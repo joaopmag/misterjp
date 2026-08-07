@@ -1,0 +1,10 @@
+{
+  "name": "SC Salgueiros U19 - Época",
+  "short_name": "Época",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#182619",
+  "theme_color": "#182619",
+  "orientation": "portrait-primary",
+  "icons": []
+}
