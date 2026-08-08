@@ -2419,7 +2419,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           <PitchMarkings />
           <SpaceZone meters={displaySpaceMeters} center={spaceCenter} onPointerDown={onSpacePointerDown} onResizeDown={onSpaceResizeDown} onDelete={clearSpace} interactive={tool === 'select'} />
           <DiagramElements
-            elements={elements} arrows={arrows}
+            elements={elements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={arrows}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
             selectedArrowId={selectedArrowId} interactive
             placingActive={tool !== 'select' && tool !== 'eraser'}
@@ -2891,7 +2891,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         }}>
           <PitchMarkings />
           <SpaceZone meters={meters} center={center} interactive={false} />
-          <DiagramElements elements={frameElements} arrows={staticArrows} interactive={false} />
+          <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={staticArrows} interactive={false} />
           <AnimOverlay items={animItems} />
         </svg>
       </div>
