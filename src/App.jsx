@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, Check, Loader2, Shield, Clock,
@@ -47,7 +48,7 @@ const display = { fontFamily: "'Oswald', sans-serif" };
 const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
-const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MD', 'MC', 'MOC', 'EE', 'ED', 'PL'];
+const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MDC', 'MC', 'MOC', 'EE', 'ED', 'PL'];
 const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Ativação / Aquecimento', 'Preparação Física'];
 const INTENSITIES = [
   { value: 'baixa', label: 'Baixa' },
@@ -547,10 +548,12 @@ function App({ session }) {
         @media (max-width: 860px) { input, select, textarea { font-size: 16px !important; } }
         .print-sheet { display: none; }
         @media print {
+          @page { size: A4; margin: 12mm; }
           body * { visibility: hidden; }
           .print-sheet, .print-sheet * { visibility: visible; }
-          .print-sheet { display: block; position: absolute; top: 0; left: 0; width: 100%; padding: 28px; color: #111; background: #fff; }
+          .print-sheet { display: block; position: absolute; top: 0; left: 0; width: 100%; padding: 0; color: #111; background: #fff; }
           .print-sheet h2, .print-sheet h3 { font-family: 'Oswald', sans-serif; }
+          .print-sheet svg { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
 
@@ -1438,8 +1441,8 @@ function nextKeeperNumber(elements, team) {
 }
 
 // Em vez do número, as bolas mostram a letra da posição:
-// 2-DD 3-DC 4-DC 5-DE 6-MD 7-MC 8-MC 9-EX 10-EX 11-PL — GR para guarda-redes.
-const POSITION_LABELS = { 2: 'DD', 3: 'DC', 4: 'DC', 5: 'DE', 6: 'MD', 7: 'MC', 8: 'MC', 9: 'EX', 10: 'EX', 11: 'PL' };
+// 2-DD 3-DC 4-DC 5-DE 6-MDC 7-MC 8-MC 9-EX 10-EX 11-PL — GR para guarda-redes.
+const POSITION_LABELS = { 2: 'DD', 3: 'DC', 4: 'DC', 5: 'DE', 6: 'MDC', 7: 'MC', 8: 'MC', 9: 'EX', 10: 'EX', 11: 'PL' };
 function elementLabel(number, isKeeper) {
   if (isKeeper) return 'GR';
   return POSITION_LABELS[number] || String(number);
@@ -1470,11 +1473,12 @@ function ballPanels(cx, cy, r) {
 }
 
 /* Bola "Trionda" (réplica da bola do Mundial 2026): em vez do preto e
-   branco tradicional, usa três "lâminas" curvas em pinwheel — azul,
-   bordô e verde — sobre uma base branca, tal como a bola oficial. É
-   propositadamente simplificada (sem o logótipo FIFA nem o texto), já
-   que aqui aparece sempre muito pequena, na prancheta; o que importa a
-   esta escala é reconhecer-se pelas cores, não pelo detalhe. */
+   branco tradicional, usa quatro "lâminas" curvas em pinwheel — azul,
+   bordô, verde e dourado — sobre uma base branca, para ficar mais viva
+   e fácil de identificar de relance na prancheta. É propositadamente
+   simplificada (sem o logótipo FIFA nem o texto), já que aqui aparece
+   sempre muito pequena; o que importa a esta escala é reconhecer-se
+   pelas cores, não pelo detalhe. */
 function triondaBlade(cx, cy, r, angle, color, key) {
   const d = `M ${cx} ${cy} `
     + `Q ${cx + r * 0.25} ${cy - r * 0.6} ${cx + r * 0.8} ${cy - r * 0.5} `
@@ -1486,27 +1490,37 @@ function TriondaBall({ cx, cy, r }) {
   return (
     <>
       <circle cx={cx} cy={cy} r={r} fill="#FDFDFB" stroke="#1a1a1a" strokeWidth={r * 0.14} />
-      {triondaBlade(cx, cy, r * 0.92, -95, '#1651C7', 'b1')}
-      {triondaBlade(cx, cy, r * 0.92, 25, T.crimson, 'b2')}
-      {triondaBlade(cx, cy, r * 0.92, 145, '#2FAE58', 'b3')}
+      {triondaBlade(cx, cy, r * 0.92, -100, '#1651C7', 'b1')}
+      {triondaBlade(cx, cy, r * 0.92, -10, T.crimson, 'b2')}
+      {triondaBlade(cx, cy, r * 0.92, 80, '#2FAE58', 'b3')}
+      {triondaBlade(cx, cy, r * 0.92, 170, T.gold, 'b4')}
       <circle cx={cx} cy={cy} r={r * 0.24} fill="#FDFDFB" stroke="#1a1a1a" strokeWidth={r * 0.06} />
     </>
   );
 }
 
-function PitchMarkings() {
+/* Campo à escala real de um relvado de futebol de 11: 105 × 68 m
+   (1 unidade do SVG = 1 metro). Marcações nas medidas oficiais:
+   círculo central 9.15 m de raio, grande área 16.5×40.32 m,
+   pequena área 5.5×18.32 m, baliza com 7.32 m de largura. */
+function PitchMarkings({ printMode }) {
+  // Em ecrã, linhas brancas translúcidas sobre o relvado escuro; em
+  // impressão (fundo branco, para poupar tinto) linhas escuras sólidas,
+  // para se manterem legíveis no papel.
+  const stroke = printMode ? '#2A2A2A' : '#ffffff55';
+  const strokeGoal = printMode ? '#2A2A2A' : '#ffffffcc';
   return (
     <>
-      <rect x="1" y="1" width="98" height="63" fill="none" stroke="#ffffff55" strokeWidth="0.4" />
-      <line x1="50" y1="1" x2="50" y2="64" stroke="#ffffff55" strokeWidth="0.4" />
-      <circle cx="50" cy="32.5" r="8" fill="none" stroke="#ffffff55" strokeWidth="0.4" />
-      <rect x="1" y="16" width="14" height="33" fill="none" stroke="#ffffff55" strokeWidth="0.4" />
-      <rect x="85" y="16" width="14" height="33" fill="none" stroke="#ffffff55" strokeWidth="0.4" />
-      <rect x="1" y="26" width="5" height="13" fill="none" stroke="#ffffff55" strokeWidth="0.4" />
-      <rect x="94" y="26" width="5" height="13" fill="none" stroke="#ffffff55" strokeWidth="0.4" />
+      <rect x="1" y="1" width="105" height="68" fill="none" stroke={stroke} strokeWidth="0.4" />
+      <line x1="53.5" y1="1" x2="53.5" y2="69" stroke={stroke} strokeWidth="0.4" />
+      <circle cx="53.5" cy="35" r="9.15" fill="none" stroke={stroke} strokeWidth="0.4" />
+      <rect x="1" y="14.84" width="16.5" height="40.32" fill="none" stroke={stroke} strokeWidth="0.4" />
+      <rect x="89.5" y="14.84" width="16.5" height="40.32" fill="none" stroke={stroke} strokeWidth="0.4" />
+      <rect x="1" y="25.84" width="5.5" height="18.32" fill="none" stroke={stroke} strokeWidth="0.4" />
+      <rect x="100.5" y="25.84" width="5.5" height="18.32" fill="none" stroke={stroke} strokeWidth="0.4" />
       {/* balizas pequenas */}
-      <rect x="-0.6" y="29" width="1.6" height="7" fill="none" stroke="#ffffffcc" strokeWidth="0.5" />
-      <rect x="99" y="29" width="1.6" height="7" fill="none" stroke="#ffffffcc" strokeWidth="0.5" />
+      <rect x="-0.6" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
+      <rect x="106" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
     </>
   );
 }
@@ -1516,10 +1530,10 @@ function PitchMarkings() {
    centro e redimensiona-se pela pega no canto inferior direito. */
 function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, interactive }) {
   if (!meters || !meters.w || !meters.h) return null;
-  const w = Math.min(meters.w, 98);
-  const h = Math.min(meters.h, 63);
-  const cx = center?.x ?? 50;
-  const cy = center?.y ?? 32.5;
+  const w = Math.min(meters.w, 105);
+  const h = Math.min(meters.h, 68);
+  const cx = center?.x ?? 53.5;
+  const cy = center?.y ?? 35;
   const x = cx - w / 2;
   const y = cy - h / 2;
   return (
@@ -1734,6 +1748,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const [selectedArrowId, setSelectedArrowId] = useState(null);
   const [drawing, setDrawing] = useState(null);
   const [printOpen, setPrintOpen] = useState(false);
+  const [erasing, setErasing] = useState(false);
   const dragStartRef = React.useRef(null);
   const dragArrowRef = React.useRef(null);
   const dragSpaceRef = React.useRef(null);
@@ -1742,7 +1757,34 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const arrows = value?.arrows || [];
   const selectedEl = elements.find(e => e.id === selectedId) || null;
   const selectedArrow = arrows.find(a => a.id === selectedArrowId) || null;
-  const spaceCenter = { x: 50 + (value?.spaceOffset?.dx || 0), y: 32.5 + (value?.spaceOffset?.dy || 0) };
+  const spaceCenter = { x: 53.5 + (value?.spaceOffset?.dx || 0), y: 35 + (value?.spaceOffset?.dy || 0) };
+  // Distância mínima de um ponto a um segmento de reta (para apagar setas
+  // "ao roçar" durante o arrastamento da borracha).
+  const distToSegment = (px, py, x1, y1, x2, y2) => {
+    const dx = x2 - x1, dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    let t = lenSq ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = x1 + t * dx, cy = y1 + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  };
+  // Apaga tudo o que a borracha "tocar" num dado ponto — usado tanto no
+  // toque inicial como continuamente enquanto se arrasta, para que os
+  // itens desapareçam logo ao serem roçados em vez de só no final do gesto.
+  const eraseAt = (p) => {
+    const hitEl = elements.some(el => Math.hypot(el.x - p.x, el.y - p.y) < 2.6);
+    const hitArrow = arrows.some(a => distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) < 1.6);
+    if (!hitEl && !hitArrow) return;
+    const remainingIds = new Set(elements.filter(el => Math.hypot(el.x - p.x, el.y - p.y) >= 2.6).map(el => el.id));
+    const remainingArrowIds = new Set(arrows.filter(a => distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) >= 1.6).map(a => a.id));
+    if (selectedId && !remainingIds.has(selectedId)) setSelectedId(null);
+    if (selectedArrowId && !remainingArrowIds.has(selectedArrowId)) setSelectedArrowId(null);
+    commit({
+      ...value,
+      elements: elements.filter(el => remainingIds.has(el.id)),
+      arrows: arrows.filter(a => remainingArrowIds.has(a.id)),
+    });
+  };
   const displaySpaceMeters = liveSpaceSize || spaceMeters;
 
   // ---- Undo / Redo -------------------------------------------------
@@ -2019,7 +2061,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     if (e.cancelable) e.preventDefault();
     try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     const p = toPoint(e);
-    if (tool === 'player') {
+    if (tool === 'eraser') {
+      setErasing(true);
+      eraseAt(p);
+    } else if (tool === 'player') {
       const number = nextPlayerNumber(elements, activeColor);
       commit({ ...value, elements: [...elements, { id: uid(), kind: 'player', team: activeColor, number, x: p.x, y: p.y }] });
     } else if (tool === 'keeper') {
@@ -2048,7 +2093,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     }
   };
   const handleBgPointerMove = (e) => {
-    if (drawing) {
+    if (erasing) {
+      eraseAt(toPoint(e));
+    } else if (drawing) {
       const p = toPoint(e);
       setDrawing({ ...drawing, x2: p.x, y2: p.y });
     } else if (dragId) {
@@ -2106,6 +2153,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const finishInteraction = (e) => {
     try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (erasing) setErasing(false);
     if (drawing) {
       if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) > 0.8) {
         commit({ ...value, arrows: [...arrows, { id: uid(), ...drawing }] });
@@ -2134,8 +2182,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const onElementDown = (e, id) => {
     e.stopPropagation();
     if (tool === 'eraser') {
-      commit({ ...value, elements: elements.filter(el => el.id !== id) });
-      if (selectedId === id) setSelectedId(null);
+      try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      setErasing(true);
+      eraseAt(toPoint(e));
       return;
     }
     beginGesture();
@@ -2147,8 +2196,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const onArrowDown = (e, id) => {
     e.stopPropagation();
     if (tool === 'eraser') {
-      commit({ ...value, arrows: arrows.filter(a => a.id !== id) });
-      if (selectedArrowId === id) setSelectedArrowId(null);
+      try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      setErasing(true);
+      eraseAt(toPoint(e));
       return;
     }
     beginGesture();
@@ -2352,7 +2402,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       <div style={{ position: 'relative', width: '100%', paddingTop: '65.1%' }}>
         <svg
           ref={svgRef}
-          viewBox="-3 -2 106 69"
+          viewBox="-3 -2 113 74"
           preserveAspectRatio="none"
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
@@ -2500,19 +2550,29 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         <span style={{ ...display, fontSize: 11, color: T.mutedDim, letterSpacing: '.04em' }}>™ Mister JP</span>
       </div>
 
-      {printOpen && (
+      {printOpen && createPortal(
         <div className="print-sheet">
-          {exerciseInfo?.name && <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>{exerciseInfo.name}</h2>}
-          <p style={{ margin: '0 0 14px', fontSize: 12.5 }}>
-            {[exerciseInfo?.phase, exerciseInfo?.space, exerciseInfo?.material].filter(Boolean).join(' · ')}
-          </p>
-          {exerciseInfo?.description && <p style={{ margin: '0 0 14px', fontSize: 12.5 }}>{exerciseInfo.description}</p>}
-          <svg viewBox="-3 -2 106 69" style={{ width: '100%', maxWidth: 620, background: '#1e3a24', borderRadius: 8 }}>
-            <PitchMarkings />
+          {exerciseInfo?.name && <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{exerciseInfo.name}</h2>}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
+            margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
+          }}>
+            {exerciseInfo?.phase && <div><strong>Fase de jogo:</strong> {exerciseInfo.phase}</div>}
+            {exerciseInfo?.defaultDuration && <div><strong>Duração:</strong> {exerciseInfo.defaultDuration} min</div>}
+            {exerciseInfo?.space && <div><strong>Espaço:</strong> {exerciseInfo.space}</div>}
+            {exerciseInfo?.playersCount && <div><strong>Nº jogadores:</strong> {exerciseInfo.playersCount}</div>}
+            {exerciseInfo?.material && <div style={{ gridColumn: '1 / -1' }}><strong>Material:</strong> {exerciseInfo.material}</div>}
+          </div>
+          {exerciseInfo?.description && (
+            <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
+          )}
+          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 680, background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <PitchMarkings printMode />
             <SpaceZone meters={spaceMeters} center={spaceCenter} interactive={false} />
             <DiagramElements elements={elements} arrows={arrows} interactive={false} />
           </svg>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -2558,9 +2618,9 @@ function DiagramThumb({ diagram, space }) {
   const meters = parseSpace(space);
   const hasDiagram = diagram && (diagram.elements?.length || diagram.arrows?.length);
   if (!hasDiagram && !meters) return null;
-  const center = { x: 50 + (diagram?.spaceOffset?.dx || 0), y: 32.5 + (diagram?.spaceOffset?.dy || 0) };
+  const center = { x: 53.5 + (diagram?.spaceOffset?.dx || 0), y: 35 + (diagram?.spaceOffset?.dy || 0) };
   return (
-    <svg viewBox="-3 -2 106 69" style={{ width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
+    <svg viewBox="-3 -2 113 74" style={{ width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
       <PitchMarkings />
       <SpaceZone meters={meters} center={center} interactive={false} />
       <DiagramElements elements={diagram?.elements || []} arrows={diagram?.arrows || []} interactive={false} />
@@ -2643,7 +2703,7 @@ function ExerciseModal({ exercise, onClose, onSave }) {
             value={f.diagram || { elements: [], arrows: [] }}
             onChange={d => setF(prev => ({ ...prev, diagram: d }))}
             spaceMeters={parseSpace(f.space)}
-            exerciseInfo={{ name: f.name, phase: f.phase, space: f.space, material: f.material, description: f.description }}
+            exerciseInfo={{ name: f.name, phase: f.phase, space: f.space, material: f.material, description: f.description, playersCount: f.playersCount, defaultDuration: f.defaultDuration }}
             onClearAll={handleClearAll}
             onClearSpace={handleClearSpace}
             onSpaceResize={handleSpaceResize}
@@ -2670,7 +2730,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const diagram = exercise.diagram || { elements: [], arrows: [] };
   const sequence = diagram.sequence || [];
   const meters = parseSpace(exercise.space);
-  const center = { x: 50 + (diagram.spaceOffset?.dx || 0), y: 32.5 + (diagram.spaceOffset?.dy || 0) };
+  const center = { x: 53.5 + (diagram.spaceOffset?.dx || 0), y: 35 + (diagram.spaceOffset?.dy || 0) };
   const staticArrows = diagram.arrows || [];
 
   const [frameElements, setFrameElements] = useState(sequence.length ? sequence[0].elements : (diagram.elements || []));
@@ -2824,7 +2884,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       )}
 
       <div style={{ position: 'relative', width: '100%', paddingTop: '65.1%' }}>
-        <svg viewBox="-3 -2 106 69" preserveAspectRatio="none" style={{
+        <svg viewBox="-3 -2 113 74" preserveAspectRatio="none" style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
           background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}`,
         }}>
@@ -2947,7 +3007,7 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
         />
       )}
 
-      {printSession && (
+      {printSession && createPortal(
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{printSession.focus || 'Sessão de treino'}</h2>
           <p style={{ margin: '0 0 18px', fontSize: 13 }}>
@@ -2967,7 +3027,8 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
               .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
               .filter(Boolean).join(', ') || 'Sem registo'}
           </p>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
