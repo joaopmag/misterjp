@@ -6,7 +6,7 @@ import {
   Gauge, Moon, Droplets, Zap, BedDouble, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
-  Undo2, Redo2
+  Undo2, Redo2, Copy
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -3706,6 +3706,21 @@ function MatchModal({ match, players, onClose, onSave }) {
 function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, sessions, onPreview }) {
   const [modal, setModal] = useState(false);
   const [showCodes, setShowCodes] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  const checkinUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}?checkin=1`
+    : '';
+
+  const copyCheckinUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(checkinUrl);
+    } catch {
+      // Alguns navegadores/contextos bloqueiam o clipboard — seleciona o texto do campo como alternativa.
+    }
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
 
   const save = (data) => {
     setMonitoring([...monitoring, { ...data, id: uid() }]);
@@ -3730,6 +3745,15 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
         action={<Btn onClick={() => setModal(true)} disabled={players.length === 0}><Plus size={15} /> Novo registo</Btn>} />
 
       <Panel title="Questionário para os atletas">
+        <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
+          Envia este link aos atletas — abre diretamente o ecrã de código pessoal, sem mostrar o resto da plataforma. Cada um entra com o seu código individual (ver "Códigos de acesso individuais" abaixo).
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <Input readOnly value={checkinUrl} onFocus={e => e.target.select()} style={{ flex: 1, minWidth: 220, ...mono, fontSize: 12.5 }} />
+          <Btn variant="ghost" onClick={copyCheckinUrl}>
+            {linkCopied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar link</>}
+          </Btn>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 0' }}>
           <Btn onClick={onPreview}><Play size={15} /> Abrir questionário</Btn>
         </div>
