@@ -1260,7 +1260,7 @@ function Exercicios({ exercises, setExercises }) {
 
   return (
     <div>
-      <SectionHeader title="Exercícios" subtitle="A tua biblioteca de tarefas de treino."
+      <SectionHeader title="Exercícios" subtitle="A tua biblioteca de treino."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Novo exercício</Btn>} />
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
@@ -3374,7 +3374,7 @@ function Presencas({ players, sessions, setSessions }) {
 
   return (
     <div>
-      <SectionHeader title="Presenças" subtitle="Assiduidade e nota de treino — confirmadas a partir do dia seguinte ao treino." />
+      <SectionHeader title="Presenças" subtitle="Assiduidade e nota de treino." />
 
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no separador Plantel." />
