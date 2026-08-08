@@ -1244,6 +1244,7 @@ function Exercicios({ exercises, setExercises }) {
   const [modal, setModal] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [filter, setFilter] = useState('Todas');
+  const [printExercise, setPrintExercise] = useState(null);
 
   const save = (data) => {
     if (data.id) setExercises(exercises.map(x => x.id === data.id ? data : x));
@@ -1251,6 +1252,10 @@ function Exercicios({ exercises, setExercises }) {
     setModal(null);
   };
   const remove = (id) => setExercises(exercises.filter(x => x.id !== id));
+  const doPrint = (x) => {
+    setPrintExercise(x);
+    setTimeout(() => window.print(), 80);
+  };
   const visible = filter === 'Todas' ? exercises : exercises.filter(x => x.phase === filter);
 
   return (
@@ -1278,6 +1283,7 @@ function Exercicios({ exercises, setExercises }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{x.name}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                 </div>
@@ -1302,6 +1308,39 @@ function Exercicios({ exercises, setExercises }) {
           onClose={() => setViewing(null)}
           onEdit={() => { setModal(viewing); setViewing(null); }}
         />
+      )}
+
+      {printExercise && createPortal(
+        <div className="print-sheet">
+          {printExercise.name && <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{printExercise.name}</h2>}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
+            margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
+          }}>
+            {printExercise.phase && <div><strong>Fase de jogo:</strong> {printExercise.phase}</div>}
+            {printExercise.defaultDuration && <div><strong>Duração:</strong> {printExercise.defaultDuration} min</div>}
+            {printExercise.space && <div><strong>Espaço:</strong> {printExercise.space}</div>}
+            {printExercise.playersCount && <div><strong>Nº jogadores:</strong> {printExercise.playersCount}</div>}
+            {printExercise.material && <div style={{ gridColumn: '1 / -1' }}><strong>Material:</strong> {printExercise.material}</div>}
+          </div>
+          {printExercise.description && (
+            <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{printExercise.description}</p>
+          )}
+          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 680, background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <PitchMarkings printMode />
+            <SpaceZone
+              meters={parseSpace(printExercise.space)}
+              center={{ x: 53.5 + (printExercise.diagram?.spaceOffset?.dx || 0), y: 35 + (printExercise.diagram?.spaceOffset?.dy || 0) }}
+              interactive={false}
+            />
+            <DiagramElements
+              elements={printExercise.diagram?.elements || []}
+              arrows={printExercise.diagram?.arrows || []}
+              interactive={false}
+            />
+          </svg>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -3751,7 +3790,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                         </span>
                       </td>
                       <td style={{ ...td2, color: T.cream }}>{p.number ? `${p.number} ` : ''}{p.name}</td>
-                      <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(1) : '—'}</td>
+                      <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(2) : '—'}</td>
                       <td style={{ ...td2, ...mono }}>{lastRpe ? lastRpe.pse : '—'}</td>
                     </tr>
                   );
@@ -4849,6 +4888,7 @@ function VideoModal({ video, onClose, onSave }) {
 ---------------------------------------------------------------- */
 function Convocatorias({ convocatorias, setConvocatorias, players, season }) {
   const [modal, setModal] = useState(null);
+  const [printConvocatoria, setPrintConvocatoria] = useState(null);
 
   const save = (data) => {
     if (data.id) setConvocatorias(convocatorias.map(c => c.id === data.id ? data : c));
@@ -4856,6 +4896,10 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season }) {
     setModal(null);
   };
   const remove = (id) => setConvocatorias(convocatorias.filter(c => c.id !== id));
+  const doPrint = (c) => {
+    setPrintConvocatoria(c);
+    setTimeout(() => window.print(), 80);
+  };
 
   const list = [...convocatorias].sort((a, b) => new Date(a.data || 0) - new Date(b.data || 0));
 
@@ -4896,6 +4940,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season }) {
                   <td style={td}>{c.localJogo || '—'}</td>
                   <td style={td}>{(c.convocados || []).length}</td>
                   <td style={td}>
+                    <button onClick={() => doPrint(c)} title="Imprimir convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', marginRight: 8 }}><Printer size={14} /></button>
                     <button onClick={() => setModal(c)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', marginRight: 8 }}><Pencil size={14} /></button>
                     <button onClick={() => remove(c.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                   </td>
@@ -4914,6 +4959,57 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season }) {
           onClose={() => setModal(null)}
           onSave={save}
         />
+      )}
+
+      {printConvocatoria && createPortal(
+        <div className="print-sheet">
+          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
+            {printConvocatoria.adversario ? `vs ${printConvocatoria.adversario}` : 'Convocatória'}
+          </h2>
+          <div style={{ fontSize: 12.5, color: '#444', margin: '0 0 14px' }}>
+            {[
+              printConvocatoria.epoca,
+              printConvocatoria.competicao,
+              printConvocatoria.escalao,
+              printConvocatoria.jornada,
+            ].filter(Boolean).join(' · ')}
+          </div>
+
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '4px 24px',
+            margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
+          }}>
+            {printConvocatoria.data && <div><strong>Data:</strong> {fmtDate(printConvocatoria.data)}</div>}
+            {printConvocatoria.casaFora && <div><strong>Casa / Fora:</strong> {printConvocatoria.casaFora}</div>}
+            {printConvocatoria.horaJogo && <div><strong>Hora do jogo:</strong> {printConvocatoria.horaJogo}</div>}
+            {printConvocatoria.localJogo && <div><strong>Local do jogo:</strong> {printConvocatoria.localJogo}</div>}
+            {printConvocatoria.horaConcentracao && <div><strong>Hora de concentração:</strong> {printConvocatoria.horaConcentracao}</div>}
+            {printConvocatoria.localConcentracao && <div><strong>Local de concentração:</strong> {printConvocatoria.localConcentracao}</div>}
+          </div>
+
+          {printConvocatoria.outrasInfo && (
+            <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}><strong>Outras informações:</strong> {printConvocatoria.outrasInfo}</p>
+          )}
+
+          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>
+            Convocados {printConvocatoria.convocados?.length ? `(${printConvocatoria.convocados.length})` : ''}
+          </h3>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '4px 16px',
+            fontSize: 12.5, marginBottom: 16,
+          }}>
+            {(printConvocatoria.convocados || []).map(pid => {
+              const p = players.find(pl => pl.id === pid);
+              return p ? <div key={pid}>{p.number ? `${p.number} · ` : ''}{p.name}</div> : null;
+            })}
+          </div>
+
+          <div style={{ fontSize: 12.5, borderTop: '1px solid #ccc', paddingTop: 8 }}>
+            {printConvocatoria.treinador && <div><strong>Treinador:</strong> {printConvocatoria.treinador}</div>}
+            {printConvocatoria.teamManager && <div><strong>Team Manager:</strong> {printConvocatoria.teamManager}</div>}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
