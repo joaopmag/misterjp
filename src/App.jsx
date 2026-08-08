@@ -3163,6 +3163,18 @@ function addDays(dateStr, n) {
   return toLocalISODate(d);
 }
 
+const WEEKDAY_ABBR = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+function weekdayAbbr(dateStr) {
+  return WEEKDAY_ABBR[new Date(dateStr + 'T00:00:00').getDay()];
+}
+function dayOfMonth(dateStr) {
+  return new Date(dateStr + 'T00:00:00').getDate();
+}
+function formatShortDatePt(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return `${weekdayAbbr(dateStr)}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 /* ---------------------------------------------------------------
    AGENDA SEMANAL — vista de calendário Seg-Dom, criada a partir
    do Planeamento, com edição direta de cada sessão.
@@ -3558,7 +3570,7 @@ function Jogos({ matches, setMatches, players }) {
 
   return (
     <div>
-      <SectionHeader title="Jogos" subtitle="Convocatória, titulares, tempo de jogo, cartões e produção ofensiva."
+      <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
 
       <div style={{ marginBottom: 20 }}>
@@ -3978,21 +3990,29 @@ function greetingNow() {
   return 'Boa noite';
 }
 
+// Quantos dias para trás (além de hoje) o atleta pode escolher para
+// responder em atraso, caso se tenha esquecido de preencher o questionário.
+const CHECKIN_DAYS_BACK = 6;
+
 function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
   const [loggedPlayerId, setLoggedPlayerId] = useState(null);
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
+  const [selectedDate, setSelectedDate] = useState(todayStr());
 
-  const todayDateStr = todayStr();
   const player = players.find(p => p.id === loggedPlayerId);
-  const todaySession = sessions.find(s => s.date === todayDateStr);
+  const sessionForDate = sessions.find(s => s.date === selectedDate);
 
-  const hasToday = (type) => monitoring.some(m => m.playerId === loggedPlayerId && m.date === todayDateStr &&
+  const hasDate = (type, date) => monitoring.some(m => m.playerId === loggedPlayerId && m.date === date &&
     (type === 'wellness' ? typeof m.sono === 'number' : typeof m.pse === 'number'));
+
+  const recentDates = Array.from({ length: CHECKIN_DAYS_BACK + 1 }, (_, i) => addDays(todayStr(), -(CHECKIN_DAYS_BACK - i)));
+  const dayStatus = {};
+  recentDates.forEach(d => { dayStatus[d] = { wellness: hasDate('wellness', d), rpe: hasDate('rpe', d) }; });
 
   const upsert = (type, fields) => {
     setMonitoring(prev => {
-      const idx = prev.findIndex(m => m.playerId === loggedPlayerId && m.date === todayDateStr && m.type === type);
-      const entry = { playerId: loggedPlayerId, date: todayDateStr, type, ...fields };
+      const idx = prev.findIndex(m => m.playerId === loggedPlayerId && m.date === selectedDate && m.type === type);
+      const entry = { playerId: loggedPlayerId, date: selectedDate, type, ...fields };
       if (idx >= 0) {
         const copy = [...prev];
         copy[idx] = { ...prev[idx], ...entry };
@@ -4016,12 +4036,13 @@ function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
   }
 
   if (activeType === 'wellness') {
-    const lastWellness = monitoring
+    const existing = monitoring.find(m => m.playerId === loggedPlayerId && m.date === selectedDate && typeof m.sono === 'number');
+    const lastWellness = existing || monitoring
       .filter(m => m.playerId === loggedPlayerId && typeof m.sono === 'number')
       .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
     return (
       <WellnessWizard
-        player={player} initial={lastWellness}
+        player={player} initial={lastWellness} date={selectedDate}
         onBack={() => setActiveType(null)}
         onSubmit={fields => upsert('wellness', fields)}
       />
@@ -4031,7 +4052,7 @@ function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
   if (activeType === 'rpe') {
     return (
       <RpeWizard
-        player={player} session={todaySession}
+        player={player} session={sessionForDate} date={selectedDate}
         onBack={() => setActiveType(null)}
         onSubmit={fields => upsert('rpe', fields)}
       />
@@ -4040,8 +4061,10 @@ function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
 
   return (
     <PlayerKioskHome
-      player={player} session={todaySession}
-      doneWellness={hasToday('wellness')} doneRpe={hasToday('rpe')}
+      player={player} session={sessionForDate}
+      recentDates={recentDates} dayStatus={dayStatus}
+      selectedDate={selectedDate} onSelectDate={setSelectedDate}
+      doneWellness={hasDate('wellness', selectedDate)} doneRpe={hasDate('rpe', selectedDate)}
       onOpenWellness={() => setActiveType('wellness')} onOpenRpe={() => setActiveType('rpe')}
       onLogout={() => setLoggedPlayerId(null)}
     />
@@ -4105,11 +4128,46 @@ function CheckinLogin({ players, onLogin }) {
   );
 }
 
-function PlayerKioskHome({ player, session, doneWellness, doneRpe, onOpenWellness, onOpenRpe, onLogout }) {
-  const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : 'Sem sessão definida para hoje';
+function DaySelectStrip({ recentDates, dayStatus, selectedDate, onSelectDate }) {
+  const todayDateStr = todayStr();
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 8 }}>A responder por:</div>
+      <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2 }}>
+        {recentDates.map(d => {
+          const isSelected = d === selectedDate;
+          const isToday = d === todayDateStr;
+          const status = dayStatus[d] || { wellness: false, rpe: false };
+          const bothDone = status.wellness && status.rpe;
+          const someDone = status.wellness || status.rpe;
+          return (
+            <button key={d} onClick={() => onSelectDate(d)} style={{
+              flex: '0 0 auto', width: 46, padding: '8px 0 7px', borderRadius: 10, cursor: 'pointer',
+              background: isSelected ? T.cream : T.surface,
+              border: `1px solid ${isSelected ? T.cream : (isToday ? T.gold : T.line)}`,
+              color: isSelected ? T.bg : T.cream, ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+            }}>
+              <span style={{ fontSize: 10.5, color: isSelected ? T.bg : T.mutedDim, textTransform: 'uppercase' }}>{weekdayAbbr(d)}</span>
+              <span style={{ ...display, fontSize: 16, fontWeight: 700 }}>{dayOfMonth(d)}</span>
+              <span style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: bothDone ? (isSelected ? T.bg : T.good) : someDone ? T.warn : 'transparent',
+                border: someDone ? 'none' : `1px solid ${isSelected ? T.bg + '55' : T.line}`,
+              }} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, onOpenWellness, onOpenRpe, onLogout }) {
+  const isToday = selectedDate === todayStr();
+  const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : `Sem sessão definida para ${isToday ? 'hoje' : 'este dia'}`;
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', padding: '28px 18px 60px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 26, gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, gap: 10 }}>
         <div>
           <div style={{ ...display, fontSize: 22, fontWeight: 700, color: T.cream }}>{greetingNow()}, {player.name.split(' ')[0]}!</div>
           <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>{player.number ? `Nº ${player.number} · ` : ''}Sessão privada — só tu vês isto.</div>
@@ -4122,6 +4180,14 @@ function PlayerKioskHome({ player, session, doneWellness, doneRpe, onOpenWellnes
         </button>
       </div>
 
+      {recentDates && (
+        <DaySelectStrip recentDates={recentDates} dayStatus={dayStatus} selectedDate={selectedDate} onSelectDate={onSelectDate} />
+      )}
+
+      {!isToday && (
+        <div style={{ fontSize: 12, color: T.warn, marginBottom: 14 }}>A preencher em atraso: {formatShortDatePt(selectedDate)}.</div>
+      )}
+
       <button onClick={onOpenWellness} style={{
         width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${doneWellness ? T.good : T.line}`,
         borderRadius: 12, padding: '18px 16px', cursor: 'pointer', ...body, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 14,
@@ -4129,7 +4195,7 @@ function PlayerKioskHome({ player, session, doneWellness, doneRpe, onOpenWellnes
         <span style={{ fontSize: 26 }}>💪</span>
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Wellness</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Sono e como te sentes hoje</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{isToday ? 'Sono e como te sentes hoje' : `Sono e como te sentias — ${formatShortDatePt(selectedDate)}`}</div>
         </span>
         {doneWellness ? <Check size={18} color={T.good} /> : <ChevronRight size={18} color={T.mutedDim} />}
       </button>
@@ -4142,7 +4208,7 @@ function PlayerKioskHome({ player, session, doneWellness, doneRpe, onOpenWellnes
         <span style={{ fontSize: 26 }}>🏋</span>
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>RPE</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{session ? `Intensidade de: ${sessionLabel}` : 'Ainda sem sessão criada para hoje'}</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{session ? `Intensidade de: ${sessionLabel}` : `Ainda sem sessão criada para ${isToday ? 'hoje' : 'este dia'}`}</div>
         </span>
         {doneRpe ? <Check size={18} color={T.good} /> : <ChevronRight size={18} color={T.mutedDim} />}
       </button>
@@ -4150,7 +4216,8 @@ function PlayerKioskHome({ player, session, doneWellness, doneRpe, onOpenWellnes
   );
 }
 
-function KioskHeader({ player, step, totalSteps, typeLabel, subLabel, onBack }) {
+function KioskHeader({ player, step, totalSteps, typeLabel, subLabel, date, onBack }) {
+  const isToday = !date || date === todayStr();
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, gap: 10 }}>
       <button onClick={onBack} style={{
@@ -4162,6 +4229,7 @@ function KioskHeader({ player, step, totalSteps, typeLabel, subLabel, onBack }) 
       <div style={{ textAlign: 'right' }}>
         <div style={{ ...display, fontSize: 18, fontWeight: 600, color: T.cream }}>{player.number ? `${player.number} ` : ''}{player.name}</div>
         <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{typeLabel} · {step ? `${step}/${totalSteps} ` : ''}{subLabel}</div>
+        {!isToday && <div style={{ fontSize: 11.5, color: T.warn, marginTop: 2 }}>Dia: {formatShortDatePt(date)}</div>}
       </div>
     </div>
   );
@@ -4252,7 +4320,7 @@ function DoneScreen({ name, message }) {
   );
 }
 
-function WellnessWizard({ player, initial, onBack, onSubmit }) {
+function WellnessWizard({ player, initial, date, onBack, onSubmit }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
@@ -4284,7 +4352,7 @@ function WellnessWizard({ player, initial, onBack, onSubmit }) {
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '20px 18px 60px' }}>
-      <KioskHeader player={player} step={step} totalSteps={2} typeLabel="Wellness" subLabel={step === 1 ? 'Sono' : 'Como te sentes'} onBack={onBack} />
+      <KioskHeader player={player} step={step} totalSteps={2} typeLabel="Wellness" subLabel={step === 1 ? 'Sono' : 'Como te sentes'} date={date} onBack={onBack} />
 
       {step === 1 && (
         <>
@@ -4333,7 +4401,7 @@ function WellnessWizard({ player, initial, onBack, onSubmit }) {
   );
 }
 
-function RpeWizard({ player, session, onBack, onSubmit }) {
+function RpeWizard({ player, session, date, onBack, onSubmit }) {
   const [value, setValue] = useState(null);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
@@ -4355,7 +4423,7 @@ function RpeWizard({ player, session, onBack, onSubmit }) {
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '20px 18px 60px' }}>
-      <KioskHeader player={player} typeLabel="RPE" subLabel={sessionLabel} onBack={onBack} />
+      <KioskHeader player={player} typeLabel="RPE" subLabel={sessionLabel} date={date} onBack={onBack} />
       <QuestionLabel>Quão intenso foi o treino?</QuestionLabel>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 22 }}>
         {RPE_SCALE.map(opt => (
@@ -4761,7 +4829,7 @@ function Videos({ videos, setVideos }) {
 
   return (
     <div>
-      <SectionHeader title="FutchannelYouT" subtitle="Vídeos das jornadas, a partir do YouTube."
+      <SectionHeader title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar vídeo</Btn>} />
 
       {videos.length === 0 ? (
