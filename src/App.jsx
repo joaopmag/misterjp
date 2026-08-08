@@ -3055,12 +3055,41 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
             {printSession.opponent ? ` · vs ${printSession.opponent}` : ''}
           </p>
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
-          <ol style={{ margin: '0 0 18px', paddingLeft: 20, fontSize: 13, lineHeight: 1.6 }}>
-            {(printSession.exerciseIds || []).map(e => {
-              const ex = exercises.find(x => x.id === e.exId);
-              return <li key={e.exId}>{ex?.name || '—'} — {e.duration} min{ex?.description ? ` — ${ex.description}` : ''}</li>;
-            })}
-          </ol>
+          {(printSession.exerciseIds || []).map((e, i) => {
+            const ex = exercises.find(x => x.id === e.exId);
+            if (!ex) return <p key={e.exId} style={{ fontSize: 13, margin: '0 0 14px' }}>{i + 1}. —</p>;
+            return (
+              <div key={e.exId} style={{ margin: '0 0 20px', pageBreakInside: 'avoid' }}>
+                <div style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>{i + 1}. {ex.name}</div>
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
+                  margin: '0 0 8px', fontSize: 12, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '6px 0',
+                }}>
+                  {ex.phase && <div><strong>Fase de jogo:</strong> {ex.phase}</div>}
+                  <div><strong>Duração na sessão:</strong> {e.duration} min</div>
+                  {ex.space && <div><strong>Espaço:</strong> {ex.space}</div>}
+                  {ex.playersCount && <div><strong>Nº jogadores:</strong> {ex.playersCount}</div>}
+                  {ex.material && <div style={{ gridColumn: '1 / -1' }}><strong>Material:</strong> {ex.material}</div>}
+                </div>
+                {ex.description && (
+                  <p style={{ margin: '0 0 8px', fontSize: 12, whiteSpace: 'pre-wrap' }}>{ex.description}</p>
+                )}
+                <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 560, background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+                  <PitchMarkings printMode />
+                  <SpaceZone
+                    meters={parseSpace(ex.space)}
+                    center={{ x: 53.5 + (ex.diagram?.spaceOffset?.dx || 0), y: 35 + (ex.diagram?.spaceOffset?.dy || 0) }}
+                    interactive={false}
+                  />
+                  <DiagramElements
+                    elements={ex.diagram?.elements || []}
+                    arrows={ex.diagram?.arrows || []}
+                    interactive={false}
+                  />
+                </svg>
+              </div>
+            );
+          })}
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
           <p style={{ fontSize: 13 }}>
             {(printSession.attendance || [])
@@ -3790,7 +3819,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                         </span>
                       </td>
                       <td style={{ ...td2, color: T.cream }}>{p.number ? `${p.number} ` : ''}{p.name}</td>
-                      <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(2) : '—'}</td>
+                      <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(1) : '—'}</td>
                       <td style={{ ...td2, ...mono }}>{lastRpe ? lastRpe.pse : '—'}</td>
                     </tr>
                   );
@@ -4036,7 +4065,7 @@ function CheckinLogin({ players, onLogin }) {
 
       {error && <div style={{ color: T.bad, fontSize: 13, marginBottom: 14 }}>Código inválido — tenta novamente.</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 22 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 22 }}>
         {digits.map((d, i) => (
           <button key={i} onClick={() => press(d)} disabled={d === ''} style={{
             padding: '18px 0', borderRadius: 10, cursor: d === '' ? 'default' : 'pointer',
@@ -4121,7 +4150,7 @@ function QuestionLabel({ children }) {
 function ScaleButtons({ value, onChange, lowLabel, highLabel }) {
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
         {[1, 2, 3, 4, 5].map(n => (
           <button key={n} onClick={() => onChange(n)} style={{
             aspectRatio: '1', borderRadius: 10, border: `1px solid ${value === n ? T.cream : T.line}`,
