@@ -5222,6 +5222,45 @@ function Diario({ diario, setDiario }) {
   );
 }
 
+// Ecrã do questionário (Wellness/RPE) para os atletas, acedido pelo link
+// partilhado (?checkin=1) — não passa pelo portão de login do treinador:
+// carrega só os dados de que precisa (jogadores, sessões, monitorização) e
+// autentica cada atleta pelo código pessoal de 4 dígitos dentro do próprio
+// CheckinKiosk.
+function CheckinApp() {
+  const notifyEdit = useCallback(() => {}, []);
+  const [players, , playersReady] = useCollectionSync('players', notifyEdit);
+  const [sessions, , sessionsReady] = useCollectionSync('sessions', notifyEdit);
+  const [monitoring, setMonitoring, monitoringReady] = useCollectionSync('monitoring', notifyEdit);
+
+  const loading = !playersReady || !sessionsReady || !monitoringReady;
+
+  if (loading) {
+    return (
+      <div style={{ background: T.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <style>{FONTS}</style>
+        <Loader2 className="animate-spin" color={T.warn} size={28} />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: T.bg, minHeight: '100vh', ...body }}>
+      <style>{`
+        ${FONTS}
+        * { box-sizing: border-box; }
+        ::selection { background: ${T.gold}55; }
+        input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
+        @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+      `}</style>
+      <CheckinKiosk
+        players={players} monitoring={monitoring} setMonitoring={setMonitoring}
+        sessions={sessions}
+      />
+    </div>
+  );
+}
+
 // Portão de autenticação: mostra o ecrã de login enquanto não há sessão,
 // e só monta a app (e começa a carregar dados do Supabase) depois de
 // autenticado. Cada conta criada fica com os seus dados isolados na
@@ -5237,6 +5276,14 @@ export default function AppRoot() {
     });
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  // O link do questionário (?checkin=1 ou #checkin) é para os atletas, que
+  // não têm (nem devem precisar de) conta de treinador — por isso esta
+  // verificação acontece ANTES do portão de login, e nunca mostra o ecrã
+  // de autenticação da plataforma.
+  const isCheckin = typeof window !== 'undefined' &&
+    (window.location.search.includes('checkin') || window.location.hash.includes('checkin'));
+  if (isCheckin) return <CheckinApp />;
 
   if (session === undefined) {
     return (
