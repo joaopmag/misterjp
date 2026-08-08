@@ -48,7 +48,7 @@ const display = { fontFamily: "'Oswald', sans-serif" };
 const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
-const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MDC', 'MC', 'MOC', 'EE', 'ED', 'PL'];
+const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MD', 'MC', 'MOC', 'EE', 'ED', 'PL'];
 const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Ativação / Aquecimento', 'Preparação Física'];
 const INTENSITIES = [
   { value: 'baixa', label: 'Baixa' },
@@ -1441,8 +1441,8 @@ function nextKeeperNumber(elements, team) {
 }
 
 // Em vez do número, as bolas mostram a letra da posição:
-// 2-DD 3-DC 4-DC 5-DE 6-MDC 7-MC 8-MC 9-EX 10-EX 11-PL — GR para guarda-redes.
-const POSITION_LABELS = { 2: 'DD', 3: 'DC', 4: 'DC', 5: 'DE', 6: 'MDC', 7: 'MC', 8: 'MC', 9: 'EX', 10: 'EX', 11: 'PL' };
+// 2-DD 3-DC 4-DC 5-DE 6-MD 7-MC 8-MC 9-EX 10-EX 11-PL — GR para guarda-redes.
+const POSITION_LABELS = { 2: 'DD', 3: 'DC', 4: 'DC', 5: 'DE', 6: 'MD', 7: 'MC', 8: 'MC', 9: 'EX', 10: 'EX', 11: 'PL' };
 function elementLabel(number, isKeeper) {
   if (isKeeper) return 'GR';
   return POSITION_LABELS[number] || String(number);
@@ -1561,13 +1561,14 @@ function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, inte
   );
 }
 
-function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, lineToolActive }) {
-  // Enquanto a ferramenta ativa é uma seta/linha, as áreas de toque dos
-  // elementos e das setas já colocadas ficam desligadas — assim dá para
-  // começar (ou terminar) a seta mesmo em cima ou coladinha a outro item
-  // (ex.: um jogador ou a bola), em vez de o toque ser "roubado" por esse
-  // item e começar a arrastá-lo.
-  const hitsEnabled = interactive && !lineToolActive;
+function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive }) {
+  // Enquanto a ferramenta ativa é para colocar um novo item (jogador,
+  // guarda-redes, bola, cone, baliza, estaca, técnico) ou desenhar uma
+  // seta/linha, as áreas de toque dos elementos e das setas já colocadas
+  // ficam desligadas — assim dá para colocar (ou começar/terminar uma
+  // seta) mesmo em cima ou coladinho a outro item já existente, em vez de
+  // o toque ser "roubado" por esse item e começar a arrastá-lo.
+  const hitsEnabled = interactive && !placingActive;
   return (
     <>
       <defs>
@@ -1695,14 +1696,14 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           const isKeeper = el.kind === 'keeper';
           return (
             <g key={el.id}>
-              {hitsEnabled && <circle cx={el.x} cy={el.y} r="2.5" onPointerDown={handler} style={hitStyle} />}
+              {hitsEnabled && <circle cx={el.x} cy={el.y} r="2.2" onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
                 {isKeeper ? (
-                  <rect x={el.x - 2.3} y={el.y - 2.3} width="4.6" height="4.6" rx="0.9" fill={tm.fill} stroke="#F0E7D6" strokeWidth="0.45" />
+                  <rect x={el.x - 2} y={el.y - 2} width="4" height="4" rx="0.8" fill={tm.fill} stroke="#F0E7D6" strokeWidth="0.4" />
                 ) : (
-                  <circle cx={el.x} cy={el.y} r="2.3" fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth="0.3" />
+                  <circle cx={el.x} cy={el.y} r="2" fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth="0.28" />
                 )}
-                <text x={el.x} y={el.y + 0.85} textAnchor="middle" fontSize={elementLabel(el.number, isKeeper).length > 2 ? '1.7' : '2.4'} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+                <text x={el.x} y={el.y + 0.75} textAnchor="middle" fontSize={elementLabel(el.number, isKeeper).length > 2 ? '1.5' : '2.1'} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {elementLabel(el.number, isKeeper)}
                 </text>
               </g>
@@ -1843,8 +1844,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const toPoint = (e) => {
     const rect = svgRef.current.getBoundingClientRect();
     return {
-      x: Math.max(-3, Math.min(103, ((e.clientX - rect.left) / rect.width) * 106 - 3)),
-      y: Math.max(-2, Math.min(67, ((e.clientY - rect.top) / rect.height) * 69 - 2)),
+      x: Math.max(-3, Math.min(110, ((e.clientX - rect.left) / rect.width) * 113 - 3)),
+      y: Math.max(-2, Math.min(72, ((e.clientY - rect.top) / rect.height) * 74 - 2)),
     };
   };
   // Converte um ponto local (lx, ly), definido antes da rotação, para a
@@ -2421,7 +2422,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             elements={elements} arrows={arrows}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
             selectedArrowId={selectedArrowId} interactive
-            lineToolActive={LINE_TOOLS.includes(tool)}
+            placingActive={tool !== 'select' && tool !== 'eraser'}
           />
           {selectedEl && selectedEl.kind !== 'goalmarker' && (
             <circle cx={selectedEl.x} cy={selectedEl.y} r="3.2" fill="none" stroke={T.warn} strokeWidth="0.3" strokeDasharray="0.8,0.6" />
