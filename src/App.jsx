@@ -1186,8 +1186,10 @@ function PlayerModal({ player, onClose, onSave }) {
     <Modal title={player ? 'Editar jogador' : 'Novo jogador'} onClose={onClose} wide>
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Identificação</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 1fr', gap: 12, marginBottom: 12 }}>
+        <div style={{ marginBottom: 12 }}>
           <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" /></Field>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 12, marginBottom: 12 }}>
           <Field label="Nº"><Input value={f.number} onChange={e => setF({ ...f, number: e.target.value })} placeholder="10" /></Field>
           <Field label="Nacionalidade"><Input value={f.nationality} onChange={e => setF({ ...f, nationality: e.target.value })} /></Field>
         </div>
