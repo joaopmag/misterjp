@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import ReactDOMServer from 'react-dom/server';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, Check, Loader2, Shield, Clock,
   Gauge, Moon, Droplets, Zap, BedDouble, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
-  Undo2, Redo2, Copy
+  Undo2, Redo2, Copy, Share2
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -1256,6 +1257,12 @@ function Exercicios({ exercises, setExercises }) {
     setPrintExercise(x);
     setTimeout(() => window.print(), 80);
   };
+  const doShare = (x) => {
+    const meta = [x.phase, x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.material && `🎒 ${x.material}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean);
+    const block = buildDiagramBlockHtml(x.diagram, x.space, 'ex');
+    const html = buildShareableHtmlDoc({ title: x.name || 'Exercício', metaLines: meta, description: x.description, blocks: [block] });
+    shareOrDownloadHtml(`${(x.name || 'exercicio').replace(/[^\w-]+/g, '_')}.html`, html, x.name || 'Exercício');
+  };
   const visible = filter === 'Todas' ? exercises : exercises.filter(x => x.phase === filter);
 
   return (
@@ -1283,6 +1290,7 @@ function Exercicios({ exercises, setExercises }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{x.name}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
@@ -1753,6 +1761,236 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
       })}
     </>
   );
+}
+
+/* ---------------------------------------------------------------
+   FICHEIRO PARTILHÁVEL (exercício / sessão) — gera um ficheiro .html
+   autónomo (sem depender da app nem de ligação à internet) com toda a
+   informação do "imprimir" mais, quando existe, a apresentação animada
+   do esquema tático. Como um PDF normal não consegue reproduzir
+   movimento, em vez disso pré-calculamos aqui — com os MESMOS
+   componentes de desenho da app (PitchMarkings/SpaceZone/DiagramElements),
+   via ReactDOMServer — uma sequência de "fotogramas" SVG estáticos que o
+   ficheiro final troca sozinho, reconstruindo a animação sem precisar de
+   vídeo nem de React. Quem recebe o ficheiro só tem de o abrir num
+   browser (telemóvel ou computador) e, se houver esquema tático, carregar
+   em "Apresentar".
+---------------------------------------------------------------- */
+function buildAnimationChainsPure(arrowList) {
+  const CHAIN_DIST = 3.2;
+  const closeEnough = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by) <= CHAIN_DIST;
+  const closest = (list, x, y) => {
+    let best = null, bestD = CHAIN_DIST;
+    for (const a of list) {
+      const d = Math.hypot(a.x1 - x, a.y1 - y);
+      if (d <= bestD) { bestD = d; best = a; }
+    }
+    return best;
+  };
+  const isContinuationOfSome = (arrow) => arrowList.some(other => (
+    other.id !== arrow.id && other.type === arrow.type && closeEnough(other.x2, other.y2, arrow.x1, arrow.y1)
+  ));
+  const used = new Set();
+  const chains = [];
+  const heads = arrowList.filter(a => !isContinuationOfSome(a));
+  for (const head of heads) {
+    if (used.has(head.id)) continue;
+    const chain = [head];
+    used.add(head.id);
+    let current = head;
+    while (true) {
+      const candidates = arrowList.filter(a => !used.has(a.id) && a.type === current.type);
+      const next = closest(candidates, current.x2, current.y2);
+      if (!next) break;
+      chain.push(next);
+      used.add(next.id);
+      current = next;
+    }
+    chains.push(chain);
+  }
+  arrowList.forEach(a => { if (!used.has(a.id)) chains.push([a]); });
+  return chains;
+}
+function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+// Devolve { frames, hasAnimation } — frames é a lista de fotogramas SVG
+// (markup já pronto) que, mostrados um a seguir ao outro com o "holdMs"
+// indicado, reconstroem passo a passo a coreografia gravada no editor
+// (diagram.sequence). Sem sequência gravada, devolve só o fotograma final.
+function computeDiagramAnimationFrames(diagram, meters, center) {
+  const sequence = diagram.sequence || [];
+  const staticArrows = diagram.arrows || [];
+  const frames = [];
+
+  const pushFrame = (elements, holdMs) => {
+    frames.push({
+      svg: ReactDOMServer.renderToStaticMarkup(
+        <>
+          <PitchMarkings />
+          <SpaceZone meters={meters} center={center} interactive={false} />
+          <DiagramElements elements={elements} arrows={staticArrows} interactive={false} />
+        </>
+      ),
+      holdMs,
+    });
+  };
+
+  if (sequence.length === 0) {
+    pushFrame(diagram.elements || [], 0);
+    return { frames, hasAnimation: false };
+  }
+
+  const FRAME_MS = 55;
+  sequence.forEach((step) => {
+    const chains = buildAnimationChainsPure(step.arrows).map(chainArrows => {
+      let cursor = 0;
+      const segments = chainArrows.map(a => {
+        const dist = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
+        const duration = Math.max(280, (dist / 26) * 1000);
+        const segment = { arrow: a, duration, start: cursor };
+        cursor += duration;
+        return segment;
+      });
+      const first = chainArrows[0];
+      let mover = step.elements.find(el =>
+        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper') : el.kind === 'ball') &&
+        Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
+      );
+      let isNewBall = false;
+      if (!mover && first.type === 'arrow-pass') {
+        mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
+        isNewBall = true;
+      }
+      return { segments, mover, isNewBall, totalDuration: cursor };
+    });
+    const baseElements = [...step.elements, ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover }))];
+    const maxDuration = Math.max(...chains.map(c => c.totalDuration));
+    const nSteps = Math.max(1, Math.round(maxDuration / FRAME_MS));
+    for (let f = 0; f <= nSteps; f++) {
+      const elapsed = (f / nSteps) * maxDuration;
+      const movedPositions = new Map();
+      chains.forEach(({ segments, mover }) => {
+        if (!mover) return;
+        let active = segments[segments.length - 1];
+        for (const seg of segments) { if (elapsed < seg.start + seg.duration) { active = seg; break; } }
+        const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
+        const t = easeInOutQuadPure(active.duration ? localElapsed / active.duration : 1);
+        const { arrow } = active;
+        movedPositions.set(mover.id, {
+          x: arrow.x1 + (arrow.x2 - arrow.x1) * t,
+          y: arrow.y1 + (arrow.y2 - arrow.y1) * t,
+        });
+      });
+      const frameElements = baseElements.map(el => (movedPositions.has(el.id) ? { ...el, x: movedPositions.get(el.id).x, y: movedPositions.get(el.id).y } : el));
+      pushFrame(frameElements, FRAME_MS);
+    }
+    frames[frames.length - 1].holdMs = 450; // pausa entre passos, igual à apresentação em direto
+  });
+  pushFrame(diagram.elements || [], 0); // fotograma final: exatamente como o exercício está guardado hoje
+  return { frames, hasAnimation: true };
+}
+
+function escapeHtmlText(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Constrói o bloco (campo + eventual botão "Apresentar") para um único
+// esquema tático, com um id único (blockId) para não colidir quando há
+// vários exercícios no mesmo ficheiro (caso da sessão de treino).
+function buildDiagramBlockHtml(diagram, space, blockId) {
+  const meters = parseSpace(space);
+  const center = { x: 53.5 + (diagram?.spaceOffset?.dx || 0), y: 35 + (diagram?.spaceOffset?.dy || 0) };
+  const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, meters, center);
+  const html = `
+    <div class="pitch-wrap">
+      <svg id="pitch-${blockId}" viewBox="-3 -2 113 74" preserveAspectRatio="none">${frames[0] ? frames[0].svg : ''}</svg>
+    </div>
+    ${hasAnimation ? `
+    <div class="controls">
+      <button class="play-btn" data-block="${blockId}">▶ Apresentar esquema tático</button>
+    </div>` : ''}
+  `;
+  return { html, blockId, frames: hasAnimation ? frames : null };
+}
+
+// Monta o documento .html completo (info + um ou mais esquemas táticos).
+// blocks: [{ heading, html, blockId, frames }]
+function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtml }) {
+  const framesMap = {};
+  blocks.forEach(b => { if (b.frames) framesMap[b.blockId] = b.frames; });
+  return `<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtmlText(title)}</title>
+<style>
+  body { margin:0; padding:24px; background:#12241a; color:#F0E7D6; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  h2 { font-size:16px; margin:26px 0 6px; color:#F0E7D6; }
+  .meta { font-size:13px; color:#B9AF9C; margin-bottom:14px; }
+  p.desc { font-size:14px; line-height:1.55; color:#DCD3C0; max-width:680px; white-space:pre-wrap; }
+  .pitch-wrap { position:relative; width:100%; max-width:680px; padding-top:65.1%; margin-top:12px; }
+  .pitch-wrap svg { position:absolute; inset:0; width:100%; height:100%; background:#1e3a24; border-radius:8px; border:1px solid #33513c; }
+  .controls { margin-top:12px; }
+  button { background:#B5393F; color:#fff; border:none; border-radius:8px; padding:9px 16px; font-size:13.5px; cursor:pointer; }
+  button:disabled { opacity:.55; cursor:default; }
+  .hint { font-size:11.5px; color:#8f8570; margin-top:6px; }
+  table { border-collapse:collapse; margin-top:8px; font-size:13px; }
+  td, th { padding:4px 10px 4px 0; text-align:left; }
+  footer { margin-top:30px; font-size:11px; color:#6d6553; }
+</style>
+</head>
+<body>
+  <h1>${escapeHtmlText(title)}</h1>
+  ${metaLines.length ? `<div class="meta">${metaLines.map(escapeHtmlText).join(' · ')}</div>` : ''}
+  ${description ? `<p class="desc">${escapeHtmlText(description)}</p>` : ''}
+  ${blocks.map(b => `${b.heading ? `<h2>${escapeHtmlText(b.heading)}</h2>` : ''}${b.html}`).join('\n')}
+  ${extraHtml || ''}
+  <footer>Gerado a partir da app da equipa · ${escapeHtmlText(new Date().toLocaleDateString('pt-PT'))}</footer>
+<script>
+  var FRAMES = ${JSON.stringify(framesMap)};
+  function playFrom(svgEl, frames, i, btn) {
+    if (i >= frames.length) { btn.disabled = false; btn.textContent = '↻ Repetir apresentação'; return; }
+    svgEl.innerHTML = frames[i].svg;
+    setTimeout(function () { playFrom(svgEl, frames, i + 1, btn); }, frames[i].holdMs || 16);
+  }
+  document.querySelectorAll('.play-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var blockId = btn.getAttribute('data-block');
+      var frames = FRAMES[blockId];
+      var svgEl = document.getElementById('pitch-' + blockId);
+      if (!frames || !svgEl) return;
+      btn.disabled = true;
+      btn.textContent = 'A reproduzir…';
+      playFrom(svgEl, frames, 0, btn);
+    });
+  });
+</script>
+</body>
+</html>`;
+}
+
+// Partilha (Web Share API, com ficheiro) ou, se o browser/telemóvel não
+// suportar partilha de ficheiros, faz simplesmente o download — o
+// treinador consegue depois enviar esse ficheiro à mão por onde quiser.
+async function shareOrDownloadHtml(filename, htmlString, title) {
+  try {
+    const blob = new Blob([htmlString], { type: 'text/html' });
+    const file = new File([blob], filename, { type: 'text/html' });
+    if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title });
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // utilizador cancelou a partilha
+    console.error('Falha ao partilhar/descarregar ficheiro:', err);
+  }
 }
 
 const LINE_LABELS = {
@@ -2966,6 +3204,27 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
     setTimeout(() => window.print(), 80);
   };
 
+  const doShare = (s) => {
+    const meta = [fmtDate(s.date), s.phase, `Intensidade: ${intensityLabel(s.intensity)}`, s.opponent && `vs ${s.opponent}`].filter(Boolean);
+    const exBlocks = (s.exerciseIds || []).map((e, i) => {
+      const ex = exercises.find(x => x.id === e.exId);
+      if (!ex) return null;
+      const block = buildDiagramBlockHtml(ex.diagram, ex.space, `ex${i}`);
+      const exMeta = [ex.phase, `Duração na sessão: ${e.duration} min`, ex.space, ex.playersCount && `👥 ${ex.playersCount}`, ex.material && `🎒 ${ex.material}`].filter(Boolean);
+      return {
+        ...block,
+        heading: `${i + 1}. ${ex.name}`,
+        html: `<div class="meta">${exMeta.map(escapeHtmlText).join(' · ')}</div>${ex.description ? `<p class="desc">${escapeHtmlText(ex.description)}</p>` : ''}${block.html}`,
+      };
+    }).filter(Boolean);
+    const attendanceNames = (s.attendance || [])
+      .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
+      .filter(Boolean);
+    const extraHtml = `<h2>Presenças</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
+    const html = buildShareableHtmlDoc({ title: s.focus || 'Sessão de treino', metaLines: meta, blocks: exBlocks, extraHtml });
+    shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, s.focus || 'Sessão de treino');
+  };
+
   const save = (data) => {
     if (data.id) setSessions(sessions.map(s => s.id === data.id ? data : s));
     else setSessions([...sessions, { ...data, id: uid() }]);
@@ -3025,6 +3284,7 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>{(s.exerciseIds || []).length} exercícios · {(s.attendance || []).length} presentes</span>
+                    <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
                     <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }} title="Imprimir ficha"><Printer size={14} /></button>
                     <button onClick={() => setModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
                     <button onClick={() => remove(s.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
