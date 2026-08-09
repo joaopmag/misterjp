@@ -1346,6 +1346,7 @@ function Exercicios({ exercises, setExercises }) {
               elements={printExercise.diagram?.elements || []}
               arrows={printExercise.diagram?.arrows || []}
               interactive={false}
+              printMode
             />
           </svg>
         </div>,
@@ -1672,7 +1673,7 @@ function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, inte
   );
 }
 
-function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive }) {
+function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive, printMode }) {
   // Enquanto a ferramenta ativa é para colocar um novo item (jogador,
   // guarda-redes, bola, cone, baliza, estaca, técnico) ou desenhar uma
   // seta/linha, as áreas de toque dos elementos e das setas já colocadas
@@ -1680,11 +1681,15 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
   // seta) mesmo em cima ou coladinho a outro item já existente, em vez de
   // o toque ser "roubado" por esse item e começar a arrastá-lo.
   const hitsEnabled = interactive && !placingActive;
+  // No ecrã (fundo verde) as setas/linhas usam branco/creme; na impressão
+  // (fundo branco) isso fica invisível, por isso passam a um tom escuro.
+  const arrowColor = printMode ? '#2A2A2A' : '#F0E7D6';
+  const dashedColor = printMode ? '#2A2A2A' : '#FFFFFF';
   return (
     <>
       <defs>
         <marker id="dg-arrow" markerWidth="4.5" markerHeight="4.5" refX="4" refY="2.25" orient="auto">
-          <path d="M0,0 L4.5,2.25 L0,4.5 Z" fill="#F0E7D6" />
+          <path d="M0,0 L4.5,2.25 L0,4.5 Z" fill={arrowColor} />
         </marker>
       </defs>
       {arrows.map(a => {
@@ -1703,7 +1708,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
             )}
             <line
               x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-              stroke={dashed ? '#FFFFFF' : '#F0E7D6'}
+              stroke={dashed ? dashedColor : arrowColor}
               strokeWidth={isSelected ? '0.75' : '0.55'}
               strokeDasharray={dashed ? '3,2.2' : undefined}
               strokeLinecap={dashed ? 'butt' : 'round'}
@@ -2926,7 +2931,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
             <SpaceZone meters={spaceMeters} center={spaceCenter} interactive={false} printMode />
-            <DiagramElements elements={elements} arrows={arrows} interactive={false} />
+            <DiagramElements elements={elements} arrows={arrows} interactive={false} printMode />
           </svg>
         </div>,
         document.body
@@ -3425,6 +3430,7 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
                     elements={ex.diagram?.elements || []}
                     arrows={ex.diagram?.arrows || []}
                     interactive={false}
+                    printMode
                   />
                 </svg>
               </div>
