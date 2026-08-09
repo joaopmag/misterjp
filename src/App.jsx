@@ -1322,19 +1322,14 @@ function Exercicios({ exercises, setExercises }) {
         <div className="print-sheet">
           {printExercise.name && <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{printExercise.name}</h2>}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-            margin: 0, fontSize: 12.5, borderTop: '1px solid #ccc', padding: '8px 0 0',
+            display: 'grid', gridTemplateColumns: 'repeat(3, minmax(140px, 1fr))', gap: '4px 24px',
+            margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
           }}>
-            {printExercise.phase && <div><strong>Fase de jogo:</strong> {printExercise.phase}</div>}
-            {printExercise.defaultDuration && <div><strong>Duração:</strong> {printExercise.defaultDuration} min</div>}
-            {printExercise.space && <div><strong>Espaço:</strong> {printExercise.space}</div>}
-          </div>
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-            margin: '0 0 14px', fontSize: 12.5, borderBottom: '1px solid #ccc', padding: '4px 0 8px',
-          }}>
-            {printExercise.playersCount && <div><strong>Nº jogadores:</strong> {printExercise.playersCount}</div>}
-            {printExercise.material && <div><strong>Material:</strong> {printExercise.material}</div>}
+            {printExercise.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {printExercise.phase}</div>}
+            {printExercise.defaultDuration && <div style={{ gridColumn: 2, gridRow: 1 }}><strong>Duração:</strong> {printExercise.defaultDuration} min</div>}
+            {printExercise.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {printExercise.space}</div>}
+            {printExercise.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {printExercise.playersCount}</div>}
+            {printExercise.material && <div style={{ gridColumn: 2, gridRow: 2 }}><strong>Material:</strong> {printExercise.material}</div>}
           </div>
           {printExercise.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{printExercise.description}</p>
@@ -2772,7 +2767,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             background: '#1e3a24', borderRadius: 8,
             border: `1px solid ${T.line}`, touchAction: 'none',
             cursor: tool === 'select' ? 'default' : 'crosshair',
+            userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none',
+            WebkitUserDrag: 'none', KhtmlUserSelect: 'none',
           }}
+          draggable="false"
+          onDragStart={(e) => e.preventDefault()}
           onPointerDown={handleBgPointerDown}
           onPointerMove={handleBgPointerMove}
           onPointerUp={finishInteraction}
@@ -2905,19 +2904,14 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         <div className="print-sheet">
           {exerciseInfo?.name && <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{exerciseInfo.name}</h2>}
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-            margin: 0, fontSize: 12.5, borderTop: '1px solid #ccc', padding: '8px 0 0',
+            display: 'grid', gridTemplateColumns: 'repeat(3, minmax(140px, 1fr))', gap: '4px 24px',
+            margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
           }}>
-            {exerciseInfo?.phase && <div><strong>Fase de jogo:</strong> {exerciseInfo.phase}</div>}
-            {exerciseInfo?.defaultDuration && <div><strong>Duração:</strong> {exerciseInfo.defaultDuration} min</div>}
-            {exerciseInfo?.space && <div><strong>Espaço:</strong> {exerciseInfo.space}</div>}
-          </div>
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-            margin: '0 0 14px', fontSize: 12.5, borderBottom: '1px solid #ccc', padding: '4px 0 8px',
-          }}>
-            {exerciseInfo?.playersCount && <div><strong>Nº jogadores:</strong> {exerciseInfo.playersCount}</div>}
-            {exerciseInfo?.material && <div><strong>Material:</strong> {exerciseInfo.material}</div>}
+            {exerciseInfo?.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {exerciseInfo.phase}</div>}
+            {exerciseInfo?.defaultDuration && <div style={{ gridColumn: 2, gridRow: 1 }}><strong>Duração:</strong> {exerciseInfo.defaultDuration} min</div>}
+            {exerciseInfo?.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {exerciseInfo.space}</div>}
+            {exerciseInfo?.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {exerciseInfo.playersCount}</div>}
+            {exerciseInfo?.material && <div style={{ gridColumn: 2, gridRow: 2 }}><strong>Material:</strong> {exerciseInfo.material}</div>}
           </div>
           {exerciseInfo?.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
@@ -3400,19 +3394,14 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
               <div key={e.exId} style={{ margin: '0 0 20px', pageBreakInside: 'avoid' }}>
                 <div style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>{i + 1}. {ex.name}</div>
                 <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-                  margin: 0, fontSize: 12, borderTop: '1px solid #ccc', padding: '6px 0 0',
+                  display: 'grid', gridTemplateColumns: 'repeat(3, minmax(140px, 1fr))', gap: '4px 24px',
+                  margin: '0 0 8px', fontSize: 12, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '6px 0',
                 }}>
-                  {ex.phase && <div><strong>Fase de jogo:</strong> {ex.phase}</div>}
-                  <div><strong>Duração na sessão:</strong> {e.duration} min</div>
-                  {ex.space && <div><strong>Espaço:</strong> {ex.space}</div>}
-                </div>
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-                  margin: '0 0 8px', fontSize: 12, borderBottom: '1px solid #ccc', padding: '4px 0 6px',
-                }}>
-                  {ex.playersCount && <div><strong>Nº jogadores:</strong> {ex.playersCount}</div>}
-                  {ex.material && <div><strong>Material:</strong> {ex.material}</div>}
+                  {ex.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {ex.phase}</div>}
+                  <div style={{ gridColumn: 2, gridRow: 1 }}><strong>Duração na sessão:</strong> {e.duration} min</div>
+                  {ex.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {ex.space}</div>}
+                  {ex.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {ex.playersCount}</div>}
+                  {ex.material && <div style={{ gridColumn: 2, gridRow: 2 }}><strong>Material:</strong> {ex.material}</div>}
                 </div>
                 {ex.description && (
                   <p style={{ margin: '0 0 8px', fontSize: 12, whiteSpace: 'pre-wrap' }}>{ex.description}</p>
