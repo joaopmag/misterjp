@@ -1323,13 +1323,18 @@ function Exercicios({ exercises, setExercises }) {
           {printExercise.name && <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{printExercise.name}</h2>}
           <div style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-            margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
+            margin: 0, fontSize: 12.5, borderTop: '1px solid #ccc', padding: '8px 0 0',
           }}>
             {printExercise.phase && <div><strong>Fase de jogo:</strong> {printExercise.phase}</div>}
             {printExercise.defaultDuration && <div><strong>Duração:</strong> {printExercise.defaultDuration} min</div>}
             {printExercise.space && <div><strong>Espaço:</strong> {printExercise.space}</div>}
+          </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
+            margin: '0 0 14px', fontSize: 12.5, borderBottom: '1px solid #ccc', padding: '4px 0 8px',
+          }}>
             {printExercise.playersCount && <div><strong>Nº jogadores:</strong> {printExercise.playersCount}</div>}
-            {printExercise.material && <div style={{ gridColumn: '1 / -1' }}><strong>Material:</strong> {printExercise.material}</div>}
+            {printExercise.material && <div><strong>Material:</strong> {printExercise.material}</div>}
           </div>
           {printExercise.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{printExercise.description}</p>
@@ -1550,24 +1555,81 @@ function TriondaBall({ cx, cy, r }) {
    (1 unidade do SVG = 1 metro). Marcações nas medidas oficiais:
    círculo central 9.15 m de raio, grande área 16.5×40.32 m,
    pequena área 5.5×18.32 m, baliza com 7.32 m de largura. */
+/* Rede de uma baliza — grelha de linhas finas dentro do retângulo da
+   baliza, para dar profundidade em vez de um simples contorno vazio. */
+function GoalNet({ x, y, w, h, color }) {
+  const cols = 5, rows = 4;
+  const lines = [];
+  for (let i = 1; i < cols; i++) {
+    const gx = x + (w * i) / cols;
+    lines.push(<line key={`v${i}`} x1={gx} y1={y} x2={gx} y2={y + h} stroke={color} strokeWidth="0.06" opacity="0.55" />);
+  }
+  for (let j = 1; j < rows; j++) {
+    const gy = y + (h * j) / rows;
+    lines.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke={color} strokeWidth="0.06" opacity="0.55" />);
+  }
+  return <>{lines}</>;
+}
+
+/* Bandeirola de canto — pequeno poste + pendão triangular, orientado
+   para fora do campo a partir do ponto exato do canto (cx, cy), na
+   direção diagonal (ox, oy), que deve ser um vetor unitário. */
+function CornerFlag({ cx, cy, ox, oy, color }) {
+  const tx = cx + ox * 1.7;
+  const ty = cy + oy * 1.7;
+  const px = -oy, py = ox;
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      <line x1={cx} y1={cy} x2={tx} y2={ty} stroke={color} strokeWidth="0.16" strokeLinecap="round" />
+      <polygon
+        points={`${tx},${ty} ${tx + px * 0.9},${ty + py * 0.9} ${tx + ox * 0.85 + px * 0.45},${ty + oy * 0.85 + py * 0.45}`}
+        fill={color}
+      />
+    </g>
+  );
+}
+
 function PitchMarkings({ printMode }) {
   // Em ecrã, linhas brancas translúcidas sobre o relvado escuro; em
   // impressão (fundo branco, para poupar tinto) linhas escuras sólidas,
   // para se manterem legíveis no papel.
   const stroke = printMode ? '#2A2A2A' : '#ffffff55';
   const strokeGoal = printMode ? '#2A2A2A' : '#ffffffcc';
+  const netColor = printMode ? '#2A2A2A' : '#ffffff';
+  const flagColor = printMode ? '#2A2A2A' : '#E7CD7A';
+  const D = 0.70710678; // sen/cos de 45º, para as diagonais dos cantos
+
   return (
     <>
       <rect x="1" y="1" width="105" height="68" fill="none" stroke={stroke} strokeWidth="0.4" />
       <line x1="53.5" y1="1" x2="53.5" y2="69" stroke={stroke} strokeWidth="0.4" />
       <circle cx="53.5" cy="35" r="9.15" fill="none" stroke={stroke} strokeWidth="0.4" />
+      <circle cx="53.5" cy="35" r="0.35" fill={stroke} />
       <rect x="1" y="14.84" width="16.5" height="40.32" fill="none" stroke={stroke} strokeWidth="0.4" />
       <rect x="89.5" y="14.84" width="16.5" height="40.32" fill="none" stroke={stroke} strokeWidth="0.4" />
       <rect x="1" y="25.84" width="5.5" height="18.32" fill="none" stroke={stroke} strokeWidth="0.4" />
       <rect x="100.5" y="25.84" width="5.5" height="18.32" fill="none" stroke={stroke} strokeWidth="0.4" />
-      {/* balizas pequenas */}
+      {/* marcas de grande penalidade */}
+      <circle cx="12" cy="35" r="0.35" fill={stroke} />
+      <circle cx="95" cy="35" r="0.35" fill={stroke} />
+      {/* meia-lua da grande área (arco fora da linha da grande área) */}
+      <path d="M 17.5 27.69 A 9.15 9.15 0 0 1 17.5 42.31" fill="none" stroke={stroke} strokeWidth="0.4" />
+      <path d="M 89.5 27.69 A 9.15 9.15 0 0 0 89.5 42.31" fill="none" stroke={stroke} strokeWidth="0.4" />
+      {/* arcos de canto */}
+      <path d="M 2 1 A 1 1 0 0 1 1 2" fill="none" stroke={stroke} strokeWidth="0.3" />
+      <path d="M 105 1 A 1 1 0 0 0 106 2" fill="none" stroke={stroke} strokeWidth="0.3" />
+      <path d="M 1 68 A 1 1 0 0 1 2 69" fill="none" stroke={stroke} strokeWidth="0.3" />
+      <path d="M 106 68 A 1 1 0 0 0 105 69" fill="none" stroke={stroke} strokeWidth="0.3" />
+      {/* bandeirolas de canto */}
+      <CornerFlag cx={1} cy={1} ox={-D} oy={-D} color={flagColor} />
+      <CornerFlag cx={106} cy={1} ox={D} oy={-D} color={flagColor} />
+      <CornerFlag cx={1} cy={69} ox={-D} oy={D} color={flagColor} />
+      <CornerFlag cx={106} cy={69} ox={D} oy={D} color={flagColor} />
+      {/* balizas pequenas, com rede */}
       <rect x="-0.6" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
       <rect x="106" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
+      <GoalNet x={-0.6} y={31.34} w={1.6} h={7.32} color={netColor} />
+      <GoalNet x={106} y={31.34} w={1.6} h={7.32} color={netColor} />
     </>
   );
 }
@@ -1925,13 +1987,19 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${escapeHtmlText(title)}</title>
 <style>
+  * { box-sizing:border-box; }
   body { margin:0; padding:24px; background:#12241a; color:#F0E7D6; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+  .wrap { max-width:820px; margin:0 auto; }
   h1 { font-size:22px; margin:0 0 6px; }
   h2 { font-size:16px; margin:26px 0 6px; color:#F0E7D6; }
   .meta { font-size:13px; color:#B9AF9C; margin-bottom:14px; }
   p.desc { font-size:14px; line-height:1.55; color:#DCD3C0; max-width:680px; white-space:pre-wrap; }
-  .pitch-wrap { position:relative; width:100%; max-width:680px; padding-top:65.1%; margin-top:12px; }
-  .pitch-wrap svg { position:absolute; inset:0; width:100%; height:100%; background:#1e3a24; border-radius:8px; border:1px solid #33513c; }
+  /* Largura fixa em vez de percentagem do ecrã: em ecrãs largos de
+     desktop a prancheta fica sempre com o mesmo tamanho legível (não
+     esticada à largura da janela), e o aspect-ratio garante sempre a
+     proporção exata do viewBox (113 × 74), sem distorcer o desenho. */
+  .pitch-wrap { position:relative; width:100%; max-width:640px; aspect-ratio:113/74; margin-top:12px; border-radius:8px; overflow:hidden; background:#1e3a24; border:1px solid #33513c; }
+  .pitch-wrap svg { position:absolute; inset:0; width:100%; height:100%; display:block; }
   .controls { margin-top:12px; }
   button { background:#B5393F; color:#fff; border:none; border-radius:8px; padding:9px 16px; font-size:13.5px; cursor:pointer; }
   button:disabled { opacity:.55; cursor:default; }
@@ -1939,15 +2007,21 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
   table { border-collapse:collapse; margin-top:8px; font-size:13px; }
   td, th { padding:4px 10px 4px 0; text-align:left; }
   footer { margin-top:30px; font-size:11px; color:#6d6553; }
+  @media (min-width:700px) {
+    body { padding:40px; }
+    h1 { font-size:26px; }
+  }
 </style>
 </head>
 <body>
+<div class="wrap">
   <h1>${escapeHtmlText(title)}</h1>
   ${metaLines.length ? `<div class="meta">${metaLines.map(escapeHtmlText).join(' · ')}</div>` : ''}
   ${description ? `<p class="desc">${escapeHtmlText(description)}</p>` : ''}
   ${blocks.map(b => `${b.heading ? `<h2>${escapeHtmlText(b.heading)}</h2>` : ''}${b.html}`).join('\n')}
   ${extraHtml || ''}
   <footer>Gerado a partir da app da equipa · ${escapeHtmlText(new Date().toLocaleDateString('pt-PT'))}</footer>
+</div>
 <script>
   var FRAMES = ${JSON.stringify(framesMap)};
   function playFrom(svgEl, frames, i, btn) {
@@ -2666,6 +2740,17 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           >
             <Redo2 size={14} />
           </button>
+          <button
+            type="button"
+            onClick={doPrint}
+            title="Imprimir prancheta"
+            style={{
+              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: '#B5393F', border: '1px solid #B5393F', cursor: 'pointer',
+            }}
+          >
+            <Printer size={14} color={TEXT_ON_ACCENT} />
+          </button>
         </div>
         {(elements.length > 0 || arrows.length > 0 || spaceMeters) && (
           <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>
@@ -2740,18 +2825,6 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           )}
           <AnimOverlay items={animItems} />
         </svg>
-        <button
-          type="button"
-          onClick={doPrint}
-          title="Imprimir prancheta"
-          style={{
-            position: 'absolute', bottom: 8, right: 8, width: 28, height: 28, borderRadius: '50%',
-            background: '#B5393F', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', boxShadow: '0 2px 8px #00000055', zIndex: 2,
-          }}
-        >
-          <Printer size={14} color={TEXT_ON_ACCENT} />
-        </button>
       </div>
 
       {selectedEl && (
@@ -2833,13 +2906,18 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {exerciseInfo?.name && <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{exerciseInfo.name}</h2>}
           <div style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-            margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
+            margin: 0, fontSize: 12.5, borderTop: '1px solid #ccc', padding: '8px 0 0',
           }}>
             {exerciseInfo?.phase && <div><strong>Fase de jogo:</strong> {exerciseInfo.phase}</div>}
             {exerciseInfo?.defaultDuration && <div><strong>Duração:</strong> {exerciseInfo.defaultDuration} min</div>}
             {exerciseInfo?.space && <div><strong>Espaço:</strong> {exerciseInfo.space}</div>}
+          </div>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
+            margin: '0 0 14px', fontSize: 12.5, borderBottom: '1px solid #ccc', padding: '4px 0 8px',
+          }}>
             {exerciseInfo?.playersCount && <div><strong>Nº jogadores:</strong> {exerciseInfo.playersCount}</div>}
-            {exerciseInfo?.material && <div style={{ gridColumn: '1 / -1' }}><strong>Material:</strong> {exerciseInfo.material}</div>}
+            {exerciseInfo?.material && <div><strong>Material:</strong> {exerciseInfo.material}</div>}
           </div>
           {exerciseInfo?.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
@@ -3323,13 +3401,18 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
                 <div style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>{i + 1}. {ex.name}</div>
                 <div style={{
                   display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
-                  margin: '0 0 8px', fontSize: 12, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '6px 0',
+                  margin: 0, fontSize: 12, borderTop: '1px solid #ccc', padding: '6px 0 0',
                 }}>
                   {ex.phase && <div><strong>Fase de jogo:</strong> {ex.phase}</div>}
                   <div><strong>Duração na sessão:</strong> {e.duration} min</div>
                   {ex.space && <div><strong>Espaço:</strong> {ex.space}</div>}
+                </div>
+                <div style={{
+                  display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '4px 24px',
+                  margin: '0 0 8px', fontSize: 12, borderBottom: '1px solid #ccc', padding: '4px 0 6px',
+                }}>
                   {ex.playersCount && <div><strong>Nº jogadores:</strong> {ex.playersCount}</div>}
-                  {ex.material && <div style={{ gridColumn: '1 / -1' }}><strong>Material:</strong> {ex.material}</div>}
+                  {ex.material && <div><strong>Material:</strong> {ex.material}</div>}
                 </div>
                 {ex.description && (
                   <p style={{ margin: '0 0 8px', fontSize: 12, whiteSpace: 'pre-wrap' }}>{ex.description}</p>
