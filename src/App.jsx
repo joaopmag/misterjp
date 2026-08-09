@@ -1340,6 +1340,7 @@ function Exercicios({ exercises, setExercises }) {
               meters={parseSpace(printExercise.space)}
               center={{ x: 53.5 + (printExercise.diagram?.spaceOffset?.dx || 0), y: 35 + (printExercise.diagram?.spaceOffset?.dy || 0) }}
               interactive={false}
+              printMode
             />
             <DiagramElements
               elements={printExercise.diagram?.elements || []}
@@ -1632,7 +1633,7 @@ function PitchMarkings({ printMode }) {
 /* Desenha a área de trabalho do exercício (ex: 20x20) à escala de
    um campo real (1 unidade da prancheta ≈ 1 metro). Arrasta-se pelo
    centro e redimensiona-se pela pega no canto inferior direito. */
-function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, interactive }) {
+function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, interactive, printMode }) {
   if (!meters || !meters.w || !meters.h) return null;
   const w = Math.min(meters.w, 105);
   const h = Math.min(meters.h, 68);
@@ -1640,12 +1641,18 @@ function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, inte
   const cy = center?.y ?? 35;
   const x = cx - w / 2;
   const y = cy - h / 2;
+  // Em impressão (fundo branco), o dourado claro usado no ecrã fica com
+  // contraste demasiado baixo — sobretudo o traço interrompido, que passa
+  // despercebido no papel. Usa-se antes um tom forte e sólido.
+  const zoneStroke = printMode ? '#B5393F' : '#E7CD7A';
+  const zoneFill = printMode ? '#B5393F14' : '#C9A22722';
+  const zoneStrokeWidth = printMode ? '0.55' : '0.4';
   return (
     <g>
-      <rect x={x} y={y} width={w} height={h} fill="#C9A22722" stroke="#E7CD7A" strokeWidth="0.4" strokeDasharray="1.4,1"
+      <rect x={x} y={y} width={w} height={h} fill={zoneFill} stroke={zoneStroke} strokeWidth={zoneStrokeWidth} strokeDasharray="1.4,1"
         onPointerDown={interactive ? onPointerDown : undefined}
         style={{ cursor: interactive ? 'grab' : 'default', touchAction: interactive ? 'none' : undefined, pointerEvents: interactive ? 'auto' : 'none' }} />
-      <text x={cx} y={y - 1.3} textAnchor="middle" fontSize="2.4" fill="#E7CD7A" style={{ fontFamily: "'Oswald', sans-serif", pointerEvents: 'none' }}>
+      <text x={cx} y={y - 1.3} textAnchor="middle" fontSize="2.4" fill={zoneStroke} style={{ fontFamily: "'Oswald', sans-serif", pointerEvents: 'none' }}>
         {Math.round(w)}×{Math.round(h)} m
       </text>
       {interactive && (
@@ -2918,7 +2925,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           )}
           <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 680, background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
-            <SpaceZone meters={spaceMeters} center={spaceCenter} interactive={false} />
+            <SpaceZone meters={spaceMeters} center={spaceCenter} interactive={false} printMode />
             <DiagramElements elements={elements} arrows={arrows} interactive={false} />
           </svg>
         </div>,
@@ -3412,6 +3419,7 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
                     meters={parseSpace(ex.space)}
                     center={{ x: 53.5 + (ex.diagram?.spaceOffset?.dx || 0), y: 35 + (ex.diagram?.spaceOffset?.dy || 0) }}
                     interactive={false}
+                    printMode
                   />
                   <DiagramElements
                     elements={ex.diagram?.elements || []}
