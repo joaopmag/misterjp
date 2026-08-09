@@ -237,7 +237,7 @@ function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'bu
 
 function Field({ label, children, labelColor }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, ...body }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, ...body }}>
       <span style={{ fontSize: 12, color: labelColor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
       {children}
     </label>
@@ -247,6 +247,7 @@ function Field({ label, children, labelColor }) {
 const inputStyle = {
   background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '9px 10px',
   color: T.cream, fontSize: 14, ...body, outline: 'none',
+  width: '100%', boxSizing: 'border-box', minWidth: 0,
 };
 
 function Input(props) { return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />; }
@@ -1033,7 +1034,11 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
         <EmptyState text="O plantel está vazio." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro jogador</Btn>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-          {[...players].sort((a, b) => (Number(a.number) || 99) - (Number(b.number) || 99)).map(p => {
+          {[...players].sort((a, b) => {
+            const posA = POSITIONS.indexOf(a.position), posB = POSITIONS.indexOf(b.position);
+            const diff = (posA === -1 ? POSITIONS.length : posA) - (posB === -1 ? POSITIONS.length : posB);
+            return diff !== 0 ? diff : (Number(a.number) || 99) - (Number(b.number) || 99);
+          }).map(p => {
             const stats = playerStats(p, sessions, matches);
             const attColor = stats.attendancePct === null ? T.mutedDim : stats.attendancePct >= 80 ? T.good : stats.attendancePct >= 60 ? T.warn : T.bad;
             const m = meta && meta[p.id];
