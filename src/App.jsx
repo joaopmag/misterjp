@@ -552,7 +552,7 @@ function App({ session }) {
           @page { size: A4; margin: 12mm; }
           body * { visibility: hidden; }
           .print-sheet, .print-sheet * { visibility: visible; }
-          .print-sheet { display: block; position: absolute; top: 0; left: 0; width: 100%; padding: 0; color: #111; background: #fff; }
+          .print-sheet { display: block; position: absolute; top: 0; left: 0; width: 100%; max-width: 172mm; padding: 0; color: #111; background: #fff; }
           .print-sheet h2, .print-sheet h3 { font-family: 'Oswald', sans-serif; }
           .print-sheet svg { break-inside: avoid; page-break-inside: avoid; }
         }
@@ -1334,7 +1334,7 @@ function Exercicios({ exercises, setExercises }) {
           {printExercise.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{printExercise.description}</p>
           )}
-          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 680, background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
             <SpaceZone
               meters={parseSpace(printExercise.space)}
@@ -2923,7 +2923,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {exerciseInfo?.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
           )}
-          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 680, background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
             <SpaceZone meters={spaceMeters} center={spaceCenter} interactive={false} printMode />
             <DiagramElements elements={elements} arrows={arrows} interactive={false} />
@@ -3413,7 +3413,7 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
                 {ex.description && (
                   <p style={{ margin: '0 0 8px', fontSize: 12, whiteSpace: 'pre-wrap' }}>{ex.description}</p>
                 )}
-                <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 560, background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+                <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 540, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
                   <PitchMarkings printMode />
                   <SpaceZone
                     meters={parseSpace(ex.space)}
