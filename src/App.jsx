@@ -267,11 +267,17 @@ function Select(props) { return <select {...props} style={{ ...inputStyle, ...(p
 function TextArea(props) { return <textarea {...props} style={{ ...inputStyle, resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />; }
 
 function Modal({ title, onClose, children, wide }) {
+  // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
+  // são quase todas de edição (exercício, sessão, jogo, jogador...) e um
+  // clique acidental fora — muito fácil de dar ao arrastar peças no editor
+  // tático — deitava fora tudo o que estava a ser preenchido. Fecha-se só
+  // pelo X ou pelo botão Cancelar (o Esc também não fecha, pelo mesmo
+  // motivo: seria outra forma acidental de perder o que está preenchido).
   return (
     <div style={{
       position: 'fixed', inset: 0, background: '#000000aa', zIndex: 50,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-    }} onClick={onClose}>
+    }}>
       <div
         onClick={e => e.stopPropagation()}
         style={{
@@ -1375,7 +1381,7 @@ function Exercicios({ exercises, setExercises }) {
         </div>
       )}
 
-      {modal && <ExerciseModal exercise={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <ExerciseModal exercise={modal === 'new' ? null : modal} allExercises={exercises} onClose={() => setModal(null)} onSave={save} />}
       {viewing && (
         <ExercisePresentation
           exercise={viewing}
@@ -3093,13 +3099,75 @@ function DiagramThumb({ diagram, space }) {
   );
 }
 
-function ExerciseModal({ exercise, onClose, onSave }) {
+function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
   const [f, setF] = useState(exercise || { name: '', phase: PHASES[0], description: '', space: '', playersCount: '', material: '', defaultDuration: 15, diagram: { elements: [], arrows: [] }, attachment: null });
   // A cor ativa do editor tático vive aqui (no modal, que não é recriado
   // durante a edição) e não dentro do DiagramEditor, para nunca poder ser
   // reposta para o valor por omissão a meio da colocação de jogadores.
   const [diagramColor, setDiagramColor] = useState('A');
   const [attachError, setAttachError] = useState('');
+  // Importar de um exercício já existente na biblioteca.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importSearch, setImportSearch] = useState('');
+  const [importNotice, setImportNotice] = useState('');
+
+  // Só faz sentido copiar de outros exercícios — nunca do próprio.
+  const importable = allExercises.filter(x => x && x.id !== (exercise && exercise.id) && x.name);
+  const importMatches = importable.filter(x => {
+    const q = importSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [x.name, x.phase, x.description, x.material, x.space, x.playersCount]
+      .filter(Boolean).join(' ').toLowerCase().includes(q);
+  });
+
+  // Copia TODA a informação do exercício escolhido para este formulário:
+  // fase, descrição, espaço, nº de jogadores, material, duração, esquema
+  // tático (incluindo animação gravada) e anexo. Cópia profunda + ids novos
+  // nos elementos do desenho, para que editar aqui nunca mexa no original.
+  const importFromExercise = (src) => {
+    const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
+    const srcDiagram = clone(src.diagram) || { elements: [], arrows: [] };
+    const idMap = {};
+    const remapped = {
+      ...srcDiagram,
+      elements: (srcDiagram.elements || []).map(el => {
+        const nid = uid();
+        idMap[el.id] = nid;
+        return { ...el, id: nid };
+      }),
+      arrows: (srcDiagram.arrows || []).map(a => ({
+        ...a, id: uid(),
+        ...(a.fromId ? { fromId: idMap[a.fromId] || a.fromId } : {}),
+        ...(a.toId ? { toId: idMap[a.toId] || a.toId } : {}),
+      })),
+      sequence: (srcDiagram.sequence || []).map(step => ({
+        ...step,
+        elements: (step.elements || []).map(el => ({ ...el, id: idMap[el.id] || el.id })),
+        arrows: (step.arrows || []).map(a => ({
+          ...a,
+          ...(a.fromId ? { fromId: idMap[a.fromId] || a.fromId } : {}),
+          ...(a.toId ? { toId: idMap[a.toId] || a.toId } : {}),
+        })),
+      })),
+    };
+    setF(prev => ({
+      ...prev,
+      // O nome só é preenchido se ainda estiver vazio, para não apagar sem
+      // aviso um título que já tenhas escrito.
+      name: prev.name && prev.name.trim() ? prev.name : `${src.name} (cópia)`,
+      phase: src.phase || prev.phase,
+      description: src.description || '',
+      space: src.space || '',
+      playersCount: src.playersCount || '',
+      material: src.material || '',
+      defaultDuration: src.defaultDuration ?? prev.defaultDuration,
+      diagram: remapped,
+      attachment: clone(src.attachment) || null,
+    }));
+    setImportOpen(false);
+    setImportSearch('');
+    setImportNotice(`Informação copiada de "${src.name}". Podes editar tudo antes de guardar.`);
+  };
 
   const handleAttachmentFile = async (file) => {
     setAttachError('');
@@ -3196,7 +3264,7 @@ function ExerciseModal({ exercise, onClose, onSave }) {
         </Field>
       </div>
       <div style={{ marginBottom: 16 }}>
-        <Field label="Anexo (imagem ou PDF)">
+        <Field label="Anexo (imagem, PDF ou exercício existente)">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <label style={{
               display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
@@ -3212,6 +3280,27 @@ function ExerciseModal({ exercise, onClose, onSave }) {
                 style={{ display: 'none' }}
               />
             </label>
+            {/* Anexar um exercício já criado: copia automaticamente toda a
+                informação dele (fase, descrição, espaço, jogadores, material,
+                duração, esquema tático e anexo) para este formulário. */}
+            <button
+              type="button"
+              onClick={() => { setImportOpen(o => !o); setImportNotice(''); }}
+              disabled={importable.length === 0}
+              title={importable.length === 0 ? 'Ainda não há outros exercícios na biblioteca.' : 'Copiar a informação de um exercício já criado'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                cursor: importable.length === 0 ? 'not-allowed' : 'pointer',
+                padding: '8px 14px', borderRadius: 8,
+                border: `1px solid ${importOpen ? T.gold : T.line}`,
+                background: importOpen ? `${T.crimson}33` : T.surfaceRaise,
+                color: importable.length === 0 ? T.mutedDim : T.cream,
+                opacity: importable.length === 0 ? 0.55 : 1,
+                fontSize: 13, ...body,
+              }}
+            >
+              <Copy size={14} /> Anexar exercício existente
+            </button>
             {f.attachment && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {f.attachment.type === 'image' ? (
@@ -3227,6 +3316,61 @@ function ExerciseModal({ exercise, onClose, onSave }) {
             )}
           </div>
           {attachError && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{attachError}</div>}
+          {importNotice && (
+            <div style={{ fontSize: 12, color: T.warn, marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Check size={13} /> {importNotice}
+            </div>
+          )}
+
+          {importOpen && (
+            <div style={{
+              marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8,
+              background: T.surface, padding: 10,
+            }}>
+              <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.45 }}>
+                Escolhe um exercício da biblioteca. A informação dele (fase, descrição, espaço,
+                nº de jogadores, material, duração, esquema tático e anexo) é copiada para aqui —
+                o exercício original não é alterado.
+              </div>
+              <div style={{ position: 'relative', marginBottom: 8 }}>
+                <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+                <input
+                  value={importSearch}
+                  onChange={e => setImportSearch(e.target.value)}
+                  placeholder="Procurar por nome, fase, material..."
+                  style={{
+                    width: '100%', boxSizing: 'border-box', padding: '8px 10px 8px 30px',
+                    borderRadius: 8, border: `1px solid ${T.line}`, background: T.surfaceRaise,
+                    color: T.cream, fontSize: 13, ...body, outline: 'none',
+                  }}
+                />
+              </div>
+              <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {importMatches.length === 0 ? (
+                  <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '8px 4px' }}>Nenhum exercício encontrado.</div>
+                ) : importMatches.map(x => (
+                  <button
+                    key={x.id}
+                    type="button"
+                    onClick={() => importFromExercise(x)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                      padding: '8px 10px', borderRadius: 8, border: `1px solid ${T.line}`,
+                      background: T.surfaceRaise, color: T.cream, cursor: 'pointer', ...body,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+                      <div style={{ fontSize: 11, color: T.mutedDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {[x.phase, x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11.5, color: T.warn, flexShrink: 0 }}>Usar</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </Field>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -5363,6 +5507,29 @@ const socialMeta = {
   tiktok: { label: 'TikTok', Icon: Music2, color: '#00F2EA' },
 };
 
+/* O embed do Instagram/TikTok não é só o vídeo: tem cabeçalho (conta) e
+   rodapé (legenda, gostos). Dentro do iframe o vídeo é dimensionado pela
+   LARGURA, por isso, para o conjunto caber na altura do ecrã, calculamos a
+   largura máxima a partir da altura disponível:
+
+       largura = (altura_disponível − extras) ÷ (16/9)
+
+   Estes "extras" são uma estimativa da altura do cabeçalho + rodapé de cada
+   plataforma (não há valor oficial publicado e pode mudar do lado deles).
+   Se algum vídeo ainda ficar cortado ou pequeno de mais, os botões − / +
+   em ecrã inteiro corrigem à mão. */
+const SOCIAL_EMBED_CHROME = { instagram: 150, tiktok: 175 };
+const SOCIAL_MEDIA_RATIO = 16 / 9; // altura/largura do vídeo vertical (Reel)
+
+function socialFullscreenWidth(platform, viewportW, viewportH, barH, zoom) {
+  if (!viewportW || !viewportH) return 360;
+  const chrome = SOCIAL_EMBED_CHROME[platform] ?? 150;
+  const available = Math.max(240, viewportH - barH);
+  const fitted = (available - chrome) / SOCIAL_MEDIA_RATIO;
+  const capped = Math.min(viewportW - 24, Math.max(240, fitted));
+  return Math.round(capped * zoom);
+}
+
 /* ---------------------------------------------------------------
    FUTCHANNEL + APRESENTAÇÕES — mesmo componente para ambas as abas:
    cada item pode ser um link do YouTube (jogado sempre dentro da
@@ -5390,6 +5557,25 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   // em vez de criar um segundo iframe — assim a reprodução nunca reinicia.
   const socialBoxRef = React.useRef(null);
   const [isSocialFullscreen, setIsSocialFullscreen] = useState(false);
+  // Tamanho real do ecrã em modo de ecrã inteiro + ajuste manual do
+  // utilizador. Servem para calcular a LARGURA da coluna do Reel: em ecrã
+  // inteiro o iframe passava a ocupar toda a largura do monitor e, como o
+  // embed do Instagram/TikTok dimensiona o vídeo pela largura, o vídeo
+  // ficava gigante e cortado em baixo. Agora limitamos a largura ao valor
+  // que faz o conteúdo caber na altura disponível.
+  const [fsViewport, setFsViewport] = useState({ w: 0, h: 0 });
+  const [socialZoom, setSocialZoom] = useState(1);
+  useEffect(() => {
+    if (!isSocialFullscreen) { setSocialZoom(1); return; }
+    const measure = () => setFsViewport({ w: window.innerWidth, h: window.innerHeight });
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('orientationchange', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('orientationchange', measure);
+    };
+  }, [isSocialFullscreen]);
   useEffect(() => {
     const onFsChange = () => {
       const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
@@ -5542,27 +5728,62 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                     <div
                       ref={socialBoxRef}
                       style={{
-                        position: 'relative', height: isSocialFullscreen ? '100vh' : 560,
-                        maxHeight: isSocialFullscreen ? '100vh' : '65vh', borderRadius: isSocialFullscreen ? 0 : 10,
-                        overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000',
+                        position: 'relative',
+                        height: isSocialFullscreen ? '100vh' : 560,
+                        width: isSocialFullscreen ? '100vw' : 'auto',
+                        maxHeight: isSocialFullscreen ? '100vh' : '65vh',
+                        borderRadius: isSocialFullscreen ? 0 : 10,
+                        overflow: 'hidden',
+                        border: isSocialFullscreen ? 'none' : `1px solid ${T.line}`,
+                        background: '#000',
                         display: 'flex', flexDirection: 'column',
                       }}
                     >
-                      <div style={{ flex: 1, minHeight: 0 }}>
-                        <iframe
-                          key={active.id}
-                          src={socialEmbedSrc(active.social)}
-                          style={{ width: '100%', height: '100%', border: 'none' }}
-                          allow="autoplay; encrypted-media; clipboard-write; fullscreen"
-                          allowFullScreen
-                          scrolling="no"
-                          title={active.title}
-                        />
+                      {/* Em ecrã inteiro o iframe fica centrado numa coluna
+                          estreita, com a largura calculada a partir da altura
+                          do ecrã — assim o Reel aparece inteiro, sem cortes. */}
+                      <div style={{
+                        flex: 1, minHeight: 0,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <div style={{
+                          height: '100%',
+                          width: isSocialFullscreen
+                            ? socialFullscreenWidth(active.social.platform, fsViewport.w, fsViewport.h, 40, socialZoom)
+                            : '100%',
+                          maxWidth: '100%',
+                        }}>
+                          <iframe
+                            key={active.id}
+                            src={socialEmbedSrc(active.social)}
+                            style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                            allow="autoplay; encrypted-media; clipboard-write; fullscreen"
+                            allowFullScreen
+                            scrolling="no"
+                            title={active.title}
+                          />
+                        </div>
                       </div>
                       <div style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+                        height: 40, boxSizing: 'border-box',
                         padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
                       }}>
+                        {isSocialFullscreen && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 4 }}>
+                            <button
+                              onClick={() => setSocialZoom(z => Math.max(0.6, Math.round((z - 0.1) * 10) / 10))}
+                              title="Reduzir"
+                              style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid #333', background: '#1b1b1b', color: '#fff', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
+                            >−</button>
+                            <span style={{ fontSize: 11.5, color: '#bbb', minWidth: 34, textAlign: 'center' }}>{Math.round(socialZoom * 100)}%</span>
+                            <button
+                              onClick={() => setSocialZoom(z => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))}
+                              title="Aumentar"
+                              style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid #333', background: '#1b1b1b', color: '#fff', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
+                            >+</button>
+                          </span>
+                        )}
                         <button
                           onClick={toggleSocialFullscreen}
                           style={{
