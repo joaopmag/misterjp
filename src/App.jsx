@@ -683,8 +683,20 @@ function App({ session }) {
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
-          {tab === 'videos' && <Videos videos={videos} setVideos={setVideos} />}
-          {tab === 'apresentacoes' && <Apresentacoes apresentacoes={apresentacoes} setApresentacoes={setApresentacoes} />}
+          {tab === 'videos' && <MediaLibrary
+            items={videos} setItems={setVideos}
+            title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
+            addLabel="Adicionar vídeo"
+            emptyText="Ainda sem vídeos. Cola o link do YouTube de uma jornada, ou carrega um ficheiro, para começares."
+            emptyFirstLabel="Adicionar o primeiro vídeo"
+          />}
+          {tab === 'apresentacoes' && <MediaLibrary
+            items={apresentacoes} setItems={setApresentacoes}
+            title="Apresentações" subtitle="Partilha de ideias."
+            addLabel="Adicionar ficheiro"
+            emptyText="Ainda sem apresentações. Cola o link do YouTube, ou carrega um PDF, PowerPoint ou vídeo, para começares."
+            emptyFirstLabel="Adicionar o primeiro ficheiro"
+          />}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} />}
         </main>
       </div>
@@ -5226,7 +5238,15 @@ function parseYouTubeId(url) {
   return null;
 }
 
-function Videos({ videos, setVideos }) {
+/* ---------------------------------------------------------------
+   FUTCHANNEL + APRESENTAÇÕES — mesmo componente para ambas as abas:
+   cada item pode ser um link do YouTube (jogado sempre dentro da
+   app, com deteção de incorporação bloqueada) OU um ficheiro
+   carregado diretamente (PDF, PowerPoint, vídeo). Layout: painel
+   principal grande à esquerda + lista de itens à direita; clicar no
+   painel principal abre a versão maior (lightbox).
+---------------------------------------------------------------- */
+function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, emptyFirstLabel }) {
   const [modal, setModal] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -5270,25 +5290,26 @@ function Videos({ videos, setVideos }) {
   };
 
   const save = (data) => {
-    if (data.id) setVideos(videos.map(v => v.id === data.id ? data : v));
+    if (data.id) setItems(items.map(v => v.id === data.id ? data : v));
     else {
       const created = { ...data, id: uid() };
-      setVideos([created, ...videos]);
+      setItems([created, ...items]);
       setActiveId(created.id);
     }
     setModal(null);
   };
   const remove = (id) => {
-    setVideos(videos.filter(v => v.id !== id));
+    setItems(items.filter(v => v.id !== id));
     if (activeId === id) setActiveId(null);
   };
-  const selectVideo = (id) => { setActiveId(id); setLightboxOpen(false); };
+  const selectItem = (id) => { setActiveId(id); setLightboxOpen(false); };
 
-  const active = videos.find(v => v.id === activeId) || videos[0];
-  const isBlocked = active && blockedIds[active.youtubeId];
+  const active = items.find(v => v.id === activeId) || items[0];
+  const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
+  const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation };
 
   useEffect(() => {
-    activeYoutubeIdRef.current = active ? active.youtubeId : null;
+    activeYoutubeIdRef.current = (active && active.youtubeId) || null;
   }, [active?.youtubeId]);
 
   // Fecha a janela maior com a tecla Esc.
@@ -5299,90 +5320,107 @@ function Videos({ videos, setVideos }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxOpen]);
 
+  const canEnlarge = active && (active.youtubeId || active.kind !== 'pptx');
+
   return (
     <div>
-      <SectionHeader title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar vídeo</Btn>} />
+      <SectionHeader title={title} subtitle={subtitle}
+        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {addLabel}</Btn>} />
 
-      {videos.length === 0 ? (
-        <EmptyState text="Ainda sem vídeos. Cola o link do YouTube de uma jornada para começares." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro vídeo</Btn>} />
+      {items.length === 0 ? (
+        <EmptyState text={emptyText} action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
           <div>
             {active && (
               <>
-                <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000' }}>
-                  {isBlocked ? (
-                    <div style={{
-                      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
-                      alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
-                    }}>
-                      <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
-                        {isBlocked === 'embed_disabled'
-                          ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
-                          : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
-                      </div>
-                      <a
-                        href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
-                        target="_blank" rel="noopener noreferrer"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
-                      >
-                        <ExternalLink size={13} /> Abrir no YouTube
-                      </a>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setLightboxOpen(true)}
-                      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer', background: 'none' }}
-                    >
-                      <img
-                        src={`https://img.youtube.com/vi/${active.youtubeId}/hqdefault.jpg`}
-                        alt={active.title}
-                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
+                {active.youtubeId ? (
+                  <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000' }}>
+                    {isBlocked ? (
                       <div style={{
-                        position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: 'linear-gradient(0deg, #000000aa, transparent 40%)',
+                        position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
+                        alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
                       }}>
-                        <div style={{
-                          width: 56, height: 56, borderRadius: '50%', background: '#A32D3Add',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff',
-                        }}>
-                          <div style={{ width: 0, height: 0, borderTop: '11px solid transparent', borderBottom: '11px solid transparent', borderLeft: '18px solid #fff', marginLeft: 4 }} />
+                        <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
+                          {isBlocked === 'embed_disabled'
+                            ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
+                            : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
                         </div>
+                        <a
+                          href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
+                          target="_blank" rel="noopener noreferrer"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
+                        >
+                          <ExternalLink size={13} /> Abrir no YouTube
+                        </a>
                       </div>
-                    </button>
-                  )}
-                </div>
+                    ) : (
+                      <button
+                        onClick={() => setLightboxOpen(true)}
+                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer', background: 'none' }}
+                      >
+                        <img
+                          src={`https://img.youtube.com/vi/${active.youtubeId}/hqdefault.jpg`}
+                          alt={active.title}
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                        <div style={{
+                          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: 'linear-gradient(0deg, #000000aa, transparent 40%)',
+                        }}>
+                          <div style={{
+                            width: 56, height: 56, borderRadius: '50%', background: '#A32D3Add',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff',
+                          }}>
+                            <div style={{ width: 0, height: 0, borderTop: '11px solid transparent', borderBottom: '11px solid transparent', borderLeft: '18px solid #fff', marginLeft: 4 }} />
+                          </div>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div onClick={() => active.kind !== 'pptx' && setLightboxOpen(true)} style={{ cursor: active.kind !== 'pptx' ? 'pointer' : 'default' }}>
+                    <AttachmentPreview item={active} />
+                  </div>
+                )}
                 <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500 }}>{active.title}</div>
                 {active.jornada && <div style={{ color: T.mutedDim, fontSize: 12.5 }}>{active.jornada}</div>}
               </>
             )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {videos.map(v => (
-              <div key={v.id} style={{
-                display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
-                background: v.id === active?.id ? `${T.crimson}33` : T.surface, padding: '8px 10px',
-              }}>
-                <button onClick={() => selectVideo(v.id)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
-                  <span>
-                    <div style={{ fontSize: 12.5, color: T.cream }}>{v.title}</div>
-                    {v.jornada && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada}</div>}
-                  </span>
-                </button>
-                <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
-              </div>
-            ))}
+            {items.map(v => {
+              const Icon = kindIcon[v.kind] || FileText;
+              return (
+                <div key={v.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
+                  background: v.id === active?.id ? `${T.crimson}33` : T.surface, padding: '8px 10px',
+                }}>
+                  <button onClick={() => selectItem(v.id)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {v.youtubeId ? (
+                      <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+                    ) : (
+                      <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Icon size={16} color={T.mutedDim} />
+                      </div>
+                    )}
+                    <span>
+                      <div style={{ fontSize: 12.5, color: T.cream }}>{v.title}</div>
+                      {(v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
+                    </span>
+                  </button>
+                  <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
+                  <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {modal && <VideoModal video={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <MediaModal item={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
 
-      {lightboxOpen && active && (
+      {lightboxOpen && active && canEnlarge && (
         <div
           onClick={() => setLightboxOpen(false)}
           style={{
@@ -5402,39 +5440,43 @@ function Videos({ videos, setVideos }) {
                 <X size={20} /> Fechar
               </button>
             </div>
-            <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080' }}>
-              {isBlocked ? (
-                <div style={{
-                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
-                  alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
-                }}>
-                  <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
-                    {isBlocked === 'embed_disabled'
-                      ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
-                      : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
+            {active.youtubeId ? (
+              <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080' }}>
+                {isBlocked ? (
+                  <div style={{
+                    position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
+                    alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
+                  }}>
+                    <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
+                      {isBlocked === 'embed_disabled'
+                        ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
+                        : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
+                    </div>
+                    <a
+                      href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
+                    >
+                      <ExternalLink size={13} /> Abrir no YouTube
+                    </a>
                   </div>
-                  <a
-                    href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
-                    target="_blank" rel="noopener noreferrer"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
-                  >
-                    <ExternalLink size={13} /> Abrir no YouTube
-                  </a>
-                </div>
-              ) : (
-                <iframe
-                  key={active.id}
-                  ref={iframeRef}
-                  onLoad={handleIframeLoad}
-                  src={`https://www.youtube.com/embed/${active.youtubeId}?autoplay=1&rel=0&playsinline=1&enablejsapi=1`}
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                  allowFullScreen
-                  referrerPolicy="strict-origin-when-cross-origin"
-                  title={active.title}
-                />
-              )}
-            </div>
+                ) : (
+                  <iframe
+                    key={active.id}
+                    ref={iframeRef}
+                    onLoad={handleIframeLoad}
+                    src={`https://www.youtube.com/embed/${active.youtubeId}?autoplay=1&rel=0&playsinline=1&enablejsapi=1`}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                    allowFullScreen
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    title={active.title}
+                  />
+                )}
+              </div>
+            ) : (
+              <AttachmentPreview item={active} tall />
+            )}
             <div style={{ marginTop: 10, color: '#fff', fontSize: 15, fontWeight: 500 }}>{active.title}</div>
             {active.jornada && <div style={{ color: '#ffffffaa', fontSize: 12.5 }}>{active.jornada}</div>}
           </div>
@@ -5444,31 +5486,102 @@ function Videos({ videos, setVideos }) {
   );
 }
 
-function VideoModal({ video, onClose, onSave }) {
-  const [f, setF] = useState(video ? { ...video, url: `https://youtu.be/${video.youtubeId}` } : { title: '', jornada: '', url: '' });
+function MediaModal({ item, onClose, onSave }) {
+  const [source, setSource] = useState(item ? (item.youtubeId ? 'youtube' : 'file') : 'youtube');
+  const [f, setF] = useState(item
+    ? { ...item, url: item.youtubeId ? `https://youtu.be/${item.youtubeId}` : '' }
+    : { title: '', jornada: '', url: '', kind: null, fileName: '', dataUrl: '' });
   const [error, setError] = useState('');
+  const [loadingFile, setLoadingFile] = useState(false);
 
-  const handleSave = () => {
-    const id = parseYouTubeId(f.url);
-    if (!id) { setError('Não consegui identificar o vídeo — confirma o link do YouTube.'); return; }
-    onSave({ ...(video || {}), title: f.title, jornada: f.jornada, youtubeId: id });
+  const handleFile = async (file) => {
+    setError('');
+    if (!file) return;
+    const kind = presentationKind(file);
+    if (!kind) { setError('Formato não suportado — escolhe um PDF, PowerPoint (.ppt/.pptx) ou vídeo.'); return; }
+    // Vídeos ocupam muito mais espaço em base64 do que PDFs/imagens —
+    // limite mais generoso que o dos anexos de exercícios, mas continua
+    // a existir para não sobrecarregar a base de dados.
+    const maxSize = kind === 'video' ? 60 * 1024 * 1024 : 15 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setError(`Ficheiro demasiado grande (máx. ${Math.round(maxSize / 1024 / 1024)} MB).`);
+      return;
+    }
+    setLoadingFile(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setF(prev => ({ ...prev, kind, fileName: file.name, dataUrl, youtubeId: null, title: prev.title || file.name.replace(/\.[^.]+$/, '') }));
+    } finally {
+      setLoadingFile(false);
+    }
   };
 
+  const handleSave = () => {
+    if (source === 'youtube') {
+      const id = parseYouTubeId(f.url);
+      if (!id) { setError('Não consegui identificar o vídeo — confirma o link do YouTube.'); return; }
+      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, youtubeId: id, kind: null, fileName: null, dataUrl: null });
+    } else {
+      if (!f.dataUrl || !f.kind) { setError('Carrega um ficheiro antes de guardar.'); return; }
+      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null });
+    }
+  };
+
+  const tabBtnStyle = (activeTab) => ({
+    flex: 1, padding: '8px 0', borderRadius: 8, cursor: 'pointer', fontSize: 13, ...body,
+    border: `1px solid ${source === activeTab ? T.gold : T.line}`,
+    background: source === activeTab ? `${T.crimson}33` : 'none',
+    color: T.cream,
+  });
+
   return (
-    <Modal title={video ? 'Editar vídeo' : 'Novo vídeo'} onClose={onClose}>
+    <Modal title={item ? 'Editar item' : 'Novo item'} onClose={onClose}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button onClick={() => { setSource('youtube'); setError(''); }} style={tabBtnStyle('youtube')}>Link do YouTube</button>
+        <button onClick={() => { setSource('file'); setError(''); }} style={tabBtnStyle('file')}>Ficheiro (PDF/PPT/vídeo)</button>
+      </div>
+
       <div style={{ marginBottom: 12 }}>
         <Field label="Título"><Input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Ex: Jornada 12 vs FC Foz" /></Field>
       </div>
       <div style={{ marginBottom: 12 }}>
-        <Field label="Jornada / contexto (opcional)"><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="Ex: Jornada 12 · Campeonato" /></Field>
+        <Field label="Descrição / contexto (opcional)"><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="Ex: Jornada 12 · Campeonato" /></Field>
       </div>
-      <div style={{ marginBottom: 8 }}>
-        <Field label="Link do YouTube"><Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/..." /></Field>
-      </div>
+
+      {source === 'youtube' ? (
+        <div style={{ marginBottom: 8 }}>
+          <Field label="Link do YouTube"><Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/..." /></Field>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 8 }}>
+          <Field label="Ficheiro (PDF, PowerPoint ou vídeo)">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <label style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
+                background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
+              }}>
+                {loadingFile ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                {f.fileName ? 'Substituir ficheiro' : 'Carregar ficheiro'}
+                <input
+                  type="file"
+                  accept="application/pdf,video/*,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                  onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ''; }}
+                  style={{ display: 'none' }}
+                />
+              </label>
+              {f.fileName && (
+                <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.fileName}</span>
+              )}
+            </div>
+          </Field>
+        </div>
+      )}
+
       {error && <p style={{ fontSize: 12, color: T.bad, margin: '0 0 12px' }}>{error}</p>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.title || !f.url} onClick={handleSave}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.title || (source === 'youtube' ? !f.url : !f.dataUrl)} onClick={handleSave}><Check size={15} /> Guardar</Btn>
       </div>
     </Modal>
   );
@@ -5590,176 +5703,6 @@ function AttachmentPreview({ item, tall }) {
         <Download size={14} /> Abrir / descarregar
       </a>
     </div>
-  );
-}
-
-function Apresentacoes({ apresentacoes, setApresentacoes }) {
-  const [modal, setModal] = useState(null);
-  const [activeId, setActiveId] = useState(null);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-
-  const save = (data) => {
-    if (data.id) setApresentacoes(apresentacoes.map(v => v.id === data.id ? data : v));
-    else {
-      const created = { ...data, id: uid() };
-      setApresentacoes([created, ...apresentacoes]);
-      setActiveId(created.id);
-    }
-    setModal(null);
-  };
-  const remove = (id) => {
-    setApresentacoes(apresentacoes.filter(v => v.id !== id));
-    if (activeId === id) setActiveId(null);
-  };
-  const selectItem = (id) => { setActiveId(id); setLightboxOpen(false); };
-
-  const active = apresentacoes.find(v => v.id === activeId) || apresentacoes[0];
-  const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation };
-
-  return (
-    <div>
-      <SectionHeader title="Apresentações" subtitle="Partilha de ideias."
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar ficheiro</Btn>} />
-
-      {apresentacoes.length === 0 ? (
-        <EmptyState text="Ainda sem apresentações. Carrega um PDF, PowerPoint ou vídeo para começares." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro ficheiro</Btn>} />
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
-          <div>
-            {active && (
-              <>
-                <div onClick={() => active.kind !== 'pptx' && setLightboxOpen(true)} style={{ cursor: active.kind !== 'pptx' ? 'pointer' : 'default' }}>
-                  <AttachmentPreview item={active} />
-                </div>
-                <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500 }}>{active.title}</div>
-                {active.description && <div style={{ color: T.mutedDim, fontSize: 12.5 }}>{active.description}</div>}
-              </>
-            )}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {apresentacoes.map(v => {
-              const Icon = kindIcon[v.kind] || FileText;
-              return (
-                <div key={v.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
-                  background: v.id === active?.id ? `${T.crimson}33` : T.surface, padding: '8px 10px',
-                }}>
-                  <button onClick={() => selectItem(v.id)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon size={16} color={T.mutedDim} />
-                    </div>
-                    <span>
-                      <div style={{ fontSize: 12.5, color: T.cream }}>{v.title}</div>
-                      <div style={{ fontSize: 11, color: T.mutedDim }}>{v.fileName}</div>
-                    </span>
-                  </button>
-                  <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                  <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {modal && <PresentationModal item={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
-
-      {lightboxOpen && active && active.kind !== 'pptx' && (
-        <div
-          onClick={() => setLightboxOpen(false)}
-          style={{
-            position: 'fixed', inset: 0, background: '#000000e6', zIndex: 60,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-          }}
-        >
-          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 1100 }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-              <button
-                onClick={() => setLightboxOpen(false)}
-                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
-              >
-                <X size={20} /> Fechar
-              </button>
-            </div>
-            <AttachmentPreview item={active} tall />
-            <div style={{ marginTop: 10, color: '#fff', fontSize: 15, fontWeight: 500 }}>{active.title}</div>
-            {active.description && <div style={{ color: '#ffffffaa', fontSize: 12.5 }}>{active.description}</div>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PresentationModal({ item, onClose, onSave }) {
-  const [f, setF] = useState(item || { title: '', description: '', kind: null, fileName: '', dataUrl: '' });
-  const [error, setError] = useState('');
-  const [loadingFile, setLoadingFile] = useState(false);
-
-  const handleFile = async (file) => {
-    setError('');
-    if (!file) return;
-    const kind = presentationKind(file);
-    if (!kind) { setError('Formato não suportado — escolhe um PDF, PowerPoint (.ppt/.pptx) ou vídeo.'); return; }
-    // Vídeos ocupam muito mais espaço em base64 do que PDFs/imagens —
-    // limite mais generoso que o dos anexos de exercícios, mas continua
-    // a existir para não sobrecarregar a base de dados.
-    const maxSize = kind === 'video' ? 60 * 1024 * 1024 : 15 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setError(`Ficheiro demasiado grande (máx. ${Math.round(maxSize / 1024 / 1024)} MB).`);
-      return;
-    }
-    setLoadingFile(true);
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      setF(prev => ({ ...prev, kind, fileName: file.name, dataUrl, title: prev.title || file.name.replace(/\.[^.]+$/, '') }));
-    } finally {
-      setLoadingFile(false);
-    }
-  };
-
-  const handleSave = () => {
-    if (!f.dataUrl || !f.kind) { setError('Carrega um ficheiro antes de guardar.'); return; }
-    onSave({ ...(item || {}), title: f.title, description: f.description, kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl });
-  };
-
-  return (
-    <Modal title={item ? 'Editar apresentação' : 'Nova apresentação'} onClose={onClose}>
-      <div style={{ marginBottom: 12 }}>
-        <Field label="Título"><Input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Ex: Plano de jogo · Jornada 12" /></Field>
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <Field label="Descrição / contexto (opcional)"><Input value={f.description} onChange={e => setF({ ...f, description: e.target.value })} placeholder="Contexto, reunião, tema..." /></Field>
-      </div>
-      <div style={{ marginBottom: 8 }}>
-        <Field label="Ficheiro (PDF, PowerPoint ou vídeo)">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <label style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-              padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
-              background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
-            }}>
-              {loadingFile ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-              {f.fileName ? 'Substituir ficheiro' : 'Carregar ficheiro'}
-              <input
-                type="file"
-                accept="application/pdf,video/*,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ''; }}
-                style={{ display: 'none' }}
-              />
-            </label>
-            {f.fileName && (
-              <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.fileName}</span>
-            )}
-          </div>
-        </Field>
-      </div>
-      {error && <p style={{ fontSize: 12, color: T.bad, margin: '0 0 12px' }}>{error}</p>}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.title || !f.dataUrl} onClick={handleSave}><Check size={15} /> Guardar</Btn>
-      </div>
-    </Modal>
   );
 }
 
