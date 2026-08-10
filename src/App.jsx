@@ -5,7 +5,7 @@ import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, Check, Loader2, Clock,
   Gauge, Moon, Droplets, Zap, BedDouble, Printer, TrendingUp, Trophy,
-  Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2,
+  Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText
 } from 'lucide-react';
@@ -5498,50 +5498,86 @@ function presentationKind(file) {
 
 function AttachmentPreview({ item, tall }) {
   const boxRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFsChange = () => {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      setIsFullscreen(!!fsEl && fsEl === boxRef.current);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
   if (!item) return null;
-  const boxStyle = {
-    position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
+
+  // O wrapper (não o iframe/vídeo em si) é que entra em ecrã inteiro —
+  // assim a barra com o botão fica sempre por baixo do conteúdo, nunca
+  // sobreposta aos controlos nativos do leitor de PDF/vídeo (que incluem
+  // o próprio botão de imprimir do browser), e continua visível depois
+  // de entrar em ecrã inteiro para se poder clicar outra vez e sair.
+  const wrapStyle = {
+    width: '100%', borderRadius: 10, overflow: 'hidden',
     border: `1px solid ${T.line}`, background: '#000',
     height: tall ? 460 : 300,
+    display: 'flex', flexDirection: 'column',
   };
-  const requestFs = () => {
+  const toggleFs = (e) => {
+    e.stopPropagation();
     const el = boxRef.current;
     if (!el) return;
-    if (el.requestFullscreen) el.requestFullscreen();
-    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    if (isFullscreen) {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } else {
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    }
   };
-  const FullscreenBtn = (
-    <button
-      onClick={(e) => { e.stopPropagation(); requestFs(); }}
-      title="Ver em ecrã inteiro"
-      style={{
-        position: 'absolute', top: 8, right: 8, zIndex: 2,
-        background: '#000000aa', border: `1px solid ${T.line}`, borderRadius: 6,
-        color: '#fff', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
-    >
-      <Maximize2 size={15} />
-    </button>
+  const FsBar = (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+      padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+    }}>
+      <button
+        onClick={toggleFs}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
+          background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+        }}
+      >
+        {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        {isFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
+      </button>
+    </div>
   );
   if (item.kind === 'video') {
     return (
-      <div ref={boxRef} style={boxStyle}>
-        <video key={item.id} src={item.dataUrl} controls style={{ width: '100%', height: '100%', background: '#000' }} />
-        {FullscreenBtn}
+      <div ref={boxRef} style={wrapStyle}>
+        <div style={{ flex: 1, minHeight: 0, background: '#000' }}>
+          <video key={item.id} src={item.dataUrl} controls style={{ width: '100%', height: '100%', background: '#000' }} />
+        </div>
+        {FsBar}
       </div>
     );
   }
   if (item.kind === 'pdf') {
     return (
-      <div ref={boxRef} style={boxStyle}>
-        <iframe key={item.id} title={item.title} src={item.dataUrl} style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} />
-        {FullscreenBtn}
+      <div ref={boxRef} style={wrapStyle}>
+        <div style={{ flex: 1, minHeight: 0, background: '#fff' }}>
+          <iframe key={item.id} title={item.title} src={item.dataUrl} style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} />
+        </div>
+        {FsBar}
       </div>
     );
   }
   // pptx — sem pré-visualização possível a partir de um ficheiro local
   return (
-    <div style={{ ...boxStyle, background: T.surfaceRaise, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 20, textAlign: 'center' }}>
+    <div style={{ ...wrapStyle, background: T.surfaceRaise, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 20, textAlign: 'center' }}>
       <Presentation size={38} color={T.mutedDim} />
       <div style={{ fontSize: 13, color: T.cream, fontWeight: 500 }}>{item.fileName}</div>
       <div style={{ fontSize: 12, color: T.mutedDim, maxWidth: 320 }}>
