@@ -758,7 +758,7 @@ function App({ session }) {
               emptyFirstLabel="Adicionar o primeiro ficheiro"
             />
           </div>
-          {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} />}
+          {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
         </main>
       </div>
     </div>
@@ -5992,14 +5992,12 @@ function MediaModal({ item, onClose, onSave }) {
     if (!file) return;
     const kind = presentationKind(file);
     if (!kind) { setError('Formato não suportado — escolhe um PDF, PowerPoint (.ppt/.pptx) ou vídeo.'); return; }
-    // Estes ficheiros são guardados dentro do próprio registo, convertidos
-    // em base64 (que ocupa ~33% mais do que o ficheiro original). O limite
-    // anterior (60 MB para vídeo) gerava registos que o servidor recusava —
-    // e, como a recusa era silenciosa, a apresentação parecia guardada mas
-    // desaparecia ao recarregar a página. Limites realistas:
-    const maxSize = kind === 'video' ? 4 * 1024 * 1024 : 3 * 1024 * 1024;
+    // Vídeos ocupam muito mais espaço em base64 do que PDFs/imagens —
+    // limite mais generoso que o dos anexos de exercícios, mas continua
+    // a existir para não sobrecarregar a base de dados.
+    const maxSize = kind === 'video' ? 60 * 1024 * 1024 : 15 * 1024 * 1024;
     if (file.size > maxSize) {
-      setError(`Ficheiro demasiado grande (máx. ${Math.round(maxSize / 1024 / 1024)} MB). Para vídeos maiores, usa antes um link do YouTube, Instagram ou TikTok.`);
+      setError(`Ficheiro demasiado grande (máx. ${Math.round(maxSize / 1024 / 1024)} MB).`);
       return;
     }
     setLoadingFile(true);
@@ -6434,7 +6432,7 @@ function ConvocatoriaModal({ convocatoria, players, season, onClose, onSave }) {
 ---------------------------------------------------------------- */
 const EMPTY_NOTA = () => ({ data: todayStr(), titulo: '', nota: '', attachment: null });
 
-function Diario({ diario, setDiario }) {
+function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
   const [formOpen, setFormOpen] = useState(false);
   // Quando se está a editar uma nota já existente, guarda-se aqui o id dela;
   // a null significa que se está a criar uma nota nova.
@@ -6463,8 +6461,14 @@ function Diario({ diario, setDiario }) {
 
   const save = () => {
     if (!f.nota.trim() && !f.attachment) return;
-    if (editingId) setDiario(diario.map(n => (n.id === editingId ? { ...f, id: editingId } : n)));
-    else setDiario([{ ...f, id: uid() }, ...diario]);
+    if (editingId) {
+      // Ao editar, o autor original mantém-se; regista-se quem alterou.
+      setDiario(diario.map(n => (n.id === editingId
+        ? { ...f, id: editingId, autor: n.autor || userEmail, editadoPor: userEmail, editadoEm: new Date().toISOString() }
+        : n)));
+    } else {
+      setDiario([{ ...f, id: uid(), autor: userEmail, criadoEm: new Date().toISOString() }, ...diario]);
+    }
     closeForm();
   };
   const closeForm = () => {
@@ -6567,9 +6571,23 @@ function Diario({ diario, setDiario }) {
           {sorted.map(n => (
             <div key={n.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <span style={{ ...mono, color: T.warn, fontSize: 12.5 }}>{fmtDate(n.data)}</span>
                   {n.titulo && <span style={{ color: T.cream, fontSize: 14, fontWeight: 500, marginLeft: 10 }}>{n.titulo}</span>}
+                  {/* Autor: o que ficou gravado na própria nota. Para notas
+                      antigas, criadas antes de isto existir, recorre-se ao
+                      registo de quem gravou a linha na base de dados — que é
+                      a última pessoa a gravar, não necessariamente o autor. */}
+                  {(() => {
+                    const autor = n.autor || (diarioMeta[n.id] && diarioMeta[n.id].email);
+                    if (!autor) return null;
+                    const editor = n.editadoPor && n.editadoPor !== autor ? n.editadoPor : null;
+                    return (
+                      <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 3 }}>
+                        Por {autor}{editor ? ` · editada por ${editor}` : ''}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
                   <button onClick={() => startEdit(n)} title="Editar nota" style={{ background: 'none', border: 'none', color: n.id === editingId ? T.warn : T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
