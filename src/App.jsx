@@ -5595,8 +5595,23 @@ function socialInnerStyle(platform, isFullscreen, boxSize, zoom, barH, offset) {
    painel principal grande à esquerda + lista de itens à direita;
    clicar no painel principal abre a versão maior (lightbox).
 ---------------------------------------------------------------- */
+// Normaliza o nome de uma pasta: sem espaços à volta, e vazio significa
+// "sem pasta". Fica numa função só para o modal e a biblioteca usarem
+// exatamente a mesma regra e não criarem pastas duplicadas por causa de
+// um espaço a mais.
+function cleanFolder(name) {
+  return (name || '').trim();
+}
+
+// Etiqueta usada no filtro para os itens que não estão em nenhuma pasta.
+const NO_FOLDER = '__sem_pasta__';
+
 function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, emptyFirstLabel }) {
   const [modal, setModal] = useState(null);
+  // Pasta atualmente aberta: null = todas.
+  const [folderFilter, setFolderFilter] = useState(null);
+  const [renaming, setRenaming] = useState(null); // nome antigo, enquanto se renomeia
+  const [renameValue, setRenameValue] = useState('');
   const [activeId, setActiveId] = useState(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   // youtubeId -> 'embed_disabled' (dono do canal bloqueou a incorporação,
@@ -5694,6 +5709,13 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
       const created = { ...data, id: uid() };
       setItems([created, ...items]);
       setActiveId(created.id);
+      // Se o item novo foi para uma pasta que não é a que está aberta,
+      // muda-se o filtro — caso contrário ele "desaparecia" à frente de
+      // quem acabou de o criar.
+      const destino = cleanFolder(created.pasta);
+      if (folderFilter !== null && folderFilter !== (destino || NO_FOLDER)) {
+        setFolderFilter(destino || NO_FOLDER);
+      }
     }
     setModal(null);
   };
@@ -5703,7 +5725,37 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   };
   const selectItem = (id) => { setActiveId(id); setLightboxOpen(false); };
 
-  const active = items.find(v => v.id === activeId) || items[0];
+  // As pastas não são registos próprios: são deduzidas do campo "pasta" dos
+  // itens. Consequência a ter em conta — uma pasta existe enquanto tiver
+  // conteúdo; se o último item sair dela, a pasta desaparece da lista.
+  const folders = Array.from(new Set(items.map(v => cleanFolder(v.pasta)).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, 'pt'));
+  const countIn = (name) => (name === NO_FOLDER
+    ? items.filter(v => !cleanFolder(v.pasta)).length
+    : items.filter(v => cleanFolder(v.pasta) === name).length);
+  const visibleItems = folderFilter === null
+    ? items
+    : (folderFilter === NO_FOLDER
+      ? items.filter(v => !cleanFolder(v.pasta))
+      : items.filter(v => cleanFolder(v.pasta) === folderFilter));
+
+  // Mudar o nome de uma pasta = reescrever o campo em todos os seus itens.
+  const applyRename = () => {
+    const novo = cleanFolder(renameValue);
+    if (!novo || novo === renaming) { setRenaming(null); return; }
+    setItems(items.map(v => (cleanFolder(v.pasta) === renaming ? { ...v, pasta: novo } : v)));
+    if (folderFilter === renaming) setFolderFilter(novo);
+    setRenaming(null);
+  };
+  // Desfazer a pasta: os itens ficam sem pasta, nada é apagado.
+  const dissolveFolder = (name) => {
+    setItems(items.map(v => (cleanFolder(v.pasta) === name ? { ...v, pasta: '' } : v)));
+    if (folderFilter === name) setFolderFilter(null);
+  };
+  // Mover um item para outra pasta a partir da própria lista.
+  const moveItem = (id, pasta) => setItems(items.map(v => (v.id === id ? { ...v, pasta: cleanFolder(pasta) } : v)));
+
+  const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
   const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation };
 
@@ -5730,8 +5782,75 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
       <SectionHeader title={title} subtitle={subtitle}
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {addLabel}</Btn>} />
 
+      {/* PASTAS — filtro por pasta. As pastas criam-se ao escrever o nome
+          no campo "Pasta" ao adicionar ou editar um item. */}
+      {items.length > 0 && (folders.length > 0 || countIn(NO_FOLDER) > 0) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+          <button onClick={() => setFolderFilter(null)} style={{
+            padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+            background: folderFilter === null ? '#B5393F' : 'transparent',
+            color: folderFilter === null ? TEXT_ON_ACCENT : T.muted,
+            border: `1px solid ${folderFilter === null ? '#B5393F' : T.line}`,
+          }}>Tudo ({items.length})</button>
+
+          {folders.map(name => {
+            const on = folderFilter === name;
+            if (renaming === name) {
+              return (
+                <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={e => setRenameValue(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') applyRename(); if (e.key === 'Escape') setRenaming(null); }}
+                    style={{
+                      padding: '5px 10px', borderRadius: 20, fontSize: 12.5, ...body,
+                      border: `1px solid ${T.gold}`, background: T.surfaceRaise, color: T.cream, outline: 'none', width: 150,
+                    }}
+                  />
+                  <button onClick={applyRename} title="Guardar nome" style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer' }}><Check size={14} /></button>
+                  <button onClick={() => setRenaming(null)} title="Cancelar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={14} /></button>
+                </span>
+              );
+            }
+            return (
+              <span key={name} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '5px 10px', borderRadius: 20,
+                background: on ? '#B5393F' : 'transparent',
+                border: `1px solid ${on ? '#B5393F' : T.line}`,
+              }}>
+                <button onClick={() => setFolderFilter(on ? null : name)} style={{
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, ...body,
+                  color: on ? TEXT_ON_ACCENT : T.muted, padding: 0,
+                }}>{name} ({countIn(name)})</button>
+                {on && (
+                  <>
+                    <button onClick={() => { setRenaming(name); setRenameValue(name); }} title="Mudar o nome da pasta"
+                      style={{ background: 'none', border: 'none', color: TEXT_ON_ACCENT, cursor: 'pointer', display: 'flex' }}><Pencil size={12} /></button>
+                    <button onClick={() => dissolveFolder(name)} title="Desfazer a pasta (os itens ficam sem pasta)"
+                      style={{ background: 'none', border: 'none', color: TEXT_ON_ACCENT, cursor: 'pointer', display: 'flex' }}><X size={13} /></button>
+                  </>
+                )}
+              </span>
+            );
+          })}
+
+          {countIn(NO_FOLDER) > 0 && folders.length > 0 && (
+            <button onClick={() => setFolderFilter(folderFilter === NO_FOLDER ? null : NO_FOLDER)} style={{
+              padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+              background: folderFilter === NO_FOLDER ? '#B5393F' : 'transparent',
+              color: folderFilter === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${folderFilter === NO_FOLDER ? '#B5393F' : T.line}`,
+            }}>Sem pasta ({countIn(NO_FOLDER)})</button>
+          )}
+        </div>
+      )}
+
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
+      ) : visibleItems.length === 0 ? (
+        <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
           <div>
@@ -5879,7 +5998,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
             )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {items.map(v => {
+            {visibleItems.map(v => {
               const Icon = kindIcon[v.kind] || FileText;
               return (
                 <div key={v.id} style={{
@@ -5898,11 +6017,29 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                         <Icon size={16} color={T.mutedDim} />
                       </div>
                     )}
-                    <span>
+                    <span style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, color: T.cream }}>{v.title}</div>
                       {(v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
+                      {/* Só se mostra a pasta quando se está a ver tudo —
+                          dentro de uma pasta seria informação repetida. */}
+                      {folderFilter === null && cleanFolder(v.pasta) && (
+                        <div style={{ fontSize: 10.5, color: T.warn, marginTop: 2 }}>{cleanFolder(v.pasta)}</div>
+                      )}
                     </span>
                   </button>
+                  {/* Mover para outra pasta sem abrir a janela de edição. */}
+                  <select
+                    value={cleanFolder(v.pasta)}
+                    onChange={e => moveItem(v.id, e.target.value)}
+                    title="Mover para uma pasta"
+                    style={{
+                      background: T.surfaceRaise, color: T.mutedDim, border: `1px solid ${T.line}`,
+                      borderRadius: 6, fontSize: 11, padding: '3px 4px', maxWidth: 96, cursor: 'pointer', ...body,
+                    }}
+                  >
+                    <option value="">Sem pasta</option>
+                    {folders.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
                   <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                   <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                 </div>
@@ -5912,7 +6049,16 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
         </div>
       )}
 
-      {modal && <MediaModal item={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      {modal && (
+        <MediaModal
+          item={modal === 'new' ? null : modal}
+          folders={folders}
+          // Ao adicionar dentro de uma pasta aberta, já vem preenchida.
+          defaultFolder={folderFilter && folderFilter !== NO_FOLDER ? folderFilter : ''}
+          onClose={() => setModal(null)}
+          onSave={save}
+        />
+      )}
 
       {lightboxOpen && active && canEnlarge && (
         <div
@@ -5979,11 +6125,11 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   );
 }
 
-function MediaModal({ item, onClose, onSave }) {
+function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' }) {
   const [source, setSource] = useState(item ? ((item.youtubeId || item.social) ? 'link' : 'file') : 'link');
   const [f, setF] = useState(item
-    ? { ...item, url: item.youtubeId ? `https://youtu.be/${item.youtubeId}` : (item.social ? socialEmbedSrc(item.social) : '') }
-    : { title: '', jornada: '', url: '', kind: null, fileName: '', dataUrl: '' });
+    ? { ...item, pasta: item.pasta || '', url: item.youtubeId ? `https://youtu.be/${item.youtubeId}` : (item.social ? socialEmbedSrc(item.social) : '') }
+    : { title: '', jornada: '', pasta: defaultFolder || '', url: '', kind: null, fileName: '', dataUrl: '' });
   const [error, setError] = useState('');
   const [loadingFile, setLoadingFile] = useState(false);
 
@@ -6013,18 +6159,18 @@ function MediaModal({ item, onClose, onSave }) {
     if (source === 'link') {
       const ytId = parseYouTubeId(f.url);
       if (ytId) {
-        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null });
+        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null });
         return;
       }
       const social = detectSocialEmbed(f.url);
       if (social) {
-        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, youtubeId: null, social, kind: null, fileName: null, dataUrl: null });
+        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), youtubeId: null, social, kind: null, fileName: null, dataUrl: null });
         return;
       }
       setError('Não consegui identificar o vídeo — confirma o link do YouTube, Instagram ou TikTok (link completo, não o link curto do TikTok).');
     } else {
       if (!f.dataUrl || !f.kind) { setError('Carrega um ficheiro antes de guardar.'); return; }
-      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null, social: null });
+      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null, social: null });
     }
   };
 
@@ -6047,6 +6193,39 @@ function MediaModal({ item, onClose, onSave }) {
       </div>
       <div style={{ marginBottom: 12 }}>
         <Field label="Descrição / contexto (opcional)"><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="Ex: Jornada 12 · Campeonato" /></Field>
+      </div>
+      {/* PASTA — escreve-se o nome à mão (criando uma pasta nova) ou
+          escolhe-se uma das que já existem na lista sugerida. Deixar em
+          branco põe o item fora de qualquer pasta. */}
+      <div style={{ marginBottom: 12 }}>
+        <Field label="Pasta (opcional)">
+          <Input
+            value={f.pasta}
+            onChange={e => setF({ ...f, pasta: e.target.value })}
+            list="media-folders"
+            placeholder="Ex: Pré-época · Bolas paradas · Adversários"
+          />
+          <datalist id="media-folders">
+            {folders.map(name => <option key={name} value={name} />)}
+          </datalist>
+        </Field>
+        {folders.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+            {folders.map(name => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setF(prev => ({ ...prev, pasta: prev.pasta === name ? '' : name }))}
+                style={{
+                  padding: '4px 10px', borderRadius: 14, fontSize: 11.5, cursor: 'pointer', ...body,
+                  border: `1px solid ${f.pasta === name ? T.gold : T.line}`,
+                  background: f.pasta === name ? `${T.crimson}33` : 'transparent',
+                  color: f.pasta === name ? T.cream : T.mutedDim,
+                }}
+              >{name}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       {source === 'link' ? (
