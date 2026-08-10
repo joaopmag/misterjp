@@ -5471,6 +5471,7 @@ function parseTikTokId(url) {
   if (!url) return null;
   const patterns = [
     /tiktok\.com\/@[^/]+\/video\/(\d+)/,
+    /tiktok\.com\/player\/v\d+\/(\d+)/,
     /tiktok\.com\/embed(?:\/v2)?\/(\d+)/,
     /tiktok\.com\/v\/(\d+)/,
   ];
@@ -5495,10 +5496,28 @@ function detectSocialEmbed(url) {
   return null;
 }
 
+/* TikTok: passámos do embed antigo (/embed/v2/) para o "Embed Player"
+   oficial (/player/v1/), documentado em developers.tiktok.com/doc/embed-player.
+   Motivo: o embed antigo é um CARTÃO — tem cabeçalho com a conta, legenda e
+   um botão "Discover more on TikTok", e ao pausar/terminar mostrava
+   sugestões que levavam o utilizador para fora do vídeo partilhado. O
+   player oficial é só o vídeo + controlos, e aceita parâmetros:
+     rel=0        → as sugestões passam a ser só do próprio autor do vídeo
+                    (atenção: segundo a documentação da TikTok, rel=0 NÃO
+                    elimina as sugestões, só as restringe ao mesmo autor —
+                    não há parâmetro para as desligar por completo)
+     loop=1       → o vídeo recomeça em vez de terminar, por isso nunca
+                    chega ao ecrã final com sugestões
+     description=0 / music_info=0 → sem legenda nem faixa de música
+     native_context_menu=0 → sem menu do browser por cima do vídeo
+   Isto resolve as duas coisas: fica fixo no vídeo partilhado e o embed
+   deixa de ter cabeçalho/rodapé, ficando o vídeo com o ecrã todo. */
+const TIKTOK_PLAYER_PARAMS = 'rel=0&loop=1&description=0&music_info=0&controls=1&native_context_menu=0';
+
 function socialEmbedSrc(social) {
   if (!social) return '';
   if (social.platform === 'instagram') return `https://www.instagram.com/reel/${social.id}/embed`;
-  if (social.platform === 'tiktok') return `https://www.tiktok.com/embed/v2/${social.id}`;
+  if (social.platform === 'tiktok') return `https://www.tiktok.com/player/v1/${social.id}?${TIKTOK_PLAYER_PARAMS}`;
   return '';
 }
 
@@ -5507,27 +5526,36 @@ const socialMeta = {
   tiktok: { label: 'TikTok', Icon: Music2, color: '#00F2EA' },
 };
 
-/* O embed do Instagram/TikTok não é só o vídeo: tem cabeçalho (conta) e
-   rodapé (legenda, gostos). Dentro do iframe o vídeo é dimensionado pela
-   LARGURA, por isso, para o conjunto caber na altura do ecrã, calculamos a
-   largura máxima a partir da altura disponível:
+/* Dentro do iframe o vídeo é dimensionado pela LARGURA, por isso a largura
+   da coluna é calculada a partir da altura realmente disponível:
 
        largura = (altura_disponível − extras) ÷ (16/9)
 
-   Estes "extras" são uma estimativa da altura do cabeçalho + rodapé de cada
-   plataforma (não há valor oficial publicado e pode mudar do lado deles).
-   Se algum vídeo ainda ficar cortado ou pequeno de mais, os botões − / +
-   em ecrã inteiro corrigem à mão. */
-const SOCIAL_EMBED_CHROME = { instagram: 150, tiktok: 175 };
+   "extras" = altura do cabeçalho/rodapé que a plataforma acrescenta à volta
+   do vídeo. Com o player oficial da TikTok isso é zero (só vídeo). O embed
+   do Instagram continua a ter cabeçalho com a conta e rodapé com a legenda;
+   não há valor oficial publicado para essa altura, por isso 110 px é uma
+   ESTIMATIVA minha e pode precisar de afinação (é também por isso que
+   existem os botões − / + em ecrã inteiro). */
+const SOCIAL_EMBED_CHROME = { instagram: 110, tiktok: 0 };
 const SOCIAL_MEDIA_RATIO = 16 / 9; // altura/largura do vídeo vertical (Reel)
 
-function socialFullscreenWidth(platform, viewportW, viewportH, barH, zoom) {
-  if (!viewportW || !viewportH) return 360;
-  const chrome = SOCIAL_EMBED_CHROME[platform] ?? 150;
-  const available = Math.max(240, viewportH - barH);
+// Largura da coluna a 100% ("ajustar": mostra o embed todo, sem cortes).
+function socialFitWidth(platform, boxW, boxH, barH) {
+  if (!boxW || !boxH) return 360;
+  const chrome = SOCIAL_EMBED_CHROME[platform] ?? 110;
+  const available = Math.max(240, boxH - barH);
   const fitted = (available - chrome) / SOCIAL_MEDIA_RATIO;
-  const capped = Math.min(viewportW - 24, Math.max(240, fitted));
-  return Math.round(capped * zoom);
+  return Math.round(Math.min(boxW, Math.max(240, fitted)));
+}
+
+// Medidas da caixa do iframe. Fora do ecrã inteiro ocupa tudo (como antes);
+// em ecrã inteiro é uma coluna vertical centrada, dimensionada pela altura.
+function socialFrameBox(platform, isFullscreen, boxSize, zoom, barH) {
+  if (!isFullscreen) return { width: '100%', height: '100%', flexShrink: 0 };
+  const chrome = SOCIAL_EMBED_CHROME[platform] ?? 110;
+  const w = Math.round(socialFitWidth(platform, boxSize.w, boxSize.h, barH) * zoom);
+  return { width: w, height: Math.round(w * SOCIAL_MEDIA_RATIO + chrome), flexShrink: 0 };
 }
 
 /* ---------------------------------------------------------------
@@ -5557,25 +5585,24 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   // em vez de criar um segundo iframe — assim a reprodução nunca reinicia.
   const socialBoxRef = React.useRef(null);
   const [isSocialFullscreen, setIsSocialFullscreen] = useState(false);
-  // Tamanho real do ecrã em modo de ecrã inteiro + ajuste manual do
-  // utilizador. Servem para calcular a LARGURA da coluna do Reel: em ecrã
-  // inteiro o iframe passava a ocupar toda a largura do monitor e, como o
-  // embed do Instagram/TikTok dimensiona o vídeo pela largura, o vídeo
-  // ficava gigante e cortado em baixo. Agora limitamos a largura ao valor
-  // que faz o conteúdo caber na altura disponível.
-  const [fsViewport, setFsViewport] = useState({ w: 0, h: 0 });
+  // Mede a CAIXA real do leitor (não o window): em ecrã inteiro, 100vh e
+  // window.innerHeight nem sempre estão já atualizados no momento em que o
+  // evento de fullscreen dispara, e era isso que deixava o vídeo mais
+  // pequeno do que devia. Com um ResizeObserver o valor é sempre o real.
+  const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
   const [socialZoom, setSocialZoom] = useState(1);
   useEffect(() => {
-    if (!isSocialFullscreen) { setSocialZoom(1); return; }
-    const measure = () => setFsViewport({ w: window.innerWidth, h: window.innerHeight });
-    measure();
-    window.addEventListener('resize', measure);
-    window.addEventListener('orientationchange', measure);
-    return () => {
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('orientationchange', measure);
-    };
-  }, [isSocialFullscreen]);
+    const el = socialBoxRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0] && entries[0].contentRect;
+      if (r) setBoxSize({ w: Math.round(r.width), h: Math.round(r.height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeId, isSocialFullscreen]);
+  // Ao sair do ecrã inteiro, o zoom volta ao normal.
+  useEffect(() => { if (!isSocialFullscreen) setSocialZoom(1); }, [isSocialFullscreen]);
   useEffect(() => {
     const onFsChange = () => {
       const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
@@ -5740,19 +5767,19 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                       }}
                     >
                       {/* Em ecrã inteiro o iframe fica centrado numa coluna
-                          estreita, com a largura calculada a partir da altura
-                          do ecrã — assim o Reel aparece inteiro, sem cortes. */}
+                          cuja largura vem da altura real da caixa. A 100% vê-se
+                          o embed todo; acima de 100% o vídeo cresce e o que é
+                          cortado é o cabeçalho/rodapé da plataforma, não o
+                          vídeo em si. */}
                       <div style={{
-                        flex: 1, minHeight: 0,
+                        flex: 1, minHeight: 0, overflow: 'hidden',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
-                        <div style={{
-                          height: '100%',
-                          width: isSocialFullscreen
-                            ? socialFullscreenWidth(active.social.platform, fsViewport.w, fsViewport.h, 40, socialZoom)
-                            : '100%',
-                          maxWidth: '100%',
-                        }}>
+                        {/* A estrutura (div > iframe) é SEMPRE a mesma — só
+                            mudam as medidas. Se alternássemos entre árvores
+                            diferentes, o React voltava a montar o iframe e o
+                            vídeo recomeçava do início ao entrar em ecrã inteiro. */}
+                        <div style={socialFrameBox(active.social.platform, isSocialFullscreen, boxSize, socialZoom, 40)}>
                           <iframe
                             key={active.id}
                             src={socialEmbedSrc(active.social)}
