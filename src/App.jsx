@@ -7,7 +7,7 @@ import {
   Gauge, Moon, Droplets, Zap, BedDouble, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
-  Undo2, Redo2, Copy, Share2, Presentation, FileText
+  Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -687,14 +687,14 @@ function App({ session }) {
             items={videos} setItems={setVideos}
             title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
             addLabel="Adicionar vídeo"
-            emptyText="Ainda sem vídeos. Cola o link do YouTube de uma jornada, ou carrega um ficheiro, para começares."
+            emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok de uma jornada, ou carrega um ficheiro, para começares."
             emptyFirstLabel="Adicionar o primeiro vídeo"
           />}
           {tab === 'apresentacoes' && <MediaLibrary
             items={apresentacoes} setItems={setApresentacoes}
             title="Apresentações" subtitle="Partilha de ideias."
             addLabel="Adicionar ficheiro"
-            emptyText="Ainda sem apresentações. Cola o link do YouTube, ou carrega um PDF, PowerPoint ou vídeo, para começares."
+            emptyText="Ainda sem apresentações. Cola o link do YouTube, Instagram ou TikTok, ou carrega um PDF, PowerPoint ou vídeo, para começares."
             emptyFirstLabel="Adicionar o primeiro ficheiro"
           />}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} />}
@@ -5239,12 +5239,71 @@ function parseYouTubeId(url) {
 }
 
 /* ---------------------------------------------------------------
+   INSTAGRAM / TIKTOK — tal como o YouTube, tocados sempre dentro
+   da app através do endpoint público de embed de cada plataforma
+   (iframe direto, sem SDK/script externo — mesma filosofia usada
+   acima para o YouTube, para não depender de scripts bloqueados
+   por CSP). Não há forma pública de obter uma miniatura (thumbnail)
+   destas duas plataformas sem chave de API, por isso a lista lateral
+   mostra um ícone da rede em vez de uma imagem de pré-visualização.
+   Nota: links curtos do TikTok (vm.tiktok.com/vt.tiktok.com) não são
+   suportados — o browser não consegue seguir o redirecionamento por
+   causa de CORS; é preciso o link completo com "/video/{id}".
+---------------------------------------------------------------- */
+function parseInstagramId(url) {
+  if (!url) return null;
+  const m = url.match(/instagram\.com\/(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+function parseTikTokId(url) {
+  if (!url) return null;
+  const patterns = [
+    /tiktok\.com\/@[^/]+\/video\/(\d+)/,
+    /tiktok\.com\/embed(?:\/v2)?\/(\d+)/,
+    /tiktok\.com\/v\/(\d+)/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// Deteta automaticamente a rede social a partir do link colado.
+function detectSocialEmbed(url) {
+  if (!url) return null;
+  if (/instagram\.com/.test(url)) {
+    const id = parseInstagramId(url);
+    return id ? { platform: 'instagram', id } : null;
+  }
+  if (/tiktok\.com/.test(url)) {
+    const id = parseTikTokId(url);
+    return id ? { platform: 'tiktok', id } : null;
+  }
+  return null;
+}
+
+function socialEmbedSrc(social) {
+  if (!social) return '';
+  if (social.platform === 'instagram') return `https://www.instagram.com/reel/${social.id}/embed`;
+  if (social.platform === 'tiktok') return `https://www.tiktok.com/embed/v2/${social.id}`;
+  return '';
+}
+
+const socialMeta = {
+  instagram: { label: 'Instagram', Icon: Instagram, color: '#E1306C' },
+  tiktok: { label: 'TikTok', Icon: Music2, color: '#00F2EA' },
+};
+
+/* ---------------------------------------------------------------
    FUTCHANNEL + APRESENTAÇÕES — mesmo componente para ambas as abas:
    cada item pode ser um link do YouTube (jogado sempre dentro da
-   app, com deteção de incorporação bloqueada) OU um ficheiro
-   carregado diretamente (PDF, PowerPoint, vídeo). Layout: painel
-   principal grande à esquerda + lista de itens à direita; clicar no
-   painel principal abre a versão maior (lightbox).
+   app, com deteção de incorporação bloqueada), um link do Instagram
+   ou TikTok (Reels/vídeos, tocados também dentro da app), OU um
+   ficheiro carregado diretamente (PDF, PowerPoint, vídeo). Layout:
+   painel principal grande à esquerda + lista de itens à direita;
+   clicar no painel principal abre a versão maior (lightbox).
 ---------------------------------------------------------------- */
 function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, emptyFirstLabel }) {
   const [modal, setModal] = useState(null);
@@ -5307,6 +5366,9 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   const active = items.find(v => v.id === activeId) || items[0];
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
   const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation };
+  // Aspeto vertical (Reels/TikTok) vs horizontal (YouTube), para o
+  // player não ficar esmagado nem gigantesco em nenhum dos dois casos.
+  const socialAspect = active?.social ? (56.25 * 16 / 9) : 56.25; // ~177.8% (9:16) vs 56.25% (16:9)
 
   useEffect(() => {
     activeYoutubeIdRef.current = (active && active.youtubeId) || null;
@@ -5320,7 +5382,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxOpen]);
 
-  const canEnlarge = active && (active.youtubeId || active.kind !== 'pptx');
+  const canEnlarge = active && (active.youtubeId || active.social || active.kind !== 'pptx');
 
   return (
     <div>
@@ -5378,6 +5440,30 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                       </button>
                     )}
                   </div>
+                ) : active.social ? (
+                  <div style={{ position: 'relative', maxWidth: 340, margin: '0 auto' }}>
+                    <div style={{ position: 'relative', paddingTop: `${socialAspect}%`, borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000' }}>
+                      <iframe
+                        src={socialEmbedSrc(active.social)}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                        allow="autoplay; encrypted-media; clipboard-write"
+                        allowFullScreen
+                        scrolling="no"
+                        title={active.title}
+                      />
+                    </div>
+                    <button
+                      onClick={() => setLightboxOpen(true)}
+                      title="Ver em grande"
+                      style={{
+                        position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: '50%',
+                        background: '#000000aa', border: 'none', color: '#fff', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <Maximize2 size={14} />
+                    </button>
+                  </div>
                 ) : (
                   <div onClick={() => active.kind !== 'pptx' && setLightboxOpen(true)} style={{ cursor: active.kind !== 'pptx' ? 'pointer' : 'default' }}>
                     <AttachmentPreview item={active} />
@@ -5399,6 +5485,10 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                   <button onClick={() => selectItem(v.id)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>
                     {v.youtubeId ? (
                       <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+                    ) : v.social ? (
+                      <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {React.createElement(socialMeta[v.social.platform].Icon, { size: 16, color: socialMeta[v.social.platform].color })}
+                      </div>
                     ) : (
                       <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Icon size={16} color={T.mutedDim} />
@@ -5474,6 +5564,17 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                   />
                 )}
               </div>
+            ) : active.social ? (
+              <div style={{ position: 'relative', paddingTop: `${socialAspect}%`, maxWidth: 480, margin: '0 auto', borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080' }}>
+                <iframe
+                  src={socialEmbedSrc(active.social)}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                  allow="autoplay; encrypted-media; clipboard-write"
+                  allowFullScreen
+                  scrolling="no"
+                  title={active.title}
+                />
+              </div>
             ) : (
               <AttachmentPreview item={active} tall />
             )}
@@ -5487,9 +5588,9 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 }
 
 function MediaModal({ item, onClose, onSave }) {
-  const [source, setSource] = useState(item ? (item.youtubeId ? 'youtube' : 'file') : 'youtube');
+  const [source, setSource] = useState(item ? ((item.youtubeId || item.social) ? 'link' : 'file') : 'link');
   const [f, setF] = useState(item
-    ? { ...item, url: item.youtubeId ? `https://youtu.be/${item.youtubeId}` : '' }
+    ? { ...item, url: item.youtubeId ? `https://youtu.be/${item.youtubeId}` : (item.social ? socialEmbedSrc(item.social) : '') }
     : { title: '', jornada: '', url: '', kind: null, fileName: '', dataUrl: '' });
   const [error, setError] = useState('');
   const [loadingFile, setLoadingFile] = useState(false);
@@ -5517,13 +5618,21 @@ function MediaModal({ item, onClose, onSave }) {
   };
 
   const handleSave = () => {
-    if (source === 'youtube') {
-      const id = parseYouTubeId(f.url);
-      if (!id) { setError('Não consegui identificar o vídeo — confirma o link do YouTube.'); return; }
-      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, youtubeId: id, kind: null, fileName: null, dataUrl: null });
+    if (source === 'link') {
+      const ytId = parseYouTubeId(f.url);
+      if (ytId) {
+        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null });
+        return;
+      }
+      const social = detectSocialEmbed(f.url);
+      if (social) {
+        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, youtubeId: null, social, kind: null, fileName: null, dataUrl: null });
+        return;
+      }
+      setError('Não consegui identificar o vídeo — confirma o link do YouTube, Instagram ou TikTok (link completo, não o link curto do TikTok).');
     } else {
       if (!f.dataUrl || !f.kind) { setError('Carrega um ficheiro antes de guardar.'); return; }
-      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null });
+      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null, social: null });
     }
   };
 
@@ -5537,7 +5646,7 @@ function MediaModal({ item, onClose, onSave }) {
   return (
     <Modal title={item ? 'Editar item' : 'Novo item'} onClose={onClose}>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button onClick={() => { setSource('youtube'); setError(''); }} style={tabBtnStyle('youtube')}>Link do YouTube</button>
+        <button onClick={() => { setSource('link'); setError(''); }} style={tabBtnStyle('link')}>Link (YouTube/Instagram/TikTok)</button>
         <button onClick={() => { setSource('file'); setError(''); }} style={tabBtnStyle('file')}>Ficheiro (PDF/PPT/vídeo)</button>
       </div>
 
@@ -5548,9 +5657,14 @@ function MediaModal({ item, onClose, onSave }) {
         <Field label="Descrição / contexto (opcional)"><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="Ex: Jornada 12 · Campeonato" /></Field>
       </div>
 
-      {source === 'youtube' ? (
+      {source === 'link' ? (
         <div style={{ marginBottom: 8 }}>
-          <Field label="Link do YouTube"><Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/..." /></Field>
+          <Field label="Link do vídeo (YouTube, Instagram ou TikTok)">
+            <Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/... · instagram.com/reel/... · tiktok.com/@user/video/..." />
+          </Field>
+          <p style={{ fontSize: 11.5, color: T.mutedDim, margin: '6px 0 0' }}>
+            No TikTok, usa o link completo (com "/video/"), não o link curto (vm.tiktok.com).
+          </p>
         </div>
       ) : (
         <div style={{ marginBottom: 8 }}>
@@ -5581,7 +5695,7 @@ function MediaModal({ item, onClose, onSave }) {
       {error && <p style={{ fontSize: 12, color: T.bad, margin: '0 0 12px' }}>{error}</p>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.title || (source === 'youtube' ? !f.url : !f.dataUrl)} onClick={handleSave}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.title || (source === 'link' ? !f.url : !f.dataUrl)} onClick={handleSave}><Check size={15} /> Guardar</Btn>
       </div>
     </Modal>
   );
