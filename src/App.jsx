@@ -2021,7 +2021,8 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
   table { border-collapse:collapse; margin-top:8px; font-size:13px; }
   td, th { padding:4px 10px 4px 0; text-align:left; }
   footer { margin-top:30px; font-size:11px; color:#6d6553; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-  footer .brand { font-weight:600; letter-spacing:.02em; color:#8f8570; }
+  footer .brand { display:inline-flex; align-items:baseline; gap:3px; font-weight:600; letter-spacing:.02em; color:#B9AF9C; padding:4px 10px; border:1px solid #3d4f42; border-radius:999px; background:rgba(255,255,255,0.03); }
+  footer .brand sup { font-size:9px; font-weight:600; color:#8f8570; }
   @media (min-width:700px) {
     body { padding:40px; }
     h1 { font-size:26px; }
@@ -2037,7 +2038,7 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
   ${extraHtml || ''}
   <footer>
     <span>Gerado a partir da app da equipa · ${escapeHtmlText(new Date().toLocaleDateString('pt-PT'))}</span>
-    <span class="brand">TM Mister JP</span>
+    <span class="brand"><sup>TM</sup> Mister JP</span>
   </footer>
 </div>
 <script>
