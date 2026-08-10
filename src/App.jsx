@@ -1202,14 +1202,41 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
   );
 }
 
+/* Agrupa sessões por data. Um dia pode ter várias sessões registadas
+   (ex: uma por exercício/foco), mas para efeitos de presença, nota e
+   assiduidade deve contar como um único dia de treino. */
+function groupSessionsByDate(sessions) {
+  const map = new Map();
+  for (const s of (sessions || [])) {
+    if (!map.has(s.date)) map.set(s.date, []);
+    map.get(s.date).push(s);
+  }
+  return [...map.entries()]
+    .map(([date, list]) => ({ date, list }))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+function dayPresent(list, playerId) {
+  return list.some(s => (s.attendance || []).includes(playerId));
+}
+function dayRating(list, playerId) {
+  for (const s of list) {
+    const r = (s.ratings || {})[playerId];
+    if (r != null && r !== '') return r;
+  }
+  return null;
+}
+
 function playerStats(player, sessions, matches) {
   const trainingSessions = sessions || [];
-  const attended = trainingSessions.filter(s => (s.attendance || []).includes(player.id)).length;
-  const attendancePct = trainingSessions.length ? Math.round((attended / trainingSessions.length) * 100) : null;
+  const days = groupSessionsByDate(trainingSessions);
+  const attended = days.filter(d => dayPresent(d.list, player.id)).length;
+  const attendancePct = days.length ? Math.round((attended / days.length) * 100) : null;
 
-  const ratings = trainingSessions
-    .filter(s => (s.attendance || []).includes(player.id) && s.ratings && s.ratings[player.id] != null)
-    .map(s => Number(s.ratings[player.id]));
+  const ratings = days
+    .filter(d => dayPresent(d.list, player.id))
+    .map(d => dayRating(d.list, player.id))
+    .filter(r => r != null && r !== '')
+    .map(Number);
   const avgTrainingRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
 
   const playerMatches = (matches || []).filter(m => (m.convocados || []).includes(player.id));
@@ -1229,7 +1256,7 @@ function playerStats(player, sessions, matches) {
   }).length;
 
   return {
-    attended, totalSessions: trainingSessions.length, attendancePct, avgTrainingRating,
+    attended, totalSessions: days.length, attendancePct, avgTrainingRating,
     matchesPlayed: playerMatches.length, starts, subsUsed, goals, assists, minutes, yellow, red, avgMatchRating,
   };
 }
@@ -4069,30 +4096,40 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
 ---------------------------------------------------------------- */
 function Presencas({ players, sessions, setSessions }) {
   const todayStart = new Date(new Date().toDateString());
-  const allSorted = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
-  // Só conta como confirmada a partir do dia seguinte à data do treino.
-  const confirmed = allSorted.filter(s => new Date(s.date + 'T00:00:00') < todayStart);
+  // Agrupado por data: se houver mais do que uma sessão no mesmo dia
+  // (ex: uma por exercício), conta e edita-se como um único dia de treino.
+  const dayGroups = groupSessionsByDate(sessions);
+  // Só conta como confirmado a partir do dia seguinte à data do treino.
+  const confirmedDays = dayGroups.filter(d => new Date(d.date + 'T00:00:00') < todayStart);
 
   const rows = players
     .map(p => {
-      const attended = confirmed.filter(s => (s.attendance || []).includes(p.id)).length;
-      const pct = confirmed.length ? Math.round((attended / confirmed.length) * 100) : null;
+      const attended = confirmedDays.filter(d => dayPresent(d.list, p.id)).length;
+      const pct = confirmedDays.length ? Math.round((attended / confirmedDays.length) * 100) : null;
       return { player: p, attended, pct };
     })
     .sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101));
 
-  const toggleAttendance = (sessionId, playerId) => {
+  // Marca/desmarca presença em TODAS as sessões desse dia, para que baste
+  // dar presença uma vez por dia, independentemente de quantos exercícios
+  // (sessões) existam para essa data.
+  const toggleAttendance = (date, playerId) => {
+    const daySessions = sessions.filter(s => s.date === date);
+    const present = daySessions.some(s => (s.attendance || []).includes(playerId));
     setSessions(sessions.map(s => {
-      if (s.id !== sessionId) return s;
-      const present = (s.attendance || []).includes(playerId);
-      const attendance = present ? s.attendance.filter(id => id !== playerId) : [...(s.attendance || []), playerId];
-      const ratings = { ...(s.ratings || {}) };
-      if (present) delete ratings[playerId]; // sem presença, não faz sentido manter nota
-      return { ...s, attendance, ratings };
+      if (s.date !== date) return s;
+      if (present) {
+        const ratings = { ...(s.ratings || {}) };
+        delete ratings[playerId]; // sem presença, não faz sentido manter nota
+        return { ...s, attendance: (s.attendance || []).filter(id => id !== playerId), ratings };
+      }
+      return { ...s, attendance: (s.attendance || []).includes(playerId) ? s.attendance : [...(s.attendance || []), playerId] };
     }));
   };
-  const setRating = (sessionId, playerId, val) => {
-    setSessions(sessions.map(s => s.id === sessionId ? { ...s, ratings: { ...(s.ratings || {}), [playerId]: val } } : s));
+  // A nota é guardada em todas as sessões desse dia, para se manter uma
+  // única nota por jogador, por dia.
+  const setRating = (date, playerId, val) => {
+    setSessions(sessions.map(s => s.date === date ? { ...s, ratings: { ...(s.ratings || {}), [playerId]: val } } : s));
   };
 
   return (
@@ -4101,7 +4138,7 @@ function Presencas({ players, sessions, setSessions }) {
 
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no separador Plantel." />
-      ) : allSorted.length === 0 ? (
+      ) : dayGroups.length === 0 ? (
         <EmptyState text="Ainda sem sessões de treino registadas no Planeamento." />
       ) : (
         <>
@@ -4116,7 +4153,7 @@ function Presencas({ players, sessions, setSessions }) {
                   <Badge number={player.number} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: T.cream, fontSize: 14 }}>{player.name}</div>
-                    <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmed.length} sessões confirmadas</div>
+                    <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmedDays.length} sessões confirmadas</div>
                   </div>
                   <div style={{ width: 80, height: 6, background: T.bg, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
                     <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color }} />
@@ -4128,16 +4165,22 @@ function Presencas({ players, sessions, setSessions }) {
           </div>
 
           <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
-            Editar presença e nota, sessão a sessão
+            Editar presença e nota, dia a dia
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {allSorted.map(s => {
-              const isConfirmed = new Date(s.date + 'T00:00:00') < todayStart;
+            {dayGroups.map(({ date, list }) => {
+              const isConfirmed = new Date(date + 'T00:00:00') < todayStart;
+              const focusLabel = [...new Set(list.map(s => s.focus || 'Sessão de treino'))].join(' + ');
               return (
-                <div key={s.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+                <div key={date} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
                   <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{s.focus || 'Sessão de treino'}</span>
-                    <span style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(s.date)} · {s.phase}</span>
+                    <span style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{focusLabel}</span>
+                    <span style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(date)} · {list[0].phase}</span>
+                    {list.length > 1 && (
+                      <span style={{ fontSize: 10.5, color: T.mutedDim, border: `1px solid ${T.line}`, borderRadius: 10, padding: '2px 8px' }}>
+                        {list.length} sessões neste dia
+                      </span>
+                    )}
                     {!isConfirmed && (
                       <span style={{ fontSize: 10.5, color: T.warn, border: `1px solid ${T.warn}66`, borderRadius: 10, padding: '2px 8px' }}>
                         ainda não confirmado
@@ -4146,13 +4189,13 @@ function Presencas({ players, sessions, setSessions }) {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {players.map(p => {
-                      const present = (s.attendance || []).includes(p.id);
+                      const present = dayPresent(list, p.id);
                       return (
                         <div key={p.id} style={{
                           display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7,
                           background: present ? `${T.crimson}33` : T.bg, border: `1px solid ${present ? T.gold + '66' : T.line}`,
                         }}>
-                          <button type="button" onClick={() => toggleAttendance(s.id, p.id)} style={{
+                          <button type="button" onClick={() => toggleAttendance(date, p.id)} style={{
                             flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
                             fontSize: 13, color: present ? T.cream : T.muted, ...body,
                           }}>
@@ -4160,7 +4203,7 @@ function Presencas({ players, sessions, setSessions }) {
                           </button>
                           {present && (
                             <Input type="number" min="0" max="10" placeholder="Nota"
-                              value={(s.ratings || {})[p.id] ?? ''} onChange={e => setRating(s.id, p.id, e.target.value)}
+                              value={dayRating(list, p.id) ?? ''} onChange={e => setRating(date, p.id, e.target.value)}
                               style={{ width: 60, padding: '5px 7px', fontSize: 12.5 }} />
                           )}
                         </div>
