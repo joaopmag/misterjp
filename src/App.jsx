@@ -683,20 +683,29 @@ function App({ session }) {
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
-          {tab === 'videos' && <MediaLibrary
-            items={videos} setItems={setVideos}
-            title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
-            addLabel="Adicionar vídeo"
-            emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok de uma jornada, ou carrega um ficheiro, para começares."
-            emptyFirstLabel="Adicionar o primeiro vídeo"
-          />}
-          {tab === 'apresentacoes' && <MediaLibrary
-            items={apresentacoes} setItems={setApresentacoes}
-            title="Apresentações" subtitle="Partilha de ideias."
-            addLabel="Adicionar ficheiro"
-            emptyText="Ainda sem apresentações. Cola o link do YouTube, Instagram ou TikTok, ou carrega um PDF, PowerPoint ou vídeo, para começares."
-            emptyFirstLabel="Adicionar o primeiro ficheiro"
-          />}
+          {/* FutchannelYouT e Apresentações ficam sempre montados (só
+             escondidos com CSS quando não é a tab ativa) em vez de serem
+             destruídos e recriados a cada troca de separador — assim um
+             vídeo do Instagram/TikTok que esteja a tocar continua
+             exatamente onde estava ao voltar a esta página. */}
+          <div style={{ display: tab === 'videos' ? 'block' : 'none' }}>
+            <MediaLibrary
+              items={videos} setItems={setVideos}
+              title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
+              addLabel="Adicionar vídeo"
+              emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok de uma jornada, ou carrega um ficheiro, para começares."
+              emptyFirstLabel="Adicionar o primeiro vídeo"
+            />
+          </div>
+          <div style={{ display: tab === 'apresentacoes' ? 'block' : 'none' }}>
+            <MediaLibrary
+              items={apresentacoes} setItems={setApresentacoes}
+              title="Apresentações" subtitle="Partilha de ideias."
+              addLabel="Adicionar ficheiro"
+              emptyText="Ainda sem apresentações. Cola o link do YouTube, Instagram ou TikTok, ou carrega um PDF, PowerPoint ou vídeo, para começares."
+              emptyFirstLabel="Adicionar o primeiro ficheiro"
+            />
+          </div>
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} />}
         </main>
       </div>
@@ -5350,6 +5359,35 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   const iframeRef = React.useRef(null);
   const activeYoutubeIdRef = React.useRef(null);
 
+  // Ecrã inteiro para vídeos do Instagram/TikTok: aplica-se ao MESMO
+  // elemento que já está a tocar (via API nativa de fullscreen do browser),
+  // em vez de criar um segundo iframe — assim a reprodução nunca reinicia.
+  const socialBoxRef = React.useRef(null);
+  const [isSocialFullscreen, setIsSocialFullscreen] = useState(false);
+  useEffect(() => {
+    const onFsChange = () => {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      setIsSocialFullscreen(!!fsEl && fsEl === socialBoxRef.current);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+  const toggleSocialFullscreen = () => {
+    const el = socialBoxRef.current;
+    if (!el) return;
+    if (isSocialFullscreen) {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } else {
+      if (el.requestFullscreen) el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    }
+  };
+
   // Deteção de erro via postMessage "cru", sem depender de carregar o
   // script externo https://www.youtube.com/iframe_api (esse script fica
   // bloqueado em ambientes com CSP restrita, como a pré-visualização de
@@ -5411,7 +5449,11 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxOpen]);
 
-  const canEnlarge = active && (active.youtubeId || active.social || active.kind !== 'pptx');
+  // Só o YouTube usa a janela ampliada (o painel principal só mostra uma
+  // miniatura antes do clique, por isso não há duplicação). Instagram/TikTok
+  // e ficheiros locais (vídeo/PDF) já têm o seu próprio botão de ecrã
+  // inteiro que atua sobre o MESMO leitor já em reprodução.
+  const canEnlarge = active && active.youtubeId;
 
   return (
     <div>
@@ -5470,35 +5512,46 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                     )}
                   </div>
                 ) : active.social ? (
-                  <div style={{ maxWidth: 320, margin: '0 auto' }}>
-                    <div style={{
-                      position: 'relative', height: 560, maxHeight: '65vh', borderRadius: 10, overflow: 'hidden',
-                      border: `1px solid ${T.line}`, background: '#000',
-                    }}>
-                      <iframe
-                        src={socialEmbedSrc(active.social)}
-                        style={{ width: '100%', height: '100%', border: 'none' }}
-                        allow="autoplay; encrypted-media; clipboard-write"
-                        allowFullScreen
-                        scrolling="no"
-                        title={active.title}
-                      />
-                    </div>
-                    <button
-                      onClick={() => setLightboxOpen(true)}
+                  <div style={{ maxWidth: isSocialFullscreen ? 'none' : 320, margin: '0 auto' }}>
+                    <div
+                      ref={socialBoxRef}
                       style={{
-                        marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        fontSize: 12, color: T.mutedDim, background: 'none', border: `1px dashed ${T.line}`, borderRadius: 8,
-                        padding: '6px 0', cursor: 'pointer', ...body,
+                        position: 'relative', height: isSocialFullscreen ? '100vh' : 560,
+                        maxHeight: isSocialFullscreen ? '100vh' : '65vh', borderRadius: isSocialFullscreen ? 0 : 10,
+                        overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000',
+                        display: 'flex', flexDirection: 'column',
                       }}
                     >
-                      <Maximize2 size={12} /> Ver em grande
-                    </button>
+                      <div style={{ flex: 1, minHeight: 0 }}>
+                        <iframe
+                          key={active.id}
+                          src={socialEmbedSrc(active.social)}
+                          style={{ width: '100%', height: '100%', border: 'none' }}
+                          allow="autoplay; encrypted-media; clipboard-write; fullscreen"
+                          allowFullScreen
+                          scrolling="no"
+                          title={active.title}
+                        />
+                      </div>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+                        padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+                      }}>
+                        <button
+                          onClick={toggleSocialFullscreen}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
+                            background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                          }}
+                        >
+                          {isSocialFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                          {isSocialFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : (
-                  <div onClick={() => active.kind !== 'pptx' && setLightboxOpen(true)} style={{ cursor: active.kind !== 'pptx' ? 'pointer' : 'default' }}>
-                    <AttachmentPreview item={active} />
-                  </div>
+                  <AttachmentPreview item={active} />
                 )}
                 <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500 }}>{active.title}</div>
                 {active.jornada && <div style={{ color: T.mutedDim, fontSize: 12.5 }}>{active.jornada}</div>}
@@ -5551,7 +5604,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
         >
           <div
             onClick={e => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: active.social ? 420 : 1100 }}
+            style={{ width: '100%', maxWidth: 1100 }}
           >
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
               <button
@@ -5561,57 +5614,42 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                 <X size={20} /> Fechar
               </button>
             </div>
-            {active.youtubeId ? (
-              <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080' }}>
-                {isBlocked ? (
-                  <div style={{
-                    position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
-                    alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
-                  }}>
-                    <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
-                      {isBlocked === 'embed_disabled'
-                        ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
-                        : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
-                    </div>
-                    <a
-                      href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
-                      target="_blank" rel="noopener noreferrer"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
-                    >
-                      <ExternalLink size={13} /> Abrir no YouTube
-                    </a>
+            {/* canEnlarge só é verdadeiro para YouTube (ver acima) — os
+               outros tipos usam sempre o mesmo leitor, com o seu próprio
+               botão de ecrã inteiro, nunca uma segunda cópia aqui. */}
+            <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080' }}>
+              {isBlocked ? (
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
+                  alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
+                }}>
+                  <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
+                    {isBlocked === 'embed_disabled'
+                      ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
+                      : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
                   </div>
-                ) : (
-                  <iframe
-                    key={active.id}
-                    ref={iframeRef}
-                    onLoad={handleIframeLoad}
-                    src={`https://www.youtube.com/embed/${active.youtubeId}?autoplay=1&rel=0&playsinline=1&enablejsapi=1`}
-                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                    allowFullScreen
-                    referrerPolicy="strict-origin-when-cross-origin"
-                    title={active.title}
-                  />
-                )}
-              </div>
-            ) : active.social ? (
-              <div style={{
-                position: 'relative', width: '100%', height: 'min(78vh, 760px)', margin: '0 auto',
-                borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080',
-              }}>
+                  <a
+                    href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
+                  >
+                    <ExternalLink size={13} /> Abrir no YouTube
+                  </a>
+                </div>
+              ) : (
                 <iframe
-                  src={socialEmbedSrc(active.social)}
-                  style={{ width: '100%', height: '100%', border: 'none' }}
-                  allow="autoplay; encrypted-media; clipboard-write"
+                  key={active.id}
+                  ref={iframeRef}
+                  onLoad={handleIframeLoad}
+                  src={`https://www.youtube.com/embed/${active.youtubeId}?autoplay=1&rel=0&playsinline=1&enablejsapi=1`}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                   allowFullScreen
-                  scrolling="no"
+                  referrerPolicy="strict-origin-when-cross-origin"
                   title={active.title}
                 />
-              </div>
-            ) : (
-              <AttachmentPreview item={active} tall />
-            )}
+              )}
+            </div>
             <div style={{ marginTop: 10, color: '#fff', fontSize: 15, fontWeight: 500 }}>{active.title}</div>
             {active.jornada && <div style={{ color: '#ffffffaa', fontSize: 12.5 }}>{active.jornada}</div>}
           </div>
