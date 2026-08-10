@@ -5497,23 +5497,45 @@ function presentationKind(file) {
 }
 
 function AttachmentPreview({ item, tall }) {
+  const boxRef = useRef(null);
   if (!item) return null;
   const boxStyle = {
     position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
     border: `1px solid ${T.line}`, background: '#000',
     height: tall ? 460 : 300,
   };
+  const requestFs = () => {
+    const el = boxRef.current;
+    if (!el) return;
+    if (el.requestFullscreen) el.requestFullscreen();
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  };
+  const FullscreenBtn = (
+    <button
+      onClick={(e) => { e.stopPropagation(); requestFs(); }}
+      title="Ver em ecrã inteiro"
+      style={{
+        position: 'absolute', top: 8, right: 8, zIndex: 2,
+        background: '#000000aa', border: `1px solid ${T.line}`, borderRadius: 6,
+        color: '#fff', cursor: 'pointer', padding: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <Maximize2 size={15} />
+    </button>
+  );
   if (item.kind === 'video') {
     return (
-      <div style={boxStyle}>
+      <div ref={boxRef} style={boxStyle}>
         <video key={item.id} src={item.dataUrl} controls style={{ width: '100%', height: '100%', background: '#000' }} />
+        {FullscreenBtn}
       </div>
     );
   }
   if (item.kind === 'pdf') {
     return (
-      <div style={boxStyle}>
+      <div ref={boxRef} style={boxStyle}>
         <iframe key={item.id} title={item.title} src={item.dataUrl} style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} />
+        {FullscreenBtn}
       </div>
     );
   }
@@ -5560,7 +5582,7 @@ function Apresentacoes({ apresentacoes, setApresentacoes }) {
 
   return (
     <div>
-      <SectionHeader title="Apresentações" subtitle="PDFs, PowerPoints e vídeos para consultar diretamente aqui."
+      <SectionHeader title="Apresentações" subtitle="Partilha de ideias."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar ficheiro</Btn>} />
 
       {apresentacoes.length === 0 ? (
@@ -5925,14 +5947,33 @@ function ConvocatoriaModal({ convocatoria, players, season, onClose, onSave }) {
 ---------------------------------------------------------------- */
 function Diario({ diario, setDiario }) {
   const [formOpen, setFormOpen] = useState(false);
-  const [f, setF] = useState({ data: todayStr(), titulo: '', nota: '' });
+  const [f, setF] = useState({ data: todayStr(), titulo: '', nota: '', attachment: null });
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
+  const [attachError, setAttachError] = useState('');
+
+  const handleAttachmentFile = async (file) => {
+    setAttachError('');
+    if (!file) return;
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type === 'application/pdf';
+    if (!isImage && !isPdf) {
+      setAttachError('Só são aceites fotos/imagens ou ficheiros PDF.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setAttachError('Ficheiro demasiado grande (máx. 8 MB).');
+      return;
+    }
+    const dataUrl = await fileToDataUrl(file);
+    setF(prev => ({ ...prev, attachment: { name: file.name, type: isPdf ? 'pdf' : 'image', dataUrl } }));
+  };
 
   const save = () => {
-    if (!f.nota.trim()) return;
+    if (!f.nota.trim() && !f.attachment) return;
     setDiario([{ ...f, id: uid() }, ...diario]);
-    setF({ data: todayStr(), titulo: '', nota: '' });
+    setF({ data: todayStr(), titulo: '', nota: '', attachment: null });
+    setAttachError('');
     setFormOpen(false);
   };
   const remove = (id) => setDiario(diario.filter(n => n.id !== id));
@@ -5944,7 +5985,7 @@ function Diario({ diario, setDiario }) {
 
   return (
     <div>
-      <SectionHeader title="Diário" subtitle="Notas e observações do treinador, dia a dia."
+      <SectionHeader title="Diário" subtitle="Notas e observações do dia a dia."
         action={<Btn onClick={() => setFormOpen(o => !o)}>{formOpen ? 'Fechar' : <><Plus size={15} /> Nova nota</>}</Btn>} />
 
       {formOpen && (
@@ -5956,7 +5997,42 @@ function Diario({ diario, setDiario }) {
           <div style={{ marginBottom: 14 }}>
             <Field label="Nota"><TextArea value={f.nota} onChange={e => setF({ ...f, nota: e.target.value })} style={{ minHeight: 120 }} /></Field>
           </div>
-          <Btn disabled={!f.nota.trim()} onClick={save}>Guardar nota</Btn>
+          <div style={{ marginBottom: 14 }}>
+            <Field label="Anexo (foto ou PDF, opcional)">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <label style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                  padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
+                  background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
+                }}>
+                  <Upload size={14} />
+                  {f.attachment ? 'Substituir anexo' : 'Tirar foto ou carregar ficheiro'}
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    capture="environment"
+                    onChange={e => { handleAttachmentFile(e.target.files?.[0]); e.target.value = ''; }}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+                {f.attachment && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {f.attachment.type === 'image' ? (
+                      <img src={f.attachment.dataUrl} alt={f.attachment.name} style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, border: `1px solid ${T.line}` }} />
+                    ) : (
+                      <div style={{ width: 46, height: 46, borderRadius: 6, border: `1px solid ${T.line}`, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <BookOpen size={18} color={T.mutedDim} />
+                      </div>
+                    )}
+                    <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.attachment.name}</span>
+                    <button onClick={() => setF(prev => ({ ...prev, attachment: null }))} title="Remover anexo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+                  </div>
+                )}
+              </div>
+              {attachError && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{attachError}</div>}
+            </Field>
+          </div>
+          <Btn disabled={!f.nota.trim() && !f.attachment} onClick={save}>Guardar nota</Btn>
         </div>
       )}
 
@@ -5984,7 +6060,21 @@ function Diario({ diario, setDiario }) {
                 </div>
                 <button onClick={() => remove(n.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
               </div>
-              <p style={{ color: T.mutedDim, fontSize: 13.5, lineHeight: 1.6, margin: 0, whiteSpace: 'pre-wrap' }}>{n.nota}</p>
+              {n.nota && <p style={{ color: T.mutedDim, fontSize: 13.5, lineHeight: 1.6, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{n.nota}</p>}
+              {n.attachment && (
+                n.attachment.type === 'image' ? (
+                  <a href={n.attachment.dataUrl} download={n.attachment.name}>
+                    <img src={n.attachment.dataUrl} alt={n.attachment.name} style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: `1px solid ${T.line}`, display: 'block' }} />
+                  </a>
+                ) : (
+                  <a
+                    href={n.attachment.dataUrl} download={n.attachment.name}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', border: `1px solid ${T.gold}55`, borderRadius: 8, padding: '6px 12px' }}
+                  >
+                    <BookOpen size={13} /> {n.attachment.name}
+                  </a>
+                )
+              )}
             </div>
           ))}
         </div>
