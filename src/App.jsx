@@ -2020,7 +2020,8 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
   .hint { font-size:11.5px; color:#8f8570; margin-top:6px; }
   table { border-collapse:collapse; margin-top:8px; font-size:13px; }
   td, th { padding:4px 10px 4px 0; text-align:left; }
-  footer { margin-top:30px; font-size:11px; color:#6d6553; }
+  footer { margin-top:30px; font-size:11px; color:#6d6553; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  footer .brand { font-weight:600; letter-spacing:.02em; color:#8f8570; }
   @media (min-width:700px) {
     body { padding:40px; }
     h1 { font-size:26px; }
@@ -2034,7 +2035,10 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
   ${description ? `<p class="desc">${escapeHtmlText(description)}</p>` : ''}
   ${blocks.map(b => `${b.heading ? `<h2>${escapeHtmlText(b.heading)}</h2>` : ''}${b.html}`).join('\n')}
   ${extraHtml || ''}
-  <footer>Gerado a partir da app da equipa · ${escapeHtmlText(new Date().toLocaleDateString('pt-PT'))}</footer>
+  <footer>
+    <span>Gerado a partir da app da equipa · ${escapeHtmlText(new Date().toLocaleDateString('pt-PT'))}</span>
+    <span class="brand">TM Mister JP</span>
+  </footer>
 </div>
 <script>
   var FRAMES = ${JSON.stringify(framesMap)};
