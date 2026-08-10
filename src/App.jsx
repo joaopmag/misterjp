@@ -114,6 +114,47 @@ async function saveSingleton(table, value) {
 // lista mudou". Compara a lista atual com a última versão sincronizada
 // e só grava (upsert/apagar) o que realmente mudou; as alterações feitas
 // por outra pessoa chegam sozinhas via tempo real.
+/* AVISO DE GRAVAÇÃO FALHADA — quando o Supabase recusa uma gravação (tabela
+   em falta, permissões/RLS, ou payload demasiado grande, como acontece com
+   ficheiros grandes guardados em base64), a app tem de o dizer. Sem isto o
+   ecrã mostrava tudo bem e o conteúdo desaparecia no refresh seguinte. */
+const SYNC_ERROR_EVENT = 'mrjp-sync-error';
+function reportSyncError(table, error) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(SYNC_ERROR_EVENT, {
+    detail: { table, message: (error && error.message) || 'erro desconhecido' },
+  }));
+}
+
+function SyncErrorBanner() {
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    const onErr = (e) => setErr(e.detail);
+    window.addEventListener(SYNC_ERROR_EVENT, onErr);
+    return () => window.removeEventListener(SYNC_ERROR_EVENT, onErr);
+  }, []);
+  if (!err) return null;
+  return (
+    <div style={{
+      position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 80,
+      background: '#3A1F22', border: `1px solid ${T.bad}`, borderRadius: 10,
+      padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10,
+      boxShadow: '0 12px 40px #00000080', maxWidth: 620, margin: '0 auto',
+    }}>
+      <div style={{ flex: 1, ...body }}>
+        <div style={{ color: T.bad, fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+          Não foi possível guardar ({ACTIVITY_LABELS[err.table] || err.table})
+        </div>
+        <div style={{ color: T.cream, fontSize: 12.5, lineHeight: 1.5 }}>
+          O que acabaste de introduzir está no ecrã mas NÃO ficou gravado — vai perder-se
+          se recarregares a página. Detalhe: {err.message}
+        </div>
+      </div>
+      <button onClick={() => setErr(null)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={16} /></button>
+    </div>
+  );
+}
+
 function useCollectionSync(table, notifyEdit) {
   const [items, setItems] = useState([]);
   const [ready, setReady] = useState(false);
@@ -177,7 +218,10 @@ function useCollectionSync(table, notifyEdit) {
 
       if (toUpsert.length) {
         const { data, error } = await supabase.from(table).upsert(toUpsert, { onConflict: 'id' }).select('id, data, updated_by_email, updated_at');
-        if (error) { console.error(table, error); }
+        // Antes um erro aqui só ia parar à consola: na app parecia que tinha
+        // ficado guardado, e só ao recarregar a página é que se percebia que
+        // não. Agora avisa no ecrã.
+        if (error) { console.error(table, error); reportSyncError(table, error); }
         else if (data) {
           data.forEach(r => {
             snapshot.current.set(r.id, JSON.stringify(r.data));
@@ -188,7 +232,7 @@ function useCollectionSync(table, notifyEdit) {
       if (toDelete.length) {
         const { error } = await supabase.from(table).delete().in('id', toDelete);
         if (!error) toDelete.forEach(id => snapshot.current.delete(id));
-        else console.error(table, error);
+        else { console.error(table, error); reportSyncError(table, error); }
       }
       if (toUpsert.length || toDelete.length) notifyEdit(table);
     })();
@@ -601,6 +645,8 @@ function App({ session }) {
             <span style={{ ...display, color: '#FFFFFF', fontSize: 15, fontWeight: 600 }}>SC Salgueiros U19</span>
           </div>
         )}
+
+        <SyncErrorBanner />
 
         {/* Sombra/overlay atrás do menu retrátil, para fechar ao tocar fora */}
         {isMobile && navOpen && (
@@ -3128,18 +3174,14 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
       }),
       arrows: (srcDiagram.arrows || []).map(a => ({
         ...a, id: uid(),
-        ...(a.fromId ? { fromId: idMap[a.fromId] || a.fromId } : {}),
-        ...(a.toId ? { toId: idMap[a.toId] || a.toId } : {}),
+        ...(a.ownerId ? { ownerId: idMap[a.ownerId] || a.ownerId } : {}),
       })),
-      sequence: (srcDiagram.sequence || []).map(step => ({
-        ...step,
-        elements: (step.elements || []).map(el => ({ ...el, id: idMap[el.id] || el.id })),
-        arrows: (step.arrows || []).map(a => ({
-          ...a,
-          ...(a.fromId ? { fromId: idMap[a.fromId] || a.fromId } : {}),
-          ...(a.toId ? { toId: idMap[a.toId] || a.toId } : {}),
-        })),
-      })),
+      // A coreografia gravada no exercício de origem NÃO vem junto: os
+      // ícones entram nas posições finais em que ficaram, e a animação
+      // recomeça daqui. É o que se pretende ao partir de um exercício já
+      // feito — continuar a partir daquele momento, e não repetir os
+      // movimentos que já tinham sido gravados lá.
+      sequence: [],
     };
     setF(prev => ({
       ...prev,
@@ -3157,7 +3199,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
     }));
     setImportOpen(false);
     setImportSearch('');
-    setImportNotice(`Informação copiada de "${src.name}". Podes editar tudo antes de guardar.`);
+    setImportNotice(`Copiado de "${src.name}". Os jogadores ficam nas posições finais e a animação recomeça a partir daqui.`);
   };
 
   const handleAttachmentFile = async (file) => {
@@ -3318,10 +3360,8 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
               marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8,
               background: T.surface, padding: 10,
             }}>
-              <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.45 }}>
-                Escolhe um exercício da biblioteca. A informação dele (fase, descrição, espaço,
-                nº de jogadores, material, duração, esquema tático e anexo) é copiada para aqui —
-                o exercício original não é alterado.
+              <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8 }}>
+                Escolhe um exercício da biblioteca.
               </div>
               <div style={{ position: 'relative', marginBottom: 8 }}>
                 <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
@@ -5485,25 +5525,27 @@ const socialMeta = {
 
 /* O TikTok resolveu-se com o player oficial (/player/v1/), que é só o vídeo.
    O Instagram NÃO tem equivalente: a Meta só publica o oEmbed, que devolve
-   o cartão completo (cabeçalho com a conta + rodapé com legenda e gostos) e
-   não aceita parâmetros para esconder essas partes nem para repetir o vídeo.
+   o cartão completo (cabeçalho com a conta + rodapé branco com "Ver mais no
+   Instagram", gostos e comentários) e não aceita parâmetros para esconder
+   essas partes nem para repetir o vídeo.
 
-   Como não dá para pedir ao Instagram um player limpo, fazemos o mesmo
-   efeito do lado de cá: mostramos o iframe dentro de uma "janela" com o
-   tamanho exato do vídeo e empurramo-lo para cima o suficiente para o
-   cabeçalho ficar fora dessa janela. O rodapé fica naturalmente abaixo do
-   recorte. Resultado: em ecrã inteiro vê-se só o vídeo, com a altura toda,
-   igual ao TikTok.
+   Como não dá para pedir ao Instagram um player limpo, fazemos o efeito do
+   lado de cá: o iframe fica dentro de uma "janela" que mostra apenas a zona
+   do vídeo — o cabeçalho fica acima do recorte e o rodapé branco fica
+   abaixo dele. Em ecrã inteiro sobra só o vídeo.
 
-   ATENÇÃO: os 54 px do cabeçalho são uma ESTIMATIVA minha — o Instagram não
-   publica esse valor e pode mudá-lo. Por isso há setas ▲ ▼ em ecrã inteiro
-   para alinhares o recorte à mão se ficar desencontrado. */
-const SOCIAL_MEDIA_RATIO = 16 / 9; // altura/largura do vídeo vertical (Reel)
-const SOCIAL_CHROME = {
-  // top  = altura do cabeçalho, a esconder acima do recorte
-  // extra = folga em baixo, só para o embed ter espaço para se desenhar todo
-  instagram: { top: 54, extra: 700 },
-  tiktok: { top: 0, extra: 0 },
+   ATENÇÃO — os dois valores do Instagram são ESTIMATIVAS, medidas a partir
+   de uma captura de ecrã real; a Meta não publica nada disto, pode mudá-lo,
+   e a zona do vídeo varia com o formato do próprio Reel. É por isso que
+   existem os controlos ▲ ▼ (alinhar) e − / + (quanto se corta) em ecrã
+   inteiro. */
+const SOCIAL_CROP = {
+  instagram: {
+    headerPx: 54,     // altura do cabeçalho com o nome da conta
+    mediaRatio: 1.09, // altura da zona do vídeo ÷ largura do iframe
+    extraPx: 700,     // folga em baixo, só para o embed se desenhar todo
+  },
+  tiktok: { headerPx: 0, mediaRatio: 16 / 9, extraPx: 0 },
 };
 
 /* O embed do Instagram leva os cliques para fora da app (cabeçalho, rodapé
@@ -5516,29 +5558,31 @@ const SOCIAL_CHROME = {
    remover esta constante do <iframe>. */
 const INSTAGRAM_SANDBOX = 'allow-scripts allow-same-origin allow-presentation';
 
-// Medidas da "janela" de recorte: fora do ecrã inteiro ocupa tudo (como
-// antes); em ecrã inteiro é exatamente a área do vídeo, centrada.
-function socialClipStyle(isFullscreen, boxSize, zoom, barH) {
-  if (!isFullscreen) return { position: 'relative', width: '100%', height: '100%', overflow: 'hidden' };
+// Contas partilhadas pelas duas funções abaixo, para não divergirem.
+function socialCropMetrics(platform, boxSize, zoom, barH) {
+  const c = SOCIAL_CROP[platform] || SOCIAL_CROP.instagram;
   const avail = Math.max(200, (boxSize.h || 600) - barH);
-  const w = Math.round(Math.min(boxSize.w || 360, avail / SOCIAL_MEDIA_RATIO) * zoom);
-  return {
-    position: 'relative', width: w, height: Math.round(w * SOCIAL_MEDIA_RATIO),
-    overflow: 'hidden', flexShrink: 0,
-  };
+  const w = Math.round(Math.min(boxSize.w || 360, avail / c.mediaRatio) * zoom);
+  const mediaH = Math.round(w * c.mediaRatio);
+  return { c, avail, w, mediaH, clipH: Math.min(avail, mediaH) };
+}
+
+// Medidas da "janela" de recorte: fora do ecrã inteiro ocupa tudo (como
+// antes); em ecrã inteiro mostra só a zona do vídeo, centrada.
+function socialClipStyle(platform, isFullscreen, boxSize, zoom, barH) {
+  if (!isFullscreen) return { position: 'relative', width: '100%', height: '100%', overflow: 'hidden' };
+  const { w, clipH } = socialCropMetrics(platform, boxSize, zoom, barH);
+  return { position: 'relative', width: w, height: clipH, overflow: 'hidden', flexShrink: 0 };
 }
 
 // O iframe é maior do que a janela e fica deslocado para cima, para o
-// cabeçalho da plataforma cair fora do recorte.
+// cabeçalho da plataforma cair fora do recorte. O rodapé fica abaixo.
 function socialInnerStyle(platform, isFullscreen, boxSize, zoom, barH, offset) {
   if (!isFullscreen) return { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' };
-  const c = SOCIAL_CHROME[platform] || SOCIAL_CHROME.instagram;
-  const avail = Math.max(200, (boxSize.h || 600) - barH);
-  const w = Math.round(Math.min(boxSize.w || 360, avail / SOCIAL_MEDIA_RATIO) * zoom);
-  const mediaH = Math.round(w * SOCIAL_MEDIA_RATIO);
+  const { c, mediaH } = socialCropMetrics(platform, boxSize, zoom, barH);
   return {
-    position: 'absolute', left: 0, top: -(c.top + offset),
-    width: '100%', height: c.top + mediaH + c.extra,
+    position: 'absolute', left: 0, top: -(c.headerPx + offset),
+    width: '100%', height: c.headerPx + mediaH + c.extraPx,
   };
 }
 
@@ -5765,7 +5809,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                             só mudam as medidas. Se alternássemos entre árvores
                             diferentes, o React voltava a montar o iframe e o
                             vídeo recomeçava do início ao entrar em ecrã inteiro. */}
-                        <div style={socialClipStyle(isSocialFullscreen, boxSize, socialZoom, 40)}>
+                        <div style={socialClipStyle(active.social.platform, isSocialFullscreen, boxSize, socialZoom, 40)}>
                           <div style={socialInnerStyle(active.social.platform, isSocialFullscreen, boxSize, socialZoom, 40, socialOffset)}>
                             <iframe
                               key={active.id}
@@ -5787,7 +5831,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                       }}>
                         {isSocialFullscreen && (() => {
                           const ctrlStyle = { width: 24, height: 24, borderRadius: 6, border: '1px solid #333', background: '#1b1b1b', color: '#fff', cursor: 'pointer', fontSize: 13, lineHeight: 1 };
-                          const hasChrome = (SOCIAL_CHROME[active.social.platform] || {}).top > 0;
+                          const hasChrome = (SOCIAL_CROP[active.social.platform] || {}).headerPx > 0;
                           return (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 4 }}>
                               {/* Alinhamento do recorte — só faz falta onde a
@@ -5948,12 +5992,14 @@ function MediaModal({ item, onClose, onSave }) {
     if (!file) return;
     const kind = presentationKind(file);
     if (!kind) { setError('Formato não suportado — escolhe um PDF, PowerPoint (.ppt/.pptx) ou vídeo.'); return; }
-    // Vídeos ocupam muito mais espaço em base64 do que PDFs/imagens —
-    // limite mais generoso que o dos anexos de exercícios, mas continua
-    // a existir para não sobrecarregar a base de dados.
-    const maxSize = kind === 'video' ? 60 * 1024 * 1024 : 15 * 1024 * 1024;
+    // Estes ficheiros são guardados dentro do próprio registo, convertidos
+    // em base64 (que ocupa ~33% mais do que o ficheiro original). O limite
+    // anterior (60 MB para vídeo) gerava registos que o servidor recusava —
+    // e, como a recusa era silenciosa, a apresentação parecia guardada mas
+    // desaparecia ao recarregar a página. Limites realistas:
+    const maxSize = kind === 'video' ? 4 * 1024 * 1024 : 3 * 1024 * 1024;
     if (file.size > maxSize) {
-      setError(`Ficheiro demasiado grande (máx. ${Math.round(maxSize / 1024 / 1024)} MB).`);
+      setError(`Ficheiro demasiado grande (máx. ${Math.round(maxSize / 1024 / 1024)} MB). Para vídeos maiores, usa antes um link do YouTube, Instagram ou TikTok.`);
       return;
     }
     setLoadingFile(true);
@@ -5994,8 +6040,8 @@ function MediaModal({ item, onClose, onSave }) {
   return (
     <Modal title={item ? 'Editar item' : 'Novo item'} onClose={onClose}>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button onClick={() => { setSource('link'); setError(''); }} style={tabBtnStyle('link')}>Link (YouTube/Instagram/TikTok)</button>
-        <button onClick={() => { setSource('file'); setError(''); }} style={tabBtnStyle('file')}>Ficheiro (PDF/PPT/vídeo)</button>
+        <button onClick={() => { setSource('link'); setError(''); }} style={tabBtnStyle('link')}>Link</button>
+        <button onClick={() => { setSource('file'); setError(''); }} style={tabBtnStyle('file')}>Ficheiro</button>
       </div>
 
       <div style={{ marginBottom: 12 }}>
@@ -6386,9 +6432,14 @@ function ConvocatoriaModal({ convocatoria, players, season, onClose, onSave }) {
 /* ---------------------------------------------------------------
    DIÁRIO — notas datadas do treinador, com pesquisa.
 ---------------------------------------------------------------- */
+const EMPTY_NOTA = () => ({ data: todayStr(), titulo: '', nota: '', attachment: null });
+
 function Diario({ diario, setDiario }) {
   const [formOpen, setFormOpen] = useState(false);
-  const [f, setF] = useState({ data: todayStr(), titulo: '', nota: '', attachment: null });
+  // Quando se está a editar uma nota já existente, guarda-se aqui o id dela;
+  // a null significa que se está a criar uma nota nova.
+  const [editingId, setEditingId] = useState(null);
+  const [f, setF] = useState(EMPTY_NOTA);
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [attachError, setAttachError] = useState('');
@@ -6412,12 +6463,28 @@ function Diario({ diario, setDiario }) {
 
   const save = () => {
     if (!f.nota.trim() && !f.attachment) return;
-    setDiario([{ ...f, id: uid() }, ...diario]);
-    setF({ data: todayStr(), titulo: '', nota: '', attachment: null });
+    if (editingId) setDiario(diario.map(n => (n.id === editingId ? { ...f, id: editingId } : n)));
+    else setDiario([{ ...f, id: uid() }, ...diario]);
+    closeForm();
+  };
+  const closeForm = () => {
+    setF(EMPTY_NOTA());
+    setEditingId(null);
     setAttachError('');
     setFormOpen(false);
   };
-  const remove = (id) => setDiario(diario.filter(n => n.id !== id));
+  // Abre o formulário já preenchido com a nota escolhida.
+  const startEdit = (n) => {
+    setF({ data: n.data || todayStr(), titulo: n.titulo || '', nota: n.nota || '', attachment: n.attachment || null });
+    setEditingId(n.id);
+    setAttachError('');
+    setFormOpen(true);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const remove = (id) => {
+    setDiario(diario.filter(n => n.id !== id));
+    if (editingId === id) closeForm();
+  };
 
   const filtered = search
     ? diario.filter(n => (n.titulo || '').toLowerCase().includes(search.toLowerCase()) || (n.nota || '').toLowerCase().includes(search.toLowerCase()))
@@ -6427,7 +6494,7 @@ function Diario({ diario, setDiario }) {
   return (
     <div>
       <SectionHeader title="Diário" subtitle="Notas e observações do dia a dia."
-        action={<Btn onClick={() => setFormOpen(o => !o)}>{formOpen ? 'Fechar' : <><Plus size={15} /> Nova nota</>}</Btn>} />
+        action={<Btn onClick={() => (formOpen ? closeForm() : setFormOpen(true))}>{formOpen ? 'Fechar' : <><Plus size={15} /> Nova nota</>}</Btn>} />
 
       {formOpen && (
         <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 18, marginBottom: 20 }}>
@@ -6473,7 +6540,12 @@ function Diario({ diario, setDiario }) {
               {attachError && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{attachError}</div>}
             </Field>
           </div>
-          <Btn disabled={!f.nota.trim() && !f.attachment} onClick={save}>Guardar nota</Btn>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Btn disabled={!f.nota.trim() && !f.attachment} onClick={save}>
+              {editingId ? <><Check size={15} /> Guardar alterações</> : 'Guardar nota'}
+            </Btn>
+            {editingId && <Btn variant="ghost" onClick={closeForm}>Cancelar</Btn>}
+          </div>
         </div>
       )}
 
@@ -6499,7 +6571,10 @@ function Diario({ diario, setDiario }) {
                   <span style={{ ...mono, color: T.warn, fontSize: 12.5 }}>{fmtDate(n.data)}</span>
                   {n.titulo && <span style={{ color: T.cream, fontSize: 14, fontWeight: 500, marginLeft: 10 }}>{n.titulo}</span>}
                 </div>
-                <button onClick={() => remove(n.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
+                <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                  <button onClick={() => startEdit(n)} title="Editar nota" style={{ background: 'none', border: 'none', color: n.id === editingId ? T.warn : T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
+                  <button onClick={() => remove(n.id)} title="Apagar nota" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
+                </div>
               </div>
               {n.nota && <p style={{ color: T.mutedDim, fontSize: 13.5, lineHeight: 1.6, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{n.nota}</p>}
               {n.attachment && (
