@@ -59,6 +59,18 @@ const INTENSITIES = [
 const intensityLabel = (v) => INTENSITIES.find(i => i.value === v)?.label || v || '—';
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+/* Lê um ficheiro (imagem ou PDF) escolhido pelo utilizador e devolve uma
+   Promise com um data URL em base64, pronto a guardar diretamente no
+   registo do exercício (mesma abordagem usada para o emblema do clube). */
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 function genPlayerCode(usedSet) {
   let code;
   do { code = String(Math.floor(1000 + Math.random() * 9000)); } while (usedSet.has(code));
@@ -205,10 +217,10 @@ function Badge({ number }) {
     <div
       style={{
         width: 40, height: 40, borderRadius: '50%',
-        background: `radial-gradient(circle at 30% 30%, ${T.crimsonBright}, ${T.crimson})`,
-        border: `1px solid ${T.gold}55`,
+        background: '#FFFFFF',
+        border: `2px solid ${T.gold}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: T.warn, ...display, fontWeight: 600, fontSize: 15, flexShrink: 0,
+        color: T.crimson, ...display, fontWeight: 600, fontSize: 15, flexShrink: 0,
       }}
     >
       {number || '–'}
@@ -1061,7 +1073,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
                   <span style={{ color: attColor }}>Assid. {stats.attendancePct === null ? '—' : `${stats.attendancePct}%`}</span>
                   <span style={{ color: T.mutedDim }}>⚽ {stats.goals}</span>
                   <span style={{ color: T.mutedDim }}>🅰 {stats.assists}</span>
-                  <span style={{ color: T.mutedDim }}>Nota {stats.avgMatchRating ?? '—'}</span>
+                  <span style={{ color: T.mutedDim }}>{p.statusMain || 'Sem estatuto'}</span>
                 </div>
                 {m && m.email && (
                   <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1305,6 +1317,15 @@ function Exercicios({ exercises, setExercises }) {
               </div>
               <div style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '2px 8px', borderRadius: 12, marginBottom: 8 }}>{x.phase}</div>
               <DiagramThumb diagram={x.diagram} space={x.space} />
+              {x.attachment && (
+                x.attachment.type === 'image' ? (
+                  <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: 95, objectFit: 'cover', borderRadius: 6, marginBottom: 8 }} />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.mutedDim, background: T.surfaceRaise, borderRadius: 6, padding: '6px 10px', marginBottom: 8 }}>
+                    <BookOpen size={13} /> {x.attachment.name}
+                  </div>
+                )
+              )}
               <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px' }}>{x.description}</p>
               <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: T.mutedDim, ...mono }}>
                 {x.space && <span>📐 {x.space}</span>}
@@ -3003,11 +3024,29 @@ function DiagramThumb({ diagram, space }) {
 }
 
 function ExerciseModal({ exercise, onClose, onSave }) {
-  const [f, setF] = useState(exercise || { name: '', phase: PHASES[0], description: '', space: '', playersCount: '', material: '', defaultDuration: 15, diagram: { elements: [], arrows: [] } });
+  const [f, setF] = useState(exercise || { name: '', phase: PHASES[0], description: '', space: '', playersCount: '', material: '', defaultDuration: 15, diagram: { elements: [], arrows: [] }, attachment: null });
   // A cor ativa do editor tático vive aqui (no modal, que não é recriado
   // durante a edição) e não dentro do DiagramEditor, para nunca poder ser
   // reposta para o valor por omissão a meio da colocação de jogadores.
   const [diagramColor, setDiagramColor] = useState('A');
+  const [attachError, setAttachError] = useState('');
+
+  const handleAttachmentFile = async (file) => {
+    setAttachError('');
+    if (!file) return;
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type === 'application/pdf';
+    if (!isImage && !isPdf) {
+      setAttachError('Só são aceites imagens ou ficheiros PDF.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setAttachError('Ficheiro demasiado grande (máx. 8 MB).');
+      return;
+    }
+    const dataUrl = await fileToDataUrl(file);
+    setF(prev => ({ ...prev, attachment: { name: file.name, type: isPdf ? 'pdf' : 'image', dataUrl } }));
+  };
 
   const autoInsertPlayers = () => {
     setF(prev => {
@@ -3084,6 +3123,40 @@ function ExerciseModal({ exercise, onClose, onSave }) {
             activeColor={diagramColor}
             onColorChange={setDiagramColor}
           />
+        </Field>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Anexo (imagem ou PDF)">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+              padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
+              background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
+            }}>
+              <Upload size={14} />
+              {f.attachment ? 'Substituir ficheiro' : 'Carregar imagem ou PDF'}
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={e => { handleAttachmentFile(e.target.files?.[0]); e.target.value = ''; }}
+                style={{ display: 'none' }}
+              />
+            </label>
+            {f.attachment && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {f.attachment.type === 'image' ? (
+                  <img src={f.attachment.dataUrl} alt={f.attachment.name} style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, border: `1px solid ${T.line}` }} />
+                ) : (
+                  <div style={{ width: 46, height: 46, borderRadius: 6, border: `1px solid ${T.line}`, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <BookOpen size={18} color={T.mutedDim} />
+                  </div>
+                )}
+                <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.attachment.name}</span>
+                <button onClick={() => setF(prev => ({ ...prev, attachment: null }))} title="Remover anexo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+              </div>
+            )}
+          </div>
+          {attachError && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{attachError}</div>}
         </Field>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -3255,6 +3328,22 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       </div>
       {exercise.description && (
         <p style={{ color: T.mutedDim, fontSize: 13.5, lineHeight: 1.55, margin: '0 0 14px' }}>{exercise.description}</p>
+      )}
+
+      {exercise.attachment && (
+        <div style={{ marginBottom: 14 }}>
+          {exercise.attachment.type === 'image' ? (
+            <img src={exercise.attachment.dataUrl} alt={exercise.attachment.name} style={{ width: '100%', maxHeight: 420, objectFit: 'contain', borderRadius: 8, border: `1px solid ${T.line}`, background: '#000' }} />
+          ) : (
+            <div style={{ border: `1px solid ${T.line}`, borderRadius: 8, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', background: T.surfaceRaise }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.cream }}><BookOpen size={14} /> {exercise.attachment.name}</span>
+                <a href={exercise.attachment.dataUrl} download={exercise.attachment.name} style={{ fontSize: 12, color: T.gold, textDecoration: 'none' }}>Descarregar</a>
+              </div>
+              <iframe title={exercise.attachment.name} src={exercise.attachment.dataUrl} style={{ width: '100%', height: 420, border: 'none', background: '#fff' }} />
+            </div>
+          )}
+        </div>
       )}
 
       <div style={{ position: 'relative', width: '100%', paddingTop: '65.1%' }}>
