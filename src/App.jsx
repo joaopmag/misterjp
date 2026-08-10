@@ -189,7 +189,33 @@ function useCollectionSync(table, notifyEdit) {
           setItems(prev => prev.filter(it => it.id !== id));
           setRecordMeta(prev => { const n = { ...prev }; delete n[id]; return n; });
         } else {
-          const row = payload.new;
+          const row = payload.new || {};
+          /* O Realtime do Supabase tem um limite de tamanho por registo
+             (max_record_bytes, 1 MB por omissão). Registos acima disso não
+             são enviados por inteiro: chega um evento com "errors" e com o
+             registo vazio ou só com a chave. Se aplicássemos isso ao estado,
+             o item bom que temos em memória era substituído por um vazio —
+             perdia o título, a pasta e o próprio ficheiro — e a gravação
+             seguinte escrevia esse vazio por cima do registo correto na base
+             de dados. Era isto que fazia os ficheiros grandes "desaparecer"
+             e ficarem como linhas em branco.
+             Nesse caso ignoramos o evento e vamos buscar a versão completa
+             diretamente à base de dados. */
+          const truncated = (payload.errors && payload.errors.length) || row.data == null;
+          const rowId = row.id || (payload.old && payload.old.id);
+          if (truncated) {
+            if (!rowId) return;
+            supabase.from(table).select('id, data, updated_by_email, updated_at').eq('id', rowId).maybeSingle()
+              .then(({ data: full, error }) => {
+                if (error || !full || full.data == null) return; // mantém o que já temos
+                applyRow(full);
+              });
+            return;
+          }
+          applyRow(row);
+        }
+
+        function applyRow(row) {
           snapshot.current.set(row.id, JSON.stringify(row.data));
           setItems(prev => {
             const item = { ...row.data, id: row.id };
@@ -210,6 +236,11 @@ function useCollectionSync(table, notifyEdit) {
       const toUpsert = [];
       for (const it of items) {
         const { id, ...rest } = it;
+        // Nunca gravar um registo que ficou sem conteúdo nenhum. Um item só
+        // com id é sempre sinal de que algo correu mal a montante (ver o
+        // limite do Realtime acima) — gravá-lo destruiria o registo bom que
+        // está na base de dados.
+        if (Object.keys(rest).length === 0 && snapshot.current.has(id)) continue;
         const json = JSON.stringify(rest);
         if (snapshot.current.get(id) !== json) toUpsert.push({ id, data: rest });
       }
@@ -5704,19 +5735,20 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   };
 
   const save = (data) => {
-    if (data.id) setItems(items.map(v => v.id === data.id ? data : v));
-    else {
+    // Depois de guardar, o filtro passa SEMPRE a mostrar o sítio onde o
+    // item ficou: a pasta escolhida, ou "Tudo" se não tiver pasta. Assim
+    // nunca se guarda alguma coisa e se fica a olhar para uma vista onde
+    // ela não aparece.
+    const destino = cleanFolder(data.pasta);
+    if (data.id) {
+      setItems(items.map(v => v.id === data.id ? data : v));
+      setActiveId(data.id);
+    } else {
       const created = { ...data, id: uid() };
       setItems([created, ...items]);
       setActiveId(created.id);
-      // Se o item novo foi para uma pasta que não é a que está aberta,
-      // muda-se o filtro — caso contrário ele "desaparecia" à frente de
-      // quem acabou de o criar.
-      const destino = cleanFolder(created.pasta);
-      if (folderFilter !== null && folderFilter !== (destino || NO_FOLDER)) {
-        setFolderFilter(destino || NO_FOLDER);
-      }
     }
+    setFolderFilter(destino || null);
     setModal(null);
   };
   const remove = (id) => {
@@ -5754,6 +5786,15 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   };
   // Mover um item para outra pasta a partir da própria lista.
   const moveItem = (id, pasta) => setItems(items.map(v => (v.id === id ? { ...v, pasta: cleanFolder(pasta) } : v)));
+
+  // Rede de segurança: se a pasta aberta deixar de existir (o último item
+  // saiu dela, foi renomeada noutro dispositivo, etc.), voltamos a "Tudo"
+  // em vez de deixar o ecrã preso numa pasta vazia que já não está na barra.
+  useEffect(() => {
+    if (folderFilter === null || folderFilter === NO_FOLDER) return;
+    if (!items.some(v => cleanFolder(v.pasta) === folderFilter)) setFolderFilter(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, folderFilter]);
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
@@ -6018,7 +6059,10 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                       </div>
                     )}
                     <span style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, color: T.cream }}>{v.title}</div>
+                      {/* Se um item ficar sem título por alguma razão, mostra
+                          na mesma alguma coisa — uma linha totalmente em
+                          branco não dá para perceber nem para apagar. */}
+                      <div style={{ fontSize: 12.5, color: v.title ? T.cream : T.mutedDim }}>{v.title || v.fileName || '(sem título)'}</div>
                       {(v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
                       {/* Só se mostra a pasta quando se está a ver tudo —
                           dentro de uma pasta seria informação repetida. */}
