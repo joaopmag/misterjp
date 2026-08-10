@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ReactDOMServer from 'react-dom/server';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
-  Pencil, ChevronLeft, ChevronRight, Check, Loader2, Shield, Clock,
+  Pencil, ChevronLeft, ChevronRight, Check, Loader2, Clock,
   Gauge, Moon, Droplets, Zap, BedDouble, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
@@ -4450,7 +4450,7 @@ function CheckinLogin({ players, onLogin }) {
 
   return (
     <div style={{ maxWidth: 360, margin: '0 auto', padding: '60px 20px', textAlign: 'center' }}>
-      <Shield size={32} color={T.warn} style={{ marginBottom: 14 }} />
+      <img src="/logo-salgueiros.png" alt="SC Salgueiros" style={{ width: 56, height: 'auto', marginBottom: 14 }} />
       <div style={{ ...display, fontSize: 21, fontWeight: 700, color: T.cream, marginBottom: 6 }}>{greetingNow()}, Salgueirista!</div>
       <div style={{ fontSize: 13.5, color: T.mutedDim, marginBottom: 26 }}>Introduz o teu código pessoal para entrares.</div>
 
