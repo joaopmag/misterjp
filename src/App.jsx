@@ -3653,12 +3653,31 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
   const [printSession, setPrintSession] = useState(null);
+  const [dayModalDate, setDayModalDate] = useState(null); // data (YYYY-MM-DD) do dia a ver em detalhe
+  const [printDayDate, setPrintDayDate] = useState(null); // data a imprimir com todas as sessões desse dia
   const [view, setView] = useState('lista'); // 'lista' | 'agenda'
   const [weekStart, setWeekStart] = useState(getMonday(todayStr()));
 
   const doPrint = (s) => {
+    setPrintDayDate(null);
     setPrintSession(s);
-    setTimeout(() => window.print(), 80);
+    setTimeout(() => {
+      window.print();
+      openAndPrintPdfSequential(collectPdfAttachments([s], exercises));
+    }, 80);
+  };
+
+  // Imprime TODAS as sessões de um dia numa única ficha; qualquer imagem
+  // anexada aos exercícios sai na própria ficha, e qualquer PDF anexado
+  // é aberto e impresso à parte, numa aba própria.
+  const doPrintDay = (date) => {
+    const daySessions = sessions.filter(s => s.date === date);
+    setPrintSession(null);
+    setPrintDayDate(date);
+    setTimeout(() => {
+      window.print();
+      openAndPrintPdfSequential(collectPdfAttachments(daySessions, exercises));
+    }, 80);
   };
 
   const doShare = (s) => {
@@ -3738,7 +3757,11 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10,
                 }}>
                   <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                    <div style={{ textAlign: 'center', width: 46 }}>
+                    <div
+                      onClick={() => setDayModalDate(s.date)}
+                      title="Ver todos os treinos deste dia"
+                      style={{ textAlign: 'center', width: 46, cursor: 'pointer' }}
+                    >
                       <div style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600 }}>{new Date(s.date + 'T00:00:00').getDate()}</div>
                       <div style={{ fontSize: 10, color: T.mutedDim, textTransform: 'uppercase' }}>{new Date(s.date + 'T00:00:00').toLocaleDateString('pt-PT', { month: 'short' })}</div>
                     </div>
@@ -3789,48 +3812,51 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             {printSession.opponent ? ` · vs ${printSession.opponent}` : ''}
           </p>
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
-          {(printSession.exerciseIds || []).map((e, i) => {
-            const ex = exercises.find(x => x.id === e.exId);
-            if (!ex) return <p key={e.exId} style={{ fontSize: 13, margin: '0 0 14px' }}>{i + 1}. —</p>;
-            return (
-              <div key={e.exId} style={{ margin: '0 0 20px', pageBreakInside: 'avoid' }}>
-                <div style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>{i + 1}. {ex.name}</div>
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(3, minmax(140px, 1fr))', gap: '4px 24px',
-                  margin: '0 0 8px', fontSize: 12, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '6px 0',
-                }}>
-                  {ex.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {ex.phase}</div>}
-                  <div style={{ gridColumn: 2, gridRow: 1 }}><strong>Duração na sessão:</strong> {e.duration} min</div>
-                  {ex.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {ex.space}</div>}
-                  {ex.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {ex.playersCount}</div>}
-                  {ex.material && <div style={{ gridColumn: 2, gridRow: 2 }}><strong>Material:</strong> {ex.material}</div>}
-                </div>
-                {ex.description && (
-                  <p style={{ margin: '0 0 8px', fontSize: 12, whiteSpace: 'pre-wrap' }}>{ex.description}</p>
-                )}
-                <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 540, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
-                  <PitchMarkings printMode />
-                  <SpaceZone
-                    meters={parseSpace(ex.space)}
-                    center={{ x: 53.5 + (ex.diagram?.spaceOffset?.dx || 0), y: 35 + (ex.diagram?.spaceOffset?.dy || 0) }}
-                    interactive={false}
-                    printMode
-                  />
-                  <DiagramElements
-                    elements={ex.diagram?.elements || []}
-                    arrows={ex.diagram?.arrows || []}
-                    interactive={false}
-                    printMode
-                  />
-                </svg>
-              </div>
-            );
-          })}
+          {(printSession.exerciseIds || []).map((e, i) => (
+            <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
+          ))}
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
           <p style={{ fontSize: 13 }}>
             {(printSession.attendance || [])
               .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
               .filter(Boolean).join(', ') || 'Sem registo'}
+          </p>
+        </div>,
+        document.body
+      )}
+
+      {dayModalDate && (
+        <DayModal
+          date={dayModalDate}
+          daySessions={sessions.filter(s => s.date === dayModalDate)}
+          exercises={exercises}
+          players={players}
+          onClose={() => setDayModalDate(null)}
+          onPrint={() => doPrintDay(dayModalDate)}
+          onEditSession={(s) => { setDayModalDate(null); setModal(s); }}
+        />
+      )}
+
+      {printDayDate && createPortal(
+        <div className="print-sheet">
+          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{fmtDate(printDayDate)}</h2>
+          {sessions.filter(s => s.date === printDayDate).map(s => (
+            <div key={s.id} style={{ marginBottom: 24 }}>
+              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.focus || 'Sessão de treino'}</h3>
+              <p style={{ margin: '0 0 12px', fontSize: 13 }}>
+                {s.phase} · Intensidade: {intensityLabel(s.intensity)}{s.opponent ? ` · vs ${s.opponent}` : ''}
+              </p>
+              {(s.exerciseIds || []).map((e, i) => (
+                <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
+              ))}
+            </div>
+          ))}
+          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
+          <p style={{ fontSize: 13 }}>
+            {players
+              .filter(p => sessions.some(s => s.date === printDayDate && (s.attendance || []).includes(p.id)))
+              .map(p => (p.number ? `#${p.number} ` : '') + p.name)
+              .join(', ') || 'Sem registo'}
           </p>
         </div>,
         document.body
@@ -3980,6 +4006,86 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
   );
 }
 
+// Recolhe todos os anexos em PDF dos exercícios de uma ou mais sessões.
+// Um PDF é o próprio documento — não dá para "embutir" na folha de
+// impressão da app, por isso cada um é aberto e impresso à parte.
+function collectPdfAttachments(sessionsArr, exercises) {
+  const out = [];
+  (sessionsArr || []).forEach(s => (s.exerciseIds || []).forEach(e => {
+    const ex = exercises.find(x => x.id === e.exId);
+    if (ex?.attachment?.type === 'pdf') out.push(ex.attachment);
+  }));
+  return out;
+}
+// Abre cada PDF anexado numa aba própria e despoleta a impressão do
+// browser para cada um, com um pequeno desfasamento entre eles para não
+// serem todos bloqueados de uma vez como popups.
+function openAndPrintPdfSequential(attachments) {
+  (attachments || []).forEach((att, i) => {
+    setTimeout(() => {
+      const w = window.open(att.dataUrl, '_blank');
+      if (w) {
+        const tryPrint = () => { try { w.focus(); w.print(); } catch (e) { /* ignora: alguns browsers bloqueiam print entre origens de data URL */ } };
+        w.onload = () => setTimeout(tryPrint, 300);
+        setTimeout(tryPrint, 800);
+      }
+    }, 700 * i);
+  });
+}
+// Bloco de impressão de um exercício dentro de uma ficha de sessão/dia.
+// Se houver imagem anexada, mostra-a em vez do esquema tático (tal como
+// na impressão do exercício isolado); se for PDF, fica uma nota — o
+// ficheiro em si é impresso à parte (ver openAndPrintPdfSequential).
+function PrintExerciseBlock({ e, ex, index }) {
+  if (!ex) return <p style={{ fontSize: 13, margin: '0 0 14px' }}>{index + 1}. —</p>;
+  return (
+    <div style={{ margin: '0 0 20px', pageBreakInside: 'avoid' }}>
+      <div style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px' }}>{index + 1}. {ex.name}</div>
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(3, minmax(140px, 1fr))', gap: '4px 24px',
+        margin: '0 0 8px', fontSize: 12, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '6px 0',
+      }}>
+        {ex.phase && <div style={{ gridColumn: 1, gridRow: 1 }}><strong>Fase de jogo:</strong> {ex.phase}</div>}
+        <div style={{ gridColumn: 2, gridRow: 1 }}><strong>Duração na sessão:</strong> {e.duration} min</div>
+        {ex.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {ex.space}</div>}
+        {ex.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {ex.playersCount}</div>}
+        {ex.material && <div style={{ gridColumn: 2, gridRow: 2 }}><strong>Material:</strong> {ex.material}</div>}
+      </div>
+      {ex.description && (
+        <p style={{ margin: '0 0 8px', fontSize: 12, whiteSpace: 'pre-wrap' }}>{ex.description}</p>
+      )}
+      {ex.attachment && ex.attachment.type === 'pdf' && (
+        <p style={{ margin: '0 0 8px', fontSize: 11, color: '#555' }}>
+          📄 PDF anexado ({ex.attachment.name}) — impresso à parte, numa aba própria.
+        </p>
+      )}
+      {ex.attachment && ex.attachment.type === 'image' ? (
+        <img
+          src={ex.attachment.dataUrl}
+          alt={ex.attachment.name}
+          style={{ width: '100%', maxWidth: 540, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
+        />
+      ) : (
+        <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 540, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <PitchMarkings printMode />
+          <SpaceZone
+            meters={parseSpace(ex.space)}
+            center={{ x: 53.5 + (ex.diagram?.spaceOffset?.dx || 0), y: 35 + (ex.diagram?.spaceOffset?.dy || 0) }}
+            interactive={false}
+            printMode
+          />
+          <DiagramElements
+            elements={ex.diagram?.elements || []}
+            arrows={ex.diagram?.arrows || []}
+            interactive={false}
+            printMode
+          />
+        </svg>
+      )}
+    </div>
+  );
+}
+
 function dayLabel(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { weekday: 'short' }).replace('.', '');
 }
@@ -4091,6 +4197,102 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
 }
 
 /* ---------------------------------------------------------------
+   DIA — ao clicar na data de uma sessão no Planeamento, mostra todos
+   os treinos desse dia (pode haver mais do que uma sessão na mesma
+   data), com a informação de cada um e o esquema tático de cada
+   exercício, incluindo imagens/PDFs anexados.
+---------------------------------------------------------------- */
+function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onEditSession }) {
+  const totalMin = daySessions.reduce((sum, s) => sum + (s.exerciseIds || []).reduce((a, e) => a + (Number(e.duration) || 0), 0), 0);
+  const presentPlayers = players.filter(p => daySessions.some(s => (s.attendance || []).includes(p.id)));
+
+  return (
+    <Modal title={fmtDate(date)} onClose={onClose} wide>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
+        <span style={{ fontSize: 12.5, color: T.mutedDim }}>
+          {daySessions.length} {daySessions.length === 1 ? 'sessão' : 'sessões'} · {totalMin} min total
+        </span>
+        <Btn onClick={onPrint}><Printer size={14} /> Imprimir dia</Btn>
+      </div>
+
+      {daySessions.map((s, si) => (
+        <div key={s.id} style={{ marginBottom: 22, paddingBottom: 18, borderBottom: si < daySessions.length - 1 ? `1px solid ${T.line}` : 'none' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            <div>
+              <div style={{ color: T.cream, fontSize: 16, fontWeight: 600 }}>{s.focus || 'Sessão de treino'}</div>
+              <div style={{ color: T.mutedDim, fontSize: 12 }}>
+                {s.phase} · Intensidade: {intensityLabel(s.intensity)}{s.opponent ? ` · vs ${s.opponent}` : ''}
+              </div>
+            </div>
+            <button onClick={() => onEditSession(s)} title="Editar sessão" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}>
+              <Pencil size={14} />
+            </button>
+          </div>
+
+          {(s.exerciseIds || []).length === 0 ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem exercícios associados a esta sessão.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {s.exerciseIds.map((e, i) => {
+                const ex = exercises.find(x => x.id === e.exId);
+                if (!ex) return null;
+                return (
+                  <div key={e.exId} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                      <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 500 }}>{i + 1}. {ex.name}</span>
+                      <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>{e.duration} min</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 11.5, color: T.mutedDim, marginBottom: 8, ...mono }}>
+                      {ex.phase && <span>{ex.phase}</span>}
+                      {ex.space && <span>📐 {ex.space}</span>}
+                      {ex.playersCount && <span>👥 {ex.playersCount}</span>}
+                      {ex.material && <span>🎒 {ex.material}</span>}
+                    </div>
+                    {ex.description && (
+                      <p style={{ fontSize: 12.5, color: T.mutedDim, margin: '0 0 8px', whiteSpace: 'pre-wrap' }}>{ex.description}</p>
+                    )}
+                    {ex.attachment && (
+                      <div style={{ marginBottom: 8 }}>
+                        {ex.attachment.type === 'image' ? (
+                          <img src={ex.attachment.dataUrl} alt={ex.attachment.name} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', borderRadius: 6, border: `1px solid ${T.line}`, background: '#000' }} />
+                        ) : (
+                          <a href={ex.attachment.dataUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.gold, textDecoration: 'none' }}>
+                            <BookOpen size={13} /> {ex.attachment.name} (PDF anexado — abre numa aba)
+                          </a>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ position: 'relative', width: '100%', paddingTop: '65.1%' }}>
+                      <svg viewBox="-3 -2 113 74" preserveAspectRatio="none" style={{
+                        position: 'absolute', inset: 0, width: '100%', height: '100%',
+                        background: '#1e3a24', borderRadius: 6, border: `1px solid ${T.line}`,
+                      }}>
+                        <PitchMarkings />
+                        <SpaceZone
+                          meters={parseSpace(ex.space)}
+                          center={{ x: 53.5 + (ex.diagram?.spaceOffset?.dx || 0), y: 35 + (ex.diagram?.spaceOffset?.dy || 0) }}
+                          interactive={false}
+                        />
+                        <DiagramElements elements={ex.diagram?.elements || []} arrows={ex.diagram?.arrows || []} interactive={false} />
+                      </svg>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+
+      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Presenças</div>
+      <p style={{ fontSize: 13, color: T.mutedDim, margin: 0 }}>
+        {presentPlayers.length ? presentPlayers.map(p => (p.number ? `#${p.number} ` : '') + p.name).join(', ') : 'Sem registo'}
+      </p>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------
    PRESENÇAS — controlo de assiduidade ao longo da época, com
    resumo por jogador e edição de presença + nota, sessão a sessão.
 ---------------------------------------------------------------- */
@@ -4106,7 +4308,13 @@ function Presencas({ players, sessions, setSessions }) {
     .map(p => {
       const attended = confirmedDays.filter(d => dayPresent(d.list, p.id)).length;
       const pct = confirmedDays.length ? Math.round((attended / confirmedDays.length) * 100) : null;
-      return { player: p, attended, pct };
+      const ratingValues = confirmedDays
+        .filter(d => dayPresent(d.list, p.id))
+        .map(d => dayRating(d.list, p.id))
+        .filter(r => r != null && r !== '')
+        .map(Number);
+      const avgRating = ratingValues.length ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : null;
+      return { player: p, attended, pct, avgRating, ratingCount: ratingValues.length };
     })
     .sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101));
 
@@ -4143,8 +4351,9 @@ function Presencas({ players, sessions, setSessions }) {
       ) : (
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-            {rows.map(({ player, attended, pct }) => {
+            {rows.map(({ player, attended, pct, avgRating, ratingCount }) => {
               const color = pct === null ? T.mutedDim : pct >= 80 ? T.good : pct >= 60 ? T.warn : T.bad;
+              const ratingColor = avgRating === null ? T.mutedDim : avgRating >= 7 ? T.good : avgRating >= 5 ? T.warn : T.bad;
               return (
                 <div key={player.id} style={{
                   display: 'flex', alignItems: 'center', gap: 12, background: T.surface,
@@ -4159,6 +4368,11 @@ function Presencas({ players, sessions, setSessions }) {
                     <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color }} />
                   </div>
                   <span style={{ ...mono, color, fontSize: 13, width: 42, textAlign: 'right', flexShrink: 0 }}>{pct === null ? '—' : `${pct}%`}</span>
+                  <div style={{ width: 1, alignSelf: 'stretch', background: T.line, flexShrink: 0 }} />
+                  <div style={{ textAlign: 'right', flexShrink: 0, width: 64 }}>
+                    <div style={{ ...mono, color: ratingColor, fontSize: 13 }}>{avgRating === null ? '—' : avgRating}</div>
+                    <div style={{ fontSize: 10, color: T.mutedDim }}>nota média</div>
+                  </div>
                 </div>
               );
             })}
