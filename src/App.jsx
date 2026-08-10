@@ -7,7 +7,7 @@ import {
   Gauge, Moon, Droplets, Zap, BedDouble, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
-  Undo2, Redo2, Copy, Share2
+  Undo2, Redo2, Copy, Share2, Presentation, FileText
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -435,11 +435,12 @@ function App({ session }) {
   const [matches, setMatches, matchesReady, matchesMeta] = useCollectionSync('matches', notifyEdit);
   const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit);
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit);
+  const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit);
   const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit);
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !sessionsReady || !monitoringReady
-    || !matchesReady || !scoutingReady || !videosReady || !convocatoriasReady || !diarioReady;
+    || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
   // lateral, quando o link inclui ?checkin=1 — é este o link a partilhar
@@ -506,6 +507,7 @@ function App({ session }) {
     { id: 'monitorizacao', label: 'Monitorização', icon: Activity },
     { id: 'scouting', label: 'Scouting', icon: Search },
     { id: 'videos', label: 'FutchannelYouT', icon: Tv },
+    { id: 'apresentacoes', label: 'Apresentações', icon: Presentation },
     { id: 'diario', label: 'Diário', icon: BookOpen },
   ];
 
@@ -664,6 +666,7 @@ function App({ session }) {
               exercises={exercises} setExercises={setExercises} sessions={sessions} setSessions={setSessions}
               monitoring={monitoring} setMonitoring={setMonitoring} matches={matches} setMatches={setMatches}
               scouting={scouting} setScouting={setScouting} videos={videos} setVideos={setVideos}
+              apresentacoes={apresentacoes} setApresentacoes={setApresentacoes}
               convocatorias={convocatorias} setConvocatorias={setConvocatorias} diario={diario} setDiario={setDiario}
             />
           </div>
@@ -681,6 +684,7 @@ function App({ session }) {
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {tab === 'videos' && <Videos videos={videos} setVideos={setVideos} />}
+          {tab === 'apresentacoes' && <Apresentacoes apresentacoes={apresentacoes} setApresentacoes={setApresentacoes} />}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} />}
         </main>
       </div>
@@ -800,7 +804,7 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
 const ACTIVITY_LABELS = {
   season_config: 'Época', players: 'Plantel', exercises: 'Exercícios',
   sessions: 'Planeamento', monitoring: 'Monitorização', matches: 'Jogos',
-  scouting: 'Scouting', videos: 'Vídeos', convocatorias: 'Convocatórias', diario: 'Diário',
+  scouting: 'Scouting', videos: 'Vídeos', apresentacoes: 'Apresentações', convocatorias: 'Convocatórias', diario: 'Diário',
 };
 
 function timeAgo(iso) {
@@ -840,12 +844,12 @@ function LastActivity({ lastEdits }) {
 }
 
 /* Exportar / importar — vive no rodapé da barra lateral. */
-function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, convocatorias, setConvocatorias, diario, setDiario }) {
+function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario }) {
   const fileInputRef = React.useRef(null);
   const [importOpen, setImportOpen] = useState(false);
 
   const doExport = () => {
-    const data = { season, players, exercises, sessions, monitoring, matches, scouting, videos, convocatorias, diario, exportedAt: new Date().toISOString() };
+    const data = { season, players, exercises, sessions, monitoring, matches, scouting, videos, apresentacoes, convocatorias, diario, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -872,6 +876,7 @@ function DataTools({ season, setSeason, players, setPlayers, exercises, setExerc
         setMatches(data.matches || []);
         setScouting(data.scouting || []);
         setVideos(data.videos || []);
+        setApresentacoes(data.apresentacoes || []);
         setConvocatorias(data.convocatorias || []);
         setDiario(data.diario || []);
       } catch (err) {
@@ -895,7 +900,7 @@ function DataTools({ season, setSeason, players, setPlayers, exercises, setExerc
       {importOpen && (
         <Modal title="Importar dados" onClose={() => setImportOpen(false)}>
           <p style={{ fontSize: 13, color: T.mutedDim, marginBottom: 18, lineHeight: 1.5 }}>
-            Isto substitui todos os dados atuais nesta plataforma (plantel, exercícios, planeamento, jogos, monitorização, scouting, vídeos) pelos do ficheiro escolhido. Não pode ser desfeito.
+            Isto substitui todos os dados atuais nesta plataforma (plantel, exercícios, planeamento, jogos, monitorização, scouting, vídeos, apresentações) pelos do ficheiro escolhido. Não pode ser desfeito.
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <Btn variant="ghost" onClick={() => setImportOpen(false)}>Cancelar</Btn>
@@ -5464,6 +5469,237 @@ function VideoModal({ video, onClose, onSave }) {
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn disabled={!f.title || !f.url} onClick={handleSave}><Check size={15} /> Guardar</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------------------------------------------------------
+   APRESENTAÇÕES — mesmo layout do FutchannelYouT (painel principal
+   à esquerda + lista de itens à direita), mas para ficheiros
+   carregados diretamente (PDF, PowerPoint, vídeo) em vez de links
+   do YouTube. PDFs e vídeos abrem e reproduzem dentro da própria
+   app; ficheiros PowerPoint não podem ser pré-visualizados por um
+   browser sem estarem alojados publicamente, por isso mostram um
+   cartão com o nome do ficheiro e um botão para abrir/descarregar.
+---------------------------------------------------------------- */
+function presentationKind(file) {
+  const type = file.type || '';
+  const name = (file.name || '').toLowerCase();
+  if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  if (type.startsWith('video/') || /\.(mp4|webm|mov|m4v|ogg)$/.test(name)) return 'video';
+  if (
+    type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+    type === 'application/vnd.ms-powerpoint' ||
+    /\.(pptx|ppt)$/.test(name)
+  ) return 'pptx';
+  return null;
+}
+
+function AttachmentPreview({ item, tall }) {
+  if (!item) return null;
+  const boxStyle = {
+    position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
+    border: `1px solid ${T.line}`, background: '#000',
+    height: tall ? 460 : 300,
+  };
+  if (item.kind === 'video') {
+    return (
+      <div style={boxStyle}>
+        <video key={item.id} src={item.dataUrl} controls style={{ width: '100%', height: '100%', background: '#000' }} />
+      </div>
+    );
+  }
+  if (item.kind === 'pdf') {
+    return (
+      <div style={boxStyle}>
+        <iframe key={item.id} title={item.title} src={item.dataUrl} style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} />
+      </div>
+    );
+  }
+  // pptx — sem pré-visualização possível a partir de um ficheiro local
+  return (
+    <div style={{ ...boxStyle, background: T.surfaceRaise, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 20, textAlign: 'center' }}>
+      <Presentation size={38} color={T.mutedDim} />
+      <div style={{ fontSize: 13, color: T.cream, fontWeight: 500 }}>{item.fileName}</div>
+      <div style={{ fontSize: 12, color: T.mutedDim, maxWidth: 320 }}>
+        Ficheiros PowerPoint não podem ser pré-visualizados diretamente no browser. Abre ou descarrega para veres a apresentação.
+      </div>
+      <a
+        href={item.dataUrl} download={item.fileName}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', border: `1px solid ${T.gold}55`, borderRadius: 8, padding: '7px 14px' }}
+      >
+        <Download size={14} /> Abrir / descarregar
+      </a>
+    </div>
+  );
+}
+
+function Apresentacoes({ apresentacoes, setApresentacoes }) {
+  const [modal, setModal] = useState(null);
+  const [activeId, setActiveId] = useState(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  const save = (data) => {
+    if (data.id) setApresentacoes(apresentacoes.map(v => v.id === data.id ? data : v));
+    else {
+      const created = { ...data, id: uid() };
+      setApresentacoes([created, ...apresentacoes]);
+      setActiveId(created.id);
+    }
+    setModal(null);
+  };
+  const remove = (id) => {
+    setApresentacoes(apresentacoes.filter(v => v.id !== id));
+    if (activeId === id) setActiveId(null);
+  };
+  const selectItem = (id) => { setActiveId(id); setLightboxOpen(false); };
+
+  const active = apresentacoes.find(v => v.id === activeId) || apresentacoes[0];
+  const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation };
+
+  return (
+    <div>
+      <SectionHeader title="Apresentações" subtitle="PDFs, PowerPoints e vídeos para consultar diretamente aqui."
+        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar ficheiro</Btn>} />
+
+      {apresentacoes.length === 0 ? (
+        <EmptyState text="Ainda sem apresentações. Carrega um PDF, PowerPoint ou vídeo para começares." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro ficheiro</Btn>} />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+          <div>
+            {active && (
+              <>
+                <div onClick={() => active.kind !== 'pptx' && setLightboxOpen(true)} style={{ cursor: active.kind !== 'pptx' ? 'pointer' : 'default' }}>
+                  <AttachmentPreview item={active} />
+                </div>
+                <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500 }}>{active.title}</div>
+                {active.description && <div style={{ color: T.mutedDim, fontSize: 12.5 }}>{active.description}</div>}
+              </>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {apresentacoes.map(v => {
+              const Icon = kindIcon[v.kind] || FileText;
+              return (
+                <div key={v.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
+                  background: v.id === active?.id ? `${T.crimson}33` : T.surface, padding: '8px 10px',
+                }}>
+                  <button onClick={() => selectItem(v.id)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon size={16} color={T.mutedDim} />
+                    </div>
+                    <span>
+                      <div style={{ fontSize: 12.5, color: T.cream }}>{v.title}</div>
+                      <div style={{ fontSize: 11, color: T.mutedDim }}>{v.fileName}</div>
+                    </span>
+                  </button>
+                  <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
+                  <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {modal && <PresentationModal item={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+
+      {lightboxOpen && active && active.kind !== 'pptx' && (
+        <div
+          onClick={() => setLightboxOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: '#000000e6', zIndex: 60,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 1100 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+              <button
+                onClick={() => setLightboxOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
+              >
+                <X size={20} /> Fechar
+              </button>
+            </div>
+            <AttachmentPreview item={active} tall />
+            <div style={{ marginTop: 10, color: '#fff', fontSize: 15, fontWeight: 500 }}>{active.title}</div>
+            {active.description && <div style={{ color: '#ffffffaa', fontSize: 12.5 }}>{active.description}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PresentationModal({ item, onClose, onSave }) {
+  const [f, setF] = useState(item || { title: '', description: '', kind: null, fileName: '', dataUrl: '' });
+  const [error, setError] = useState('');
+  const [loadingFile, setLoadingFile] = useState(false);
+
+  const handleFile = async (file) => {
+    setError('');
+    if (!file) return;
+    const kind = presentationKind(file);
+    if (!kind) { setError('Formato não suportado — escolhe um PDF, PowerPoint (.ppt/.pptx) ou vídeo.'); return; }
+    // Vídeos ocupam muito mais espaço em base64 do que PDFs/imagens —
+    // limite mais generoso que o dos anexos de exercícios, mas continua
+    // a existir para não sobrecarregar a base de dados.
+    const maxSize = kind === 'video' ? 60 * 1024 * 1024 : 15 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setError(`Ficheiro demasiado grande (máx. ${Math.round(maxSize / 1024 / 1024)} MB).`);
+      return;
+    }
+    setLoadingFile(true);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setF(prev => ({ ...prev, kind, fileName: file.name, dataUrl, title: prev.title || file.name.replace(/\.[^.]+$/, '') }));
+    } finally {
+      setLoadingFile(false);
+    }
+  };
+
+  const handleSave = () => {
+    if (!f.dataUrl || !f.kind) { setError('Carrega um ficheiro antes de guardar.'); return; }
+    onSave({ ...(item || {}), title: f.title, description: f.description, kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl });
+  };
+
+  return (
+    <Modal title={item ? 'Editar apresentação' : 'Nova apresentação'} onClose={onClose}>
+      <div style={{ marginBottom: 12 }}>
+        <Field label="Título"><Input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Ex: Plano de jogo · Jornada 12" /></Field>
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <Field label="Descrição / contexto (opcional)"><Input value={f.description} onChange={e => setF({ ...f, description: e.target.value })} placeholder="Contexto, reunião, tema..." /></Field>
+      </div>
+      <div style={{ marginBottom: 8 }}>
+        <Field label="Ficheiro (PDF, PowerPoint ou vídeo)">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <label style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+              padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
+              background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
+            }}>
+              {loadingFile ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {f.fileName ? 'Substituir ficheiro' : 'Carregar ficheiro'}
+              <input
+                type="file"
+                accept="application/pdf,video/*,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ''; }}
+                style={{ display: 'none' }}
+              />
+            </label>
+            {f.fileName && (
+              <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.fileName}</span>
+            )}
+          </div>
+        </Field>
+      </div>
+      {error && <p style={{ fontSize: 12, color: T.bad, margin: '0 0 12px' }}>{error}</p>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn disabled={!f.title || !f.dataUrl} onClick={handleSave}><Check size={15} /> Guardar</Btn>
       </div>
     </Modal>
   );
