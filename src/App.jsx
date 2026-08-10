@@ -1073,7 +1073,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
                   <span style={{ color: attColor }}>Assid. {stats.attendancePct === null ? '—' : `${stats.attendancePct}%`}</span>
                   <span style={{ color: T.mutedDim }}>⚽ {stats.goals}</span>
                   <span style={{ color: T.mutedDim }}>🅰 {stats.assists}</span>
-                  <span style={{ color: T.mutedDim }}>{p.statusMain || 'Sem estatuto'}</span>
+                  <span style={{ color: T.mutedDim }}>Nota {stats.avgMatchRating ?? '—'}</span>
                 </div>
                 {m && m.email && (
                   <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1273,6 +1273,18 @@ function Exercicios({ exercises, setExercises }) {
   };
   const remove = (id) => setExercises(exercises.filter(x => x.id !== id));
   const doPrint = (x) => {
+    // Um PDF anexado é o próprio documento a imprimir — abre-o numa nova
+    // aba e deixa o visualizador de PDF do browser tratar da impressão,
+    // em vez de tentar embutir o PDF na folha de impressão da app.
+    if (x.attachment && x.attachment.type === 'pdf') {
+      const w = window.open(x.attachment.dataUrl, '_blank');
+      if (w) {
+        const tryPrint = () => { try { w.focus(); w.print(); } catch (e) { /* ignora: alguns browsers bloqueiam print entre origens de data URL */ } };
+        w.onload = () => setTimeout(tryPrint, 300);
+        setTimeout(tryPrint, 800);
+      }
+      return;
+    }
     setPrintExercise(x);
     setTimeout(() => window.print(), 80);
   };
@@ -1362,21 +1374,29 @@ function Exercicios({ exercises, setExercises }) {
           {printExercise.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{printExercise.description}</p>
           )}
-          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
-            <PitchMarkings printMode />
-            <SpaceZone
-              meters={parseSpace(printExercise.space)}
-              center={{ x: 53.5 + (printExercise.diagram?.spaceOffset?.dx || 0), y: 35 + (printExercise.diagram?.spaceOffset?.dy || 0) }}
-              interactive={false}
-              printMode
+          {printExercise.attachment && printExercise.attachment.type === 'image' ? (
+            <img
+              src={printExercise.attachment.dataUrl}
+              alt={printExercise.attachment.name}
+              style={{ width: '100%', maxWidth: 640, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
             />
-            <DiagramElements
-              elements={printExercise.diagram?.elements || []}
-              arrows={printExercise.diagram?.arrows || []}
-              interactive={false}
-              printMode
-            />
-          </svg>
+          ) : (
+            <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+              <PitchMarkings printMode />
+              <SpaceZone
+                meters={parseSpace(printExercise.space)}
+                center={{ x: 53.5 + (printExercise.diagram?.spaceOffset?.dx || 0), y: 35 + (printExercise.diagram?.spaceOffset?.dy || 0) }}
+                interactive={false}
+                printMode
+              />
+              <DiagramElements
+                elements={printExercise.diagram?.elements || []}
+                arrows={printExercise.diagram?.arrows || []}
+                interactive={false}
+                printMode
+              />
+            </svg>
+          )}
         </div>,
         document.body
       )}
