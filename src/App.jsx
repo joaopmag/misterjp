@@ -5526,36 +5526,63 @@ const socialMeta = {
   tiktok: { label: 'TikTok', Icon: Music2, color: '#00F2EA' },
 };
 
-/* Dentro do iframe o vídeo é dimensionado pela LARGURA, por isso a largura
-   da coluna é calculada a partir da altura realmente disponível:
+/* O TikTok resolveu-se com o player oficial (/player/v1/), que é só o vídeo.
+   O Instagram NÃO tem equivalente: a Meta só publica o oEmbed, que devolve
+   o cartão completo (cabeçalho com a conta + rodapé com legenda e gostos) e
+   não aceita parâmetros para esconder essas partes nem para repetir o vídeo.
 
-       largura = (altura_disponível − extras) ÷ (16/9)
+   Como não dá para pedir ao Instagram um player limpo, fazemos o mesmo
+   efeito do lado de cá: mostramos o iframe dentro de uma "janela" com o
+   tamanho exato do vídeo e empurramo-lo para cima o suficiente para o
+   cabeçalho ficar fora dessa janela. O rodapé fica naturalmente abaixo do
+   recorte. Resultado: em ecrã inteiro vê-se só o vídeo, com a altura toda,
+   igual ao TikTok.
 
-   "extras" = altura do cabeçalho/rodapé que a plataforma acrescenta à volta
-   do vídeo. Com o player oficial da TikTok isso é zero (só vídeo). O embed
-   do Instagram continua a ter cabeçalho com a conta e rodapé com a legenda;
-   não há valor oficial publicado para essa altura, por isso 110 px é uma
-   ESTIMATIVA minha e pode precisar de afinação (é também por isso que
-   existem os botões − / + em ecrã inteiro). */
-const SOCIAL_EMBED_CHROME = { instagram: 110, tiktok: 0 };
+   ATENÇÃO: os 54 px do cabeçalho são uma ESTIMATIVA minha — o Instagram não
+   publica esse valor e pode mudá-lo. Por isso há setas ▲ ▼ em ecrã inteiro
+   para alinhares o recorte à mão se ficar desencontrado. */
 const SOCIAL_MEDIA_RATIO = 16 / 9; // altura/largura do vídeo vertical (Reel)
+const SOCIAL_CHROME = {
+  // top  = altura do cabeçalho, a esconder acima do recorte
+  // extra = folga em baixo, só para o embed ter espaço para se desenhar todo
+  instagram: { top: 54, extra: 700 },
+  tiktok: { top: 0, extra: 0 },
+};
 
-// Largura da coluna a 100% ("ajustar": mostra o embed todo, sem cortes).
-function socialFitWidth(platform, boxW, boxH, barH) {
-  if (!boxW || !boxH) return 360;
-  const chrome = SOCIAL_EMBED_CHROME[platform] ?? 110;
-  const available = Math.max(240, boxH - barH);
-  const fitted = (available - chrome) / SOCIAL_MEDIA_RATIO;
-  return Math.round(Math.min(boxW, Math.max(240, fitted)));
+/* O embed do Instagram leva os cliques para fora da app (cabeçalho, rodapé
+   e sobretudo o ecrã que aparece no fim do vídeo). Como não há parâmetro
+   para o desligar, usamos o atributo "sandbox" do próprio browser: sem
+   allow-top-navigation e sem allow-popups, o iframe fica impedido de mudar
+   a página ou abrir separadores. O vídeo continua a tocar; os cliques que
+   levavam para o Instagram deixam simplesmente de fazer nada.
+   Se algum dia a reprodução deixar de funcionar por causa disto, basta
+   remover esta constante do <iframe>. */
+const INSTAGRAM_SANDBOX = 'allow-scripts allow-same-origin allow-presentation';
+
+// Medidas da "janela" de recorte: fora do ecrã inteiro ocupa tudo (como
+// antes); em ecrã inteiro é exatamente a área do vídeo, centrada.
+function socialClipStyle(isFullscreen, boxSize, zoom, barH) {
+  if (!isFullscreen) return { position: 'relative', width: '100%', height: '100%', overflow: 'hidden' };
+  const avail = Math.max(200, (boxSize.h || 600) - barH);
+  const w = Math.round(Math.min(boxSize.w || 360, avail / SOCIAL_MEDIA_RATIO) * zoom);
+  return {
+    position: 'relative', width: w, height: Math.round(w * SOCIAL_MEDIA_RATIO),
+    overflow: 'hidden', flexShrink: 0,
+  };
 }
 
-// Medidas da caixa do iframe. Fora do ecrã inteiro ocupa tudo (como antes);
-// em ecrã inteiro é uma coluna vertical centrada, dimensionada pela altura.
-function socialFrameBox(platform, isFullscreen, boxSize, zoom, barH) {
-  if (!isFullscreen) return { width: '100%', height: '100%', flexShrink: 0 };
-  const chrome = SOCIAL_EMBED_CHROME[platform] ?? 110;
-  const w = Math.round(socialFitWidth(platform, boxSize.w, boxSize.h, barH) * zoom);
-  return { width: w, height: Math.round(w * SOCIAL_MEDIA_RATIO + chrome), flexShrink: 0 };
+// O iframe é maior do que a janela e fica deslocado para cima, para o
+// cabeçalho da plataforma cair fora do recorte.
+function socialInnerStyle(platform, isFullscreen, boxSize, zoom, barH, offset) {
+  if (!isFullscreen) return { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' };
+  const c = SOCIAL_CHROME[platform] || SOCIAL_CHROME.instagram;
+  const avail = Math.max(200, (boxSize.h || 600) - barH);
+  const w = Math.round(Math.min(boxSize.w || 360, avail / SOCIAL_MEDIA_RATIO) * zoom);
+  const mediaH = Math.round(w * SOCIAL_MEDIA_RATIO);
+  return {
+    position: 'absolute', left: 0, top: -(c.top + offset),
+    width: '100%', height: c.top + mediaH + c.extra,
+  };
 }
 
 /* ---------------------------------------------------------------
@@ -5591,6 +5618,9 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   // pequeno do que devia. Com um ResizeObserver o valor é sempre o real.
   const [boxSize, setBoxSize] = useState({ w: 0, h: 0 });
   const [socialZoom, setSocialZoom] = useState(1);
+  // Ajuste fino vertical do recorte (só é preciso no Instagram, onde a
+  // altura do cabeçalho é uma estimativa). 0 = valor calculado.
+  const [socialOffset, setSocialOffset] = useState(0);
   useEffect(() => {
     const el = socialBoxRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
@@ -5602,7 +5632,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
     return () => ro.disconnect();
   }, [activeId, isSocialFullscreen]);
   // Ao sair do ecrã inteiro, o zoom volta ao normal.
-  useEffect(() => { if (!isSocialFullscreen) setSocialZoom(1); }, [isSocialFullscreen]);
+  useEffect(() => { if (!isSocialFullscreen) { setSocialZoom(1); setSocialOffset(0); } }, [isSocialFullscreen]);
   useEffect(() => {
     const onFsChange = () => {
       const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
@@ -5766,29 +5796,31 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                         display: 'flex', flexDirection: 'column',
                       }}
                     >
-                      {/* Em ecrã inteiro o iframe fica centrado numa coluna
-                          cuja largura vem da altura real da caixa. A 100% vê-se
-                          o embed todo; acima de 100% o vídeo cresce e o que é
-                          cortado é o cabeçalho/rodapé da plataforma, não o
-                          vídeo em si. */}
+                      {/* Em ecrã inteiro, a "janela" tem o tamanho exato do
+                          vídeo e o iframe está deslocado para cima, de forma a
+                          esconder o cabeçalho da plataforma. No TikTok não há
+                          cabeçalho, por isso o deslocamento é zero. */}
                       <div style={{
                         flex: 1, minHeight: 0, overflow: 'hidden',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
-                        {/* A estrutura (div > iframe) é SEMPRE a mesma — só
-                            mudam as medidas. Se alternássemos entre árvores
+                        {/* A estrutura (div > div > iframe) é SEMPRE a mesma —
+                            só mudam as medidas. Se alternássemos entre árvores
                             diferentes, o React voltava a montar o iframe e o
                             vídeo recomeçava do início ao entrar em ecrã inteiro. */}
-                        <div style={socialFrameBox(active.social.platform, isSocialFullscreen, boxSize, socialZoom, 40)}>
-                          <iframe
-                            key={active.id}
-                            src={socialEmbedSrc(active.social)}
-                            style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                            allow="autoplay; encrypted-media; clipboard-write; fullscreen"
-                            allowFullScreen
-                            scrolling="no"
-                            title={active.title}
-                          />
+                        <div style={socialClipStyle(isSocialFullscreen, boxSize, socialZoom, 40)}>
+                          <div style={socialInnerStyle(active.social.platform, isSocialFullscreen, boxSize, socialZoom, 40, socialOffset)}>
+                            <iframe
+                              key={active.id}
+                              src={socialEmbedSrc(active.social)}
+                              style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                              allow="autoplay; encrypted-media; clipboard-write; fullscreen"
+                              allowFullScreen
+                              scrolling="no"
+                              sandbox={active.social.platform === 'instagram' ? INSTAGRAM_SANDBOX : undefined}
+                              title={active.title}
+                            />
+                          </div>
                         </div>
                       </div>
                       <div style={{
@@ -5796,21 +5828,34 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                         height: 40, boxSizing: 'border-box',
                         padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
                       }}>
-                        {isSocialFullscreen && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 4 }}>
-                            <button
-                              onClick={() => setSocialZoom(z => Math.max(0.6, Math.round((z - 0.1) * 10) / 10))}
-                              title="Reduzir"
-                              style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid #333', background: '#1b1b1b', color: '#fff', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
-                            >−</button>
-                            <span style={{ fontSize: 11.5, color: '#bbb', minWidth: 34, textAlign: 'center' }}>{Math.round(socialZoom * 100)}%</span>
-                            <button
-                              onClick={() => setSocialZoom(z => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))}
-                              title="Aumentar"
-                              style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid #333', background: '#1b1b1b', color: '#fff', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}
-                            >+</button>
-                          </span>
-                        )}
+                        {isSocialFullscreen && (() => {
+                          const ctrlStyle = { width: 24, height: 24, borderRadius: 6, border: '1px solid #333', background: '#1b1b1b', color: '#fff', cursor: 'pointer', fontSize: 13, lineHeight: 1 };
+                          const hasChrome = (SOCIAL_CHROME[active.social.platform] || {}).top > 0;
+                          return (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 4 }}>
+                              {/* Alinhamento do recorte — só faz falta onde a
+                                  plataforma põe cabeçalho por cima do vídeo. */}
+                              {hasChrome && (
+                                <>
+                                  <button onClick={() => setSocialOffset(o => o - 6)} title="Subir o recorte" style={ctrlStyle}>▲</button>
+                                  <button onClick={() => setSocialOffset(o => o + 6)} title="Descer o recorte" style={ctrlStyle}>▼</button>
+                                  <span style={{ width: 8 }} />
+                                </>
+                              )}
+                              <button
+                                onClick={() => setSocialZoom(z => Math.max(0.6, Math.round((z - 0.1) * 10) / 10))}
+                                title="Reduzir"
+                                style={ctrlStyle}
+                              >−</button>
+                              <span style={{ fontSize: 11.5, color: '#bbb', minWidth: 34, textAlign: 'center' }}>{Math.round(socialZoom * 100)}%</span>
+                              <button
+                                onClick={() => setSocialZoom(z => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))}
+                                title="Aumentar"
+                                style={ctrlStyle}
+                              >+</button>
+                            </span>
+                          );
+                        })()}
                         <button
                           onClick={toggleSocialFullscreen}
                           style={{
