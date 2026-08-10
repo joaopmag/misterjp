@@ -1995,7 +1995,9 @@ function computeDiagramAnimationFrames(diagram, meters, center) {
         return segment;
       });
       const first = chainArrows[0];
-      let mover = step.elements.find(el =>
+      // Prioriza o dono gravado na própria seta; só recorre à procura por
+      // proximidade para setas antigas, guardadas antes desta correção.
+      let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
         (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
@@ -2407,9 +2409,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         return segment;
       });
       const first = chainArrows[0];
-      let mover = first.type === 'arrow-run'
-        ? nearestElementOfKind(['player', 'keeper'], first.x1, first.y1, 3.2)
-        : nearestElementOfKind(['ball'], first.x1, first.y1, 3.2);
+      // Prioriza o dono gravado na própria seta (ver handleBgPointerDown);
+      // só recorre à antiga procura por proximidade para setas antigas,
+      // guardadas antes desta correção, que não têm essa informação.
+      let mover = first.ownerId ? elements.find(el => el.id === first.ownerId) : null;
+      if (!mover) {
+        mover = first.type === 'arrow-run'
+          ? nearestElementOfKind(['player', 'keeper'], first.x1, first.y1, 3.2)
+          : nearestElementOfKind(['ball'], first.x1, first.y1, 3.2);
+      }
       // Um "Passe" representa sempre a bola a deslocar-se. Se ainda não
       // houver nenhuma bola colocada perto do início da seta (por exemplo,
       // desenhou-se o passe sem usar primeiro a ferramenta "Bola"), a
@@ -2524,7 +2532,23 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       const start = (tool === 'arrow-pass' || tool === 'arrow-run')
         ? snapChainStart(tool, p.x, p.y)
         : p;
-      setDrawing({ type: tool, x1: start.x, y1: start.y, x2: start.x, y2: start.y });
+      // Regista já aqui, no início do traço, qual jogador/guarda-redes
+      // (seta de corrida) ou bola (seta de passe) está mais próximo do
+      // ponto de partida, e grava-o na própria seta como "dono" do
+      // movimento. Sem isto, a animação só conseguia adivinhar o dono mais
+      // tarde, por proximidade — e quando dois marcadores de equipas
+      // diferentes ficam perto um do outro (ex.: dois "MC" sobrepostos),
+      // podia agarrar o jogador errado e deslocá-lo ao longo da seta do
+      // outro. Guardando o dono exato aqui, essa ambiguidade desaparece.
+      let ownerId = null;
+      if (tool === 'arrow-run') {
+        const owner = nearestElementOfKind(['player', 'keeper'], start.x, start.y, 3.2);
+        ownerId = owner ? owner.id : null;
+      } else if (tool === 'arrow-pass') {
+        const owner = nearestElementOfKind(['ball'], start.x, start.y, 3.2);
+        ownerId = owner ? owner.id : null;
+      }
+      setDrawing({ type: tool, x1: start.x, y1: start.y, x2: start.x, y2: start.y, ownerId });
     } else {
       setSelectedId(null);
       setSelectedArrowId(null);
@@ -3292,7 +3316,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         return segment;
       });
       const first = chainArrows[0];
-      let mover = step.elements.find(el =>
+      // Prioriza o dono gravado na própria seta; só recorre à procura por
+      // proximidade para setas antigas, guardadas antes desta correção.
+      let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
         (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
