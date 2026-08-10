@@ -1925,6 +1925,23 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
    browser (telemóvel ou computador) e, se houver esquema tático, carregar
    em "Apresentar".
 ---------------------------------------------------------------- */
+/* Agrupa setas encadeadas (o fim de uma coincide com o início da seguinte,
+   do mesmo tipo) em "cadeias", para a animação as tocar em sequência.
+
+   REGRA DO DONO: uma seta que tem dono próprio (o jogador/guarda-redes ou a
+   bola que estava no seu ponto de partida, gravado em ownerId no momento do
+   desenho) NUNCA é encadeada na cadeia de outro dono. Sem esta regra, se o
+   DD começava a sua corrida onde a corrida do EX terminava, as duas setas
+   eram vistas como uma só cadeia: o EX percorria as duas e o DD ficava
+   parado — ou seja, um jogador "assumia" a seta do outro. Setas sem dono
+   (as continuações normais de um mesmo movimento, onde não há ninguém no
+   ponto de partida, e as setas antigas criadas antes desta gravação existir)
+   continuam a encadear como antes. */
+function chainOwnerCompatible(chainOwnerId, nextOwnerId) {
+  if (!nextOwnerId) return true;               // sem dono próprio → continua a cadeia
+  return chainOwnerId === nextOwnerId;         // com dono → só na cadeia do mesmo dono
+}
+
 function buildAnimationChainsPure(arrowList) {
   const CHAIN_DIST = 3.2;
   const closeEnough = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by) <= CHAIN_DIST;
@@ -1936,8 +1953,12 @@ function buildAnimationChainsPure(arrowList) {
     }
     return best;
   };
+  // Uma seta só é "continuação" de outra se, além de encostar geometricamente,
+  // não tiver um dono diferente — caso contrário é cabeça da sua própria cadeia.
   const isContinuationOfSome = (arrow) => arrowList.some(other => (
-    other.id !== arrow.id && other.type === arrow.type && closeEnough(other.x2, other.y2, arrow.x1, arrow.y1)
+    other.id !== arrow.id && other.type === arrow.type
+    && closeEnough(other.x2, other.y2, arrow.x1, arrow.y1)
+    && chainOwnerCompatible(other.ownerId || null, arrow.ownerId || null)
   ));
   const used = new Set();
   const chains = [];
@@ -1947,8 +1968,14 @@ function buildAnimationChainsPure(arrowList) {
     const chain = [head];
     used.add(head.id);
     let current = head;
+    // Dono efetivo da cadeia: o primeiro dono encontrado (normalmente o da
+    // cabeça). É contra este que se validam todas as setas seguintes.
+    let chainOwnerId = head.ownerId || null;
     while (true) {
-      const candidates = arrowList.filter(a => !used.has(a.id) && a.type === current.type);
+      const candidates = arrowList.filter(a => (
+        !used.has(a.id) && a.type === current.type
+        && chainOwnerCompatible(chainOwnerId, a.ownerId || null)
+      ));
       const next = closest(candidates, current.x2, current.y2);
       if (!next) break;
       chain.push(next);
@@ -2316,9 +2343,18 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // exatamente desse ponto, garantindo uma cadeia sem falhas.
   const SNAP_DIST = 3.2;
   const snapChainStart = (type, x, y) => {
+    // Quem está debaixo do dedo neste momento — é este que vai ser o dono
+    // da seta nova.
+    const rawOwner = type === 'arrow-run'
+      ? nearestElementOfKind(['player', 'keeper'], x, y, SNAP_DIST)
+      : nearestElementOfKind(['ball'], x, y, SNAP_DIST);
     let best = null, bestD = SNAP_DIST;
     for (const a of arrows) {
       if (a.type !== type) continue;
+      // Nunca cola o início da seta ao fim da seta de OUTRO elemento: se o
+      // DD começa a correr onde a corrida do EX acabou, a seta do DD tem de
+      // ficar no sítio onde o DD está, e não agarrada à do EX.
+      if (rawOwner && a.ownerId && a.ownerId !== rawOwner.id) continue;
       const d = Math.hypot(a.x2 - x, a.y2 - y);
       if (d <= bestD) { bestD = d; best = { x: a.x2, y: a.y2 }; }
     }
@@ -2349,56 +2385,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // uma a seguir à outra em vez de todas ao mesmo tempo — assim um passe
   // que segue outro só começa quando o anterior chega ao destino, tal
   // como aconteceria num lance real.
-  const buildAnimationChains = (arrowList) => {
-    // 3.2 em vez de 1.5: o desenho agora já "cola" (snapChainStart) o
-    // início de uma seta nova ao fim da anterior, mas setas mais antigas
-    // (criadas antes desta correção) ou movidas à mão pelos manípulos podem
-    // ter uma pequena folga entre pontas — esta tolerância mais generosa
-    // evita que essa folga parta a cadeia em pedaços que animam ao mesmo
-    // tempo em vez de um a seguir ao outro.
-    const CHAIN_DIST = 3.2;
-    const closeEnough = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by) <= CHAIN_DIST;
-    // Quando o fim de uma seta está perto do início de mais do que uma
-    // outra da mesma cadeia (ex.: duas setas foram desenhadas quase no
-    // mesmo sítio), escolhe sempre a mais próxima — assim a cadeia segue
-    // sempre o caminho geometricamente mais coerente, em vez do primeiro
-    // candidato encontrado.
-    const closest = (list, x, y) => {
-      let best = null, bestD = CHAIN_DIST;
-      for (const a of list) {
-        const d = Math.hypot(a.x1 - x, a.y1 - y);
-        if (d <= bestD) { bestD = d; best = a; }
-      }
-      return best;
-    };
-    const isContinuationOfSome = (arrow) => arrowList.some(other => (
-      other.id !== arrow.id && other.type === arrow.type && closeEnough(other.x2, other.y2, arrow.x1, arrow.y1)
-    ));
-    const used = new Set();
-    const chains = [];
-    const heads = arrowList.filter(a => !isContinuationOfSome(a));
-    for (const head of heads) {
-      if (used.has(head.id)) continue;
-      const chain = [head];
-      used.add(head.id);
-      let current = head;
-      // Segue a cadeia enquanto houver uma próxima seta do mesmo tipo a
-      // começar onde a atual termina.
-      while (true) {
-        const candidates = arrowList.filter(a => !used.has(a.id) && a.type === current.type);
-        const next = closest(candidates, current.x2, current.y2);
-        if (!next) break;
-        chain.push(next);
-        used.add(next.id);
-        current = next;
-      }
-      chains.push(chain);
-    }
-    // Qualquer seta que, por alguma topologia estranha (ex.: ciclo), não
-    // tenha ficado em nenhuma cadeia, anima sozinha na mesma.
-    arrowList.forEach(a => { if (!used.has(a.id)) chains.push([a]); });
-    return chains;
-  };
+  // Uma única implementação, partilhada com a apresentação do exercício e
+  // com o ficheiro exportado (buildAnimationChainsPure, mais acima). Antes
+  // existiam três cópias desta lógica e uma correção numa delas não chegava
+  // às outras — a regra do dono de cada seta ficava por aplicar.
+  const buildAnimationChains = (arrowList) => buildAnimationChainsPure(arrowList);
   const playAnimation = () => {
     const animArrows = arrows.filter(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
     if (animArrows.length === 0) return;
@@ -3408,44 +3399,10 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   // Mesma lógica de "cadeias" usada no editor (ver buildAnimationChains em
   // DiagramEditor): agrupa setas encadeadas do mesmo tipo para as tocar em
   // sequência, uma a seguir à outra, em vez de todas ao mesmo tempo.
-  const buildAnimationChains = (arrowList) => {
-    // Mesma tolerância mais generosa do editor (ver comentário em
-    // DiagramEditor.buildAnimationChains) — os passos guardados podem ter
-    // sido criados antes do "snap" ao desenhar existir.
-    const CHAIN_DIST = 3.2;
-    const closeEnough = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by) <= CHAIN_DIST;
-    const closest = (list, x, y) => {
-      let best = null, bestD = CHAIN_DIST;
-      for (const a of list) {
-        const d = Math.hypot(a.x1 - x, a.y1 - y);
-        if (d <= bestD) { bestD = d; best = a; }
-      }
-      return best;
-    };
-    const isContinuationOfSome = (arrow) => arrowList.some(other => (
-      other.id !== arrow.id && other.type === arrow.type && closeEnough(other.x2, other.y2, arrow.x1, arrow.y1)
-    ));
-    const used = new Set();
-    const chains = [];
-    const heads = arrowList.filter(a => !isContinuationOfSome(a));
-    for (const head of heads) {
-      if (used.has(head.id)) continue;
-      const chain = [head];
-      used.add(head.id);
-      let current = head;
-      while (true) {
-        const candidates = arrowList.filter(a => !used.has(a.id) && a.type === current.type);
-        const next = closest(candidates, current.x2, current.y2);
-        if (!next) break;
-        chain.push(next);
-        used.add(next.id);
-        current = next;
-      }
-      chains.push(chain);
-    }
-    arrowList.forEach(a => { if (!used.has(a.id)) chains.push([a]); });
-    return chains;
-  };
+  // Mesma implementação partilhada usada pelo editor (ver
+  // buildAnimationChainsPure), para a reprodução aqui ser exatamente igual
+  // à que se viu ao criar o exercício — incluindo a regra do dono da seta.
+  const buildAnimationChains = (arrowList) => buildAnimationChainsPure(arrowList);
 
   const runStep = (idx) => {
     const step = sequence[idx];
