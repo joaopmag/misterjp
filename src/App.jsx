@@ -677,7 +677,7 @@ function App({ session }) {
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} exercises={exercises} monitoring={monitoring} matches={matches} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} />}
@@ -3415,8 +3415,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     </Modal>
   );
 }
-function Planeamento({ sessions, setSessions, exercises, players }) {
+function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
+  const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
   const [printSession, setPrintSession] = useState(null);
   const [view, setView] = useState('lista'); // 'lista' | 'agenda'
   const [weekStart, setWeekStart] = useState(getMonday(todayStr()));
@@ -3454,6 +3455,12 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
   };
   const remove = (id) => setSessions(sessions.filter(s => s.id !== id));
 
+  const saveMatch = (data) => {
+    if (data.id) setMatches(matches.map(m => m.id === data.id ? data : m));
+    else setMatches([...matches, { ...data, id: uid() }]);
+    setMatchModal(null);
+  };
+
   const grouped = groupByWeek(sessions);
   const isEditing = modal && modal !== 'new' && modal.id;
   const presetDate = modal && modal !== 'new' && !modal.id ? modal.presetDate : undefined;
@@ -3478,8 +3485,10 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
           weekStart={weekStart}
           setWeekStart={setWeekStart}
           sessions={sessions}
+          matches={matches}
           onEdit={(s) => setModal(s)}
           onAddForDate={(d) => setModal({ presetDate: d })}
+          onEditMatch={(m) => setMatchModal(m)}
         />
       ) : sessions.length === 0 ? (
         <EmptyState text="Ainda não há sessões planeadas." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar a primeira sessão</Btn>} />
@@ -3526,6 +3535,15 @@ function Planeamento({ sessions, setSessions, exercises, players }) {
           players={players}
           onClose={() => setModal(null)}
           onSave={save}
+        />
+      )}
+
+      {matchModal && (
+        <MatchModal
+          match={matchModal}
+          players={players}
+          onClose={() => setMatchModal(null)}
+          onSave={saveMatch}
         />
       )}
 
@@ -3663,7 +3681,7 @@ function formatShortDatePt(dateStr) {
    AGENDA SEMANAL — vista de calendário Seg-Dom, criada a partir
    do Planeamento, com edição direta de cada sessão.
 ---------------------------------------------------------------- */
-function WeekAgenda({ weekStart, setWeekStart, sessions, onEdit, onAddForDate }) {
+function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddForDate, onEditMatch }) {
   const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
   const currentDayStr = todayStr();
 
@@ -3684,6 +3702,7 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, onEdit, onAddForDate })
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))', gap: 8, overflowX: 'auto' }}>
         {days.map(d => {
           const daySessions = sessions.filter(s => s.date === d);
+          const dayMatches = (matches || []).filter(m => m.date === d);
           const isToday = d === currentDayStr;
           return (
             <div key={d} style={{
@@ -3692,6 +3711,19 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, onEdit, onAddForDate })
               <div style={{ fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.04em' }}>{dayLabel(d)}</div>
               <div style={{ ...mono, fontSize: 15, color: isToday ? T.warn : T.cream, marginBottom: 8 }}>{new Date(d + 'T00:00:00').getDate()}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6 }}>
+                {dayMatches.map(m => (
+                  <button key={m.id} onClick={() => onEditMatch(m)} style={{
+                    textAlign: 'left', fontSize: 11, color: T.cream, background: `${T.warn}33`,
+                    border: `1px solid ${T.warn}88`, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
+                    display: 'flex', alignItems: 'flex-start', gap: 5,
+                  }}>
+                    <Trophy size={11} color={T.warn} style={{ marginTop: 1, flexShrink: 0 }} />
+                    <span>
+                      vs {m.opponent || 'Adversário'}
+                      <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{m.result || m.competition || 'Jogo'}</div>
+                    </span>
+                  </button>
+                ))}
                 {daySessions.map(s => (
                   <button key={s.id} onClick={() => onEdit(s)} style={{
                     textAlign: 'left', fontSize: 11, color: T.cream, background: `${T.crimson}44`,
@@ -5366,9 +5398,6 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   const active = items.find(v => v.id === activeId) || items[0];
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
   const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation };
-  // Aspeto vertical (Reels/TikTok) vs horizontal (YouTube), para o
-  // player não ficar esmagado nem gigantesco em nenhum dos dois casos.
-  const socialAspect = active?.social ? (56.25 * 16 / 9) : 56.25; // ~177.8% (9:16) vs 56.25% (16:9)
 
   useEffect(() => {
     activeYoutubeIdRef.current = (active && active.youtubeId) || null;
@@ -5441,11 +5470,14 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                     )}
                   </div>
                 ) : active.social ? (
-                  <div style={{ position: 'relative', maxWidth: 340, margin: '0 auto' }}>
-                    <div style={{ position: 'relative', paddingTop: `${socialAspect}%`, borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000' }}>
+                  <div style={{ maxWidth: 320, margin: '0 auto' }}>
+                    <div style={{
+                      position: 'relative', height: 560, maxHeight: '65vh', borderRadius: 10, overflow: 'hidden',
+                      border: `1px solid ${T.line}`, background: '#000',
+                    }}>
                       <iframe
                         src={socialEmbedSrc(active.social)}
-                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                        style={{ width: '100%', height: '100%', border: 'none' }}
                         allow="autoplay; encrypted-media; clipboard-write"
                         allowFullScreen
                         scrolling="no"
@@ -5454,14 +5486,13 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                     </div>
                     <button
                       onClick={() => setLightboxOpen(true)}
-                      title="Ver em grande"
                       style={{
-                        position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: '50%',
-                        background: '#000000aa', border: 'none', color: '#fff', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        fontSize: 12, color: T.mutedDim, background: 'none', border: `1px dashed ${T.line}`, borderRadius: 8,
+                        padding: '6px 0', cursor: 'pointer', ...body,
                       }}
                     >
-                      <Maximize2 size={14} />
+                      <Maximize2 size={12} /> Ver em grande
                     </button>
                   </div>
                 ) : (
@@ -5520,7 +5551,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
         >
           <div
             onClick={e => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: 1100 }}
+            style={{ width: '100%', maxWidth: active.social ? 420 : 1100 }}
           >
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
               <button
@@ -5565,10 +5596,13 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                 )}
               </div>
             ) : active.social ? (
-              <div style={{ position: 'relative', paddingTop: `${socialAspect}%`, maxWidth: 480, margin: '0 auto', borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080' }}>
+              <div style={{
+                position: 'relative', width: '100%', height: 'min(78vh, 760px)', margin: '0 auto',
+                borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080',
+              }}>
                 <iframe
                   src={socialEmbedSrc(active.social)}
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
                   allow="autoplay; encrypted-media; clipboard-write"
                   allowFullScreen
                   scrolling="no"
