@@ -1456,7 +1456,7 @@ function Exercicios({ exercises, setExercises, meta }) {
           {visible.map(x => {
             const m = meta && meta[x.id];
             return (
-            <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}>
+            <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{x.name}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -1485,7 +1485,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                 {x.material && <span>🎒 {x.material}</span>}
               </div>
               {m && m.email && (
-                <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 10, paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 'auto', paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   Adicionado/editado por {m.email} · {timeAgo(m.at)}
                 </div>
               )}
