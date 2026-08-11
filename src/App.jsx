@@ -108,51 +108,6 @@ async function saveSingleton(table, value) {
   }
 }
 
-// Versão genérica do padrão usado para a Época: carrega, grava (debounced
-// pelo próprio efeito de mudança de valor) e escuta alterações em tempo
-// real feitas por outra pessoa, para uma tabela de registo único
-// (colunas id='default', data jsonb, updated_by_email, updated_at).
-function useSingletonSync(table, fallback, notifyEdit) {
-  const [value, setValue] = useState(fallback);
-  const [ready, setReady] = useState(false);
-  const [meta, setMeta] = useState({ email: null, at: null });
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const s = await loadSingleton(table, fallback);
-      if (cancelled) return;
-      setValue(s.value);
-      if (s.editedBy) setMeta({ email: s.editedBy, at: s.editedAt });
-      setReady(true);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
-
-  useEffect(() => {
-    if (!ready) return;
-    saveSingleton(table, value);
-    if (notifyEdit) notifyEdit(table);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, ready]);
-
-  useEffect(() => {
-    const channel = supabase.channel(`${table}_rt`)
-      .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
-        const row = payload.new;
-        if (!row) return;
-        setValue(row.data);
-        setMeta({ email: row.updated_by_email, at: row.updated_at });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
-
-  return [value, setValue, ready, meta];
-}
-
 // Hook genérico de sincronização para as listas (jogadores, sessões,
 // jogos, ...). Cada registo da lista vira UMA LINHA na respetiva tabela,
 // o que permite saber quem editou cada registo individual — não só "a
@@ -564,15 +519,9 @@ function App({ session }) {
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit);
   const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit);
-  // Classificação/resultados da competição — registo único, atualizado
-  // manualmente (jornada a jornada), partilhado por toda a equipa técnica.
-  const [standings, setStandings, standingsReady, standingsMeta] = useSingletonSync(
-    'league_standings', { competition: '', teams: [], rounds: [] }, notifyEdit
-  );
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !sessionsReady || !monitoringReady
-    || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
-    || !standingsReady;
+    || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
   // lateral, quando o link inclui ?checkin=1 — é este o link a partilhar
@@ -814,7 +763,7 @@ function App({ session }) {
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -1581,12 +1530,7 @@ function Exercicios({ exercises, setExercises, meta }) {
           ) : (
             <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
               <PitchMarkings printMode />
-              <SpaceZone
-                meters={parseSpace(printExercise.space)}
-                center={{ x: 53.5 + (printExercise.diagram?.spaceOffset?.dx || 0), y: 35 + (printExercise.diagram?.spaceOffset?.dy || 0) }}
-                interactive={false}
-                printMode
-              />
+              <SpaceZonesReadOnly diagram={printExercise.diagram} spaceText={printExercise.space} printMode />
               <DiagramElements
                 elements={printExercise.diagram?.elements || []}
                 arrows={printExercise.diagram?.arrows || []}
@@ -1628,6 +1572,7 @@ const BASE_TOOLS = [
   { id: 'arrow-run', label: 'Corrida' },
   { id: 'line-solid', symbol: 'solid', title: 'Linha contínua' },
   { id: 'line-dashed', symbol: 'dashed', title: 'Linha tracejada' },
+  { id: 'space-square', symbol: 'square', title: 'Zona / quadrado reduzido (igual ao campo Espaço)' },
   { id: 'eraser', label: 'Apagar' },
 ];
 const LINE_TOOLS = ['arrow-pass', 'arrow-run', 'line-solid', 'line-dashed'];
@@ -1642,6 +1587,76 @@ function parseSpace(str) {
   const h = parseFloat(m[2].replace(',', '.'));
   if (!w || !h) return null;
   return { w, h };
+}
+
+// Sufixo opcional "(N)" no fim do texto do campo Espaço (ex.: "20x20 (2)"
+// → 2 zonas). Sem sufixo, ou sufixo inválido, assume-se 1 zona.
+function parseSpaceCount(str) {
+  const m = String(str || '').match(/\((\d+)\)\s*$/);
+  if (!m) return 1;
+  return Math.max(1, Math.min(8, parseInt(m[1], 10) || 1));
+}
+
+// Distribui N zonas W×H em grelha, centradas no meio-campo, com um pequeno
+// espaçamento entre elas — usado quando o treinador escreve no campo
+// Espaço (ex.: "20x20 (2)") em vez de desenhar cada quadrado à mão.
+function layoutSpaceZones(w, h, count) {
+  const n = Math.max(1, count);
+  const cols = Math.ceil(Math.sqrt(n));
+  const rows = Math.ceil(n / cols);
+  const gap = 3;
+  const zones = [];
+  for (let i = 0; i < n; i++) {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    zones.push({
+      id: uid(), w, h,
+      dx: (col - (cols - 1) / 2) * (w + gap),
+      dy: (row - (rows - 1) / 2) * (h + gap),
+    });
+  }
+  return zones;
+}
+
+// Texto a mostrar/gravar no campo Espaço a partir da lista de zonas
+// atualmente desenhadas no campo: tamanho único → "WxH" (ou "WxH (N)" se
+// forem várias iguais); tamanhos diferentes → rótulo genérico "Vários
+// reduzidos", já que deixa de fazer sentido um único WxH.
+function describeSpaceZones(zones) {
+  if (!zones || !zones.length) return '';
+  const fmt = (n) => {
+    const r = Math.round(n * 10) / 10;
+    return (Number.isInteger(r) ? String(r) : r.toFixed(1).replace('.', ','));
+  };
+  const first = zones[0];
+  const sameSize = zones.every(z => Math.abs(z.w - first.w) < 0.05 && Math.abs(z.h - first.h) < 0.05);
+  if (!sameSize) return 'Vários reduzidos';
+  return zones.length > 1 ? `${fmt(first.w)}x${fmt(first.h)} (${zones.length})` : `${fmt(first.w)}x${fmt(first.h)}`;
+}
+
+// Lista de zonas a desenhar no campo, com compatibilidade para exercícios
+// gravados antes de existir a possibilidade de várias zonas (só tinham uma,
+// via spaceOffset associado ao WxH do campo Espaço).
+function getSpaceZones(diagram, spaceText) {
+  if (diagram?.spaceZones?.length) return diagram.spaceZones;
+  const meters = parseSpace(spaceText);
+  if (!meters) return [];
+  const off = diagram?.spaceOffset || { dx: 0, dy: 0 };
+  return [{ id: 'legacy', w: meters.w, h: meters.h, dx: off.dx || 0, dy: off.dy || 0 }];
+}
+
+// Substitui, em qualquer sítio só de leitura (fichas impressas, miniaturas,
+// apresentação do exercício), a antiga única <SpaceZone> por uma por cada
+// zona gravada — mantém a mesma aparência de antes quando só há uma.
+function SpaceZonesReadOnly({ diagram, spaceText, printMode }) {
+  const zones = getSpaceZones(diagram, spaceText);
+  return (
+    <>
+      {zones.map(z => (
+        <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode={printMode} />
+      ))}
+    </>
+  );
 }
 
 /* Interpreta o formato do nº de jogadores e devolve uma lista de "grupos",
@@ -2159,7 +2174,7 @@ function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t
 // (markup já pronto) que, mostrados um a seguir ao outro com o "holdMs"
 // indicado, reconstroem passo a passo a coreografia gravada no editor
 // (diagram.sequence). Sem sequência gravada, devolve só o fotograma final.
-function computeDiagramAnimationFrames(diagram, meters, center) {
+function computeDiagramAnimationFrames(diagram, zones) {
   const sequence = diagram.sequence || [];
   const staticArrows = diagram.arrows || [];
   const frames = [];
@@ -2169,7 +2184,9 @@ function computeDiagramAnimationFrames(diagram, meters, center) {
       svg: ReactDOMServer.renderToStaticMarkup(
         <>
           <PitchMarkings />
-          <SpaceZone meters={meters} center={center} interactive={false} />
+          {zones.map(z => (
+            <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
+          ))}
           <DiagramElements elements={elements} arrows={staticArrows} interactive={false} />
         </>
       ),
@@ -2242,9 +2259,8 @@ function escapeHtmlText(s) {
 // esquema tático, com um id único (blockId) para não colidir quando há
 // vários exercícios no mesmo ficheiro (caso da sessão de treino).
 function buildDiagramBlockHtml(diagram, space, blockId) {
-  const meters = parseSpace(space);
-  const center = { x: 53.5 + (diagram?.spaceOffset?.dx || 0), y: 35 + (diagram?.spaceOffset?.dy || 0) };
-  const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, meters, center);
+  const zones = getSpaceZones(diagram, space);
+  const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, zones);
   const html = `
     <div class="pitch-wrap">
       <svg id="pitch-${blockId}" viewBox="-3 -2 113 74" preserveAspectRatio="none">${frames[0] ? frames[0].svg : ''}</svg>
@@ -2361,7 +2377,7 @@ const LINE_LABELS = {
   'line-dashed': 'Linha tracejada',
 };
 
-function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll, onClearSpace, onSpaceResize, activeColor, onColorChange }) {
+function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll, onSpaceZonesChange, activeColor, onColorChange }) {
   const svgRef = React.useRef(null);
   const [tool, setTool] = useState('select');
   // 'activeColor' já não é estado local — vem do componente pai (ExerciseModal)
@@ -2380,9 +2396,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const [animItems, setAnimItems] = useState([]); // [{ id, type: 'arrow-pass'|'arrow-run', x, y, mover }]
   const animRef = React.useRef(null);
   useEffect(() => () => { if (animRef.current) cancelAnimationFrame(animRef.current); }, []);
-  const [dragSpace, setDragSpace] = useState(false);
-  const [resizingSpace, setResizingSpace] = useState(false);
-  const [liveSpaceSize, setLiveSpaceSize] = useState(null);
+  const [dragZoneId, setDragZoneId] = useState(null);
+  const [resizingZoneId, setResizingZoneId] = useState(null);
+  const [liveZoneSize, setLiveZoneSize] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedArrowId, setSelectedArrowId] = useState(null);
   const [drawing, setDrawing] = useState(null);
@@ -2390,13 +2406,20 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const [erasing, setErasing] = useState(false);
   const dragStartRef = React.useRef(null);
   const dragArrowRef = React.useRef(null);
-  const dragSpaceRef = React.useRef(null);
+  const dragZoneRef = React.useRef(null);
 
   const elements = value?.elements || [];
   const arrows = value?.arrows || [];
   const selectedEl = elements.find(e => e.id === selectedId) || null;
   const selectedArrow = arrows.find(a => a.id === selectedArrowId) || null;
-  const spaceCenter = { x: 53.5 + (value?.spaceOffset?.dx || 0), y: 35 + (value?.spaceOffset?.dy || 0) };
+  // Lista de zonas de espaço reduzido desenhadas no campo. Compatibilidade
+  // com exercícios antigos: se ainda não houver 'spaceZones' guardadas mas
+  // existir o par clássico spaceOffset + WxH (no campo Espaço), mostra-se
+  // essa única zona na mesma — passa a "zona real" assim que for arrastada,
+  // redimensionada ou apagada.
+  const zones = value?.spaceZones && value.spaceZones.length
+    ? value.spaceZones
+    : (spaceMeters ? [{ id: 'legacy', w: spaceMeters.w, h: spaceMeters.h, dx: value?.spaceOffset?.dx || 0, dy: value?.spaceOffset?.dy || 0 }] : []);
   // Distância mínima de um ponto a um segmento de reta (para apagar setas
   // "ao roçar" durante o arrastamento da borracha).
   const distToSegment = (px, py, x1, y1, x2, y2) => {
@@ -2424,7 +2447,6 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       arrows: arrows.filter(a => remainingArrowIds.has(a.id)),
     });
   };
-  const displaySpaceMeters = liveSpaceSize || spaceMeters;
 
   // ---- Undo / Redo -------------------------------------------------
   // 'past'/'future' guardam snapshots de 'value'. Ações discretas
@@ -2661,7 +2683,100 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     animRef.current = requestAnimationFrame(tick);
   };
 
+  // Pré-visualização da apresentação completa (todos os passos já
+  // gravados através de sucessivos "Animar"), tal como fica depois de
+  // guardado — para conferir a coreografia toda antes de sair do editor,
+  // sem ser preciso guardar e abrir "Apresentar" para ver.
+  const [isPresenting, setIsPresenting] = useState(false);
+  const [presentElements, setPresentElements] = useState(null);
+  const [presentAnimItems, setPresentAnimItems] = useState([]);
+  const presentAnimRef = React.useRef(null);
+  const presentTimeoutRef = React.useRef(null);
+  useEffect(() => () => {
+    if (presentAnimRef.current) cancelAnimationFrame(presentAnimRef.current);
+    if (presentTimeoutRef.current) clearTimeout(presentTimeoutRef.current);
+  }, []);
+  const stopPresentation = () => {
+    if (presentAnimRef.current) cancelAnimationFrame(presentAnimRef.current);
+    if (presentTimeoutRef.current) clearTimeout(presentTimeoutRef.current);
+    presentAnimRef.current = null;
+    setIsPresenting(false);
+    setPresentElements(null);
+    setPresentAnimItems([]);
+  };
+  const runPresentStep = (idx, seq) => {
+    const step = seq[idx];
+    const chains = buildAnimationChains(step.arrows).map(chainArrows => {
+      let cursor = 0;
+      const segments = chainArrows.map(a => {
+        const dist = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
+        const duration = Math.max(280, (dist / 26) * 1000);
+        const segment = { arrow: a, duration, start: cursor };
+        cursor += duration;
+        return segment;
+      });
+      const first = chainArrows[0];
+      let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
+        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper') : el.kind === 'ball') &&
+        Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
+      );
+      let isNewBall = false;
+      if (!mover && first.type === 'arrow-pass') {
+        mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
+        isNewBall = true;
+      }
+      return { id: first.id, segments, mover, isNewBall, totalDuration: cursor };
+    });
+    const baseElements = [
+      ...step.elements,
+      ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
+    ];
+    setPresentElements(baseElements);
+    const maxDuration = Math.max(...chains.map(c => c.totalDuration));
+    const start = performance.now();
+    const tick = (now) => {
+      const elapsed = now - start;
+      setPresentAnimItems(chains.map(({ id, segments, mover }) => {
+        let active = segments[segments.length - 1];
+        for (const seg of segments) {
+          if (elapsed < seg.start + seg.duration) { active = seg; break; }
+        }
+        const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
+        const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
+        const { arrow } = active;
+        return { id, type: arrow.type, mover, x: arrow.x1 + (arrow.x2 - arrow.x1) * t, y: arrow.y1 + (arrow.y2 - arrow.y1) * t };
+      }));
+      if (elapsed < maxDuration) {
+        presentAnimRef.current = requestAnimationFrame(tick);
+      } else {
+        const moved = new Map();
+        chains.forEach(({ segments, mover }) => {
+          if (mover && segments.length) moved.set(mover.id, { x: segments[segments.length - 1].arrow.x2, y: segments[segments.length - 1].arrow.y2 });
+        });
+        setPresentElements(baseElements.map(el => (moved.has(el.id) ? { ...el, x: moved.get(el.id).x, y: moved.get(el.id).y } : el)));
+        setPresentAnimItems([]);
+        presentAnimRef.current = null;
+        if (idx + 1 < seq.length) {
+          presentTimeoutRef.current = setTimeout(() => runPresentStep(idx + 1, seq), 450);
+        } else {
+          // Terminou: volta a mostrar o quadro tal como está agora no editor,
+          // incluindo setas por animar que ainda não tenham sido "Animadas".
+          stopPresentation();
+        }
+      }
+    };
+    presentAnimRef.current = requestAnimationFrame(tick);
+  };
+  const startPresentation = () => {
+    const seq = value.sequence || [];
+    if (seq.length === 0) return;
+    setIsPresenting(true);
+    setPresentElements(seq[0].elements);
+    presentTimeoutRef.current = setTimeout(() => runPresentStep(0, seq), 200);
+  };
+
   const handleBgPointerDown = (e) => {
+    if (isPresenting) return;
     // Impede o "clique fantasma" de compatibilidade que alguns browsers/
     // webviews móveis podem disparar pouco depois do toque, nas mesmas
     // coordenadas — se esse clique caísse por acaso sobre outro elemento
@@ -2686,6 +2801,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       // rotação/redimensionamento aparecerem de imediato, sem ser preciso
       // mudar para "Mover / Selecionar" e tocar nela outra vez.
       setSelectedId(newId);
+    } else if (tool === 'space-square') {
+      // Usa o tamanho da última zona colocada (ou 15x15 por omissão) —
+      // pode ser redimensionada a seguir arrastando o canto.
+      const last = zones[zones.length - 1];
+      const w = last ? last.w : 15;
+      const h = last ? last.h : 15;
+      commitZones([...zones, { id: uid(), w, h, dx: p.x - 53.5, dy: p.y - 35 }]);
     } else if (MARKER_TOOLS.includes(tool)) {
       commit({ ...value, elements: [...elements, { id: uid(), kind: tool, x: p.x, y: p.y }] });
     } else if (LINE_TOOLS.includes(tool)) {
@@ -2743,16 +2865,21 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         ...value,
         arrows: arrows.map(a => a.id === dragArrowId ? { ...a, x1: ref.orig.x1 + dx, y1: ref.orig.y1 + dy, x2: ref.orig.x2 + dx, y2: ref.orig.y2 + dy } : a),
       });
-    } else if (resizingSpace) {
+    } else if (resizingZoneId) {
+      const zone = zones.find(z => z.id === resizingZoneId);
+      if (!zone) return;
       const p = toPoint(e);
-      const halfW = Math.max(2, Math.abs(p.x - spaceCenter.x));
-      const halfH = Math.max(2, Math.abs(p.y - spaceCenter.y));
-      setLiveSpaceSize({ w: Math.round(halfW * 2), h: Math.round(halfH * 2) });
-    } else if (dragSpace) {
+      const cx = 53.5 + (zone.dx || 0), cy = 35 + (zone.dy || 0);
+      const halfW = Math.max(2, Math.abs(p.x - cx));
+      const halfH = Math.max(2, Math.abs(p.y - cy));
+      setLiveZoneSize({ w: Math.round(halfW * 2), h: Math.round(halfH * 2) });
+    } else if (dragZoneId) {
       const p = toPoint(e);
-      const ref = dragSpaceRef.current;
+      const ref = dragZoneRef.current;
       if (!ref) return;
-      onChange({ ...value, spaceOffset: { dx: ref.orig.dx + (p.x - ref.start.x), dy: ref.orig.dy + (p.y - ref.start.y) } });
+      const dx = ref.orig.dx + (p.x - ref.start.x);
+      const dy = ref.orig.dy + (p.y - ref.start.y);
+      onChange({ ...value, spaceZones: zones.map(z => (z.id === dragZoneId ? { ...z, dx, dy } : z)), spaceOffset: undefined });
     } else if (goalDrag) {
       const el = elements.find(x => x.id === goalDrag.id);
       if (!el) return;
@@ -2790,11 +2917,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       setDragId(null);
     }
     if (dragHandle) setDragHandle(null);
-    if (dragSpace) setDragSpace(false);
-    if (resizingSpace) {
-      if (liveSpaceSize && onSpaceResize) onSpaceResize(liveSpaceSize.w, liveSpaceSize.h);
-      setResizingSpace(false);
-      setLiveSpaceSize(null);
+    if (dragZoneId) setDragZoneId(null);
+    if (resizingZoneId) {
+      if (liveZoneSize) {
+        commitZones(zones.map(z => (z.id === resizingZoneId ? { ...z, w: liveZoneSize.w, h: liveZoneSize.h } : z)));
+      }
+      setResizingZoneId(null);
+      setLiveZoneSize(null);
     }
     if (dragArrowId) {
       if (tool === 'select' && !arrowMoved) setSelectedArrowId(dragArrowId);
@@ -2855,18 +2984,20 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     setSelectedId(id);
     setGoalDrag({ id, mode: 'resize' });
   };
-  const onSpacePointerDown = (e) => {
+  const onZonePointerDown = (e, zoneId) => {
     e.stopPropagation();
     beginGesture();
     try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-    dragSpaceRef.current = { start: toPoint(e), orig: value?.spaceOffset || { dx: 0, dy: 0 } };
-    setDragSpace(true);
+    const zone = zones.find(z => z.id === zoneId);
+    dragZoneRef.current = { start: toPoint(e), orig: { dx: zone?.dx || 0, dy: zone?.dy || 0 } };
+    setDragZoneId(zoneId);
   };
-  const onSpaceResizeDown = (e) => {
+  const onZoneResizeDown = (e, zoneId) => {
     e.stopPropagation();
     try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-    setLiveSpaceSize(spaceMeters ? { w: spaceMeters.w, h: spaceMeters.h } : { w: 20, h: 20 });
-    setResizingSpace(true);
+    const zone = zones.find(z => z.id === zoneId);
+    setLiveZoneSize(zone ? { w: zone.w, h: zone.h } : { w: 20, h: 20 });
+    setResizingZoneId(zoneId);
   };
   const changeSelectedNumber = (delta) => {
     if (!selectedEl) return;
@@ -2915,9 +3046,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     setSelectedArrowId(null);
     if (onClearAll) onClearAll();
   };
-  const clearSpace = () => {
-    commit({ ...value, spaceOffset: undefined });
-    if (onClearSpace) onClearSpace();
+  // Aplica uma nova lista de zonas de espaço reduzido e avisa o formulário
+  // pai (para atualizar o texto mostrado no campo Espaço, derivado das
+  // zonas atuais — ver describeSpaceZones).
+  const commitZones = (newZones) => {
+    commit({ ...value, spaceZones: newZones, spaceOffset: undefined });
+    if (onSpaceZonesChange) onSpaceZonesChange(newZones);
+  };
+  const deleteZone = (zoneId) => {
+    commitZones(zones.filter(z => z.id !== zoneId));
   };
 
   return (
@@ -2965,35 +3102,28 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             {t.symbol === 'dashed' && (
               <svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="currentColor" strokeWidth="2" strokeDasharray="3,2.2" /></svg>
             )}
+            {t.symbol === 'square' && (
+              <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.4,1.8" /></svg>
+            )}
             {!t.symbol && t.label}
           </button>
         ))}
-        {(() => {
-          const hasMovement = arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
-          return (
-            <button
-              type="button"
-              onClick={isPlaying ? stopAnimation : playAnimation}
-              disabled={!hasMovement}
-              title={
-                !hasMovement
-                  ? 'Desenha uma seta de Passe ou Corrida para poderes simular a animação'
-                  : (isPlaying ? 'Parar animação' : 'Simula a animação (bola no passe, jogador na corrida) antes de guardar')
-              }
-              style={{
-                padding: '5px 10px', borderRadius: 6, fontSize: 11.5, cursor: hasMovement ? 'pointer' : 'not-allowed', ...body,
-                background: !hasMovement ? 'transparent' : (isPlaying ? T.bad : T.crimsonBright),
-                color: !hasMovement ? T.mutedDim : T.cream,
-                border: `1px solid ${!hasMovement ? T.line : (isPlaying ? T.bad : T.crimsonBright)}`,
-                opacity: hasMovement ? 1 : 0.6,
-                display: 'flex', alignItems: 'center', gap: 5, minHeight: 24,
-              }}
-            >
-              {isPlaying ? <Square size={12} /> : <Play size={12} />}
-              {isPlaying ? 'Parar' : 'Simular animação'}
-            </button>
-          );
-        })()}
+        {arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') && (
+          <button
+            type="button"
+            onClick={isPlaying ? stopAnimation : playAnimation}
+            title={isPlaying ? 'Parar animação' : 'Animar deslocamentos (bola no passe, jogador na corrida)'}
+            style={{
+              padding: '5px 10px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+              background: isPlaying ? T.bad : T.crimsonBright,
+              color: T.cream, border: `1px solid ${isPlaying ? T.bad : T.crimsonBright}`,
+              display: 'flex', alignItems: 'center', gap: 5, minHeight: 24,
+            }}
+          >
+            {isPlaying ? <Square size={12} /> : <Play size={12} />}
+            {isPlaying ? 'Parar' : 'Animar'}
+          </button>
+        )}
       </div>
       <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6 }}>
         Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
@@ -3020,11 +3150,25 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           onPointerCancel={finishInteraction}
         >
           <PitchMarkings />
-          <SpaceZone meters={displaySpaceMeters} center={spaceCenter} onPointerDown={onSpacePointerDown} onResizeDown={onSpaceResizeDown} onDelete={clearSpace} interactive={tool === 'select'} />
+          {zones.map(z => {
+            const meters = resizingZoneId === z.id && liveZoneSize ? liveZoneSize : { w: z.w, h: z.h };
+            return (
+              <SpaceZone
+                key={z.id}
+                meters={meters}
+                center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }}
+                onPointerDown={(e) => onZonePointerDown(e, z.id)}
+                onResizeDown={(e) => onZoneResizeDown(e, z.id)}
+                onDelete={() => deleteZone(z.id)}
+                interactive={tool === 'select'}
+              />
+            );
+          })}
           <DiagramElements
-            elements={elements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={arrows}
+            elements={(isPresenting ? presentElements || [] : elements).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
+            arrows={arrows}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
-            selectedArrowId={selectedArrowId} interactive
+            selectedArrowId={selectedArrowId} interactive={!isPresenting}
             placingActive={tool !== 'select' && tool !== 'eraser'}
           />
           {selectedEl && selectedEl.kind !== 'goalmarker' && (
@@ -3065,6 +3209,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               stroke="#C9A227" strokeWidth="0.45" strokeDasharray={drawing.type === 'arrow-run' || drawing.type === 'line-dashed' ? '2,1.5' : '1,1'} />
           )}
           <AnimOverlay items={animItems} />
+          <AnimOverlay items={presentAnimItems} />
         </svg>
       </div>
 
@@ -3112,8 +3257,24 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           >
             <Printer size={14} color={TEXT_ON_ACCENT} />
           </button>
+          {(value.sequence || []).length > 0 && (
+            <button
+              type="button"
+              onClick={isPresenting ? stopPresentation : startPresentation}
+              title={isPresenting ? 'Parar apresentação' : 'Pré-visualiza a apresentação completa (todos os passos já animados, em sequência) antes de guardar'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', height: 26, borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: isPresenting ? T.bad : 'transparent',
+                color: isPresenting ? T.cream : T.cream,
+                border: `1px solid ${isPresenting ? T.bad : T.line}`,
+              }}
+            >
+              {isPresenting ? <Square size={12} /> : <Play size={12} />}
+              {isPresenting ? 'Parar' : 'Apresentar tudo'}
+            </button>
+          )}
         </div>
-        {(elements.length > 0 || arrows.length > 0 || spaceMeters) && (
+        {(elements.length > 0 || arrows.length > 0 || zones.length > 0) && (
           <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>
             Limpar tudo
           </button>
@@ -3212,7 +3373,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           )}
           <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
-            <SpaceZone meters={spaceMeters} center={spaceCenter} interactive={false} printMode />
+            {zones.map(z => (
+              <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
+            ))}
             <DiagramElements elements={elements} arrows={arrows} interactive={false} printMode />
           </svg>
         </div>,
@@ -3259,14 +3422,15 @@ function AnimOverlay({ items }) {
 }
 
 function DiagramThumb({ diagram, space }) {
-  const meters = parseSpace(space);
+  const zones = getSpaceZones(diagram, space);
   const hasDiagram = diagram && (diagram.elements?.length || diagram.arrows?.length);
-  if (!hasDiagram && !meters) return null;
-  const center = { x: 53.5 + (diagram?.spaceOffset?.dx || 0), y: 35 + (diagram?.spaceOffset?.dy || 0) };
+  if (!hasDiagram && !zones.length) return null;
   return (
     <svg viewBox="-3 -2 113 74" style={{ width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
       <PitchMarkings />
-      <SpaceZone meters={meters} center={center} interactive={false} />
+      {zones.map(z => (
+        <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
+      ))}
       <DiagramElements elements={diagram?.elements || []} arrows={diagram?.arrows || []} interactive={false} />
     </svg>
   );
@@ -3387,11 +3551,31 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
   const handleClearAll = () => {
     setF(prev => ({ ...prev, space: '', playersCount: '' }));
   };
-  const handleClearSpace = () => {
-    setF(prev => ({ ...prev, space: '' }));
+  // Sempre que uma zona é arrastada, redimensionada, criada (ferramenta
+  // "quadrado") ou apagada diretamente no campo, atualiza o texto do campo
+  // Espaço para refletir o que lá está — "WxH" ou "WxH (N)" se forem várias
+  // iguais, "Vários reduzidos" se tiverem tamanhos diferentes.
+  const handleSpaceZonesChange = (zones) => {
+    setF(prev => ({ ...prev, space: describeSpaceZones(zones) }));
   };
-  const handleSpaceResize = (w, h) => {
-    setF(prev => ({ ...prev, space: `${w}x${h}` }));
+  // Ao sair do campo Espaço, interpreta o texto escrito ("20x20",
+  // "20x20 (2)") e (re)gera as zonas no campo — substitui as que lá
+  // estivessem, para o campo de texto continuar a ser a forma rápida de
+  // definir quantas zonas e de que tamanho. Se o texto não for uma medida
+  // reconhecível (por exemplo já está a mostrar "Vários reduzidos", gerado
+  // automaticamente a partir de zonas desenhadas à mão), não mexe nas
+  // zonas — evita apagar por engano um layout feito à mão no campo.
+  const applySpaceText = () => {
+    const text = f.space.trim();
+    if (!text) {
+      setF(prev => ({ ...prev, diagram: { ...(prev.diagram || {}), spaceZones: [], spaceOffset: undefined } }));
+      return;
+    }
+    const meters = parseSpace(text);
+    if (!meters) return;
+    const count = parseSpaceCount(text);
+    const newZones = layoutSpaceZones(meters.w, meters.h, count);
+    setF(prev => ({ ...prev, space: describeSpaceZones(newZones), diagram: { ...(prev.diagram || {}), spaceZones: newZones, spaceOffset: undefined } }));
   };
 
   return (
@@ -3411,7 +3595,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
         <Field label="Descrição / instruções"><TextArea value={f.description} onChange={e => setF({ ...f, description: e.target.value })} placeholder="Objetivo, regras, condicionantes..." /></Field>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
-        <Field label="Espaço"><Input value={f.space} onChange={e => setF({ ...f, space: e.target.value })} placeholder="20x20" /></Field>
+        <Field label="Espaço"><Input value={f.space} onChange={e => setF({ ...f, space: e.target.value })} onBlur={applySpaceText} placeholder="20x20 ou 20x20 (2)" /></Field>
         <Field label="Nº jogadores">
           <Input value={f.playersCount} onChange={e => setF({ ...f, playersCount: e.target.value })} onBlur={autoInsertPlayers} placeholder="4x4, 4+1, 3 Gr" />
         </Field>
@@ -3425,8 +3609,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
             spaceMeters={parseSpace(f.space)}
             exerciseInfo={{ name: f.name, phase: f.phase, space: f.space, material: f.material, description: f.description, playersCount: f.playersCount, defaultDuration: f.defaultDuration }}
             onClearAll={handleClearAll}
-            onClearSpace={handleClearSpace}
-            onSpaceResize={handleSpaceResize}
+            onSpaceZonesChange={handleSpaceZonesChange}
             activeColor={diagramColor}
             onColorChange={setDiagramColor}
           />
@@ -3557,8 +3740,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
 function ExercisePresentation({ exercise, onClose, onEdit }) {
   const diagram = exercise.diagram || { elements: [], arrows: [] };
   const sequence = diagram.sequence || [];
-  const meters = parseSpace(exercise.space);
-  const center = { x: 53.5 + (diagram.spaceOffset?.dx || 0), y: 35 + (diagram.spaceOffset?.dy || 0) };
+  const zones = getSpaceZones(diagram, exercise.space);
   const staticArrows = diagram.arrows || [];
 
   const [frameElements, setFrameElements] = useState(sequence.length ? sequence[0].elements : (diagram.elements || []));
@@ -3701,7 +3883,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}`,
         }}>
           <PitchMarkings />
-          <SpaceZone meters={meters} center={center} interactive={false} />
+          {zones.map(z => (
+            <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
+          ))}
           <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={staticArrows} interactive={false} />
           <AnimOverlay items={animItems} />
         </svg>
@@ -4146,12 +4330,7 @@ function PrintExerciseBlock({ e, ex, index }) {
       ) : (
         <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 540, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
           <PitchMarkings printMode />
-          <SpaceZone
-            meters={parseSpace(ex.space)}
-            center={{ x: 53.5 + (ex.diagram?.spaceOffset?.dx || 0), y: 35 + (ex.diagram?.spaceOffset?.dy || 0) }}
-            interactive={false}
-            printMode
-          />
+          <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
           <DiagramElements
             elements={ex.diagram?.elements || []}
             arrows={ex.diagram?.arrows || []}
@@ -4346,11 +4525,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
                         background: '#1e3a24', borderRadius: 6, border: `1px solid ${T.line}`,
                       }}>
                         <PitchMarkings />
-                        <SpaceZone
-                          meters={parseSpace(ex.space)}
-                          center={{ x: 53.5 + (ex.diagram?.spaceOffset?.dx || 0), y: 35 + (ex.diagram?.spaceOffset?.dy || 0) }}
-                          interactive={false}
-                        />
+                        <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
                         <DiagramElements elements={ex.diagram?.elements || []} arrows={ex.diagram?.arrows || []} interactive={false} />
                       </svg>
                     </div>
@@ -4615,246 +4790,7 @@ function ResultsTable({ matches }) {
   );
 }
 
-/* ---------------------------------------------------------------
-   CLASSIFICAÇÃO — tabela da competição (ex: AF Porto), atualizada
-   manualmente jornada a jornada. Não depende de nenhum site externo:
-   os dados são colados/introduzidos aqui e ficam guardados e
-   sincronizados para toda a equipa técnica.
----------------------------------------------------------------- */
-function sortStandings(teams) {
-  return [...(teams || [])]
-    .map(t => {
-      const J = Number(t.J) || 0, V = Number(t.V) || 0, E = Number(t.E) || 0, D = Number(t.D) || 0;
-      const GM = Number(t.GM) || 0, GS = Number(t.GS) || 0;
-      return { ...t, J, V, E, D, GM, GS, P: V * 3 + E, DG: GM - GS };
-    })
-    .sort((a, b) => b.P - a.P || b.DG - a.DG || b.GM - a.GM || a.name.localeCompare(b.name));
-}
-
-function LeagueStandings({ standings, setStandings, standingsMeta }) {
-  const [editing, setEditing] = useState(false);
-  const [roundIdx, setRoundIdx] = useState(0);
-  const teams = sortStandings(standings.teams);
-  const rounds = standings.rounds || [];
-  const round = rounds[roundIdx];
-
-  useEffect(() => {
-    // Ao chegarem novas jornadas (ex: outra pessoa acabou de atualizar),
-    // mantém-nos na última em vez de saltar para trás.
-    if (roundIdx >= rounds.length && rounds.length > 0) setRoundIdx(rounds.length - 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rounds.length]);
-
-  const hasData = teams.length > 0 || rounds.length > 0;
-
-  return (
-    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div>
-          <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>{standings.competition || 'Classificação da competição'}</div>
-          {standingsMeta?.email && (
-            <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 2 }}>Atualizado por {standingsMeta.email} · {timeAgo(standingsMeta.at)}</div>
-          )}
-        </div>
-        <Btn variant="ghost" onClick={() => setEditing(true)}><Pencil size={14} /> Atualizar jornada</Btn>
-      </div>
-
-      {!hasData ? (
-        <EmptyState text="Ainda sem classificação introduzida. Usa 'Atualizar jornada' para colar os resultados e a tabela." />
-      ) : (
-        <>
-          {rounds.length > 0 && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 10 }}>
-                <button onClick={() => setRoundIdx(i => Math.max(0, i - 1))} disabled={roundIdx === 0}
-                  style={{ background: 'none', border: 'none', color: roundIdx === 0 ? T.mutedDim : T.cream, cursor: roundIdx === 0 ? 'default' : 'pointer' }}>
-                  <ChevronLeft size={18} />
-                </button>
-                <span style={{ ...display, fontSize: 14, color: T.cream, textTransform: 'uppercase', letterSpacing: '.06em' }}>{round?.label || `Jornada ${roundIdx + 1}`}</span>
-                <button onClick={() => setRoundIdx(i => Math.min(rounds.length - 1, i + 1))} disabled={roundIdx === rounds.length - 1}
-                  style={{ background: 'none', border: 'none', color: roundIdx === rounds.length - 1 ? T.mutedDim : T.cream, cursor: roundIdx === rounds.length - 1 ? 'default' : 'pointer' }}>
-                  <ChevronRight size={18} />
-                </button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {(round?.games || []).map((g, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
-                    {g.date && <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 44, flexShrink: 0 }}>{g.date}</span>}
-                    <span style={{ flex: 1, textAlign: 'right', color: T.cream }}>{g.home}</span>
-                    <span style={{ ...mono, color: T.gold, width: 52, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
-                    <span style={{ flex: 1, color: T.cream }}>{g.away}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {teams.length > 0 && (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead>
-                  <tr style={{ color: T.mutedDim, ...mono, fontSize: 11 }}>
-                    <th style={{ textAlign: 'left', padding: '4px 6px' }}>#</th>
-                    <th style={{ textAlign: 'left', padding: '4px 6px' }}>Equipa</th>
-                    <th style={{ padding: '4px 6px' }}>P</th>
-                    <th style={{ padding: '4px 6px' }}>J</th>
-                    <th style={{ padding: '4px 6px' }}>V</th>
-                    <th style={{ padding: '4px 6px' }}>E</th>
-                    <th style={{ padding: '4px 6px' }}>D</th>
-                    <th style={{ padding: '4px 6px' }}>GM</th>
-                    <th style={{ padding: '4px 6px' }}>GS</th>
-                    <th style={{ padding: '4px 6px' }}>DG</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teams.map((t, i) => {
-                    const isUs = /salgueiros/i.test(t.name || '');
-                    return (
-                      <tr key={t.id} style={{ color: isUs ? T.gold : T.cream, background: isUs ? `${T.crimson}22` : 'transparent', borderTop: `1px solid ${T.line}` }}>
-                        <td style={{ padding: '5px 6px', ...mono }}>{i + 1}</td>
-                        <td style={{ padding: '5px 6px', fontWeight: isUs ? 600 : 400 }}>{t.name}</td>
-                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono, fontWeight: 600 }}>{t.P}</td>
-                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.J}</td>
-                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.V}</td>
-                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.E}</td>
-                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.D}</td>
-                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.GM}</td>
-                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.GS}</td>
-                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-
-      {editing && <StandingsModal standings={standings} onClose={() => setEditing(false)} onSave={(data) => { setStandings(data); setEditing(false); }} />}
-    </div>
-  );
-}
-
-function StandingsModal({ standings, onClose, onSave }) {
-  const [competition, setCompetition] = useState(standings.competition || '');
-  const [teams, setTeams] = useState((standings.teams && standings.teams.length ? standings.teams : [{ id: uid(), name: '', J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }]));
-  const [rounds, setRounds] = useState(standings.rounds || []);
-  const [roundIdx, setRoundIdx] = useState(Math.max(0, (standings.rounds || []).length - 1));
-
-  const updateTeam = (id, field, val) => setTeams(teams.map(t => t.id === id ? { ...t, [field]: val } : t));
-  const addTeam = () => setTeams([...teams, { id: uid(), name: '', J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }]);
-  const removeTeam = (id) => setTeams(teams.filter(t => t.id !== id));
-
-  const round = rounds[roundIdx] || null;
-  const addRound = () => {
-    const next = [...rounds, { id: uid(), label: `Jornada ${rounds.length + 1}`, games: [] }];
-    setRounds(next);
-    setRoundIdx(next.length - 1);
-  };
-  const removeRound = (idx) => {
-    const next = rounds.filter((_, i) => i !== idx);
-    setRounds(next);
-    setRoundIdx(Math.max(0, Math.min(idx, next.length - 1)));
-  };
-  const updateRoundLabel = (idx, label) => setRounds(rounds.map((r, i) => i === idx ? { ...r, label } : r));
-  const addGame = () => {
-    if (!round) return;
-    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: [...(r.games || []), { home: '', away: '', score: '', date: '' }] } : r));
-  };
-  const updateGame = (gi, field, val) => {
-    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: r.games.map((g, j) => j === gi ? { ...g, [field]: val } : g) } : r));
-  };
-  const removeGame = (gi) => {
-    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: r.games.filter((_, j) => j !== gi) } : r));
-  };
-
-  const save = () => onSave({ competition, teams: teams.filter(t => t.name.trim()), rounds });
-
-  return (
-    <Modal title="Atualizar jornada" onClose={onClose} wide>
-      <div style={{ marginBottom: 18 }}>
-        <Field label="Competição">
-          <Input value={competition} onChange={e => setCompetition(e.target.value)} placeholder="Ex: AF Porto - 1ª Divisão Sub-19, Série 2 - 2025/26" />
-        </Field>
-      </div>
-
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Resultados por jornada</div>
-          <Btn variant="ghost" onClick={addRound}><Plus size={13} /> Nova jornada</Btn>
-        </div>
-
-        {rounds.length === 0 ? (
-          <p style={{ fontSize: 12.5, color: T.mutedDim }}>Sem jornadas ainda. Adiciona uma para começar a registar os resultados.</p>
-        ) : (
-          <>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-              {rounds.map((r, i) => (
-                <button key={r.id} type="button" onClick={() => setRoundIdx(i)} style={{
-                  padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
-                  background: i === roundIdx ? '#B5393F' : 'transparent', color: i === roundIdx ? TEXT_ON_ACCENT : T.muted,
-                  border: `1px solid ${i === roundIdx ? '#B5393F' : T.line}`,
-                }}>{r.label}</button>
-              ))}
-            </div>
-
-            {round && (
-              <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  <Input value={round.label} onChange={e => updateRoundLabel(roundIdx, e.target.value)} style={{ flex: 1 }} placeholder="Nome da jornada" />
-                  <button onClick={() => removeRound(roundIdx)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={15} /></button>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                  {(round.games || []).map((g, gi) => (
-                    <div key={gi} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <Input value={g.date} onChange={e => updateGame(gi, 'date', e.target.value)} placeholder="dd/mm" style={{ width: 70 }} />
-                      <Input value={g.home} onChange={e => updateGame(gi, 'home', e.target.value)} placeholder="Equipa casa" style={{ flex: 1 }} />
-                      <Input value={g.score} onChange={e => updateGame(gi, 'score', e.target.value)} placeholder="1-1" style={{ width: 56, textAlign: 'center' }} />
-                      <Input value={g.away} onChange={e => updateGame(gi, 'away', e.target.value)} placeholder="Equipa fora" style={{ flex: 1 }} />
-                      <button onClick={() => removeGame(gi)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
-                    </div>
-                  ))}
-                </div>
-                <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Classificação (P e DG calculam-se sozinhos)</div>
-          <Btn variant="ghost" onClick={addTeam}><Plus size={13} /> Adicionar equipa</Btn>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
-            <span>Equipa</span><span style={{ textAlign: 'center' }}>J</span><span style={{ textAlign: 'center' }}>V</span>
-            <span style={{ textAlign: 'center' }}>E</span><span style={{ textAlign: 'center' }}>D</span>
-            <span style={{ textAlign: 'center' }}>GM</span><span style={{ textAlign: 'center' }}>GS</span><span />
-          </div>
-          {teams.map(t => (
-            <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, alignItems: 'center' }}>
-              <Input value={t.name} onChange={e => updateTeam(t.id, 'name', e.target.value)} placeholder="Nome da equipa" />
-              {['J', 'V', 'E', 'D', 'GM', 'GS'].map(f => (
-                <Input key={f} type="number" min="0" value={t[f]} onChange={e => updateTeam(t.id, f, e.target.value)} style={{ textAlign: 'center', padding: '6px 4px' }} />
-              ))}
-              <button onClick={() => removeTeam(t.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={save}><Check size={15} /> Guardar</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta }) {
+function Jogos({ matches, setMatches, players }) {
   const [modal, setModal] = useState(null);
 
   const save = (data) => {
@@ -4870,9 +4806,6 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
       <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
 
-      <div style={{ marginBottom: 20 }}>
-        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} />
-      </div>
       <div style={{ marginBottom: 20 }}>
         <MatchDashboard players={players} matches={matches} />
       </div>
