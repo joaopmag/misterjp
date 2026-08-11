@@ -7281,22 +7281,31 @@ function PdfCanvasViewer({ dataUrl }) {
         if (!container) return;
         container.innerHTML = '';
         const width = Math.max(280, container.clientWidth || 600);
+        // O ecrã (sobretudo em telemóveis) mostra mais píxeis físicos do que
+        // píxeis CSS — desenhar o canvas só à largura CSS (scale = 1 píxel
+        // físico por píxel CSS) fica desfocado assim que o browser o amplia
+        // para o ecrã real. Multiplicamos a escala de desenho pelo
+        // devicePixelRatio (limitado a 3, para não pesar demasiado em
+        // ecrãs 4K) para o canvas ter píxeis físicos suficientes, e depois
+        // reduzimos de volta via CSS — a mesma técnica usada em qualquer
+        // canvas "retina-ready".
+        const dpr = Math.min(window.devicePixelRatio || 1, 3);
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           if (cancelled) return;
           const page = await pdf.getPage(pageNum);
           const unscaled = page.getViewport({ scale: 1 });
-          const scale = width / unscaled.width;
-          const viewport = page.getViewport({ scale });
+          const displayScale = width / unscaled.width;
+          const renderViewport = page.getViewport({ scale: displayScale * dpr });
           const canvas = document.createElement('canvas');
-          canvas.width = Math.ceil(viewport.width);
-          canvas.height = Math.ceil(viewport.height);
+          canvas.width = Math.ceil(renderViewport.width);
+          canvas.height = Math.ceil(renderViewport.height);
           canvas.style.display = 'block';
           canvas.style.width = '100%';
           canvas.style.height = 'auto';
           canvas.style.marginBottom = pageNum < pdf.numPages ? '8px' : '0';
           container.appendChild(canvas);
           const ctx = canvas.getContext('2d');
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
         }
         if (!cancelled) setStatus('ready');
       })
