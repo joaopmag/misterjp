@@ -7257,71 +7257,130 @@ function loadPdfJs() {
   return pdfJsLoadPromise;
 }
 
-// Mostra o PDF desenhando cada página num <canvas>, em vez de o embutir num
-// iframe. É preciso porque o Chrome no Android (ao contrário do desktop) não
-// tem visualizador de PDF embutido para iframes — mesmo com um blob: URL
-// válido, mostra só um cartão "Abrir" em vez do conteúdo. Desenhar as
-// páginas nós mesmos funciona em qualquer browser, incluindo dentro de
-// WebViews de outras apps.
+// Mostra o PDF desenhando a página atual num <canvas>, em vez de o embutir
+// num iframe. É preciso porque o Chrome no Android (ao contrário do
+// desktop) não tem visualizador de PDF embutido para iframes — mesmo com
+// um blob: URL válido, mostra só um cartão "Abrir" em vez do conteúdo.
+// Desenhar as páginas nós mesmos funciona em qualquer browser, incluindo
+// dentro de WebViews de outras apps. Mostra uma página de cada vez (em
+// vez de todas empilhadas) para caber por inteiro no ecrã em modo
+// apresentação/ecrã inteiro, com navegação por setas do teclado (←/→,
+// PageUp/PageDown, espaço) e botões, útil sobretudo quando não há mais
+// nada em que interagir (ecrã inteiro).
 function PdfCanvasViewer({ dataUrl }) {
   const containerRef = useRef(null);
+  const canvasRef = useRef(null);
+  const pdfDocRef = useRef(null);
+  const renderTaskRef = useRef(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error
+  const [numPages, setNumPages] = useState(0);
+  const [pageNum, setPageNum] = useState(1);
 
+  // Carrega o documento PDF sempre que o dataUrl muda.
   useEffect(() => {
     if (!dataUrl) return undefined;
     let cancelled = false;
-    let pdfDoc = null;
     setStatus('loading');
+    setNumPages(0);
+    setPageNum(1);
     loadPdfJs()
       .then(pdfjsLib => (cancelled ? null : pdfjsLib.getDocument(dataUrl).promise))
-      .then(async (pdf) => {
-        if (cancelled || !pdf) return;
-        pdfDoc = pdf;
-        const container = containerRef.current;
-        if (!container) return;
-        container.innerHTML = '';
-        const width = Math.max(280, container.clientWidth || 600);
-        // O ecrã (sobretudo em telemóveis) mostra mais píxeis físicos do que
-        // píxeis CSS — desenhar o canvas só à largura CSS (scale = 1 píxel
-        // físico por píxel CSS) fica desfocado assim que o browser o amplia
-        // para o ecrã real. Multiplicamos a escala de desenho pelo
-        // devicePixelRatio (limitado a 3, para não pesar demasiado em
-        // ecrãs 4K) para o canvas ter píxeis físicos suficientes, e depois
-        // reduzimos de volta via CSS — a mesma técnica usada em qualquer
-        // canvas "retina-ready".
-        const dpr = Math.min(window.devicePixelRatio || 1, 3);
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-          if (cancelled) return;
-          const page = await pdf.getPage(pageNum);
-          const unscaled = page.getViewport({ scale: 1 });
-          const displayScale = width / unscaled.width;
-          const renderViewport = page.getViewport({ scale: displayScale * dpr });
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.ceil(renderViewport.width);
-          canvas.height = Math.ceil(renderViewport.height);
-          canvas.style.display = 'block';
-          canvas.style.width = '100%';
-          canvas.style.height = 'auto';
-          canvas.style.marginBottom = pageNum < pdf.numPages ? '8px' : '0';
-          container.appendChild(canvas);
-          const ctx = canvas.getContext('2d');
-          await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
-        }
-        if (!cancelled) setStatus('ready');
+      .then((pdf) => {
+        if (cancelled) return;
+        pdfDocRef.current = pdf;
+        setNumPages(pdf.numPages);
+        setStatus('ready');
       })
       .catch((err) => {
-        console.error('Erro ao mostrar o PDF', err);
+        console.error('Erro ao carregar o PDF', err);
         if (!cancelled) setStatus('error');
       });
     return () => {
       cancelled = true;
-      if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) { /* ignore */ } }
+      if (pdfDocRef.current) { try { pdfDocRef.current.destroy(); } catch (e) { /* ignore */ } }
+      pdfDocRef.current = null;
     };
   }, [dataUrl]);
 
+  // Desenha só a página atual, ajustada por inteiro ao contentor (largura
+  // E altura), numa resolução bem acima do tamanho de exibição —
+  // multiplicada pelo devicePixelRatio do ecrã (para não desfocar em ecrãs
+  // retina/telemóvel, limitado a 3x) e por um fator extra de nitidez, já
+  // que só há uma página de cada vez para desenhar — ao contrário da
+  // versão anterior, que desenhava todas empilhadas e por isso tinha de
+  // poupar resolução por cada uma.
+  const renderPage = useCallback(async () => {
+    const pdf = pdfDocRef.current;
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!pdf || !container || !canvas) return;
+    if (renderTaskRef.current) { try { renderTaskRef.current.cancel(); } catch (e) { /* ignore */ } }
+    try {
+      const page = await pdf.getPage(pageNum);
+      const width = Math.max(280, container.clientWidth || 600);
+      const height = Math.max(280, container.clientHeight || 800);
+      const unscaled = page.getViewport({ scale: 1 });
+      const fitScale = Math.min(width / unscaled.width, height / unscaled.height);
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      const QUALITY = 1.5;
+      const renderScale = fitScale * dpr * QUALITY;
+      const viewport = page.getViewport({ scale: renderScale });
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      canvas.style.width = `${Math.ceil(fitScale * unscaled.width)}px`;
+      canvas.style.height = `${Math.ceil(fitScale * unscaled.height)}px`;
+      const ctx = canvas.getContext('2d');
+      const task = page.render({ canvasContext: ctx, viewport });
+      renderTaskRef.current = task;
+      await task.promise;
+      renderTaskRef.current = null;
+    } catch (err) {
+      if (err && err.name !== 'RenderingCancelledException') {
+        console.error('Erro ao mostrar a página do PDF', err);
+      }
+    }
+  }, [pageNum]);
+
+  useEffect(() => {
+    if (status !== 'ready') return undefined;
+    renderPage();
+    const onResize = () => renderPage();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [status, renderPage]);
+
+  const goPrev = useCallback(() => setPageNum(p => Math.max(1, p - 1)), []);
+  const goNext = useCallback(() => setPageNum(p => Math.min(numPages || 1, p + 1)), [numPages]);
+
+  // Navegação por teclado — ignora quando o foco está num campo de texto,
+  // para não interferir com o resto da app.
+  useEffect(() => {
+    if (status !== 'ready' || numPages <= 1) return undefined;
+    const onKeyDown = (e) => {
+      const active = document.activeElement;
+      const tag = active && active.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (active && active.isContentEditable)) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault();
+        goNext();
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+        e.preventDefault();
+        goPrev();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [status, numPages, goNext, goPrev]);
+
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'auto', background: '#525659' }}>
-      <div ref={containerRef} style={{ padding: 8 }} />
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#525659',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      {status === 'ready' && <canvas ref={canvasRef} style={{ display: 'block' }} />}
       {status === 'loading' && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ddd', fontSize: 12.5 }}>
           A carregar o PDF…
@@ -7332,9 +7391,33 @@ function PdfCanvasViewer({ dataUrl }) {
           Não foi possível mostrar a pré-visualização deste PDF. Usa "Abrir / descarregar" abaixo.
         </div>
       )}
+      {status === 'ready' && numPages > 1 && (
+        <div style={{
+          position: 'absolute', left: '50%', bottom: 10, transform: 'translateX(-50%)',
+          display: 'flex', alignItems: 'center', gap: 10, padding: '5px 10px', borderRadius: 20,
+          background: 'rgba(0,0,0,0.6)',
+        }}>
+          <button
+            type="button" onClick={goPrev} disabled={pageNum <= 1}
+            style={{ background: 'none', border: 'none', color: pageNum <= 1 ? 'rgba(255,255,255,0.35)' : '#fff', cursor: pageNum <= 1 ? 'default' : 'pointer', display: 'flex', padding: 2 }}
+            title="Página anterior (seta esquerda)"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <span style={{ fontSize: 12, color: '#fff', minWidth: 46, textAlign: 'center' }}>{pageNum} / {numPages}</span>
+          <button
+            type="button" onClick={goNext} disabled={pageNum >= numPages}
+            style={{ background: 'none', border: 'none', color: pageNum >= numPages ? 'rgba(255,255,255,0.35)' : '#fff', cursor: pageNum >= numPages ? 'default' : 'pointer', display: 'flex', padding: 2 }}
+            title="Página seguinte (seta direita)"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
+
 
 function AttachmentPreview({ item, tall }) {
   const boxRef = useRef(null);
