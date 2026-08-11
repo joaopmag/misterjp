@@ -3747,6 +3747,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const [animItems, setAnimItems] = useState([]);
   const [playing, setPlaying] = useState(false);
   const [finished, setFinished] = useState(sequence.length === 0);
+  const attachmentBlobUrl = useBlobUrl(exercise.attachment && exercise.attachment.type !== 'image' ? exercise.attachment.dataUrl : null);
   const animRef = React.useRef(null);
   const timeoutRef = React.useRef(null);
   useEffect(() => () => {
@@ -3871,7 +3872,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.cream }}><BookOpen size={14} /> {exercise.attachment.name}</span>
                 <a href={exercise.attachment.dataUrl} download={exercise.attachment.name} style={{ fontSize: 12, color: T.gold, textDecoration: 'none' }}>Descarregar</a>
               </div>
-              <iframe title={exercise.attachment.name} src={exercise.attachment.dataUrl} style={{ width: '100%', height: 420, border: 'none', background: '#fff' }} />
+              <div style={{ height: 420 }}>
+                <PdfCanvasViewer dataUrl={attachmentBlobUrl} />
+              </div>
             </div>
           )}
         </div>
@@ -4339,6 +4342,11 @@ function PrintExerciseBlock({ e, ex, index }) {
           />
         </svg>
       )}
+      {!(ex.attachment && ex.attachment.type === 'image') && (
+        <div style={{ textAlign: 'right', maxWidth: 540, margin: '2px 0 0' }}>
+          <span style={{ fontSize: 9.5, color: '#888', letterSpacing: '.04em' }}>™ Mister JP</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -4528,6 +4536,9 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
                         <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
                         <DiagramElements elements={ex.diagram?.elements || []} arrows={ex.diagram?.arrows || []} interactive={false} />
                       </svg>
+                    </div>
+                    <div style={{ textAlign: 'right', marginTop: 4 }}>
+                      <span style={{ fontSize: 10.5, color: T.mutedDim, letterSpacing: '.04em' }}>™ Mister JP</span>
                     </div>
                   </div>
                 );
@@ -6899,6 +6910,98 @@ function useBlobUrl(dataUrl) {
   return blobUrl;
 }
 
+let pdfJsLoadPromise = null;
+// Carrega o pdf.js (Mozilla) a partir de um CDN, uma única vez, e prepara o
+// worker. Ficamos com uma única instância partilhada por toda a app.
+function loadPdfJs() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('sem window'));
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (pdfJsLoadPromise) return pdfJsLoadPromise;
+  pdfJsLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js';
+    script.onload = () => {
+      try {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.js';
+        resolve(window.pdfjsLib);
+      } catch (err) { reject(err); }
+    };
+    script.onerror = () => reject(new Error('Falha a carregar pdf.js'));
+    document.head.appendChild(script);
+  });
+  return pdfJsLoadPromise;
+}
+
+// Mostra o PDF desenhando cada página num <canvas>, em vez de o embutir num
+// iframe. É preciso porque o Chrome no Android (ao contrário do desktop) não
+// tem visualizador de PDF embutido para iframes — mesmo com um blob: URL
+// válido, mostra só um cartão "Abrir" em vez do conteúdo. Desenhar as
+// páginas nós mesmos funciona em qualquer browser, incluindo dentro de
+// WebViews de outras apps.
+function PdfCanvasViewer({ dataUrl }) {
+  const containerRef = useRef(null);
+  const [status, setStatus] = useState('loading'); // loading | ready | error
+
+  useEffect(() => {
+    if (!dataUrl) return undefined;
+    let cancelled = false;
+    let pdfDoc = null;
+    setStatus('loading');
+    loadPdfJs()
+      .then(pdfjsLib => (cancelled ? null : pdfjsLib.getDocument(dataUrl).promise))
+      .then(async (pdf) => {
+        if (cancelled || !pdf) return;
+        pdfDoc = pdf;
+        const container = containerRef.current;
+        if (!container) return;
+        container.innerHTML = '';
+        const width = Math.max(280, container.clientWidth || 600);
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          if (cancelled) return;
+          const page = await pdf.getPage(pageNum);
+          const unscaled = page.getViewport({ scale: 1 });
+          const scale = width / unscaled.width;
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          canvas.style.display = 'block';
+          canvas.style.width = '100%';
+          canvas.style.height = 'auto';
+          canvas.style.marginBottom = pageNum < pdf.numPages ? '8px' : '0';
+          container.appendChild(canvas);
+          const ctx = canvas.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport }).promise;
+        }
+        if (!cancelled) setStatus('ready');
+      })
+      .catch((err) => {
+        console.error('Erro ao mostrar o PDF', err);
+        if (!cancelled) setStatus('error');
+      });
+    return () => {
+      cancelled = true;
+      if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) { /* ignore */ } }
+    };
+  }, [dataUrl]);
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'auto', background: '#525659' }}>
+      <div ref={containerRef} style={{ padding: 8 }} />
+      {status === 'loading' && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ddd', fontSize: 12.5 }}>
+          A carregar o PDF…
+        </div>
+      )}
+      {status === 'error' && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ddd', fontSize: 12.5, textAlign: 'center', padding: 20 }}>
+          Não foi possível mostrar a pré-visualização deste PDF. Usa "Abrir / descarregar" abaixo.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AttachmentPreview({ item, tall }) {
   const boxRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -6974,7 +7077,7 @@ function AttachmentPreview({ item, tall }) {
       <div ref={boxRef} style={wrapStyle}>
         <div style={{ flex: 1, minHeight: 0, background: '#fff', position: 'relative' }}>
           {pdfBlobUrl ? (
-            <iframe key={item.id} title={item.title} src={pdfBlobUrl} style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} />
+            <PdfCanvasViewer key={item.id} dataUrl={pdfBlobUrl} />
           ) : (
             <div style={{
               position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
