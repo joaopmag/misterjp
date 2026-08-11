@@ -108,6 +108,51 @@ async function saveSingleton(table, value) {
   }
 }
 
+// Versão genérica do padrão usado para a Época: carrega, grava (debounced
+// pelo próprio efeito de mudança de valor) e escuta alterações em tempo
+// real feitas por outra pessoa, para uma tabela de registo único
+// (colunas id='default', data jsonb, updated_by_email, updated_at).
+function useSingletonSync(table, fallback, notifyEdit) {
+  const [value, setValue] = useState(fallback);
+  const [ready, setReady] = useState(false);
+  const [meta, setMeta] = useState({ email: null, at: null });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const s = await loadSingleton(table, fallback);
+      if (cancelled) return;
+      setValue(s.value);
+      if (s.editedBy) setMeta({ email: s.editedBy, at: s.editedAt });
+      setReady(true);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [table]);
+
+  useEffect(() => {
+    if (!ready) return;
+    saveSingleton(table, value);
+    if (notifyEdit) notifyEdit(table);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, ready]);
+
+  useEffect(() => {
+    const channel = supabase.channel(`${table}_rt`)
+      .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+        const row = payload.new;
+        if (!row) return;
+        setValue(row.data);
+        setMeta({ email: row.updated_by_email, at: row.updated_at });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [table]);
+
+  return [value, setValue, ready, meta];
+}
+
 // Hook genérico de sincronização para as listas (jogadores, sessões,
 // jogos, ...). Cada registo da lista vira UMA LINHA na respetiva tabela,
 // o que permite saber quem editou cada registo individual — não só "a
@@ -519,9 +564,15 @@ function App({ session }) {
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit);
   const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit);
+  // Classificação/resultados da competição — registo único, atualizado
+  // manualmente (jornada a jornada), partilhado por toda a equipa técnica.
+  const [standings, setStandings, standingsReady, standingsMeta] = useSingletonSync(
+    'league_standings', { competition: '', teams: [], rounds: [] }, notifyEdit
+  );
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !sessionsReady || !monitoringReady
-    || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady;
+    || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
+    || !standingsReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
   // lateral, quando o link inclui ?checkin=1 — é este o link a partilhar
@@ -763,7 +814,7 @@ function App({ session }) {
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -4564,7 +4615,246 @@ function ResultsTable({ matches }) {
   );
 }
 
-function Jogos({ matches, setMatches, players }) {
+/* ---------------------------------------------------------------
+   CLASSIFICAÇÃO — tabela da competição (ex: AF Porto), atualizada
+   manualmente jornada a jornada. Não depende de nenhum site externo:
+   os dados são colados/introduzidos aqui e ficam guardados e
+   sincronizados para toda a equipa técnica.
+---------------------------------------------------------------- */
+function sortStandings(teams) {
+  return [...(teams || [])]
+    .map(t => {
+      const J = Number(t.J) || 0, V = Number(t.V) || 0, E = Number(t.E) || 0, D = Number(t.D) || 0;
+      const GM = Number(t.GM) || 0, GS = Number(t.GS) || 0;
+      return { ...t, J, V, E, D, GM, GS, P: V * 3 + E, DG: GM - GS };
+    })
+    .sort((a, b) => b.P - a.P || b.DG - a.DG || b.GM - a.GM || a.name.localeCompare(b.name));
+}
+
+function LeagueStandings({ standings, setStandings, standingsMeta }) {
+  const [editing, setEditing] = useState(false);
+  const [roundIdx, setRoundIdx] = useState(0);
+  const teams = sortStandings(standings.teams);
+  const rounds = standings.rounds || [];
+  const round = rounds[roundIdx];
+
+  useEffect(() => {
+    // Ao chegarem novas jornadas (ex: outra pessoa acabou de atualizar),
+    // mantém-nos na última em vez de saltar para trás.
+    if (roundIdx >= rounds.length && rounds.length > 0) setRoundIdx(rounds.length - 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rounds.length]);
+
+  const hasData = teams.length > 0 || rounds.length > 0;
+
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div>
+          <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>{standings.competition || 'Classificação da competição'}</div>
+          {standingsMeta?.email && (
+            <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 2 }}>Atualizado por {standingsMeta.email} · {timeAgo(standingsMeta.at)}</div>
+          )}
+        </div>
+        <Btn variant="ghost" onClick={() => setEditing(true)}><Pencil size={14} /> Atualizar jornada</Btn>
+      </div>
+
+      {!hasData ? (
+        <EmptyState text="Ainda sem classificação introduzida. Usa 'Atualizar jornada' para colar os resultados e a tabela." />
+      ) : (
+        <>
+          {rounds.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 10 }}>
+                <button onClick={() => setRoundIdx(i => Math.max(0, i - 1))} disabled={roundIdx === 0}
+                  style={{ background: 'none', border: 'none', color: roundIdx === 0 ? T.mutedDim : T.cream, cursor: roundIdx === 0 ? 'default' : 'pointer' }}>
+                  <ChevronLeft size={18} />
+                </button>
+                <span style={{ ...display, fontSize: 14, color: T.cream, textTransform: 'uppercase', letterSpacing: '.06em' }}>{round?.label || `Jornada ${roundIdx + 1}`}</span>
+                <button onClick={() => setRoundIdx(i => Math.min(rounds.length - 1, i + 1))} disabled={roundIdx === rounds.length - 1}
+                  style={{ background: 'none', border: 'none', color: roundIdx === rounds.length - 1 ? T.mutedDim : T.cream, cursor: roundIdx === rounds.length - 1 ? 'default' : 'pointer' }}>
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {(round?.games || []).map((g, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
+                    {g.date && <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 44, flexShrink: 0 }}>{g.date}</span>}
+                    <span style={{ flex: 1, textAlign: 'right', color: T.cream }}>{g.home}</span>
+                    <span style={{ ...mono, color: T.gold, width: 52, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
+                    <span style={{ flex: 1, color: T.cream }}>{g.away}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {teams.length > 0 && (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ color: T.mutedDim, ...mono, fontSize: 11 }}>
+                    <th style={{ textAlign: 'left', padding: '4px 6px' }}>#</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px' }}>Equipa</th>
+                    <th style={{ padding: '4px 6px' }}>P</th>
+                    <th style={{ padding: '4px 6px' }}>J</th>
+                    <th style={{ padding: '4px 6px' }}>V</th>
+                    <th style={{ padding: '4px 6px' }}>E</th>
+                    <th style={{ padding: '4px 6px' }}>D</th>
+                    <th style={{ padding: '4px 6px' }}>GM</th>
+                    <th style={{ padding: '4px 6px' }}>GS</th>
+                    <th style={{ padding: '4px 6px' }}>DG</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teams.map((t, i) => {
+                    const isUs = /salgueiros/i.test(t.name || '');
+                    return (
+                      <tr key={t.id} style={{ color: isUs ? T.gold : T.cream, background: isUs ? `${T.crimson}22` : 'transparent', borderTop: `1px solid ${T.line}` }}>
+                        <td style={{ padding: '5px 6px', ...mono }}>{i + 1}</td>
+                        <td style={{ padding: '5px 6px', fontWeight: isUs ? 600 : 400 }}>{t.name}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono, fontWeight: 600 }}>{t.P}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.J}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.V}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.E}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.D}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.GM}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.GS}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {editing && <StandingsModal standings={standings} onClose={() => setEditing(false)} onSave={(data) => { setStandings(data); setEditing(false); }} />}
+    </div>
+  );
+}
+
+function StandingsModal({ standings, onClose, onSave }) {
+  const [competition, setCompetition] = useState(standings.competition || '');
+  const [teams, setTeams] = useState((standings.teams && standings.teams.length ? standings.teams : [{ id: uid(), name: '', J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }]));
+  const [rounds, setRounds] = useState(standings.rounds || []);
+  const [roundIdx, setRoundIdx] = useState(Math.max(0, (standings.rounds || []).length - 1));
+
+  const updateTeam = (id, field, val) => setTeams(teams.map(t => t.id === id ? { ...t, [field]: val } : t));
+  const addTeam = () => setTeams([...teams, { id: uid(), name: '', J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }]);
+  const removeTeam = (id) => setTeams(teams.filter(t => t.id !== id));
+
+  const round = rounds[roundIdx] || null;
+  const addRound = () => {
+    const next = [...rounds, { id: uid(), label: `Jornada ${rounds.length + 1}`, games: [] }];
+    setRounds(next);
+    setRoundIdx(next.length - 1);
+  };
+  const removeRound = (idx) => {
+    const next = rounds.filter((_, i) => i !== idx);
+    setRounds(next);
+    setRoundIdx(Math.max(0, Math.min(idx, next.length - 1)));
+  };
+  const updateRoundLabel = (idx, label) => setRounds(rounds.map((r, i) => i === idx ? { ...r, label } : r));
+  const addGame = () => {
+    if (!round) return;
+    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: [...(r.games || []), { home: '', away: '', score: '', date: '' }] } : r));
+  };
+  const updateGame = (gi, field, val) => {
+    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: r.games.map((g, j) => j === gi ? { ...g, [field]: val } : g) } : r));
+  };
+  const removeGame = (gi) => {
+    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: r.games.filter((_, j) => j !== gi) } : r));
+  };
+
+  const save = () => onSave({ competition, teams: teams.filter(t => t.name.trim()), rounds });
+
+  return (
+    <Modal title="Atualizar jornada" onClose={onClose} wide>
+      <div style={{ marginBottom: 18 }}>
+        <Field label="Competição">
+          <Input value={competition} onChange={e => setCompetition(e.target.value)} placeholder="Ex: AF Porto - 1ª Divisão Sub-19, Série 2 - 2025/26" />
+        </Field>
+      </div>
+
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Resultados por jornada</div>
+          <Btn variant="ghost" onClick={addRound}><Plus size={13} /> Nova jornada</Btn>
+        </div>
+
+        {rounds.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: T.mutedDim }}>Sem jornadas ainda. Adiciona uma para começar a registar os resultados.</p>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {rounds.map((r, i) => (
+                <button key={r.id} type="button" onClick={() => setRoundIdx(i)} style={{
+                  padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
+                  background: i === roundIdx ? '#B5393F' : 'transparent', color: i === roundIdx ? TEXT_ON_ACCENT : T.muted,
+                  border: `1px solid ${i === roundIdx ? '#B5393F' : T.line}`,
+                }}>{r.label}</button>
+              ))}
+            </div>
+
+            {round && (
+              <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <Input value={round.label} onChange={e => updateRoundLabel(roundIdx, e.target.value)} style={{ flex: 1 }} placeholder="Nome da jornada" />
+                  <button onClick={() => removeRound(roundIdx)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={15} /></button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                  {(round.games || []).map((g, gi) => (
+                    <div key={gi} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <Input value={g.date} onChange={e => updateGame(gi, 'date', e.target.value)} placeholder="dd/mm" style={{ width: 70 }} />
+                      <Input value={g.home} onChange={e => updateGame(gi, 'home', e.target.value)} placeholder="Equipa casa" style={{ flex: 1 }} />
+                      <Input value={g.score} onChange={e => updateGame(gi, 'score', e.target.value)} placeholder="1-1" style={{ width: 56, textAlign: 'center' }} />
+                      <Input value={g.away} onChange={e => updateGame(gi, 'away', e.target.value)} placeholder="Equipa fora" style={{ flex: 1 }} />
+                      <button onClick={() => removeGame(gi)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+                    </div>
+                  ))}
+                </div>
+                <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Classificação (P e DG calculam-se sozinhos)</div>
+          <Btn variant="ghost" onClick={addTeam}><Plus size={13} /> Adicionar equipa</Btn>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
+            <span>Equipa</span><span style={{ textAlign: 'center' }}>J</span><span style={{ textAlign: 'center' }}>V</span>
+            <span style={{ textAlign: 'center' }}>E</span><span style={{ textAlign: 'center' }}>D</span>
+            <span style={{ textAlign: 'center' }}>GM</span><span style={{ textAlign: 'center' }}>GS</span><span />
+          </div>
+          {teams.map(t => (
+            <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, alignItems: 'center' }}>
+              <Input value={t.name} onChange={e => updateTeam(t.id, 'name', e.target.value)} placeholder="Nome da equipa" />
+              {['J', 'V', 'E', 'D', 'GM', 'GS'].map(f => (
+                <Input key={f} type="number" min="0" value={t[f]} onChange={e => updateTeam(t.id, f, e.target.value)} style={{ textAlign: 'center', padding: '6px 4px' }} />
+              ))}
+              <button onClick={() => removeTeam(t.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={save}><Check size={15} /> Guardar</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta }) {
   const [modal, setModal] = useState(null);
 
   const save = (data) => {
@@ -4580,6 +4870,9 @@ function Jogos({ matches, setMatches, players }) {
       <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
 
+      <div style={{ marginBottom: 20 }}>
+        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} />
+      </div>
       <div style={{ marginBottom: 20 }}>
         <MatchDashboard players={players} matches={matches} />
       </div>
