@@ -2917,68 +2917,32 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             {!t.symbol && t.label}
           </button>
         ))}
-        {arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') && (
-          <button
-            type="button"
-            onClick={isPlaying ? stopAnimation : playAnimation}
-            title={isPlaying ? 'Parar animação' : 'Animar deslocamentos (bola no passe, jogador na corrida)'}
-            style={{
-              padding: '5px 10px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
-              background: isPlaying ? T.bad : T.crimsonBright,
-              color: T.cream, border: `1px solid ${isPlaying ? T.bad : T.crimsonBright}`,
-              display: 'flex', alignItems: 'center', gap: 5, minHeight: 24,
-            }}
-          >
-            {isPlaying ? <Square size={12} /> : <Play size={12} />}
-            {isPlaying ? 'Parar' : 'Animar'}
-          </button>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-          <button
-            type="button"
-            onClick={undo}
-            disabled={!canUndo}
-            title="Retroceder (Ctrl+Z)"
-            style={{
-              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: `1px solid ${T.line}`,
-              color: canUndo ? T.cream : T.mutedDim, cursor: canUndo ? 'pointer' : 'not-allowed',
-              opacity: canUndo ? 1 : 0.5,
-            }}
-          >
-            <Undo2 size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={redo}
-            disabled={!canRedo}
-            title="Refazer (Ctrl+Y)"
-            style={{
-              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: `1px solid ${T.line}`,
-              color: canRedo ? T.cream : T.mutedDim, cursor: canRedo ? 'pointer' : 'not-allowed',
-              opacity: canRedo ? 1 : 0.5,
-            }}
-          >
-            <Redo2 size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={doPrint}
-            title="Imprimir prancheta"
-            style={{
-              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: '#B5393F', border: '1px solid #B5393F', cursor: 'pointer',
-            }}
-          >
-            <Printer size={14} color={TEXT_ON_ACCENT} />
-          </button>
-        </div>
-        {(elements.length > 0 || arrows.length > 0 || spaceMeters) && (
-          <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>
-            Limpar tudo
-          </button>
-        )}
+        {(() => {
+          const hasMovement = arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
+          return (
+            <button
+              type="button"
+              onClick={isPlaying ? stopAnimation : playAnimation}
+              disabled={!hasMovement}
+              title={
+                !hasMovement
+                  ? 'Desenha uma seta de Passe ou Corrida para poderes simular a animação'
+                  : (isPlaying ? 'Parar animação' : 'Simula a animação (bola no passe, jogador na corrida) antes de guardar')
+              }
+              style={{
+                padding: '5px 10px', borderRadius: 6, fontSize: 11.5, cursor: hasMovement ? 'pointer' : 'not-allowed', ...body,
+                background: !hasMovement ? 'transparent' : (isPlaying ? T.bad : T.crimsonBright),
+                color: !hasMovement ? T.mutedDim : T.cream,
+                border: `1px solid ${!hasMovement ? T.line : (isPlaying ? T.bad : T.crimsonBright)}`,
+                opacity: hasMovement ? 1 : 0.6,
+                display: 'flex', alignItems: 'center', gap: 5, minHeight: 24,
+              }}
+            >
+              {isPlaying ? <Square size={12} /> : <Play size={12} />}
+              {isPlaying ? 'Parar' : 'Simular animação'}
+            </button>
+          );
+        })()}
       </div>
       <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6 }}>
         Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
@@ -3051,6 +3015,58 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           )}
           <AnimOverlay items={animItems} />
         </svg>
+      </div>
+
+      {/* Undo/Redo/Imprimir/Limpar tudo — por baixo do campo, à esquerda,
+          para não competir por espaço com a barra de ferramentas em cima
+          (que já é apertada em ecrãs pequenos). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            type="button"
+            onClick={undo}
+            disabled={!canUndo}
+            title="Retroceder (Ctrl+Z)"
+            style={{
+              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: `1px solid ${T.line}`,
+              color: canUndo ? T.cream : T.mutedDim, cursor: canUndo ? 'pointer' : 'not-allowed',
+              opacity: canUndo ? 1 : 0.5,
+            }}
+          >
+            <Undo2 size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            title="Refazer (Ctrl+Y)"
+            style={{
+              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: `1px solid ${T.line}`,
+              color: canRedo ? T.cream : T.mutedDim, cursor: canRedo ? 'pointer' : 'not-allowed',
+              opacity: canRedo ? 1 : 0.5,
+            }}
+          >
+            <Redo2 size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={doPrint}
+            title="Imprimir prancheta"
+            style={{
+              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: '#B5393F', border: '1px solid #B5393F', cursor: 'pointer',
+            }}
+          >
+            <Printer size={14} color={TEXT_ON_ACCENT} />
+          </button>
+        </div>
+        {(elements.length > 0 || arrows.length > 0 || spaceMeters) && (
+          <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>
+            Limpar tudo
+          </button>
+        )}
       </div>
 
       {selectedEl && (
@@ -5920,6 +5936,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   const [blockedIds, setBlockedIds] = useState({});
 
   const iframeRef = React.useRef(null);
+  const inlineIframeRef = React.useRef(null);
   const activeYoutubeIdRef = React.useRef(null);
 
   // Ecrã inteiro para vídeos do Instagram/TikTok: aplica-se ao MESMO
@@ -5995,9 +6012,11 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   }, []);
 
   // Envia o "handshake" ao iframe assim que carrega, para o player começar
-  // a reportar-nos eventos (incluindo onError) por postMessage.
-  const handleIframeLoad = () => {
-    const win = iframeRef.current && iframeRef.current.contentWindow;
+  // a reportar-nos eventos (incluindo onError) por postMessage. Fábrica em
+  // vez de função fixa porque agora há dois iframes possíveis (o da caixa
+  // inline e o da janela ampliada) e cada um precisa do seu próprio ref.
+  const handleIframeLoad = (ref) => () => {
+    const win = ref.current && ref.current.contentWindow;
     if (!win) return;
     win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
   };
@@ -6166,47 +6185,68 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
             {active && (
               <>
                 {active.youtubeId ? (
-                  <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000' }}>
-                    {isBlocked ? (
-                      <div style={{
-                        position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
-                        alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
-                      }}>
-                        <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
-                          {isBlocked === 'embed_disabled'
-                            ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
-                            : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
+                  // Toca sempre diretamente na caixa (tal como um vídeo
+                  // local ou um PDF) em vez de mostrar só uma miniatura
+                  // que obriga a um clique extra para abrir a janela
+                  // ampliada — essa janela continua disponível através do
+                  // botão "Ecrã inteiro" abaixo, para quem quiser um ecrã
+                  // maior, mas já não é preciso para simplesmente ver o vídeo.
+                  <div style={{ borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ position: 'relative', paddingTop: '56.25%' }}>
+                      {isBlocked ? (
+                        <div style={{
+                          position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
+                          alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
+                        }}>
+                          <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
+                            {isBlocked === 'embed_disabled'
+                              ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
+                              : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
+                          </div>
+                          <a
+                            href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
+                            target="_blank" rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
+                          >
+                            <ExternalLink size={13} /> Abrir no YouTube
+                          </a>
                         </div>
+                      ) : (
+                        <iframe
+                          key={active.id}
+                          ref={inlineIframeRef}
+                          onLoad={handleIframeLoad(inlineIframeRef)}
+                          src={`https://www.youtube.com/embed/${active.youtubeId}?rel=0&playsinline=1&enablejsapi=1`}
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                          allowFullScreen
+                          referrerPolicy="strict-origin-when-cross-origin"
+                          title={active.title}
+                        />
+                      )}
+                    </div>
+                    {!isBlocked && (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                        padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+                      }}>
                         <a
                           href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
                           target="_blank" rel="noopener noreferrer"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', textDecoration: 'none' }}
                         >
                           <ExternalLink size={13} /> Abrir no YouTube
                         </a>
+                        <button
+                          onClick={() => setLightboxOpen(true)}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
+                            background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                          }}
+                        >
+                          <Maximize2 size={14} /> Ecrã inteiro
+                        </button>
                       </div>
-                    ) : (
-                      <button
-                        onClick={() => setLightboxOpen(true)}
-                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', padding: 0, border: 'none', cursor: 'pointer', background: 'none' }}
-                      >
-                        <img
-                          src={`https://img.youtube.com/vi/${active.youtubeId}/hqdefault.jpg`}
-                          alt={active.title}
-                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                        <div style={{
-                          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: 'linear-gradient(0deg, #000000aa, transparent 40%)',
-                        }}>
-                          <div style={{
-                            width: 56, height: 56, borderRadius: '50%', background: '#A32D3Add',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff',
-                          }}>
-                            <div style={{ width: 0, height: 0, borderTop: '11px solid transparent', borderBottom: '11px solid transparent', borderLeft: '18px solid #fff', marginLeft: 4 }} />
-                          </div>
-                        </div>
-                      </button>
                     )}
                   </div>
                 ) : active.social ? (
@@ -6418,7 +6458,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                 <iframe
                   key={active.id}
                   ref={iframeRef}
-                  onLoad={handleIframeLoad}
+                  onLoad={handleIframeLoad(iframeRef)}
                   src={`https://www.youtube.com/embed/${active.youtubeId}?autoplay=1&rel=0&playsinline=1&enablejsapi=1`}
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
@@ -6606,9 +6646,37 @@ function presentationKind(file) {
   return null;
 }
 
+/* Converte um data URL (base64) num blob: URL. É preciso para o PDF —
+   o Chrome (sobretudo no telemóvel) recusa-se a mostrar um PDF embutido
+   num iframe quando o src é um data: URI (trata-o como navegação
+   bloqueada e mostra apenas o cartão "Abrir" em vez do conteúdo). Um
+   blob: URL não tem essa restrição e funciona em todos os browsers. */
+function useBlobUrl(dataUrl) {
+  const [blobUrl, setBlobUrl] = useState(null);
+  useEffect(() => {
+    if (!dataUrl) { setBlobUrl(null); return undefined; }
+    try {
+      const [header, base64] = dataUrl.split(',');
+      const mimeMatch = /data:([^;]+);base64/.exec(header || '');
+      const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      setBlobUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } catch (e) {
+      setBlobUrl(null);
+      return undefined;
+    }
+  }, [dataUrl]);
+  return blobUrl;
+}
+
 function AttachmentPreview({ item, tall }) {
   const boxRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const pdfBlobUrl = useBlobUrl(item && item.kind === 'pdf' ? item.dataUrl : null);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -6678,10 +6746,43 @@ function AttachmentPreview({ item, tall }) {
   if (item.kind === 'pdf') {
     return (
       <div ref={boxRef} style={wrapStyle}>
-        <div style={{ flex: 1, minHeight: 0, background: '#fff' }}>
-          <iframe key={item.id} title={item.title} src={item.dataUrl} style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} />
+        <div style={{ flex: 1, minHeight: 0, background: '#fff', position: 'relative' }}>
+          {pdfBlobUrl ? (
+            <iframe key={item.id} title={item.title} src={pdfBlobUrl} style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }} />
+          ) : (
+            <div style={{
+              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: T.mutedDim, fontSize: 12.5,
+            }}>
+              A preparar o PDF…
+            </div>
+          )}
         </div>
-        {FsBar}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+        }}>
+          {/* Alguns browsers/apps móveis (WebViews dentro de outras apps,
+              navegadores mais antigos) continuam a não conseguir mostrar o
+              PDF embutido mesmo com blob: URL — este link garante que há
+              sempre uma forma de o abrir/descarregar. */}
+          <a
+            href={item.dataUrl} download={item.fileName || 'documento.pdf'}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', textDecoration: 'none' }}
+          >
+            <Download size={13} /> Abrir / descarregar
+          </a>
+          <button
+            onClick={toggleFs}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
+              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+            }}
+          >
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {isFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
+          </button>
+        </div>
       </div>
     );
   }
