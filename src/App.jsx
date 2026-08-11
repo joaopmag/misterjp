@@ -759,7 +759,7 @@ function App({ session }) {
         <main style={{ flex: 1, minWidth: 0, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px', maxWidth: 1100 }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} exercises={exercises} monitoring={monitoring} matches={matches} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
-          {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} />}
+          {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} />}
@@ -1396,11 +1396,12 @@ function PlayerModal({ player, onClose, onSave }) {
 /* ---------------------------------------------------------------
    EXERCÍCIOS
 ---------------------------------------------------------------- */
-function Exercicios({ exercises, setExercises }) {
+function Exercicios({ exercises, setExercises, meta }) {
   const [modal, setModal] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [filter, setFilter] = useState('Todas');
   const [printExercise, setPrintExercise] = useState(null);
+  const [historyFor, setHistoryFor] = useState(null); // exercício a ver o histórico de alterações
 
   const save = (data) => {
     if (data.id) setExercises(exercises.map(x => x.id === data.id ? data : x));
@@ -1452,13 +1453,16 @@ function Exercicios({ exercises, setExercises }) {
         <EmptyState text="Nenhum exercício aqui ainda." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar exercício</Btn>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-          {visible.map(x => (
+          {visible.map(x => {
+            const m = meta && meta[x.id];
+            return (
             <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{x.name}</div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                 </div>
@@ -1480,12 +1484,19 @@ function Exercicios({ exercises, setExercises }) {
                 {x.playersCount && <span>👥 {x.playersCount}</span>}
                 {x.material && <span>🎒 {x.material}</span>}
               </div>
+              {m && m.email && (
+                <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 10, paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  Adicionado/editado por {m.email} · {timeAgo(m.at)}
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {modal && <ExerciseModal exercise={modal === 'new' ? null : modal} allExercises={exercises} onClose={() => setModal(null)} onSave={save} />}
+      {historyFor && <HistoryModal table="exercises" recordId={historyFor.id} title={`Histórico · ${historyFor.name}`} onClose={() => setHistoryFor(null)} />}
       {viewing && (
         <ExercisePresentation
           exercise={viewing}
