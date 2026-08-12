@@ -1521,20 +1521,32 @@ function playerReportRows(p) {
   ].filter(([, v]) => v !== null && v !== undefined && v !== '');
 }
 
+/* Números da época na ficha do jogador — os mesmos que aparecem no ecrã
+   de estatísticas, para a folha impressa não ficar mais pobre do que a app. */
+function playerSeasonRows(stats) {
+  return [
+    ['Assiduidade', stats.attendancePct === null ? '—' : `${stats.attendancePct}%`],
+    ['Sessões presentes', `${stats.attended}/${stats.totalSessions}`],
+    ['Nota média de treino', stats.avgTrainingRating ?? '—'],
+    ['Convocatórias', stats.matchesPlayed],
+    ['Titular', stats.starts],
+    ['Entrou do banco', stats.subsUsed],
+    ['Minutos', stats.minutes],
+    ['Golos', stats.goals],
+    ['Assistências', stats.assists],
+    ['Cartões amarelos', stats.yellow],
+    ['Cartões vermelhos', stats.red],
+    ['Nota média de jogo', stats.avgMatchRating ?? '—'],
+  ];
+}
+
 function buildPlayerReportHtml(p, stats) {
   const rows = playerReportRows(p);
   const table = `<table>${rows.map(([k, v]) => `<tr><th>${escapeHtmlText(k)}</th><td>${escapeHtmlText(String(v))}</td></tr>`).join('')}</table>`;
   const photoHtml = p.photo
     ? `<img src="${p.photo}" alt="Fotografia" style="width:170px;max-width:40%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid #33513c;background:#000;flex:0 0 auto;" />`
     : '';
-  const statRows = [
-    ['Assiduidade', stats.attendancePct === null ? '—' : `${stats.attendancePct}%`],
-    ['Sessões presentes', `${stats.attended}/${stats.totalSessions}`],
-    ['Golos', stats.goals],
-    ['Assistências', stats.assists],
-    ['Nota média de jogo', stats.avgMatchRating ?? '—'],
-    ['Nota média de treino', stats.avgTrainingRating ?? '—'],
-  ];
+  const statRows = playerSeasonRows(stats);
   return `
 <h2 style="margin-top:0">Identificação</h2>
 <div style="display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;">
@@ -1573,12 +1585,9 @@ function PlayerPrintSheet({ player: p, stats }) {
       <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Época</h3>
       <table style={{ fontSize: 12.5, width: 'auto' }}>
         <tbody>
-          <tr><th style={th}>Assiduidade</th><td style={{ padding: '3px 0' }}>{stats.attendancePct === null ? '—' : `${stats.attendancePct}%`}</td></tr>
-          <tr><th style={th}>Sessões presentes</th><td style={{ padding: '3px 0' }}>{stats.attended}/{stats.totalSessions}</td></tr>
-          <tr><th style={th}>Golos</th><td style={{ padding: '3px 0' }}>{stats.goals}</td></tr>
-          <tr><th style={th}>Assistências</th><td style={{ padding: '3px 0' }}>{stats.assists}</td></tr>
-          <tr><th style={th}>Nota média de jogo</th><td style={{ padding: '3px 0' }}>{stats.avgMatchRating ?? '—'}</td></tr>
-          <tr><th style={th}>Nota média de treino</th><td style={{ padding: '3px 0' }}>{stats.avgTrainingRating ?? '—'}</td></tr>
+          {playerSeasonRows(stats).map(([k, v]) => (
+            <tr key={k}><th style={th}>{k}</th><td style={{ padding: '3px 0' }}>{v}</td></tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -5756,7 +5765,7 @@ function sortStandings(teams) {
     .sort((a, b) => b.P - a.P || b.DG - a.DG || b.GM - a.GM || a.name.localeCompare(b.name));
 }
 
-function LeagueStandings({ standings, setStandings, standingsMeta }) {
+function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches }) {
   const [editing, setEditing] = useState(false);
   const [roundIdx, setRoundIdx] = useState(0);
   const { competitions } = normalizeStandings(standings);
@@ -5824,7 +5833,11 @@ function LeagueStandings({ standings, setStandings, standingsMeta }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {(round?.games || []).map((g, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
-                    {g.date && <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 44, flexShrink: 0 }}>{g.date}</span>}
+                    {g.date && (
+                      <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 48, flexShrink: 0 }}>
+                        {/^\d{4}-\d{2}-\d{2}$/.test(g.date) ? `${g.date.slice(8, 10)}/${g.date.slice(5, 7)}` : g.date}
+                      </span>
+                    )}
                     <span style={{ flex: 1, textAlign: 'right', color: T.cream }}>{g.home}</span>
                     <span style={{ ...mono, color: T.gold, width: 52, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
                     <span style={{ flex: 1, color: T.cream }}>{g.away}</span>
@@ -5876,7 +5889,18 @@ function LeagueStandings({ standings, setStandings, standingsMeta }) {
         </>
       )}
 
-      {editing && <StandingsModal standings={standings} onClose={() => setEditing(false)} onSave={(data) => { setStandings(data); setEditing(false); }} />}
+      {editing && (
+        <StandingsModal
+          standings={standings}
+          onClose={() => setEditing(false)}
+          onSave={(data) => {
+            setStandings(data);
+            // Cria/atualiza na lista de Jogos os encontros da nossa equipa.
+            if (setMatches) setMatches(syncCompetitionMatches(data.competitions, matches));
+            setEditing(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -5963,6 +5987,50 @@ function competitionTable(comp) {
   return sortStandings(computeStandingsFromRounds(comp.rounds || [], comp.teamNames || []));
 }
 
+/* Cria (ou atualiza) na lista de Jogos os encontros da competição em que
+   a nossa equipa participa. É isto que os faz aparecer também na agenda
+   semanal do Planeamento, que lê a mesma lista.
+
+   Só entram jogos com data em calendário e com a nossa equipa escolhida
+   na configuração. A ligação é feita pelo id do jogo (`sourceGameId`),
+   por isso corrigir a data ou o resultado atualiza o jogo já criado em
+   vez de criar um duplicado. Apagar o jogo da jornada NÃO apaga o jogo
+   já criado — as convocatórias e o relatório ficariam perdidos. */
+function syncCompetitionMatches(competitions, matches) {
+  const next = [...(matches || [])];
+  (competitions || []).forEach(comp => {
+    const mine = (comp.myTeam || '').trim();
+    if (!mine) return;
+    (comp.rounds || []).forEach(r => (r.games || []).forEach(g => {
+      if (!g.id || !/^\d{4}-\d{2}-\d{2}$/.test(g.date || '')) return;
+      const isHome = g.home === mine;
+      const isAway = g.away === mine;
+      if (!isHome && !isAway) return;
+      const opponent = isHome ? g.away : g.home;
+      if (!opponent) return;
+      const sc = parseScore(g.score);
+      // O resultado é sempre do nosso ponto de vista.
+      const result = sc ? (isHome ? `${sc.home}-${sc.away}` : `${sc.away}-${sc.home}`) : '';
+      const idx = next.findIndex(m => m.sourceGameId === g.id);
+      if (idx >= 0) {
+        next[idx] = {
+          ...next[idx],
+          date: g.date, opponent, atHome: isHome,
+          competition: comp.name || next[idx].competition,
+          result: result || next[idx].result || '',
+        };
+      } else {
+        next.push({
+          id: uid(), sourceGameId: g.id, date: g.date, opponent, atHome: isHome,
+          competition: comp.name || '', result,
+          convocados: [], starters: [], report: {},
+        });
+      }
+    }));
+  });
+  return next;
+}
+
 const emptyCompetition = (name = '') => ({
   id: uid(), name, teamNames: [], rounds: [], auto: true, teams: [],
 });
@@ -6040,16 +6108,33 @@ function StandingsModal({ standings, onClose, onSave }) {
     if (!round) return;
     patchComp({
       rounds: rounds.map((r, i) => (i === roundIdx
-        ? { ...r, games: [...(r.games || []), { home: '', away: '', score: '', date: '' }] }
+        // O id do jogo é o que liga este resultado ao jogo criado na
+        // secção Jogos e na agenda do Planeamento (ver syncCompetitionMatches).
+        ? { ...r, games: [...(r.games || []), { id: uid(), home: '', away: '', homeGoals: '', awayGoals: '', score: '', date: '' }] }
         : r)),
     });
   };
-  const updateGame = (gi, field, val) => {
+  const updateGame = (gi, patch) => {
     patchComp({
       rounds: rounds.map((r, i) => (i === roundIdx
-        ? { ...r, games: r.games.map((g, j) => (j === gi ? { ...g, [field]: val } : g)) }
+        ? { ...r, games: r.games.map((g, j) => (j === gi ? { ...g, id: g.id || uid(), ...patch } : g)) }
         : r)),
     });
+  };
+  // Os golos são introduzidos em dois seletores numéricos; o campo `score`
+  // continua a ser gravado ("2-1") porque é dele que a classificação e os
+  // registos antigos dependem.
+  const setGoals = (gi, side, val) => {
+    const g = (round.games || [])[gi] || {};
+    const sc = parseScore(g.score);
+    const cur = {
+      home: g.homeGoals !== undefined && g.homeGoals !== '' ? g.homeGoals : (sc ? sc.home : ''),
+      away: g.awayGoals !== undefined && g.awayGoals !== '' ? g.awayGoals : (sc ? sc.away : ''),
+    };
+    const clean = val === '' ? '' : Math.max(0, Math.min(99, Number(val) || 0));
+    const next = { ...cur, [side]: clean };
+    const score = (next.home === '' || next.away === '') ? '' : `${next.home}-${next.away}`;
+    updateGame(gi, { homeGoals: next.home, awayGoals: next.away, score });
   };
   const removeGame = (gi) => {
     patchComp({ rounds: rounds.map((r, i) => (i === roundIdx ? { ...r, games: r.games.filter((_, j) => j !== gi) } : r)) });
@@ -6158,6 +6243,18 @@ function StandingsModal({ standings, onClose, onSave }) {
             )}
           </div>
 
+          <div style={{ marginBottom: 20, maxWidth: 320 }}>
+            <Field label="A minha equipa nesta competição">
+              <Select value={comp.myTeam || ''} onChange={e => patchComp({ myTeam: e.target.value })}>
+                <option value="">— nenhuma —</option>
+                {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
+              </Select>
+            </Field>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.5 }}>
+              É por aqui que a app sabe quais dos jogos são teus, para os criar na lista de Jogos e na agenda semanal.
+            </div>
+          </div>
+
           {competitions.length > 1 && (
             <button type="button" onClick={() => removeCompetition(comp.id)} style={{
               background: 'none', border: 'none', color: T.bad, cursor: 'pointer', fontSize: 12.5, ...body, marginBottom: 8,
@@ -6190,26 +6287,41 @@ function StandingsModal({ standings, onClose, onSave }) {
               </div>
 
               <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 1fr 70px 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 2px 6px' }}>
-                  <span>Equipa casa</span><span style={{ textAlign: 'center' }}>Resultado</span><span>Equipa fora</span><span style={{ textAlign: 'center' }}>Data</span><span />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 54px 54px 1fr 150px 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 2px 6px' }}>
+                  <span>Equipa casa</span><span style={{ textAlign: 'center' }}>GM</span><span style={{ textAlign: 'center' }}>GS</span><span>Equipa fora</span><span>Data</span><span />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                  {(round?.games || []).map((g, gi) => (
-                    <div key={gi} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 1fr 70px 24px', gap: 6, alignItems: 'center' }}>
-                      <Select value={g.home} onChange={e => updateGame(gi, 'home', e.target.value)}>
-                        <option value="">— escolher —</option>
-                        {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
-                      </Select>
-                      <Input value={g.score} onChange={e => updateGame(gi, 'score', e.target.value)} placeholder="1-1" style={{ textAlign: 'center', padding: '9px 4px' }} />
-                      <Select value={g.away} onChange={e => updateGame(gi, 'away', e.target.value)}>
-                        <option value="">— escolher —</option>
-                        {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
-                      </Select>
-                      <Input value={g.date} onChange={e => updateGame(gi, 'date', e.target.value)} placeholder="dd/mm" style={{ textAlign: 'center', padding: '9px 4px' }} />
-                      <button onClick={() => removeGame(gi)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
-                    </div>
-                  ))}
+                  {(round?.games || []).map((g, gi) => {
+                    const sc = parseScore(g.score);
+                    const gh = g.homeGoals !== undefined && g.homeGoals !== '' ? g.homeGoals : (sc ? sc.home : '');
+                    const ga = g.awayGoals !== undefined && g.awayGoals !== '' ? g.awayGoals : (sc ? sc.away : '');
+                    return (
+                      <div key={g.id || gi} style={{ display: 'grid', gridTemplateColumns: '1fr 54px 54px 1fr 150px 24px', gap: 6, alignItems: 'center' }}>
+                        <Select value={g.home} onChange={e => updateGame(gi, { home: e.target.value })}>
+                          <option value="">— escolher —</option>
+                          {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
+                        </Select>
+                        <Input type="number" min="0" max="99" value={gh} onChange={e => setGoals(gi, 'home', e.target.value)} style={{ textAlign: 'center', padding: '9px 4px' }} />
+                        <Input type="number" min="0" max="99" value={ga} onChange={e => setGoals(gi, 'away', e.target.value)} style={{ textAlign: 'center', padding: '9px 4px' }} />
+                        <Select value={g.away} onChange={e => updateGame(gi, { away: e.target.value })}>
+                          <option value="">— escolher —</option>
+                          {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
+                        </Select>
+                        <Input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(g.date || '') ? g.date : ''} onChange={e => updateGame(gi, { date: e.target.value })} style={{ padding: '8px 6px' }} />
+                        <button onClick={() => removeGame(gi)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+                      </div>
+                    );
+                  })}
                 </div>
+                {(comp.myTeam || '').trim() ? (
+                  <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10, lineHeight: 1.5 }}>
+                    Os jogos de <span style={{ color: T.cream }}>{comp.myTeam}</span> com data preenchida entram automaticamente na lista de Jogos e na agenda do Planeamento.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11.5, color: T.warn, marginBottom: 10, lineHeight: 1.5 }}>
+                    Escolhe "A minha equipa" na Configuração para os teus jogos entrarem sozinhos na lista de Jogos e na agenda.
+                  </div>
+                )}
                 <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
               </div>
             </div>
@@ -6308,7 +6420,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
 
       <div style={{ marginBottom: 20 }}>
-        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} />
+        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} />
       </div>
       <div style={{ marginBottom: 20 }}>
         <MatchDashboard players={players} matches={matches} />
@@ -6326,7 +6438,12 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
               <div key={m.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
                   <div>
-                    <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>vs {m.opponent || 'Adversário por definir'}</div>
+                    <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>
+                      vs {m.opponent || 'Adversário por definir'}
+                      {m.atHome !== undefined && (
+                        <span style={{ fontSize: 11, color: T.mutedDim, marginLeft: 8 }}>{m.atHome ? '(casa)' : '(fora)'}</span>
+                      )}
+                    </div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>
                       {fmtDate(m.date)}{m.competition ? ` · ${m.competition}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} convocados · {goals} golos
                     </div>
