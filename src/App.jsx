@@ -7,7 +7,7 @@ import {
   Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
-  Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2
+  Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -580,6 +580,8 @@ function App({ session }) {
   // editou ESTE jogador/sessão/jogo", disponível em playersMeta[id], etc.
   const [players, setPlayers, playersReady, playersMeta] = useCollectionSync('players', notifyEdit);
   const [exercises, setExercises, exercisesReady, exercisesMeta] = useCollectionSync('exercises', notifyEdit);
+  // Ideia de Jogo — esquemas táticos do modelo de jogo (tabela "ideias").
+  const [ideias, setIdeias, ideiasReady, ideiasMeta] = useCollectionSync('ideias', notifyEdit);
   const [sessions, setSessions, sessionsReady, sessionsMeta] = useCollectionSync('sessions', notifyEdit);
   const [monitoring, setMonitoring, monitoringReady, monitoringMeta] = useCollectionSync('monitoring', notifyEdit);
   const [matches, setMatches, matchesReady, matchesMeta] = useCollectionSync('matches', notifyEdit);
@@ -594,7 +596,7 @@ function App({ session }) {
     'league_standings', { competition: '', teams: [], rounds: [] }, notifyEdit
   );
 
-  const loading = !seasonReady || !playersReady || !exercisesReady || !sessionsReady || !monitoringReady
+  const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
     || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
     || !standingsReady;
 
@@ -656,6 +658,7 @@ function App({ session }) {
     { id: 'geral', label: 'Visão Geral', icon: LayoutGrid },
     { id: 'plantel', label: 'Plantel', icon: Users },
     { id: 'exercicios', label: 'Exercícios', icon: Dumbbell },
+    { id: 'ideiajogo', label: 'Ideia de Jogo', icon: Lightbulb },
     { id: 'planeamento', label: 'Planeamento', icon: CalendarDays },
     { id: 'presencas', label: 'Presenças', icon: UserCheck },
     { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList },
@@ -821,7 +824,8 @@ function App({ session }) {
             </div>
             <DataTools
               season={season} setSeason={setSeason} players={players} setPlayers={setPlayers}
-              exercises={exercises} setExercises={setExercises} sessions={sessions} setSessions={setSessions}
+              exercises={exercises} setExercises={setExercises} ideias={ideias} setIdeias={setIdeias}
+              sessions={sessions} setSessions={setSessions}
               monitoring={monitoring} setMonitoring={setMonitoring} matches={matches} setMatches={setMatches}
               scouting={scouting} setScouting={setScouting} videos={videos} setVideos={setVideos}
               apresentacoes={apresentacoes} setApresentacoes={setApresentacoes}
@@ -835,6 +839,7 @@ function App({ session }) {
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} exercises={exercises} monitoring={monitoring} matches={matches} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
+          {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} />}
@@ -981,7 +986,7 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
 }
 
 const ACTIVITY_LABELS = {
-  season_config: 'Época', players: 'Plantel', exercises: 'Exercícios',
+  season_config: 'Época', players: 'Plantel', exercises: 'Exercícios', ideias: 'Ideia de Jogo',
   sessions: 'Planeamento', monitoring: 'Monitorização', matches: 'Jogos',
   scouting: 'Scouting', videos: 'Vídeos', apresentacoes: 'Apresentações', convocatorias: 'Convocatórias', diario: 'Diário',
 };
@@ -1023,12 +1028,12 @@ function LastActivity({ lastEdits }) {
 }
 
 /* Exportar / importar — vive no rodapé da barra lateral. */
-function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario }) {
+function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, ideias, setIdeias, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario }) {
   const fileInputRef = React.useRef(null);
   const [importOpen, setImportOpen] = useState(false);
 
   const doExport = () => {
-    const data = { season, players, exercises, sessions, monitoring, matches, scouting, videos, apresentacoes, convocatorias, diario, exportedAt: new Date().toISOString() };
+    const data = { season, players, exercises, ideias, sessions, monitoring, matches, scouting, videos, apresentacoes, convocatorias, diario, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1050,6 +1055,8 @@ function DataTools({ season, setSeason, players, setPlayers, exercises, setExerc
         if (data.season) setSeason(data.season);
         setPlayers(data.players || []);
         setExercises(data.exercises || []);
+        // Compatível com backups antigos, feitos antes da Ideia de Jogo existir.
+        setIdeias(data.ideias || []);
         setSessions(data.sessions || []);
         setMonitoring(data.monitoring || []);
         setMatches(data.matches || []);
@@ -1632,6 +1639,252 @@ function Exercicios({ exercises, setExercises, meta }) {
         document.body
       )}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   IDEIA DE JOGO — biblioteca de esquemas táticos do modelo de jogo.
+
+   Usa exatamente o mesmo método de introdução dos Exercícios (o mesmo
+   editor 2D, com animação gravada, importação de um registo existente
+   e apresentação passo a passo), mas com muito menos campos: aqui só
+   existem a FASE DE JOGO e o ESQUEMA TÁTICO. Não há nome, duração,
+   espaço, descrição, nº de jogadores nem material — uma ideia de jogo
+   não é um exercício de treino, é um princípio desenhado no campo.
+---------------------------------------------------------------- */
+function IdeiaJogo({ ideias, setIdeias, meta }) {
+  const [modal, setModal] = useState(null); // null | 'new' | ideia (edição)
+  const [viewing, setViewing] = useState(null);
+  const [historyFor, setHistoryFor] = useState(null);
+  const [printIdeia, setPrintIdeia] = useState(null);
+  const [filter, setFilter] = useState('Todas');
+
+  const save = (data) => {
+    if (data.id) setIdeias(ideias.map(x => x.id === data.id ? data : x));
+    else setIdeias([...ideias, { ...data, id: uid() }]);
+    setModal(null);
+  };
+  const remove = (id) => setIdeias(ideias.filter(x => x.id !== id));
+
+  const doPrint = (x) => {
+    setPrintIdeia(x);
+    setTimeout(() => window.print(), 80);
+  };
+  const doShare = (x) => {
+    const block = buildDiagramBlockHtml(x.diagram, '', 'ideia');
+    const html = buildShareableHtmlDoc({ title: x.phase || 'Ideia de jogo', metaLines: [x.phase].filter(Boolean), blocks: [block] });
+    shareOrDownloadHtml(`ideia_${(x.phase || 'jogo').replace(/[^\w-]+/g, '_')}.html`, html, x.phase || 'Ideia de jogo');
+  };
+
+  // Sem campo "nome", cada ideia é identificada pela fase de jogo e por um
+  // número de ordem estável (a posição em que foi criada na biblioteca).
+  const labelOf = (x) => `Ideia ${ideias.findIndex(i => i.id === x.id) + 1}`;
+  const visible = filter === 'Todas' ? ideias : ideias.filter(x => x.phase === filter);
+
+  return (
+    <div>
+      <SectionHeader title="Ideia de Jogo" subtitle="A tua ideia de jogo."
+        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ideia</Btn>} />
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+        {['Todas', ...EXERCISE_PHASES].map(ph => (
+          <button key={ph} onClick={() => setFilter(ph)} style={{
+            padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+            background: filter === ph ? '#B5393F' : 'transparent',
+            color: filter === ph ? TEXT_ON_ACCENT : T.muted,
+            border: `1px solid ${filter === ph ? '#B5393F' : T.line}`,
+          }}>{ph}</button>
+        ))}
+      </div>
+
+      {visible.length === 0 ? (
+        <EmptyState text="Ainda sem ideias de jogo aqui." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar ideia</Btn>} />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {visible.map(x => {
+            const m = meta && meta[x.id];
+            const steps = (x.diagram && x.diagram.sequence && x.diagram.sequence.length) || 0;
+            return (
+              <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{labelOf(x)}</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                  </div>
+                </div>
+                <div style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '2px 8px', borderRadius: 12, marginBottom: 8, alignSelf: 'flex-start' }}>{x.phase}</div>
+                <DiagramThumb diagram={x.diagram} />
+                <div style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>
+                  {steps ? `${steps} ${steps === 1 ? 'movimento gravado' : 'movimentos gravados'}` : 'Sem movimento gravado'}
+                </div>
+                {m && m.email && (
+                  <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 'auto', paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Adicionado/editado por {m.email} · {timeAgo(m.at)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {modal && <IdeiaModal ideia={modal === 'new' ? null : modal} allIdeias={ideias} onClose={() => setModal(null)} onSave={save} />}
+      {historyFor && <HistoryModal table="ideias" recordId={historyFor.id} title={`Histórico · ${labelOf(historyFor)}`} onClose={() => setHistoryFor(null)} />}
+      {viewing && (
+        // Reaproveita a apresentação dos exercícios: os campos que a ideia
+        // não tem (espaço, material, descrição…) simplesmente não aparecem.
+        <ExercisePresentation
+          exercise={{ ...viewing, name: `${labelOf(viewing)} · ${viewing.phase || ''}` }}
+          onClose={() => setViewing(null)}
+          onEdit={() => { setModal(viewing); setViewing(null); }}
+        />
+      )}
+
+      {printIdeia && createPortal(
+        <div className="print-sheet">
+          <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{labelOf(printIdeia)}</h2>
+          <div style={{ margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0' }}>
+            <strong>Fase de jogo:</strong> {printIdeia.phase}
+          </div>
+          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <PitchMarkings printMode />
+            <SpaceZonesReadOnly diagram={printIdeia.diagram} printMode />
+            <DiagramElements
+              elements={printIdeia.diagram?.elements || []}
+              arrows={printIdeia.diagram?.arrows || []}
+              interactive={false}
+              printMode
+            />
+          </svg>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
+  const [f, setF] = useState(ideia || { phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
+  // Tal como no ExerciseModal, a cor ativa do editor vive aqui (no modal) e
+  // não dentro do DiagramEditor, para não poder ser reposta a meio.
+  const [diagramColor, setDiagramColor] = useState('A');
+  const [importOpen, setImportOpen] = useState(false);
+  const [importNotice, setImportNotice] = useState('');
+
+  const importable = allIdeias.filter(x => x && x.id !== (ideia && ideia.id) && x.diagram);
+
+  // Copia a fase e o esquema tático de outra ideia já criada. Cópia
+  // profunda com ids novos, para editar aqui nunca mexer no original; a
+  // animação gravada não vem junto — os ícones entram nas posições finais
+  // e a coreografia recomeça a partir daqui (mesma regra dos exercícios).
+  const importFromIdeia = (src, label) => {
+    const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
+    const srcDiagram = clone(src.diagram) || { elements: [], arrows: [] };
+    const idMap = {};
+    const remapped = {
+      ...srcDiagram,
+      elements: (srcDiagram.elements || []).map(el => {
+        const nid = uid();
+        idMap[el.id] = nid;
+        return { ...el, id: nid };
+      }),
+      arrows: (srcDiagram.arrows || []).map(a => ({
+        ...a, id: uid(),
+        ...(a.ownerId ? { ownerId: idMap[a.ownerId] || a.ownerId } : {}),
+      })),
+      sequence: [],
+    };
+    setF(prev => ({ ...prev, phase: src.phase || prev.phase, diagram: remapped }));
+    setImportOpen(false);
+    setImportNotice(`Copiado de "${label}". Os jogadores ficam nas posições finais e a animação recomeça a partir daqui.`);
+  };
+
+  return (
+    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide>
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Fase de jogo">
+          <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
+            {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+          </Select>
+        </Field>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Esquema tático">
+          <DiagramEditor
+            value={f.diagram || { elements: [], arrows: [] }}
+            onChange={d => setF(prev => ({ ...prev, diagram: d }))}
+            exerciseInfo={{ phase: f.phase }}
+            activeColor={diagramColor}
+            onColorChange={setDiagramColor}
+          />
+        </Field>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Partir de uma ideia existente">
+          <button
+            type="button"
+            onClick={() => { setImportOpen(o => !o); setImportNotice(''); }}
+            disabled={importable.length === 0}
+            title={importable.length === 0 ? 'Ainda não há outras ideias criadas.' : 'Copiar a fase e o esquema de uma ideia já criada'}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              cursor: importable.length === 0 ? 'not-allowed' : 'pointer',
+              padding: '8px 14px', borderRadius: 8,
+              border: `1px solid ${importOpen ? T.gold : T.line}`,
+              background: importOpen ? `${T.crimson}33` : T.surfaceRaise,
+              color: importable.length === 0 ? T.mutedDim : T.cream,
+              opacity: importable.length === 0 ? 0.55 : 1,
+              fontSize: 13, ...body,
+            }}
+          >
+            <Copy size={14} /> Copiar ideia existente
+          </button>
+          {importNotice && (
+            <div style={{ fontSize: 12, color: T.warn, marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Check size={13} /> {importNotice}
+            </div>
+          )}
+          {importOpen && (
+            <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8, background: T.surface, padding: 10 }}>
+              <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {importable.map(x => {
+                  const label = `Ideia ${allIdeias.findIndex(i => i.id === x.id) + 1}`;
+                  return (
+                    <button
+                      key={x.id}
+                      type="button"
+                      onClick={() => importFromIdeia(x, label)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                        padding: '8px 10px', borderRadius: 8, border: `1px solid ${T.line}`,
+                        background: T.surfaceRaise, color: T.cream, cursor: 'pointer', ...body,
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: T.cream }}>{label}</div>
+                        <div style={{ fontSize: 11, color: T.mutedDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.phase}</div>
+                      </div>
+                      <span style={{ fontSize: 11.5, color: T.warn, flexShrink: 0 }}>Usar</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </Field>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn disabled={!f.phase} onClick={() => onSave(f)}><Check size={15} /> Guardar</Btn>
+      </div>
+    </Modal>
   );
 }
 
