@@ -4608,15 +4608,21 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                     </span>
                   </button>
                 ))}
-                {daySessions.map(s => (
-                  <button key={s.id} onClick={() => onEdit(s)} style={{
-                    textAlign: 'left', fontSize: 11, color: T.cream, background: `${T.crimson}44`,
-                    border: `1px solid ${T.gold}55`, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
-                  }}>
-                    {s.focus || 'Sessão'}
-                    <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{s.phase}</div>
-                  </button>
-                ))}
+                {daySessions.map(s => {
+                  // Dia de folga: mostra "Folga" em vez de "Sessão" — não há
+                  // treino nem foco a apresentar.
+                  const isRest = s.phase === 'Descanso';
+                  return (
+                    <button key={s.id} onClick={() => onEdit(s)} style={{
+                      textAlign: 'left', fontSize: 11, color: isRest ? T.mutedDim : T.cream,
+                      background: isRest ? T.bg : `${T.crimson}44`,
+                      border: `1px solid ${isRest ? T.line : T.gold + '55'}`, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
+                    }}>
+                      {isRest ? 'Folga' : (s.focus || 'Sessão')}
+                      <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{isRest ? 'Descanso total' : s.phase}</div>
+                    </button>
+                  );
+                })}
               </div>
               <button onClick={() => onAddForDate(d)} style={{
                 width: '100%', fontSize: 11, color: T.mutedDim, background: 'none',
@@ -6933,9 +6939,74 @@ function RatingStars({ value }) {
   );
 }
 
+/* Ficha individual do jogador observado — usada tanto na partilha (um
+   ficheiro HTML autónomo, que se envia por WhatsApp/email e abre em
+   qualquer telemóvel) como na impressão. Só mostra os campos que estão
+   preenchidos, para não sair uma folha cheia de traços. */
+function scoutMetaLines(x) {
+  const playerAge = x.birthYear ? age(x.birthYear) : (x.age || null);
+  return [
+    x.club || null,
+    x.position ? `${x.position}${x.secondaryPosition ? `/${x.secondaryPosition}` : ''}` : null,
+    playerAge ? `${playerAge} anos` : null,
+    x.birthYear ? `Nascido em ${x.birthYear}` : null,
+    x.nationality || null,
+    x.dominantFoot ? `Pé ${String(x.dominantFoot).toLowerCase()}` : null,
+    x.contractEnd ? `Contrato até ${x.contractEnd}` : null,
+    x.observationDate ? `Observado a ${fmtDate(x.observationDate)}` : null,
+  ].filter(Boolean);
+}
+
+function starsText(n) {
+  const v = Math.max(0, Math.min(5, Number(n) || 0));
+  return '★'.repeat(v) + '☆'.repeat(5 - v);
+}
+
+function buildScoutReportHtml(x) {
+  const table = (pairs) => {
+    const valid = pairs.filter(([, v]) => v !== null && v !== undefined && v !== '');
+    if (!valid.length) return '';
+    return `<table>${valid.map(([k, v]) => `<tr><th>${escapeHtmlText(k)}</th><td>${escapeHtmlText(String(v))}</td></tr>`).join('')}</table>`;
+  };
+  const avg = pillarAverage(x);
+  const potentialLabel = (RATING_LEVELS.find(r => r.value === Number(x.potential)) || {}).label || '';
+
+  const identificacao = table([
+    ['Nome', x.name],
+    ['Clube atual', x.club],
+    ['Ano de nascimento', x.birthYear],
+    ['Idade', x.birthYear ? age(x.birthYear) : x.age],
+    ['Nacionalidade(s)', x.nationality],
+    ['Fim de contrato', x.contractEnd],
+    ['Posição principal', x.position],
+    ['Posição secundária', x.secondaryPosition],
+    ['Pé dominante', x.dominantFoot],
+    ['Data de observação', x.observationDate ? fmtDate(x.observationDate) : ''],
+  ]);
+
+  const pilares = SCOUT_PILLARS.map(p => {
+    const rating = x[`${p.key}Rating`];
+    const notes = x[`${p.key}Notes`];
+    if (!rating && !notes) return '';
+    return `<h2>${escapeHtmlText(p.label)} — ${escapeHtmlText(rating ? `${rating}/5  ${starsText(rating)}` : 'sem avaliação')}</h2>`
+      + (notes ? `<p class="desc">${escapeHtmlText(notes)}</p>` : '');
+  }).join('');
+
+  return `
+<h2>Identificação</h2>
+${identificacao}
+<h2>Potencial geral</h2>
+<p class="desc">${escapeHtmlText(x.potential ? `${x.potential}/5  ${starsText(x.potential)}${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação')}${avg !== null ? escapeHtmlText(`\nMédia dos 4 pilares: ${avg}`) : ''}</p>
+${pilares}
+${x.traits ? `<h2>Características</h2><p class="desc">${escapeHtmlText(x.traits)}</p>` : ''}
+${x.notes ? `<h2>Notas gerais</h2><p class="desc">${escapeHtmlText(x.notes)}</p>` : ''}
+`;
+}
+
 function Scouting({ scouting, setScouting }) {
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('');
+  const [printScout, setPrintScout] = useState(null);
 
   const save = (data) => {
     if (data.id) setScouting(scouting.map(x => x.id === data.id ? data : x));
@@ -6943,6 +7014,18 @@ function Scouting({ scouting, setScouting }) {
     setModal(null);
   };
   const remove = (id) => setScouting(scouting.filter(x => x.id !== id));
+
+  const doShare = (x) => {
+    const title = x.name || 'Jogador observado';
+    const html = buildShareableHtmlDoc({
+      title, metaLines: scoutMetaLines(x), blocks: [], extraHtml: buildScoutReportHtml(x),
+    });
+    shareOrDownloadHtml(`scouting_${title.replace(/[^\w-]+/g, '_')}.html`, html, title);
+  };
+  const doPrint = (x) => {
+    setPrintScout(x);
+    setTimeout(() => window.print(), 80);
+  };
 
   const visible = [...scouting]
     .filter(x => !filter || x.position === filter)
@@ -7001,6 +7084,8 @@ function Scouting({ scouting, setScouting }) {
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => doShare(x)} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
+                    <button onClick={() => doPrint(x)} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
                     <button onClick={() => setModal(x)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                     <button onClick={() => remove(x.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                   </div>
@@ -7027,6 +7112,75 @@ function Scouting({ scouting, setScouting }) {
       )}
 
       {modal && <ScoutModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+
+      {printScout && createPortal(
+        <div className="print-sheet">
+          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{printScout.name || 'Jogador observado'}</h2>
+          <div style={{ fontSize: 12.5, color: '#444', margin: '0 0 12px' }}>
+            {scoutMetaLines(printScout).join(' · ')}
+          </div>
+
+          <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Identificação</h3>
+          <table style={{ fontSize: 12.5, marginBottom: 14 }}>
+            <tbody>
+              {[
+                ['Clube atual', printScout.club],
+                ['Ano de nascimento', printScout.birthYear],
+                ['Idade', printScout.birthYear ? `${age(printScout.birthYear)} anos` : (printScout.age || '')],
+                ['Nacionalidade(s)', printScout.nationality],
+                ['Fim de contrato', printScout.contractEnd],
+                ['Posição principal', printScout.position],
+                ['Posição secundária', printScout.secondaryPosition],
+                ['Pé dominante', printScout.dominantFoot],
+                ['Data de observação', printScout.observationDate ? fmtDate(printScout.observationDate) : ''],
+              ].filter(([, v]) => v).map(([k, v]) => (
+                <tr key={k}>
+                  <th style={{ textAlign: 'left', padding: '3px 16px 3px 0', fontWeight: 600, whiteSpace: 'nowrap' }}>{k}</th>
+                  <td style={{ padding: '3px 0' }}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Potencial geral</h3>
+          <p style={{ fontSize: 12.5, margin: '0 0 4px' }}>
+            {printScout.potential
+              ? `${printScout.potential}/5  ${starsText(printScout.potential)}${(RATING_LEVELS.find(r => r.value === Number(printScout.potential)) || {}).label ? ` — ${(RATING_LEVELS.find(r => r.value === Number(printScout.potential)) || {}).label}` : ''}`
+              : 'Sem classificação'}
+          </p>
+          {pillarAverage(printScout) !== null && (
+            <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>Média dos 4 pilares: {pillarAverage(printScout)}</p>
+          )}
+
+          {SCOUT_PILLARS.map(p => {
+            const rating = printScout[`${p.key}Rating`];
+            const notes = printScout[`${p.key}Notes`];
+            if (!rating && !notes) return null;
+            return (
+              <div key={p.key} style={{ marginBottom: 10 }}>
+                <h3 style={{ fontSize: 13.5, margin: '0 0 3px' }}>
+                  {p.label} — {rating ? `${rating}/5  ${starsText(rating)}` : 'sem avaliação'}
+                </h3>
+                {notes && <p style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
+              </div>
+            );
+          })}
+
+          {printScout.traits && (
+            <>
+              <h3 style={{ fontSize: 14, margin: '12px 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Características</h3>
+              <p style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-wrap' }}>{printScout.traits}</p>
+            </>
+          )}
+          {printScout.notes && (
+            <>
+              <h3 style={{ fontSize: 14, margin: '12px 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Notas gerais</h3>
+              <p style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-wrap' }}>{printScout.notes}</p>
+            </>
+          )}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
