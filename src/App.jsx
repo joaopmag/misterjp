@@ -1672,13 +1672,16 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   };
   const doShare = (x) => {
     const block = buildDiagramBlockHtml(x.diagram, '', 'ideia');
-    const html = buildShareableHtmlDoc({ title: x.phase || 'Ideia de jogo', metaLines: [x.phase].filter(Boolean), blocks: [block] });
-    shareOrDownloadHtml(`ideia_${(x.phase || 'jogo').replace(/[^\w-]+/g, '_')}.html`, html, x.phase || 'Ideia de jogo');
+    const title = (x.name && x.name.trim()) || x.phase || 'Ideia de jogo';
+    const html = buildShareableHtmlDoc({ title, metaLines: [x.phase].filter(Boolean), blocks: [block] });
+    shareOrDownloadHtml(`ideia_${title.replace(/[^\w-]+/g, '_')}.html`, html, title);
   };
 
-  // Sem campo "nome", cada ideia é identificada pela fase de jogo e por um
-  // número de ordem estável (a posição em que foi criada na biblioteca).
-  const labelOf = (x) => `Ideia ${ideias.findIndex(i => i.id === x.id) + 1}`;
+  // Nome dado pelo treinador. Se ficar vazio (ideias criadas antes de o
+  // campo existir), usa um número de ordem estável como identificação.
+  const labelOf = (x) => (x.name && x.name.trim())
+    ? x.name.trim()
+    : `Ideia ${ideias.findIndex(i => i.id === x.id) + 1}`;
   const visible = filter === 'Todas' ? ideias : ideias.filter(x => x.phase === filter);
 
   return (
@@ -1768,7 +1771,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
 }
 
 function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
-  const [f, setF] = useState(ideia || { phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
+  const [f, setF] = useState(ideia || { name: '', phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
   // Tal como no ExerciseModal, a cor ativa do editor vive aqui (no modal) e
   // não dentro do DiagramEditor, para não poder ser reposta a meio.
   const [diagramColor, setDiagramColor] = useState('A');
@@ -1798,13 +1801,23 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
       })),
       sequence: [],
     };
-    setF(prev => ({ ...prev, phase: src.phase || prev.phase, diagram: remapped }));
+    setF(prev => ({
+      ...prev,
+      // O nome só é sugerido se ainda estiver vazio, para não apagar sem
+      // aviso um título que já tenhas escrito.
+      name: (prev.name && prev.name.trim()) ? prev.name : `${label} (cópia)`,
+      phase: src.phase || prev.phase,
+      diagram: remapped,
+    }));
     setImportOpen(false);
     setImportNotice(`Copiado de "${label}". Os jogadores ficam nas posições finais e a animação recomeça a partir daqui.`);
   };
 
   return (
     <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide>
+      <div style={{ marginBottom: 12 }}>
+        <Field label="Nome"><Input value={f.name || ''} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Construção a 3 com médio a cair" /></Field>
+      </div>
       <div style={{ marginBottom: 16 }}>
         <Field label="Fase de jogo">
           <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
@@ -1854,7 +1867,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
             <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8, background: T.surface, padding: 10 }}>
               <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {importable.map(x => {
-                  const label = `Ideia ${allIdeias.findIndex(i => i.id === x.id) + 1}`;
+                  const label = (x.name && x.name.trim()) || `Ideia ${allIdeias.findIndex(i => i.id === x.id) + 1}`;
                   return (
                     <button
                       key={x.id}
@@ -1882,7 +1895,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.phase} onClick={() => onSave(f)}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.name || !f.name.trim()} onClick={() => onSave(f)}><Check size={15} /> Guardar</Btn>
       </div>
     </Modal>
   );
@@ -5708,7 +5721,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                 </tr>
               </thead>
               <tbody>
-                {players.map(p => {
+                {sortByPosition(players).map(p => {
                   const recs = monitoring.filter(m => m.playerId === p.id).sort((a, b) => new Date(b.date) - new Date(a.date));
                   const lastWellness = recs.find(r => typeof r.sono === 'number');
                   const lastRpe = recs.find(r => typeof r.pse === 'number');
@@ -5785,6 +5798,10 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
         </>
       )}
 
+      {players.length > 0 && (
+        <PlantelHistorico players={players} monitoring={monitoring} />
+      )}
+
       {modal && (
         <ManualCheckinBoard
           players={players} monitoring={monitoring} sessions={sessions}
@@ -5796,6 +5813,175 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 }
 
 const tdStyle = { padding: '9px 12px', fontSize: 13, color: T.mutedDim };
+
+/* ---------------------------------------------------------------
+   PLANTEL — HISTÓRICO
+
+   Vista de período: escolhe-se uma data de início e uma data de fim
+   (seletores de calendário) e, para cada jogador do plantel, mostra-se
+   a média de Wellness e de PSE nesse intervalo, cada uma acompanhada
+   de um gráfico de linha com os valores dia a dia.
+
+   Dias sem resposta não contam para a média e ficam como falha na
+   linha — não são tratados como zero, o que baixaria a média sem razão.
+---------------------------------------------------------------- */
+
+// Lista de datas (YYYY-MM-DD) entre início e fim, inclusive. Limitada a
+// um ano para o gráfico não ficar ilegível nem pesado.
+const HISTORY_MAX_DAYS = 366;
+function dateRangeList(start, end) {
+  if (!start || !end) return [];
+  if (new Date(start) > new Date(end)) return [];
+  const out = [];
+  let d = start;
+  while (out.length < HISTORY_MAX_DAYS) {
+    out.push(d);
+    if (d === end) break;
+    d = addDays(d, 1);
+  }
+  return out;
+}
+
+// Gráfico de linha compacto. `points` é um array com um valor por dia
+// (null quando não há resposta nesse dia). O domínio é fixo (1-5 no
+// Wellness, 0-10 no PSE) para as linhas de jogadores diferentes serem
+// diretamente comparáveis entre si.
+function Sparkline({ points, min, max, color, width = 190, height = 44 }) {
+  const n = points.length;
+  const known = points.map((v, i) => ({ v, i })).filter(p => typeof p.v === 'number');
+  if (!n || known.length === 0) {
+    return <div style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>sem dados</div>;
+  }
+  const pad = 5;
+  const x = (i) => (n === 1 ? width / 2 : pad + (i / (n - 1)) * (width - pad * 2));
+  const y = (v) => {
+    const clamped = Math.max(min, Math.min(max, v));
+    return height - pad - ((clamped - min) / (max - min)) * (height - pad * 2);
+  };
+  const line = known.map(p => `${x(p.i)},${y(p.v)}`).join(' ');
+  return (
+    <svg width={width} height={height} style={{ display: 'block', overflow: 'visible' }}>
+      <line x1={0} y1={height - pad} x2={width} y2={height - pad} stroke={T.line} strokeWidth="1" />
+      <line x1={0} y1={pad} x2={width} y2={pad} stroke={T.line} strokeWidth="1" strokeDasharray="2 3" />
+      {known.length > 1 && (
+        <polyline points={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+      )}
+      {known.map(p => (
+        <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r={known.length > 40 ? 1.3 : 2.4} fill={color} />
+      ))}
+    </svg>
+  );
+}
+
+function PlantelHistorico({ players, monitoring }) {
+  // Por omissão, os últimos 7 dias (incluindo hoje).
+  const [start, setStart] = useState(() => addDays(todayStr(), -6));
+  const [end, setEnd] = useState(() => todayStr());
+
+  const dates = dateRangeList(start, end);
+  const invalidRange = !!start && !!end && new Date(start) > new Date(end);
+
+  const rows = sortByPosition(players).map(p => {
+    const recs = monitoring.filter(m => m.playerId === p.id);
+    const wellnessDaily = dates.map(d => wellnessAvg(recs.find(m => m.date === d && typeof m.sono === 'number')));
+    const pseDaily = dates.map(d => {
+      const r = recs.find(m => m.date === d && typeof m.pse === 'number');
+      return r ? r.pse : null;
+    });
+    const mean = (arr) => {
+      const vals = arr.filter(v => typeof v === 'number');
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    };
+    return {
+      player: p,
+      wellnessDaily, pseDaily,
+      wellnessMean: mean(wellnessDaily),
+      pseMean: mean(pseDaily),
+      wellnessCount: wellnessDaily.filter(v => typeof v === 'number').length,
+      pseCount: pseDaily.filter(v => typeof v === 'number').length,
+    };
+  });
+
+  const th3 = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap' };
+  const td3 = { padding: '10px 12px', fontSize: 13, color: T.mutedDim, verticalAlign: 'middle' };
+
+  return (
+    <Panel title="Plantel — histórico">
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
+        <div style={{ minWidth: 160 }}>
+          <Field label="Data de início"><Input type="date" value={start} max={end || undefined} onChange={e => setStart(e.target.value)} /></Field>
+        </div>
+        <div style={{ minWidth: 160 }}>
+          <Field label="Data de fim"><Input type="date" value={end} min={start || undefined} onChange={e => setEnd(e.target.value)} /></Field>
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 2 }}>
+          {[['7 dias', 6], ['14 dias', 13], ['30 dias', 29]].map(([label, back]) => (
+            <button key={label} onClick={() => { setStart(addDays(todayStr(), -back)); setEnd(todayStr()); }} style={{
+              padding: '8px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
+              background: 'transparent', color: T.muted, border: `1px solid ${T.line}`,
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      {invalidRange ? (
+        <div style={{ fontSize: 12.5, color: T.warn }}>A data de início é posterior à data de fim.</div>
+      ) : dates.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim }}>Escolhe uma data de início e uma data de fim.</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 10 }}>
+            {formatShortDatePt(dates[0])} a {formatShortDatePt(dates[dates.length - 1])} · {dates.length} {dates.length === 1 ? 'dia' : 'dias'}.
+            Dias sem resposta não entram na média.
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ minWidth: 720 }}>
+              <thead>
+                <tr>
+                  <th style={th3}>Jogador</th>
+                  <th style={th3}>Wellness (média)</th>
+                  <th style={th3}>Wellness (evolução)</th>
+                  <th style={th3}>PSE (média)</th>
+                  <th style={th3}>PSE (evolução)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => {
+                  const wColor = r.wellnessMean === null ? T.mutedDim : r.wellnessMean >= 3.5 ? T.good : r.wellnessMean >= 2.2 ? T.warn : T.bad;
+                  return (
+                    <tr key={r.player.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+                      <td style={{ ...td3, color: T.cream, whiteSpace: 'nowrap' }}>
+                        {r.player.position ? `${r.player.position} · ` : ''}{r.player.name}
+                      </td>
+                      <td style={{ ...td3, ...mono, color: wColor, whiteSpace: 'nowrap' }}>
+                        {r.wellnessMean === null ? '—' : r.wellnessMean.toFixed(1)}
+                        <span style={{ color: T.mutedDim, fontSize: 11 }}> {r.wellnessCount ? `(${r.wellnessCount})` : ''}</span>
+                      </td>
+                      <td style={td3}>
+                        <Sparkline points={r.wellnessDaily} min={1} max={5} color={T.good} />
+                      </td>
+                      <td style={{ ...td3, ...mono, color: r.pseMean === null ? T.mutedDim : T.warn, whiteSpace: 'nowrap' }}>
+                        {r.pseMean === null ? '—' : r.pseMean.toFixed(1)}
+                        <span style={{ color: T.mutedDim, fontSize: 11 }}> {r.pseCount ? `(${r.pseCount})` : ''}</span>
+                      </td>
+                      <td style={td3}>
+                        <Sparkline points={r.pseDaily} min={0} max={10} color={T.warn} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 10, lineHeight: 1.5 }}>
+            Escala fixa: Wellness 1–5, PSE 0–10 — as linhas são comparáveis entre jogadores.
+            O número entre parênteses é quantos dias tiveram resposta.
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
 
 /* ---------------------------------------------------------------
    REGISTO MANUAL — grelha de plantel em touchscreen
