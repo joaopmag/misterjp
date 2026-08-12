@@ -89,8 +89,37 @@ function fileToDataUrl(file) {
     reader.readAsDataURL(file);
   });
 }
-function genPlayerCode(usedSet) {
-  let code;
+/* Fotografia de jogador. Ao contrário dos anexos dos exercícios, a foto é
+   redimensionada no browser ANTES de ser guardada: o Realtime do Supabase
+   corta payloads acima de ~1 MB e uma foto tirada com o telemóvel tem
+   facilmente 4-8 MB. 640px no lado maior, JPEG a 82%, dá uma foto nítida
+   na ficha impressa e fica quase sempre abaixo dos 120 KB. */
+const PHOTO_MAX_SIDE = 640;
+function fileToPhotoDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Não foi possível ler a imagem.'));
+      img.onload = () => {
+        const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        try { resolve(canvas.toDataURL('image/jpeg', 0.82)); }
+        catch (e) { resolve(reader.result); } // fallback: guarda o original
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function genPlayerCode(usedSet) {  let code;
   do { code = String(Math.floor(1000 + Math.random() * 9000)); } while (usedSet.has(code));
   usedSet.add(code);
   return code;
@@ -397,6 +426,63 @@ function Field({ label, children, labelColor }) {
       <span style={{ fontSize: 12, color: labelColor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
       {children}
     </label>
+  );
+}
+
+/* Campo de fotografia reutilizável (ficha de scouting e ficha do plantel).
+   Guarda a foto como data URL já redimensionada em `value`. */
+function PhotoField({ label = 'Fotografia', value, onChange, hint }) {
+  const [err, setErr] = useState('');
+  const inputRef = useRef(null);
+
+  const pick = async (file) => {
+    setErr('');
+    if (!file) return;
+    if (!file.type || !file.type.startsWith('image/')) { setErr('Só são aceites imagens (JPG, PNG…).'); return; }
+    if (file.size > 12 * 1024 * 1024) { setErr('Imagem demasiado grande (máx. 12 MB).'); return; }
+    try {
+      onChange(await fileToPhotoDataUrl(file));
+    } catch (e) {
+      setErr('Não foi possível ler a imagem.');
+    }
+  };
+
+  return (
+    <div style={{ ...body }}>
+      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        {value ? (
+          <img src={value} alt="Fotografia" style={{ width: 72, height: 90, objectFit: 'cover', borderRadius: 8, border: `1px solid ${T.line}`, background: '#000' }} />
+        ) : (
+          <div style={{
+            width: 72, height: 90, borderRadius: 8, border: `1px dashed ${T.line}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 10.5, textAlign: 'center',
+          }}>sem foto</div>
+        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => inputRef.current && inputRef.current.click()} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+            padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
+            background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
+          }}>
+            <Upload size={14} /> {value ? 'Substituir foto' : 'Anexar foto'}
+          </button>
+          {value && (
+            <button type="button" onClick={() => { onChange(null); setErr(''); }} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+              padding: '8px 12px', borderRadius: 8, border: `1px solid ${T.line}`,
+              background: 'transparent', color: T.mutedDim, fontSize: 13, ...body,
+            }}>
+              <X size={14} /> Remover
+            </button>
+          )}
+        </div>
+        <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+          onChange={e => { pick(e.target.files && e.target.files[0]); e.target.value = ''; }} />
+      </div>
+      {hint && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6 }}>{hint}</div>}
+      {err && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{err}</div>}
+    </div>
   );
 }
 
@@ -1423,7 +1509,7 @@ function PlayerModal({ player, onClose, onSave }) {
   const [f, setF] = useState(player || {
     name: '', number: '', position: 'MC', nationality: '', birthdate: '', laterality: '', contact: '',
     weight: '', height: '', previousClub: '', entryDate: '', exitDate: '',
-    statusMain: '', statusSecondary: '',
+    statusMain: '', statusSecondary: '', photo: null,
   });
 
   return (
@@ -1479,6 +1565,12 @@ function PlayerModal({ player, onClose, onSave }) {
             </Select>
           </Field>
         </div>
+      </div>
+
+      <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
+        <PhotoField label="Fotografia do jogador" value={f.photo || null}
+          onChange={photo => setF({ ...f, photo })}
+          hint="A imagem é reduzida automaticamente antes de ser guardada." />
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -5755,12 +5847,32 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 
   const todayDateStr = todayStr();
   const yesterdayDateStr = addDays(todayDateStr, -1);
+  // Índice tático do jogador, para ordenar as respostas da mesma forma que
+  // o resto da app (GR, defesas, médios, avançados).
+  const posRank = (playerId) => {
+    const p = players.find(x => x.id === playerId);
+    const i = p ? POSITIONS.indexOf(p.position) : -1;
+    return i === -1 ? POSITIONS.length : i;
+  };
+  const nameOf = (playerId) => {
+    const p = players.find(x => x.id === playerId);
+    return p ? p.name : '';
+  };
   // A tabela de respostas mostra apenas a véspera e o próprio dia — é o
   // que interessa para decidir o treino de hoje. O histórico completo
-  // continua guardado; só não é listado aqui.
+  // continua guardado; só não é listado aqui. Dentro de cada dia, ordena
+  // por posição e depois por nome, para o Wellness e o PSE do mesmo
+  // jogador ficarem lado a lado.
   const sorted = [...monitoring]
     .filter(m => m.date === todayDateStr || m.date === yesterdayDateStr)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .sort((a, b) => {
+      if (a.date !== b.date) return new Date(b.date) - new Date(a.date);
+      const byPos = posRank(a.playerId) - posRank(b.playerId);
+      if (byPos !== 0) return byPos;
+      const byName = nameOf(a.playerId).localeCompare(nameOf(b.playerId), 'pt');
+      if (byName !== 0) return byName;
+      return String(a.type || '').localeCompare(String(b.type || ''));
+    });
   const todaySession = sessions.find(s => s.date === todayDateStr);
 
   const th2 = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}` };
@@ -6943,19 +7055,6 @@ function RatingStars({ value }) {
    ficheiro HTML autónomo, que se envia por WhatsApp/email e abre em
    qualquer telemóvel) como na impressão. Só mostra os campos que estão
    preenchidos, para não sair uma folha cheia de traços. */
-function scoutMetaLines(x) {
-  const playerAge = x.birthYear ? age(x.birthYear) : (x.age || null);
-  return [
-    x.club || null,
-    x.position ? `${x.position}${x.secondaryPosition ? `/${x.secondaryPosition}` : ''}` : null,
-    playerAge ? `${playerAge} anos` : null,
-    x.birthYear ? `Nascido em ${x.birthYear}` : null,
-    x.nationality || null,
-    x.dominantFoot ? `Pé ${String(x.dominantFoot).toLowerCase()}` : null,
-    x.contractEnd ? `Contrato até ${x.contractEnd}` : null,
-    x.observationDate ? `Observado a ${fmtDate(x.observationDate)}` : null,
-  ].filter(Boolean);
-}
 
 function starsText(n) {
   const v = Math.max(0, Math.min(5, Number(n) || 0));
@@ -6992,12 +7091,22 @@ function buildScoutReportHtml(x) {
       + (notes ? `<p class="desc">${escapeHtmlText(notes)}</p>` : '');
   }).join('');
 
+  // A foto flutua à direita ao lado do bloco de identificação. A média
+  // dos 4 pilares aparece depois dos pilares todos, não antes deles.
+  const photoHtml = x.photo
+    ? `<img src="${x.photo}" alt="Fotografia" style="float:right;width:200px;max-width:38%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid #33513c;background:#000;margin:0 0 14px 18px;" />`
+    : '';
+
   return `
-<h2>Identificação</h2>
+<div style="overflow:hidden">
+${photoHtml}
+<h2 style="margin-top:0">Identificação</h2>
 ${identificacao}
 <h2>Potencial geral</h2>
-<p class="desc">${escapeHtmlText(x.potential ? `${x.potential}/5  ${starsText(x.potential)}${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação')}${avg !== null ? escapeHtmlText(`\nMédia dos 4 pilares: ${avg}`) : ''}</p>
+<p class="desc">${escapeHtmlText(x.potential ? `${x.potential}/5  ${starsText(x.potential)}${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação')}</p>
 ${pilares}
+${avg !== null ? `<p class="desc" style="margin-top:14px"><strong>${escapeHtmlText(`Média dos 4 pilares: ${avg}`)}</strong></p>` : ''}
+</div>
 ${x.traits ? `<h2>Características</h2><p class="desc">${escapeHtmlText(x.traits)}</p>` : ''}
 ${x.notes ? `<h2>Notas gerais</h2><p class="desc">${escapeHtmlText(x.notes)}</p>` : ''}
 `;
@@ -7017,8 +7126,10 @@ function Scouting({ scouting, setScouting }) {
 
   const doShare = (x) => {
     const title = x.name || 'Jogador observado';
+    // Sem subtítulo: a linha corrida de dados repetia a tabela de
+    // identificação que vem logo a seguir.
     const html = buildShareableHtmlDoc({
-      title, metaLines: scoutMetaLines(x), blocks: [], extraHtml: buildScoutReportHtml(x),
+      title, metaLines: [], blocks: [], extraHtml: buildScoutReportHtml(x),
     });
     shareOrDownloadHtml(`scouting_${title.replace(/[^\w-]+/g, '_')}.html`, html, title);
   };
@@ -7115,60 +7226,66 @@ function Scouting({ scouting, setScouting }) {
 
       {printScout && createPortal(
         <div className="print-sheet">
-          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{printScout.name || 'Jogador observado'}</h2>
-          <div style={{ fontSize: 12.5, color: '#444', margin: '0 0 12px' }}>
-            {scoutMetaLines(printScout).join(' · ')}
+          <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{printScout.name || 'Jogador observado'}</h2>
+
+          <div style={{ overflow: 'hidden' }}>
+            {printScout.photo && (
+              <img src={printScout.photo} alt="Fotografia" style={{
+                float: 'right', width: '34%', maxWidth: 190, aspectRatio: '3 / 4', objectFit: 'cover',
+                borderRadius: 8, border: '1px solid #ccc', margin: '0 0 12px 16px',
+              }} />
+            )}
+            <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Identificação</h3>
+            <table style={{ fontSize: 12.5, marginBottom: 14 }}>
+              <tbody>
+                {[
+                  ['Clube atual', printScout.club],
+                  ['Ano de nascimento', printScout.birthYear],
+                  ['Idade', printScout.birthYear ? `${age(printScout.birthYear)} anos` : (printScout.age || '')],
+                  ['Nacionalidade(s)', printScout.nationality],
+                  ['Fim de contrato', printScout.contractEnd],
+                  ['Posição principal', printScout.position],
+                  ['Posição secundária', printScout.secondaryPosition],
+                  ['Pé dominante', printScout.dominantFoot],
+                  ['Data de observação', printScout.observationDate ? fmtDate(printScout.observationDate) : ''],
+                ].filter(([, v]) => v).map(([k, v]) => (
+                  <tr key={k}>
+                    <th style={{ textAlign: 'left', padding: '3px 16px 3px 0', fontWeight: 600, whiteSpace: 'nowrap' }}>{k}</th>
+                    <td style={{ padding: '3px 0' }}>{v}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Potencial geral</h3>
+            <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>
+              {printScout.potential
+                ? `${printScout.potential}/5  ${starsText(printScout.potential)}${(RATING_LEVELS.find(r => r.value === Number(printScout.potential)) || {}).label ? ` — ${(RATING_LEVELS.find(r => r.value === Number(printScout.potential)) || {}).label}` : ''}`
+                : 'Sem classificação'}
+            </p>
+
+            {SCOUT_PILLARS.map(p => {
+              const rating = printScout[`${p.key}Rating`];
+              const notes = printScout[`${p.key}Notes`];
+              if (!rating && !notes) return null;
+              return (
+                <div key={p.key} style={{ marginBottom: 10 }}>
+                  <h3 style={{ fontSize: 13.5, margin: '0 0 3px' }}>
+                    {p.label} — {rating ? `${rating}/5  ${starsText(rating)}` : 'sem avaliação'}
+                  </h3>
+                  {notes && <p style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
+                </div>
+              );
+            })}
+
+            {pillarAverage(printScout) !== null && (
+              <p style={{ fontSize: 12.5, margin: '14px 0 0', fontWeight: 600 }}>Média dos 4 pilares: {pillarAverage(printScout)}</p>
+            )}
           </div>
-
-          <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Identificação</h3>
-          <table style={{ fontSize: 12.5, marginBottom: 14 }}>
-            <tbody>
-              {[
-                ['Clube atual', printScout.club],
-                ['Ano de nascimento', printScout.birthYear],
-                ['Idade', printScout.birthYear ? `${age(printScout.birthYear)} anos` : (printScout.age || '')],
-                ['Nacionalidade(s)', printScout.nationality],
-                ['Fim de contrato', printScout.contractEnd],
-                ['Posição principal', printScout.position],
-                ['Posição secundária', printScout.secondaryPosition],
-                ['Pé dominante', printScout.dominantFoot],
-                ['Data de observação', printScout.observationDate ? fmtDate(printScout.observationDate) : ''],
-              ].filter(([, v]) => v).map(([k, v]) => (
-                <tr key={k}>
-                  <th style={{ textAlign: 'left', padding: '3px 16px 3px 0', fontWeight: 600, whiteSpace: 'nowrap' }}>{k}</th>
-                  <td style={{ padding: '3px 0' }}>{v}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Potencial geral</h3>
-          <p style={{ fontSize: 12.5, margin: '0 0 4px' }}>
-            {printScout.potential
-              ? `${printScout.potential}/5  ${starsText(printScout.potential)}${(RATING_LEVELS.find(r => r.value === Number(printScout.potential)) || {}).label ? ` — ${(RATING_LEVELS.find(r => r.value === Number(printScout.potential)) || {}).label}` : ''}`
-              : 'Sem classificação'}
-          </p>
-          {pillarAverage(printScout) !== null && (
-            <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>Média dos 4 pilares: {pillarAverage(printScout)}</p>
-          )}
-
-          {SCOUT_PILLARS.map(p => {
-            const rating = printScout[`${p.key}Rating`];
-            const notes = printScout[`${p.key}Notes`];
-            if (!rating && !notes) return null;
-            return (
-              <div key={p.key} style={{ marginBottom: 10 }}>
-                <h3 style={{ fontSize: 13.5, margin: '0 0 3px' }}>
-                  {p.label} — {rating ? `${rating}/5  ${starsText(rating)}` : 'sem avaliação'}
-                </h3>
-                {notes && <p style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
-              </div>
-            );
-          })}
 
           {printScout.traits && (
             <>
-              <h3 style={{ fontSize: 14, margin: '12px 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Características</h3>
+              <h3 style={{ fontSize: 14, margin: '14px 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Características</h3>
               <p style={{ fontSize: 12.5, margin: 0, whiteSpace: 'pre-wrap' }}>{printScout.traits}</p>
             </>
           )}
@@ -7193,7 +7310,7 @@ const emptyScout = {
   tacticalRating: 0, tacticalNotes: '',
   physicalRating: 0, physicalNotes: '',
   psychologicalRating: 0, psychologicalNotes: '',
-  traits: '', observationDate: '', notes: '',
+  traits: '', observationDate: '', notes: '', photo: null,
 };
 
 function ScoutModal({ player, onClose, onSave }) {
@@ -7278,8 +7395,13 @@ function ScoutModal({ player, onClose, onSave }) {
       <div style={{ marginBottom: 12 }}>
         <Field label="Características"><TextArea value={f.traits} onChange={e => setF({ ...f, traits: e.target.value })} placeholder="Perfil físico, pontos fortes/fracos..." /></Field>
       </div>
-      <div style={{ marginBottom: 18 }}>
+      <div style={{ marginBottom: 16 }}>
         <Field label="Notas gerais"><TextArea value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} placeholder="Contexto em que foi observado, evolução..." /></Field>
+      </div>
+      <div style={{ marginBottom: 18 }}>
+        <PhotoField label="Fotografia do jogador" value={f.photo || null}
+          onChange={photo => setF({ ...f, photo })}
+          hint="Aparece na ficha partilhada e na impressão. A imagem é reduzida automaticamente." />
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
