@@ -2250,6 +2250,7 @@ const BASE_TOOLS = [
   { id: 'arrow-run', label: 'Corrida' },
   { id: 'line-solid', symbol: 'solid', title: 'Linha contínua' },
   { id: 'line-dashed', symbol: 'dashed', title: 'Linha tracejada' },
+  { id: 'text', label: 'Texto', title: 'Caixa de texto — escreve no campo ou dentro de um quadrado' },
   { id: 'space-square', symbol: 'square', title: 'Zona / quadrado reduzido (igual ao campo Espaço)' },
   { id: 'eraser', label: 'Apagar' },
 ];
@@ -2725,13 +2726,39 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
             </g>
           );
         }
-        if (el.kind === 'coach') {
+        if (el.kind === 'text') {
+          // Texto livre: serve de legenda solta ou para escrever dentro de
+          // um quadrado/zona já desenhado. A caixa de fundo é desenhada a
+          // partir do comprimento do texto (o SVG não tem auto-layout).
+          const label = el.text || '';
+          const size = el.size || 3;
+          const boxW = Math.max(3, label.length * size * 0.56 + size * 0.9);
+          const boxH = size * 1.55;
+          const fill = printMode ? '#1B1B1B' : '#F0E7D6';
           return (
             <g key={el.id}>
-              {hitsEnabled && <circle cx={el.x} cy={el.y} r="2.3" onPointerDown={handler} style={hitStyle} />}
+              {hitsEnabled && (
+                <rect x={el.x - boxW / 2} y={el.y - boxH / 2} width={boxW} height={boxH}
+                  onPointerDown={handler} style={hitStyle} />
+              )}
               <g style={{ pointerEvents: 'none' }}>
-                <circle cx={el.x} cy={el.y} r="2.1" fill={TEXT_ON_ACCENT} stroke="#C9A227" strokeWidth="0.35" />
-                <text x={el.x} y={el.y + 0.85} textAnchor="middle" fontSize="2.5" fontWeight="700" fill="#C9A227" style={{ fontFamily: "'Oswald', sans-serif" }}>T</text>
+                <rect x={el.x - boxW / 2} y={el.y - boxH / 2} width={boxW} height={boxH} rx={size * 0.32}
+                  fill={printMode ? '#FFFFFF' : '#12241ACC'} stroke={printMode ? '#999' : '#F0E7D655'} strokeWidth="0.18" />
+                <text x={el.x} y={el.y + size * 0.36} textAnchor="middle" fontSize={size} fontWeight="600" fill={fill}
+                  style={{ fontFamily: "'Oswald', sans-serif" }}>{label}</text>
+              </g>
+            </g>
+          );
+        }
+        if (el.kind === 'coach') {
+          // Marcador do treinador: mais pequeno que um jogador e com o "T"
+          // a preto — a dourado sobre fundo claro quase não se lia.
+          return (
+            <g key={el.id}>
+              {hitsEnabled && <circle cx={el.x} cy={el.y} r="1.9" onPointerDown={handler} style={hitStyle} />}
+              <g style={{ pointerEvents: 'none' }}>
+                <circle cx={el.x} cy={el.y} r="1.5" fill="#F0E7D6" stroke="#C9A227" strokeWidth="0.3" />
+                <text x={el.x} y={el.y + 0.62} textAnchor="middle" fontSize="1.85" fontWeight="700" fill="#111111" style={{ fontFamily: "'Oswald', sans-serif" }}>T</text>
               </g>
             </g>
           );
@@ -3486,6 +3513,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       const w = last ? last.w : 15;
       const h = last ? last.h : 15;
       commitZones([...zones, { id: uid(), w, h, dx: p.x - 53.5, dy: p.y - 35 }]);
+    } else if (tool === 'text') {
+      // Caixa de texto: entra com um texto de exemplo e fica logo
+      // selecionada, para se escrever no campo do painel de baixo.
+      const newId = uid();
+      commit({ ...value, elements: [...elements, { id: newId, kind: 'text', x: p.x, y: p.y, text: 'Texto', size: 3 }] });
+      setSelectedId(newId);
     } else if (MARKER_TOOLS.includes(tool)) {
       commit({ ...value, elements: [...elements, { id: uid(), kind: tool, x: p.x, y: p.y }] });
     } else if (LINE_TOOLS.includes(tool)) {
@@ -3687,6 +3720,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       const nextIdx = ((idx === -1 ? 0 : idx) + delta + KEEPER_NUMBERS.length) % KEEPER_NUMBERS.length;
       commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, number: KEEPER_NUMBERS[nextIdx] } : el)) });
     }
+  };
+  const changeSelectedText = (text) => {
+    if (!selectedEl || selectedEl.kind !== 'text') return;
+    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, text } : el)) });
+  };
+  const changeSelectedTextSize = (delta) => {
+    if (!selectedEl || selectedEl.kind !== 'text') return;
+    const size = Math.max(1.5, Math.min(8, (selectedEl.size || 3) + delta));
+    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, size } : el)) });
   };
   const changeSelectedRotation = (delta) => {
     if (!selectedEl) return;
@@ -3965,8 +4007,27 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           <span style={{ fontSize: 12, color: T.cream }}>
             {selectedEl.kind === 'player' || selectedEl.kind === 'keeper'
               ? `${teamInfo(selectedEl.team)?.label} · ${elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}`
-              : selectedEl.kind === 'goalmarker' ? 'Baliza' : selectedEl.kind === 'stake' ? 'Estaca' : selectedEl.kind === 'coach' ? 'Treinador' : selectedEl.kind === 'cone' ? 'Cone' : 'Bola'}
+              : selectedEl.kind === 'goalmarker' ? 'Baliza' : selectedEl.kind === 'stake' ? 'Estaca' : selectedEl.kind === 'coach' ? 'Treinador' : selectedEl.kind === 'text' ? 'Texto' : selectedEl.kind === 'cone' ? 'Cone' : 'Bola'}
           </span>
+          {selectedEl.kind === 'text' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
+              <input
+                value={selectedEl.text || ''}
+                onChange={e => changeSelectedText(e.target.value)}
+                placeholder="Escreve aqui"
+                autoFocus
+                style={{
+                  background: T.surface, border: `1px solid ${T.line}`, borderRadius: 6, padding: '5px 8px',
+                  color: T.cream, fontSize: 12.5, ...body, outline: 'none', minWidth: 160,
+                }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 10.5, color: T.mutedDim }}>Tam.</span>
+                <button type="button" onClick={() => changeSelectedTextSize(-0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>−</button>
+                <button type="button" onClick={() => changeSelectedTextSize(0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>+</button>
+              </div>
+            </div>
+          )}
           {(selectedEl.kind === 'player' || selectedEl.kind === 'keeper') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
               <button type="button" onClick={() => changeSelectedNumber(-1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>−</button>
@@ -4428,10 +4489,45 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const attachmentBlobUrl = useBlobUrl(exercise.attachment && exercise.attachment.type !== 'image' ? exercise.attachment.dataUrl : null);
   const animRef = React.useRef(null);
   const timeoutRef = React.useRef(null);
+  const pitchWrapRef = useRef(null);
+  const [isFull, setIsFull] = useState(false);
   useEffect(() => () => {
     if (animRef.current) cancelAnimationFrame(animRef.current);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }, []);
+
+  /* Ecrã inteiro: usa a API nativa do browser quando existe (esconde
+     mesmo a barra do sistema no telemóvel e no TV) e, se falhar ou não
+     for suportada, cai num modo "ecrã cheio" só com CSS — o resultado
+     visual é praticamente o mesmo dentro da app. */
+  useEffect(() => {
+    const onChange = () => setIsFull(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = async () => {
+    const node = pitchWrapRef.current;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        setIsFull(false);
+      } else if (node && node.requestFullscreen) {
+        await node.requestFullscreen();
+        setIsFull(true);
+      } else {
+        setIsFull(v => !v); // sem API disponível: modo CSS
+      }
+    } catch (e) {
+      setIsFull(v => !v);
+    }
+  };
+  // Tecla Esc fecha o modo CSS (no modo nativo o browser trata disto).
+  useEffect(() => {
+    if (!isFull) return;
+    const onKey = (e) => { if (e.key === 'Escape' && !document.fullscreenElement) setIsFull(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isFull]);
   const easeInOutQuad = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
   // Mesma lógica de "cadeias" usada no editor (ver buildAnimationChains em
   // DiagramEditor): agrupa setas encadeadas do mesmo tipo para as tocar em
@@ -4558,11 +4654,19 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         </div>
       )}
 
-      <div style={{ position: 'relative', width: '100%', paddingTop: '65.1%' }}>
-        <svg viewBox="-3 -2 113 74" preserveAspectRatio="none" style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}`,
-        }}>
+      {/* O campo pode passar a ecrã inteiro (útil para mostrar a animação
+          ao grupo, num TV ou projetor). Em ecrã inteiro os controlos de
+          reprodução ficam por cima, no rodapé. */}
+      <div ref={pitchWrapRef} style={
+        isFull
+          ? { position: 'fixed', inset: 0, zIndex: 100, background: '#0e1a12', display: 'flex', flexDirection: 'column', padding: 12 }
+          : { position: 'relative', width: '100%', paddingTop: '65.1%' }
+      }>
+        <svg viewBox="-3 -2 113 74" preserveAspectRatio={isFull ? 'xMidYMid meet' : 'none'} style={
+          isFull
+            ? { flex: 1, width: '100%', minHeight: 0, background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
+            : { position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
+        }>
           <PitchMarkings />
           {zones.map(z => (
             <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
@@ -4570,6 +4674,29 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={staticArrows} interactive={false} />
           <AnimOverlay items={animItems} />
         </svg>
+
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          title={isFull ? 'Sair do ecrã inteiro' : 'Ver em ecrã inteiro'}
+          style={{
+            position: 'absolute', top: isFull ? 20 : 10, right: isFull ? 20 : 10, zIndex: 2,
+            display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8,
+            background: '#0e1a12CC', border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
+            fontSize: 12, ...body,
+          }}
+        >
+          {isFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          {isFull ? 'Sair' : 'Ecrã inteiro'}
+        </button>
+
+        {isFull && sequence.length > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, paddingTop: 12 }}>
+            <Btn onClick={playing ? stop : start}>
+              {playing ? <><Square size={14} /> Parar</> : <><Play size={14} /> {finished ? 'Repetir apresentação' : 'Apresentar'}</>}
+            </Btn>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
@@ -6604,14 +6731,17 @@ function ManualCheckinBoard({ players, monitoring, sessions, onClose, onSave }) 
   // --- Questionário aberto para um jogador ---------------------------
   if (activePlayer) {
     const back = () => setActiveId(null);
+    // IMPORTANTE: aqui só se usa o registo DAQUELE dia. Antes havia um
+    // recurso ao último registo de outro dia qualquer, o que dava a
+    // impressão de o jogador já ter respondido hoje quando não tinha.
+    const existing = recordFor(activePlayer.id, type);
+    const notice = existing
+      ? 'Este jogador já respondeu neste dia — as respostas dele aparecem selecionadas. Guardar substitui o registo.'
+      : null;
     if (type === 'wellness') {
-      const existing = recordFor(activePlayer.id, 'wellness');
-      const fallback = monitoring
-        .filter(m => m.playerId === activePlayer.id && typeof m.sono === 'number')
-        .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
       return shell(
         <WellnessWizard
-          player={activePlayer} initial={existing || fallback} date={date}
+          player={activePlayer} initial={existing} date={date} notice={notice}
           onBack={back} onSubmit={fields => submit(fields)}
         />
       );
@@ -6619,6 +6749,7 @@ function ManualCheckinBoard({ players, monitoring, sessions, onClose, onSave }) 
     return shell(
       <RpeWizard
         player={activePlayer} session={session} date={date}
+        initial={existing} notice={notice}
         onBack={back} onSubmit={fields => submit(fields)}
       />
     );
@@ -7101,6 +7232,17 @@ function QuestionLabel({ children }) {
   return <div style={{ ...display, fontSize: 17, fontWeight: 600, color: T.cream, marginBottom: 14 }}>{children}</div>;
 }
 
+// Aviso no topo do questionário — usado no registo manual, para o staff
+// perceber que está a editar uma resposta já dada pelo jogador.
+function KioskNotice({ children }) {
+  return (
+    <div style={{
+      border: `1px solid ${T.warn}66`, background: `${T.warn}14`, borderRadius: 10,
+      padding: '10px 12px', color: T.warn, fontSize: 12.5, lineHeight: 1.45, marginBottom: 16, ...body,
+    }}>{children}</div>
+  );
+}
+
 function ScaleButtons({ value, onChange, lowLabel, highLabel }) {
   return (
     <div>
@@ -7182,7 +7324,7 @@ function DoneScreen({ name, message }) {
   );
 }
 
-function WellnessWizard({ player, initial, date, onBack, onSubmit }) {
+function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
@@ -7215,6 +7357,7 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit }) {
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '20px 18px 60px' }}>
       <KioskHeader player={player} step={step} totalSteps={2} typeLabel="Wellness" subLabel={step === 1 ? 'Sono' : 'Como te sentes'} date={date} onBack={onBack} />
+      {notice && <KioskNotice>{notice}</KioskNotice>}
 
       {step === 1 && (
         <>
@@ -7263,8 +7406,12 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit }) {
   );
 }
 
-function RpeWizard({ player, session, date, onBack, onSubmit }) {
-  const [value, setValue] = useState(null);
+function RpeWizard({ player, session, date, onBack, onSubmit, initial, notice }) {
+  // `initial` traz o registo já existente (registo manual a corrigir uma
+  // resposta): a opção que o jogador escolheu aparece logo selecionada.
+  const [value, setValue] = useState(
+    initial && typeof initial.pse === 'number' ? initial.pse : null
+  );
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -7286,6 +7433,7 @@ function RpeWizard({ player, session, date, onBack, onSubmit }) {
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '20px 18px 60px' }}>
       <KioskHeader player={player} typeLabel="RPE" subLabel={sessionLabel} date={date} onBack={onBack} />
+      {notice && <KioskNotice>{notice}</KioskNotice>}
       <QuestionLabel>Quão intenso foi o treino?</QuestionLabel>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 22 }}>
         {RPE_SCALE.map(opt => (
@@ -7571,7 +7719,7 @@ function Scouting({ scouting, setScouting }) {
                     </div>
                     {(x.nationality || x.dominantFoot || x.birthYear) && (
                       <div style={{ color: T.mutedDim, fontSize: 11, marginTop: 2 }}>
-                        {[x.nationality, x.dominantFoot ? `Pé ${x.dominantFoot.toLowerCase()}` : null, x.birthYear ? `Nascido em ${x.birthYear}` : null]
+                        {[x.nationality, x.dominantFoot ? `Pé ${x.dominantFoot.toLowerCase()}` : null, x.birthYear || null]
                           .filter(Boolean).join(' · ')}
                       </div>
                     )}
