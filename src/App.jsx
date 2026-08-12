@@ -51,6 +51,9 @@ const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
 const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MD', 'MC', 'MOC', 'EE', 'ED', 'PL'];
 const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Ativação / Aquecimento', 'Preparação Física', 'Descanso'];
+// Fases de jogo disponíveis na edição de exercícios: "Descanso" é uma fase
+// de sessão (dia de folga), não faz sentido classificar um exercício assim.
+const EXERCISE_PHASES = PHASES.filter(p => p !== 'Descanso');
 const INTENSITIES = [
   { value: 'baixa', label: 'Baixa' },
   { value: 'media', label: 'Média' },
@@ -905,7 +908,7 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
                   padding: '10px 14px', background: T.bg, borderRadius: 8, border: `1px solid ${T.line}`,
                 }}>
                   <div>
-                    <div style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{s.focus || 'Sessão de treino'}</div>
+                    <div style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(s.date)} · {s.phase || '—'}</div>
                   </div>
                   <div style={{ ...mono, color: T.warn, fontSize: 13 }}>{daysTo(s.date)}d</div>
@@ -3643,7 +3646,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
         <Field label="Fase de jogo">
           <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
-            {PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+            {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
           </Select>
         </Field>
         <Field label="Duração padrão (min)"><Input type="number" value={f.defaultDuration} onChange={e => setF({ ...f, defaultDuration: e.target.value })} /></Field>
@@ -4019,8 +4022,9 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
       .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
       .filter(Boolean);
     const extraHtml = `<h2>Presenças</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
-    const html = buildShareableHtmlDoc({ title: s.focus || 'Sessão de treino', metaLines: meta, blocks: exBlocks, extraHtml });
-    shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, s.focus || 'Sessão de treino');
+    const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino');
+    const html = buildShareableHtmlDoc({ title: sessionTitle, metaLines: meta, blocks: exBlocks, extraHtml });
+    shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, sessionTitle);
   };
 
   const save = (data) => {
@@ -4088,7 +4092,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                       <div style={{ fontSize: 10, color: T.mutedDim, textTransform: 'uppercase' }}>{new Date(s.date + 'T00:00:00').toLocaleDateString('pt-PT', { month: 'short' })}</div>
                     </div>
                     <div>
-                      <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500 }}>{s.focus || 'Sessão de treino'}</div>
+                      <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500 }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</div>
                       <div style={{ color: T.mutedDim, fontSize: 12 }}>{[s.phase, s.opponent && `vs ${s.opponent}`, intensityText(s)].filter(Boolean).join(' · ')}</div>
                     </div>
                   </div>
@@ -4130,7 +4134,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
 
       {printSession && createPortal(
         <div className="print-sheet">
-          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{printSession.focus || 'Sessão de treino'}</h2>
+          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{printSession.phase === 'Descanso' ? 'Folga' : (printSession.focus || 'Sessão de treino')}</h2>
           <p style={{ margin: '0 0 18px', fontSize: 13 }}>
             {[fmtDate(printSession.date), printSession.phase, intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
           </p>
@@ -4165,7 +4169,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{fmtDate(printDayDate)}</h2>
           {sessions.filter(s => s.date === printDayDate).map(s => (
             <div key={s.id} style={{ marginBottom: 24 }}>
-              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.focus || 'Sessão de treino'}</h3>
+              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</h3>
               <p style={{ margin: '0 0 12px', fontSize: 13 }}>
                 {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
@@ -4564,7 +4568,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
         <div key={s.id} style={{ marginBottom: 22, paddingBottom: 18, borderBottom: si < daySessions.length - 1 ? `1px solid ${T.line}` : 'none' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
             <div>
-              <div style={{ color: T.cream, fontSize: 16, fontWeight: 600 }}>{s.focus || 'Sessão de treino'}</div>
+              <div style={{ color: T.cream, fontSize: 16, fontWeight: 600 }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</div>
               <div style={{ color: T.mutedDim, fontSize: 12 }}>
                 {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </div>
@@ -5344,7 +5348,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
       <Panel title="Sessão de hoje (usada no RPE)">
         {todaySession ? (
           <div style={{ fontSize: 13, color: T.cream, display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <div style={{ fontWeight: 500 }}>{todaySession.focus || todaySession.phase || 'Sessão de treino'}</div>
+            <div style={{ fontWeight: 500 }}>{todaySession.phase === 'Descanso' ? 'Folga' : (todaySession.focus || todaySession.phase || 'Sessão de treino')}</div>
             <div style={{ fontSize: 12, color: T.mutedDim }}>
               {[todaySession.phase, intensityText(todaySession)].filter(Boolean).join(' · ')}
             </div>
@@ -5487,8 +5491,12 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 const tdStyle = { padding: '9px 12px', fontSize: 13, color: T.mutedDim };
 
 function MonitoringModal({ players, onClose, onSave }) {
+  // Wellness e PSE são registos distintos (tal como no questionário dos
+  // atletas): o treinador escolhe o tipo e só preenche os campos desse
+  // tipo, para não misturar os dois num único registo.
+  const [type, setType] = useState('wellness');
   const [f, setF] = useState({
-    playerId: players[0]?.id || '', date: todayStr(), type: 'manual',
+    playerId: players[0]?.id || '', date: todayStr(),
     pse: 5, sono: 3, fadiga: 3, dor: 3, humor: 3, stress: 3,
   });
 
@@ -5500,9 +5508,23 @@ function MonitoringModal({ players, onClose, onSave }) {
     { key: 'stress', label: 'Stress (5 = relaxado)', icon: Droplets },
   ];
 
+  const save = () => {
+    const base = { playerId: f.playerId, date: f.date, type };
+    onSave(type === 'wellness'
+      ? { ...base, sono: f.sono, fadiga: f.fadiga, dor: f.dor, humor: f.humor, stress: f.stress }
+      : { ...base, pse: f.pse });
+  };
+
   return (
     <Modal title="Novo registo de monitorização" onClose={onClose}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+      <Field label="Tipo de registo">
+        <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+          <ToggleBtn active={type === 'wellness'} onClick={() => setType('wellness')}>💪 Wellness</ToggleBtn>
+          <ToggleBtn active={type === 'rpe'} onClick={() => setType('rpe')} accent>🏋 PSE</ToggleBtn>
+        </div>
+      </Field>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, margin: '16px 0' }}>
         <Field label="Jogador">
           <Select value={f.playerId} onChange={e => setF({ ...f, playerId: e.target.value })}>
             {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -5511,22 +5533,26 @@ function MonitoringModal({ players, onClose, onSave }) {
         <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
       </div>
 
-      <Field label={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Gauge size={13} /> PSE — perceção subjetiva de esforço (1-10)</span>}>
-        <input type="range" min="1" max="10" value={f.pse} onChange={e => setF({ ...f, pse: Number(e.target.value) })} style={{ width: '100%' }} />
-      </Field>
-      <div style={{ textAlign: 'right', ...mono, color: T.warn, fontSize: 13, marginBottom: 14 }}>{f.pse}/10</div>
-
-      {sliders.map(s => (
-        <div key={s.key} style={{ marginBottom: 12 }}>
-          <Field label={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><s.icon size={13} /> {s.label} (1-5)</span>}>
-            <input type="range" min="1" max="5" value={f[s.key]} onChange={e => setF({ ...f, [s.key]: Number(e.target.value) })} style={{ width: '100%' }} />
+      {type === 'rpe' ? (
+        <>
+          <Field label={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Gauge size={13} /> PSE — perceção subjetiva de esforço (1-10)</span>}>
+            <input type="range" min="1" max="10" value={f.pse} onChange={e => setF({ ...f, pse: Number(e.target.value) })} style={{ width: '100%' }} />
           </Field>
-        </div>
-      ))}
+          <div style={{ textAlign: 'right', ...mono, color: T.warn, fontSize: 13, marginBottom: 14 }}>{f.pse}/10</div>
+        </>
+      ) : (
+        sliders.map(s => (
+          <div key={s.key} style={{ marginBottom: 12 }}>
+            <Field label={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><s.icon size={13} /> {s.label} (1-5)</span>}>
+              <input type="range" min="1" max="5" value={f[s.key]} onChange={e => setF({ ...f, [s.key]: Number(e.target.value) })} style={{ width: '100%' }} />
+            </Field>
+          </div>
+        ))
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.playerId} onClick={() => onSave(f)}><Check size={15} /> Guardar registo</Btn>
+        <Btn disabled={!f.playerId} onClick={save}><Check size={15} /> Guardar registo</Btn>
       </div>
     </Modal>
   );
@@ -5771,16 +5797,19 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         {doneWellness ? <Check size={18} color={T.good} /> : <ChevronRight size={18} color={T.mutedDim} />}
       </button>
 
-      <button onClick={onOpenRpe} disabled={!session || isRestDay} style={{
+      <button onClick={onOpenRpe} disabled={!session || isRestDay || !isToday} style={{
         width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${doneRpe ? T.good : T.line}`,
-        borderRadius: 12, padding: '18px 16px', cursor: (session && !isRestDay) ? 'pointer' : 'default', opacity: (session && !isRestDay) ? 1 : 0.55,
+        borderRadius: 12, padding: '18px 16px', cursor: (session && !isRestDay && isToday) ? 'pointer' : 'default', opacity: (session && !isRestDay && isToday) ? 1 : 0.55,
         ...body, display: 'flex', alignItems: 'center', gap: 14,
       }}>
         <span style={{ fontSize: 26 }}>🏋</span>
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>RPE</div>
           <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>
-            {isRestDay ? 'Dia de folga — sem RPE a registar' : session ? `Intensidade de: ${sessionLabel}` : `Ainda sem sessão criada para ${isToday ? 'hoje' : 'este dia'}`}
+            {/* O PSE só pode ser respondido até às 23:59 do próprio dia da
+                sessão — ao contrário do Wellness, não é possível responder
+                em atraso num dia diferente. */}
+            {!isToday ? 'Só pode ser respondido até às 23:59 do próprio dia' : isRestDay ? 'Dia de folga — sem PSE a registar' : session ? `Intensidade de: ${sessionLabel}` : `Ainda sem sessão criada para ${isToday ? 'hoje' : 'este dia'}`}
           </div>
         </span>
         {doneRpe ? <Check size={18} color={T.good} /> : <ChevronRight size={18} color={T.mutedDim} />}
