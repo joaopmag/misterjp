@@ -50,7 +50,7 @@ const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
 const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MD', 'MC', 'MOC', 'EE', 'ED', 'PL'];
-const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Ativação / Aquecimento', 'Preparação Física'];
+const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Ativação / Aquecimento', 'Preparação Física', 'Descanso'];
 const INTENSITIES = [
   { value: 'baixa', label: 'Baixa' },
   { value: 'media', label: 'Média' },
@@ -1278,7 +1278,9 @@ function dayRating(list, playerId) {
 }
 
 function playerStats(player, sessions, matches) {
-  const trainingSessions = sessions || [];
+  // Dias de folga (fase "Descanso") não contam para a assiduidade —
+  // não há presenças nem notas a registar num dia sem treino.
+  const trainingSessions = (sessions || []).filter(s => s.phase !== 'Descanso');
   const days = groupSessionsByDate(trainingSessions);
   const attended = days.filter(d => dayPresent(d.list, player.id)).length;
   const attendancePct = days.length ? Math.round((attended / days.length) * 100) : null;
@@ -4087,7 +4089,9 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>{(s.exerciseIds || []).length} exercícios · {(s.attendance || []).length} presentes</span>
+                    <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
+                      {s.phase === 'Descanso' ? 'Dia de folga' : `${(s.exerciseIds || []).length} exercícios · ${(s.attendance || []).length} presentes`}
+                    </span>
                     <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
                     <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }} title="Imprimir ficha"><Printer size={14} /></button>
                     <button onClick={() => setModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
@@ -4453,56 +4457,67 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
         <Field label="Próximo adversário (opcional)"><Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" /></Field>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-          Exercícios da sessão {totalMin ? `· ${totalMin} min total` : ''}
+      {f.phase === 'Descanso' ? (
+        <div style={{
+          marginBottom: 18, padding: '12px 14px', background: T.surface, border: `1px solid ${T.line}`,
+          borderRadius: 8, fontSize: 13, color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <Moon size={15} color={T.mutedDim} /> Dia de folga — sem exercícios, presenças ou notas a registar.
         </div>
-        {exercises.length === 0 ? (
-          <div style={{ fontSize: 13, color: T.mutedDim }}>Cria exercícios primeiro no separador Exercícios.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
-            {exercises.map(x => {
-              const picked = f.exerciseIds.find(e => e.exId === x.id);
-              return (
-                <div key={x.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px',
-                  background: picked ? `${T.crimson}33` : T.bg, border: `1px solid ${picked ? T.gold + '66' : T.line}`, borderRadius: 7,
-                }}>
-                  <input type="checkbox" checked={!!picked} onChange={() => toggleExercise(x.id)} />
-                  <span style={{ flex: 1, fontSize: 13, color: T.cream }}>{x.name}</span>
-                  <span style={{ fontSize: 11, color: T.mutedDim }}>{x.phase}</span>
-                  {picked && (
-                    <Input type="number" value={picked.duration} onChange={e => setDuration(x.id, e.target.value)}
-                      style={{ width: 60, padding: '4px 6px', fontSize: 12 }} />
-                  )}
-                </div>
-              );
-            })}
+      ) : (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+              Exercícios da sessão {totalMin ? `· ${totalMin} min total` : ''}
+            </div>
+            {exercises.length === 0 ? (
+              <div style={{ fontSize: 13, color: T.mutedDim }}>Cria exercícios primeiro no separador Exercícios.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+                {exercises.map(x => {
+                  const picked = f.exerciseIds.find(e => e.exId === x.id);
+                  return (
+                    <div key={x.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px',
+                      background: picked ? `${T.crimson}33` : T.bg, border: `1px solid ${picked ? T.gold + '66' : T.line}`, borderRadius: 7,
+                    }}>
+                      <input type="checkbox" checked={!!picked} onChange={() => toggleExercise(x.id)} />
+                      <span style={{ flex: 1, fontSize: 13, color: T.cream }}>{x.name}</span>
+                      <span style={{ fontSize: 11, color: T.mutedDim }}>{x.phase}</span>
+                      {picked && (
+                        <Input type="number" value={picked.duration} onChange={e => setDuration(x.id, e.target.value)}
+                          style={{ width: 60, padding: '4px 6px', fontSize: 12 }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-          Presenças {f.attendance.length ? `· ${f.attendance.length}/${players.length}` : ''}
-        </div>
-        {players.length === 0 ? (
-          <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores primeiro no separador Plantel.</div>
-        ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {players.map(p => {
-              const present = f.attendance.includes(p.id);
-              return (
-                <button key={p.id} type="button" onClick={() => toggleAttendance(p.id)} style={{
-                  padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
-                  background: present ? '#B5393F' : 'transparent', color: present ? TEXT_ON_ACCENT : T.muted,
-                  border: `1px solid ${present ? '#B5393F' : T.line}`,
-                }}>{p.number ? `#${p.number} ` : ''}{p.name}</button>
-              );
-            })}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+              Presenças {f.attendance.length ? `· ${f.attendance.length}/${players.length}` : ''}
+            </div>
+            {players.length === 0 ? (
+              <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores primeiro no separador Plantel.</div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {players.map(p => {
+                  const present = f.attendance.includes(p.id);
+                  return (
+                    <button key={p.id} type="button" onClick={() => toggleAttendance(p.id)} style={{
+                      padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
+                      background: present ? '#B5393F' : 'transparent', color: present ? TEXT_ON_ACCENT : T.muted,
+                      border: `1px solid ${present ? '#B5393F' : T.line}`,
+                    }}>{p.number ? `#${p.number} ` : ''}{p.name}</button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
@@ -4545,7 +4560,9 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
             </button>
           </div>
 
-          {(s.exerciseIds || []).length === 0 ? (
+          {s.phase === 'Descanso' ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>Dia de folga — sem treino.</div>
+          ) : (s.exerciseIds || []).length === 0 ? (
             <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem exercícios associados a esta sessão.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -4615,7 +4632,9 @@ function Presencas({ players, sessions, setSessions }) {
   const todayStart = new Date(new Date().toDateString());
   // Agrupado por data: se houver mais do que uma sessão no mesmo dia
   // (ex: uma por exercício), conta e edita-se como um único dia de treino.
-  const dayGroups = groupSessionsByDate(sessions);
+  // Dias de folga (fase "Descanso") não entram na assiduidade — não há
+  // presenças nem notas a registar num dia sem treino.
+  const dayGroups = groupSessionsByDate(sessions).filter(d => !d.list.every(s => s.phase === 'Descanso'));
   // Só conta como confirmado a partir do dia seguinte à data do treino.
   const confirmedDays = dayGroups.filter(d => new Date(d.date + 'T00:00:00') < todayStart);
 
