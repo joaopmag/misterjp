@@ -50,6 +50,17 @@ const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
 const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MD', 'MC', 'MOC', 'EE', 'ED', 'PL'];
+
+// Ordenação-padrão do plantel: por posição (ordem tática de POSITIONS) e,
+// dentro da mesma posição, por número de camisola. Mantida tal como estava
+// mesmo depois de o crachá passar a mostrar a posição em vez do número.
+function sortByPosition(players) {
+  return [...(players || [])].sort((a, b) => {
+    const posA = POSITIONS.indexOf(a.position), posB = POSITIONS.indexOf(b.position);
+    const diff = (posA === -1 ? POSITIONS.length : posA) - (posB === -1 ? POSITIONS.length : posB);
+    return diff !== 0 ? diff : (Number(a.number) || 99) - (Number(b.number) || 99);
+  });
+}
 const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Ativação / Aquecimento', 'Preparação Física', 'Descanso'];
 // Fases de jogo disponíveis na edição de exercícios: "Descanso" é uma fase
 // de sessão (dia de folga), não faz sentido classificar um exercício assim.
@@ -339,7 +350,12 @@ function wellnessAvg(rec) {
 /* ---------------------------------------------------------------
    SMALL UI PRIMITIVES
 ---------------------------------------------------------------- */
-function Badge({ number }) {
+function Badge({ number, label }) {
+  // `label` tem prioridade: passou a mostrar-se a posição (GR, DC, MOC…)
+  // em vez do número de camisola. O número continua suportado para
+  // eventuais usos antigos.
+  const text = (label ?? number) || '–';
+  const long = String(text).length > 2;
   return (
     <div
       style={{
@@ -347,10 +363,11 @@ function Badge({ number }) {
         background: '#FFFFFF',
         border: `2px solid ${T.gold}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: T.crimson, ...display, fontWeight: 600, fontSize: 15, flexShrink: 0,
+        color: T.crimson, ...display, fontWeight: 600, fontSize: long ? 12.5 : 15,
+        letterSpacing: long ? '-.02em' : 0, flexShrink: 0,
       }}
     >
-      {number || '–'}
+      {text}
     </div>
   );
 }
@@ -1213,11 +1230,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
         <EmptyState text="O plantel está vazio." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro jogador</Btn>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-          {[...players].sort((a, b) => {
-            const posA = POSITIONS.indexOf(a.position), posB = POSITIONS.indexOf(b.position);
-            const diff = (posA === -1 ? POSITIONS.length : posA) - (posB === -1 ? POSITIONS.length : posB);
-            return diff !== 0 ? diff : (Number(a.number) || 99) - (Number(b.number) || 99);
-          }).map(p => {
+          {sortByPosition(players).map(p => {
             const stats = playerStats(p, sessions, matches);
             const attColor = stats.attendancePct === null ? T.mutedDim : stats.attendancePct >= 80 ? T.good : stats.attendancePct >= 60 ? T.warn : T.bad;
             const m = meta && meta[p.id];
@@ -1227,10 +1240,10 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
                 display: 'flex', flexDirection: 'column', gap: 10,
               }}>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <Badge number={p.number} />
+                  <Badge label={p.position} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                    <div style={{ color: T.mutedDim, fontSize: 12 }}>{p.position || '—'} {p.birthdate ? `· ${age(p.birthdate)} anos` : ''}</div>
+                    <div style={{ color: T.mutedDim, fontSize: 12 }}>{playerBirthLine(p)}</div>
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(p); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(p); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
@@ -1326,10 +1339,10 @@ function PlayerStatsModal({ player, sessions, matches, onClose }) {
   return (
     <Modal title={`${player.name} — estatísticas`} onClose={onClose}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <Badge number={player.number} />
+        <Badge label={player.position} />
         <div>
           <div style={{ color: T.cream, fontSize: 15 }}>{player.name}</div>
-          <div style={{ color: T.mutedDim, fontSize: 12 }}>{player.position || '—'} {player.birthdate ? `· ${age(player.birthdate)} anos` : ''}</div>
+          <div style={{ color: T.mutedDim, fontSize: 12 }}>{playerBirthLine(player)}</div>
         </div>
       </div>
 
@@ -1378,6 +1391,22 @@ function age(birthYearOrDate) {
   const y = s.length > 4 ? new Date(s).getFullYear() : parseInt(s, 10);
   if (!y || Number.isNaN(y)) return null;
   return new Date().getFullYear() - y;
+}
+
+// Ano de nascimento + idade, para o subtítulo dos cartões de jogador.
+// Ex.: "2009 · 17 anos". A posição deixou de aparecer aqui — passou a
+// estar no crachá redondo, no lugar do número de camisola.
+function birthYearOf(player) {
+  if (!player || !player.birthdate) return null;
+  const s = String(player.birthdate);
+  const y = s.length > 4 ? new Date(s).getFullYear() : parseInt(s, 10);
+  return (!y || Number.isNaN(y)) ? null : y;
+}
+function playerBirthLine(player) {
+  const y = birthYearOf(player);
+  const a = age(player && player.birthdate);
+  if (y === null) return '—';
+  return a === null ? String(y) : `${y} · ${a} anos`;
 }
 
 const LATERALITY = ['Destro', 'Esquerdo', 'Ambidestro'];
@@ -4711,7 +4740,7 @@ function Presencas({ players, sessions, setSessions }) {
                   display: 'flex', alignItems: 'center', gap: 12, background: T.surface,
                   border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 14px',
                 }}>
-                  <Badge number={player.number} />
+                  <Badge label={player.position} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: T.cream, fontSize: 14 }}>{player.name}</div>
                     <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmedDays.length} sessões confirmadas</div>
@@ -5327,8 +5356,14 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
     setPlayers(players.map(p => p.id === playerId ? { ...p, code: genPlayerCode(used) } : p));
   };
 
-  const sorted = [...monitoring].sort((a, b) => new Date(b.date) - new Date(a.date));
   const todayDateStr = todayStr();
+  const yesterdayDateStr = addDays(todayDateStr, -1);
+  // A tabela de respostas mostra apenas a véspera e o próprio dia — é o
+  // que interessa para decidir o treino de hoje. O histórico completo
+  // continua guardado; só não é listado aqui.
+  const sorted = [...monitoring]
+    .filter(m => m.date === todayDateStr || m.date === yesterdayDateStr)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
   const todaySession = sessions.find(s => s.date === todayDateStr);
 
   const th2 = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}` };
@@ -5385,7 +5420,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   <tbody>
                     {players.map(p => (
                       <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                        <td style={{ ...td2, color: T.cream }}>{p.number ? `${p.number} ` : ''}{p.name}</td>
+                        <td style={{ ...td2, color: T.cream }}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
                         <td style={{ ...td2, ...mono, color: T.warn, letterSpacing: '.1em' }}>{p.code || '—'}</td>
                         <td style={td2}>
                           <button onClick={() => regenerateCode(p.id)} title="Gerar novo código"
@@ -5437,7 +5472,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                           {statusLabel}
                         </span>
                       </td>
-                      <td style={{ ...td2, color: T.cream }}>{p.number ? `${p.number} ` : ''}{p.name}</td>
+                      <td style={{ ...td2, color: T.cream }}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
                       <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(1) : '—'}</td>
                       <td style={{ ...td2, ...mono }}>{lastRpe ? lastRpe.pse : '—'}</td>
                     </tr>
@@ -5452,9 +5487,13 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registar dados de monitorização." />
       ) : sorted.length === 0 ? (
-        <EmptyState text="Ainda sem registos." action={<Btn onClick={() => setModal(true)}><Plus size={15} /> Criar o primeiro registo</Btn>} />
+        <EmptyState text={`Sem respostas em ${formatShortDatePt(yesterdayDateStr)} nem ${formatShortDatePt(todayDateStr)}.`} action={<Btn onClick={() => setModal(true)}><Plus size={15} /> Registar agora</Btn>} />
       ) : (
-        <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
+        <>
+          <div style={{ fontSize: 12, color: T.mutedDim, margin: '0 0 8px' }}>
+            Respostas de {formatShortDatePt(yesterdayDateStr)} e {formatShortDatePt(todayDateStr)}.
+          </div>
+          <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
           <table>
             <thead>
               <tr style={{ background: T.surface }}>
@@ -5472,7 +5511,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                 return (
                   <tr key={m.id} style={{ borderBottom: `1px solid ${T.line}` }}>
                     <td style={tdStyle}>{fmtDate(m.date)}</td>
-                    <td style={{ ...tdStyle, color: T.cream }}>{p ? p.name : '—'}</td>
+                    <td style={{ ...tdStyle, color: T.cream }}>{p ? `${p.position ? `${p.position} · ` : ''}${p.name}` : '—'}</td>
                     <td style={tdStyle}>{typeLabel}</td>
                     <td style={{ ...tdStyle, ...mono }}>{typeof m.pse === 'number' ? `${m.pse}/10` : '—'}</td>
                     <td style={{ ...tdStyle, ...mono }}>{m.sono ?? '—'}</td>
@@ -5489,7 +5528,8 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       {modal && (
@@ -5626,7 +5666,7 @@ function ManualCheckinBoard({ players, monitoring, sessions, onClose, onSave }) 
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-        {players.map((p, i) => {
+        {sortByPosition(players).map(p => {
           const wDone = !!recordFor(p.id, 'wellness');
           const rDone = !!recordFor(p.id, 'rpe');
           const done = type === 'wellness' ? wDone : rDone;
@@ -5641,8 +5681,8 @@ function ManualCheckinBoard({ players, monitoring, sessions, onClose, onSave }) 
                 <StatusPip emoji="💪" on={wDone} />
                 <StatusPip emoji="🏋" on={rDone} />
               </div>
-              <div style={{ ...display, fontSize: 30, fontWeight: 700, color: done ? T.good : T.mutedDim, lineHeight: 1 }}>
-                {p.number || i + 1}
+              <div style={{ ...display, fontSize: String(p.position || '').length > 2 ? 22 : 30, fontWeight: 700, color: done ? T.good : T.mutedDim, lineHeight: 1 }}>
+                {p.position || '–'}
               </div>
               <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, marginTop: 12 }}>{p.name}</div>
             </button>
@@ -5967,7 +6007,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, gap: 10 }}>
         <div>
           <div style={{ ...display, fontSize: 22, fontWeight: 700, color: T.cream }}>{greetingNow()}, {player.name.split(' ')[0]}!</div>
-          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>{player.number ? `Nº ${player.number} · ` : ''}Sessão privada — só tu vês isto.</div>
+          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>{player.position ? `${player.position} · ` : ''}Sessão privada — só tu vês isto.</div>
         </div>
         <button onClick={onLogout} title="Terminar sessão" style={{
           display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`,
@@ -6034,7 +6074,7 @@ function KioskHeader({ player, step, totalSteps, typeLabel, subLabel, date, onBa
         <ChevronLeft size={15} /> Voltar
       </button>
       <div style={{ textAlign: 'right' }}>
-        <div style={{ ...display, fontSize: 18, fontWeight: 600, color: T.cream }}>{player.number ? `${player.number} ` : ''}{player.name}</div>
+        <div style={{ ...display, fontSize: 18, fontWeight: 600, color: T.cream }}>{player.position ? `${player.position} · ` : ''}{player.name}</div>
         <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{typeLabel} · {step ? `${step}/${totalSteps} ` : ''}{subLabel}</div>
         {!isToday && <div style={{ fontSize: 11.5, color: T.warn, marginTop: 2 }}>Dia: {formatShortDatePt(date)}</div>}
       </div>
