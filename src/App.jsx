@@ -1110,9 +1110,10 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
    se ela não estiver entre os primeiros lugares mostrados, acrescenta-a
    no fim para estar sempre visível. */
 function StandingsSummary({ standings, season }) {
-  const all = sortStandings((standings && standings.teams) || []);
+  const comp = activeCompetitionOf(standings);
+  const all = competitionTable(comp);
   if (all.length === 0) {
-    return <EmptyState text="Sem classificação. Preenche-a em Jogos › Atualizar jornada." />;
+    return <EmptyState text="Sem classificação. Configura a competição em Jogos › Competições e jornadas." />;
   }
 
   const ourName = (season && season.club) || '';
@@ -1142,8 +1143,8 @@ function StandingsSummary({ standings, season }) {
 
   return (
     <div>
-      {standings.competition && (
-        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6 }}>{standings.competition}</div>
+      {comp && comp.name && (
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6 }}>{comp.name}</div>
       )}
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
@@ -1486,6 +1487,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
           onClose={() => setStatsFor(null)}
           onShare={() => doShare(statsFor)}
           onPrint={() => { const p = statsFor; setStatsFor(null); setTimeout(() => doPrint(p), 60); }}
+          onEdit={() => { const p = statsFor; setStatsFor(null); setModal(p); }}
         />
       )}
 
@@ -1536,11 +1538,11 @@ function buildPlayerReportHtml(p, stats) {
   return `
 <h2 style="margin-top:0">Identificação</h2>
 <div style="display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;">
-  <div style="flex:0 1 auto;">${table}</div>
+  <div style="flex:0 1 auto;">${table.replace('<table>', '<table style="width:auto">')}</div>
   ${photoHtml}
 </div>
 <h2>Época</h2>
-<table>${statRows.map(([k, v]) => `<tr><th>${escapeHtmlText(k)}</th><td>${escapeHtmlText(String(v))}</td></tr>`).join('')}</table>
+<table style="width:auto">${statRows.map(([k, v]) => `<tr><th>${escapeHtmlText(k)}</th><td>${escapeHtmlText(String(v))}</td></tr>`).join('')}</table>
 `;
 }
 
@@ -1553,7 +1555,7 @@ function PlayerPrintSheet({ player: p, stats }) {
 
       <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Identificação</h3>
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 14 }}>
-        <table style={{ fontSize: 12.5, flex: '0 1 auto' }}>
+        <table style={{ fontSize: 12.5, flex: '0 1 auto', width: 'auto' }}>
           <tbody>
             {rows.map(([k, v]) => (
               <tr key={k}><th style={th}>{k}</th><td style={{ padding: '3px 0' }}>{v}</td></tr>
@@ -1569,7 +1571,7 @@ function PlayerPrintSheet({ player: p, stats }) {
       </div>
 
       <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Época</h3>
-      <table style={{ fontSize: 12.5 }}>
+      <table style={{ fontSize: 12.5, width: 'auto' }}>
         <tbody>
           <tr><th style={th}>Assiduidade</th><td style={{ padding: '3px 0' }}>{stats.attendancePct === null ? '—' : `${stats.attendancePct}%`}</td></tr>
           <tr><th style={th}>Sessões presentes</th><td style={{ padding: '3px 0' }}>{stats.attended}/{stats.totalSessions}</td></tr>
@@ -1644,14 +1646,15 @@ function playerStats(player, sessions, matches) {
   };
 }
 
-function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint }) {
+function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint, onEdit }) {
   const s = playerStats(player, sessions, matches);
   return (
     <Modal title={`${player.name} — estatísticas`} onClose={onClose}>
-      {(onShare || onPrint) && (
+      {(onShare || onPrint || onEdit) && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {onShare && <Btn variant="ghost" onClick={onShare}><Share2 size={14} /> Partilhar</Btn>}
           {onPrint && <Btn variant="ghost" onClick={onPrint}><Printer size={14} /> Imprimir</Btn>}
+          {onEdit && <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>}
         </div>
       )}
       {player.photo && (
@@ -5756,9 +5759,16 @@ function sortStandings(teams) {
 function LeagueStandings({ standings, setStandings, standingsMeta }) {
   const [editing, setEditing] = useState(false);
   const [roundIdx, setRoundIdx] = useState(0);
-  const teams = sortStandings(standings.teams);
-  const rounds = standings.rounds || [];
+  const { competitions } = normalizeStandings(standings);
+  // Competição a ver neste painel. Arranca na ativa (a última editada) e
+  // pode alternar-se sem abrir a janela de configuração.
+  const [viewId, setViewId] = useState(null);
+  const comp = competitions.find(c => c.id === viewId) || activeCompetitionOf(standings);
+  const teams = competitionTable(comp);
+  const rounds = (comp && comp.rounds) || [];
   const round = rounds[roundIdx];
+
+  useEffect(() => { setRoundIdx(0); }, [comp && comp.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // Ao chegarem novas jornadas (ex: outra pessoa acabou de atualizar),
@@ -5773,16 +5783,29 @@ function LeagueStandings({ standings, setStandings, standingsMeta }) {
     <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
-          <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>{standings.competition || 'Classificação da competição'}</div>
+          <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>{(comp && comp.name) || 'Classificação da competição'}</div>
           {standingsMeta?.email && (
             <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 2 }}>Atualizado por {standingsMeta.email} · {timeAgo(standingsMeta.at)}</div>
           )}
         </div>
-        <Btn variant="ghost" onClick={() => setEditing(true)}><Pencil size={14} /> Atualizar jornada</Btn>
+        <Btn variant="ghost" onClick={() => setEditing(true)}><Pencil size={14} /> Competições e jornadas</Btn>
       </div>
 
+      {competitions.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+          {competitions.map(c => (
+            <button key={c.id} type="button" onClick={() => setViewId(c.id)} style={{
+              padding: '5px 11px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
+              background: comp && c.id === comp.id ? '#B5393F' : 'transparent',
+              color: comp && c.id === comp.id ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${comp && c.id === comp.id ? '#B5393F' : T.line}`,
+            }}>{c.name || 'Sem nome'}</button>
+          ))}
+        </div>
+      )}
+
       {!hasData ? (
-        <EmptyState text="Ainda sem classificação introduzida. Usa 'Atualizar jornada' para colar os resultados e a tabela." />
+        <EmptyState text="Ainda sem competições configuradas. Usa 'Competições e jornadas' para criar a competição, as equipas e as jornadas." />
       ) : (
         <>
           {rounds.length > 0 && (
@@ -5897,180 +5920,368 @@ function computeStandingsFromRounds(rounds, extraNames = []) {
   return [...map.values()];
 }
 
+/* ---------------------------------------------------------------
+   COMPETIÇÕES
+
+   O registo único `league_standings` passou a guardar VÁRIAS
+   competições (campeonato, taça, torneio…), cada uma com a sua lista
+   de equipas, número de jornadas, resultados e classificação.
+
+   Formato: { competitions: [...], activeId }. Os campos antigos
+   (competition/teams/rounds/auto) continuam a ser gravados a espelhar
+   a competição ativa, para nada que os leia deixar de funcionar.
+---------------------------------------------------------------- */
+function normalizeStandings(standings) {
+  const st = standings || {};
+  if (Array.isArray(st.competitions) && st.competitions.length) {
+    const activeId = st.competitions.some(c => c.id === st.activeId) ? st.activeId : st.competitions[0].id;
+    return { competitions: st.competitions, activeId };
+  }
+  // Migração do formato antigo (uma só competição solta no objeto).
+  const legacy = {
+    id: uid(),
+    name: st.competition || 'Competição',
+    teamNames: (st.teams || []).map(t => t.name).filter(Boolean),
+    rounds: st.rounds || [],
+    auto: st.auto !== false,
+    teams: st.teams || [],
+  };
+  const hasAnything = legacy.name !== 'Competição' || legacy.teamNames.length || legacy.rounds.length;
+  return { competitions: hasAnything ? [legacy] : [], activeId: hasAnything ? legacy.id : null };
+}
+
+function activeCompetitionOf(standings) {
+  const { competitions, activeId } = normalizeStandings(standings);
+  return competitions.find(c => c.id === activeId) || competitions[0] || null;
+}
+
+// Classificação de uma competição: em automático calcula-se a partir dos
+// resultados; em manual usa-se a tabela introduzida à mão.
+function competitionTable(comp) {
+  if (!comp) return [];
+  if (comp.auto === false) return sortStandings(comp.teams || []);
+  return sortStandings(computeStandingsFromRounds(comp.rounds || [], comp.teamNames || []));
+}
+
+const emptyCompetition = (name = '') => ({
+  id: uid(), name, teamNames: [], rounds: [], auto: true, teams: [],
+});
+
 function StandingsModal({ standings, onClose, onSave }) {
-  const [competition, setCompetition] = useState(standings.competition || '');
-  const [teams, setTeams] = useState((standings.teams && standings.teams.length ? standings.teams : [{ id: uid(), name: '', J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }]));
-  const [rounds, setRounds] = useState(standings.rounds || []);
-  const [roundIdx, setRoundIdx] = useState(Math.max(0, (standings.rounds || []).length - 1));
-  // Modo automático: a classificação é calculada a partir dos resultados
-  // das jornadas. Pode ser desligado para casos em que só se tem a tabela
-  // publicada (ou quando há pontos retirados por castigo).
-  const [auto, setAuto] = useState(standings.auto !== false);
+  const initial = normalizeStandings(standings);
+  const [competitions, setCompetitions] = useState(
+    initial.competitions.length ? initial.competitions : [emptyCompetition('')]
+  );
+  const [activeId, setActiveId] = useState(
+    initial.activeId || (initial.competitions[0] && initial.competitions[0].id) || null
+  );
+  const [tab, setTab] = useState('resultados'); // 'config' | 'resultados'
+  const [roundIdx, setRoundIdx] = useState(0);
+  const [notice, setNotice] = useState('');
 
-  // Nomes escritos à mão que devem constar na tabela mesmo sem jogos.
-  const manualNames = teams.map(t => t.name).filter(n => n && n.trim());
-  const computedTeams = computeStandingsFromRounds(rounds, manualNames);
-  const previewTeams = sortStandings(auto ? computedTeams : teams);
-  const gamesCounted = (rounds || []).reduce((n, r) => n + (r.games || []).filter(g => parseScore(g.score) && g.home && g.away).length, 0);
-  const gamesTotal = (rounds || []).reduce((n, r) => n + (r.games || []).length, 0);
+  const comp = competitions.find(c => c.id === activeId) || competitions[0];
+  useEffect(() => {
+    if (comp && !competitions.some(c => c.id === activeId)) setActiveId(comp.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [competitions.length]);
 
-  const updateTeam = (id, field, val) => setTeams(teams.map(t => t.id === id ? { ...t, [field]: val } : t));
-  const addTeam = () => setTeams([...teams, { id: uid(), name: '', J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }]);
-  const removeTeam = (id) => setTeams(teams.filter(t => t.id !== id));
+  const patchComp = (patch) => setCompetitions(cs => cs.map(c => (c.id === comp.id ? { ...c, ...patch } : c)));
+
+  // --- competições -----------------------------------------------
+  const addCompetition = () => {
+    const nova = emptyCompetition('');
+    setCompetitions(cs => [...cs, nova]);
+    setActiveId(nova.id);
+    setRoundIdx(0);
+    setTab('config');
+    setNotice('');
+  };
+  const removeCompetition = (id) => {
+    const rest = competitions.filter(c => c.id !== id);
+    setCompetitions(rest.length ? rest : [emptyCompetition('')]);
+    setActiveId((rest[0] && rest[0].id) || null);
+    setRoundIdx(0);
+  };
+
+  // --- equipas ----------------------------------------------------
+  const teamNames = comp.teamNames || [];
+  const setTeamName = (i, name) => patchComp({ teamNames: teamNames.map((t, j) => (j === i ? name : t)) });
+  const addTeamName = () => patchComp({ teamNames: [...teamNames, ''] });
+  const removeTeamName = (i) => patchComp({ teamNames: teamNames.filter((_, j) => j !== i) });
+  const validTeams = teamNames.map(t => (t || '').trim()).filter(Boolean);
+
+  // --- jornadas ---------------------------------------------------
+  const rounds = comp.rounds || [];
+  const setRoundsCount = (n) => {
+    const target = Math.max(0, Math.min(60, Number(n) || 0));
+    if (target > rounds.length) {
+      const extra = Array.from({ length: target - rounds.length }, (_, k) => ({
+        id: uid(), label: `Jornada ${rounds.length + k + 1}`, games: [],
+      }));
+      patchComp({ rounds: [...rounds, ...extra] });
+      setNotice('');
+      return;
+    }
+    if (target < rounds.length) {
+      // Só remove jornadas do fim que ainda não tenham jogos — nunca apaga
+      // resultados já introduzidos sem avisar.
+      let next = [...rounds];
+      while (next.length > target && (next[next.length - 1].games || []).length === 0) next.pop();
+      patchComp({ rounds: next });
+      setNotice(next.length > target
+        ? `Ficaram ${next.length} jornadas: as restantes já têm jogos registados e não foram apagadas.`
+        : '');
+      setRoundIdx(i => Math.max(0, Math.min(i, next.length - 1)));
+    }
+  };
 
   const round = rounds[roundIdx] || null;
-  const addRound = () => {
-    const next = [...rounds, { id: uid(), label: `Jornada ${rounds.length + 1}`, games: [] }];
-    setRounds(next);
-    setRoundIdx(next.length - 1);
-  };
-  const removeRound = (idx) => {
-    const next = rounds.filter((_, i) => i !== idx);
-    setRounds(next);
-    setRoundIdx(Math.max(0, Math.min(idx, next.length - 1)));
-  };
-  const updateRoundLabel = (idx, label) => setRounds(rounds.map((r, i) => i === idx ? { ...r, label } : r));
   const addGame = () => {
     if (!round) return;
-    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: [...(r.games || []), { home: '', away: '', score: '', date: '' }] } : r));
+    patchComp({
+      rounds: rounds.map((r, i) => (i === roundIdx
+        ? { ...r, games: [...(r.games || []), { home: '', away: '', score: '', date: '' }] }
+        : r)),
+    });
   };
   const updateGame = (gi, field, val) => {
-    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: r.games.map((g, j) => j === gi ? { ...g, [field]: val } : g) } : r));
+    patchComp({
+      rounds: rounds.map((r, i) => (i === roundIdx
+        ? { ...r, games: r.games.map((g, j) => (j === gi ? { ...g, [field]: val } : g)) }
+        : r)),
+    });
   };
   const removeGame = (gi) => {
-    setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: r.games.filter((_, j) => j !== gi) } : r));
+    patchComp({ rounds: rounds.map((r, i) => (i === roundIdx ? { ...r, games: r.games.filter((_, j) => j !== gi) } : r)) });
   };
 
-  const save = () => onSave({
-    competition,
-    // Em automático guarda-se a tabela já calculada, para quem só a lê
-    // (Visão Geral, ecrã de Jogos) não ter de a recalcular.
-    teams: auto ? computedTeams : teams.filter(t => t.name.trim()),
-    rounds,
-    auto,
-  });
+  // --- classificação ----------------------------------------------
+  const previewTeams = competitionTable(comp);
+  const gamesCounted = rounds.reduce((n, r) => n + (r.games || []).filter(g => parseScore(g.score) && g.home && g.away).length, 0);
+  const gamesTotal = rounds.reduce((n, r) => n + (r.games || []).length, 0);
+
+  const manualTeams = comp.teams && comp.teams.length
+    ? comp.teams
+    : validTeams.map(n => ({ id: uid(), name: n, J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }));
+  const updateManualTeam = (id, field, val) => patchComp({ teams: manualTeams.map(t => (t.id === id ? { ...t, [field]: val } : t)) });
+
+  const save = () => {
+    const cleaned = competitions
+      .map(c => ({ ...c, name: (c.name || '').trim(), teamNames: (c.teamNames || []).map(t => (t || '').trim()).filter(Boolean) }))
+      .filter(c => c.name || (c.rounds || []).length || (c.teamNames || []).length)
+      .map(c => ({ ...c, teams: c.auto === false ? (c.teams || []) : computeStandingsFromRounds(c.rounds || [], c.teamNames || []) }));
+    const act = cleaned.find(c => c.id === activeId) || cleaned[0] || null;
+    onSave({
+      competitions: cleaned,
+      activeId: act ? act.id : null,
+      // Espelho do formato antigo, para leitores que ainda o usem.
+      competition: act ? act.name : '',
+      teams: act ? act.teams : [],
+      rounds: act ? act.rounds : [],
+      auto: act ? act.auto !== false : true,
+    });
+  };
+
+  const tabBtn = (id, label) => (
+    <button type="button" onClick={() => setTab(id)} style={{
+      padding: '7px 14px', borderRadius: 8, fontSize: 12.5, cursor: 'pointer', ...body,
+      background: tab === id ? '#B5393F' : 'transparent',
+      color: tab === id ? TEXT_ON_ACCENT : T.muted,
+      border: `1px solid ${tab === id ? '#B5393F' : T.line}`,
+    }}>{label}</button>
+  );
 
   return (
-    <Modal title="Atualizar jornada" onClose={onClose} wide>
-      <div style={{ marginBottom: 18 }}>
-        <Field label="Competição">
-          <Input value={competition} onChange={e => setCompetition(e.target.value)} placeholder="Ex: AF Porto - 1ª Divisão Sub-19, Série 2 - 2025/26" />
-        </Field>
+    <Modal title="Competições e classificação" onClose={onClose} wide>
+      {/* --- seletor de competição --- */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Competição</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {competitions.map(c => (
+            <button key={c.id} type="button" onClick={() => { setActiveId(c.id); setRoundIdx(0); setNotice(''); }} style={{
+              padding: '6px 12px', borderRadius: 16, fontSize: 12.5, cursor: 'pointer', ...body,
+              background: c.id === comp.id ? '#B5393F' : 'transparent',
+              color: c.id === comp.id ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${c.id === comp.id ? '#B5393F' : T.line}`,
+            }}>{c.name || 'Sem nome'}</button>
+          ))}
+          <Btn variant="ghost" onClick={addCompetition} style={{ padding: '6px 12px', fontSize: 12.5 }}><Plus size={13} /> Nova competição</Btn>
+        </div>
       </div>
 
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Resultados por jornada</div>
-          <Btn variant="ghost" onClick={addRound}><Plus size={13} /> Nova jornada</Btn>
-        </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+        {tabBtn('config', 'Configuração')}
+        {tabBtn('resultados', 'Resultados e classificação')}
+      </div>
 
-        {rounds.length === 0 ? (
-          <p style={{ fontSize: 12.5, color: T.mutedDim }}>Sem jornadas ainda. Adiciona uma para começar a registar os resultados.</p>
-        ) : (
-          <>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-              {rounds.map((r, i) => (
-                <button key={r.id} type="button" onClick={() => setRoundIdx(i)} style={{
-                  padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
-                  background: i === roundIdx ? '#B5393F' : 'transparent', color: i === roundIdx ? TEXT_ON_ACCENT : T.muted,
-                  border: `1px solid ${i === roundIdx ? '#B5393F' : T.line}`,
-                }}>{r.label}</button>
-              ))}
+      {notice && (
+        <div style={{ fontSize: 12, color: T.warn, marginBottom: 12 }}>{notice}</div>
+      )}
+
+      {/* ================= CONFIGURAÇÃO ================= */}
+      {tab === 'config' && (
+        <>
+          <div style={{ marginBottom: 18 }}>
+            <Field label="Nome da competição">
+              <Input value={comp.name || ''} onChange={e => patchComp({ name: e.target.value })}
+                placeholder="Ex: AF Porto · 1ª Divisão Sub-19 · Série 2" />
+            </Field>
+          </div>
+
+          <div style={{ marginBottom: 18, maxWidth: 220 }}>
+            <Field label="Número de jornadas">
+              <Input type="number" min="0" max="60" value={rounds.length}
+                onChange={e => setRoundsCount(e.target.value)} />
+            </Field>
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                Equipas ({validTeams.length})
+              </div>
+              <Btn variant="ghost" onClick={addTeamName}><Plus size={13} /> Adicionar equipa</Btn>
             </div>
+            {teamNames.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: T.mutedDim }}>
+                Adiciona aqui todas as equipas da competição — passam a aparecer em lista nos resultados, para não haver nomes escritos de forma diferente.
+              </p>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                {teamNames.map((t, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <Input value={t} onChange={e => setTeamName(i, e.target.value)} placeholder={`Equipa ${i + 1}`} />
+                    <button onClick={() => removeTeamName(i)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-            {round && (
+          {competitions.length > 1 && (
+            <button type="button" onClick={() => removeCompetition(comp.id)} style={{
+              background: 'none', border: 'none', color: T.bad, cursor: 'pointer', fontSize: 12.5, ...body, marginBottom: 8,
+            }}>
+              Apagar a competição "{comp.name || 'sem nome'}"
+            </button>
+          )}
+        </>
+      )}
+
+      {/* ================= RESULTADOS ================= */}
+      {tab === 'resultados' && (
+        <>
+          {rounds.length === 0 || validTeams.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 18 }}>
+              Vai primeiro a "Configuração" e define o nome da competição, as equipas e o número de jornadas.
+            </p>
+          ) : (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ maxWidth: 240, marginBottom: 12 }}>
+                <Field label="Jornada">
+                  <Select value={roundIdx} onChange={e => setRoundIdx(Number(e.target.value))}>
+                    {rounds.map((r, i) => (
+                      <option key={r.id} value={i}>
+                        {r.label}{(r.games || []).length ? ` (${r.games.length})` : ''}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+
               <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  <Input value={round.label} onChange={e => updateRoundLabel(roundIdx, e.target.value)} style={{ flex: 1 }} placeholder="Nome da jornada" />
-                  <button onClick={() => removeRound(roundIdx)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={15} /></button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 1fr 70px 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 2px 6px' }}>
+                  <span>Equipa casa</span><span style={{ textAlign: 'center' }}>Resultado</span><span>Equipa fora</span><span style={{ textAlign: 'center' }}>Data</span><span />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                  {(round.games || []).map((g, gi) => (
-                    <div key={gi} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <Input value={g.date} onChange={e => updateGame(gi, 'date', e.target.value)} placeholder="dd/mm" style={{ width: 70 }} />
-                      <Input value={g.home} onChange={e => updateGame(gi, 'home', e.target.value)} placeholder="Equipa casa" style={{ flex: 1 }} />
-                      <Input value={g.score} onChange={e => updateGame(gi, 'score', e.target.value)} placeholder="1-1" style={{ width: 56, textAlign: 'center' }} />
-                      <Input value={g.away} onChange={e => updateGame(gi, 'away', e.target.value)} placeholder="Equipa fora" style={{ flex: 1 }} />
+                  {(round?.games || []).map((g, gi) => (
+                    <div key={gi} style={{ display: 'grid', gridTemplateColumns: '1fr 70px 1fr 70px 24px', gap: 6, alignItems: 'center' }}>
+                      <Select value={g.home} onChange={e => updateGame(gi, 'home', e.target.value)}>
+                        <option value="">— escolher —</option>
+                        {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
+                      </Select>
+                      <Input value={g.score} onChange={e => updateGame(gi, 'score', e.target.value)} placeholder="1-1" style={{ textAlign: 'center', padding: '9px 4px' }} />
+                      <Select value={g.away} onChange={e => updateGame(gi, 'away', e.target.value)}>
+                        <option value="">— escolher —</option>
+                        {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
+                      </Select>
+                      <Input value={g.date} onChange={e => updateGame(gi, 'date', e.target.value)} placeholder="dd/mm" style={{ textAlign: 'center', padding: '9px 4px' }} />
                       <button onClick={() => removeGame(gi)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
                     </div>
                   ))}
                 </div>
                 <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
               </div>
-            )}
-          </>
-        )}
-      </div>
-
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Classificação</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <ToggleBtn active={auto} onClick={() => setAuto(true)}>Automática</ToggleBtn>
-            <ToggleBtn active={!auto} onClick={() => setAuto(false)} accent>Manual</ToggleBtn>
-            <Btn variant="ghost" onClick={addTeam}><Plus size={13} /> Adicionar equipa</Btn>
-          </div>
-        </div>
-
-        {auto ? (
-          <>
-            <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10, lineHeight: 1.5 }}>
-              Calculada a partir dos resultados acima: {gamesCounted} de {gamesTotal} {gamesTotal === 1 ? 'jogo lido' : 'jogos lidos'}.
-              {gamesTotal > gamesCounted && ' Os jogos sem resultado válido (ex: "2-1") não entram na conta.'}
-              {' '}Usa "Adicionar equipa" só para incluir equipas que ainda não jogaram.
             </div>
-            {previewTeams.length === 0 ? (
-              <p style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem jogos com resultado. Preenche os resultados da jornada acima.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr repeat(8, 40px)', gap: 4, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
-                  <span>#</span><span>Equipa</span>
-                  {['J', 'V', 'E', 'D', 'GM', 'GS', 'DG', 'P'].map(h => <span key={h} style={{ textAlign: 'center' }}>{h}</span>)}
+          )}
+
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Classificação</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <ToggleBtn active={comp.auto !== false} onClick={() => patchComp({ auto: true })}>Automática</ToggleBtn>
+                <ToggleBtn active={comp.auto === false} onClick={() => patchComp({ auto: false, teams: manualTeams })} accent>Manual</ToggleBtn>
+              </div>
+            </div>
+
+            {comp.auto !== false ? (
+              <>
+                <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10, lineHeight: 1.5 }}>
+                  Calculada a partir dos resultados acima: {gamesCounted} de {gamesTotal} {gamesTotal === 1 ? 'jogo lido' : 'jogos lidos'}.
+                  {gamesTotal > gamesCounted && ' Os jogos sem resultado válido (ex: "2-1") não entram na conta.'}
                 </div>
-                {previewTeams.map((t, i) => (
-                  <div key={t.id} style={{
-                    display: 'grid', gridTemplateColumns: '24px 1fr repeat(8, 40px)', gap: 4, alignItems: 'center',
-                    background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '6px 4px', fontSize: 12.5, ...mono, color: T.mutedDim,
-                  }}>
-                    <span style={{ textAlign: 'center' }}>{i + 1}</span>
-                    <span style={{ color: T.cream, ...body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-                    <span style={{ textAlign: 'center' }}>{t.J}</span>
-                    <span style={{ textAlign: 'center' }}>{t.V}</span>
-                    <span style={{ textAlign: 'center' }}>{t.E}</span>
-                    <span style={{ textAlign: 'center' }}>{t.D}</span>
-                    <span style={{ textAlign: 'center' }}>{t.GM}</span>
-                    <span style={{ textAlign: 'center' }}>{t.GS}</span>
-                    <span style={{ textAlign: 'center' }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</span>
-                    <span style={{ textAlign: 'center', color: T.warn, fontWeight: 600 }}>{t.P}</span>
+                {previewTeams.length === 0 ? (
+                  <p style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem equipas nem resultados nesta competição.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr repeat(8, 40px)', gap: 4, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
+                      <span>#</span><span>Equipa</span>
+                      {['J', 'V', 'E', 'D', 'GM', 'GS', 'DG', 'P'].map(h => <span key={h} style={{ textAlign: 'center' }}>{h}</span>)}
+                    </div>
+                    {previewTeams.map((t, i) => (
+                      <div key={t.id} style={{
+                        display: 'grid', gridTemplateColumns: '24px 1fr repeat(8, 40px)', gap: 4, alignItems: 'center',
+                        background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '6px 4px', fontSize: 12.5, ...mono, color: T.mutedDim,
+                      }}>
+                        <span style={{ textAlign: 'center' }}>{i + 1}</span>
+                        <span style={{ color: T.cream, ...body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                        <span style={{ textAlign: 'center' }}>{t.J}</span>
+                        <span style={{ textAlign: 'center' }}>{t.V}</span>
+                        <span style={{ textAlign: 'center' }}>{t.E}</span>
+                        <span style={{ textAlign: 'center' }}>{t.D}</span>
+                        <span style={{ textAlign: 'center' }}>{t.GM}</span>
+                        <span style={{ textAlign: 'center' }}>{t.GS}</span>
+                        <span style={{ textAlign: 'center' }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</span>
+                        <span style={{ textAlign: 'center', color: T.warn, fontWeight: 600 }}>{t.P}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10 }}>
-              Introdução manual — os pontos e a diferença de golos continuam a ser calculados a partir de V/E/D e GM/GS.
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
-                <span>Equipa</span><span style={{ textAlign: 'center' }}>J</span><span style={{ textAlign: 'center' }}>V</span>
-                <span style={{ textAlign: 'center' }}>E</span><span style={{ textAlign: 'center' }}>D</span>
-                <span style={{ textAlign: 'center' }}>GM</span><span style={{ textAlign: 'center' }}>GS</span><span />
-              </div>
-              {teams.map(t => (
-                <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, alignItems: 'center' }}>
-                  <Input value={t.name} onChange={e => updateTeam(t.id, 'name', e.target.value)} placeholder="Nome da equipa" />
-                  {['J', 'V', 'E', 'D', 'GM', 'GS'].map(f => (
-                    <Input key={f} type="number" min="0" value={t[f]} onChange={e => updateTeam(t.id, f, e.target.value)} style={{ textAlign: 'center', padding: '6px 4px' }} />
-                  ))}
-                  <button onClick={() => removeTeam(t.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+                )}
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10 }}>
+                  Introdução manual — os pontos e a diferença de golos continuam a ser calculados a partir de V/E/D e GM/GS.
                 </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px)', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
+                    <span>Equipa</span>
+                    {['J', 'V', 'E', 'D', 'GM', 'GS'].map(h => <span key={h} style={{ textAlign: 'center' }}>{h}</span>)}
+                  </div>
+                  {manualTeams.map(t => (
+                    <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px)', gap: 6, alignItems: 'center' }}>
+                      <span style={{ fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                      {['J', 'V', 'E', 'D', 'GM', 'GS'].map(fld => (
+                        <Input key={fld} type="number" min="0" value={t[fld]} onChange={e => updateManualTeam(t.id, fld, e.target.value)} style={{ textAlign: 'center', padding: '6px 4px' }} />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
@@ -7621,7 +7832,7 @@ function buildScoutReportHtml(x) {
 <div>
 <h2 style="margin-top:0">Identificação</h2>
 <div style="display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;">
-  <div style="flex:0 1 auto;">${identificacao}</div>
+  <div style="flex:0 1 auto;">${identificacao.replace('<table>', '<table style="width:auto">')}</div>
   ${photoHtml}
 </div>
 <h2>Potencial geral</h2>
@@ -7764,7 +7975,7 @@ function Scouting({ scouting, setScouting }) {
           <div>
             <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Identificação</h3>
             <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 14 }}>
-            <table style={{ fontSize: 12.5, flex: '0 1 auto' }}>
+            <table style={{ fontSize: 12.5, flex: '0 1 auto', width: 'auto' }}>
               <tbody>
                 {[
                   ['Clube atual', printScout.club],
@@ -7865,7 +8076,10 @@ function ScoutSheetModal({ player: x, onClose, onEdit, onShare, onPrint }) {
 
       <SubHeading>Identificação</SubHeading>
       <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
-        <table style={{ borderCollapse: 'collapse', flex: '0 1 auto' }}>
+        {/* width:auto sobrepõe o `table { width:100% }` global — sem isto a
+            tabela ocupava a linha toda, empurrando os valores para longe
+            das etiquetas e a foto para baixo. */}
+        <table style={{ borderCollapse: 'collapse', flex: '0 1 auto', width: 'auto' }}>
           <tbody>
             {idRows.map(([k, v]) => (
               <tr key={k}>
