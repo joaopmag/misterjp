@@ -4,7 +4,7 @@ import ReactDOMServer from 'react-dom/server';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, Check, Loader2, Clock,
-  Gauge, Moon, Droplets, Zap, BedDouble, Printer, TrendingUp, Trophy,
+  Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2
@@ -5308,9 +5308,18 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
     setTimeout(() => setLinkCopied(false), 2000);
   };
 
+  // Registo manual: substitui o registo do mesmo jogador/dia/tipo em vez de
+  // duplicar linhas — o quadro fica aberto para o jogador seguinte.
   const save = (data) => {
-    setMonitoring([...monitoring, { ...data, id: uid() }]);
-    setModal(false);
+    setMonitoring(prev => {
+      const idx = prev.findIndex(m => m.playerId === data.playerId && m.date === data.date && m.type === data.type);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...prev[idx], ...data };
+        return copy;
+      }
+      return [...prev, { ...data, id: uid() }];
+    });
   };
   const remove = (id) => setMonitoring(monitoring.filter(m => m.id !== id));
   const regenerateCode = (playerId) => {
@@ -5483,78 +5492,179 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
         </div>
       )}
 
-      {modal && <MonitoringModal players={players} sessions={sessions} onClose={() => setModal(false)} onSave={save} />}
+      {modal && (
+        <ManualCheckinBoard
+          players={players} monitoring={monitoring} sessions={sessions}
+          onClose={() => setModal(false)} onSave={save}
+        />
+      )}
     </div>
   );
 }
 
 const tdStyle = { padding: '9px 12px', fontSize: 13, color: T.mutedDim };
 
-function MonitoringModal({ players, onClose, onSave }) {
-  // Wellness e PSE são registos distintos (tal como no questionário dos
-  // atletas): o treinador escolhe o tipo e só preenche os campos desse
-  // tipo, para não misturar os dois num único registo.
+/* ---------------------------------------------------------------
+   REGISTO MANUAL — grelha de plantel em touchscreen
+
+   Substitui o antigo formulário com sliders. O staff abre o quadro,
+   escolhe Wellness ou PSE e a data, e tem o plantel todo à disposição:
+   toca no jogador e responde no MESMO questionário que os atletas usam
+   (WellnessWizard / RpeWizard). No fim volta à grelha para o jogador
+   seguinte — pensado para passar o tablet de mão em mão no balneário.
+
+   Ao contrário do questionário dos atletas, aqui NÃO há janelas
+   horárias nem limite de dia: é sempre possível preencher.
+---------------------------------------------------------------- */
+function ManualCheckinBoard({ players, monitoring, sessions, onClose, onSave }) {
   const [type, setType] = useState('wellness');
-  const [f, setF] = useState({
-    playerId: players[0]?.id || '', date: todayStr(),
-    pse: 5, sono: 3, fadiga: 3, dor: 3, humor: 3, stress: 3,
-  });
+  const [date, setDate] = useState(todayStr());
+  const [activeId, setActiveId] = useState(null);
 
-  const sliders = [
-    { key: 'sono', label: 'Qualidade do sono', icon: Moon },
-    { key: 'fadiga', label: 'Fadiga (5 = fresco)', icon: BedDouble },
-    { key: 'dor', label: 'Dor muscular (5 = sem dor)', icon: Zap },
-    { key: 'humor', label: 'Humor (5 = ótimo)', icon: Gauge },
-    { key: 'stress', label: 'Stress (5 = relaxado)', icon: Droplets },
-  ];
+  const session = sessions.find(s => s.date === date);
+  const isRestDay = session && session.phase === 'Descanso';
+  const sessionLabel = session ? (session.focus || session.phase || 'Sessão do dia') : 'Sem sessão definida';
+  const activePlayer = players.find(p => p.id === activeId);
 
-  const save = () => {
-    const base = { playerId: f.playerId, date: f.date, type };
-    onSave(type === 'wellness'
-      ? { ...base, sono: f.sono, fadiga: f.fadiga, dor: f.dor, humor: f.humor, stress: f.stress }
-      : { ...base, pse: f.pse });
+  // Registo já existente para aquele jogador, naquele dia, daquele tipo.
+  const recordFor = (playerId, t) => monitoring.find(m => m.playerId === playerId && m.date === date &&
+    (t === 'wellness' ? typeof m.sono === 'number' : typeof m.pse === 'number'));
+
+  const doneCount = players.filter(p => recordFor(p.id, type)).length;
+
+  const submit = (fields) => {
+    if (!activePlayer) return;
+    onSave({ playerId: activePlayer.id, date, type, ...fields });
   };
 
-  return (
-    <Modal title="Novo registo de monitorização" onClose={onClose}>
-      <Field label="Tipo de registo">
-        <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+  const shell = (children) => (
+    <div style={{
+      position: 'fixed', inset: 0, background: T.bg, zIndex: 60, overflowY: 'auto',
+      ...body, WebkitOverflowScrolling: 'touch',
+    }}>
+      {children}
+    </div>
+  );
+
+  // --- Questionário aberto para um jogador ---------------------------
+  if (activePlayer) {
+    const back = () => setActiveId(null);
+    if (type === 'wellness') {
+      const existing = recordFor(activePlayer.id, 'wellness');
+      const fallback = monitoring
+        .filter(m => m.playerId === activePlayer.id && typeof m.sono === 'number')
+        .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+      return shell(
+        <WellnessWizard
+          player={activePlayer} initial={existing || fallback} date={date}
+          onBack={back} onSubmit={fields => submit(fields)}
+        />
+      );
+    }
+    return shell(
+      <RpeWizard
+        player={activePlayer} session={session} date={date}
+        onBack={back} onSubmit={fields => submit(fields)}
+      />
+    );
+  }
+
+  // --- Grelha do plantel ---------------------------------------------
+  return shell(
+    <div style={{ maxWidth: 1180, margin: '0 auto', padding: '22px 18px 60px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, marginBottom: 18 }}>
+        <div>
+          <div style={{ ...display, fontSize: 23, fontWeight: 700, color: T.cream }}>Registo manual</div>
+          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>Toca no jogador — {type === 'wellness' ? 'wellness do dia' : 'intensidade do treino'}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          <div style={{ ...display, fontSize: 22, fontWeight: 700, color: doneCount === players.length ? T.good : T.teamB }}>
+            {doneCount}/{players.length}
+          </div>
+          <button onClick={onClose} title="Fechar" style={{
+            background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.mutedDim,
+            padding: '8px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, ...body, fontSize: 12.5,
+          }}>
+            <X size={15} /> Fechar
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8, minWidth: 260, flex: 1 }}>
           <ToggleBtn active={type === 'wellness'} onClick={() => setType('wellness')}>💪 Wellness</ToggleBtn>
           <ToggleBtn active={type === 'rpe'} onClick={() => setType('rpe')} accent>🏋 PSE</ToggleBtn>
         </div>
-      </Field>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, margin: '16px 0' }}>
-        <Field label="Jogador">
-          <Select value={f.playerId} onChange={e => setF({ ...f, playerId: e.target.value })}>
-            {players.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
+        <div style={{ minWidth: 170 }}>
+          <Field label="Data do registo">
+            <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+          </Field>
+        </div>
       </div>
 
-      {type === 'rpe' ? (
-        <>
-          <Field label={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Gauge size={13} /> PSE — perceção subjetiva de esforço (1-10)</span>}>
-            <input type="range" min="1" max="10" value={f.pse} onChange={e => setF({ ...f, pse: Number(e.target.value) })} style={{ width: '100%' }} />
-          </Field>
-          <div style={{ textAlign: 'right', ...mono, color: T.warn, fontSize: 13, marginBottom: 14 }}>{f.pse}/10</div>
-        </>
-      ) : (
-        sliders.map(s => (
-          <div key={s.key} style={{ marginBottom: 12 }}>
-            <Field label={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><s.icon size={13} /> {s.label} (1-5)</span>}>
-              <input type="range" min="1" max="5" value={f[s.key]} onChange={e => setF({ ...f, [s.key]: Number(e.target.value) })} style={{ width: '100%' }} />
-            </Field>
-          </div>
-        ))
+      {type === 'rpe' && !session && (
+        <div style={{
+          border: `1px solid ${T.warn}`, background: `${T.warn}14`, borderRadius: 10,
+          padding: '12px 14px', color: T.warn, fontSize: 13, marginBottom: 16, lineHeight: 1.5,
+        }}>
+          Ainda não há treino registado neste dia — cria a sessão em Planeamento para o PSE ficar associado a ela.
+          Podes registar à mesma, mas o registo fica sem sessão ligada.
+        </div>
+      )}
+      {type === 'rpe' && isRestDay && (
+        <div style={{
+          border: `1px solid ${T.line}`, background: T.surface, borderRadius: 10,
+          padding: '12px 14px', color: T.mutedDim, fontSize: 13, marginBottom: 16,
+        }}>
+          {formatShortDatePt(date)} está marcado como folga. Normalmente não há PSE a registar.
+        </div>
+      )}
+      {type === 'rpe' && session && !isRestDay && (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
+          Sessão de {formatShortDatePt(date)}: <span style={{ color: T.cream }}>{sessionLabel}</span>
+        </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.playerId} onClick={save}><Check size={15} /> Guardar registo</Btn>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+        {players.map((p, i) => {
+          const wDone = !!recordFor(p.id, 'wellness');
+          const rDone = !!recordFor(p.id, 'rpe');
+          const done = type === 'wellness' ? wDone : rDone;
+          return (
+            <button key={p.id} onClick={() => setActiveId(p.id)} style={{
+              position: 'relative', textAlign: 'left', padding: '16px 16px 18px', borderRadius: 12,
+              background: done ? `${T.good}12` : T.surface,
+              border: `1px solid ${done ? T.good : T.line}`,
+              cursor: 'pointer', ...body, minHeight: 104,
+            }}>
+              <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
+                <StatusPip emoji="💪" on={wDone} />
+                <StatusPip emoji="🏋" on={rDone} />
+              </div>
+              <div style={{ ...display, fontSize: 30, fontWeight: 700, color: done ? T.good : T.mutedDim, lineHeight: 1 }}>
+                {p.number || i + 1}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, marginTop: 12 }}>{p.name}</div>
+            </button>
+          );
+        })}
       </div>
-    </Modal>
+
+      <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 22, lineHeight: 1.5 }}>
+        O registo manual não tem restrição de horário — podes preencher qualquer dia, a qualquer hora.
+        Se o jogador já tiver respondido, um novo registo substitui o anterior desse dia.
+      </div>
+    </div>
+  );
+}
+
+function StatusPip({ emoji, on }) {
+  return (
+    <span style={{
+      width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 12, border: `1px solid ${on ? T.good : T.line}`, background: on ? `${T.good}22` : 'transparent',
+      opacity: on ? 1 : 0.35,
+    }}>{emoji}</span>
   );
 }
 
@@ -5586,14 +5696,78 @@ function greetingNow() {
   return 'Boa noite';
 }
 
-// Quantos dias para trás (além de hoje) o atleta pode escolher para
-// responder em atraso, caso se tenha esquecido de preencher o questionário.
+// Quantos dias para trás (além de hoje) o atleta vê na tira de dias.
+// Os dias anteriores servem só para o atleta ver o que já preencheu —
+// desde que existem janelas horárias, responder em atraso deixou de ser
+// possível no questionário (ver CHECKIN_WINDOWS).
 const CHECKIN_DAYS_BACK = 6;
+
+// Com janelas horárias activas, o atleta só responde ao dia de hoje.
+// Se algum dia se quiser voltar a permitir preencher em atraso, basta pôr
+// esta constante a true (a tira de dias volta a ser clicável).
+const CHECKIN_ALLOW_BACKFILL = false;
+
+/* ---------------------------------------------------------------
+   JANELAS HORÁRIAS DO QUESTIONÁRIO DOS ATLETAS
+
+   Wellness: das 08:00 às 13:00 do próprio dia.
+   PSE/RPE:  das 13:10 às 23:59 do próprio dia.
+
+   IMPORTANTE: estas janelas aplicam-se APENAS ao questionário que os
+   atletas abrem pelo link (?checkin=1). O registo manual feito pelo staff
+   em Monitorização não tem qualquer restrição de hora nem de dia — é
+   precisamente essa a forma de corrigir/preencher fora de horas.
+---------------------------------------------------------------- */
+const CHECKIN_WINDOWS = {
+  wellness: { startMin: 8 * 60, endMin: 13 * 60, label: 'das 08:00 às 13:00' },
+  rpe: { startMin: 13 * 60 + 10, endMin: 23 * 60 + 59, label: 'das 13:10 às 23:59' },
+};
+
+function fmtMinutesOfDay(m) {
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+// Estado da janela para um tipo de questionário num determinado dia.
+// Devolve { open, reason } — reason é o texto mostrado ao atleta.
+function checkinWindowState(type, dateStr, now = new Date()) {
+  const w = CHECKIN_WINDOWS[type];
+  if (!w) return { open: true, reason: '' };
+  if (dateStr !== todayStr()) {
+    return { open: false, reason: `Só pode ser respondido no próprio dia, ${w.label}` };
+  }
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (mins < w.startMin) {
+    return { open: false, reason: `Ainda fechado — abre às ${fmtMinutesOfDay(w.startMin)} (${w.label})` };
+  }
+  if (mins > w.endMin) {
+    return { open: false, reason: `Já fechou às ${fmtMinutesOfDay(w.endMin)} — fala com o staff para registar` };
+  }
+  return { open: true, reason: `Disponível hoje ${w.label}` };
+}
 
 function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
   const [loggedPlayerId, setLoggedPlayerId] = useState(null);
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
   const [selectedDate, setSelectedDate] = useState(todayStr());
+
+  // Relógio interno: as janelas horárias abrem/fecham sozinhas sem o atleta
+  // ter de recarregar a página (ex.: está no ecrã às 12:59 e às 13:00 o
+  // Wellness fecha e o PSE passa a estar disponível às 13:10).
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 20000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Se o dia virar com o ecrã aberto, volta automaticamente para hoje.
+  useEffect(() => {
+    const today = todayStr();
+    if (selectedDate !== today && !CHECKIN_ALLOW_BACKFILL) setSelectedDate(today);
+  }, [nowTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const now = new Date(nowTick);
+  const wellnessWindow = checkinWindowState('wellness', selectedDate, now);
+  const rpeWindow = checkinWindowState('rpe', selectedDate, now);
 
   const player = players.find(p => p.id === loggedPlayerId);
   const sessionForDate = sessions.find(s => s.date === selectedDate);
@@ -5661,7 +5835,9 @@ function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
       recentDates={recentDates} dayStatus={dayStatus}
       selectedDate={selectedDate} onSelectDate={setSelectedDate}
       doneWellness={hasDate('wellness', selectedDate)} doneRpe={hasDate('rpe', selectedDate)}
-      onOpenWellness={() => setActiveType('wellness')} onOpenRpe={() => setActiveType('rpe')}
+      wellnessWindow={wellnessWindow} rpeWindow={rpeWindow}
+      onOpenWellness={() => { if (wellnessWindow.open) setActiveType('wellness'); }}
+      onOpenRpe={() => { if (rpeWindow.open) setActiveType('rpe'); }}
       onLogout={() => setLoggedPlayerId(null)}
     />
   );
@@ -5728,7 +5904,9 @@ function DaySelectStrip({ recentDates, dayStatus, selectedDate, onSelectDate }) 
   const todayDateStr = todayStr();
   return (
     <div style={{ marginBottom: 22 }}>
-      <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 8 }}>A responder por:</div>
+      <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 8 }}>
+        {CHECKIN_ALLOW_BACKFILL ? 'A responder por:' : 'Os teus últimos dias (só respondes ao dia de hoje):'}
+      </div>
       <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2 }}>
         {recentDates.map(d => {
           const isSelected = d === selectedDate;
@@ -5736,9 +5914,12 @@ function DaySelectStrip({ recentDates, dayStatus, selectedDate, onSelectDate }) 
           const status = dayStatus[d] || { wellness: false, rpe: false };
           const bothDone = status.wellness && status.rpe;
           const someDone = status.wellness || status.rpe;
+          // Sem backfill, os dias anteriores servem só de histórico visual.
+          const locked = !CHECKIN_ALLOW_BACKFILL && !isToday;
           return (
-            <button key={d} onClick={() => onSelectDate(d)} style={{
-              flex: '0 0 auto', width: 46, padding: '8px 0 7px', borderRadius: 10, cursor: 'pointer',
+            <button key={d} onClick={() => { if (!locked) onSelectDate(d); }} disabled={locked} style={{
+              flex: '0 0 auto', width: 46, padding: '8px 0 7px', borderRadius: 10, cursor: locked ? 'default' : 'pointer',
+              opacity: locked ? 0.5 : 1,
               background: isSelected ? T.cream : T.surface,
               border: `1px solid ${isSelected ? T.cream : (isToday ? T.gold : T.line)}`,
               color: isSelected ? T.bg : T.cream, ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
@@ -5758,10 +5939,29 @@ function DaySelectStrip({ recentDates, dayStatus, selectedDate, onSelectDate }) 
   );
 }
 
-function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, onOpenWellness, onOpenRpe, onLogout }) {
+function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onLogout }) {
   const isToday = selectedDate === todayStr();
   const isRestDay = session && session.phase === 'Descanso';
   const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : `Sem sessão definida para ${isToday ? 'hoje' : 'este dia'}`;
+
+  // Janelas horárias (ver CHECKIN_WINDOWS). O Wellness depende só da hora;
+  // o PSE depende da hora e ainda de existir sessão criada e não ser folga.
+  const wWin = wellnessWindow || { open: true, reason: '' };
+  const rWin = rpeWindow || { open: true, reason: '' };
+  const wellnessEnabled = wWin.open && !doneWellness;
+  const rpeEnabled = rWin.open && !!session && !isRestDay && !doneRpe;
+
+  const wellnessHint = doneWellness
+    ? 'Já respondeste hoje — obrigado!'
+    : !wWin.open ? wWin.reason
+      : 'Sono e como te sentes hoje';
+
+  const rpeHint = doneRpe
+    ? 'Já respondeste hoje — obrigado!'
+    : !rWin.open ? rWin.reason
+      : isRestDay ? 'Dia de folga — sem PSE a registar'
+        : !session ? 'Ainda sem sessão criada para hoje'
+          : `Intensidade de: ${sessionLabel}`;
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', padding: '28px 18px 60px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, gap: 10 }}>
@@ -5782,38 +5982,43 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
       )}
 
       {!isToday && (
-        <div style={{ fontSize: 12, color: T.warn, marginBottom: 14 }}>A preencher em atraso: {formatShortDatePt(selectedDate)}.</div>
+        <div style={{ fontSize: 12, color: T.warn, marginBottom: 14 }}>
+          {formatShortDatePt(selectedDate)} — dia já fechado. Só podes responder ao dia de hoje.
+        </div>
       )}
 
-      <button onClick={onOpenWellness} style={{
+      <button onClick={onOpenWellness} disabled={!wellnessEnabled} style={{
         width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${doneWellness ? T.good : T.line}`,
-        borderRadius: 12, padding: '18px 16px', cursor: 'pointer', ...body, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 14,
+        borderRadius: 12, padding: '18px 16px', cursor: wellnessEnabled ? 'pointer' : 'default',
+        opacity: wellnessEnabled || doneWellness ? 1 : 0.55,
+        ...body, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 14,
       }}>
         <span style={{ fontSize: 26 }}>💪</span>
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Wellness</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{isToday ? 'Sono e como te sentes hoje' : `Sono e como te sentias — ${formatShortDatePt(selectedDate)}`}</div>
+          <div style={{ fontSize: 12, color: doneWellness ? T.good : (wWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{wellnessHint}</div>
         </span>
-        {doneWellness ? <Check size={18} color={T.good} /> : <ChevronRight size={18} color={T.mutedDim} />}
+        {doneWellness ? <Check size={18} color={T.good} /> : wWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
       </button>
 
-      <button onClick={onOpenRpe} disabled={!session || isRestDay || !isToday} style={{
+      <button onClick={onOpenRpe} disabled={!rpeEnabled} style={{
         width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${doneRpe ? T.good : T.line}`,
-        borderRadius: 12, padding: '18px 16px', cursor: (session && !isRestDay && isToday) ? 'pointer' : 'default', opacity: (session && !isRestDay && isToday) ? 1 : 0.55,
+        borderRadius: 12, padding: '18px 16px', cursor: rpeEnabled ? 'pointer' : 'default',
+        opacity: rpeEnabled || doneRpe ? 1 : 0.55,
         ...body, display: 'flex', alignItems: 'center', gap: 14,
       }}>
         <span style={{ fontSize: 26 }}>🏋</span>
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>RPE</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>
-            {/* O PSE só pode ser respondido até às 23:59 do próprio dia da
-                sessão — ao contrário do Wellness, não é possível responder
-                em atraso num dia diferente. */}
-            {!isToday ? 'Só pode ser respondido até às 23:59 do próprio dia' : isRestDay ? 'Dia de folga — sem PSE a registar' : session ? `Intensidade de: ${sessionLabel}` : `Ainda sem sessão criada para ${isToday ? 'hoje' : 'este dia'}`}
-          </div>
+          <div style={{ fontSize: 12, color: doneRpe ? T.good : (rWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{rpeHint}</div>
         </span>
-        {doneRpe ? <Check size={18} color={T.good} /> : <ChevronRight size={18} color={T.mutedDim} />}
+        {doneRpe ? <Check size={18} color={T.good} /> : rWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
       </button>
+
+      <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 18, lineHeight: 1.5 }}>
+        Horários: Wellness {CHECKIN_WINDOWS.wellness.label} · PSE {CHECKIN_WINDOWS.rpe.label}.
+        Fora destas horas fala com o staff técnico.
+      </div>
     </div>
   );
 }
