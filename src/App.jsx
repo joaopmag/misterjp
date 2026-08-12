@@ -163,12 +163,21 @@ function useSingletonSync(table, fallback, notifyEdit) {
   const [value, setValue] = useState(fallback);
   const [ready, setReady] = useState(false);
   const [meta, setMeta] = useState({ email: null, at: null });
+  /* CICLO INFINITO — o Supabase Realtime devolve-nos as NOSSAS próprias
+     escritas. Como `row.data` chega sempre como um objeto novo, o
+     setValue mudava a identidade do estado, o efeito de gravação
+     disparava outra vez, gravava, o realtime devolvia... sem fim. O
+     sintoma era a "Última atividade" a piscar com "agora mesmo"
+     permanente. A solução é guardar a assinatura JSON do último valor
+     sincronizado e ignorar tudo o que for igual — nos dois sentidos. */
+  const syncedRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const s = await loadSingleton(table, fallback);
       if (cancelled) return;
+      syncedRef.current = JSON.stringify(s.value);
       setValue(s.value);
       if (s.editedBy) setMeta({ email: s.editedBy, at: s.editedAt });
       setReady(true);
@@ -179,6 +188,11 @@ function useSingletonSync(table, fallback, notifyEdit) {
 
   useEffect(() => {
     if (!ready) return;
+    const signature = JSON.stringify(value);
+    // Nada mudou de facto (ex.: veio do realtime, ou é o valor acabado de
+    // carregar) — não voltar a gravar nem marcar nova atividade.
+    if (signature === syncedRef.current) return;
+    syncedRef.current = signature;
     saveSingleton(table, value);
     if (notifyEdit) notifyEdit(table);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -189,6 +203,9 @@ function useSingletonSync(table, fallback, notifyEdit) {
       .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
         const row = payload.new;
         if (!row) return;
+        const signature = JSON.stringify(row.data);
+        if (signature === syncedRef.current) return; // é o eco da nossa própria gravação
+        syncedRef.current = signature;
         setValue(row.data);
         setMeta({ email: row.updated_by_email, at: row.updated_at });
       })
@@ -693,9 +710,15 @@ function App({ session }) {
   const isCheckin = previewKiosk || (typeof window !== 'undefined' &&
     (window.location.search.includes('checkin') || window.location.hash.includes('checkin')));
 
+  // Mesma protecção contra o ciclo save→realtime→save descrita em
+  // useSingletonSync: a Época tem os seus próprios efeitos (é anterior ao
+  // hook genérico) e sofria exatamente do mesmo problema.
+  const seasonSyncedRef = useRef(null);
+
   useEffect(() => {
     (async () => {
       const s = await loadSingleton('season_config', { name: '2026/2027', start: '', end: '', club: 'SC Salgueiros · Sub-19' });
+      seasonSyncedRef.current = JSON.stringify(s.value);
       setSeason(s.value);
       if (s.editedBy) setLastEdits(prev => ({ ...prev, season_config: { email: s.editedBy, at: s.editedAt } }));
       setSeasonReady(true);
@@ -704,6 +727,9 @@ function App({ session }) {
 
   useEffect(() => {
     if (!seasonReady) return;
+    const signature = JSON.stringify(season);
+    if (signature === seasonSyncedRef.current) return;
+    seasonSyncedRef.current = signature;
     saveSingleton('season_config', season);
     notifyEdit('season_config');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -715,6 +741,9 @@ function App({ session }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'season_config' }, (payload) => {
         const row = payload.new;
         if (!row) return;
+        const signature = JSON.stringify(row.data);
+        if (signature === seasonSyncedRef.current) return; // eco da nossa própria gravação
+        seasonSyncedRef.current = signature;
         setSeason(row.data);
         setLastEdits(prev => ({ ...prev, season_config: { email: row.updated_by_email, at: row.updated_at } }));
       })
@@ -922,7 +951,7 @@ function App({ session }) {
 
         {/* MAIN */}
         <main style={{ flex: 1, minWidth: 0, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px', maxWidth: 1100 }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} exercises={exercises} monitoring={monitoring} matches={matches} lastEdits={lastEdits} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} exercises={exercises} monitoring={monitoring} matches={matches} standings={standings} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
@@ -965,7 +994,7 @@ function App({ session }) {
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, sessions, exercises, monitoring, matches, lastEdits }) {
+function Overview({ season, setSeason, players, sessions, exercises, monitoring, matches, standings, lastEdits }) {
   const today = new Date();
   const upcoming = [...sessions]
     .filter(s => new Date(s.date) >= new Date(today.toDateString()))
@@ -1063,6 +1092,10 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
           )}
         </Panel>
 
+        <Panel title="Classificação">
+          <StandingsSummary standings={standings} season={season} />
+        </Panel>
+
         <Panel title="Última atividade">
           <LastActivity lastEdits={lastEdits} />
         </Panel>
@@ -1071,10 +1104,81 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
   );
 }
 
+/* Resumo da classificação para a Visão Geral. Lê a mesma tabela que é
+   preenchida em Jogos (registo único league_standings) — não há aqui
+   nenhuma introdução de dados, é só leitura. Destaca a nossa equipa e,
+   se ela não estiver entre os primeiros lugares mostrados, acrescenta-a
+   no fim para estar sempre visível. */
+function StandingsSummary({ standings, season }) {
+  const all = sortStandings((standings && standings.teams) || []);
+  if (all.length === 0) {
+    return <EmptyState text="Sem classificação. Preenche-a em Jogos › Atualizar jornada." />;
+  }
+
+  const ourName = (season && season.club) || '';
+  const isUs = (t) => {
+    if (!ourName || !t.name) return false;
+    const a = t.name.toLowerCase(), b = ourName.toLowerCase();
+    return a === b || b.includes(a) || a.includes(b.split('·')[0].trim());
+  };
+
+  const TOP = 6;
+  const top = all.slice(0, TOP);
+  const ourIdx = all.findIndex(isUs);
+  const showExtra = ourIdx >= TOP;
+
+  const th = { textAlign: 'left', padding: '5px 6px', fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em' };
+  const td = { padding: '6px', fontSize: 12.5, color: T.mutedDim, whiteSpace: 'nowrap' };
+
+  const row = (t, i) => (
+    <tr key={t.id || t.name} style={{ borderTop: `1px solid ${T.line}`, background: isUs(t) ? `${T.crimson}33` : 'transparent' }}>
+      <td style={{ ...td, ...mono, width: 22, color: isUs(t) ? T.warn : T.mutedDim }}>{i + 1}</td>
+      <td style={{ ...td, color: isUs(t) ? T.cream : T.muted, whiteSpace: 'normal' }}>{t.name || '—'}</td>
+      <td style={{ ...td, ...mono, textAlign: 'right' }}>{t.J}</td>
+      <td style={{ ...td, ...mono, textAlign: 'right' }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</td>
+      <td style={{ ...td, ...mono, textAlign: 'right', color: isUs(t) ? T.warn : T.cream, fontWeight: 600 }}>{t.P}</td>
+    </tr>
+  );
+
+  return (
+    <div>
+      {standings.competition && (
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6 }}>{standings.competition}</div>
+      )}
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={th}>#</th>
+            <th style={th}>Equipa</th>
+            <th style={{ ...th, textAlign: 'right' }}>J</th>
+            <th style={{ ...th, textAlign: 'right' }}>DG</th>
+            <th style={{ ...th, textAlign: 'right' }}>P</th>
+          </tr>
+        </thead>
+        <tbody>
+          {top.map((t, i) => row(t, i))}
+          {showExtra && (
+            <>
+              <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: T.mutedDim }}>⋯</td></tr>
+              {row(all[ourIdx], ourIdx)}
+            </>
+          )}
+        </tbody>
+      </table>
+      {all.length > TOP && !showExtra && (
+        <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 8 }}>
+          Tabela completa em Jogos ({all.length} equipas).
+        </div>
+      )}
+    </div>
+  );
+}
+
 const ACTIVITY_LABELS = {
   season_config: 'Época', players: 'Plantel', exercises: 'Exercícios', ideias: 'Ideia de Jogo',
   sessions: 'Planeamento', monitoring: 'Monitorização', matches: 'Jogos',
   scouting: 'Scouting', videos: 'Vídeos', apresentacoes: 'Apresentações', convocatorias: 'Convocatórias', diario: 'Diário',
+  league_standings: 'Classificação',
 };
 
 function timeAgo(iso) {
