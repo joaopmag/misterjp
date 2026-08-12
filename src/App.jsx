@@ -1535,7 +1535,9 @@ function Exercicios({ exercises, setExercises, meta }) {
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Novo exercício</Btn>} />
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-        {['Todas', ...PHASES].map(ph => (
+        {/* "Descanso" é uma fase de sessão (dia de folga), não classifica
+            exercícios — por isso não entra nos filtros da biblioteca. */}
+        {['Todas', ...EXERCISE_PHASES].map(ph => (
           <button key={ph} onClick={() => setFilter(ph)} style={{
             padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
             background: filter === ph ? '#B5393F' : 'transparent',
@@ -4941,6 +4943,78 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
    PRESENÇAS — controlo de assiduidade ao longo da época, com
    resumo por jogador e edição de presença + nota, sessão a sessão.
 ---------------------------------------------------------------- */
+/* Um dia de treino pode ser "fechado": depois de marcadas as presenças e
+   atribuídas as notas, guarda-se e o dia passa a leitura apenas. Só o
+   botão "Editar" volta a abrir — evita cliques acidentais numa lista
+   longa de jogadores dias depois. A marca fica gravada em todas as
+   sessões desse dia (campo attendanceClosed), por isso sincroniza para
+   toda a equipa técnica como qualquer outra alteração. */
+function dayIsClosed(list) {
+  return (list || []).some(s => s.attendanceClosed);
+}
+
+const MONTH_NAMES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const monthKeyOf = (dateStr) => String(dateStr || '').slice(0, 7);
+function monthLabelPt(key) {
+  const [y, m] = String(key).split('-');
+  const idx = parseInt(m, 10) - 1;
+  return `${MONTH_NAMES_PT[idx] || m} ${y}`;
+}
+const dayShort = (dateStr) => `${dateStr.slice(8, 10)}/${dateStr.slice(5, 7)}`;
+
+/* Exporta a relação de presenças em CSV (separador ";", com BOM, para
+   abrir direito no Excel em português). Um bloco por mês, com uma coluna
+   por dia de treino e duas tabelas: presenças (P/F) e notas de treino. */
+function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
+  const rows = [];
+  monthKeys.forEach((key, mi) => {
+    const days = dayGroups
+      .filter(d => monthKeyOf(d.date) === key)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (!days.length) return;
+    if (mi > 0) rows.push([]);
+    rows.push([`MÊS: ${monthLabelPt(key).toUpperCase()}`]);
+    rows.push([`Dias de treino: ${days.length}`]);
+    rows.push([]);
+
+    rows.push(['PRESENÇAS (P = presente, F = ausente)']);
+    rows.push(['Jogador', 'Posição', ...days.map(d => dayShort(d.date)), 'Presenças', 'Dias', 'Assiduidade %']);
+    players.forEach(p => {
+      const cells = days.map(d => (dayPresent(d.list, p.id) ? 'P' : 'F'));
+      const att = cells.filter(c => c === 'P').length;
+      rows.push([
+        p.name, p.position || '', ...cells,
+        att, days.length, days.length ? Math.round((att / days.length) * 100) : '',
+      ]);
+    });
+    rows.push([]);
+
+    rows.push(['NOTAS DE TREINO (só nos dias com presença)']);
+    rows.push(['Jogador', 'Posição', ...days.map(d => dayShort(d.date)), 'Nota média']);
+    players.forEach(p => {
+      const cells = days.map(d => {
+        if (!dayPresent(d.list, p.id)) return '';
+        const r = dayRating(d.list, p.id);
+        return (r == null || r === '') ? '' : String(r).replace('.', ',');
+      });
+      const vals = cells.filter(c => c !== '').map(c => Number(String(c).replace(',', '.')));
+      const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1).replace('.', ',') : '';
+      rows.push([p.name, p.position || '', ...cells, avg]);
+    });
+  });
+
+  if (!rows.length) return false;
+  const csv = rows.map(r => r.map(csvEscape).join(';')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `presencas-${monthKeys.length === 1 ? monthKeys[0] : 'epoca'}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  return true;
+}
+
 function Presencas({ players, sessions, setSessions }) {
   const todayStart = new Date(new Date().toDateString());
   // Agrupado por data: se houver mais do que uma sessão no mesmo dia
@@ -4951,19 +5025,23 @@ function Presencas({ players, sessions, setSessions }) {
   // Só conta como confirmado a partir do dia seguinte à data do treino.
   const confirmedDays = dayGroups.filter(d => new Date(d.date + 'T00:00:00') < todayStart);
 
-  const rows = players
-    .map(p => {
-      const attended = confirmedDays.filter(d => dayPresent(d.list, p.id)).length;
-      const pct = confirmedDays.length ? Math.round((attended / confirmedDays.length) * 100) : null;
-      const ratingValues = confirmedDays
-        .filter(d => dayPresent(d.list, p.id))
-        .map(d => dayRating(d.list, p.id))
-        .filter(r => r != null && r !== '')
-        .map(Number);
-      const avgRating = ratingValues.length ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : null;
-      return { player: p, attended, pct, avgRating, ratingCount: ratingValues.length };
-    })
-    .sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101));
+  // Meses com dias de treino, do mais recente para o mais antigo.
+  const monthKeys = [...new Set(dayGroups.map(d => monthKeyOf(d.date)))].sort().reverse();
+  const [month, setMonth] = useState('todos');
+  const visibleDays = month === 'todos' ? dayGroups : dayGroups.filter(d => monthKeyOf(d.date) === month);
+
+  const orderedPlayers = sortByPosition(players);
+  const rows = orderedPlayers.map(p => {
+    const attended = confirmedDays.filter(d => dayPresent(d.list, p.id)).length;
+    const pct = confirmedDays.length ? Math.round((attended / confirmedDays.length) * 100) : null;
+    const ratingValues = confirmedDays
+      .filter(d => dayPresent(d.list, p.id))
+      .map(d => dayRating(d.list, p.id))
+      .filter(r => r != null && r !== '')
+      .map(Number);
+    const avgRating = ratingValues.length ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : null;
+    return { player: p, attended, pct, avgRating, ratingCount: ratingValues.length };
+  });
 
   // Marca/desmarca presença em TODAS as sessões desse dia, para que baste
   // dar presença uma vez por dia, independentemente de quantos exercícios
@@ -4986,10 +5064,20 @@ function Presencas({ players, sessions, setSessions }) {
   const setRating = (date, playerId, val) => {
     setSessions(sessions.map(s => s.date === date ? { ...s, ratings: { ...(s.ratings || {}), [playerId]: val } } : s));
   };
+  // Fecha (guarda) ou reabre (editar) o dia.
+  const setDayClosed = (date, closed) => {
+    setSessions(sessions.map(s => s.date === date ? { ...s, attendanceClosed: closed } : s));
+  };
+
+  const doExport = () => {
+    const keys = month === 'todos' ? [...monthKeys].sort() : [month];
+    exportAttendanceCSV({ players: orderedPlayers, dayGroups, monthKeys: keys });
+  };
 
   return (
     <div>
-      <SectionHeader title="Presenças" subtitle="Assiduidade e nota de treino." />
+      <SectionHeader title="Presenças" subtitle="Assiduidade e nota de treino."
+        action={dayGroups.length > 0 ? <Btn variant="ghost" onClick={doExport}><Download size={15} /> Exportar CSV</Btn> : null} />
 
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no separador Plantel." />
@@ -5025,15 +5113,29 @@ function Presencas({ players, sessions, setSessions }) {
             })}
           </div>
 
-          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
-            Editar presença e nota, dia a dia
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              Editar presença e nota, dia a dia
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: T.mutedDim }}>Mês:</span>
+              <Select value={month} onChange={e => setMonth(e.target.value)} style={{ padding: '6px 10px', fontSize: 12.5, width: 'auto' }}>
+                <option value="todos">Todos os meses</option>
+                {monthKeys.map(k => <option key={k} value={k}>{monthLabelPt(k)}</option>)}
+              </Select>
+            </div>
           </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {dayGroups.map(({ date, list }) => {
+            {visibleDays.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem dias de treino neste mês.</div>
+            ) : visibleDays.map(({ date, list }) => {
               const isConfirmed = new Date(date + 'T00:00:00') < todayStart;
+              const closed = dayIsClosed(list);
               const focusLabel = [...new Set(list.map(s => s.focus || 'Sessão de treino'))].join(' + ');
+              const presentCount = orderedPlayers.filter(p => dayPresent(list, p.id)).length;
               return (
-                <div key={date} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+                <div key={date} style={{ background: T.surface, border: `1px solid ${closed ? T.good + '55' : T.line}`, borderRadius: 10, padding: 14 }}>
                   <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{focusLabel}</span>
                     <span style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(date)} · {list[0].phase}</span>
@@ -5047,26 +5149,49 @@ function Presencas({ players, sessions, setSessions }) {
                         ainda não confirmado
                       </span>
                     )}
+                    {closed && (
+                      <span style={{ fontSize: 10.5, color: T.good, border: `1px solid ${T.good}66`, borderRadius: 10, padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Check size={11} /> Guardado · {presentCount}/{orderedPlayers.length} presentes
+                      </span>
+                    )}
+                    <span style={{ marginLeft: 'auto' }}>
+                      {closed ? (
+                        <Btn variant="ghost" onClick={() => setDayClosed(date, false)} style={{ padding: '6px 12px', fontSize: 12.5 }}>
+                          <Pencil size={13} /> Editar
+                        </Btn>
+                      ) : (
+                        <Btn onClick={() => setDayClosed(date, true)} style={{ padding: '6px 12px', fontSize: 12.5 }}>
+                          <Check size={13} /> Guardar presenças
+                        </Btn>
+                      )}
+                    </span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {players.map(p => {
+                    {orderedPlayers.map(p => {
                       const present = dayPresent(list, p.id);
+                      const rating = dayRating(list, p.id);
                       return (
                         <div key={p.id} style={{
                           display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7,
                           background: present ? `${T.crimson}33` : T.bg, border: `1px solid ${present ? T.gold + '66' : T.line}`,
+                          opacity: closed && !present ? 0.6 : 1,
                         }}>
-                          <button type="button" onClick={() => toggleAttendance(date, p.id)} style={{
-                            flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+                          <button type="button" onClick={() => { if (!closed) toggleAttendance(date, p.id); }} disabled={closed} style={{
+                            flex: 1, textAlign: 'left', background: 'none', border: 'none',
+                            cursor: closed ? 'default' : 'pointer',
                             fontSize: 13, color: present ? T.cream : T.muted, ...body,
                           }}>
-                            {p.number ? `#${p.number} ` : ''}{p.name} — {present ? 'Presente' : 'Ausente'}
+                            {p.position ? `${p.position} · ` : ''}{p.name} — {present ? 'Presente' : 'Ausente'}
                           </button>
-                          {present && (
+                          {present && (closed ? (
+                            <span style={{ ...mono, fontSize: 12.5, color: rating == null || rating === '' ? T.mutedDim : T.cream, width: 60, textAlign: 'center' }}>
+                              {rating == null || rating === '' ? '—' : `${rating}/10`}
+                            </span>
+                          ) : (
                             <Input type="number" min="0" max="10" placeholder="Nota"
-                              value={dayRating(list, p.id) ?? ''} onChange={e => setRating(date, p.id, e.target.value)}
+                              value={rating ?? ''} onChange={e => setRating(date, p.id, e.target.value)}
                               style={{ width: 60, padding: '5px 7px', fontSize: 12.5 }} />
-                          )}
+                          ))}
                         </div>
                       );
                     })}
