@@ -1406,7 +1406,22 @@ function fmtDate(d) {
 function Plantel({ players, setPlayers, sessions, matches, meta }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
   const [statsFor, setStatsFor] = useState(null); // player object (view stats)
-  const [historyFor, setHistoryFor] = useState(null); // player object (ver histórico)
+  const [printPlayer, setPrintPlayer] = useState(null); // ficha a imprimir
+
+  // Mesma lógica do Scouting: partilha um ficheiro HTML autónomo com a
+  // ficha do jogador, ou imprime/guarda em PDF.
+  const doShare = (p) => {
+    const title = p.name || 'Jogador';
+    const html = buildShareableHtmlDoc({
+      title, metaLines: [], blocks: [],
+      extraHtml: buildPlayerReportHtml(p, playerStats(p, sessions, matches)),
+    });
+    shareOrDownloadHtml(`jogador_${title.replace(/[^\w-]+/g, '_')}.html`, html, title);
+  };
+  const doPrint = (p) => {
+    setPrintPlayer(p);
+    setTimeout(() => window.print(), 80);
+  };
 
   const save = (data) => {
     if (data.id) {
@@ -1442,7 +1457,8 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
                     <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>{playerBirthLine(p)}</div>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); setHistoryFor(p); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(p); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); doPrint(p); }} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(p); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); remove(p.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                 </div>
@@ -1464,8 +1480,105 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
       )}
 
       {modal && <PlayerModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
-      {statsFor && <PlayerStatsModal player={statsFor} sessions={sessions} matches={matches} onClose={() => setStatsFor(null)} />}
-      {historyFor && <HistoryModal table="players" recordId={historyFor.id} title={`Histórico · ${historyFor.name}`} onClose={() => setHistoryFor(null)} />}
+      {statsFor && (
+        <PlayerStatsModal
+          player={statsFor} sessions={sessions} matches={matches}
+          onClose={() => setStatsFor(null)}
+          onShare={() => doShare(statsFor)}
+          onPrint={() => { const p = statsFor; setStatsFor(null); setTimeout(() => doPrint(p), 60); }}
+        />
+      )}
+
+      {printPlayer && createPortal(
+        <PlayerPrintSheet player={printPlayer} stats={playerStats(printPlayer, sessions, matches)} />,
+        document.body
+      )}
+    </div>
+  );
+}
+
+/* Ficha do jogador do plantel — os mesmos campos na partilha (HTML) e na
+   impressão, na mesma lógica usada no Scouting. */
+function playerReportRows(p) {
+  return [
+    ['Nome', p.name],
+    ['Número', p.number],
+    ['Posição', p.position],
+    ['Ano de nascimento', p.birthdate],
+    ['Idade', p.birthdate && age(p.birthdate) !== null ? `${age(p.birthdate)} anos` : ''],
+    ['Nacionalidade', p.nationality],
+    ['Lateralidade', p.laterality],
+    ['Altura', p.height ? `${p.height} cm` : ''],
+    ['Peso', p.weight ? `${p.weight} kg` : ''],
+    ['Clube anterior', p.previousClub],
+    ['Data de entrada', p.entryDate],
+    ['Data de saída', p.exitDate],
+    ['Contacto', p.contact],
+    ['Estatuto principal', p.statusMain],
+    ['Estatuto secundário', p.statusSecondary],
+  ].filter(([, v]) => v !== null && v !== undefined && v !== '');
+}
+
+function buildPlayerReportHtml(p, stats) {
+  const rows = playerReportRows(p);
+  const table = `<table>${rows.map(([k, v]) => `<tr><th>${escapeHtmlText(k)}</th><td>${escapeHtmlText(String(v))}</td></tr>`).join('')}</table>`;
+  const photoHtml = p.photo
+    ? `<img src="${p.photo}" alt="Fotografia" style="width:170px;max-width:40%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid #33513c;background:#000;flex:0 0 auto;" />`
+    : '';
+  const statRows = [
+    ['Assiduidade', stats.attendancePct === null ? '—' : `${stats.attendancePct}%`],
+    ['Sessões presentes', `${stats.attended}/${stats.totalSessions}`],
+    ['Golos', stats.goals],
+    ['Assistências', stats.assists],
+    ['Nota média de jogo', stats.avgMatchRating ?? '—'],
+    ['Nota média de treino', stats.avgTrainingRating ?? '—'],
+  ];
+  return `
+<h2 style="margin-top:0">Identificação</h2>
+<div style="display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;">
+  <div style="flex:0 1 auto;">${table}</div>
+  ${photoHtml}
+</div>
+<h2>Época</h2>
+<table>${statRows.map(([k, v]) => `<tr><th>${escapeHtmlText(k)}</th><td>${escapeHtmlText(String(v))}</td></tr>`).join('')}</table>
+`;
+}
+
+function PlayerPrintSheet({ player: p, stats }) {
+  const rows = playerReportRows(p);
+  const th = { textAlign: 'left', padding: '3px 16px 3px 0', fontWeight: 600, whiteSpace: 'nowrap' };
+  return (
+    <div className="print-sheet">
+      <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{p.name || 'Jogador'}</h2>
+
+      <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Identificação</h3>
+      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 14 }}>
+        <table style={{ fontSize: 12.5, flex: '0 1 auto' }}>
+          <tbody>
+            {rows.map(([k, v]) => (
+              <tr key={k}><th style={th}>{k}</th><td style={{ padding: '3px 0' }}>{v}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        {p.photo && (
+          <img src={p.photo} alt="Fotografia" style={{
+            width: 150, flex: '0 0 auto', aspectRatio: '3 / 4', objectFit: 'cover',
+            borderRadius: 8, border: '1px solid #ccc',
+          }} />
+        )}
+      </div>
+
+      <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Época</h3>
+      <table style={{ fontSize: 12.5 }}>
+        <tbody>
+          <tr><th style={th}>Assiduidade</th><td style={{ padding: '3px 0' }}>{stats.attendancePct === null ? '—' : `${stats.attendancePct}%`}</td></tr>
+          <tr><th style={th}>Sessões presentes</th><td style={{ padding: '3px 0' }}>{stats.attended}/{stats.totalSessions}</td></tr>
+          <tr><th style={th}>Golos</th><td style={{ padding: '3px 0' }}>{stats.goals}</td></tr>
+          <tr><th style={th}>Assistências</th><td style={{ padding: '3px 0' }}>{stats.assists}</td></tr>
+          <tr><th style={th}>Nota média de jogo</th><td style={{ padding: '3px 0' }}>{stats.avgMatchRating ?? '—'}</td></tr>
+          <tr><th style={th}>Nota média de treino</th><td style={{ padding: '3px 0' }}>{stats.avgTrainingRating ?? '—'}</td></tr>
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1531,10 +1644,22 @@ function playerStats(player, sessions, matches) {
   };
 }
 
-function PlayerStatsModal({ player, sessions, matches, onClose }) {
+function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint }) {
   const s = playerStats(player, sessions, matches);
   return (
     <Modal title={`${player.name} — estatísticas`} onClose={onClose}>
+      {(onShare || onPrint) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          {onShare && <Btn variant="ghost" onClick={onShare}><Share2 size={14} /> Partilhar</Btn>}
+          {onPrint && <Btn variant="ghost" onClick={onPrint}><Printer size={14} /> Imprimir</Btn>}
+        </div>
+      )}
+      {player.photo && (
+        <img src={player.photo} alt="Fotografia" style={{
+          width: 110, aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 10,
+          border: `1px solid ${T.line}`, background: '#000', marginBottom: 14, display: 'block',
+        }} />
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <Badge label={player.position} />
         <div>
@@ -5632,11 +5757,61 @@ function LeagueStandings({ standings, setStandings, standingsMeta }) {
   );
 }
 
+/* Lê um resultado escrito à mão ("2-1", "2 - 1", "2:1") e devolve os
+   golos de cada lado. Se não der para perceber, devolve null e o jogo é
+   ignorado no cálculo (fica registado à mesma na lista da jornada). */
+function parseScore(text) {
+  if (!text) return null;
+  const m = String(text).match(/(\d+)\s*[-–—:xX]\s*(\d+)/);
+  if (!m) return null;
+  return { home: Number(m[1]), away: Number(m[2]) };
+}
+
+/* Constrói a classificação a partir dos resultados de todas as jornadas:
+   jogos, vitórias, empates, derrotas, golos marcados e sofridos. Os
+   pontos e a diferença de golos são depois calculados em sortStandings.
+   `extraNames` permite manter na tabela equipas que ainda não jogaram. */
+function computeStandingsFromRounds(rounds, extraNames = []) {
+  const map = new Map();
+  const keyOf = (n) => String(n || '').trim().toLowerCase();
+  const ensure = (name) => {
+    const k = keyOf(name);
+    if (!k) return null;
+    if (!map.has(k)) map.set(k, { id: k, name: String(name).trim(), J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 });
+    return map.get(k);
+  };
+  extraNames.forEach(n => ensure(n));
+  (rounds || []).forEach(r => (r.games || []).forEach(g => {
+    const sc = parseScore(g.score);
+    const home = ensure(g.home);
+    const away = ensure(g.away);
+    if (!sc || !home || !away || home === away) return;
+    home.J++; away.J++;
+    home.GM += sc.home; home.GS += sc.away;
+    away.GM += sc.away; away.GS += sc.home;
+    if (sc.home > sc.away) { home.V++; away.D++; }
+    else if (sc.home < sc.away) { away.V++; home.D++; }
+    else { home.E++; away.E++; }
+  }));
+  return [...map.values()];
+}
+
 function StandingsModal({ standings, onClose, onSave }) {
   const [competition, setCompetition] = useState(standings.competition || '');
   const [teams, setTeams] = useState((standings.teams && standings.teams.length ? standings.teams : [{ id: uid(), name: '', J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }]));
   const [rounds, setRounds] = useState(standings.rounds || []);
   const [roundIdx, setRoundIdx] = useState(Math.max(0, (standings.rounds || []).length - 1));
+  // Modo automático: a classificação é calculada a partir dos resultados
+  // das jornadas. Pode ser desligado para casos em que só se tem a tabela
+  // publicada (ou quando há pontos retirados por castigo).
+  const [auto, setAuto] = useState(standings.auto !== false);
+
+  // Nomes escritos à mão que devem constar na tabela mesmo sem jogos.
+  const manualNames = teams.map(t => t.name).filter(n => n && n.trim());
+  const computedTeams = computeStandingsFromRounds(rounds, manualNames);
+  const previewTeams = sortStandings(auto ? computedTeams : teams);
+  const gamesCounted = (rounds || []).reduce((n, r) => n + (r.games || []).filter(g => parseScore(g.score) && g.home && g.away).length, 0);
+  const gamesTotal = (rounds || []).reduce((n, r) => n + (r.games || []).length, 0);
 
   const updateTeam = (id, field, val) => setTeams(teams.map(t => t.id === id ? { ...t, [field]: val } : t));
   const addTeam = () => setTeams([...teams, { id: uid(), name: '', J: 0, V: 0, E: 0, D: 0, GM: 0, GS: 0 }]);
@@ -5665,7 +5840,14 @@ function StandingsModal({ standings, onClose, onSave }) {
     setRounds(rounds.map((r, i) => i === roundIdx ? { ...r, games: r.games.filter((_, j) => j !== gi) } : r));
   };
 
-  const save = () => onSave({ competition, teams: teams.filter(t => t.name.trim()), rounds });
+  const save = () => onSave({
+    competition,
+    // Em automático guarda-se a tabela já calculada, para quem só a lê
+    // (Visão Geral, ecrã de Jogos) não ter de a recalcular.
+    teams: auto ? computedTeams : teams.filter(t => t.name.trim()),
+    rounds,
+    auto,
+  });
 
   return (
     <Modal title="Atualizar jornada" onClose={onClose} wide>
@@ -5720,26 +5902,73 @@ function StandingsModal({ standings, onClose, onSave }) {
       </div>
 
       <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Classificação (P e DG calculam-se sozinhos)</div>
-          <Btn variant="ghost" onClick={addTeam}><Plus size={13} /> Adicionar equipa</Btn>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
-            <span>Equipa</span><span style={{ textAlign: 'center' }}>J</span><span style={{ textAlign: 'center' }}>V</span>
-            <span style={{ textAlign: 'center' }}>E</span><span style={{ textAlign: 'center' }}>D</span>
-            <span style={{ textAlign: 'center' }}>GM</span><span style={{ textAlign: 'center' }}>GS</span><span />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Classificação</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <ToggleBtn active={auto} onClick={() => setAuto(true)}>Automática</ToggleBtn>
+            <ToggleBtn active={!auto} onClick={() => setAuto(false)} accent>Manual</ToggleBtn>
+            <Btn variant="ghost" onClick={addTeam}><Plus size={13} /> Adicionar equipa</Btn>
           </div>
-          {teams.map(t => (
-            <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, alignItems: 'center' }}>
-              <Input value={t.name} onChange={e => updateTeam(t.id, 'name', e.target.value)} placeholder="Nome da equipa" />
-              {['J', 'V', 'E', 'D', 'GM', 'GS'].map(f => (
-                <Input key={f} type="number" min="0" value={t[f]} onChange={e => updateTeam(t.id, f, e.target.value)} style={{ textAlign: 'center', padding: '6px 4px' }} />
-              ))}
-              <button onClick={() => removeTeam(t.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
-            </div>
-          ))}
         </div>
+
+        {auto ? (
+          <>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10, lineHeight: 1.5 }}>
+              Calculada a partir dos resultados acima: {gamesCounted} de {gamesTotal} {gamesTotal === 1 ? 'jogo lido' : 'jogos lidos'}.
+              {gamesTotal > gamesCounted && ' Os jogos sem resultado válido (ex: "2-1") não entram na conta.'}
+              {' '}Usa "Adicionar equipa" só para incluir equipas que ainda não jogaram.
+            </div>
+            {previewTeams.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem jogos com resultado. Preenche os resultados da jornada acima.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr repeat(8, 40px)', gap: 4, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
+                  <span>#</span><span>Equipa</span>
+                  {['J', 'V', 'E', 'D', 'GM', 'GS', 'DG', 'P'].map(h => <span key={h} style={{ textAlign: 'center' }}>{h}</span>)}
+                </div>
+                {previewTeams.map((t, i) => (
+                  <div key={t.id} style={{
+                    display: 'grid', gridTemplateColumns: '24px 1fr repeat(8, 40px)', gap: 4, alignItems: 'center',
+                    background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '6px 4px', fontSize: 12.5, ...mono, color: T.mutedDim,
+                  }}>
+                    <span style={{ textAlign: 'center' }}>{i + 1}</span>
+                    <span style={{ color: T.cream, ...body, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                    <span style={{ textAlign: 'center' }}>{t.J}</span>
+                    <span style={{ textAlign: 'center' }}>{t.V}</span>
+                    <span style={{ textAlign: 'center' }}>{t.E}</span>
+                    <span style={{ textAlign: 'center' }}>{t.D}</span>
+                    <span style={{ textAlign: 'center' }}>{t.GM}</span>
+                    <span style={{ textAlign: 'center' }}>{t.GS}</span>
+                    <span style={{ textAlign: 'center' }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</span>
+                    <span style={{ textAlign: 'center', color: T.warn, fontWeight: 600 }}>{t.P}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10 }}>
+              Introdução manual — os pontos e a diferença de golos continuam a ser calculados a partir de V/E/D e GM/GS.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
+                <span>Equipa</span><span style={{ textAlign: 'center' }}>J</span><span style={{ textAlign: 'center' }}>V</span>
+                <span style={{ textAlign: 'center' }}>E</span><span style={{ textAlign: 'center' }}>D</span>
+                <span style={{ textAlign: 'center' }}>GM</span><span style={{ textAlign: 'center' }}>GS</span><span />
+              </div>
+              {teams.map(t => (
+                <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px) 24px', gap: 6, alignItems: 'center' }}>
+                  <Input value={t.name} onChange={e => updateTeam(t.id, 'name', e.target.value)} placeholder="Nome da equipa" />
+                  {['J', 'V', 'E', 'D', 'GM', 'GS'].map(f => (
+                    <Input key={f} type="number" min="0" value={t[f]} onChange={e => updateTeam(t.id, f, e.target.value)} style={{ textAlign: 'center', padding: '6px 4px' }} />
+                  ))}
+                  <button onClick={() => removeTeam(t.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -5964,17 +6193,17 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
   };
   // A tabela de respostas mostra apenas a véspera e o próprio dia — é o
   // que interessa para decidir o treino de hoje. O histórico completo
-  // continua guardado; só não é listado aqui. Dentro de cada dia, ordena
-  // por posição e depois por nome, para o Wellness e o PSE do mesmo
-  // jogador ficarem lado a lado.
+  // continua guardado; só não é listado aqui. Ordena por posição (e não
+  // por dia): cada jogador aparece com todas as suas linhas juntas, mais
+  // recente primeiro.
   const sorted = [...monitoring]
     .filter(m => m.date === todayDateStr || m.date === yesterdayDateStr)
     .sort((a, b) => {
-      if (a.date !== b.date) return new Date(b.date) - new Date(a.date);
       const byPos = posRank(a.playerId) - posRank(b.playerId);
       if (byPos !== 0) return byPos;
       const byName = nameOf(a.playerId).localeCompare(nameOf(b.playerId), 'pt');
       if (byName !== 0) return byName;
+      if (a.date !== b.date) return new Date(b.date) - new Date(a.date);
       return String(a.type || '').localeCompare(String(b.type || ''));
     });
   const todaySession = sessions.find(s => s.date === todayDateStr);
@@ -7120,22 +7349,65 @@ function csvEscape(value) {
   return s;
 }
 
+/* Exporta a base de scouting em CSV, organizada por blocos como o
+   ficheiro das presenças: primeiro um resumo comparável (uma linha por
+   jogador, com o essencial e as notas dos 4 pilares, já ordenado por
+   potencial), e só depois as observações escritas, que são longas e
+   estragariam a leitura do resumo. Separador ";" e BOM, para o Excel
+   português abrir logo em colunas. */
 function exportScoutingCSV(scouting) {
-  const headers = [
-    'Nome', 'Ano de Nascimento', 'Idade', 'Nacionalidade(s)', 'Clube Atual', 'Fim de Contrato',
-    'Posição Principal', 'Posição Secundária', 'Pé Dominante',
-    'Potencial Geral (1-5)', 'Técnico (1-5)', 'Tático (1-5)', 'Físico (1-5)', 'Psicológico (1-5)',
-    'Observações Técnicas', 'Observações Táticas', 'Observações Físicas', 'Observações Psicológicas',
-    'Características', 'Data de Observação', 'Notas Gerais',
-  ];
-  const rows = scouting.map(x => [
-    x.name, x.birthYear || '', x.birthYear ? age(x.birthYear) : (x.age || ''), x.nationality || '', x.club || '', x.contractEnd || '',
-    x.position || '', x.secondaryPosition || '', x.dominantFoot || '',
-    x.potential || '', x.technicalRating || '', x.tacticalRating || '', x.physicalRating || '', x.psychologicalRating || '',
-    x.technicalNotes || '', x.tacticalNotes || '', x.physicalNotes || '', x.psychologicalNotes || '',
-    x.traits || '', x.observationDate || '', x.notes || '',
+  const list = [...(scouting || [])].sort((a, b) => {
+    const byPot = (Number(b.potential) || 0) - (Number(a.potential) || 0);
+    if (byPot !== 0) return byPot;
+    const avgA = pillarAverage(a), avgB = pillarAverage(b);
+    if ((avgB || 0) !== (avgA || 0)) return (avgB || 0) - (avgA || 0);
+    return String(a.name || '').localeCompare(String(b.name || ''), 'pt');
+  });
+
+  const rows = [];
+  rows.push([`BASE DE SCOUTING · ${list.length} ${list.length === 1 ? 'jogador observado' : 'jogadores observados'}`]);
+  rows.push([`Exportado a ${new Date().toLocaleDateString('pt-PT')}`]);
+  rows.push([]);
+
+  rows.push(['RESUMO (ordenado por potencial)']);
+  rows.push([
+    '#', 'Nome', 'Posição', 'Pos. secundária', 'Pé', 'Clube atual',
+    'Ano nasc.', 'Idade', 'Nacionalidade', 'Fim de contrato', 'Observado em',
+    'Potencial (1-5)', 'Técnico', 'Tático', 'Físico', 'Psicológico', 'Média pilares',
   ]);
-  const csv = [headers, ...rows].map(row => row.map(csvEscape).join(';')).join('\r\n');
+  list.forEach((x, i) => {
+    const avg = pillarAverage(x);
+    rows.push([
+      i + 1, x.name || '', x.position || '', x.secondaryPosition || '', x.dominantFoot || '', x.club || '',
+      x.birthYear || '', x.birthYear ? age(x.birthYear) : (x.age || ''), x.nationality || '',
+      x.contractEnd || '', x.observationDate || '',
+      x.potential || '', x.technicalRating || '', x.tacticalRating || '',
+      x.physicalRating || '', x.psychologicalRating || '',
+      avg === null ? '' : String(avg).replace('.', ','),
+    ]);
+  });
+  rows.push([]);
+
+  rows.push(['OBSERVAÇÕES POR PILAR']);
+  rows.push(['Nome', 'Pilar', 'Nota (1-5)', 'Observações']);
+  list.forEach(x => {
+    SCOUT_PILLARS.forEach(p => {
+      const rating = x[`${p.key}Rating`];
+      const notes = x[`${p.key}Notes`];
+      if (!rating && !notes) return;
+      rows.push([x.name || '', p.label, rating || '', notes || '']);
+    });
+  });
+  rows.push([]);
+
+  rows.push(['CARACTERÍSTICAS E NOTAS GERAIS']);
+  rows.push(['Nome', 'Características', 'Notas gerais']);
+  list.forEach(x => {
+    if (!x.traits && !x.notes) return;
+    rows.push([x.name || '', x.traits || '', x.notes || '']);
+  });
+
+  const csv = rows.map(row => row.map(csvEscape).join(';')).join('\r\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -7195,17 +7467,21 @@ function buildScoutReportHtml(x) {
       + (notes ? `<p class="desc">${escapeHtmlText(notes)}</p>` : '');
   }).join('');
 
-  // A foto flutua à direita ao lado do bloco de identificação. A média
-  // dos 4 pilares aparece depois dos pilares todos, não antes deles.
+  // A foto fica encostada à tabela de identificação, ambas alinhadas à
+  // esquerda — antes flutuava à direita e ficava colada à margem, com um
+  // vazio enorme no meio. A média dos 4 pilares aparece depois dos
+  // pilares todos, não antes deles.
   const photoHtml = x.photo
-    ? `<img src="${x.photo}" alt="Fotografia" style="float:right;width:200px;max-width:38%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid #33513c;background:#000;margin:0 0 14px 18px;" />`
+    ? `<img src="${x.photo}" alt="Fotografia" style="width:170px;max-width:40%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid #33513c;background:#000;flex:0 0 auto;" />`
     : '';
 
   return `
-<div style="overflow:hidden">
-${photoHtml}
+<div>
 <h2 style="margin-top:0">Identificação</h2>
-${identificacao}
+<div style="display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap;">
+  <div style="flex:0 1 auto;">${identificacao}</div>
+  ${photoHtml}
+</div>
 <h2>Potencial geral</h2>
 <p class="desc">${escapeHtmlText(x.potential ? `${x.potential}/5  ${starsText(x.potential)}${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação')}</p>
 ${pilares}
@@ -7220,6 +7496,7 @@ function Scouting({ scouting, setScouting }) {
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('');
   const [printScout, setPrintScout] = useState(null);
+  const [viewing, setViewing] = useState(null); // ficha completa em ecrã
 
   const save = (data) => {
     if (data.id) setScouting(scouting.map(x => x.id === data.id ? data : x));
@@ -7253,7 +7530,7 @@ function Scouting({ scouting, setScouting }) {
         action={
           <div style={{ display: 'flex', gap: 8 }}>
             {scouting.length > 0 && (
-              <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)}><Download size={15} /> Exportar base de dados</Btn>
+              <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)}><Download size={15} /> Exportar CSV</Btn>
             )}
             <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
           </div>
@@ -7284,25 +7561,26 @@ function Scouting({ scouting, setScouting }) {
             const playerAge = x.birthYear ? age(x.birthYear) : (x.age || null);
             const avg = pillarAverage(x);
             return (
-              <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 }}>
+              <div key={x.id} onClick={() => setViewing(x)} title="Ver ficha completa"
+                style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                   <div>
                     <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{x.name}</div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>
                       {x.club || 'Clube desconhecido'}{x.position ? ` · ${x.position}${x.secondaryPosition ? `/${x.secondaryPosition}` : ''}` : ''}{playerAge ? ` · ${playerAge} anos` : ''}
                     </div>
-                    {(x.nationality || x.dominantFoot || x.contractEnd) && (
+                    {(x.nationality || x.dominantFoot || x.birthYear) && (
                       <div style={{ color: T.mutedDim, fontSize: 11, marginTop: 2 }}>
-                        {[x.nationality, x.dominantFoot ? `Pé ${x.dominantFoot.toLowerCase()}` : null, x.contractEnd ? `Contrato até ${x.contractEnd}` : null]
+                        {[x.nationality, x.dominantFoot ? `Pé ${x.dominantFoot.toLowerCase()}` : null, x.birthYear ? `Nascido em ${x.birthYear}` : null]
                           .filter(Boolean).join(' · ')}
                       </div>
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => doShare(x)} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
-                    <button onClick={() => doPrint(x)} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
-                    <button onClick={() => setModal(x)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                    <button onClick={() => remove(x.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
@@ -7327,20 +7605,24 @@ function Scouting({ scouting, setScouting }) {
       )}
 
       {modal && <ScoutModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      {viewing && (
+        <ScoutSheetModal
+          player={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={() => { setModal(viewing); setViewing(null); }}
+          onShare={() => doShare(viewing)}
+          onPrint={() => { const p = viewing; setViewing(null); setTimeout(() => doPrint(p), 60); }}
+        />
+      )}
 
       {printScout && createPortal(
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{printScout.name || 'Jogador observado'}</h2>
 
-          <div style={{ overflow: 'hidden' }}>
-            {printScout.photo && (
-              <img src={printScout.photo} alt="Fotografia" style={{
-                float: 'right', width: '34%', maxWidth: 190, aspectRatio: '3 / 4', objectFit: 'cover',
-                borderRadius: 8, border: '1px solid #ccc', margin: '0 0 12px 16px',
-              }} />
-            )}
+          <div>
             <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Identificação</h3>
-            <table style={{ fontSize: 12.5, marginBottom: 14 }}>
+            <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 14 }}>
+            <table style={{ fontSize: 12.5, flex: '0 1 auto' }}>
               <tbody>
                 {[
                   ['Clube atual', printScout.club],
@@ -7360,6 +7642,13 @@ function Scouting({ scouting, setScouting }) {
                 ))}
               </tbody>
             </table>
+            {printScout.photo && (
+              <img src={printScout.photo} alt="Fotografia" style={{
+                width: 150, flex: '0 0 auto', aspectRatio: '3 / 4', objectFit: 'cover',
+                borderRadius: 8, border: '1px solid #ccc',
+              }} />
+            )}
+            </div>
 
             <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Potencial geral</h3>
             <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>
@@ -7403,6 +7692,95 @@ function Scouting({ scouting, setScouting }) {
         document.body
       )}
     </div>
+  );
+}
+
+/* Ficha completa em ecrã — o mesmo conteúdo e a mesma disposição da
+   página que sai na partilha, para o treinador ver antes de enviar. */
+function ScoutSheetModal({ player: x, onClose, onEdit, onShare, onPrint }) {
+  const avg = pillarAverage(x);
+  const potentialLabel = (RATING_LEVELS.find(r => r.value === Number(x.potential)) || {}).label || '';
+  const idRows = [
+    ['Nome', x.name],
+    ['Clube atual', x.club],
+    ['Ano de nascimento', x.birthYear],
+    ['Idade', x.birthYear ? `${age(x.birthYear)} anos` : (x.age || '')],
+    ['Nacionalidade(s)', x.nationality],
+    ['Fim de contrato', x.contractEnd],
+    ['Posição principal', x.position],
+    ['Posição secundária', x.secondaryPosition],
+    ['Pé dominante', x.dominantFoot],
+    ['Data de observação', x.observationDate ? fmtDate(x.observationDate) : ''],
+  ].filter(([, v]) => v);
+
+  return (
+    <Modal title={x.name || 'Jogador observado'} onClose={onClose} wide>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+        <Btn variant="ghost" onClick={onShare}><Share2 size={14} /> Partilhar</Btn>
+        <Btn variant="ghost" onClick={onPrint}><Printer size={14} /> Imprimir</Btn>
+        <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>
+      </div>
+
+      <SubHeading>Identificação</SubHeading>
+      <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
+        <table style={{ borderCollapse: 'collapse', flex: '0 1 auto' }}>
+          <tbody>
+            {idRows.map(([k, v]) => (
+              <tr key={k}>
+                <th style={{ textAlign: 'left', padding: '3px 18px 3px 0', fontSize: 12.5, color: T.muted, fontWeight: 500, whiteSpace: 'nowrap' }}>{k}</th>
+                <td style={{ padding: '3px 0', fontSize: 13, color: T.cream }}>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {x.photo && (
+          <img src={x.photo} alt="Fotografia" style={{
+            width: 160, flex: '0 0 auto', aspectRatio: '3 / 4', objectFit: 'cover',
+            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000',
+          }} />
+        )}
+      </div>
+
+      <SubHeading>Potencial geral</SubHeading>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <RatingStars value={Number(x.potential) || 0} />
+        <span style={{ fontSize: 13, color: T.cream }}>
+          {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
+        </span>
+      </div>
+
+      {SCOUT_PILLARS.map(p => {
+        const rating = x[`${p.key}Rating`];
+        const notes = x[`${p.key}Notes`];
+        if (!rating && !notes) return null;
+        return (
+          <div key={p.key} style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+              <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 500 }}>{p.label}</span>
+              {rating ? <RatingStars value={Number(rating)} /> : <span style={{ fontSize: 12, color: T.mutedDim }}>sem avaliação</span>}
+            </div>
+            {notes && <p style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
+          </div>
+        );
+      })}
+
+      {avg !== null && (
+        <div style={{ fontSize: 13, color: T.warn, fontWeight: 600, margin: '14px 0 18px' }}>Média dos 4 pilares: {avg}</div>
+      )}
+
+      {x.traits && (
+        <>
+          <SubHeading>Características</SubHeading>
+          <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: '0 0 16px', whiteSpace: 'pre-wrap' }}>{x.traits}</p>
+        </>
+      )}
+      {x.notes && (
+        <>
+          <SubHeading>Notas gerais</SubHeading>
+          <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.notes}</p>
+        </>
+      )}
+    </Modal>
   );
 }
 
