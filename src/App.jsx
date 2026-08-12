@@ -57,6 +57,10 @@ const INTENSITIES = [
   { value: 'alta', label: 'Alta' },
 ];
 const intensityLabel = (v) => INTENSITIES.find(i => i.value === v)?.label || v || '—';
+// Dias de folga (fase "Descanso") são descanso total: não fazem sentido
+// com intensidade nenhuma, por isso esta função devolve '' para eles em
+// vez de "Intensidade: —", em qualquer sítio onde a sessão é resumida.
+const intensityText = (s) => s.phase === 'Descanso' ? '' : `Intensidade: ${intensityLabel(s.intensity)}`;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -3999,7 +4003,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   };
 
   const doShare = (s) => {
-    const meta = [fmtDate(s.date), s.phase, `Intensidade: ${intensityLabel(s.intensity)}`, s.opponent && `vs ${s.opponent}`].filter(Boolean);
+    const meta = [fmtDate(s.date), s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean);
     const exBlocks = (s.exerciseIds || []).map((e, i) => {
       const ex = exercises.find(x => x.id === e.exId);
       if (!ex) return null;
@@ -4085,7 +4089,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     </div>
                     <div>
                       <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500 }}>{s.focus || 'Sessão de treino'}</div>
-                      <div style={{ color: T.mutedDim, fontSize: 12 }}>{s.phase}{s.opponent ? ` · vs ${s.opponent}` : ''} · Intensidade: {intensityLabel(s.intensity)}</div>
+                      <div style={{ color: T.mutedDim, fontSize: 12 }}>{[s.phase, s.opponent && `vs ${s.opponent}`, intensityText(s)].filter(Boolean).join(' · ')}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -4128,8 +4132,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{printSession.focus || 'Sessão de treino'}</h2>
           <p style={{ margin: '0 0 18px', fontSize: 13 }}>
-            {fmtDate(printSession.date)} · {printSession.phase} · Intensidade: {intensityLabel(printSession.intensity)}
-            {printSession.opponent ? ` · vs ${printSession.opponent}` : ''}
+            {[fmtDate(printSession.date), printSession.phase, intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
           </p>
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
           {(printSession.exerciseIds || []).map((e, i) => (
@@ -4164,7 +4167,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             <div key={s.id} style={{ marginBottom: 24 }}>
               <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.focus || 'Sessão de treino'}</h3>
               <p style={{ margin: '0 0 12px', fontSize: 13 }}>
-                {s.phase} · Intensidade: {intensityLabel(s.intensity)}{s.opponent ? ` · vs ${s.opponent}` : ''}
+                {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
               {(s.exerciseIds || []).map((e, i) => (
                 <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
@@ -4442,27 +4445,38 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
         <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Fase de jogo (foco)">
-          <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
-            {PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+          <Select value={f.phase} onChange={e => {
+            const phase = e.target.value;
+            // "Descanso" é um dia de folga total: sem exercícios, sem
+            // presenças e sem intensidade — por isso limpamos a intensidade
+            // ao mudar para esta fase, e devolvemos um valor por omissão
+            // sensato ('media') se o treinador voltar a escolher outra fase.
+            setF({ ...f, phase, intensity: phase === 'Descanso' ? null : (f.intensity || 'media') });
+          }}>
+            {PHASES.map(p => <option key={p} value={p}>{p === 'Descanso' ? 'Descanso (Folga)' : p}</option>)}
           </Select>
         </Field>
-        <Field label="Intensidade">
-          <Select value={f.intensity} onChange={e => setF({ ...f, intensity: e.target.value })}>
-            {INTENSITIES.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
-          </Select>
-        </Field>
+        {f.phase !== 'Descanso' && (
+          <Field label="Intensidade">
+            <Select value={f.intensity} onChange={e => setF({ ...f, intensity: e.target.value })}>
+              {INTENSITIES.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
+            </Select>
+          </Field>
+        )}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
-        <Field label="Título / foco da sessão"><Input value={f.focus} onChange={e => setF({ ...f, focus: e.target.value })} placeholder="Ex: Pressing alto e coberturas" /></Field>
-        <Field label="Próximo adversário (opcional)"><Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" /></Field>
-      </div>
+      {f.phase !== 'Descanso' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <Field label="Título / foco da sessão"><Input value={f.focus} onChange={e => setF({ ...f, focus: e.target.value })} placeholder="Ex: Pressing alto e coberturas" /></Field>
+          <Field label="Próximo adversário (opcional)"><Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" /></Field>
+        </div>
+      )}
 
       {f.phase === 'Descanso' ? (
         <div style={{
           marginBottom: 18, padding: '12px 14px', background: T.surface, border: `1px solid ${T.line}`,
           borderRadius: 8, fontSize: 13, color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <Moon size={15} color={T.mutedDim} /> Dia de folga — sem exercícios, presenças ou notas a registar.
+          <Moon size={15} color={T.mutedDim} /> Dia de folga — descanso total: sem exercícios, sem intensidade, sem presenças a registar.
         </div>
       ) : (
         <>
@@ -4552,7 +4566,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
             <div>
               <div style={{ color: T.cream, fontSize: 16, fontWeight: 600 }}>{s.focus || 'Sessão de treino'}</div>
               <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                {s.phase} · Intensidade: {intensityLabel(s.intensity)}{s.opponent ? ` · vs ${s.opponent}` : ''}
+                {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </div>
             </div>
             <button onClick={() => onEditSession(s)} title="Editar sessão" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}>
@@ -5332,7 +5346,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
           <div style={{ fontSize: 13, color: T.cream, display: 'flex', flexDirection: 'column', gap: 3 }}>
             <div style={{ fontWeight: 500 }}>{todaySession.focus || todaySession.phase || 'Sessão de treino'}</div>
             <div style={{ fontSize: 12, color: T.mutedDim }}>
-              {todaySession.phase ? `${todaySession.phase} · ` : ''}Intensidade: {INTENSITIES.find(i => i.value === todaySession.intensity)?.label || todaySession.intensity}
+              {[todaySession.phase, intensityText(todaySession)].filter(Boolean).join(' · ')}
             </div>
           </div>
         ) : (
@@ -5720,6 +5734,7 @@ function DaySelectStrip({ recentDates, dayStatus, selectedDate, onSelectDate }) 
 
 function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, onOpenWellness, onOpenRpe, onLogout }) {
   const isToday = selectedDate === todayStr();
+  const isRestDay = session && session.phase === 'Descanso';
   const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : `Sem sessão definida para ${isToday ? 'hoje' : 'este dia'}`;
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', padding: '28px 18px 60px' }}>
@@ -5756,15 +5771,17 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         {doneWellness ? <Check size={18} color={T.good} /> : <ChevronRight size={18} color={T.mutedDim} />}
       </button>
 
-      <button onClick={onOpenRpe} disabled={!session} style={{
+      <button onClick={onOpenRpe} disabled={!session || isRestDay} style={{
         width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${doneRpe ? T.good : T.line}`,
-        borderRadius: 12, padding: '18px 16px', cursor: session ? 'pointer' : 'default', opacity: session ? 1 : 0.55,
+        borderRadius: 12, padding: '18px 16px', cursor: (session && !isRestDay) ? 'pointer' : 'default', opacity: (session && !isRestDay) ? 1 : 0.55,
         ...body, display: 'flex', alignItems: 'center', gap: 14,
       }}>
         <span style={{ fontSize: 26 }}>🏋</span>
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>RPE</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{session ? `Intensidade de: ${sessionLabel}` : `Ainda sem sessão criada para ${isToday ? 'hoje' : 'este dia'}`}</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>
+            {isRestDay ? 'Dia de folga — sem RPE a registar' : session ? `Intensidade de: ${sessionLabel}` : `Ainda sem sessão criada para ${isToday ? 'hoje' : 'este dia'}`}
+          </div>
         </span>
         {doneRpe ? <Check size={18} color={T.good} /> : <ChevronRight size={18} color={T.mutedDim} />}
       </button>
