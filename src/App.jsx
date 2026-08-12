@@ -5737,32 +5737,6 @@ function MatchDashboard({ players, matches }) {
   );
 }
 
-/* Lista de resultados dos jogos, com adversário e dados
-   estatísticos calculados a partir dos jogos já registados. */
-function ResultsTable({ matches }) {
-  if (matches.length === 0) return null;
-  const sorted = [...matches].sort((a, b) => new Date(b.date) - new Date(a.date));
-  return (
-    <Panel title="Resultados">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {sorted.map(m => {
-          const reports = (m.convocados || []).map(pid => (m.report && m.report[pid]) || {});
-          const goals = reports.reduce((a, r) => a + (Number(r.goals) || 0), 0);
-          const d = new Date(m.date + 'T00:00:00');
-          const weekday = d.toLocaleDateString('pt-PT', { weekday: 'long' });
-          const short = d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' });
-          return (
-            <div key={m.id} style={{ fontSize: 13, color: T.cream, padding: '8px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7 }}>
-              <span style={{ color: T.warn }}>vs {m.opponent || 'Adversário por definir'}</span>
-              <span style={{ color: T.mutedDim }}> — {weekday}, {short} · {m.competition || 'particular'} · {m.result || '—'} · {(m.convocados || []).length} convocados · {goals} golos</span>
-            </div>
-          );
-        })}
-      </div>
-    </Panel>
-  );
-}
-
 /* ---------------------------------------------------------------
    CLASSIFICAÇÃO — tabela da competição (ex: AF Porto), atualizada
    manualmente jornada a jornada. Não depende de nenhum site externo:
@@ -6128,10 +6102,6 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
       <div style={{ marginBottom: 20 }}>
         <MatchDashboard players={players} matches={matches} />
       </div>
-      <div style={{ marginBottom: 20 }}>
-        <ResultsTable matches={matches} />
-      </div>
-
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registares um jogo." />
       ) : sorted.length === 0 ? (
@@ -7328,21 +7298,35 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  /* Nada vem preenchido por omissão: enquanto o atleta não tocar, cada
+     resposta fica a null. Antes abria tudo em 3 (e "Não" na dor), o que
+     tornava impossível distinguir uma resposta real de um valor por
+     defeito — bastava carregar em Confirmar sem ler nada. Só se carrega
+     em `initial` quando o staff está a corrigir um registo existente. */
   const [f, setF] = useState({
-    sleepHours: initial?.sleepHours ?? 8,
-    sono: initial?.sono ?? 3,
-    fadiga: initial?.fadiga ?? 3,
-    dor: initial?.dor ?? 3,
-    humor: initial?.humor ?? 3,
-    stress: initial?.stress ?? 3,
-    dorLocalizada: initial?.dorLocalizada ?? false,
+    sleepHours: initial?.sleepHours ?? null,
+    sono: initial?.sono ?? null,
+    fadiga: initial?.fadiga ?? null,
+    dor: initial?.dor ?? null,
+    humor: initial?.humor ?? null,
+    stress: initial?.stress ?? null,
+    dorLocalizada: initial?.dorLocalizada ?? null,
     zonasDor: initial?.zonasDor ?? [],
   });
 
   const toggleZona = (z) => setF(prev => ({ ...prev, zonasDor: prev.zonasDor.includes(z) ? prev.zonasDor.filter(x => x !== z) : [...prev.zonasDor, z] }));
-  const adjustSleep = (delta) => setF(prev => ({ ...prev, sleepHours: Math.min(14, Math.max(0, Math.round((prev.sleepHours + delta) * 10) / 10)) }));
+  // Primeiro toque em − ou + arranca nas 8h (valor de partida razoável);
+  // a partir daí ajusta meia hora de cada vez.
+  const adjustSleep = (delta) => setF(prev => ({
+    ...prev,
+    sleepHours: prev.sleepHours === null ? 8 : Math.min(14, Math.max(0, Math.round((prev.sleepHours + delta) * 10) / 10)),
+  }));
+
+  const step1Done = f.sleepHours !== null && f.sono !== null;
+  const step2Done = f.fadiga !== null && f.dor !== null && f.humor !== null && f.stress !== null && f.dorLocalizada !== null;
 
   const confirm = () => {
+    if (!step2Done) return;
     setSaving(true);
     setTimeout(() => {
       onSubmit({ ...f });
@@ -7364,8 +7348,8 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
           <QuestionLabel>Quantas horas dormiste?</QuestionLabel>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 30 }}>
             <StepperBtn onClick={() => adjustSleep(-0.5)}>−</StepperBtn>
-            <div style={{ flex: 1, textAlign: 'center', ...display, fontSize: 42, fontWeight: 700, color: T.cream }}>
-              {f.sleepHours.toFixed(1).replace('.', ',')}<span style={{ fontSize: 17, color: T.mutedDim, marginLeft: 4 }}>h</span>
+            <div style={{ flex: 1, textAlign: 'center', ...display, fontSize: 42, fontWeight: 700, color: f.sleepHours === null ? T.mutedDim : T.cream }}>
+              {f.sleepHours === null ? '—' : f.sleepHours.toFixed(1).replace('.', ',')}<span style={{ fontSize: 17, color: T.mutedDim, marginLeft: 4 }}>h</span>
             </div>
             <StepperBtn onClick={() => adjustSleep(0.5)}>+</StepperBtn>
           </div>
@@ -7373,7 +7357,12 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
           <QuestionLabel>Qualidade do sono</QuestionLabel>
           <ScaleButtons value={f.sono} onChange={v => setF({ ...f, sono: v })} lowLabel="Muito má" highLabel="Excelente" />
 
-          <BigButton onClick={() => setStep(2)} style={{ marginTop: 32 }}>Continuar →</BigButton>
+          {!step1Done && (
+            <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 18, textAlign: 'center' }}>
+              Responde às duas perguntas para continuares.
+            </div>
+          )}
+          <BigButton onClick={() => setStep(2)} disabled={!step1Done} style={{ marginTop: step1Done ? 32 : 10 }}>Continuar →</BigButton>
         </>
       )}
 
@@ -7397,7 +7386,12 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
             </div>
           )}
 
-          <BigButton onClick={confirm} disabled={saving} accent style={{ marginTop: 10 }}>
+          {!step2Done && (
+            <div style={{ fontSize: 12, color: T.mutedDim, margin: '4px 0 10px', textAlign: 'center' }}>
+              Falta responder a alguma pergunta acima.
+            </div>
+          )}
+          <BigButton onClick={confirm} disabled={saving || !step2Done} accent style={{ marginTop: 10 }}>
             {saving ? 'A guardar…' : <>Confirmar <Check size={17} /></>}
           </BigButton>
         </>
