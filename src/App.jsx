@@ -851,7 +851,14 @@ function App({ session }) {
         }
       `}</style>
 
-      <div style={{ display: 'flex', minHeight: '100vh', flexDirection: isMobile ? 'column' : 'row' }}>
+      {/* Em ecrã largo a página não faz scroll: a barra lateral e o conteúdo
+          têm cada um o seu próprio scroll, para o menu não fugir enquanto se
+          lê uma lista longa. Em mobile mantém-se o scroll normal da página,
+          porque o menu é um painel deslizante. */}
+      <div style={{
+        display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+        ...(isMobile ? { minHeight: '100vh' } : { height: '100vh', overflow: 'hidden' }),
+      }}>
 
         {/* TOP BAR — só em mobile: hamburger + emblema, substitui a barra lateral fixa */}
         {isMobile && (
@@ -891,7 +898,7 @@ function App({ session }) {
             position: 'fixed', top: 0, left: 0, height: '100vh', zIndex: 50,
             transform: navOpen ? 'translateX(0)' : 'translateX(-100%)',
             transition: 'transform 0.25s ease', boxShadow: navOpen ? '4px 0 24px #00000066' : 'none',
-          } : { position: 'sticky', top: 0, height: '100vh' }),
+          } : { height: '100vh', overflow: 'hidden' }),
         }}>
           <div style={{ padding: '22px 20px 16px', borderBottom: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
@@ -954,7 +961,10 @@ function App({ session }) {
         </aside>
 
         {/* MAIN */}
-        <main style={{ flex: 1, minWidth: 0, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px', maxWidth: 1100 }}>
+        <main style={{
+          flex: 1, minWidth: 0, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px', maxWidth: 1100,
+          ...(isMobile ? {} : { overflowY: 'auto', height: '100vh' }),
+        }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} exercises={exercises} monitoring={monitoring} matches={matches} standings={standings} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
@@ -1084,7 +1094,10 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
           {players.length === 0 ? (
             <EmptyState text="Adiciona jogadores no separador Plantel." />
           ) : (
-            <WellnessSummary players={players} monitoring={monitoring} />
+            <>
+              <WellnessSummary players={players} monitoring={monitoring} />
+              <WellnessLoadMatrix players={players} monitoring={monitoring} />
+            </>
           )}
         </Panel>
 
@@ -1339,6 +1352,127 @@ const STATUS_SUMMARY_COLORS = {
   'Reserva': T.mutedDim,
   'Dispensável': T.bad,
 };
+
+/* ---------------------------------------------------------------
+   MATRIZ WELLNESS × ESFORÇO
+
+   Eixo horizontal: média de Wellness dos últimos 7 dias (1 a 5).
+   Eixo vertical:   média de PSE dos últimos 7 dias (0 a 10).
+
+   Os quadrantes lêem-se assim:
+     · esforço alto + wellness baixo  → sinal de alerta (canto sup. esq.)
+     · esforço alto + wellness bom    → a aguentar bem a carga
+     · esforço baixo + wellness baixo → mal-estar sem carga que o explique
+     · esforço baixo + wellness bom   → margem para carregar
+
+   Cada ponto mostra só a posição e o primeiro nome, para a matriz não
+   ficar ilegível com 25 jogadores. Só entram jogadores com pelo menos
+   uma resposta de cada tipo na semana — sem os dois eixos não há sítio
+   onde os colocar.
+---------------------------------------------------------------- */
+function firstNameOf(name) {
+  const parts = String(name || '').trim().split(/\s+/);
+  return parts[0] || '—';
+}
+
+function WellnessLoadMatrix({ players, monitoring }) {
+  const end = todayStr();
+  const start = addDays(end, -6);
+  const inWindow = (d) => d >= start && d <= end;
+
+  const points = players.map(p => {
+    const recs = (monitoring || []).filter(m => m.playerId === p.id && inWindow(m.date));
+    const wellVals = recs.filter(m => typeof m.sono === 'number').map(wellnessAvg).filter(v => typeof v === 'number');
+    const pseVals = recs.filter(m => typeof m.pse === 'number').map(m => m.pse);
+    if (!wellVals.length || !pseVals.length) return null;
+    const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    return {
+      id: p.id,
+      label: `${p.position ? `${p.position} ` : ''}${firstNameOf(p.name)}`,
+      well: mean(wellVals),
+      pse: mean(pseVals),
+    };
+  }).filter(Boolean);
+
+  const missing = players.length - points.length;
+
+  if (points.length === 0) {
+    return (
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 12, color: T.mutedDim, lineHeight: 1.5 }}>
+        Matriz wellness × esforço: ainda sem respostas suficientes nos últimos 7 dias. É preciso pelo menos um wellness e um PSE por jogador.
+      </div>
+    );
+  }
+
+  // Geometria em coordenadas do SVG (viewBox 0 0 100 100 no interior do
+  // gráfico, com margens para as legendas dos eixos).
+  const W = 320, H = 260, ml = 30, mr = 12, mt = 12, mb = 26;
+  const plotW = W - ml - mr, plotH = H - mt - mb;
+  const xOf = (well) => ml + ((Math.max(1, Math.min(5, well)) - 1) / 4) * plotW;
+  const yOf = (pse) => mt + (1 - Math.max(0, Math.min(10, pse)) / 10) * plotH;
+  const midX = xOf(3), midY = yOf(5);
+
+  // Afasta ligeiramente etiquetas que caiam quase no mesmo sítio, para os
+  // nomes não ficarem uns por cima dos outros.
+  const placed = [];
+  const labelOffset = (x, y) => {
+    let dy = -6;
+    while (placed.some(q => Math.abs(q.x - x) < 34 && Math.abs(q.y - (y + dy)) < 8) && dy > -34) dy -= 8;
+    placed.push({ x, y: y + dy });
+    return dy;
+  };
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
+      <div style={{ fontSize: 11.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+        Wellness × esforço · últimos 7 dias
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
+        {/* fundo dos quadrantes */}
+        <rect x={ml} y={mt} width={midX - ml} height={midY - mt} fill={`${T.bad}18`} />
+        <rect x={midX} y={mt} width={ml + plotW - midX} height={midY - mt} fill={`${T.warn}12`} />
+        <rect x={ml} y={midY} width={midX - ml} height={mt + plotH - midY} fill={`${T.warn}10`} />
+        <rect x={midX} y={midY} width={ml + plotW - midX} height={mt + plotH - midY} fill={`${T.good}14`} />
+
+        <rect x={ml} y={mt} width={plotW} height={plotH} fill="none" stroke={T.line} strokeWidth="1" />
+        <line x1={midX} y1={mt} x2={midX} y2={mt + plotH} stroke={T.line} strokeWidth="1" strokeDasharray="3 3" />
+        <line x1={ml} y1={midY} x2={ml + plotW} y2={midY} stroke={T.line} strokeWidth="1" strokeDasharray="3 3" />
+
+        {/* legendas dos quadrantes */}
+        <text x={ml + 5} y={mt + 11} fontSize="7.5" fill={T.bad} style={{ fontFamily: "'Inter', sans-serif" }}>Alerta</text>
+        <text x={ml + plotW - 5} y={mt + 11} fontSize="7.5" fill={T.good} textAnchor="end" style={{ fontFamily: "'Inter', sans-serif" }}>Aguenta bem</text>
+        <text x={ml + 5} y={mt + plotH - 5} fontSize="7.5" fill={T.warn} style={{ fontFamily: "'Inter', sans-serif" }}>Mal-estar</text>
+        <text x={ml + plotW - 5} y={mt + plotH - 5} fontSize="7.5" fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'Inter', sans-serif" }}>Margem p/ carga</text>
+
+        {/* eixos */}
+        <text x={ml + plotW / 2} y={H - 6} fontSize="8.5" fill={T.muted} textAnchor="middle" style={{ fontFamily: "'Inter', sans-serif" }}>Wellness (1–5) →</text>
+        <text x={9} y={mt + plotH / 2} fontSize="8.5" fill={T.muted} textAnchor="middle" transform={`rotate(-90 9 ${mt + plotH / 2})`} style={{ fontFamily: "'Inter', sans-serif" }}>Esforço PSE (0–10) →</text>
+        <text x={ml - 4} y={mt + 4} fontSize="7.5" fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'JetBrains Mono', monospace" }}>10</text>
+        <text x={ml - 4} y={mt + plotH} fontSize="7.5" fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'JetBrains Mono', monospace" }}>0</text>
+        <text x={ml} y={mt + plotH + 10} fontSize="7.5" fill={T.mutedDim} textAnchor="middle" style={{ fontFamily: "'JetBrains Mono', monospace" }}>1</text>
+        <text x={ml + plotW} y={mt + plotH + 10} fontSize="7.5" fill={T.mutedDim} textAnchor="middle" style={{ fontFamily: "'JetBrains Mono', monospace" }}>5</text>
+
+        {points.map(pt => {
+          const x = xOf(pt.well), y = yOf(pt.pse);
+          const alerta = pt.well < 3 && pt.pse >= 5;
+          const color = alerta ? T.bad : pt.well >= 3 ? T.good : T.warn;
+          const dy = labelOffset(x, y);
+          const anchor = x > ml + plotW - 40 ? 'end' : x < ml + 40 ? 'start' : 'middle';
+          return (
+            <g key={pt.id}>
+              <circle cx={x} cy={y} r="3.2" fill={color} stroke={T.bg} strokeWidth="0.8" />
+              <text x={x} y={y + dy} fontSize="7.5" fill={T.cream} textAnchor={anchor} style={{ fontFamily: "'Inter', sans-serif" }}>{pt.label}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 6, lineHeight: 1.5 }}>
+        {points.length} {points.length === 1 ? 'jogador posicionado' : 'jogadores posicionados'}.
+        {missing > 0 && ` ${missing} sem wellness e PSE na semana.`}
+      </div>
+    </div>
+  );
+}
 
 function PlantelStatusSummary({ players }) {
   const total = players.length;
@@ -6796,7 +6930,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                 <table>
                   <thead><tr><th style={th2}>Jogador</th><th style={th2}>Código</th><th style={th2}></th></tr></thead>
                   <tbody>
-                    {players.map(p => (
+                    {sortByPosition(players).map(p => (
                       <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
                         <td style={{ ...td2, color: T.cream }}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
                         <td style={{ ...td2, ...mono, color: T.warn, letterSpacing: '.1em' }}>{p.code || '—'}</td>
