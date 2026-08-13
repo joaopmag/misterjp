@@ -515,15 +515,21 @@ function PhotoField({ label = 'Fotografia', value, onChange, hint }) {
   );
 }
 
+/* A altura é fixada de propósito: sem ela, um <select> (com a seta), um
+   input de data/hora (com o ícone do calendário) e um input de texto
+   simples ficam com alturas diferentes, e numa linha de campos lado a
+   lado nota-se logo que umas caixas são mais baixas do que outras. */
 const inputStyle = {
-  background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '9px 10px',
+  background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '0 10px',
   color: T.cream, fontSize: 14, ...body, outline: 'none',
-  width: '100%', boxSizing: 'border-box', minWidth: 0,
+  width: '100%', height: 40, lineHeight: '38px', boxSizing: 'border-box', minWidth: 0,
 };
 
 function Input(props) { return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />; }
 function Select(props) { return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />; }
-function TextArea(props) { return <textarea {...props} style={{ ...inputStyle, resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />; }
+function TextArea(props) {
+  return <textarea {...props} style={{ ...inputStyle, height: 'auto', lineHeight: 1.5, padding: '9px 10px', resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />;
+}
 
 function Modal({ title, onClose, children, wide }) {
   // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
@@ -1380,12 +1386,11 @@ function firstNameOf(name) {
   return parts[0] || '—';
 }
 
-function WellnessLoadMatrix({ players, monitoring }) {
+function matrixPoints(players, monitoring) {
   const end = todayStr();
   const start = addDays(end, -6);
   const inWindow = (d) => d >= start && d <= end;
-
-  const points = players.map(p => {
+  return players.map(p => {
     const recs = (monitoring || []).filter(m => m.playerId === p.id && inWindow(m.date));
     const wellVals = recs.filter(m => typeof m.sono === 'number').map(wellnessAvg).filter(v => typeof v === 'number');
     const pseVals = recs.filter(m => typeof m.pse === 'number').map(m => m.pse);
@@ -1393,12 +1398,89 @@ function WellnessLoadMatrix({ players, monitoring }) {
     const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
     return {
       id: p.id,
+      name: p.name,
       label: `${p.position ? `${p.position} ` : ''}${firstNameOf(p.name)}`,
       well: mean(wellVals),
       pse: mean(pseVals),
+      dias: Math.max(wellVals.length, pseVals.length),
     };
   }).filter(Boolean);
+}
 
+// Quadrante em que cada jogador cai (linhas divisórias: Wellness 3, PSE 5).
+function quadrantOf(pt) {
+  if (pt.pse >= 5) return pt.well < 3 ? 'alerta' : 'aguenta';
+  return pt.well < 3 ? 'malestar' : 'margem';
+}
+const QUADRANTS = {
+  alerta: { label: 'Alerta', color: T.bad, hint: 'Esforço alto com wellness baixo' },
+  aguenta: { label: 'Aguenta bem', color: T.good, hint: 'Esforço alto com wellness bom' },
+  malestar: { label: 'Mal-estar', color: T.warn, hint: 'Wellness baixo sem carga que o explique' },
+  margem: { label: 'Margem para carga', color: T.mutedDim, hint: 'Wellness bom com esforço baixo' },
+};
+
+/* O gráfico em si. `scale` amplia tipos de letra e pontos na versão
+   grande, sem duplicar o desenho. */
+function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
+  const ml = 30 * scale, mr = 12 * scale, mt = 12 * scale, mb = 26 * scale;
+  const plotW = W - ml - mr, plotH = H - mt - mb;
+  const xOf = (well) => ml + ((Math.max(1, Math.min(5, well)) - 1) / 4) * plotW;
+  const yOf = (pse) => mt + (1 - Math.max(0, Math.min(10, pse)) / 10) * plotH;
+  const midX = xOf(3), midY = yOf(5);
+  const fs = 7.5 * scale, fsAxis = 8.5 * scale;
+
+  // Afasta etiquetas quase sobrepostas, para os nomes não ficarem uns por
+  // cima dos outros.
+  const placed = [];
+  const labelOffset = (x, y) => {
+    let dy = -6 * scale;
+    while (placed.some(q => Math.abs(q.x - x) < 34 * scale && Math.abs(q.y - (y + dy)) < 8 * scale) && dy > -34 * scale) dy -= 8 * scale;
+    placed.push({ x, y: y + dy });
+    return dy;
+  };
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
+      <rect x={ml} y={mt} width={midX - ml} height={midY - mt} fill={`${T.bad}18`} />
+      <rect x={midX} y={mt} width={ml + plotW - midX} height={midY - mt} fill={`${T.warn}12`} />
+      <rect x={ml} y={midY} width={midX - ml} height={mt + plotH - midY} fill={`${T.warn}10`} />
+      <rect x={midX} y={midY} width={ml + plotW - midX} height={mt + plotH - midY} fill={`${T.good}14`} />
+
+      <rect x={ml} y={mt} width={plotW} height={plotH} fill="none" stroke={T.line} strokeWidth={scale} />
+      <line x1={midX} y1={mt} x2={midX} y2={mt + plotH} stroke={T.line} strokeWidth={scale} strokeDasharray={`${3 * scale} ${3 * scale}`} />
+      <line x1={ml} y1={midY} x2={ml + plotW} y2={midY} stroke={T.line} strokeWidth={scale} strokeDasharray={`${3 * scale} ${3 * scale}`} />
+
+      <text x={ml + 5 * scale} y={mt + 11 * scale} fontSize={fs} fill={T.bad} style={{ fontFamily: "'Inter', sans-serif" }}>Alerta</text>
+      <text x={ml + plotW - 5 * scale} y={mt + 11 * scale} fontSize={fs} fill={T.good} textAnchor="end" style={{ fontFamily: "'Inter', sans-serif" }}>Aguenta bem</text>
+      <text x={ml + 5 * scale} y={mt + plotH - 5 * scale} fontSize={fs} fill={T.warn} style={{ fontFamily: "'Inter', sans-serif" }}>Mal-estar</text>
+      <text x={ml + plotW - 5 * scale} y={mt + plotH - 5 * scale} fontSize={fs} fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'Inter', sans-serif" }}>Margem p/ carga</text>
+
+      <text x={ml + plotW / 2} y={H - 6 * scale} fontSize={fsAxis} fill={T.muted} textAnchor="middle" style={{ fontFamily: "'Inter', sans-serif" }}>Wellness (1–5) →</text>
+      <text x={9 * scale} y={mt + plotH / 2} fontSize={fsAxis} fill={T.muted} textAnchor="middle" transform={`rotate(-90 ${9 * scale} ${mt + plotH / 2})`} style={{ fontFamily: "'Inter', sans-serif" }}>Esforço PSE (0–10) →</text>
+      <text x={ml - 4 * scale} y={mt + 4 * scale} fontSize={fs} fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'JetBrains Mono', monospace" }}>10</text>
+      <text x={ml - 4 * scale} y={mt + plotH} fontSize={fs} fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'JetBrains Mono', monospace" }}>0</text>
+      <text x={ml} y={mt + plotH + 10 * scale} fontSize={fs} fill={T.mutedDim} textAnchor="middle" style={{ fontFamily: "'JetBrains Mono', monospace" }}>1</text>
+      <text x={ml + plotW} y={mt + plotH + 10 * scale} fontSize={fs} fill={T.mutedDim} textAnchor="middle" style={{ fontFamily: "'JetBrains Mono', monospace" }}>5</text>
+
+      {points.map(pt => {
+        const x = xOf(pt.well), y = yOf(pt.pse);
+        const color = QUADRANTS[quadrantOf(pt)].color;
+        const dy = labelOffset(x, y);
+        const anchor = x > ml + plotW - 40 * scale ? 'end' : x < ml + 40 * scale ? 'start' : 'middle';
+        return (
+          <g key={pt.id}>
+            <circle cx={x} cy={y} r={3.2 * scale} fill={color} stroke={T.bg} strokeWidth={0.8 * scale} />
+            <text x={x} y={y + dy} fontSize={fs} fill={T.cream} textAnchor={anchor} style={{ fontFamily: "'Inter', sans-serif" }}>{pt.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function WellnessLoadMatrix({ players, monitoring }) {
+  const [open, setOpen] = useState(false);
+  const points = matrixPoints(players, monitoring);
   const missing = players.length - points.length;
 
   if (points.length === 0) {
@@ -1409,73 +1491,67 @@ function WellnessLoadMatrix({ players, monitoring }) {
     );
   }
 
-  // Geometria em coordenadas do SVG (viewBox 0 0 100 100 no interior do
-  // gráfico, com margens para as legendas dos eixos).
-  const W = 320, H = 260, ml = 30, mr = 12, mt = 12, mb = 26;
-  const plotW = W - ml - mr, plotH = H - mt - mb;
-  const xOf = (well) => ml + ((Math.max(1, Math.min(5, well)) - 1) / 4) * plotW;
-  const yOf = (pse) => mt + (1 - Math.max(0, Math.min(10, pse)) / 10) * plotH;
-  const midX = xOf(3), midY = yOf(5);
-
-  // Afasta ligeiramente etiquetas que caiam quase no mesmo sítio, para os
-  // nomes não ficarem uns por cima dos outros.
-  const placed = [];
-  const labelOffset = (x, y) => {
-    let dy = -6;
-    while (placed.some(q => Math.abs(q.x - x) < 34 && Math.abs(q.y - (y + dy)) < 8) && dy > -34) dy -= 8;
-    placed.push({ x, y: y + dy });
-    return dy;
-  };
-
   return (
-    <div>
-      <div style={{ fontSize: 11.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-        Wellness × esforço · últimos 7 dias
+    <>
+      <div onClick={() => setOpen(true)} title="Abrir em grande" style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ fontSize: 11.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+            Wellness × esforço · últimos 7 dias
+          </div>
+          <Maximize2 size={13} color={T.mutedDim} />
+        </div>
+        <MatrixChart points={points} />
+        <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 6, lineHeight: 1.5 }}>
+          {points.length} {points.length === 1 ? 'jogador posicionado' : 'jogadores posicionados'}.
+          {missing > 0 && ` ${missing} sem wellness e PSE na semana.`}
+        </div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
-        {/* fundo dos quadrantes */}
-        <rect x={ml} y={mt} width={midX - ml} height={midY - mt} fill={`${T.bad}18`} />
-        <rect x={midX} y={mt} width={ml + plotW - midX} height={midY - mt} fill={`${T.warn}12`} />
-        <rect x={ml} y={midY} width={midX - ml} height={mt + plotH - midY} fill={`${T.warn}10`} />
-        <rect x={midX} y={midY} width={ml + plotW - midX} height={mt + plotH - midY} fill={`${T.good}14`} />
 
-        <rect x={ml} y={mt} width={plotW} height={plotH} fill="none" stroke={T.line} strokeWidth="1" />
-        <line x1={midX} y1={mt} x2={midX} y2={mt + plotH} stroke={T.line} strokeWidth="1" strokeDasharray="3 3" />
-        <line x1={ml} y1={midY} x2={ml + plotW} y2={midY} stroke={T.line} strokeWidth="1" strokeDasharray="3 3" />
+      {open && (
+        <Modal title="Wellness × esforço · últimos 7 dias" onClose={() => setOpen(false)} wide>
+          <MatrixChart points={points} W={640} H={480} scale={2} />
 
-        {/* legendas dos quadrantes */}
-        <text x={ml + 5} y={mt + 11} fontSize="7.5" fill={T.bad} style={{ fontFamily: "'Inter', sans-serif" }}>Alerta</text>
-        <text x={ml + plotW - 5} y={mt + 11} fontSize="7.5" fill={T.good} textAnchor="end" style={{ fontFamily: "'Inter', sans-serif" }}>Aguenta bem</text>
-        <text x={ml + 5} y={mt + plotH - 5} fontSize="7.5" fill={T.warn} style={{ fontFamily: "'Inter', sans-serif" }}>Mal-estar</text>
-        <text x={ml + plotW - 5} y={mt + plotH - 5} fontSize="7.5" fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'Inter', sans-serif" }}>Margem p/ carga</text>
+          <div style={{ marginTop: 20 }}>
+            {Object.entries(QUADRANTS).map(([key, q]) => {
+              const list = points.filter(pt => quadrantOf(pt) === key)
+                .sort((a, b) => b.pse - a.pse || a.well - b.well);
+              if (list.length === 0) return null;
+              return (
+                <div key={key} style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: q.color, flexShrink: 0 }} />
+                    <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 500 }}>{q.label}</span>
+                    <span style={{ color: T.mutedDim, fontSize: 11.5 }}>· {q.hint}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {list.map(pt => (
+                      <div key={pt.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px',
+                        background: T.surface, border: `1px solid ${T.line}`, borderRadius: 7,
+                      }}>
+                        <span style={{ flex: 1, fontSize: 13, color: T.cream }}>{pt.name}</span>
+                        <span style={{ ...mono, fontSize: 12, color: T.good }}>W {pt.well.toFixed(1)}</span>
+                        <span style={{ ...mono, fontSize: 12, color: T.warn }}>PSE {pt.pse.toFixed(1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
-        {/* eixos */}
-        <text x={ml + plotW / 2} y={H - 6} fontSize="8.5" fill={T.muted} textAnchor="middle" style={{ fontFamily: "'Inter', sans-serif" }}>Wellness (1–5) →</text>
-        <text x={9} y={mt + plotH / 2} fontSize="8.5" fill={T.muted} textAnchor="middle" transform={`rotate(-90 9 ${mt + plotH / 2})`} style={{ fontFamily: "'Inter', sans-serif" }}>Esforço PSE (0–10) →</text>
-        <text x={ml - 4} y={mt + 4} fontSize="7.5" fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'JetBrains Mono', monospace" }}>10</text>
-        <text x={ml - 4} y={mt + plotH} fontSize="7.5" fill={T.mutedDim} textAnchor="end" style={{ fontFamily: "'JetBrains Mono', monospace" }}>0</text>
-        <text x={ml} y={mt + plotH + 10} fontSize="7.5" fill={T.mutedDim} textAnchor="middle" style={{ fontFamily: "'JetBrains Mono', monospace" }}>1</text>
-        <text x={ml + plotW} y={mt + plotH + 10} fontSize="7.5" fill={T.mutedDim} textAnchor="middle" style={{ fontFamily: "'JetBrains Mono', monospace" }}>5</text>
+          {missing > 0 && (
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4, lineHeight: 1.5 }}>
+              {missing} {missing === 1 ? 'jogador não aparece' : 'jogadores não aparecem'} na matriz — falta-lhes wellness ou PSE nos últimos 7 dias.
+            </div>
+          )}
 
-        {points.map(pt => {
-          const x = xOf(pt.well), y = yOf(pt.pse);
-          const alerta = pt.well < 3 && pt.pse >= 5;
-          const color = alerta ? T.bad : pt.well >= 3 ? T.good : T.warn;
-          const dy = labelOffset(x, y);
-          const anchor = x > ml + plotW - 40 ? 'end' : x < ml + 40 ? 'start' : 'middle';
-          return (
-            <g key={pt.id}>
-              <circle cx={x} cy={y} r="3.2" fill={color} stroke={T.bg} strokeWidth="0.8" />
-              <text x={x} y={y + dy} fontSize="7.5" fill={T.cream} textAnchor={anchor} style={{ fontFamily: "'Inter', sans-serif" }}>{pt.label}</text>
-            </g>
-          );
-        })}
-      </svg>
-      <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 6, lineHeight: 1.5 }}>
-        {points.length} {points.length === 1 ? 'jogador posicionado' : 'jogadores posicionados'}.
-        {missing > 0 && ` ${missing} sem wellness e PSE na semana.`}
-      </div>
-    </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+            <Btn variant="ghost" onClick={() => setOpen(false)}>Fechar</Btn>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -5874,7 +5950,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches }) {
                           ) : (
                             <Input type="number" min="0" max="10" placeholder="Nota"
                               value={rating ?? ''} onChange={e => setRating(day, p.id, e.target.value)}
-                              style={{ width: 60, padding: '5px 7px', fontSize: 12.5 }} />
+                              style={{ width: 60, padding: '0 7px', height: 32, lineHeight: '30px', fontSize: 12.5 }} />
                           ))}
                         </div>
                       );
@@ -6534,13 +6610,13 @@ function StandingsModal({ standings, onClose, onSave }) {
                           <option value="">— escolher —</option>
                           {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
                         </Select>
-                        <Input type="number" min="0" max="99" value={gh} onChange={e => setGoals(gi, 'home', e.target.value)} style={{ textAlign: 'center', padding: '9px 4px' }} />
-                        <Input type="number" min="0" max="99" value={ga} onChange={e => setGoals(gi, 'away', e.target.value)} style={{ textAlign: 'center', padding: '9px 4px' }} />
+                        <Input type="number" min="0" max="99" value={gh} onChange={e => setGoals(gi, 'home', e.target.value)} style={{ textAlign: 'center', padding: '0 4px' }} />
+                        <Input type="number" min="0" max="99" value={ga} onChange={e => setGoals(gi, 'away', e.target.value)} style={{ textAlign: 'center', padding: '0 4px' }} />
                         <Select value={g.away} onChange={e => updateGame(gi, { away: e.target.value })}>
                           <option value="">— escolher —</option>
                           {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
                         </Select>
-                        <Input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(g.date || '') ? g.date : ''} onChange={e => updateGame(gi, { date: e.target.value })} style={{ padding: '8px 6px' }} />
+                        <Input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(g.date || '') ? g.date : ''} onChange={e => updateGame(gi, { date: e.target.value })} style={{ padding: '0 6px' }} />
                         <button onClick={() => removeGame(gi)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
                       </div>
                     );
@@ -6617,7 +6693,7 @@ function StandingsModal({ standings, onClose, onSave }) {
                     <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr repeat(6, 52px)', gap: 6, alignItems: 'center' }}>
                       <span style={{ fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
                       {['J', 'V', 'E', 'D', 'GM', 'GS'].map(fld => (
-                        <Input key={fld} type="number" min="0" value={t[fld]} onChange={e => updateManualTeam(t.id, fld, e.target.value)} style={{ textAlign: 'center', padding: '6px 4px' }} />
+                        <Input key={fld} type="number" min="0" value={t[fld]} onChange={e => updateManualTeam(t.id, fld, e.target.value)} style={{ textAlign: 'center', padding: '0 4px', height: 34, lineHeight: '32px' }} />
                       ))}
                     </div>
                   ))}
