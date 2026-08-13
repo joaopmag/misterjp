@@ -1016,7 +1016,7 @@ function App({ session }) {
               items={apresentacoes} setItems={setApresentacoes}
               title="Apresentações" subtitle="Partilha de ideias."
               addLabel="Adicionar ficheiro"
-              emptyText="Ainda sem apresentações. Cola o link do YouTube, Instagram ou TikTok, ou carrega um PDF, PowerPoint ou vídeo, para começares."
+              emptyText="Ainda sem apresentações. Carrega um PDF ou PowerPoint, cola um link do Google Drive (para ficheiros grandes) ou um link de vídeo, para começares."
               emptyFirstLabel="Adicionar o primeiro ficheiro"
             />
           </div>
@@ -5856,7 +5856,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
      · jogo   → C (convocado) / NC (não convocado), por omissão NC, mas já
                 marcado a C para quem consta da convocatória desse dia
    Dias fechados aparecem só de leitura. */
-function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onToggle, onRating }) {
+function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onToggle, onRating, onSetClosed, monthControl }) {
   const ordered = [...days].sort((a, b) => new Date(a.date) - new Date(b.date));
   if (ordered.length === 0 || players.length === 0) return null;
 
@@ -5871,20 +5871,42 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
 
   return (
     <div style={{ marginBottom: 22 }}>
-      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-        Resumo · presença e nota por dia
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+          Presença e nota por dia
+        </div>
+        {monthControl}
       </div>
       <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
         <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
           <thead>
             <tr>
               <th style={{ ...headCell, ...nameCell, textAlign: 'left', color: T.muted, fontSize: 10 }}>Jogador</th>
-              {ordered.map(d => (
-                <th key={d.match ? `m-${d.match.id}` : d.date} style={headCell}>
-                  <div style={{ ...mono, color: d.match ? T.warn : T.mutedDim }}>{dayShort(d.date)}</div>
-                  <div style={{ fontSize: 9, color: T.mutedDim }}>{d.match ? 'jogo' : 'treino'}</div>
-                </th>
-              ))}
+              {ordered.map(d => {
+                const closed = dayClosed(d);
+                return (
+                  <th key={d.match ? `m-${d.match.id}` : d.date} style={headCell}>
+                    <div style={{ ...mono, color: d.match ? T.warn : T.mutedDim }}>{dayShort(d.date)}</div>
+                    <div style={{ fontSize: 9, color: T.mutedDim, marginBottom: 4 }}>{d.match ? 'jogo' : 'treino'}</div>
+                    {/* Guardar fecha a coluna (fica só de leitura); Editar
+                        volta a abri-la. Substitui os cartões dia a dia. */}
+                    <button
+                      type="button"
+                      onClick={() => onSetClosed(d, !closed)}
+                      title={closed ? 'Reabrir para editar' : 'Guardar as presenças deste dia'}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 7px', borderRadius: 6,
+                        fontSize: 9.5, cursor: 'pointer', ...body, fontWeight: 600,
+                        background: closed ? 'transparent' : `${T.good}22`,
+                        color: closed ? T.mutedDim : T.good,
+                        border: `1px solid ${closed ? T.line : T.good}66`,
+                      }}
+                    >
+                      {closed ? <><Pencil size={9} /> Editar</> : <><Check size={9} /> Guardar</>}
+                    </button>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -6125,8 +6147,37 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
         <EmptyState text="Ainda sem treinos nem jogos registados no Planeamento." />
       ) : (
         <>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-            {rows.map(({ player, attended, pct, avgRating, ratingCount }) => {
+          {/* TABELA-RESUMO: uma coluna por dia (treino ou jogo) e uma linha
+              por jogador. Nos treinos alterna P/NP, nos jogos C/NC, e cada
+              cruzamento tem ainda uma célula de nota de 1 a 10. Cada coluna
+              tem "Guardar" (fecha para leitura) e "Editar" (reabre).
+              Substituiu os antigos cartões dia a dia, que mostravam a mesma
+              informação em muito mais espaço. */}
+          <AttendanceMatrix
+            days={visibleDays} players={orderedPlayers}
+            isPresent={isPresent} ratingOf={ratingOf} dayClosed={dayClosed}
+            onToggle={toggleAttendance} onRating={setRating} onSetClosed={setDayClosed}
+            monthControl={(
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: T.mutedDim }}>Mês:</span>
+                <Select value={month} onChange={e => setMonth(e.target.value)} style={{ padding: '0 10px', height: 34, lineHeight: '32px', fontSize: 12.5, width: 'auto' }}>
+                  <option value="todos">Todos os meses</option>
+                  {monthKeys.map(k => <option key={k} value={k}>{monthLabelPt(k)}</option>)}
+                </Select>
+              </div>
+            )}
+          />
+
+          {visibleDays.length === 0 && (
+            <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 22 }}>Sem treinos nem jogos neste mês.</div>
+          )}
+
+          {/* ASSIDUIDADE — resumo por jogador, alimentado pela tabela acima. */}
+          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
+            Assiduidade e nota média
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {rows.map(({ player, attended, pct, avgRating }) => {
               const color = pct === null ? T.mutedDim : pct >= 80 ? T.good : pct >= 60 ? T.warn : T.bad;
               const ratingColor = avgRating === null ? T.mutedDim : avgRating >= 7 ? T.good : avgRating >= 5 ? T.warn : T.bad;
               return (
@@ -6137,7 +6188,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                   <Badge label={player.position} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ color: T.cream, fontSize: 14 }}>{player.name}</div>
-                    <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmedDays.length} sessões confirmadas</div>
+                    <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmedDays.length} confirmados</div>
                   </div>
                   <div style={{ width: 80, height: 6, background: T.bg, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
                     <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color }} />
@@ -6147,114 +6198,6 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                   <div style={{ textAlign: 'right', flexShrink: 0, width: 64 }}>
                     <div style={{ ...mono, color: ratingColor, fontSize: 13 }}>{avgRating === null ? '—' : avgRating}</div>
                     <div style={{ fontSize: 10, color: T.mutedDim }}>nota média</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* TABELA-RESUMO: uma coluna por dia (treino ou jogo) e uma linha
-              por jogador. Nos treinos alterna P/NP, nos jogos C/NC, e cada
-              cruzamento tem ainda uma célula de nota de 1 a 10. É a mesma
-              informação que os cartões dia a dia mais abaixo — o que se
-              muda aqui aparece lá, e alimenta a assiduidade no topo. */}
-          <AttendanceMatrix
-            days={visibleDays} players={orderedPlayers}
-            isPresent={isPresent} ratingOf={ratingOf} dayClosed={dayClosed}
-            onToggle={toggleAttendance} onRating={setRating}
-          />
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
-            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-              Editar presença e nota, dia a dia (treinos e jogos)
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 12, color: T.mutedDim }}>Mês:</span>
-              <Select value={month} onChange={e => setMonth(e.target.value)} style={{ padding: '6px 10px', fontSize: 12.5, width: 'auto' }}>
-                <option value="todos">Todos os meses</option>
-                {monthKeys.map(k => <option key={k} value={k}>{monthLabelPt(k)}</option>)}
-              </Select>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {visibleDays.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem treinos nem jogos neste mês.</div>
-            ) : visibleDays.map((day) => {
-              const { date, list, match } = day;
-              const isConfirmed = new Date(date + 'T00:00:00') < todayStart;
-              const closed = dayClosed(day);
-              const focusLabel = match
-                ? `Jogo vs ${match.opponent || 'adversário'}`
-                : [...new Set(list.map(s => s.focus || 'Sessão de treino'))].join(' + ');
-              const presentCount = orderedPlayers.filter(p => isPresent(day, p.id)).length;
-              return (
-                <div key={match ? `m-${match.id}` : date} style={{
-                  background: T.surface,
-                  border: `1px solid ${closed ? T.good + '55' : (match ? T.warn + '55' : T.line)}`,
-                  borderRadius: 10, padding: 14,
-                }}>
-                  <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ color: T.cream, fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {match && <Trophy size={13} color={T.warn} />}{focusLabel}
-                    </span>
-                    <span style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(date)} · {match ? (match.competition || 'Jogo') : list[0].phase}</span>
-                    {!match && list.length > 1 && (
-                      <span style={{ fontSize: 10.5, color: T.mutedDim, border: `1px solid ${T.line}`, borderRadius: 10, padding: '2px 8px' }}>
-                        {list.length} sessões neste dia
-                      </span>
-                    )}
-                    {!isConfirmed && (
-                      <span style={{ fontSize: 10.5, color: T.warn, border: `1px solid ${T.warn}66`, borderRadius: 10, padding: '2px 8px' }}>
-                        ainda não confirmado
-                      </span>
-                    )}
-                    {closed && (
-                      <span style={{ fontSize: 10.5, color: T.good, border: `1px solid ${T.good}66`, borderRadius: 10, padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <Check size={11} /> Guardado · {presentCount}/{orderedPlayers.length} presentes
-                      </span>
-                    )}
-                    <span style={{ marginLeft: 'auto' }}>
-                      {closed ? (
-                        <Btn variant="ghost" onClick={() => setDayClosed(day, false)} style={{ padding: '6px 12px', fontSize: 12.5 }}>
-                          <Pencil size={13} /> Editar
-                        </Btn>
-                      ) : (
-                        <Btn onClick={() => setDayClosed(day, true)} style={{ padding: '6px 12px', fontSize: 12.5 }}>
-                          <Check size={13} /> Guardar presenças
-                        </Btn>
-                      )}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {orderedPlayers.map(p => {
-                      const present = isPresent(day, p.id);
-                      const rating = ratingOf(day, p.id);
-                      return (
-                        <div key={p.id} style={{
-                          display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7,
-                          background: present ? `${T.crimson}33` : T.bg, border: `1px solid ${present ? T.gold + '66' : T.line}`,
-                          opacity: closed && !present ? 0.6 : 1,
-                        }}>
-                          <button type="button" onClick={() => { if (!closed) toggleAttendance(day, p.id); }} disabled={closed} style={{
-                            flex: 1, textAlign: 'left', background: 'none', border: 'none',
-                            cursor: closed ? 'default' : 'pointer',
-                            fontSize: 13, color: present ? T.cream : T.muted, ...body,
-                          }}>
-                            {p.position ? `${p.position} · ` : ''}{p.name} — {present ? 'Presente' : 'Ausente'}
-                          </button>
-                          {present && (closed ? (
-                            <span style={{ ...mono, fontSize: 12.5, color: rating == null || rating === '' ? T.mutedDim : T.cream, width: 60, textAlign: 'center' }}>
-                              {rating == null || rating === '' ? '—' : `${rating}/10`}
-                            </span>
-                          ) : (
-                            <Input type="number" min="0" max="10" placeholder="Nota"
-                              value={rating ?? ''} onChange={e => setRating(day, p.id, e.target.value)}
-                              style={{ width: 60, padding: '0 7px', height: 32, lineHeight: '30px', fontSize: 12.5 }} />
-                          ))}
-                        </div>
-                      );
-                    })}
                   </div>
                 </div>
               );
@@ -6864,13 +6807,29 @@ function StandingsModal({ standings, onClose, onSave }) {
             </div>
           </div>
 
-          {competitions.length > 1 && (
-            <button type="button" onClick={() => removeCompetition(comp.id)} style={{
-              background: 'none', border: 'none', color: T.bad, cursor: 'pointer', fontSize: 12.5, ...body, marginBottom: 8,
-            }}>
-              Apagar a competição "{comp.name || 'sem nome'}"
-            </button>
-          )}
+          {/* Apagar está sempre disponível. Se for a última, fica uma
+              competição vazia no lugar — não se pode ficar sem nenhuma. */}
+          <button
+            type="button"
+            onClick={() => {
+              const label = comp.name || 'sem nome';
+              const temJogos = (comp.rounds || []).some(r => (r.games || []).length > 0);
+              const aviso = temJogos
+                ? `Apagar a competição "${label}"? Os resultados das jornadas serão perdidos.`
+                : `Apagar a competição "${label}"?`;
+              if (window.confirm(aviso)) removeCompetition(comp.id);
+            }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'none', border: `1px solid ${T.bad}55`, borderRadius: 8, padding: '7px 12px',
+              color: T.bad, cursor: 'pointer', fontSize: 12.5, ...body, marginBottom: 8,
+            }}
+          >
+            <Trash2 size={13} /> Apagar a competição "{comp.name || 'sem nome'}"
+          </button>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.5 }}>
+            Os jogos que já tenham sido criados na lista de Jogos não são apagados — se quiseres, apaga-os lá.
+          </div>
         </>
       )}
 
@@ -7073,6 +7032,16 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
   );
 }
 
+/* Convocar alguém no jogo marca-o também como convocado na tabela-resumo
+   das Presenças. Sem isto, quem já tivesse mexido nessa tabela (criando a
+   lista `attendance`) deixava de ver ali os convocados adicionados depois.
+   O contrário não acontece: tirar da convocatória não apaga a presença já
+   registada — são coisas diferentes. */
+function withConvocadosInAttendance(f) {
+  if (!Array.isArray(f.attendance)) return f;
+  return { ...f, attendance: [...new Set([...f.attendance, ...(f.convocados || [])])] };
+}
+
 function MatchModal({ match, players, standings, onClose, onSave }) {
   const [f, setF] = useState(match || {
     date: todayStr(), opponent: '', competition: 'Jogo amigável', result: '',
@@ -7165,7 +7134,7 @@ function MatchModal({ match, players, standings, onClose, onSave }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.date} onClick={() => onSave(f)}><Check size={15} /> Guardar jogo</Btn>
+        <Btn disabled={!f.date} onClick={() => onSave(withConvocadosInAttendance(f))}><Check size={15} /> Guardar jogo</Btn>
       </div>
     </Modal>
   );
@@ -9321,7 +9290,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
-  const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation };
+  const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation, drive: ExternalLink };
 
   useEffect(() => {
     activeYoutubeIdRef.current = (active && active.youtubeId) || null;
@@ -9713,11 +9682,65 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   );
 }
 
+/* ---------------------------------------------------------------
+   GOOGLE DRIVE — alternativa ao carregamento de ficheiro.
+
+   Porquê: um PDF carregado fica guardado em base64 dentro da linha da
+   tabela. Acima de uns MB, a gravação estoira o tempo limite do Postgres
+   ("canceling statement due to statement timeout"). Com um link do Drive,
+   a base de dados guarda ~200 bytes e o ficheiro fica onde já está.
+
+   Limitação assumida: o Drive não deixa outro site descarregar o ficheiro
+   (bloqueio CORS), por isso NÃO é possível usar o nosso leitor de PDF —
+   mostra-se o visualizador da própria Google dentro de um iframe. Isso
+   significa que a navegação de páginas, o deslize e o botão de ecrã
+   inteiro passam a ser os da Google, não os nossos.
+
+   O ficheiro tem de estar partilhado como "qualquer pessoa com o link".
+--------------------------------------------------------------- */
+function parseDriveId(url) {
+  if (!url) return null;
+  const u = String(url).trim();
+  if (!/drive\.google\.com|docs\.google\.com/.test(u)) return null;
+  // Formatos habituais:
+  //   drive.google.com/file/d/<ID>/view?usp=sharing
+  //   drive.google.com/open?id=<ID>
+  //   docs.google.com/presentation/d/<ID>/edit
+  //   drive.google.com/uc?id=<ID>
+  const byPath = /\/d\/([a-zA-Z0-9_-]{10,})/.exec(u);
+  if (byPath) return { id: byPath[1], kind: /docs\.google\.com\/presentation/.test(u) ? 'slides' : 'file' };
+  const byQuery = /[?&]id=([a-zA-Z0-9_-]{10,})/.exec(u);
+  if (byQuery) return { id: byQuery[1], kind: 'file' };
+  return null;
+}
+
+// URL de pré-visualização embutida. Para ficheiros no Drive é
+// /file/d/<id>/preview; para apresentações Google é /presentation/d/<id>/embed.
+function driveEmbedSrc(drive) {
+  if (!drive || !drive.id) return null;
+  return drive.kind === 'slides'
+    ? `https://docs.google.com/presentation/d/${drive.id}/embed?start=false&loop=false`
+    : `https://drive.google.com/file/d/${drive.id}/preview`;
+}
+function driveOpenSrc(drive) {
+  if (!drive || !drive.id) return null;
+  return drive.kind === 'slides'
+    ? `https://docs.google.com/presentation/d/${drive.id}/edit`
+    : `https://drive.google.com/file/d/${drive.id}/view`;
+}
+
 function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' }) {
-  const [source, setSource] = useState(item ? ((item.youtubeId || item.social) ? 'link' : 'file') : 'link');
+  const initialSource = item
+    ? (item.drive ? 'drive' : ((item.youtubeId || item.social) ? 'link' : 'file'))
+    : 'link';
+  const [source, setSource] = useState(initialSource);
   const [f, setF] = useState(item
-    ? { ...item, pasta: item.pasta || '', url: item.youtubeId ? `https://youtu.be/${item.youtubeId}` : (item.social ? socialEmbedSrc(item.social) : '') }
-    : { title: '', jornada: '', pasta: defaultFolder || '', url: '', kind: null, fileName: '', dataUrl: '' });
+    ? {
+        ...item, pasta: item.pasta || '',
+        url: item.youtubeId ? `https://youtu.be/${item.youtubeId}` : (item.social ? socialEmbedSrc(item.social) : ''),
+        driveUrl: item.drive ? driveOpenSrc(item.drive) : '',
+      }
+    : { title: '', jornada: '', pasta: defaultFolder || '', url: '', driveUrl: '', kind: null, fileName: '', dataUrl: '' });
   const [error, setError] = useState('');
   const [loadingFile, setLoadingFile] = useState(false);
 
@@ -9747,18 +9770,28 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
     if (source === 'link') {
       const ytId = parseYouTubeId(f.url);
       if (ytId) {
-        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null });
+        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null, drive: null });
         return;
       }
       const social = detectSocialEmbed(f.url);
       if (social) {
-        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), youtubeId: null, social, kind: null, fileName: null, dataUrl: null });
+        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), youtubeId: null, social, kind: null, fileName: null, dataUrl: null, drive: null });
         return;
       }
       setError('Não consegui identificar o vídeo — confirma o link do YouTube, Instagram ou TikTok (link completo, não o link curto do TikTok).');
+    } else if (source === 'drive') {
+      const drive = parseDriveId(f.driveUrl);
+      if (!drive) {
+        setError('Não consegui identificar o ficheiro — cola o link de partilha do Google Drive (drive.google.com/file/d/…).');
+        return;
+      }
+      onSave({
+        ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta),
+        drive, kind: 'drive', youtubeId: null, social: null, fileName: null, dataUrl: null,
+      });
     } else {
       if (!f.dataUrl || !f.kind) { setError('Carrega um ficheiro antes de guardar.'); return; }
-      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null, social: null });
+      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null, social: null, drive: null });
     }
   };
 
@@ -9772,8 +9805,9 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
   return (
     <Modal title={item ? 'Editar item' : 'Novo item'} onClose={onClose}>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button onClick={() => { setSource('link'); setError(''); }} style={tabBtnStyle('link')}>Link</button>
+        <button onClick={() => { setSource('link'); setError(''); }} style={tabBtnStyle('link')}>Vídeo</button>
         <button onClick={() => { setSource('file'); setError(''); }} style={tabBtnStyle('file')}>Ficheiro</button>
+        <button onClick={() => { setSource('drive'); setError(''); }} style={tabBtnStyle('drive')}>Google Drive</button>
       </div>
 
       <div style={{ marginBottom: 12 }}>
@@ -9816,7 +9850,31 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
         )}
       </div>
 
-      {source === 'link' ? (
+      {source === 'drive' ? (
+        <div style={{ marginBottom: 8 }}>
+          <Field label="Link de partilha do Google Drive">
+            <Input
+              value={f.driveUrl || ''}
+              onChange={e => { setF({ ...f, driveUrl: e.target.value }); setError(''); }}
+              placeholder="https://drive.google.com/file/d/…/view?usp=sharing"
+            />
+          </Field>
+          <div style={{
+            fontSize: 11.5, color: T.mutedDim, marginTop: 10, lineHeight: 1.55,
+            border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px', background: T.bg,
+          }}>
+            <div style={{ color: T.warn, marginBottom: 4 }}>Para documentos grandes ou que atualizas com frequência.</div>
+            O ficheiro fica no Drive — aqui guarda-se só o link, por isso não há limite de tamanho
+            nem risco de a gravação falhar.
+            <br /><br />
+            <span style={{ color: T.cream }}>Tem de estar partilhado como "qualquer pessoa com o link".</span> Caso contrário
+            os teus adjuntos veem um pedido de acesso em vez do documento.
+            <br /><br />
+            A pré-visualização passa a ser a do próprio Google: a navegação de páginas, o deslize e o
+            ecrã inteiro são os deles, não os nossos.
+          </div>
+        </div>
+      ) : source === 'link' ? (
         <div style={{ marginBottom: 8 }}>
           <Field label="Link do vídeo (YouTube, Instagram ou TikTok)">
             <Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/... · instagram.com/reel/... · tiktok.com/@user/video/..." />
@@ -10217,6 +10275,46 @@ function AttachmentPreview({ item, tall }) {
           <video key={item.id} src={item.dataUrl} controls style={{ width: '100%', height: '100%', background: '#000' }} />
         </div>
         {FsBar}
+      </div>
+    );
+  }
+  if (item.kind === 'drive' && item.drive) {
+    // Visualizador do próprio Google. Não conseguimos controlar páginas
+    // nem gestos aqui dentro — o iframe é de outro domínio.
+    const src = driveEmbedSrc(item.drive);
+    return (
+      <div ref={boxRef} style={wrapStyle}>
+        <div style={{ flex: 1, minHeight: 0, background: '#fff' }}>
+          <iframe
+            key={item.id}
+            src={src}
+            style={{ width: '100%', height: '100%', border: 'none' }}
+            allow="autoplay; fullscreen"
+            allowFullScreen
+            title={item.title || 'Documento do Google Drive'}
+          />
+        </div>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+        }}>
+          <a
+            href={driveOpenSrc(item.drive)} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', textDecoration: 'none' }}
+          >
+            <ExternalLink size={13} /> Abrir no Drive
+          </a>
+          <button
+            onClick={toggleFs}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
+              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+            }}
+          >
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {isFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
+          </button>
+        </div>
       </div>
     );
   }
