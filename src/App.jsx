@@ -438,10 +438,14 @@ function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'bu
 }
 
 function Field({ label, children, labelColor }) {
+  /* height:100% + marginTop:auto no conteúdo: quando os campos estão lado
+     a lado numa grelha e uma etiqueta ocupa duas linhas (ex: "ANO DE
+     NASCIMENTO", "HORA DE CONCENTRAÇÃO"), as caixas continuam todas
+     alinhadas em baixo, em vez de umas ficarem mais abaixo do que outras. */
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, ...body }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, height: '100%', ...body }}>
       <span style={{ fontSize: 12, color: labelColor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
-      {children}
+      <div style={{ marginTop: 'auto', minWidth: 0 }}>{children}</div>
     </label>
   );
 }
@@ -955,9 +959,9 @@ function App({ session }) {
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} />}
-          {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} />}
-          {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} />}
+          {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
+          {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
@@ -4731,7 +4735,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     </Modal>
   );
 }
-function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches }) {
+function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
   const [printSession, setPrintSession] = useState(null);
@@ -4797,7 +4801,14 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
     setMatchModal(null);
   };
 
-  const grouped = groupByWeek(sessions);
+  /* A lista mostra treinos E jogos, para o calendário da semana ficar
+     completo. Os jogos entram marcados com __match para se distinguirem
+     das sessões (têm cartão e ações próprias) e não entram nas contas do
+     resumo semanal, que é sobre carga de treino. */
+  const matchItems = (matches || [])
+    .filter(m => m.date)
+    .map(m => ({ ...m, __match: true }));
+  const grouped = groupByWeek([...sessions, ...matchItems]);
   const isEditing = modal && modal !== 'new' && modal.id;
   const presetDate = modal && modal !== 'new' && !modal.id ? modal.presetDate : undefined;
 
@@ -4826,7 +4837,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           onAddForDate={(d) => setModal({ presetDate: d })}
           onEditMatch={(m) => setMatchModal(m)}
         />
-      ) : sessions.length === 0 ? (
+      ) : sessions.length === 0 && matchItems.length === 0 ? (
         <EmptyState text="Ainda não há sessões planeadas." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar a primeira sessão</Btn>} />
       ) : (
         Object.entries(grouped).map(([week, items]) => (
@@ -4834,7 +4845,33 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             <div style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{week}</div>
             <WeekSummary items={items} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {items.map(s => (
+              {items.map(s => s.__match ? (
+                <div key={`m-${s.id}`} style={{
+                  background: T.surface, border: `1px solid ${T.warn}55`, borderRadius: 10, padding: 14,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10,
+                }}>
+                  <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                    <div style={{ textAlign: 'center', width: 46 }}>
+                      <div style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600 }}>{new Date(s.date + 'T00:00:00').getDate()}</div>
+                      <div style={{ fontSize: 10, color: T.mutedDim, textTransform: 'uppercase' }}>{new Date(s.date + 'T00:00:00').toLocaleDateString('pt-PT', { month: 'short' })}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Trophy size={13} color={T.warn} /> vs {s.opponent || 'Adversário por definir'}
+                      </div>
+                      <div style={{ color: T.mutedDim, fontSize: 12 }}>
+                        {[s.competition || 'Jogo', s.atHome === undefined ? null : (s.atHome ? 'Casa' : 'Fora'), s.result].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
+                      {(s.convocados || []).length} convocados
+                    </span>
+                    <button onClick={() => setMatchModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
+                  </div>
+                </div>
+              ) : (
                 <div key={s.id} style={{
                   background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14,
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10,
@@ -4884,6 +4921,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
         <MatchModal
           match={matchModal}
           players={players}
+          standings={standings}
           onClose={() => setMatchModal(null)}
           onSave={saveMatch}
         />
@@ -4949,7 +4987,10 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   );
 }
 
-function WeekSummary({ items }) {
+function WeekSummary({ itemsRaw, items: itemsProp }) {
+  // O resumo é sobre carga de treino — os jogos que também aparecem na
+  // lista não entram nestas contas.
+  const items = (itemsProp || itemsRaw || []).filter(s => !s.__match);
   const totalMin = items.reduce((sum, s) => sum + (s.exerciseIds || []).reduce((a, e) => a + (Number(e.duration) || 0), 0), 0);
   const phaseCounts = {};
   items.forEach(s => { phaseCounts[s.phase] = (phaseCounts[s.phase] || 0) + 1; });
@@ -5446,7 +5487,7 @@ function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
     rows.push(['PRESENÇAS (P = presente, F = ausente)']);
     rows.push(['Jogador', 'Posição', ...days.map(d => dayShort(d.date)), 'Presenças', 'Dias', 'Assiduidade %']);
     players.forEach(p => {
-      const cells = days.map(d => (dayPresent(d.list, p.id) ? 'P' : 'F'));
+      const cells = days.map(d => (d.match ? (d.match.attendance || []).includes(p.id) : dayPresent(d.list, p.id)) ? 'P' : 'F');
       const att = cells.filter(c => c === 'P').length;
       rows.push([
         p.name, p.position || '', ...cells,
@@ -5459,8 +5500,9 @@ function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
     rows.push(['Jogador', 'Posição', ...days.map(d => dayShort(d.date)), 'Nota média']);
     players.forEach(p => {
       const cells = days.map(d => {
-        if (!dayPresent(d.list, p.id)) return '';
-        const r = dayRating(d.list, p.id);
+        const presente = d.match ? (d.match.attendance || []).includes(p.id) : dayPresent(d.list, p.id);
+        if (!presente) return '';
+        const r = d.match ? ((d.match.ratings || {})[p.id] ?? null) : dayRating(d.list, p.id);
         return (r == null || r === '') ? '' : String(r).replace('.', ',');
       });
       const vals = cells.filter(c => c !== '').map(c => Number(String(c).replace(',', '.')));
@@ -5481,13 +5523,21 @@ function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
   return true;
 }
 
-function Presencas({ players, sessions, setSessions }) {
+function Presencas({ players, sessions, setSessions, matches, setMatches }) {
   const todayStart = new Date(new Date().toDateString());
+  /* Os jogos entram nas presenças como um "dia" próprio, para se poder
+     confirmar quem esteve presente e dar nota, tal como num treino. A
+     presença e a nota do jogo ficam guardadas no próprio jogo
+     (attendance/ratings), não nas sessões. */
+  const matchDays = (matches || [])
+    .filter(m => m.date)
+    .map(m => ({ date: m.date, match: m }));
   // Agrupado por data: se houver mais do que uma sessão no mesmo dia
   // (ex: uma por exercício), conta e edita-se como um único dia de treino.
   // Dias de folga (fase "Descanso") não entram na assiduidade — não há
   // presenças nem notas a registar num dia sem treino.
-  const dayGroups = groupSessionsByDate(sessions).filter(d => !d.list.every(s => s.phase === 'Descanso'));
+  const trainingDays = groupSessionsByDate(sessions).filter(d => !d.list.every(s => s.phase === 'Descanso'));
+  const dayGroups = [...trainingDays, ...matchDays].sort((a, b) => new Date(b.date) - new Date(a.date));
   // Só conta como confirmado a partir do dia seguinte à data do treino.
   const confirmedDays = dayGroups.filter(d => new Date(d.date + 'T00:00:00') < todayStart);
 
@@ -5497,12 +5547,17 @@ function Presencas({ players, sessions, setSessions }) {
   const visibleDays = month === 'todos' ? dayGroups : dayGroups.filter(d => monthKeyOf(d.date) === month);
 
   const orderedPlayers = sortByPosition(players);
+  // Leitura/escrita unificada: um dia é de treino (tem `list`) ou de jogo
+  // (tem `match`).
+  const isPresent = (d, pid) => (d.match ? (d.match.attendance || []).includes(pid) : dayPresent(d.list, pid));
+  const ratingOf = (d, pid) => (d.match ? ((d.match.ratings || {})[pid] ?? null) : dayRating(d.list, pid));
+  const dayClosed = (d) => (d.match ? !!d.match.attendanceClosed : dayIsClosed(d.list));
   const rows = orderedPlayers.map(p => {
-    const attended = confirmedDays.filter(d => dayPresent(d.list, p.id)).length;
+    const attended = confirmedDays.filter(d => isPresent(d, p.id)).length;
     const pct = confirmedDays.length ? Math.round((attended / confirmedDays.length) * 100) : null;
     const ratingValues = confirmedDays
-      .filter(d => dayPresent(d.list, p.id))
-      .map(d => dayRating(d.list, p.id))
+      .filter(d => isPresent(d, p.id))
+      .map(d => ratingOf(d, p.id))
       .filter(r => r != null && r !== '')
       .map(Number);
     const avgRating = ratingValues.length ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : null;
@@ -5512,7 +5567,22 @@ function Presencas({ players, sessions, setSessions }) {
   // Marca/desmarca presença em TODAS as sessões desse dia, para que baste
   // dar presença uma vez por dia, independentemente de quantos exercícios
   // (sessões) existam para essa data.
-  const toggleAttendance = (date, playerId) => {
+  const toggleAttendance = (day, playerId) => {
+    if (day.match) {
+      const m = day.match;
+      const present = (m.attendance || []).includes(playerId);
+      setMatches(matches.map(x => {
+        if (x.id !== m.id) return x;
+        if (present) {
+          const ratings = { ...(x.ratings || {}) };
+          delete ratings[playerId];
+          return { ...x, attendance: (x.attendance || []).filter(id => id !== playerId), ratings };
+        }
+        return { ...x, attendance: [...(x.attendance || []), playerId] };
+      }));
+      return;
+    }
+    const date = day.date;
     const daySessions = sessions.filter(s => s.date === date);
     const present = daySessions.some(s => (s.attendance || []).includes(playerId));
     setSessions(sessions.map(s => {
@@ -5527,12 +5597,20 @@ function Presencas({ players, sessions, setSessions }) {
   };
   // A nota é guardada em todas as sessões desse dia, para se manter uma
   // única nota por jogador, por dia.
-  const setRating = (date, playerId, val) => {
-    setSessions(sessions.map(s => s.date === date ? { ...s, ratings: { ...(s.ratings || {}), [playerId]: val } } : s));
+  const setRating = (day, playerId, val) => {
+    if (day.match) {
+      setMatches(matches.map(x => (x.id === day.match.id ? { ...x, ratings: { ...(x.ratings || {}), [playerId]: val } } : x)));
+      return;
+    }
+    setSessions(sessions.map(s => s.date === day.date ? { ...s, ratings: { ...(s.ratings || {}), [playerId]: val } } : s));
   };
   // Fecha (guarda) ou reabre (editar) o dia.
-  const setDayClosed = (date, closed) => {
-    setSessions(sessions.map(s => s.date === date ? { ...s, attendanceClosed: closed } : s));
+  const setDayClosed = (day, closed) => {
+    if (day.match) {
+      setMatches(matches.map(x => (x.id === day.match.id ? { ...x, attendanceClosed: closed } : x)));
+      return;
+    }
+    setSessions(sessions.map(s => s.date === day.date ? { ...s, attendanceClosed: closed } : s));
   };
 
   const doExport = () => {
@@ -5548,7 +5626,7 @@ function Presencas({ players, sessions, setSessions }) {
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no separador Plantel." />
       ) : dayGroups.length === 0 ? (
-        <EmptyState text="Ainda sem sessões de treino registadas no Planeamento." />
+        <EmptyState text="Ainda sem treinos nem jogos registados no Planeamento." />
       ) : (
         <>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
@@ -5581,7 +5659,7 @@ function Presencas({ players, sessions, setSessions }) {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
             <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-              Editar presença e nota, dia a dia
+              Editar presença e nota, dia a dia (treinos e jogos)
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 12, color: T.mutedDim }}>Mês:</span>
@@ -5594,18 +5672,27 @@ function Presencas({ players, sessions, setSessions }) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {visibleDays.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem dias de treino neste mês.</div>
-            ) : visibleDays.map(({ date, list }) => {
+              <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem treinos nem jogos neste mês.</div>
+            ) : visibleDays.map((day) => {
+              const { date, list, match } = day;
               const isConfirmed = new Date(date + 'T00:00:00') < todayStart;
-              const closed = dayIsClosed(list);
-              const focusLabel = [...new Set(list.map(s => s.focus || 'Sessão de treino'))].join(' + ');
-              const presentCount = orderedPlayers.filter(p => dayPresent(list, p.id)).length;
+              const closed = dayClosed(day);
+              const focusLabel = match
+                ? `Jogo vs ${match.opponent || 'adversário'}`
+                : [...new Set(list.map(s => s.focus || 'Sessão de treino'))].join(' + ');
+              const presentCount = orderedPlayers.filter(p => isPresent(day, p.id)).length;
               return (
-                <div key={date} style={{ background: T.surface, border: `1px solid ${closed ? T.good + '55' : T.line}`, borderRadius: 10, padding: 14 }}>
+                <div key={match ? `m-${match.id}` : date} style={{
+                  background: T.surface,
+                  border: `1px solid ${closed ? T.good + '55' : (match ? T.warn + '55' : T.line)}`,
+                  borderRadius: 10, padding: 14,
+                }}>
                   <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{focusLabel}</span>
-                    <span style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(date)} · {list[0].phase}</span>
-                    {list.length > 1 && (
+                    <span style={{ color: T.cream, fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {match && <Trophy size={13} color={T.warn} />}{focusLabel}
+                    </span>
+                    <span style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(date)} · {match ? (match.competition || 'Jogo') : list[0].phase}</span>
+                    {!match && list.length > 1 && (
                       <span style={{ fontSize: 10.5, color: T.mutedDim, border: `1px solid ${T.line}`, borderRadius: 10, padding: '2px 8px' }}>
                         {list.length} sessões neste dia
                       </span>
@@ -5622,11 +5709,11 @@ function Presencas({ players, sessions, setSessions }) {
                     )}
                     <span style={{ marginLeft: 'auto' }}>
                       {closed ? (
-                        <Btn variant="ghost" onClick={() => setDayClosed(date, false)} style={{ padding: '6px 12px', fontSize: 12.5 }}>
+                        <Btn variant="ghost" onClick={() => setDayClosed(day, false)} style={{ padding: '6px 12px', fontSize: 12.5 }}>
                           <Pencil size={13} /> Editar
                         </Btn>
                       ) : (
-                        <Btn onClick={() => setDayClosed(date, true)} style={{ padding: '6px 12px', fontSize: 12.5 }}>
+                        <Btn onClick={() => setDayClosed(day, true)} style={{ padding: '6px 12px', fontSize: 12.5 }}>
                           <Check size={13} /> Guardar presenças
                         </Btn>
                       )}
@@ -5634,15 +5721,15 @@ function Presencas({ players, sessions, setSessions }) {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {orderedPlayers.map(p => {
-                      const present = dayPresent(list, p.id);
-                      const rating = dayRating(list, p.id);
+                      const present = isPresent(day, p.id);
+                      const rating = ratingOf(day, p.id);
                       return (
                         <div key={p.id} style={{
                           display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7,
                           background: present ? `${T.crimson}33` : T.bg, border: `1px solid ${present ? T.gold + '66' : T.line}`,
                           opacity: closed && !present ? 0.6 : 1,
                         }}>
-                          <button type="button" onClick={() => { if (!closed) toggleAttendance(date, p.id); }} disabled={closed} style={{
+                          <button type="button" onClick={() => { if (!closed) toggleAttendance(day, p.id); }} disabled={closed} style={{
                             flex: 1, textAlign: 'left', background: 'none', border: 'none',
                             cursor: closed ? 'default' : 'pointer',
                             fontSize: 13, color: present ? T.cream : T.muted, ...body,
@@ -5655,7 +5742,7 @@ function Presencas({ players, sessions, setSessions }) {
                             </span>
                           ) : (
                             <Input type="number" min="0" max="10" placeholder="Nota"
-                              value={rating ?? ''} onChange={e => setRating(date, p.id, e.target.value)}
+                              value={rating ?? ''} onChange={e => setRating(day, p.id, e.target.value)}
                               style={{ width: 60, padding: '5px 7px', fontSize: 12.5 }} />
                           ))}
                         </div>
@@ -5703,7 +5790,10 @@ function cardBadge(card) {
 /* Dashboard individual da aba Jogos — ranking de golos, assistências,
    cartões e nota média atribuída, usando o mesmo cálculo do Plantel. */
 function MatchDashboard({ players, matches }) {
-  const totalMatches = matches.length;
+  // "Não convocado" só faz sentido em jogos onde houve mesmo convocatória.
+  // Um jogo ainda sem ninguém escolhido não conta como não convocado para
+  // toda a gente — era isso que punha a coluna sempre no total de jogos.
+  const totalMatches = matches.filter(m => (m.convocados || []).length > 0).length;
   const rows = players
     .map(p => ({ player: p, s: playerStats(p, [], matches) }))
     .filter(r => r.s.matchesPlayed > 0)
@@ -5833,11 +5923,14 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {(round?.games || []).map((g, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
-                    {g.date && (
-                      <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 48, flexShrink: 0 }}>
-                        {/^\d{4}-\d{2}-\d{2}$/.test(g.date) ? `${g.date.slice(8, 10)}/${g.date.slice(5, 7)}` : g.date}
-                      </span>
-                    )}
+                    {/* A coluna da data ocupa sempre o mesmo espaço, mesmo
+                        vazia — senão os jogos sem data ficam desalinhados
+                        em relação aos restantes. */}
+                    <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 48, flexShrink: 0 }}>
+                      {g.date
+                        ? (/^\d{4}-\d{2}-\d{2}$/.test(g.date) ? `${g.date.slice(8, 10)}/${g.date.slice(5, 7)}` : g.date)
+                        : ''}
+                    </span>
                     <span style={{ flex: 1, textAlign: 'right', color: T.cream }}>{g.home}</span>
                     <span style={{ ...mono, color: T.gold, width: 52, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
                     <span style={{ flex: 1, color: T.cream }}>{g.away}</span>
@@ -6029,6 +6122,15 @@ function syncCompetitionMatches(competitions, matches) {
     }));
   });
   return next;
+}
+
+// Nomes das competições configuradas em Jogos, para as listas de escolha
+// dos jogos e das convocatórias. "Jogo amigável" está sempre disponível.
+function competitionOptions(standings) {
+  const names = normalizeStandings(standings).competitions
+    .map(c => (c.name || '').trim())
+    .filter(Boolean);
+  return [...new Set(['Jogo amigável', ...names])];
 }
 
 const emptyCompetition = (name = '') => ({
@@ -6445,7 +6547,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                       )}
                     </div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                      {fmtDate(m.date)}{m.competition ? ` · ${m.competition}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} convocados · {goals} golos
+                      {fmtDate(m.date)}{m.competition ? ` · ${m.competition}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} convocados
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -6459,16 +6561,20 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         </div>
       )}
 
-      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} onClose={() => setModal(null)} onSave={save} />}
     </div>
   );
 }
 
-function MatchModal({ match, players, onClose, onSave }) {
+function MatchModal({ match, players, standings, onClose, onSave }) {
   const [f, setF] = useState(match || {
-    date: todayStr(), opponent: '', competition: 'Divisão de Elite - Juniores', result: '',
+    date: todayStr(), opponent: '', competition: 'Jogo amigável', result: '',
     convocados: [], starters: [], report: {},
   });
+  // Lista das competições configuradas + "Jogo amigável" (valor por
+  // omissão). Se o jogo tiver uma competição antiga que já não está
+  // configurada, ela continua a aparecer na lista para não se perder.
+  const compOptions = [...new Set([...competitionOptions(standings), ...(f.competition ? [f.competition] : [])])];
 
   const toggleConvocado = (pid) => {
     const inList = f.convocados.includes(pid);
@@ -6497,7 +6603,12 @@ function MatchModal({ match, players, onClose, onSave }) {
         <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
       </div>
       <div style={{ marginBottom: 16 }}>
-        <Field label="Competição (opcional)"><Input value={f.competition} onChange={e => setF({ ...f, competition: e.target.value })} placeholder="Campeonato / Taça / Particular" /></Field>
+        <Field label="Competição">
+          <Select value={f.competition || ''} onChange={e => setF({ ...f, competition: e.target.value })}>
+            <option value="">— sem competição —</option>
+            {compOptions.map(c => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </Field>
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -9660,7 +9771,7 @@ function AttachmentPreview({ item, tall }) {
    convocados, responsáveis), separada em "próximos jogos" e
    "jogos realizados".
 ---------------------------------------------------------------- */
-function Convocatorias({ convocatorias, setConvocatorias, players, season }) {
+function Convocatorias({ convocatorias, setConvocatorias, players, season, standings }) {
   const [modal, setModal] = useState(null);
   const [printConvocatoria, setPrintConvocatoria] = useState(null);
 
@@ -9730,6 +9841,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season }) {
           convocatoria={modal === 'new' ? null : modal}
           players={players}
           season={season}
+          standings={standings}
           onClose={() => setModal(null)}
           onSave={save}
         />
@@ -9789,9 +9901,9 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season }) {
   );
 }
 
-function ConvocatoriaModal({ convocatoria, players, season, onClose, onSave }) {
+function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, onSave }) {
   const [f, setF] = useState(convocatoria || {
-    epoca: season?.name || '', competicao: 'Divisão de Elite - Juniores', escalao: 'Sub-19', adversario: '', casaFora: 'Casa',
+    epoca: season?.name || '', competicao: 'Jogo amigável', escalao: 'Sub-19', adversario: '', casaFora: 'Casa',
     jornada: '', data: '', horaJogo: '', localJogo: '', horaConcentracao: '',
     localConcentracao: '', outrasInfo: '', convocados: [], treinador: 'João Pedro', teamManager: 'Américo',
   });
@@ -9800,6 +9912,8 @@ function ConvocatoriaModal({ convocatoria, players, season, onClose, onSave }) {
     const inList = f.convocados.includes(pid);
     setF({ ...f, convocados: inList ? f.convocados.filter(id => id !== pid) : [...f.convocados, pid] });
   };
+  // As competições vêm das que estão configuradas em Jogos.
+  const compOptions = [...new Set([...competitionOptions(standings), ...(f.competicao ? [f.competicao] : [])])];
 
   return (
     <Modal title={convocatoria ? 'Editar convocatória' : 'Nova convocatória'} onClose={onClose} wide>
@@ -9807,7 +9921,12 @@ function ConvocatoriaModal({ convocatoria, players, season, onClose, onSave }) {
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Jogo</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
           <Field label="Época"><Input value={f.epoca} onChange={e => setF({ ...f, epoca: e.target.value })} placeholder="2026/2027" /></Field>
-          <Field label="Competição"><Input value={f.competicao} onChange={e => setF({ ...f, competicao: e.target.value })} /></Field>
+          <Field label="Competição">
+            <Select value={f.competicao || ''} onChange={e => setF({ ...f, competicao: e.target.value })}>
+              <option value="">— sem competição —</option>
+              {compOptions.map(c => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </Field>
           <Field label="Escalão"><Input value={f.escalao} onChange={e => setF({ ...f, escalao: e.target.value })} placeholder="Sub-19" /></Field>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
