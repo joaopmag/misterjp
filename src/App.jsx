@@ -437,6 +437,14 @@ function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'bu
   );
 }
 
+/* Grelha-padrão dos formulários. Todas as caixas de um mesmo bloco devem
+   viver numa ÚNICA grelha: quando se usam grelhas separadas por linha (uma
+   com 3 campos, a seguir outra com 4), as caixas ficam com larguras
+   diferentes de linha para linha. Campos que ocupam a linha toda usam
+   FIELD_FULL. */
+const FIELD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 };
+const FIELD_FULL = { gridColumn: '1 / -1' };
+
 function Field({ label, children, labelColor }) {
   /* height:100% + marginTop:auto no conteúdo: quando os campos estão lado
      a lado numa grelha e uma etiqueta ocupa duas linhas (ex: "ANO DE
@@ -1094,10 +1102,7 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
           {players.length === 0 ? (
             <EmptyState text="Adiciona jogadores no separador Plantel." />
           ) : (
-            <>
-              <WellnessSummary players={players} monitoring={monitoring} />
-              <WellnessLoadMatrix players={players} monitoring={monitoring} />
-            </>
+            <WellnessLoadMatrix players={players} monitoring={monitoring} />
           )}
         </Panel>
 
@@ -1398,7 +1403,7 @@ function WellnessLoadMatrix({ players, monitoring }) {
 
   if (points.length === 0) {
     return (
-      <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${T.line}`, fontSize: 12, color: T.mutedDim, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.5 }}>
         Matriz wellness × esforço: ainda sem respostas suficientes nos últimos 7 dias. É preciso pelo menos um wellness e um PSE por jogador.
       </div>
     );
@@ -1423,7 +1428,7 @@ function WellnessLoadMatrix({ players, monitoring }) {
   };
 
   return (
-    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
+    <div>
       <div style={{ fontSize: 11.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
         Wellness × esforço · últimos 7 dias
       </div>
@@ -1895,14 +1900,12 @@ function PlayerModal({ player, onClose, onSave }) {
     <Modal title={player ? 'Editar jogador' : 'Novo jogador'} onClose={onClose} wide>
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Identificação</div>
-        <div style={{ marginBottom: 12 }}>
-          <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" /></Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 12, marginBottom: 12 }}>
+        <div style={{ ...FIELD_GRID }}>
+          <div style={FIELD_FULL}>
+            <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" /></Field>
+          </div>
           <Field label="Nº"><Input value={f.number} onChange={e => setF({ ...f, number: e.target.value })} placeholder="10" /></Field>
           <Field label="Nacionalidade"><Input value={f.nationality} onChange={e => setF({ ...f, nationality: e.target.value })} /></Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginBottom: 12 }}>
           <Field label="Ano de nascimento"><Input value={f.birthdate} onChange={e => setF({ ...f, birthdate: e.target.value })} placeholder="AAAA" maxLength={4} /></Field>
           <Field label="Posição">
             <Select value={f.position} onChange={e => setF({ ...f, position: e.target.value })}>
@@ -1916,13 +1919,9 @@ function PlayerModal({ player, onClose, onSave }) {
             </Select>
           </Field>
           <Field label="Contacto"><Input value={f.contact} onChange={e => setF({ ...f, contact: e.target.value })} placeholder="opcional" /></Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
           <Field label="Peso (kg)"><Input type="number" value={f.weight} onChange={e => setF({ ...f, weight: e.target.value })} /></Field>
           <Field label="Altura (cm)"><Input type="number" value={f.height} onChange={e => setF({ ...f, height: e.target.value })} /></Field>
           <Field label="Clube anterior"><Input value={f.previousClub} onChange={e => setF({ ...f, previousClub: e.target.value })} /></Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
           <Field label="Data de entrada"><Input type="date" value={f.entryDate} onChange={e => setF({ ...f, entryDate: e.target.value })} /></Field>
           <Field label="Data de saída"><Input type="date" value={f.exitDate} onChange={e => setF({ ...f, exitDate: e.target.value })} /></Field>
         </div>
@@ -1930,7 +1929,7 @@ function PlayerModal({ player, onClose, onSave }) {
 
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Estatuto no Plantel</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+        <div style={{ ...FIELD_GRID }}>
           <Field label="Estatuto principal">
             <Select value={f.statusMain} onChange={e => setF({ ...f, statusMain: e.target.value })}>
               <option value="">—</option>
@@ -4469,26 +4468,24 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
 
   return (
     <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide>
-      <div style={{ marginBottom: 12 }}>
-        <Field label="Nome"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Jogo posicional 5v5+3" /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
+      <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
+        <div style={FIELD_FULL}>
+          <Field label="Nome"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Jogo posicional 5v5+3" /></Field>
+        </div>
         <Field label="Fase de jogo">
           <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
             {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
           </Select>
         </Field>
         <Field label="Duração padrão (min)"><Input type="number" value={f.defaultDuration} onChange={e => setF({ ...f, defaultDuration: e.target.value })} /></Field>
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <Field label="Descrição / instruções"><TextArea value={f.description} onChange={e => setF({ ...f, description: e.target.value })} placeholder="Objetivo, regras, condicionantes..." /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
         <Field label="Espaço"><Input value={f.space} onChange={e => setF({ ...f, space: e.target.value })} onBlur={applySpaceText} placeholder="20x20 ou 20x20 (2)" /></Field>
         <Field label="Nº jogadores">
           <Input value={f.playersCount} onChange={e => setF({ ...f, playersCount: e.target.value })} onBlur={autoInsertPlayers} placeholder="4x4, 4+1, 3 Gr" />
         </Field>
         <Field label="Material"><Input value={f.material} onChange={e => setF({ ...f, material: e.target.value })} placeholder="Coletes, cones, balizas, estacas" /></Field>
+        <div style={FIELD_FULL}>
+          <Field label="Descrição / instruções"><TextArea value={f.description} onChange={e => setF({ ...f, description: e.target.value })} placeholder="Objetivo, regras, condicionantes..." /></Field>
+        </div>
       </div>
       <div style={{ marginBottom: 16 }}>
         <Field label="Esquema tático">
@@ -5384,7 +5381,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
 
   return (
     <Modal title={session ? 'Editar sessão' : 'Nova sessão'} onClose={onClose} wide>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
+      <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Fase de jogo (foco)">
           <Select value={f.phase} onChange={e => {
@@ -5405,13 +5402,13 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
             </Select>
           </Field>
         )}
+        {f.phase !== 'Descanso' && (
+          <>
+            <Field label="Título / foco da sessão"><Input value={f.focus} onChange={e => setF({ ...f, focus: e.target.value })} placeholder="Ex: Pressing alto e coberturas" /></Field>
+            <Field label="Próximo adversário (opcional)"><Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" /></Field>
+          </>
+        )}
       </div>
-      {f.phase !== 'Descanso' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
-          <Field label="Título / foco da sessão"><Input value={f.focus} onChange={e => setF({ ...f, focus: e.target.value })} placeholder="Ex: Pressing alto e coberturas" /></Field>
-          <Field label="Próximo adversário (opcional)"><Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" /></Field>
-        </div>
-      )}
 
       {f.phase === 'Descanso' ? (
         <div style={{
@@ -6731,12 +6728,10 @@ function MatchModal({ match, players, standings, onClose, onSave }) {
 
   return (
     <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 16 }}>
+      <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Adversário"><Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" /></Field>
         <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
-      </div>
-      <div style={{ marginBottom: 16 }}>
         <Field label="Competição">
           <Select value={f.competition || ''} onChange={e => setF({ ...f, competition: e.target.value })}>
             <option value="">— sem competição —</option>
@@ -8522,23 +8517,19 @@ function ScoutModal({ player, onClose, onSave }) {
     <Modal title={player ? 'Editar jogador adversário' : 'Novo jogador adversário'} onClose={onClose} wide>
 
       <SubHeading>Dados e perfil</SubHeading>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
-        <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" /></Field>
+      <div style={{ ...FIELD_GRID, marginBottom: 18 }}>
+        <div style={FIELD_FULL}>
+          <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" /></Field>
+        </div>
         <Field label="Nacionalidade(s)"><Input value={f.nationality} onChange={e => setF({ ...f, nationality: e.target.value })} placeholder="Portuguesa" /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
         <Field label="Ano de nascimento">
           <Input type="number" value={f.birthYear} onChange={e => setF({ ...f, birthYear: e.target.value })} placeholder="2008" />
         </Field>
         <Field label="Idade">
           <Input value={playerAge !== null ? `${playerAge} anos` : '—'} readOnly disabled />
         </Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
         <Field label="Clube atual"><Input value={f.club} onChange={e => setF({ ...f, club: e.target.value })} placeholder="Clube atual" /></Field>
         <Field label="Fim de contrato"><Input type="date" value={f.contractEnd} onChange={e => setF({ ...f, contractEnd: e.target.value })} /></Field>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 18 }}>
         <Field label="Posição principal">
           <Select value={f.position} onChange={e => setF({ ...f, position: e.target.value })}>
             {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
@@ -10053,7 +10044,7 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
     <Modal title={convocatoria ? 'Editar convocatória' : 'Nova convocatória'} onClose={onClose} wide>
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Jogo</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
+        <div style={{ ...FIELD_GRID }}>
           <Field label="Época"><Input value={f.epoca} onChange={e => setF({ ...f, epoca: e.target.value })} placeholder="2026/2027" /></Field>
           <Field label="Competição">
             <Select value={f.competicao || ''} onChange={e => setF({ ...f, competicao: e.target.value })}>
@@ -10062,8 +10053,6 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
             </Select>
           </Field>
           <Field label="Escalão"><Input value={f.escalao} onChange={e => setF({ ...f, escalao: e.target.value })} placeholder="Sub-19" /></Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 12 }}>
           <Field label="Adversário"><Input value={f.adversario} onChange={e => setF({ ...f, adversario: e.target.value })} /></Field>
           <Field label="Casa / Fora">
             <Select value={f.casaFora} onChange={e => setF({ ...f, casaFora: e.target.value })}>
@@ -10072,17 +10061,17 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
             </Select>
           </Field>
           <Field label="Jornada"><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="ex: Jornada 12" /></Field>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 12, marginBottom: 12 }}>
           <Field label="Data"><Input type="date" value={f.data} onChange={e => setF({ ...f, data: e.target.value })} /></Field>
           <Field label="Hora do jogo"><Input type="time" value={f.horaJogo} onChange={e => setF({ ...f, horaJogo: e.target.value })} /></Field>
           <Field label="Local do jogo"><Input value={f.localJogo} onChange={e => setF({ ...f, localJogo: e.target.value })} /></Field>
           <Field label="Hora de concentração"><Input type="time" value={f.horaConcentracao} onChange={e => setF({ ...f, horaConcentracao: e.target.value })} /></Field>
+          <div style={FIELD_FULL}>
+            <Field label="Local de concentração"><Input value={f.localConcentracao} onChange={e => setF({ ...f, localConcentracao: e.target.value })} /></Field>
+          </div>
+          <div style={FIELD_FULL}>
+            <Field label="Outras informações"><TextArea value={f.outrasInfo} onChange={e => setF({ ...f, outrasInfo: e.target.value })} /></Field>
+          </div>
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <Field label="Local de concentração"><Input value={f.localConcentracao} onChange={e => setF({ ...f, localConcentracao: e.target.value })} /></Field>
-        </div>
-        <Field label="Outras informações"><TextArea value={f.outrasInfo} onChange={e => setF({ ...f, outrasInfo: e.target.value })} /></Field>
       </div>
 
       <div style={{ marginBottom: 18 }}>
@@ -10109,7 +10098,7 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
 
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Responsáveis</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+        <div style={{ ...FIELD_GRID }}>
           <Field label="Treinador"><Input value={f.treinador} onChange={e => setF({ ...f, treinador: e.target.value })} /></Field>
           <Field label="Team Manager"><Input value={f.teamManager} onChange={e => setF({ ...f, teamManager: e.target.value })} /></Field>
         </div>
