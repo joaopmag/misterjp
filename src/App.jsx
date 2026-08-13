@@ -519,6 +519,9 @@ function PhotoField({ label = 'Fotografia', value, onChange, hint }) {
    input de data/hora (com o ícone do calendário) e um input de texto
    simples ficam com alturas diferentes, e numa linha de campos lado a
    lado nota-se logo que umas caixas são mais baixas do que outras. */
+// Altura da barra superior em mobile (fixa no topo + espaçador).
+const MOBILE_BAR_H = 62;
+
 const inputStyle = {
   background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '0 10px',
   color: T.cream, fontSize: 14, ...body, outline: 'none',
@@ -874,10 +877,15 @@ function App({ session }) {
         ...(isMobile ? { minHeight: '100vh' } : { height: '100vh', overflow: 'hidden' }),
       }}>
 
-        {/* TOP BAR — só em mobile: hamburger + emblema, substitui a barra lateral fixa */}
+        {/* TOP BAR — só em mobile: hamburger + emblema, substitui a barra
+            lateral fixa. Usa position:fixed (e não sticky) porque dentro de
+            um contentor flex o sticky não segurava a barra ao fazer scroll;
+            o espaçador a seguir compensa a altura da barra. */}
+        {isMobile && <div style={{ height: MOBILE_BAR_H, flexShrink: 0 }} />}
         {isMobile && (
           <div style={{
-            position: 'sticky', top: 0, zIndex: 40, display: 'flex', alignItems: 'center', gap: 10,
+            position: 'fixed', top: 0, left: 0, right: 0, height: MOBILE_BAR_H,
+            zIndex: 40, display: 'flex', alignItems: 'center', gap: 10, boxSizing: 'border-box',
             padding: '12px 14px', background: T.surface, borderBottom: `1px solid ${T.line}`,
           }}>
             <button
@@ -979,12 +987,12 @@ function App({ session }) {
           flex: 1, minWidth: 0, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px', maxWidth: 1100,
           ...(isMobile ? {} : { overflowY: 'auto', height: '100vh' }),
         }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} exercises={exercises} monitoring={monitoring} matches={matches} standings={standings} lastEdits={lastEdits} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} />}
-          {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
+          {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
@@ -1022,7 +1030,13 @@ function App({ session }) {
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, sessions, exercises, monitoring, matches, standings, lastEdits }) {
+function Overview({ season, setSeason, players, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, lastEdits }) {
+  // Cartões clicáveis: sessão e jogo abrem a respetiva janela de edição
+  // aqui mesmo, sem obrigar a ir ao Planeamento ou aos Jogos.
+  const [sessionModal, setSessionModal] = useState(null);
+  const [matchModal, setMatchModal] = useState(null);
+  const [standingsOpen, setStandingsOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   const today = new Date();
   const upcoming = [...sessions]
     .filter(s => new Date(s.date) >= new Date(today.toDateString()))
@@ -1057,7 +1071,7 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
           <Stat value={players.length} label="Jogadores" />
           <Stat value={sessions.length} label="Sessões" />
           <Stat value={matches.length} label="Jogos" />
-          <Stat value={upcoming.length ? daysTo(upcoming[0].date) : '–'} label="Dias p/ próxima" />
+          <Stat value={upcoming.length ? daysTo(upcoming[0].date) : '–'} label="Dias p/ próx. sessão" />
         </div>
       </div>
 
@@ -1068,8 +1082,8 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {upcoming.map(s => (
-                <div key={s.id} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                <div key={s.id} onClick={() => setSessionModal(s)} title="Abrir sessão" style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer',
                   padding: '10px 14px', background: T.bg, borderRadius: 8, border: `1px solid ${T.line}`,
                 }}>
                   <div>
@@ -1089,8 +1103,8 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {upcomingMatches.map(m => (
-                <div key={m.id} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                <div key={m.id} onClick={() => setMatchModal(m)} title="Abrir jogo" style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer',
                   padding: '10px 14px', background: T.bg, borderRadius: 8, border: `1px solid ${T.line}`,
                 }}>
                   <div>
@@ -1116,19 +1130,136 @@ function Overview({ season, setSeason, players, sessions, exercises, monitoring,
           {players.length === 0 ? (
             <EmptyState text="Adiciona jogadores no separador Plantel." />
           ) : (
-            <PlantelStatusSummary players={players} />
+            <div onClick={() => setStatusOpen(true)} title="Ver jogador a jogador" style={{ cursor: 'pointer' }}>
+              <PlantelStatusSummary players={players} />
+            </div>
           )}
         </Panel>
 
         <Panel title="Classificação">
-          <StandingsSummary standings={standings} season={season} />
+          <div onClick={() => setStandingsOpen(true)} title="Ver classificação completa" style={{ cursor: 'pointer' }}>
+            <StandingsSummary standings={standings} season={season} />
+          </div>
         </Panel>
 
         <Panel title="Última atividade">
           <LastActivity lastEdits={lastEdits} />
         </Panel>
       </div>
+
+      {sessionModal && (
+        <SessionModal
+          session={sessionModal} exercises={exercises} players={players}
+          onClose={() => setSessionModal(null)}
+          onSave={(data) => { setSessions(sessions.map(x => (x.id === data.id ? data : x))); setSessionModal(null); }}
+        />
+      )}
+      {matchModal && (
+        <MatchModal
+          match={matchModal} players={players} standings={standings}
+          onClose={() => setMatchModal(null)}
+          onSave={(data) => { setMatches(matches.map(x => (x.id === data.id ? data : x))); setMatchModal(null); }}
+        />
+      )}
+      {standingsOpen && <StandingsFullModal standings={standings} season={season} onClose={() => setStandingsOpen(false)} />}
+      {statusOpen && <PlantelStatusModal players={players} onClose={() => setStatusOpen(false)} />}
     </div>
+  );
+}
+
+/* Classificação completa, aberta a partir do cartão da Visão Geral. */
+function StandingsFullModal({ standings, season, onClose }) {
+  const { competitions } = normalizeStandings(standings);
+  const [viewId, setViewId] = useState(null);
+  const comp = competitions.find(c => c.id === viewId) || activeCompetitionOf(standings);
+  const table = competitionTable(comp);
+  const ourName = (season && season.club) || '';
+  const isUs = (t) => {
+    if (!ourName || !t.name) return false;
+    const a = t.name.toLowerCase(), b = ourName.toLowerCase();
+    return a === b || b.includes(a) || a.includes(b.split('·')[0].trim());
+  };
+  const th = { textAlign: 'center', padding: '6px 4px', fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em' };
+
+  return (
+    <Modal title={(comp && comp.name) || 'Classificação'} onClose={onClose} wide>
+      {competitions.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+          {competitions.map(c => (
+            <button key={c.id} type="button" onClick={() => setViewId(c.id)} style={{
+              padding: '5px 11px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
+              background: comp && c.id === comp.id ? '#B5393F' : 'transparent',
+              color: comp && c.id === comp.id ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${comp && c.id === comp.id ? '#B5393F' : T.line}`,
+            }}>{c.name || 'Sem nome'}</button>
+          ))}
+        </div>
+      )}
+      {table.length === 0 ? (
+        <EmptyState text="Sem classificação nesta competição." />
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460 }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: 'left' }}>#</th>
+                <th style={{ ...th, textAlign: 'left' }}>Equipa</th>
+                {['J', 'V', 'E', 'D', 'GM', 'GS', 'DG', 'P'].map(h => <th key={h} style={th}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {table.map((t, i) => (
+                <tr key={t.id} style={{ borderTop: `1px solid ${T.line}`, background: isUs(t) ? `${T.crimson}33` : 'transparent' }}>
+                  <td style={{ ...mono, padding: '7px 4px', fontSize: 12.5, color: isUs(t) ? T.warn : T.mutedDim }}>{i + 1}</td>
+                  <td style={{ padding: '7px 4px', fontSize: 13, color: isUs(t) ? T.cream : T.muted }}>{t.name}</td>
+                  {['J', 'V', 'E', 'D', 'GM', 'GS'].map(k => (
+                    <td key={k} style={{ ...mono, padding: '7px 4px', fontSize: 12.5, color: T.mutedDim, textAlign: 'center' }}>{t[k]}</td>
+                  ))}
+                  <td style={{ ...mono, padding: '7px 4px', fontSize: 12.5, color: T.mutedDim, textAlign: 'center' }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</td>
+                  <td style={{ ...mono, padding: '7px 4px', fontSize: 13, color: T.warn, fontWeight: 600, textAlign: 'center' }}>{t.P}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+        <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+/* Matriz de estatuto: jogador, estatuto principal e secundário. */
+function PlantelStatusModal({ players, onClose }) {
+  const th = { textAlign: 'left', padding: '7px 8px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}` };
+  const td = { padding: '8px', fontSize: 13, color: T.mutedDim };
+  return (
+    <Modal title="Estatuto de plantel" onClose={onClose} wide>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 440 }}>
+          <thead>
+            <tr>
+              <th style={th}>Jogador</th>
+              <th style={th}>Estatuto principal</th>
+              <th style={th}>Estatuto secundário</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortByPosition(players).map(p => (
+              <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+                <td style={{ ...td, color: T.cream, whiteSpace: 'nowrap' }}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
+                <td style={td}>{p.statusMain || '—'}</td>
+                <td style={td}>{p.statusSecondary || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+        <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+      </div>
+    </Modal>
   );
 }
 
@@ -1555,6 +1686,47 @@ function WellnessLoadMatrix({ players, monitoring }) {
   );
 }
 
+/* Lista de jogadores em "chips" (presenças da sessão, convocados do jogo e
+   da convocatória). No telemóvel fica uma linha por jogador — lado a lado
+   os nomes longos partiam-se e a lista ficava desalinhada. Mostra sempre a
+   posição, nunca o número, e vem ordenada por posição. */
+/* Partilhar / Imprimir / Editar no topo das fichas. No telemóvel os
+   botões encolhem para caberem os três na mesma linha, em vez de o
+   terceiro cair sozinho para baixo. */
+function SheetActions({ onShare, onPrint, onEdit }) {
+  const isMobile = useIsMobile(560);
+  const st = isMobile ? { padding: '8px 10px', fontSize: 12.5, flex: 1, justifyContent: 'center' } : {};
+  return (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: isMobile ? 'nowrap' : 'wrap' }}>
+      {onShare && <Btn variant="ghost" onClick={onShare} style={st}><Share2 size={14} /> Partilhar</Btn>}
+      {onPrint && <Btn variant="ghost" onClick={onPrint} style={st}><Printer size={14} /> Imprimir</Btn>}
+      {onEdit && <Btn variant="ghost" onClick={onEdit} style={st}><Pencil size={14} /> Editar</Btn>}
+    </div>
+  );
+}
+
+function PlayerChipList({ players, isOn, onToggle }) {
+  const isMobile = useIsMobile(560);
+  return (
+    <div style={{
+      display: 'flex', gap: 6,
+      ...(isMobile ? { flexDirection: 'column' } : { flexWrap: 'wrap' }),
+    }}>
+      {sortByPosition(players).map(p => {
+        const on = isOn(p);
+        return (
+          <button key={p.id} type="button" onClick={() => onToggle(p)} style={{
+            padding: isMobile ? '9px 12px' : '5px 10px', borderRadius: 16, fontSize: 12.5, cursor: 'pointer', ...body,
+            textAlign: 'left',
+            background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
+            border: `1px solid ${on ? '#B5393F' : T.line}`,
+          }}>{p.position ? `${p.position} · ` : ''}{p.name}</button>
+        );
+      })}
+    </div>
+  );
+}
+
 function PlantelStatusSummary({ players }) {
   const total = players.length;
   const ordered = [...STATUS_OPTIONS].reverse(); // Jogador de Elite primeiro
@@ -1879,11 +2051,7 @@ function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint
   return (
     <Modal title={`${player.name} — estatísticas`} onClose={onClose}>
       {(onShare || onPrint || onEdit) && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-          {onShare && <Btn variant="ghost" onClick={onShare}><Share2 size={14} /> Partilhar</Btn>}
-          {onPrint && <Btn variant="ghost" onClick={onPrint}><Printer size={14} /> Imprimir</Btn>}
-          {onEdit && <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>}
-        </div>
+        <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
       )}
       {player.photo && (
         <img src={player.photo} alt="Fotografia" style={{
@@ -2080,12 +2248,15 @@ function Exercicios({ exercises, setExercises, meta }) {
       <SectionHeader title="Exercícios" subtitle="A tua biblioteca de treino."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Novo exercício</Btn>} />
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+      {/* Grelha de duas colunas: com nomes de comprimentos muito diferentes,
+          a lista em linha ficava aos saltos. Assim ficam alinhados, metade
+          de cada lado. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginBottom: 18 }}>
         {/* "Descanso" é uma fase de sessão (dia de folga), não classifica
             exercícios — por isso não entra nos filtros da biblioteca. */}
         {['Todas', ...EXERCISE_PHASES].map(ph => (
           <button key={ph} onClick={() => setFilter(ph)} style={{
-            padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+            padding: '8px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body, textAlign: 'center',
             background: filter === ph ? '#B5393F' : 'transparent',
             color: filter === ph ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${filter === ph ? '#B5393F' : T.line}`,
@@ -2101,17 +2272,19 @@ function Exercicios({ exercises, setExercises, meta }) {
             const m = meta && meta[x.id];
             return (
             <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{x.name}</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={13} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+              {/* Nome sozinho na primeira linha; a fase e os ícones ficam
+                  por baixo, para o título não ser cortado a meio. */}
+              <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{x.name}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
+                <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                 </div>
               </div>
-              <div style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '2px 8px', borderRadius: 12, marginBottom: 8 }}>{x.phase}</div>
               <DiagramThumb diagram={x.diagram} space={x.space} />
               {x.attachment && (
                 x.attachment.type === 'image' ? (
@@ -2237,10 +2410,10 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
       <SectionHeader title="Ideia de Jogo" subtitle="A tua ideia de jogo."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ideia</Btn>} />
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginBottom: 18 }}>
         {['Todas', ...EXERCISE_PHASES].map(ph => (
           <button key={ph} onClick={() => setFilter(ph)} style={{
-            padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+            padding: '8px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body, textAlign: 'center',
             background: filter === ph ? '#B5393F' : 'transparent',
             color: filter === ph ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${filter === ph ? '#B5393F' : T.line}`,
@@ -2254,12 +2427,12 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {visible.map(x => {
             const m = meta && meta[x.id];
-            const steps = (x.diagram && x.diagram.sequence && x.diagram.sequence.length) || 0;
             return (
               <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{labelOf(x)}</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{labelOf(x)}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
+                  <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
                     <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
                     <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
                     <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={13} /></button>
@@ -2267,11 +2440,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                     <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                   </div>
                 </div>
-                <div style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '2px 8px', borderRadius: 12, marginBottom: 8, alignSelf: 'flex-start' }}>{x.phase}</div>
                 <DiagramThumb diagram={x.diagram} />
-                <div style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>
-                  {steps ? `${steps} ${steps === 1 ? 'movimento gravado' : 'movimentos gravados'}` : 'Sem movimento gravado'}
-                </div>
                 {m && m.email && (
                   <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 'auto', paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     Adicionado/editado por {m.email} · {timeAgo(m.at)}
@@ -2289,7 +2458,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
         // Reaproveita a apresentação dos exercícios: os campos que a ideia
         // não tem (espaço, material, descrição…) simplesmente não aparecem.
         <ExercisePresentation
-          exercise={{ ...viewing, name: `${labelOf(viewing)} · ${viewing.phase || ''}` }}
+          exercise={{ ...viewing, name: labelOf(viewing) }}
           onClose={() => setViewing(null)}
           onEdit={() => { setModal(viewing); setViewing(null); }}
         />
@@ -4845,6 +5014,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setPlaying(false);
     setAnimItems([]);
   };
+  // Repetir do início: garante que nenhuma animação anterior fica pendente
+  // (era isso que impedia o segundo "play" logo a seguir ao fim).
+  const restart = () => { stop(); setTimeout(start, 30); };
 
   return (
     <Modal title={exercise.name} onClose={onClose} wide>
@@ -4898,28 +5070,40 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           <AnimOverlay items={animItems} />
         </svg>
 
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          title={isFull ? 'Sair do ecrã inteiro' : 'Ver em ecrã inteiro'}
-          style={{
-            position: 'absolute', top: isFull ? 20 : 10, right: isFull ? 20 : 10, zIndex: 2,
-            display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8,
-            background: '#0e1a12CC', border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
-            fontSize: 12, ...body,
-          }}
-        >
-          {isFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          {isFull ? 'Sair' : 'Ecrã inteiro'}
-        </button>
-
-        {isFull && sequence.length > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, paddingTop: 12 }}>
-            <Btn onClick={playing ? stop : start}>
-              {playing ? <><Square size={14} /> Parar</> : <><Play size={14} /> {finished ? 'Repetir apresentação' : 'Apresentar'}</>}
-            </Btn>
-          </div>
-        )}
+        {/* Em ecrã inteiro os controlos ficam no TOPO: no Android o sistema
+            mostra um aviso permanente no rodapé ("para sair do ecrã
+            inteiro...") que tapava o botão de Apresentar/Repetir. */}
+        <div style={{
+          position: 'absolute', top: isFull ? 16 : 10, right: isFull ? 16 : 10, zIndex: 5,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          {isFull && sequence.length > 0 && (
+            <button
+              type="button"
+              onClick={() => (playing ? stop() : restart())}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
+                background: playing ? '#0e1a12CC' : '#B5393F', border: `1px solid ${playing ? T.line : '#B5393F'}`,
+                color: playing ? T.cream : TEXT_ON_ACCENT, cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
+              }}
+            >
+              {playing ? <><Square size={14} /> Parar</> : <><Play size={14} /> {finished ? 'Repetir' : 'Apresentar'}</>}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            title={isFull ? 'Sair do ecrã inteiro' : 'Ver em ecrã inteiro'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8,
+              background: '#0e1a12CC', border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
+              fontSize: 12, ...body,
+            }}
+          >
+            {isFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {isFull ? 'Sair' : 'Ecrã inteiro'}
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
@@ -4927,13 +5111,11 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           <div style={{ fontSize: 12, color: T.mutedDim }}>
             Sem sequência de movimento gravada. Abre em "Editar" e usa "Animar" enquanto colocas as setas — cada animação fica guardada e passa a fazer parte desta apresentação.
           </div>
-        ) : (
-          <div style={{ fontSize: 12, color: T.mutedDim }}>{sequence.length} {sequence.length === 1 ? 'movimento gravado' : 'movimentos gravados'}</div>
-        )}
+        ) : <span />}
         <div style={{ display: 'flex', gap: 8 }}>
           {onEdit && <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>}
           {sequence.length > 0 && (
-            <Btn onClick={playing ? stop : start}>
+            <Btn onClick={playing ? stop : restart}>
               {playing ? <><Square size={14} /> Parar</> : <><Play size={14} /> {finished ? 'Repetir apresentação' : 'Apresentar'}</>}
             </Btn>
           )}
@@ -5204,16 +5386,19 @@ function WeekSummary({ itemsRaw, items: itemsProp }) {
   const intensityCounts = { baixa: 0, media: 0, alta: 0 };
   items.forEach(s => { if (intensityCounts[s.intensity] != null) intensityCounts[s.intensity]++; });
   const intensitySummary = INTENSITIES.filter(i => intensityCounts[i.value] > 0).map(i => `${intensityCounts[i.value]}× ${i.label}`).join(' · ');
+  // Lista vertical: em coluna, cada indicador na sua linha — em ecrã
+  // estreito a versão em linha partia-se a meio e ficava confusa.
   return (
     <div style={{
-      display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 12, color: T.mutedDim,
-      marginBottom: 8, padding: '8px 12px', background: T.surface, borderRadius: 8, border: `1px solid ${T.line}`,
+      display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim,
+      marginBottom: 8, padding: '10px 12px', background: T.surface, borderRadius: 8, border: `1px solid ${T.line}`,
     }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-        <TrendingUp size={12} color={T.warn} /> {items.length} sessões · {totalMin} min{intensitySummary ? ` · ${intensitySummary}` : ''}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: T.cream }}>
+        <TrendingUp size={12} color={T.warn} /> {items.length} {items.length === 1 ? 'sessão' : 'sessões'} · {totalMin} min
       </span>
+      {intensitySummary && <span>Intensidade: <span style={{ color: T.warn }}>{intensitySummary}</span></span>}
       {Object.entries(phaseCounts).map(([ph, c]) => (
-        <span key={ph} style={{ color: T.warn }}>{ph}: {c}</span>
+        <span key={ph}>{ph}: <span style={{ color: T.warn }}>{c}</span></span>
       ))}
     </div>
   );
@@ -5276,6 +5461,10 @@ function formatShortDatePt(dateStr) {
 function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddForDate, onEditMatch }) {
   const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
   const currentDayStr = todayStr();
+  // No telemóvel a semana passa a 3 colunas (3 dias em cima, 3 no meio e o
+  // domingo em baixo) — assim vê-se a semana inteira sem arrastar para o
+  // lado. Em ecrã largo mantém-se a linha única com os 7 dias.
+  const isMobile = useIsMobile(700);
 
   return (
     <div>
@@ -5291,7 +5480,12 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))', gap: 8, overflowX: 'auto' }}>
+      <div style={{
+        display: 'grid', gap: 8,
+        ...(isMobile
+          ? { gridTemplateColumns: 'repeat(3, 1fr)' }
+          : { gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))', overflowX: 'auto' }),
+      }}>
         {days.map(d => {
           const daySessions = sessions.filter(s => s.date === d);
           const dayMatches = (matches || []).filter(m => m.date === d);
@@ -5531,18 +5725,11 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
             {players.length === 0 ? (
               <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores primeiro no separador Plantel.</div>
             ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {players.map(p => {
-                  const present = f.attendance.includes(p.id);
-                  return (
-                    <button key={p.id} type="button" onClick={() => toggleAttendance(p.id)} style={{
-                      padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
-                      background: present ? '#B5393F' : 'transparent', color: present ? TEXT_ON_ACCENT : T.muted,
-                      border: `1px solid ${present ? '#B5393F' : T.line}`,
-                    }}>{p.number ? `#${p.number} ` : ''}{p.name}</button>
-                  );
-                })}
-              </div>
+              <PlayerChipList
+                players={players}
+                isOn={p => f.attendance.includes(p.id)}
+                onToggle={p => toggleAttendance(p.id)}
+              />
             )}
           </div>
         </>
@@ -5663,6 +5850,96 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
    longa de jogadores dias depois. A marca fica gravada em todas as
    sessões desse dia (campo attendanceClosed), por isso sincroniza para
    toda a equipa técnica como qualquer outra alteração. */
+/* Tabela-resumo das presenças. Colunas = dias (treinos e jogos, na ordem
+   do calendário), linhas = jogadores. Cada célula tem o estado e a nota:
+     · treino → P (presente) / NP (não presente), por omissão NP
+     · jogo   → C (convocado) / NC (não convocado), por omissão NC, mas já
+                marcado a C para quem consta da convocatória desse dia
+   Dias fechados aparecem só de leitura. */
+function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onToggle, onRating }) {
+  const ordered = [...days].sort((a, b) => new Date(a.date) - new Date(b.date));
+  if (ordered.length === 0 || players.length === 0) return null;
+
+  const headCell = {
+    padding: '6px 4px', fontSize: 10, color: T.muted, textAlign: 'center',
+    borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap', minWidth: 78,
+  };
+  const nameCell = {
+    padding: '6px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap',
+    position: 'sticky', left: 0, background: T.surface, zIndex: 1, borderRight: `1px solid ${T.line}`,
+  };
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+        Resumo · presença e nota por dia
+      </div>
+      <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
+        <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
+          <thead>
+            <tr>
+              <th style={{ ...headCell, ...nameCell, textAlign: 'left', color: T.muted, fontSize: 10 }}>Jogador</th>
+              {ordered.map(d => (
+                <th key={d.match ? `m-${d.match.id}` : d.date} style={headCell}>
+                  <div style={{ ...mono, color: d.match ? T.warn : T.mutedDim }}>{dayShort(d.date)}</div>
+                  <div style={{ fontSize: 9, color: T.mutedDim }}>{d.match ? 'jogo' : 'treino'}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {players.map(p => (
+              <tr key={p.id} style={{ borderTop: `1px solid ${T.line}` }}>
+                <td style={nameCell}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
+                {ordered.map(d => {
+                  const on = isPresent(d, p.id);
+                  const closed = dayClosed(d);
+                  const rating = ratingOf(d, p.id);
+                  const label = d.match ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP');
+                  return (
+                    <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: 4, textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => { if (!closed) onToggle(d, p.id); }}
+                        disabled={closed}
+                        title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : ''}
+                        style={{
+                          width: 34, padding: '4px 0', borderRadius: 6, fontSize: 11, ...mono, fontWeight: 600,
+                          cursor: closed ? 'default' : 'pointer',
+                          background: on ? (d.match ? `${T.warn}33` : `${T.crimson}44`) : 'transparent',
+                          color: on ? T.cream : T.mutedDim,
+                          border: `1px solid ${on ? (d.match ? T.warn : T.gold) : T.line}`,
+                        }}
+                      >{label}</button>
+                      {on && (
+                        closed ? (
+                          <div style={{ ...mono, fontSize: 10.5, color: rating == null || rating === '' ? T.mutedDim : T.cream, marginTop: 3 }}>
+                            {rating == null || rating === '' ? '—' : rating}
+                          </div>
+                        ) : (
+                          <Input
+                            type="number" min="1" max="10" placeholder="–"
+                            value={rating ?? ''} onChange={e => onRating(d, p.id, e.target.value)}
+                            style={{ width: 34, marginTop: 3, padding: '0 2px', height: 24, lineHeight: '22px', fontSize: 11, textAlign: 'center' }}
+                          />
+                        )
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+        Treinos: P presente / NP não presente. Jogos: C convocado / NC não convocado.
+        Toca para alternar; a nota (1–10) só aparece em quem está P ou C.
+      </div>
+    </div>
+  );
+}
+
 function dayIsClosed(list) {
   return (list || []).some(s => s.attendanceClosed);
 }
@@ -5730,7 +6007,7 @@ function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
   return true;
 }
 
-function Presencas({ players, sessions, setSessions, matches, setMatches }) {
+function Presencas({ players, sessions, setSessions, matches, setMatches, convocatorias }) {
   const todayStart = new Date(new Date().toDateString());
   /* Os jogos entram nas presenças como um "dia" próprio, para se poder
      confirmar quem esteve presente e dar nota, tal como num treino. A
@@ -5756,7 +6033,18 @@ function Presencas({ players, sessions, setSessions, matches, setMatches }) {
   const orderedPlayers = sortByPosition(players);
   // Leitura/escrita unificada: um dia é de treino (tem `list`) ou de jogo
   // (tem `match`).
-  const isPresent = (d, pid) => (d.match ? (d.match.attendance || []).includes(pid) : dayPresent(d.list, pid));
+  /* Num jogo, o valor de partida vem da convocatória: quem foi convocado
+     no jogo (ou na convocatória com a mesma data) aparece já como
+     convocado nesta tabela. Assim que o staff toca numa célula, passa a
+     valer a lista `attendance` do jogo e a convocatória deixa de mandar. */
+  const convocadosOf = (match) => {
+    if (Array.isArray(match.attendance)) return match.attendance;
+    const conv = (convocatorias || []).find(c => c.data === match.date);
+    const fromMatch = match.convocados || [];
+    const fromConv = (conv && conv.convocados) || [];
+    return [...new Set([...fromMatch, ...fromConv])];
+  };
+  const isPresent = (d, pid) => (d.match ? convocadosOf(d.match).includes(pid) : dayPresent(d.list, pid));
   const ratingOf = (d, pid) => (d.match ? ((d.match.ratings || {})[pid] ?? null) : dayRating(d.list, pid));
   const dayClosed = (d) => (d.match ? !!d.match.attendanceClosed : dayIsClosed(d.list));
   const rows = orderedPlayers.map(p => {
@@ -5777,15 +6065,16 @@ function Presencas({ players, sessions, setSessions, matches, setMatches }) {
   const toggleAttendance = (day, playerId) => {
     if (day.match) {
       const m = day.match;
-      const present = (m.attendance || []).includes(playerId);
+      const base = convocadosOf(m); // parte da convocatória, se ainda não houver lista própria
+      const present = base.includes(playerId);
       setMatches(matches.map(x => {
         if (x.id !== m.id) return x;
         if (present) {
           const ratings = { ...(x.ratings || {}) };
           delete ratings[playerId];
-          return { ...x, attendance: (x.attendance || []).filter(id => id !== playerId), ratings };
+          return { ...x, attendance: base.filter(id => id !== playerId), ratings };
         }
-        return { ...x, attendance: [...(x.attendance || []), playerId] };
+        return { ...x, attendance: [...base, playerId] };
       }));
       return;
     }
@@ -5863,6 +6152,17 @@ function Presencas({ players, sessions, setSessions, matches, setMatches }) {
               );
             })}
           </div>
+
+          {/* TABELA-RESUMO: uma coluna por dia (treino ou jogo) e uma linha
+              por jogador. Nos treinos alterna P/NP, nos jogos C/NC, e cada
+              cruzamento tem ainda uma célula de nota de 1 a 10. É a mesma
+              informação que os cartões dia a dia mais abaixo — o que se
+              muda aqui aparece lá, e alimenta a assiduidade no topo. */}
+          <AttendanceMatrix
+            days={visibleDays} players={orderedPlayers}
+            isPresent={isPresent} ratingOf={ratingOf} dayClosed={dayClosed}
+            onToggle={toggleAttendance} onRating={setRating}
+          />
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
             <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
@@ -6820,18 +7120,11 @@ function MatchModal({ match, players, standings, onClose, onSave }) {
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
           Convocados {f.convocados.length ? `· ${f.convocados.length}/${players.length}` : ''}
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {players.map(p => {
-            const inList = f.convocados.includes(p.id);
-            return (
-              <button key={p.id} type="button" onClick={() => toggleConvocado(p.id)} style={{
-                padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
-                background: inList ? '#B5393F' : 'transparent', color: inList ? TEXT_ON_ACCENT : T.muted,
-                border: `1px solid ${inList ? '#B5393F' : T.line}`,
-              }}>{p.number ? `#${p.number} ` : ''}{p.name}</button>
-            );
-          })}
-        </div>
+        <PlayerChipList
+          players={players}
+          isOn={p => f.convocados.includes(p.id)}
+          onToggle={p => toggleConvocado(p.id)}
+        />
       </div>
 
       {convocadoPlayers.length > 0 && (
@@ -8501,11 +8794,7 @@ function ScoutSheetModal({ player: x, onClose, onEdit, onShare, onPrint }) {
 
   return (
     <Modal title={x.name || 'Jogador observado'} onClose={onClose} wide>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
-        <Btn variant="ghost" onClick={onShare}><Share2 size={14} /> Partilhar</Btn>
-        <Btn variant="ghost" onClick={onPrint}><Printer size={14} /> Imprimir</Btn>
-        <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>
-      </div>
+      <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
 
       <SubHeading>Identificação</SubHeading>
       <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
@@ -9789,12 +10078,37 @@ function PdfCanvasViewer({ dataUrl }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [status, numPages, goNext, goPrev]);
 
+  /* Deslizar para mudar de página (telemóvel/tablet). O canvas do PDF não
+     tem scroll próprio, por isso o gesto era ignorado — só funcionavam as
+     setas e o teclado. touchAction:'pan-y' deixa o scroll vertical da
+     página continuar a funcionar fora do ecrã inteiro. */
+  const touchRef = useRef(null);
+  const onTouchStart = (e) => {
+    const t = e.touches && e.touches[0];
+    touchRef.current = t ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+  };
+  const onTouchEnd = (e) => {
+    const startPt = touchRef.current;
+    touchRef.current = null;
+    if (!startPt || numPages <= 1) return;
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - startPt.x;
+    const dy = t.clientY - startPt.y;
+    // Só conta como deslize horizontal se for claramente mais horizontal
+    // do que vertical e com alguma amplitude.
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    if (dx < 0) goNext(); else goPrev();
+  };
+
   return (
     <div
       ref={containerRef}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
       style={{
         position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#525659',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'pan-y',
       }}
     >
       {status === 'ready' && <canvas ref={canvasRef} style={{ display: 'block' }} />}
@@ -10157,18 +10471,11 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
         {players.length === 0 ? (
           <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores ao plantel antes de criar uma convocatória.</div>
         ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {players.map(p => {
-              const inList = f.convocados.includes(p.id);
-              return (
-                <button key={p.id} type="button" onClick={() => toggleConvocado(p.id)} style={{
-                  padding: '5px 10px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
-                  background: inList ? '#B5393F' : 'transparent', color: inList ? TEXT_ON_ACCENT : T.muted,
-                  border: `1px solid ${inList ? '#B5393F' : T.line}`,
-                }}>{p.number ? `#${p.number} ` : ''}{p.name}</button>
-              );
-            })}
-          </div>
+          <PlayerChipList
+            players={players}
+            isOn={p => f.convocados.includes(p.id)}
+            onToggle={p => toggleConvocado(p.id)}
+          />
         )}
       </div>
 
