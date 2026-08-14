@@ -9856,6 +9856,106 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   }, [items, folderFilter]);
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
+
+  // Pastas abertas/fechadas na vista "Tudo": nome -> true/false. Sem
+  // entrada = ainda não foi tocada, vale o comportamento por omissão.
+  const [openFolders, setOpenFolders] = useState({});
+
+  /* Agrupamento por pasta para a vista "Tudo". Uma pasta arranca fechada;
+     a exceção é a que contém o ficheiro que está a ser mostrado à
+     esquerda, que abre sozinha para a lista e o visualizador não ficarem
+     a falar de coisas diferentes. Depois de o utilizador abrir ou fechar
+     uma pasta à mão, é a escolha dele que manda. */
+  const grupos = [
+    ...folders.map(name => ({ name, items: items.filter(v => cleanFolder(v.pasta) === name) })),
+    { name: NO_FOLDER, items: items.filter(v => !cleanFolder(v.pasta)) },
+  ].filter(g => g.items.length > 0);
+  const isGroupOpen = (name) => (
+    openFolders[name] !== undefined
+      ? openFolders[name]
+      : !!(active && (cleanFolder(active.pasta) || NO_FOLDER) === name)
+  );
+
+  /* Uma linha da lista. Extraída para poder ser usada tanto na lista
+     corrida (dentro de uma pasta) como dentro de cada pasta fechada. */
+  const renderRow = (v) => {
+    const Icon = kindIcon[v.kind] || FileText;
+    return (
+        <div key={v.id} style={{
+          display: 'flex', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
+          background: v.id === active?.id ? `${T.crimson}33` : T.surface, padding: '8px 10px',
+          // No telemóvel a linha parte-se em duas: o item em cima e
+          // os controlos por baixo. Tudo na mesma linha deixava o
+          // título espremido em duas ou três palavras por linha.
+          ...(isNarrow
+            ? { flexDirection: 'column', alignItems: 'stretch' }
+            : { alignItems: 'center' }),
+        }}>
+          <button onClick={() => selectItem(v.id)} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center', padding: 0 }}>
+            {v.youtubeId ? (
+              <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+            ) : v.social ? (
+              <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {React.createElement(socialMeta[v.social.platform].Icon, { size: 16, color: socialMeta[v.social.platform].color })}
+              </div>
+            ) : (
+              <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon size={16} color={T.mutedDim} />
+              </div>
+            )}
+            <span style={{ minWidth: 0 }}>
+              {/* Se um item ficar sem título por alguma razão, mostra
+                  na mesma alguma coisa — uma linha totalmente em
+                  branco não dá para perceber nem para apagar. */}
+              <div style={{ fontSize: 12.5, color: v.title ? T.cream : T.mutedDim }}>{v.title || v.fileName || '(sem título)'}</div>
+              {(v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
+            </span>
+          </button>
+          {/* Mover para outra pasta sem abrir a janela de edição. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isNarrow ? { justifyContent: 'flex-end' } : {}) }}>
+          <select
+            value={cleanFolder(v.pasta)}
+            onChange={e => moveItem(v.id, e.target.value)}
+            title="Mover para uma pasta"
+            style={{
+              background: T.surfaceRaise, color: T.mutedDim, border: `1px solid ${T.line}`,
+              // Largura fixa (e não automática): assim os seletores e
+              // os ícones ficam todos na mesma coluna, em vez de cada
+              // linha os colocar num sítio diferente conforme o
+              // comprimento do nome da pasta.
+              borderRadius: 6, fontSize: 11, padding: '4px 6px', cursor: 'pointer', ...body,
+              ...(isNarrow ? { flex: 1, minWidth: 0 } : { width: 150, flexShrink: 0 }),
+            }}
+          >
+            <option value="">Sem pasta</option>
+            {folders.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
+          {/* Imprimir sem ter de abrir o item primeiro. Só faz
+              sentido em documentos (PDF carregado ou do Drive). */}
+          {/* O lugar da impressora existe sempre, mesmo nos itens que
+              não se imprimem (vídeos, links) — senão o lápis e o
+              caixote saltavam de linha para linha. */}
+          <button
+            onClick={() => shareMediaItem(v)}
+            title="Partilhar"
+            style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
+          ><Share2 size={13} /></button>
+          {(v.kind === 'pdf' || v.kind === 'drive' || v.kind === 'image') ? (
+            <button
+              onClick={() => printDocumentItem(v)}
+              title="Abrir num separador novo e imprimir"
+              style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
+            ><Printer size={13} /></button>
+          ) : (
+            <span style={{ width: 20, flexShrink: 0 }} />
+          )}
+          <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
+          <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+          </div>
+        </div>
+    );
+  };
+
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
   const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation, drive: ExternalLink, image: ImageIcon };
 
@@ -10118,90 +10218,58 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
               </>
             )}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {visibleItems.map(v => {
-              const Icon = kindIcon[v.kind] || FileText;
-              return (
-                <div key={v.id} style={{
-                  display: 'flex', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
-                  background: v.id === active?.id ? `${T.crimson}33` : T.surface, padding: '8px 10px',
-                  // No telemóvel a linha parte-se em duas: o item em cima e
-                  // os controlos por baixo. Tudo na mesma linha deixava o
-                  // título espremido em duas ou três palavras por linha.
-                  ...(isNarrow
-                    ? { flexDirection: 'column', alignItems: 'stretch' }
-                    : { alignItems: 'center' }),
-                }}>
-                  <button onClick={() => selectItem(v.id)} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center', padding: 0 }}>
-                    {v.youtubeId ? (
-                      <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
-                    ) : v.social ? (
-                      <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {React.createElement(socialMeta[v.social.platform].Icon, { size: 16, color: socialMeta[v.social.platform].color })}
-                      </div>
-                    ) : (
-                      <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Icon size={16} color={T.mutedDim} />
+          {/* Em "Tudo", as pastas ficam fechadas por omissão: com 16 ou
+              mais ficheiros, a lista corrida obrigava a percorrer tudo
+              para chegar a uma pasta. Dentro de uma pasta escolhida na
+              barra de cima, a lista é sempre corrida — já está filtrada. */}
+          {folderFilter === null && folders.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => {
+                    const abrirTodas = grupos.some(g => !isGroupOpen(g.name));
+                    const next = {};
+                    grupos.forEach(g => { next[g.name] = abrirTodas; });
+                    setOpenFolders(next);
+                  }}
+                  style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 11.5, ...body, padding: 0 }}
+                >{grupos.some(g => !isGroupOpen(g.name)) ? 'Abrir todas' : 'Fechar todas'}</button>
+              </div>
+              {grupos.map(g => {
+                const aberta = isGroupOpen(g.name);
+                return (
+                  <div key={g.name} style={{ border: `1px solid ${T.line}`, borderRadius: 8, overflow: 'hidden' }}>
+                    <button
+                      onClick={() => setOpenFolders(prev => ({ ...prev, [g.name]: !aberta }))}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                        background: T.surface, border: 'none', cursor: 'pointer', padding: '9px 11px', ...body,
+                      }}
+                    >
+                      <ChevronRight
+                        size={14}
+                        color={T.mutedDim}
+                        style={{ flexShrink: 0, transform: aberta ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}
+                      />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: g.name === NO_FOLDER ? T.mutedDim : T.cream }}>
+                        {g.name === NO_FOLDER ? 'Sem pasta' : g.name}
+                      </span>
+                      <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{g.items.length}</span>
+                    </button>
+                    {aberta && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, borderTop: `1px solid ${T.line}` }}>
+                        {g.items.map(renderRow)}
                       </div>
                     )}
-                    <span style={{ minWidth: 0 }}>
-                      {/* Se um item ficar sem título por alguma razão, mostra
-                          na mesma alguma coisa — uma linha totalmente em
-                          branco não dá para perceber nem para apagar. */}
-                      <div style={{ fontSize: 12.5, color: v.title ? T.cream : T.mutedDim }}>{v.title || v.fileName || '(sem título)'}</div>
-                      {(v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
-                      {/* Só se mostra a pasta quando se está a ver tudo —
-                          dentro de uma pasta seria informação repetida. */}
-                      {folderFilter === null && cleanFolder(v.pasta) && (
-                        <div style={{ fontSize: 10.5, color: T.warn, marginTop: 2 }}>{cleanFolder(v.pasta)}</div>
-                      )}
-                    </span>
-                  </button>
-                  {/* Mover para outra pasta sem abrir a janela de edição. */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isNarrow ? { justifyContent: 'flex-end' } : {}) }}>
-                  <select
-                    value={cleanFolder(v.pasta)}
-                    onChange={e => moveItem(v.id, e.target.value)}
-                    title="Mover para uma pasta"
-                    style={{
-                      background: T.surfaceRaise, color: T.mutedDim, border: `1px solid ${T.line}`,
-                      // Largura fixa (e não automática): assim os seletores e
-                      // os ícones ficam todos na mesma coluna, em vez de cada
-                      // linha os colocar num sítio diferente conforme o
-                      // comprimento do nome da pasta.
-                      borderRadius: 6, fontSize: 11, padding: '4px 6px', cursor: 'pointer', ...body,
-                      ...(isNarrow ? { flex: 1, minWidth: 0 } : { width: 150, flexShrink: 0 }),
-                    }}
-                  >
-                    <option value="">Sem pasta</option>
-                    {folders.map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                  {/* Imprimir sem ter de abrir o item primeiro. Só faz
-                      sentido em documentos (PDF carregado ou do Drive). */}
-                  {/* O lugar da impressora existe sempre, mesmo nos itens que
-                      não se imprimem (vídeos, links) — senão o lápis e o
-                      caixote saltavam de linha para linha. */}
-                  <button
-                    onClick={() => shareMediaItem(v)}
-                    title="Partilhar"
-                    style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
-                  ><Share2 size={13} /></button>
-                  {(v.kind === 'pdf' || v.kind === 'drive' || v.kind === 'image') ? (
-                    <button
-                      onClick={() => printDocumentItem(v)}
-                      title="Abrir num separador novo e imprimir"
-                      style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
-                    ><Printer size={13} /></button>
-                  ) : (
-                    <span style={{ width: 20, flexShrink: 0 }} />
-                  )}
-                  <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                  <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {visibleItems.map(renderRow)}
+            </div>
+          )}
         </div>
       )}
 
