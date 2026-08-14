@@ -1060,7 +1060,7 @@ function App({ session }) {
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
-          {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} />}
+          {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
@@ -10968,13 +10968,58 @@ function AttachmentPreview({ item, tall }) {
    convocados, responsáveis), separada em "próximos jogos" e
    "jogos realizados".
 ---------------------------------------------------------------- */
-function Convocatorias({ convocatorias, setConvocatorias, players, season, standings }) {
+/* Uma convocatória é sempre um jogo. Ao guardá-la, garantimos que existe o
+   jogo correspondente na lista de Jogos — é esse registo que a faz aparecer
+   no Planeamento, na agenda semanal e na tabela de presenças. Se já houver
+   um jogo na mesma data (por exemplo criado a partir das jornadas da
+   competição), é esse que se atualiza, em vez de se criar um duplicado. */
+function syncConvocatoriaMatch(conv, matches) {
+  if (!conv || !conv.data) return matches || [];
+  const list = matches || [];
+  const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+  let idx = list.findIndex(m => m.sourceConvocatoriaId === conv.id);
+  if (idx < 0) {
+    // Sem ligação explícita: aproveita um jogo da mesma data, desde que o
+    // adversário não seja outro (um dos dois pode ainda estar por preencher).
+    idx = list.findIndex(m => m.date === conv.data
+      && (!m.opponent || !conv.adversario || igual(m.opponent, conv.adversario)));
+  }
+
+  const base = {
+    date: conv.data,
+    opponent: conv.adversario || '',
+    competition: competitionLabel(conv.competicao) || '',
+    jornada: conv.jornada || '',
+    sourceConvocatoriaId: conv.id,
+  };
+  if (conv.casaFora) base.atHome = conv.casaFora === 'Casa';
+
+  if (idx < 0) {
+    return [...list, { id: uid(), ...base, result: '', convocados: [...(conv.convocados || [])], starters: [], report: {} }];
+  }
+  return list.map((m, i) => {
+    if (i !== idx) return m;
+    const next = { ...m, ...base };
+    /* A lista de convocados do jogo só acompanha a convocatória enquanto o
+       staff não tiver mexido nas presenças desse jogo. A partir daí manda a
+       tabela de presenças (`attendance`) e não se reescreve nada. */
+    if (!Array.isArray(m.attendance)) next.convocados = [...(conv.convocados || [])];
+    return next;
+  });
+}
+
+function Convocatorias({ convocatorias, setConvocatorias, players, season, standings, matches, setMatches }) {
   const [modal, setModal] = useState(null);
   const [printConvocatoria, setPrintConvocatoria] = useState(null);
 
   const save = (data) => {
-    if (data.id) setConvocatorias(convocatorias.map(c => c.id === data.id ? data : c));
-    else setConvocatorias([...convocatorias, { ...data, id: uid() }]);
+    const registo = data.id ? data : { ...data, id: uid() };
+    if (data.id) setConvocatorias(convocatorias.map(c => c.id === data.id ? registo : c));
+    else setConvocatorias([...convocatorias, registo]);
+    // Cria/atualiza o jogo correspondente, para a convocatória alimentar o
+    // Planeamento, os Jogos e a tabela de presenças.
+    if (setMatches) setMatches(syncConvocatoriaMatch(registo, matches));
     setModal(null);
   };
   const remove = (id) => setConvocatorias(convocatorias.filter(c => c.id !== id));
