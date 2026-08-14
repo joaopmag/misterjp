@@ -1591,6 +1591,26 @@ function firstNameOf(name) {
   return parts[0] || '—';
 }
 
+/* Nome "de cartão": primeiro e último nome, sem os do meio. É o formato
+   que se usa a falar do jogador ("Edu Castro") e cabe numa linha sem
+   reticências, ao contrário do nome completo do registo. */
+function shortFullName(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '—';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
+/* Nome curto para tabelas estreitas: primeiro nome + inicial do apelido.
+   O apelido entra porque só o primeiro nome cria ambiguidades no plantel
+   (dois "Martim", dois "João"). */
+function firstNameInitial(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '—';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+}
+
 function matrixPoints(players, monitoring) {
   const end = todayStr();
   const start = addDays(end, -6);
@@ -1931,16 +1951,21 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
                 background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', gap: 10,
               }}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                {/* Cartão em três andares: nome, subtítulo (ano · idade) e
+                    ações. Com os ícones ao lado do nome, o nome ficava
+                    cortado com reticências em quase todos os jogadores. */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                   <Badge label={p.position} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                    <div style={{ color: T.mutedDim, fontSize: 12 }}>{playerBirthLine(p)}</div>
+                    <div title={p.name} style={{ color: T.cream, fontSize: 15, fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shortFullName(p.name)}</div>
+                    <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>{playerBirthLine(p)}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 9 }}>
+                      <button onClick={(e) => { e.stopPropagation(); doShare(p); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={15} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); doPrint(p); }} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={15} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setModal(p); }} title="Editar jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={15} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); remove(p.id); }} title="Remover jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={15} /></button>
+                    </div>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); doShare(p); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); doPrint(p); }} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={14} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); setModal(p); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); remove(p.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                 </div>
                 <div style={{ display: 'flex', gap: 14, fontSize: 11.5, ...mono, borderTop: `1px solid ${T.line}`, paddingTop: 9 }}>
                   <span style={{ color: attColor }}>Assid. {stats.attendancePct === null ? '—' : `${stats.attendancePct}%`}</span>
@@ -5224,6 +5249,8 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   const [printDayDate, setPrintDayDate] = useState(null); // data a imprimir com todas as sessões desse dia
   const [view, setView] = useState('lista'); // 'lista' | 'agenda'
   const [weekStart, setWeekStart] = useState(getMonday(todayStr()));
+  // No telemóvel os cartões da lista partem-se em dois andares (ver abaixo).
+  const isNarrow = useIsMobile(700);
 
   const doPrint = (s) => {
     setPrintDayDate(null);
@@ -5330,14 +5357,17 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
               {items.map(s => s.__match ? (
                 <div key={`m-${s.id}`} style={{
                   background: T.surface, border: `1px solid ${T.warn}55`, borderRadius: 10, padding: 14,
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10,
+                  display: 'flex', gap: 10,
+                  ...(isNarrow
+                    ? { flexDirection: 'column', alignItems: 'stretch' }
+                    : { justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }),
                 }}>
-                  <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                    <div style={{ textAlign: 'center', width: 46 }}>
+                  <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0 }}>
+                    <div style={{ textAlign: 'center', width: 46, flexShrink: 0 }}>
                       <div style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600 }}>{new Date(s.date + 'T00:00:00').getDate()}</div>
                       <div style={{ fontSize: 10, color: T.mutedDim, textTransform: 'uppercase' }}>{new Date(s.date + 'T00:00:00').toLocaleDateString('pt-PT', { month: 'short' })}</div>
                     </div>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Trophy size={13} color={T.warn} /> vs {s.opponent || 'Adversário por definir'}
                       </div>
@@ -5346,40 +5376,56 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{
+                    display: 'flex', gap: 8, alignItems: 'center',
+                    ...(isNarrow ? { justifyContent: 'space-between', paddingLeft: 60 } : {}),
+                  }}>
                     <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
                       {(s.convocados || []).length} convocados
                     </span>
-                    <button onClick={() => setMatchModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
+                    <button onClick={() => setMatchModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                   </div>
                 </div>
               ) : (
+                /* No telemóvel o cartão parte-se em dois andares: em cima a
+                   data e o título, em baixo o resumo à esquerda e os ícones
+                   à direita. Assim os ícones ficam na mesma coluna em todos
+                   os cartões, em vez de saltarem conforme o comprimento do
+                   texto (era o caso do "Dia de folga", muito mais curto). */
                 <div key={s.id} style={{
                   background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14,
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10,
+                  display: 'flex', gap: 10,
+                  ...(isNarrow
+                    ? { flexDirection: 'column', alignItems: 'stretch' }
+                    : { justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }),
                 }}>
-                  <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 14, alignItems: 'center', minWidth: 0 }}>
                     <div
                       onClick={() => setDayModalDate(s.date)}
                       title="Ver todos os treinos deste dia"
-                      style={{ textAlign: 'center', width: 46, cursor: 'pointer' }}
+                      style={{ textAlign: 'center', width: 46, flexShrink: 0, cursor: 'pointer' }}
                     >
                       <div style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600 }}>{new Date(s.date + 'T00:00:00').getDate()}</div>
                       <div style={{ fontSize: 10, color: T.mutedDim, textTransform: 'uppercase' }}>{new Date(s.date + 'T00:00:00').toLocaleDateString('pt-PT', { month: 'short' })}</div>
                     </div>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500 }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</div>
                       <div style={{ color: T.mutedDim, fontSize: 12 }}>{[s.phase, s.opponent && `vs ${s.opponent}`, intensityText(s)].filter(Boolean).join(' · ')}</div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
+                  <div style={{
+                    display: 'flex', gap: 12, alignItems: 'center',
+                    ...(isNarrow ? { justifyContent: 'space-between', paddingLeft: 60 } : { gap: 8 }),
+                  }}>
+                    <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {s.phase === 'Descanso' ? 'Dia de folga' : `${(s.exerciseIds || []).length} exercícios · ${(s.attendance || []).length} presentes`}
                     </span>
-                    <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
-                    <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }} title="Imprimir ficha"><Printer size={14} /></button>
-                    <button onClick={() => setModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
-                    <button onClick={() => remove(s.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+                      <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
+                      <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Imprimir ficha"><Printer size={14} /></button>
+                      <button onClick={() => setModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Editar sessão"><Pencil size={14} /></button>
+                      <button onClick={() => remove(s.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Apagar sessão"><Trash2 size={14} /></button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -6005,7 +6051,10 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
           <tbody>
             {players.map(p => (
               <tr key={p.id} style={{ borderTop: `1px solid ${T.line}` }}>
-                <td style={nameCell}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
+                {/* Nome curto (primeiro nome + inicial) para a coluna não
+                    roubar largura às colunas dos dias. O nome completo fica
+                    no title, para quando houver dúvida. */}
+                <td style={nameCell} title={p.name}>{p.position ? `${p.position} · ` : ''}{firstNameInitial(p.name)}</td>
                 {ordered.map(d => {
                   const on = isPresent(d, p.id);
                   const closed = dayClosed(d);
@@ -9778,7 +9827,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                     title="Partilhar"
                     style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
                   ><Share2 size={13} /></button>
-                  {(v.kind === 'pdf' || v.kind === 'drive') ? (
+                  {(v.kind === 'pdf' || v.kind === 'drive' || v.kind === 'image') ? (
                     <button
                       onClick={() => printDocumentItem(v)}
                       title="Abrir num separador novo e imprimir"
@@ -9936,6 +9985,10 @@ async function shareMediaItem(item) {
 
 function printDocumentItem(item) {
   if (!item) return;
+  // As imagens não abrem num leitor com botão de impressão próprio: montamos
+  // uma página só com a foto, dimensionada para caber numa folha A4, e
+  // mandamos imprimir assim que a imagem estiver carregada.
+  if (item.kind === 'image') return printImageItem(item);
   const url = item.kind === 'drive' ? driveOpenSrc(item.drive) : item.dataUrl;
   if (!url) return;
   const win = window.open(url, '_blank');
@@ -9943,6 +9996,34 @@ function printDocumentItem(item) {
   setTimeout(() => {
     try { win.focus(); win.print(); } catch (err) { /* o leitor tem o seu próprio botão */ }
   }, 1500);
+}
+
+function printImageItem(item) {
+  if (!item || !item.dataUrl) return;
+  const win = window.open('', '_blank');
+  if (!win) return;
+  const titulo = item.title || item.fileName || 'Imagem';
+  win.document.write(
+    '<!doctype html><html lang="pt"><head><meta charset="utf-8">' +
+    `<title>${escapeHtmlText(titulo)}</title>` +
+    '<style>' +
+    'html,body{margin:0;padding:0;background:#fff;}' +
+    'img{display:block;max-width:100%;max-height:100vh;margin:0 auto;}' +
+    '@page{margin:10mm;}' +
+    '@media print{img{max-height:none;}}' +
+    '</style></head><body>' +
+    `<img src="${item.dataUrl}" alt="${escapeHtmlText(titulo)}">` +
+    '</body></html>'
+  );
+  win.document.close();
+  const imprimir = () => { try { win.focus(); win.print(); } catch (err) { /* o utilizador imprime pelo menu */ } };
+  const img = win.document.images && win.document.images[0];
+  if (img && !img.complete) {
+    img.onload = () => setTimeout(imprimir, 120);
+    img.onerror = imprimir;
+  } else {
+    setTimeout(imprimir, 300);
+  }
 }
 
 function parseDriveId(url) {
