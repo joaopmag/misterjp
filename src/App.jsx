@@ -356,18 +356,37 @@ function useCollectionSync(table, notifyEdit) {
       const toDelete = [];
       for (const id of snapshot.current.keys()) if (!currentIds.has(id)) toDelete.push(id);
 
-      if (toUpsert.length) {
-        const { data, error } = await supabase.from(table).upsert(toUpsert, { onConflict: 'id' }).select('id, data, updated_by_email, updated_at');
-        // Antes um erro aqui só ia parar à consola: na app parecia que tinha
-        // ficado guardado, e só ao recarregar a página é que se percebia que
-        // não. Agora avisa no ecrã.
-        if (error) { console.error(table, error); reportSyncError(table, error); }
-        else if (data) {
-          data.forEach(r => {
-            snapshot.current.set(r.id, JSON.stringify(r.data));
-            setRecordMeta(prev => ({ ...prev, [r.id]: { email: r.updated_by_email, at: r.updated_at } }));
-          });
+      /* UM REGISTO DE CADA VEZ, e não todos num único upsert.
+
+         Um upsert com vários registos é UMA instrução SQL: se um deles for
+         enorme (um vídeo ou um PDF em base64) e rebentar o tempo limite do
+         Postgres, a instrução inteira é cancelada e NADA fica gravado —
+         nem os registos pequenos que iam à boleia. Era isto que fazia
+         falhar coisas triviais como criar uma pasta ou colar um link do
+         Drive: iam no mesmo lote de um ficheiro grande.
+
+         Assim, cada registo é gravado por si. Um grande que falhe não
+         arrasta os outros, e o aviso passa a dizer QUAL falhou. */
+      const failed = [];
+      for (const rec of toUpsert) {
+        const { data, error } = await supabase.from(table).upsert([rec], { onConflict: 'id' })
+          .select('id, data, updated_by_email, updated_at');
+        if (error) {
+          console.error(table, rec.id, error);
+          const nome = (rec.data && (rec.data.title || rec.data.name)) || rec.id;
+          const mb = Math.round(JSON.stringify(rec.data || {}).length / 1024 / 1024);
+          failed.push(mb >= 2 ? `${nome} (~${mb} MB)` : String(nome));
+          continue;
         }
+        (data || []).forEach(r => {
+          snapshot.current.set(r.id, JSON.stringify(r.data));
+          setRecordMeta(prev => ({ ...prev, [r.id]: { email: r.updated_by_email, at: r.updated_at } }));
+        });
+      }
+      if (failed.length) {
+        reportSyncError(table, {
+          message: `Não ficou gravado: ${failed.join(', ')}. Ficheiros grandes não cabem na base de dados — usa o separador Google Drive.`,
+        });
       }
       if (toDelete.length) {
         const { error } = await supabase.from(table).delete().in('id', toDelete);
@@ -2278,9 +2297,11 @@ function Exercicios({ exercises, setExercises, meta }) {
               {/* Nome sozinho na primeira linha; a fase e os ícones ficam
                   por baixo, para o título não ser cortado a meio. */}
               <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{x.name}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <span style={{ fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
-                <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: 'flex', gap: 16 }}>
                   <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={14} /></button>
@@ -2436,16 +2457,15 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                 <div style={{ marginBottom: 8 }}>
                   <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 14, marginBottom: 10 }}>
-                  <div style={{ display: 'flex', gap: 14 }}>
-                    <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={13} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
-                  </div>
-                </div>
                 <DiagramThumb diagram={x.diagram} />
+                {/* Ícones por baixo da imagem, alinhados à esquerda. */}
+                <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={14} /></button>
+                </div>
                 {m && m.email && (
                   <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 'auto', paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     Adicionado/editado por {m.email} · {timeAgo(m.at)}
@@ -5252,7 +5272,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     </div>
                     <div>
                       <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Trophy size={13} color={T.warn} /> {matchLabel(s, season)}
+                        <Trophy size={13} color={T.warn} /> vs {s.opponent || 'Adversário por definir'}
                       </div>
                       <div style={{ color: T.mutedDim, fontSize: 12 }}>
                         {[s.competition || 'Jogo', s.atHome === undefined ? null : (s.atHome ? 'Casa' : 'Fora'), s.result].filter(Boolean).join(' · ')}
@@ -5511,7 +5531,7 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                   }}>
                     <Trophy size={11} color={T.warn} style={{ marginTop: 1, flexShrink: 0 }} />
                     <span>
-                      {matchLabel(m, season)}
+                      vs {m.opponent || 'Adversário'}
                       <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{m.result || m.competition || 'Jogo'}</div>
                     </span>
                   </button>
@@ -6144,14 +6164,14 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       const m = day.match;
       const base = convocadosOf(m); // parte da convocatória, se ainda não houver lista própria
       const present = base.includes(playerId);
+      const next = present ? base.filter(id => id !== playerId) : [...base, playerId];
       setMatches(matches.map(x => {
         if (x.id !== m.id) return x;
-        if (present) {
-          const ratings = { ...(x.ratings || {}) };
-          delete ratings[playerId];
-          return { ...x, attendance: base.filter(id => id !== playerId), ratings };
-        }
-        return { ...x, attendance: [...base, playerId] };
+        const ratings = { ...(x.ratings || {}) };
+        if (present) delete ratings[playerId];
+        // `attendance` e `convocados` andam sempre a par: marcar C aqui
+        // convoca o jogador no Planeamento/Jogos, e desmarcar retira-o.
+        return { ...x, attendance: next, convocados: next, ratings };
       }));
       return;
     }
@@ -7078,7 +7098,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
                   <div>
                     <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>
-                      {matchLabel(m, season)}
+                      vs {m.opponent || 'Adversário por definir'}
                       {m.atHome !== undefined && (
                         <span style={{ fontSize: 11, color: T.mutedDim, marginLeft: 8 }}>{m.atHome ? '(casa)' : '(fora)'}</span>
                       )}
