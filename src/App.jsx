@@ -1191,7 +1191,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
                 }}>
                   <div>
                     <div style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{matchLabel(m, season)}</div>
-                    <div style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(m.date)}{m.competition ? ` · ${m.competition}` : ''}</div>
+                    <div style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}</div>
                   </div>
                   <div style={{ ...mono, color: T.warn, fontSize: 13 }}>{daysTo(m.date)}d</div>
                 </div>
@@ -1238,7 +1238,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
       )}
       {matchModal && (
         <MatchModal
-          match={matchModal} players={players} standings={standings}
+          match={matchModal} players={players} standings={standings} season={season}
           onClose={() => setMatchModal(null)}
           onSave={(data) => { setMatches(matches.map(x => (x.id === data.id ? data : x))); setMatchModal(null); }}
         />
@@ -1308,17 +1308,13 @@ function StandingsFullModal({ standings, season, onClose, onEdit }) {
     return a === b || b.includes(a) || a.includes(b.split('·')[0].trim());
   };
   const th = { textAlign: 'center', padding: '6px 4px', fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em' };
-  // Só no telemóvel: em ecrã largo o nome inteiro cabe numa linha.
-  const isNarrow = useIsMobile(700);
+  // Mesmo tratamento em telemóvel e em desktop: se o nome da competição
+  // tiver um traço, o que vem depois passa a subtítulo ("Campeonato
+  // distrital U19" + "1ª Divisão"). Sem traço, fica tudo no título.
   const nome = splitCompetitionName((comp && comp.name) || 'Classificação');
 
   return (
-    <Modal
-      title={isNarrow ? nome.title : ((comp && comp.name) || 'Classificação')}
-      subtitle={isNarrow ? nome.subtitle : ''}
-      onClose={onClose}
-      wide
-    >
+    <Modal title={nome.title} subtitle={nome.subtitle} onClose={onClose} wide>
       {competitions.length > 1 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
           {competitions.map(c => (
@@ -1676,6 +1672,16 @@ function shortFullName(name) {
   if (!parts.length) return '—';
   if (parts.length === 1) return parts[0];
   return `${parts[0]} ${parts[parts.length - 1]}`;
+}
+
+/* Nome curto "inteligente": só o primeiro nome, e a inicial do apelido
+   apenas quando há outro jogador com o mesmo primeiro nome. Evita ter
+   "Cadilhe C." quando não há nenhum outro Cadilhe no plantel. */
+function shortPlayerName(player, allPlayers) {
+  if (!player) return '—';
+  const primeiro = firstNameOf(player.name);
+  const repetido = (allPlayers || []).some(o => o && o.id !== player.id && firstNameOf(o.name) === primeiro);
+  return repetido ? firstNameInitial(player.name) : primeiro;
 }
 
 /* Nome curto para tabelas estreitas: primeiro nome + inicial do apelido.
@@ -5449,7 +5455,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                         <Trophy size={13} color={T.warn} /> vs {s.opponent || 'Adversário por definir'}
                       </div>
                       <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                        {[s.competition || 'Jogo', s.atHome === undefined ? null : (s.atHome ? 'Casa' : 'Fora'), s.result].filter(Boolean).join(' · ')}
+                        {[competitionLabel(s.competition) || 'Jogo', s.atHome === undefined ? null : (s.atHome ? 'Casa' : 'Fora'), s.result].filter(Boolean).join(' · ')}
                       </div>
                     </div>
                   </div>
@@ -5527,6 +5533,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           match={matchModal}
           players={players}
           standings={standings}
+          season={season}
           onClose={() => setMatchModal(null)}
           onSave={saveMatch}
         />
@@ -5722,7 +5729,7 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                     <Trophy size={11} color={T.warn} style={{ marginTop: 1, flexShrink: 0 }} />
                     <span>
                       vs {m.opponent || 'Adversário'}
-                      <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{m.result || m.competition || 'Jogo'}</div>
+                      <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{m.result || competitionLabel(m.competition) || 'Jogo'}</div>
                     </span>
                   </button>
                 ))}
@@ -6862,13 +6869,63 @@ function syncCompetitionMatches(competitions, matches) {
   return next;
 }
 
+// Designação única para os jogos fora de competição. Os registos antigos
+// gravaram "Jogo amigável"; `competitionLabel` converte-os na leitura, para
+// não ser preciso reescrever nada na base de dados.
+const FRIENDLY = 'Amigável';
+function competitionLabel(name) {
+  const txt = String(name || '').trim();
+  return /^jogo\s+amig/i.test(txt) ? FRIENDLY : txt;
+}
+
 // Nomes das competições configuradas em Jogos, para as listas de escolha
-// dos jogos e das convocatórias. "Jogo amigável" está sempre disponível.
+// dos jogos e das convocatórias. "Amigável" está sempre disponível.
 function competitionOptions(standings) {
   const names = normalizeStandings(standings).competitions
     .map(c => (c.name || '').trim())
     .filter(Boolean);
-  return [...new Set(['Jogo amigável', ...names])];
+  return [...new Set([FRIENDLY, ...names])];
+}
+
+// Competição configurada com um determinado nome (ou null se for um
+// amigável / uma competição já apagada).
+function competitionByName(standings, name) {
+  const alvo = competitionLabel(name).toLowerCase();
+  if (!alvo || alvo === FRIENDLY.toLowerCase()) return null;
+  return normalizeStandings(standings).competitions
+    .find(c => (c.name || '').trim().toLowerCase() === alvo) || null;
+}
+
+// Equipas e jornadas de uma competição, para preencher as listas de
+// escolha dos jogos e das convocatórias.
+function competitionTeamNames(comp, ourClub) {
+  const nomes = (comp && comp.teamNames ? comp.teamNames : []).map(t => (t || '').trim()).filter(Boolean);
+  const nosso = String(ourClub || '').trim().toLowerCase();
+  // A nossa equipa não é adversária de si própria.
+  return nosso ? nomes.filter(t => t.toLowerCase() !== nosso) : nomes;
+}
+function competitionRoundLabels(comp) {
+  return (comp && comp.rounds ? comp.rounds : [])
+    .map((r, i) => (r.label || `Jornada ${i + 1}`));
+}
+/* Data marcada na competição para o encontro entre a nossa equipa e um
+   adversário, numa jornada. Devolve '' quando o jogo ainda não tem data
+   ou não está lançado — nesse caso o campo fica como estava. */
+function competitionGameDate(comp, roundLabel, opponent) {
+  if (!comp || !opponent) return '';
+  const adv = String(opponent).trim().toLowerCase();
+  const rondas = (comp.rounds || []);
+  const alvo = roundLabel
+    ? rondas.filter((r, i) => (r.label || `Jornada ${i + 1}`) === roundLabel)
+    : rondas;
+  for (const r of alvo) {
+    for (const g of (r.games || [])) {
+      const home = String(g.home || '').trim().toLowerCase();
+      const away = String(g.away || '').trim().toLowerCase();
+      if ((home === adv || away === adv) && g.date) return g.date;
+    }
+  }
+  return '';
 }
 
 const emptyCompetition = (name = '') => ({
@@ -7301,7 +7358,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                       )}
                     </div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                      {fmtDate(m.date)}{m.competition ? ` · ${m.competition}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} convocados
+                      {fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} convocados
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -7315,7 +7372,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         </div>
       )}
 
-      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} onClose={() => setModal(null)} onSave={save} />}
     </div>
   );
 }
@@ -7332,15 +7389,32 @@ function withConvocadosInAttendance(f) {
   return { ...f, attendance: [...convocados], ratings };
 }
 
-function MatchModal({ match, players, standings, onClose, onSave }) {
+function MatchModal({ match, players, standings, season, onClose, onSave }) {
   const [f, setF] = useState(match || {
-    date: todayStr(), opponent: '', competition: 'Jogo amigável', result: '',
+    date: todayStr(), opponent: '', competition: FRIENDLY, result: '', jornada: '',
     convocados: [], starters: [], report: {},
   });
-  // Lista das competições configuradas + "Jogo amigável" (valor por
-  // omissão). Se o jogo tiver uma competição antiga que já não está
-  // configurada, ela continua a aparecer na lista para não se perder.
-  const compOptions = [...new Set([...competitionOptions(standings), ...(f.competition ? [f.competition] : [])])];
+  // Lista das competições configuradas + "Amigável" (valor por omissão).
+  // Se o jogo tiver uma competição antiga que já não está configurada, ela
+  // continua a aparecer na lista para não se perder.
+  const compAtual = competitionLabel(f.competition);
+  const compOptions = [...new Set([...competitionOptions(standings), ...(compAtual ? [compAtual] : [])])];
+
+  // Quando a competição escolhida já está configurada em Jogos, o
+  // adversário e a jornada deixam de ser texto livre e passam a listas
+  // com o que lá está — e a data vem do calendário da competição.
+  const comp = competitionByName(standings, f.competition);
+  const equipas = competitionTeamNames(comp, season && season.club);
+  const jornadas = competitionRoundLabels(comp);
+
+  // Ao trocar de adversário ou de jornada, a data acompanha o que estiver
+  // marcado na competição. Se esse jogo ainda não tiver data lá, mantém-se
+  // a data que já estava no formulário — nunca se apaga o que foi escrito.
+  const setFixture = (patch) => {
+    const next = { ...f, ...patch };
+    const data = competitionGameDate(comp, next.jornada, next.opponent);
+    setF(data ? { ...next, date: data } : next);
+  };
 
   const toggleConvocado = (pid) => {
     const inList = f.convocados.includes(pid);
@@ -7364,15 +7438,34 @@ function MatchModal({ match, players, standings, onClose, onSave }) {
   return (
     <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide>
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
-        <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
-        <Field label="Adversário"><Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" /></Field>
-        <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
         <Field label="Competição">
-          <Select value={f.competition || ''} onChange={e => setF({ ...f, competition: e.target.value })}>
+          <Select value={compAtual} onChange={e => setF({ ...f, competition: e.target.value, opponent: '', jornada: '' })}>
             <option value="">— sem competição —</option>
             {compOptions.map(c => <option key={c} value={c}>{c}</option>)}
           </Select>
         </Field>
+        <Field label="Adversário">
+          {equipas.length > 0 ? (
+            <Select value={f.opponent || ''} onChange={e => setFixture({ opponent: e.target.value })}>
+              <option value="">— escolher equipa —</option>
+              {equipas.map(t => <option key={t} value={t}>{t}</option>)}
+            </Select>
+          ) : (
+            <Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" />
+          )}
+        </Field>
+        <Field label="Jornada">
+          {jornadas.length > 0 ? (
+            <Select value={f.jornada || ''} onChange={e => setFixture({ jornada: e.target.value })}>
+              <option value="">— sem jornada —</option>
+              {jornadas.map(j => <option key={j} value={j}>{j}</option>)}
+            </Select>
+          ) : (
+            <Input value={f.jornada || ''} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="ex: Jornada 12" />
+          )}
+        </Field>
+        <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -7555,7 +7648,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   <tbody>
                     {sortByPosition(players).map(p => (
                       <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                        <td style={{ ...td2, color: T.cream }}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
+                        <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                         <td style={{ ...td2, ...mono, color: T.warn, letterSpacing: '.1em' }}>{p.code || '—'}</td>
                         <td style={td2}>
                           <button onClick={() => regenerateCode(p.id)} title="Gerar novo código"
@@ -7607,7 +7700,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                           {statusLabel}
                         </span>
                       </td>
-                      <td style={{ ...td2, color: T.cream }}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
+                      <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                       <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(1) : '—'}</td>
                       <td style={{ ...td2, ...mono }}>{lastRpe ? lastRpe.pse : '—'}</td>
                     </tr>
@@ -7646,7 +7739,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                 return (
                   <tr key={m.id} style={{ borderBottom: `1px solid ${T.line}` }}>
                     <td style={tdStyle}>{fmtDate(m.date)}</td>
-                    <td style={{ ...tdStyle, color: T.cream }}>{p ? `${p.position ? `${p.position} · ` : ''}${p.name}` : '—'}</td>
+                    <td style={{ ...tdStyle, color: T.cream }} title={p ? p.name : undefined}>{p ? `${p.position ? `${p.position} · ` : ''}${shortPlayerName(p, players)}` : '—'}</td>
                     <td style={tdStyle}>{typeLabel}</td>
                     <td style={{ ...tdStyle, ...mono }}>{typeof m.pse === 'number' ? `${m.pse}/10` : '—'}</td>
                     <td style={{ ...tdStyle, ...mono }}>{m.sono ?? '—'}</td>
@@ -7818,7 +7911,7 @@ function PlantelHistorico({ players, monitoring }) {
                   return (
                     <tr key={r.player.id} style={{ borderBottom: `1px solid ${T.line}` }}>
                       <td style={{ ...td3, color: T.cream, whiteSpace: 'nowrap' }}>
-                        {r.player.position ? `${r.player.position} · ` : ''}{r.player.name}
+                        {r.player.position ? `${r.player.position} · ` : ''}{shortPlayerName(r.player, players)}
                       </td>
                       <td style={{ ...td3, ...mono, color: wColor, whiteSpace: 'nowrap' }}>
                         {r.wellnessMean === null ? '—' : r.wellnessMean.toFixed(1)}
@@ -10913,25 +11006,29 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
         <EmptyState text="Sem convocatórias." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova convocatória</Btn>} />
       ) : (
         <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
-          <table>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead>
               <tr style={{ background: T.surface }}>
-                {['Data', 'Adversário', 'Competição', 'Jornada', 'Local', 'Convocados', ''].map(h => <th key={h} style={th}>{h}</th>)}
+                {['Data', 'Adversário', 'Competição', 'Jornada', 'Local', 'Convocados', ''].map(h => <th key={h} style={{ ...th, whiteSpace: 'nowrap' }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {list.map(c => (
                 <tr key={c.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                  <td style={{ ...td, color: T.cream }}>{c.data ? fmtDate(c.data) : '—'}</td>
-                  <td style={{ ...td, color: T.cream }}>{c.adversario || '—'}</td>
-                  <td style={td}>{c.competicao || '—'}</td>
-                  <td style={td}>{c.jornada || '—'}</td>
-                  <td style={td}>{c.localJogo || '—'}</td>
-                  <td style={td}>{(c.convocados || []).length}</td>
-                  <td style={td}>
-                    <button onClick={() => doPrint(c)} title="Imprimir convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', marginRight: 8 }}><Printer size={14} /></button>
-                    <button onClick={() => setModal(c)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', marginRight: 8 }}><Pencil size={14} /></button>
-                    <button onClick={() => remove(c.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
+                  <td style={{ ...td, color: T.cream, whiteSpace: 'nowrap' }}>{c.data ? fmtDate(c.data) : '—'}</td>
+                  <td style={{ ...td, color: T.cream, whiteSpace: 'nowrap' }}>{c.adversario || '—'}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{competitionLabel(c.competicao) || '—'}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.jornada || '—'}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.localJogo || '—'}</td>
+                  <td style={{ ...td, textAlign: 'center' }}>{(c.convocados || []).length}</td>
+                  {/* Célula estreita e sem quebra: sem isto, no telemóvel os
+                      três ícones empilhavam-se um debaixo do outro. */}
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'flex-end' }}>
+                      <button onClick={() => doPrint(c)} title="Imprimir convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
+                      <button onClick={() => setModal(c)} title="Editar convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
+                      <button onClick={() => remove(c.id)} title="Apagar convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -10959,7 +11056,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
           <div style={{ fontSize: 12.5, color: '#444', margin: '0 0 14px' }}>
             {[
               printConvocatoria.epoca,
-              printConvocatoria.competicao,
+              competitionLabel(printConvocatoria.competicao),
               printConvocatoria.escalao,
               printConvocatoria.jornada,
             ].filter(Boolean).join(' · ')}
@@ -11007,7 +11104,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
 
 function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, onSave }) {
   const [f, setF] = useState(convocatoria || {
-    epoca: season?.name || '', competicao: 'Jogo amigável', escalao: 'Sub-19', adversario: '', casaFora: 'Casa',
+    epoca: season?.name || '', competicao: FRIENDLY, escalao: 'Sub-19', adversario: '', casaFora: 'Casa',
     jornada: '', data: '', horaJogo: '', localJogo: '', horaConcentracao: '',
     localConcentracao: '', outrasInfo: '', convocados: [], treinador: 'João Pedro', teamManager: 'Américo',
   });
@@ -11017,7 +11114,20 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
     setF({ ...f, convocados: inList ? f.convocados.filter(id => id !== pid) : [...f.convocados, pid] });
   };
   // As competições vêm das que estão configuradas em Jogos.
-  const compOptions = [...new Set([...competitionOptions(standings), ...(f.competicao ? [f.competicao] : [])])];
+  const compAtual = competitionLabel(f.competicao);
+  const compOptions = [...new Set([...competitionOptions(standings), ...(compAtual ? [compAtual] : [])])];
+
+  // Igual ao Novo jogo: com uma competição configurada, o adversário e a
+  // jornada passam a listas com as equipas e jornadas lá criadas, e a data
+  // vem do calendário da competição.
+  const comp = competitionByName(standings, f.competicao);
+  const equipas = competitionTeamNames(comp, season && season.club);
+  const jornadas = competitionRoundLabels(comp);
+  const setFixture = (patch) => {
+    const next = { ...f, ...patch };
+    const data = competitionGameDate(comp, next.jornada, next.adversario);
+    setF(data ? { ...next, data } : next);
+  };
 
   return (
     <Modal title={convocatoria ? 'Editar convocatória' : 'Nova convocatória'} onClose={onClose} wide>
@@ -11026,20 +11136,38 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
         <div style={{ ...FIELD_GRID }}>
           <Field label="Época"><Input value={f.epoca} onChange={e => setF({ ...f, epoca: e.target.value })} placeholder="2026/2027" /></Field>
           <Field label="Competição">
-            <Select value={f.competicao || ''} onChange={e => setF({ ...f, competicao: e.target.value })}>
+            <Select value={compAtual} onChange={e => setF({ ...f, competicao: e.target.value, adversario: '', jornada: '' })}>
               <option value="">— sem competição —</option>
               {compOptions.map(c => <option key={c} value={c}>{c}</option>)}
             </Select>
           </Field>
           <Field label="Escalão"><Input value={f.escalao} onChange={e => setF({ ...f, escalao: e.target.value })} placeholder="Sub-19" /></Field>
-          <Field label="Adversário"><Input value={f.adversario} onChange={e => setF({ ...f, adversario: e.target.value })} /></Field>
+          <Field label="Adversário">
+            {equipas.length > 0 ? (
+              <Select value={f.adversario || ''} onChange={e => setFixture({ adversario: e.target.value })}>
+                <option value="">— escolher equipa —</option>
+                {equipas.map(t => <option key={t} value={t}>{t}</option>)}
+              </Select>
+            ) : (
+              <Input value={f.adversario} onChange={e => setF({ ...f, adversario: e.target.value })} />
+            )}
+          </Field>
           <Field label="Casa / Fora">
             <Select value={f.casaFora} onChange={e => setF({ ...f, casaFora: e.target.value })}>
               <option value="Casa">Casa</option>
               <option value="Fora">Fora</option>
             </Select>
           </Field>
-          <Field label="Jornada"><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="ex: Jornada 12" /></Field>
+          <Field label="Jornada">
+            {jornadas.length > 0 ? (
+              <Select value={f.jornada || ''} onChange={e => setFixture({ jornada: e.target.value })}>
+                <option value="">— sem jornada —</option>
+                {jornadas.map(j => <option key={j} value={j}>{j}</option>)}
+              </Select>
+            ) : (
+              <Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="ex: Jornada 12" />
+            )}
+          </Field>
           <Field label="Data"><Input type="date" value={f.data} onChange={e => setF({ ...f, data: e.target.value })} /></Field>
           <Field label="Hora do jogo"><Input type="time" value={f.horaJogo} onChange={e => setF({ ...f, horaJogo: e.target.value })} /></Field>
           <Field label="Local do jogo"><Input value={f.localJogo} onChange={e => setF({ ...f, localJogo: e.target.value })} /></Field>
