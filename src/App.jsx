@@ -991,10 +991,10 @@ function App({ session }) {
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} />}
-          {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} />}
+          {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -1108,7 +1108,7 @@ function Overview({ season, setSeason, players, sessions, setSessions, exercises
                   padding: '10px 14px', background: T.bg, borderRadius: 8, border: `1px solid ${T.line}`,
                 }}>
                   <div>
-                    <div style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>vs {m.opponent || 'Adversário por definir'}</div>
+                    <div style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{matchLabel(m, season)}</div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(m.date)}{m.competition ? ` · ${m.competition}` : ''}</div>
                   </div>
                   <div style={{ ...mono, color: T.warn, fontSize: 13 }}>{daysTo(m.date)}d</div>
@@ -1707,17 +1707,20 @@ function SheetActions({ onShare, onPrint, onEdit }) {
 
 function PlayerChipList({ players, isOn, onToggle }) {
   const isMobile = useIsMobile(560);
+  // Grelha em vez de linha corrida: com nomes de comprimentos muito
+  // diferentes, os chips ficavam desalinhados de linha para linha. No
+  // telemóvel é uma coluna única.
   return (
     <div style={{
-      display: 'flex', gap: 6,
-      ...(isMobile ? { flexDirection: 'column' } : { flexWrap: 'wrap' }),
+      display: 'grid', gap: 6,
+      gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(210px, 1fr))',
     }}>
       {sortByPosition(players).map(p => {
         const on = isOn(p);
         return (
           <button key={p.id} type="button" onClick={() => onToggle(p)} style={{
-            padding: isMobile ? '9px 12px' : '5px 10px', borderRadius: 16, fontSize: 12.5, cursor: 'pointer', ...body,
-            textAlign: 'left',
+            padding: '9px 12px', borderRadius: 16, fontSize: 12.5, cursor: 'pointer', ...body,
+            textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${on ? '#B5393F' : T.line}`,
           }}>{p.position ? `${p.position} · ` : ''}{p.name}</button>
@@ -2429,10 +2432,12 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
             const m = meta && meta[x.id];
             return (
               <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{labelOf(x)}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <span style={{ fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
-                  <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{labelOf(x)}</div>
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 14, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', gap: 14 }}>
                     <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
                     <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
                     <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={13} /></button>
@@ -5124,7 +5129,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     </Modal>
   );
 }
-function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings }) {
+function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
   const [printSession, setPrintSession] = useState(null);
@@ -5225,6 +5230,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           onEdit={(s) => setModal(s)}
           onAddForDate={(d) => setModal({ presetDate: d })}
           onEditMatch={(m) => setMatchModal(m)}
+          season={season}
         />
       ) : sessions.length === 0 && matchItems.length === 0 ? (
         <EmptyState text="Ainda não há sessões planeadas." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar a primeira sessão</Btn>} />
@@ -5246,7 +5252,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     </div>
                     <div>
                       <div style={{ color: T.cream, fontSize: 14.5, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Trophy size={13} color={T.warn} /> vs {s.opponent || 'Adversário por definir'}
+                        <Trophy size={13} color={T.warn} /> {matchLabel(s, season)}
                       </div>
                       <div style={{ color: T.mutedDim, fontSize: 12 }}>
                         {[s.competition || 'Jogo', s.atHome === undefined ? null : (s.atHome ? 'Casa' : 'Fora'), s.result].filter(Boolean).join(' · ')}
@@ -5458,7 +5464,7 @@ function formatShortDatePt(dateStr) {
    AGENDA SEMANAL — vista de calendário Seg-Dom, criada a partir
    do Planeamento, com edição direta de cada sessão.
 ---------------------------------------------------------------- */
-function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddForDate, onEditMatch }) {
+function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddForDate, onEditMatch, season }) {
   const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
   const currentDayStr = todayStr();
   // No telemóvel a semana passa a 3 colunas (3 dias em cima, 3 no meio e o
@@ -5505,7 +5511,7 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                   }}>
                     <Trophy size={11} color={T.warn} style={{ marginTop: 1, flexShrink: 0 }} />
                     <span>
-                      vs {m.opponent || 'Adversário'}
+                      {matchLabel(m, season)}
                       <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{m.result || m.competition || 'Jogo'}</div>
                     </span>
                   </button>
@@ -5919,7 +5925,8 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
                   const rating = ratingOf(d, p.id);
                   const label = d.match ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP');
                   return (
-                    <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: 4, textAlign: 'center' }}>
+                    <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: 4, textAlign: 'center', verticalAlign: 'top' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                       <button
                         type="button"
                         onClick={() => { if (!closed) onToggle(d, p.id); }}
@@ -5936,16 +5943,25 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
                       {on && (
                         closed ? (
                           <div style={{ ...mono, fontSize: 10.5, color: rating == null || rating === '' ? T.mutedDim : T.cream, marginTop: 3 }}>
-                            {rating == null || rating === '' ? '—' : rating}
+                            {rating == null || rating === '' ? 'NA' : rating}
                           </div>
                         ) : (
-                          <Input
-                            type="number" min="1" max="10" placeholder="–"
-                            value={rating ?? ''} onChange={e => onRating(d, p.id, e.target.value)}
-                            style={{ width: 34, marginTop: 3, padding: '0 2px', height: 24, lineHeight: '22px', fontSize: 11, textAlign: 'center' }}
-                          />
+                          /* Lista em vez de campo numérico: no telemóvel as
+                             setinhas do <input type=number> são minúsculas e
+                             disparavam duas vezes. "NA" (sem nota) é o valor
+                             de partida — um jogador pode estar presente e
+                             lesionado, ou convocado e não jogar. */
+                          <Select
+                            value={rating == null || rating === '' ? '' : String(rating)}
+                            onChange={e => onRating(d, p.id, e.target.value)}
+                            style={{ width: 46, marginTop: 3, padding: '0 2px', height: 26, lineHeight: '24px', fontSize: 11, textAlign: 'center' }}
+                          >
+                            <option value="">NA</option>
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
+                          </Select>
                         )
                       )}
+                      </div>
                     </td>
                   );
                 })}
@@ -5956,7 +5972,8 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
       </div>
       <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
         Treinos: P presente / NP não presente. Jogos: C convocado / NC não convocado.
-        Toca para alternar; a nota (1–10) só aparece em quem está P ou C.
+        Toca para alternar. A nota (1–10) só aparece em quem está P ou C e começa em <span style={{ color: T.cream }}>NA</span> —
+        sem nota não conta para a média (jogador presente mas lesionado, ou convocado que não jogou).
       </div>
     </div>
   );
@@ -5990,30 +6007,59 @@ function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
     rows.push([`Dias de treino: ${days.length}`]);
     rows.push([]);
 
-    rows.push(['PRESENÇAS (P = presente, F = ausente)']);
-    rows.push(['Jogador', 'Posição', ...days.map(d => dayShort(d.date)), 'Presenças', 'Dias', 'Assiduidade %']);
+    // Helpers comuns aos vários blocos.
+    const presente = (d, p) => (d.match
+      ? (Array.isArray(d.match.attendance) ? d.match.attendance : (d.match.convocados || [])).includes(p.id)
+      : dayPresent(d.list, p.id));
+    const nota = (d, p) => {
+      const r = d.match ? ((d.match.ratings || {})[p.id] ?? null) : dayRating(d.list, p.id);
+      return (r == null || r === '') ? '' : String(r).replace('.', ',');
+    };
+    const media = (cells) => {
+      const vals = cells.filter(c => c !== '').map(c => Number(String(c).replace(',', '.')));
+      return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1).replace('.', ',') : 'NA';
+    };
+    const treinos = days.filter(d => !d.match);
+    const jogos = days.filter(d => !!d.match);
+    const head = (list) => list.map(d => `${dayShort(d.date)}${d.match ? ' (J)' : ''}`);
+
+    rows.push(['TREINOS · PRESENÇAS (P = presente, NP = não presente)']);
+    rows.push(['Jogador', 'Posição', ...head(treinos), 'Presenças', 'Treinos', 'Assiduidade %']);
     players.forEach(p => {
-      const cells = days.map(d => (d.match ? (d.match.attendance || []).includes(p.id) : dayPresent(d.list, p.id)) ? 'P' : 'F');
+      const cells = treinos.map(d => (presente(d, p) ? 'P' : 'NP'));
       const att = cells.filter(c => c === 'P').length;
       rows.push([
         p.name, p.position || '', ...cells,
-        att, days.length, days.length ? Math.round((att / days.length) * 100) : '',
+        att, treinos.length, treinos.length ? Math.round((att / treinos.length) * 100) : '',
       ]);
     });
     rows.push([]);
 
-    rows.push(['NOTAS DE TREINO (só nos dias com presença)']);
-    rows.push(['Jogador', 'Posição', ...days.map(d => dayShort(d.date)), 'Nota média']);
+    rows.push(['TREINOS · NOTAS (NA = sem nota atribuída)']);
+    rows.push(['Jogador', 'Posição', ...head(treinos), 'Nota média treino']);
     players.forEach(p => {
-      const cells = days.map(d => {
-        const presente = d.match ? (d.match.attendance || []).includes(p.id) : dayPresent(d.list, p.id);
-        if (!presente) return '';
-        const r = d.match ? ((d.match.ratings || {})[p.id] ?? null) : dayRating(d.list, p.id);
-        return (r == null || r === '') ? '' : String(r).replace('.', ',');
-      });
-      const vals = cells.filter(c => c !== '').map(c => Number(String(c).replace(',', '.')));
-      const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1).replace('.', ',') : '';
-      rows.push([p.name, p.position || '', ...cells, avg]);
+      const cells = treinos.map(d => (presente(d, p) ? nota(d, p) : ''));
+      rows.push([p.name, p.position || '', ...cells.map(c => (c === '' ? 'NA' : c)), media(cells)]);
+    });
+    rows.push([]);
+
+    rows.push(['JOGOS · CONVOCATÓRIA (C = convocado, NC = não convocado)']);
+    rows.push(['Jogador', 'Posição', ...jogos.map(d => `${dayShort(d.date)} ${d.match.opponent || ''}`.trim()), 'Convocatórias', 'Jogos', '%']);
+    players.forEach(p => {
+      const cells = jogos.map(d => (presente(d, p) ? 'C' : 'NC'));
+      const conv = cells.filter(c => c === 'C').length;
+      rows.push([
+        p.name, p.position || '', ...cells,
+        conv, jogos.length, jogos.length ? Math.round((conv / jogos.length) * 100) : '',
+      ]);
+    });
+    rows.push([]);
+
+    rows.push(['JOGOS · NOTAS (NA = sem nota atribuída)']);
+    rows.push(['Jogador', 'Posição', ...jogos.map(d => `${dayShort(d.date)} ${d.match.opponent || ''}`.trim()), 'Nota média jogo']);
+    players.forEach(p => {
+      const cells = jogos.map(d => (presente(d, p) ? nota(d, p) : ''));
+      rows.push([p.name, p.position || '', ...cells.map(c => (c === '' ? 'NA' : c)), media(cells)]);
     });
   });
 
@@ -6029,7 +6075,7 @@ function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
   return true;
 }
 
-function Presencas({ players, sessions, setSessions, matches, setMatches, convocatorias }) {
+function Presencas({ players, sessions, setSessions, matches, setMatches, convocatorias, season }) {
   const todayStart = new Date(new Date().toDateString());
   /* Os jogos entram nas presenças como um "dia" próprio, para se poder
      confirmar quem esteve presente e dar nota, tal como num treino. A
@@ -6069,16 +6115,25 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   const isPresent = (d, pid) => (d.match ? convocadosOf(d.match).includes(pid) : dayPresent(d.list, pid));
   const ratingOf = (d, pid) => (d.match ? ((d.match.ratings || {})[pid] ?? null) : dayRating(d.list, pid));
   const dayClosed = (d) => (d.match ? !!d.match.attendanceClosed : dayIsClosed(d.list));
+  const mean = (arr) => (arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null);
   const rows = orderedPlayers.map(p => {
     const attended = confirmedDays.filter(d => isPresent(d, p.id)).length;
     const pct = confirmedDays.length ? Math.round((attended / confirmedDays.length) * 100) : null;
-    const ratingValues = confirmedDays
-      .filter(d => isPresent(d, p.id))
+    // Notas de treino e de jogo contam separadamente — são escalas
+    // diferentes e misturá-las não diz nada. Notas em branco (NA) não
+    // entram em nenhuma das médias.
+    const notasDe = (filtro) => confirmedDays
+      .filter(d => filtro(d) && isPresent(d, p.id))
       .map(d => ratingOf(d, p.id))
       .filter(r => r != null && r !== '')
       .map(Number);
-    const avgRating = ratingValues.length ? (ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length).toFixed(1) : null;
-    return { player: p, attended, pct, avgRating, ratingCount: ratingValues.length };
+    const treinoVals = notasDe(d => !d.match);
+    const jogoVals = notasDe(d => !!d.match);
+    return {
+      player: p, attended, pct,
+      avgTreino: mean(treinoVals), avgJogo: mean(jogoVals),
+      countTreino: treinoVals.length, countJogo: jogoVals.length,
+    };
   });
 
   // Marca/desmarca presença em TODAS as sessões desse dia, para que baste
@@ -6177,27 +6232,31 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
             Assiduidade e nota média
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rows.map(({ player, attended, pct, avgRating }) => {
+            {rows.map(({ player, attended, pct, avgTreino, avgJogo }) => {
               const color = pct === null ? T.mutedDim : pct >= 80 ? T.good : pct >= 60 ? T.warn : T.bad;
-              const ratingColor = avgRating === null ? T.mutedDim : avgRating >= 7 ? T.good : avgRating >= 5 ? T.warn : T.bad;
+              const noteColor = (v) => (v === null ? T.mutedDim : v >= 7 ? T.good : v >= 5 ? T.warn : T.bad);
               return (
                 <div key={player.id} style={{
                   display: 'flex', alignItems: 'center', gap: 12, background: T.surface,
-                  border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 14px',
+                  border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 14px', flexWrap: 'wrap',
                 }}>
                   <Badge label={player.position} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ flex: 1, minWidth: 120 }}>
                     <div style={{ color: T.cream, fontSize: 14 }}>{player.name}</div>
                     <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmedDays.length} confirmados</div>
                   </div>
-                  <div style={{ width: 80, height: 6, background: T.bg, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
+                  <div style={{ width: 70, height: 6, background: T.bg, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
                     <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color }} />
                   </div>
                   <span style={{ ...mono, color, fontSize: 13, width: 42, textAlign: 'right', flexShrink: 0 }}>{pct === null ? '—' : `${pct}%`}</span>
                   <div style={{ width: 1, alignSelf: 'stretch', background: T.line, flexShrink: 0 }} />
-                  <div style={{ textAlign: 'right', flexShrink: 0, width: 64 }}>
-                    <div style={{ ...mono, color: ratingColor, fontSize: 13 }}>{avgRating === null ? '—' : avgRating}</div>
-                    <div style={{ fontSize: 10, color: T.mutedDim }}>nota média</div>
+                  <div style={{ textAlign: 'right', flexShrink: 0, width: 62 }}>
+                    <div style={{ ...mono, color: noteColor(avgTreino), fontSize: 13 }}>{avgTreino === null ? 'NA' : avgTreino}</div>
+                    <div style={{ fontSize: 10, color: T.mutedDim }}>média treino</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0, width: 56 }}>
+                    <div style={{ ...mono, color: noteColor(avgJogo), fontSize: 13 }}>{avgJogo === null ? 'NA' : avgJogo}</div>
+                    <div style={{ fontSize: 10, color: T.mutedDim }}>média jogo</div>
                   </div>
                 </div>
               );
@@ -6498,6 +6557,18 @@ function computeStandingsFromRounds(rounds, extraNames = []) {
    (competition/teams/rounds/auto) continuam a ser gravados a espelhar
    a competição ativa, para nada que os leia deixar de funcionar.
 ---------------------------------------------------------------- */
+/* Rótulo do jogo com o nosso clube incluído e do lado certo:
+   "SC Salgueiros vs X" em casa, "X vs SC Salgueiros" fora. Sem indicação
+   de casa/fora, mantém-se o formato antigo ("vs X"). */
+function matchLabel(m, season) {
+  const rival = (m && m.opponent) || 'Adversário por definir';
+  const usRaw = (season && season.club) || '';
+  // "SC Salgueiros · Sub-19" → "SC Salgueiros"
+  const us = usRaw.split('·')[0].trim() || usRaw.trim();
+  if (!us || m.atHome === undefined || m.atHome === null) return `vs ${rival}`;
+  return m.atHome ? `${us} vs ${rival}` : `${rival} vs ${us}`;
+}
+
 function normalizeStandings(standings) {
   const st = standings || {};
   if (Array.isArray(st.competitions) && st.competitions.length) {
@@ -6971,7 +7042,7 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta }) {
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season }) {
   const [modal, setModal] = useState(null);
 
   const save = (data) => {
@@ -7007,7 +7078,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
                   <div>
                     <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>
-                      vs {m.opponent || 'Adversário por definir'}
+                      {matchLabel(m, season)}
                       {m.atHome !== undefined && (
                         <span style={{ fontSize: 11, color: T.mutedDim, marginLeft: 8 }}>{m.atHome ? '(casa)' : '(fora)'}</span>
                       )}
@@ -7032,14 +7103,16 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
   );
 }
 
-/* Convocar alguém no jogo marca-o também como convocado na tabela-resumo
-   das Presenças. Sem isto, quem já tivesse mexido nessa tabela (criando a
-   lista `attendance`) deixava de ver ali os convocados adicionados depois.
-   O contrário não acontece: tirar da convocatória não apaga a presença já
-   registada — são coisas diferentes. */
+/* A convocatória do jogo manda na coluna desse jogo na tabela-resumo das
+   Presenças: convocar marca C, desconvocar volta a NC. Guardar o jogo
+   passa a alinhar as duas listas, para não ficarem versões diferentes da
+   mesma coisa em sítios diferentes. As notas de quem sai da convocatória
+   também são retiradas, porque deixaram de ter a que se referir. */
 function withConvocadosInAttendance(f) {
-  if (!Array.isArray(f.attendance)) return f;
-  return { ...f, attendance: [...new Set([...f.attendance, ...(f.convocados || [])])] };
+  const convocados = f.convocados || [];
+  const ratings = { ...(f.ratings || {}) };
+  Object.keys(ratings).forEach(pid => { if (!convocados.includes(pid)) delete ratings[pid]; });
+  return { ...f, attendance: [...convocados], ratings };
 }
 
 function MatchModal({ match, players, standings, onClose, onSave }) {
@@ -9760,7 +9833,13 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
     setLoadingFile(true);
     try {
       const dataUrl = await fileToDataUrl(file);
-      setF(prev => ({ ...prev, kind, fileName: file.name, dataUrl, youtubeId: null, title: prev.title || file.name.replace(/\.[^.]+$/, '') }));
+      setF(prev => ({ ...prev, kind, fileName: file.name, dataUrl, youtubeId: null, drive: null, title: prev.title || file.name.replace(/\.[^.]+$/, '') }));
+      // Acima de ~4 MB a gravação começa a ultrapassar o tempo limite do
+      // Postgres ("statement timeout"): o ficheiro vai em base64 dentro da
+      // própria linha da tabela. Avisamos ANTES de tentar gravar.
+      if (file.size > 4 * 1024 * 1024) {
+        setError(`Atenção: ${Math.round(file.size / 1024 / 1024)} MB é grande para guardar na base de dados — a gravação pode falhar com "statement timeout". Usa antes o separador Google Drive, ou comprime o ficheiro.`);
+      }
     } finally {
       setLoadingFile(false);
     }
@@ -9819,35 +9898,28 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
       {/* PASTA — escreve-se o nome à mão (criando uma pasta nova) ou
           escolhe-se uma das que já existem na lista sugerida. Deixar em
           branco põe o item fora de qualquer pasta. */}
-      <div style={{ marginBottom: 12 }}>
-        <Field label="Pasta (opcional)">
-          <Input
-            value={f.pasta}
-            onChange={e => setF({ ...f, pasta: e.target.value })}
-            list="media-folders"
-            placeholder="Ex: Pré-época · Bolas paradas · Adversários"
-          />
-          <datalist id="media-folders">
-            {folders.map(name => <option key={name} value={name} />)}
-          </datalist>
-        </Field>
-        {folders.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-            {folders.map(name => (
-              <button
-                key={name}
-                type="button"
-                onClick={() => setF(prev => ({ ...prev, pasta: prev.pasta === name ? '' : name }))}
-                style={{
-                  padding: '4px 10px', borderRadius: 14, fontSize: 11.5, cursor: 'pointer', ...body,
-                  border: `1px solid ${f.pasta === name ? T.gold : T.line}`,
-                  background: f.pasta === name ? `${T.crimson}33` : 'transparent',
-                  color: f.pasta === name ? T.cream : T.mutedDim,
-                }}
-              >{name}</button>
-            ))}
-          </div>
-        )}
+      {/* PASTA — a lista escolhe uma das existentes; a caixa ao lado serve
+          para criar uma nova. Antes era um <datalist>, cuja seta o browser
+          desenha mas não abre de forma fiável no telemóvel. */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ ...FIELD_GRID }}>
+          <Field label="Pasta existente">
+            <Select
+              value={folders.includes(f.pasta) ? f.pasta : ''}
+              onChange={e => setF({ ...f, pasta: e.target.value })}
+            >
+              <option value="">— sem pasta —</option>
+              {folders.map(name => <option key={name} value={name}>{name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Ou criar pasta nova">
+            <Input
+              value={folders.includes(f.pasta) ? '' : f.pasta}
+              onChange={e => setF({ ...f, pasta: e.target.value })}
+              placeholder="Ex: Adversários"
+            />
+          </Field>
+        </div>
       </div>
 
       {source === 'drive' ? (
@@ -9876,7 +9948,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
         </div>
       ) : source === 'link' ? (
         <div style={{ marginBottom: 8 }}>
-          <Field label="Link do vídeo (YouTube, Instagram ou TikTok)">
+          <Field label="Link do vídeo">
             <Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/... · instagram.com/reel/... · tiktok.com/@user/video/..." />
           </Field>
           <p style={{ fontSize: 11.5, color: T.mutedDim, margin: '6px 0 0' }}>
@@ -9912,7 +9984,12 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
       {error && <p style={{ fontSize: 12, color: T.bad, margin: '0 0 12px' }}>{error}</p>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.title || (source === 'link' ? !f.url : !f.dataUrl)} onClick={handleSave}><Check size={15} /> Guardar</Btn>
+        {/* A fonte "Google Drive" só precisa do link — antes o botão exigia
+            um ficheiro carregado (dataUrl) e ficava sempre desativado. */}
+        <Btn
+          disabled={!f.title || (source === 'link' ? !f.url : source === 'drive' ? !f.driveUrl : !f.dataUrl)}
+          onClick={handleSave}
+        ><Check size={15} /> Guardar</Btn>
       </div>
     </Modal>
   );
