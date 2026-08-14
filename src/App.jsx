@@ -1726,15 +1726,21 @@ function SheetActions({ onShare, onPrint, onEdit }) {
 
 function PlayerChipList({ players, isOn, onToggle }) {
   const isMobile = useIsMobile(560);
-  // Grelha em vez de linha corrida: com nomes de comprimentos muito
-  // diferentes, os chips ficavam desalinhados de linha para linha. No
-  // telemóvel é uma coluna única.
+  /* Ordenação POR COLUNA: com gridAutoFlow "column" e um número de linhas
+     fixo, a lista lê-se de cima para baixo em cada coluna (GR, GR, GR, GR,
+     DC…) em vez de saltar de coluna em coluna. Para isso é preciso saber
+     quantas colunas há, por isso são fixas: 1 no telemóvel, 2 no resto. */
+  const cols = isMobile ? 1 : 2;
+  const ordered = sortByPosition(players);
+  const rows = Math.max(1, Math.ceil(ordered.length / cols));
   return (
     <div style={{
       display: 'grid', gap: 6,
-      gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(210px, 1fr))',
+      gridTemplateColumns: `repeat(${cols}, 1fr)`,
+      gridTemplateRows: `repeat(${rows}, auto)`,
+      gridAutoFlow: 'column',
     }}>
-      {sortByPosition(players).map(p => {
+      {ordered.map(p => {
         const on = isOn(p);
         return (
           <button key={p.id} type="button" onClick={() => onToggle(p)} style={{
@@ -2458,8 +2464,9 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                   <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
                 </div>
                 <DiagramThumb diagram={x.diagram} />
-                {/* Ícones por baixo da imagem, alinhados à esquerda. */}
-                <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                {/* Ícones por baixo da imagem, encostados à margem esquerda
+                    do cartão (mesmo alinhamento do título e do badge). */}
+                <div style={{ display: 'flex', gap: 16, marginTop: 8, marginLeft: 0, justifyContent: 'flex-start' }}>
                   <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
