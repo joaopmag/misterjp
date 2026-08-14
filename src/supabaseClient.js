@@ -10,4 +10,26 @@ if (!url || !anonKey) {
   );
 }
 
-export const supabase = createClient(url, anonKey);
+/* OPÇÕES DE SESSÃO — explícitas de propósito.
+
+   Estes três valores já são o comportamento por omissão do supabase-js v2,
+   por isso escrevê-los não muda nada hoje. Ficam escritos por dois motivos:
+
+   1. As omissões mudaram entre versões do SDK. Uma atualização futura que
+      altere um destes valores tira a app do ar de uma forma difícil de
+      diagnosticar (o sintoma é conteúdo a aparecer vazio, não um erro).
+   2. Documentam a intenção: a sessão do treinador PERSISTE entre visitas e
+      o token renova-se sozinho. Quem ler este ficheiro daqui a um ano não
+      tem de ir confirmar omissões à documentação.
+
+   `storageKey` fixa o nome da chave no localStorage. Sem ele, o SDK deriva
+   o nome do URL do projeto — se o projeto Supabase mudar, toda a gente é
+   deslogada sem aviso. */
+export const supabase = createClient(url, anonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: 'misterjp-auth',
+  },
+});

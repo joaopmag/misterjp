@@ -134,17 +134,34 @@ import AuthScreen from './AuthScreen.jsx';
 
 // A Época é um registo único (não uma lista) — vive numa linha fixa
 // (id='default') na tabela season_config.
+/* Devolve { ok, value, editedBy, editedAt }. O `ok` é o que interessa.
+
+   ISTO ERA UM CAMINHO REAL DE PERDA DE DADOS. Antes, uma leitura falhada
+   devolvia o `fallback` — classificação vazia, época por omissão — sem
+   distinção nenhuma de uma leitura bem-sucedida. Bastava o treinador
+   mexer num campo a seguir para essa versão vazia ser gravada por cima da
+   classificação verdadeira, com todas as jornadas e resultados da época.
+
+   Ao contrário das coleções (onde o snapshot vazio impedia eliminações),
+   aqui não havia nada a travar a escrita. Com `ok: false`, o hook não fica
+   pronto e a gravação nunca chega a acontecer. */
 async function loadSingleton(table, fallback) {
   try {
+    // Token válido primeiro — sem ele a RLS aplica o papel `anon` e a
+    // resposta vem vazia, sem erro. Ver a nota em ensureSession.
+    const sessao = await ensureSession();
+    if (!sessao) throw new Error('Sem sessão válida — o token expirou e não foi possível renovar.');
+
     const { data, error } = await supabase
       .from(table).select('data, updated_by_email, updated_at').eq('id', 'default').maybeSingle();
     if (error) throw error;
     return data
-      ? { value: data.data, editedBy: data.updated_by_email, editedAt: data.updated_at }
-      : { value: fallback, editedBy: null, editedAt: null };
+      ? { ok: true, value: data.data, editedBy: data.updated_by_email, editedAt: data.updated_at }
+      : { ok: true, value: fallback, editedBy: null, editedAt: null };
   } catch (e) {
     console.error('Falha ao carregar', table, e);
-    return { value: fallback, editedBy: null, editedAt: null };
+    reportReadError(table, e);
+    return { ok: false, value: fallback, editedBy: null, editedAt: null };
   }
 }
 async function saveSingleton(table, value) {
@@ -181,7 +198,8 @@ function useSingletonSync(table, fallback, notifyEdit) {
       syncedRef.current = JSON.stringify(s.value);
       setValue(s.value);
       if (s.editedBy) setMeta({ email: s.editedBy, at: s.editedAt });
-      setReady(true);
+      // Só fica pronto (= só autoriza gravar) se a leitura correu bem.
+      if (s.ok) setReady(true);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -249,6 +267,36 @@ function reportReadError(table, error) {
   reportSyncError(table, error, 'read');
 }
 
+/* SESSÃO VÁLIDA ANTES DE LER — a correção da causa raiz.
+
+   O que acontecia: o portão de autenticação monta a app assim que o
+   getSession() responde, e a app dispara logo a seguir as treze leituras
+   das treze tabelas, todas ao mesmo tempo. Se a app esteve fechada tempo
+   suficiente para o token caducar, essas leituras saem antes de a
+   renovação ter terminado — e uma leitura sem token válido não dá erro:
+   o Postgres aplica a RLS do papel `anon` e devolve lista VAZIA.
+
+   Daí o padrão exato que se via: `players`, `sessions` e `monitoring`
+   continuavam a funcionar (têm política `anon`), e tudo o resto aparecia
+   em branco.
+
+   `getSession()` do supabase-js renova o token se estiver caducado, e
+   devolve a sessão só depois disso. Esperar por ele antes de cada leitura
+   custa milissegundos e fecha a corrida.
+
+   A promessa é partilhada por todas as tabelas (não são treze renovações
+   em paralelo, é uma só à qual todas se juntam). */
+let sessaoPendente = null;
+async function ensureSession() {
+  if (!sessaoPendente) {
+    sessaoPendente = supabase.auth.getSession()
+      .then(({ data }) => (data && data.session) || null)
+      .catch(() => null)
+      .finally(() => { sessaoPendente = null; });
+  }
+  return sessaoPendente;
+}
+
 function SyncErrorBanner() {
   const [err, setErr] = useState(null);
   useEffect(() => {
@@ -291,7 +339,11 @@ function SyncErrorBanner() {
   );
 }
 
-function useCollectionSync(table, notifyEdit) {
+/* `anonimo` — o quiosque do questionário (?checkin=1) lê `players`,
+   `sessions` e `monitoring` SEM login, através das políticas `anon`. Para
+   esse caso não se pode exigir sessão: exigi-la deixava os atletas sem
+   conseguir responder. Todas as outras utilizações exigem sessão válida. */
+function useCollectionSync(table, notifyEdit, { anonimo = false } = {}) {
   const [items, setItems] = useState([]);
   const [ready, setReady] = useState(false);
   const [recordMeta, setRecordMeta] = useState({}); // id -> { email, at }
@@ -304,6 +356,18 @@ function useCollectionSync(table, notifyEdit) {
          arranque não deve deixar a secção vazia para o resto da sessão. */
       let ultimo = null;
       for (let tentativa = 0; tentativa < 3; tentativa++) {
+        // Token válido primeiro; sem isto a leitura pode sair como `anon`.
+        if (!anonimo) {
+          const sessao = await ensureSession();
+          if (cancelled) return;
+          if (!sessao) {
+            ultimo = { message: 'Sem sessão válida — o token expirou e não foi possível renovar.' };
+            await new Promise(r => setTimeout(r, 400 * (tentativa + 1)));
+            if (cancelled) return;
+            continue;
+          }
+        }
+
         const { data, error } = await supabase.from(table)
           .select('id, data, updated_by_email, updated_at')
           .order('created_at', { ascending: true });
@@ -323,10 +387,10 @@ function useCollectionSync(table, notifyEdit) {
              conseguimos perguntar se ainda há sessão válida. Se não
              houver, isto não é uma tabela vazia — é uma leitura falhada,
              e trata-se como tal (sem `ready`, portanto sem escrita). */
-          if (rows.length === 0) {
-            const { data: sess } = await supabase.auth.getSession();
+          if (rows.length === 0 && !anonimo) {
+            const sess = await ensureSession();
             if (cancelled) return;
-            if (!sess || !sess.session) {
+            if (!sess) {
               reportReadError(table, { message: 'A sessão expirou durante a leitura.' });
               return;
             }
@@ -1063,7 +1127,9 @@ function App({ session }) {
       seasonSyncedRef.current = JSON.stringify(s.value);
       setSeason(s.value);
       if (s.editedBy) setLastEdits(prev => ({ ...prev, season_config: { email: s.editedBy, at: s.editedAt } }));
-      setSeasonReady(true);
+      // Mesma regra do useSingletonSync: leitura falhada não autoriza
+      // gravar, para a época por omissão não ir por cima da verdadeira.
+      if (s.ok) setSeasonReady(true);
     })();
   }, []);
 
@@ -1131,12 +1197,7 @@ function App({ session }) {
   const goTab = (id) => { setTab(id); setNavOpen(false); };
 
   if (loading) {
-    return (
-      <div style={{ background: T.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <style>{FONTS}</style>
-        <Loader2 className="animate-spin" color={T.warn} size={28} />
-      </div>
-    );
+    return <LoadingGate />;
   }
 
   if (isCheckin) {
@@ -12324,19 +12385,16 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
 // CheckinKiosk.
 function CheckinApp() {
   const notifyEdit = useCallback(() => {}, []);
-  const [players, , playersReady] = useCollectionSync('players', notifyEdit);
-  const [sessions, , sessionsReady] = useCollectionSync('sessions', notifyEdit);
-  const [monitoring, setMonitoring, monitoringReady] = useCollectionSync('monitoring', notifyEdit);
+  // Sem login: ver a nota em useCollectionSync sobre `anonimo`.
+  const anon = { anonimo: true };
+  const [players, , playersReady] = useCollectionSync('players', notifyEdit, anon);
+  const [sessions, , sessionsReady] = useCollectionSync('sessions', notifyEdit, anon);
+  const [monitoring, setMonitoring, monitoringReady] = useCollectionSync('monitoring', notifyEdit, anon);
 
   const loading = !playersReady || !sessionsReady || !monitoringReady;
 
   if (loading) {
-    return (
-      <div style={{ background: T.bg, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <style>{FONTS}</style>
-        <Loader2 className="animate-spin" color={T.warn} size={28} />
-      </div>
-    );
+    return <LoadingGate />;
   }
 
   return (
@@ -12352,6 +12410,54 @@ function CheckinApp() {
         players={players} monitoring={monitoring} setMonitoring={setMonitoring}
         sessions={sessions}
       />
+    </div>
+  );
+}
+
+/* Ecrã de carregamento que não fica preso.
+
+   Uma leitura falhada já não marca a tabela como pronta (é isso que
+   impede gravar por cima de dados que não conseguimos ler). O efeito
+   colateral é que a app ficaria a rodar a bolinha para sempre, sem
+   explicação nenhuma — que é pior do que o problema original.
+
+   Ao fim de 12 segundos assume-se que algo correu mal e diz-se por
+   palavras o que fazer. A mensagem é deliberadamente tranquilizadora
+   quanto aos dados, porque a causa quase certa é a sessão e não perda de
+   conteúdo. */
+function LoadingGate() {
+  const [demorou, setDemorou] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setDemorou(true), 12000);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div style={{
+      background: T.bg, minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 18, padding: 24, textAlign: 'center',
+    }}>
+      <style>{FONTS}</style>
+      <Loader2 className="animate-spin" color={T.warn} size={28} />
+      {demorou && (
+        <div style={{ maxWidth: 420, ...body }}>
+          <div style={{ color: T.cream, fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+            Está a demorar mais do que devia
+          </div>
+          <div style={{ color: T.muted, fontSize: 13, lineHeight: 1.6, marginBottom: 16 }}>
+            Não foi possível ler alguns dados — quase sempre é a sessão que expirou.
+            <strong style={{ color: T.cream }}> Nada foi apagado.</strong> Recarrega a
+            página; se continuar, sai da conta e volta a entrar.
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Btn onClick={() => window.location.reload()}><RefreshCw size={14} /> Recarregar</Btn>
+            <Btn variant="ghost" onClick={async () => {
+              await supabase.auth.signOut();
+              window.location.reload();
+            }}><LogOut size={14} /> Sair da conta</Btn>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
