@@ -8,7 +8,7 @@ import {
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
-  Image as ImageIcon
+  Image as ImageIcon, Folder
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -9857,24 +9857,15 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
 
-  // Pastas abertas/fechadas na vista "Tudo": nome -> true/false. Sem
-  // entrada = ainda não foi tocada, vale o comportamento por omissão.
-  const [openFolders, setOpenFolders] = useState({});
-
-  /* Agrupamento por pasta para a vista "Tudo". Uma pasta arranca fechada;
-     a exceção é a que contém o ficheiro que está a ser mostrado à
-     esquerda, que abre sozinha para a lista e o visualizador não ficarem
-     a falar de coisas diferentes. Depois de o utilizador abrir ou fechar
-     uma pasta à mão, é a escolha dele que manda. */
+  /* Em "Tudo" não se mostram ficheiros nenhuns: mostram-se as pastas.
+     Com dezenas de ficheiros, a lista completa era ruído — o que interessa
+     ao chegar a este ecrã é escolher onde procurar. Os ficheiros aparecem
+     depois de entrar numa pasta (aqui ou pelos separadores de cima). */
   const grupos = [
     ...folders.map(name => ({ name, items: items.filter(v => cleanFolder(v.pasta) === name) })),
     { name: NO_FOLDER, items: items.filter(v => !cleanFolder(v.pasta)) },
   ].filter(g => g.items.length > 0);
-  const isGroupOpen = (name) => (
-    openFolders[name] !== undefined
-      ? openFolders[name]
-      : !!(active && (cleanFolder(active.pasta) || NO_FOLDER) === name)
-  );
+  const soPastas = folderFilter === null && folders.length > 0;
 
   /* Uma linha da lista. Extraída para poder ser usada tanto na lista
      corrida (dentro de uma pasta) como dentro de cada pasta fechada. */
@@ -9991,7 +9982,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
             background: folderFilter === null ? '#B5393F' : 'transparent',
             color: folderFilter === null ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${folderFilter === null ? '#B5393F' : T.line}`,
-          }}>Tudo ({items.length})</button>
+          }}>{folders.length > 0 ? 'Pastas' : 'Tudo'} ({items.length})</button>
 
           {folders.map(name => {
             const on = folderFilter === name;
@@ -10049,6 +10040,46 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
+      ) : soPastas ? (
+        /* Vista de pastas: cartões grandes, um por pasta, com o número de
+           ficheiros e os primeiros títulos como pista do conteúdo. */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+          {grupos.map(g => {
+            const semPasta = g.name === NO_FOLDER;
+            return (
+              <button
+                key={g.name}
+                onClick={() => setFolderFilter(g.name)}
+                title={semPasta ? 'Ficheiros por arrumar' : `Abrir a pasta ${g.name}`}
+                style={{
+                  textAlign: 'left', cursor: 'pointer', ...body,
+                  background: T.surface, border: `1px solid ${semPasta ? T.line : T.gold + '44'}`,
+                  borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 10,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Folder size={20} color={semPasta ? T.mutedDim : T.warn} style={{ flexShrink: 0 }} />
+                  <span style={{
+                    flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 600,
+                    color: semPasta ? T.mutedDim : T.cream,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>{semPasta ? 'Sem pasta' : g.name}</span>
+                  <span style={{ ...mono, fontSize: 12, color: T.mutedDim, flexShrink: 0 }}>{g.items.length}</span>
+                </div>
+                {/* Duas ou três pistas do que lá está dentro, para não ser
+                    preciso entrar em cada pasta só para ver o que tem. */}
+                <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.5, minHeight: 34 }}>
+                  {g.items.slice(0, 2).map(v => (
+                    <div key={v.id} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {v.title || v.fileName || '(sem título)'}
+                    </div>
+                  ))}
+                  {g.items.length > 2 && <div>+ {g.items.length - 2} {g.items.length - 2 === 1 ? 'ficheiro' : 'ficheiros'}</div>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       ) : visibleItems.length === 0 ? (
         <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
       ) : (
@@ -10218,58 +10249,9 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
               </>
             )}
           </div>
-          {/* Em "Tudo", as pastas ficam fechadas por omissão: com 16 ou
-              mais ficheiros, a lista corrida obrigava a percorrer tudo
-              para chegar a uma pasta. Dentro de uma pasta escolhida na
-              barra de cima, a lista é sempre corrida — já está filtrada. */}
-          {folderFilter === null && folders.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => {
-                    const abrirTodas = grupos.some(g => !isGroupOpen(g.name));
-                    const next = {};
-                    grupos.forEach(g => { next[g.name] = abrirTodas; });
-                    setOpenFolders(next);
-                  }}
-                  style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 11.5, ...body, padding: 0 }}
-                >{grupos.some(g => !isGroupOpen(g.name)) ? 'Abrir todas' : 'Fechar todas'}</button>
-              </div>
-              {grupos.map(g => {
-                const aberta = isGroupOpen(g.name);
-                return (
-                  <div key={g.name} style={{ border: `1px solid ${T.line}`, borderRadius: 8, overflow: 'hidden' }}>
-                    <button
-                      onClick={() => setOpenFolders(prev => ({ ...prev, [g.name]: !aberta }))}
-                      style={{
-                        width: '100%', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
-                        background: T.surface, border: 'none', cursor: 'pointer', padding: '9px 11px', ...body,
-                      }}
-                    >
-                      <ChevronRight
-                        size={14}
-                        color={T.mutedDim}
-                        style={{ flexShrink: 0, transform: aberta ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}
-                      />
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: g.name === NO_FOLDER ? T.mutedDim : T.cream }}>
-                        {g.name === NO_FOLDER ? 'Sem pasta' : g.name}
-                      </span>
-                      <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{g.items.length}</span>
-                    </button>
-                    {aberta && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, borderTop: `1px solid ${T.line}` }}>
-                        {g.items.map(renderRow)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {visibleItems.map(renderRow)}
-            </div>
-          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {visibleItems.map(renderRow)}
+          </div>
         </div>
       )}
 
