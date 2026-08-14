@@ -7,7 +7,8 @@ import {
   Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
-  Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb
+  Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
+  Image as ImageIcon
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -719,12 +720,19 @@ function App({ session }) {
     return fromHash || 'geral';
   });
 
-  // Escreve a secção atual no endereço, sem criar entrada nova no
-  // histórico a cada clique (replace em vez de push).
+  /* Cada secção passa a ser uma entrada no histórico (pushState), para os
+     botões de retroceder/avançar do browser andarem entre secções. A
+     primeira vez usa replace, para não ficar uma entrada duplicada logo à
+     entrada da app. */
+  const firstHashRef = useRef(true);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (window.location.hash.replace('#', '') !== tab) {
+    if (window.location.hash.replace('#', '') === tab) { firstHashRef.current = false; return; }
+    if (firstHashRef.current) {
       window.history.replaceState(null, '', `#${tab}`);
+      firstHashRef.current = false;
+    } else {
+      window.history.pushState(null, '', `#${tab}`);
     }
   }, [tab]);
 
@@ -1040,7 +1048,7 @@ function App({ session }) {
           flex: 1, minWidth: 0,
           ...(isMobile ? {} : { overflowY: 'auto', height: '100vh' }),
         }}>
-        <div style={{ maxWidth: 1100, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
+        <div style={{ maxWidth: 1560, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
@@ -1130,7 +1138,9 @@ function Overview({ season, setSeason, players, sessions, setSessions, exercises
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
+      {/* Colunas mais largas: com o ecrã inteiro disponível, minmax(260px)
+          criava colunas estreitas e sobrava espaço à direita. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20, alignItems: 'start' }}>
         <Panel title="Próximas sessões">
           {upcoming.length === 0 ? (
             <EmptyState text="Ainda não há sessões planeadas." />
@@ -7622,17 +7632,15 @@ function PlantelHistorico({ players, monitoring }) {
 
   return (
     <Panel title="Plantel — histórico">
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
-        <div style={{ minWidth: 160 }}>
-          <Field label="Data de início"><Input type="date" value={start} max={end || undefined} onChange={e => setStart(e.target.value)} /></Field>
-        </div>
-        <div style={{ minWidth: 160 }}>
-          <Field label="Data de fim"><Input type="date" value={end} min={start || undefined} onChange={e => setEnd(e.target.value)} /></Field>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 2 }}>
+      {/* Mesma grelha dos restantes formulários: as duas datas e os atalhos
+          ficam com a mesma largura e alinhados, também no telemóvel. */}
+      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        <Field label="Data de início"><Input type="date" value={start} max={end || undefined} onChange={e => setStart(e.target.value)} /></Field>
+        <Field label="Data de fim"><Input type="date" value={end} min={start || undefined} onChange={e => setEnd(e.target.value)} /></Field>
+        <div style={{ ...FIELD_FULL, display: 'flex', gap: 6 }}>
           {[['7 dias', 6], ['14 dias', 13], ['30 dias', 29]].map(([label, back]) => (
             <button key={label} onClick={() => { setStart(addDays(todayStr(), -back)); setEnd(todayStr()); }} style={{
-              padding: '8px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
+              flex: 1, height: 38, padding: '0 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
               background: 'transparent', color: T.muted, border: `1px solid ${T.line}`,
             }}>{label}</button>
           ))}
@@ -9275,6 +9283,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   // Só nesse caso mostramos o aviso "abre no YouTube" — o resto reproduz
   // sempre dentro do leitor da plataforma.
   const [blockedIds, setBlockedIds] = useState({});
+  const isNarrow = useIsMobile(760);
 
   const iframeRef = React.useRef(null);
   const inlineIframeRef = React.useRef(null);
@@ -9426,7 +9435,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
-  const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation, drive: ExternalLink };
+  const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation, drive: ExternalLink, image: ImageIcon };
 
   useEffect(() => {
     activeYoutubeIdRef.current = (active && active.youtubeId) || null;
@@ -9692,10 +9701,16 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
               const Icon = kindIcon[v.kind] || FileText;
               return (
                 <div key={v.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
+                  display: 'flex', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
                   background: v.id === active?.id ? `${T.crimson}33` : T.surface, padding: '8px 10px',
+                  // No telemóvel a linha parte-se em duas: o item em cima e
+                  // os controlos por baixo. Tudo na mesma linha deixava o
+                  // título espremido em duas ou três palavras por linha.
+                  ...(isNarrow
+                    ? { flexDirection: 'column', alignItems: 'stretch' }
+                    : { alignItems: 'center' }),
                 }}>
-                  <button onClick={() => selectItem(v.id)} style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button onClick={() => selectItem(v.id)} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center', padding: 0 }}>
                     {v.youtubeId ? (
                       <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
                     ) : v.social ? (
@@ -9721,6 +9736,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                     </span>
                   </button>
                   {/* Mover para outra pasta sem abrir a janela de edição. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isNarrow ? { justifyContent: 'flex-end' } : {}) }}>
                   <select
                     value={cleanFolder(v.pasta)}
                     onChange={e => moveItem(v.id, e.target.value)}
@@ -9732,7 +9748,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                       // linha os colocar num sítio diferente conforme o
                       // comprimento do nome da pasta.
                       borderRadius: 6, fontSize: 11, padding: '4px 6px', cursor: 'pointer', ...body,
-                      width: 150, flexShrink: 0,
+                      ...(isNarrow ? { flex: 1, minWidth: 0 } : { width: 150, flexShrink: 0 }),
                     }}
                   >
                     <option value="">Sem pasta</option>
@@ -9743,6 +9759,11 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                   {/* O lugar da impressora existe sempre, mesmo nos itens que
                       não se imprimem (vídeos, links) — senão o lápis e o
                       caixote saltavam de linha para linha. */}
+                  <button
+                    onClick={() => shareMediaItem(v)}
+                    title="Partilhar"
+                    style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
+                  ><Share2 size={13} /></button>
                   {(v.kind === 'pdf' || v.kind === 'drive') ? (
                     <button
                       onClick={() => printDocumentItem(v)}
@@ -9754,6 +9775,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                   )}
                   <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                   <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                  </div>
                 </div>
               );
             })}
@@ -9857,6 +9879,47 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
    imprime a partir da nossa página — quem o desenha é o leitor do browser
    (ou o do Google, nos ficheiros do Drive), e só esse tem o comando de
    imprimir. Se a janela for bloqueada, fica sempre o botão de abrir. */
+/* Partilhar um item da biblioteca.
+
+   Nos links (YouTube, Instagram, TikTok, Drive) partilha-se o endereço,
+   que é o que faz sentido enviar. Nos ficheiros carregados tenta-se a
+   partilha nativa do sistema com o próprio ficheiro; se o browser não
+   suportar (é o caso do Chrome no computador), descarrega-se — o
+   utilizador anexa-o depois onde quiser. */
+async function shareMediaItem(item) {
+  if (!item) return;
+  const titulo = item.title || item.fileName || 'Documento';
+  const url = item.drive ? driveOpenSrc(item.drive)
+    : item.youtubeId ? `https://youtu.be/${item.youtubeId}`
+      : (item.social ? socialEmbedSrc(item.social) : null);
+
+  if (url) {
+    if (navigator.share) {
+      try { await navigator.share({ title: titulo, text: item.jornada || '', url }); return; } catch (e) { /* cancelado */ return; }
+    }
+    if (navigator.clipboard) {
+      try { await navigator.clipboard.writeText(url); window.alert('Link copiado.'); return; } catch (e) { /* segue para abrir */ }
+    }
+    window.open(url, '_blank');
+    return;
+  }
+
+  if (!item.dataUrl) return;
+  try {
+    const res = await fetch(item.dataUrl);
+    const blob = await res.blob();
+    const file = new File([blob], item.fileName || 'ficheiro', { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+      await navigator.share({ files: [file], title: titulo });
+      return;
+    }
+  } catch (e) { /* cai para o download */ }
+  const a = document.createElement('a');
+  a.href = item.dataUrl;
+  a.download = item.fileName || 'ficheiro';
+  a.click();
+}
+
 function printDocumentItem(item) {
   if (!item) return;
   const url = item.kind === 'drive' ? driveOpenSrc(item.drive) : item.dataUrl;
@@ -9918,7 +9981,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
     setError('');
     if (!file) return;
     const kind = presentationKind(file);
-    if (!kind) { setError('Formato não suportado — escolhe um PDF, PowerPoint (.ppt/.pptx) ou vídeo.'); return; }
+    if (!kind) { setError('Formato não suportado — escolhe um PDF, imagem, PowerPoint (.ppt/.pptx) ou vídeo.'); return; }
     // Vídeos ocupam muito mais espaço em base64 do que PDFs/imagens —
     // limite mais generoso que o dos anexos de exercícios, mas continua
     // a existir para não sobrecarregar a base de dados.
@@ -10054,7 +10117,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
         </div>
       ) : (
         <div style={{ marginBottom: 8 }}>
-          <Field label="Ficheiro (PDF, PowerPoint ou vídeo)">
+          <Field label="Ficheiro">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <label style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
@@ -10065,7 +10128,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
                 {f.fileName ? 'Substituir ficheiro' : 'Carregar ficheiro'}
                 <input
                   type="file"
-                  accept="application/pdf,video/*,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                  accept="application/pdf,image/*,video/*,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
                   onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ''; }}
                   style={{ display: 'none' }}
                 />
@@ -10105,6 +10168,7 @@ function presentationKind(file) {
   const type = file.type || '';
   const name = (file.name || '').toLowerCase();
   if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  if (type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic|heif)$/.test(name)) return 'image';
   if (type.startsWith('video/') || /\.(mp4|webm|mov|m4v|ogg)$/.test(name)) return 'video';
   if (
     type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
@@ -10478,6 +10542,41 @@ function AttachmentPreview({ item, tall }) {
       </button>
     </div>
   );
+  if (item.kind === 'image') {
+    return (
+      <div ref={boxRef} style={wrapStyle}>
+        <div style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img
+            key={item.id}
+            src={item.dataUrl}
+            alt={item.title || item.fileName || 'Imagem'}
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block' }}
+          />
+        </div>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+        }}>
+          <a
+            href={item.dataUrl} download={item.fileName || 'imagem.jpg'}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', textDecoration: 'none' }}
+          >
+            <Download size={13} /> Abrir / descarregar
+          </a>
+          <button
+            onClick={toggleFs}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
+              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+            }}
+          >
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {isFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (item.kind === 'video') {
     return (
       <div ref={boxRef} style={wrapStyle}>
