@@ -554,7 +554,7 @@ function TextArea(props) {
   return <textarea {...props} style={{ ...inputStyle, height: 'auto', lineHeight: 1.5, padding: '9px 10px', resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />;
 }
 
-function Modal({ title, onClose, children, wide }) {
+function Modal({ title, subtitle, onClose, children, wide }) {
   // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
   // são quase todas de edição (exercício, sessão, jogo, jogador...) e um
   // clique acidental fora — muito fácil de dar ao arrastar peças no editor
@@ -574,9 +574,12 @@ function Modal({ title, onClose, children, wide }) {
           padding: 22, boxShadow: '0 20px 60px #00000080',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0 }}>{title}</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0 }}>{title}</h3>
+            {subtitle && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 3 }}>{subtitle}</div>}
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
             <X size={20} />
           </button>
         </div>
@@ -1051,7 +1054,7 @@ function App({ session }) {
         {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} lastEdits={lastEdits} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
@@ -1095,13 +1098,18 @@ function App({ session }) {
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, lastEdits }) {
+function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, lastEdits }) {
   // Cartões clicáveis: sessão e jogo abrem a respetiva janela de edição
   // aqui mesmo, sem obrigar a ir ao Planeamento ou aos Jogos.
   const [sessionModal, setSessionModal] = useState(null);
   const [matchModal, setMatchModal] = useState(null);
   const [standingsOpen, setStandingsOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  // Edição a partir dos cartões: o jogador (estatuto) e a classificação
+  // abrem aqui as mesmas janelas do Plantel e dos Jogos, para não obrigar
+  // a sair da Visão Geral só para corrigir um campo.
+  const [playerModal, setPlayerModal] = useState(null);
+  const [standingsEdit, setStandingsEdit] = useState(false);
   // Número de colunas dos painéis, conforme a largura do ecrã.
   const isMedium = !useIsMobile(700);
   const isWide = !useIsMobile(1180);
@@ -1235,14 +1243,60 @@ function Overview({ season, setSeason, players, sessions, setSessions, exercises
           onSave={(data) => { setMatches(matches.map(x => (x.id === data.id ? data : x))); setMatchModal(null); }}
         />
       )}
-      {standingsOpen && <StandingsFullModal standings={standings} season={season} onClose={() => setStandingsOpen(false)} />}
-      {statusOpen && <PlantelStatusModal players={players} onClose={() => setStatusOpen(false)} />}
+      {standingsOpen && (
+        <StandingsFullModal
+          standings={standings} season={season}
+          onClose={() => setStandingsOpen(false)}
+          onEdit={setStandings ? () => { setStandingsOpen(false); setStandingsEdit(true); } : null}
+        />
+      )}
+      {standingsEdit && (
+        <StandingsModal
+          standings={standings}
+          onClose={() => { setStandingsEdit(false); setStandingsOpen(true); }}
+          onSave={(data) => {
+            setStandings(data);
+            // Mesma regra dos Jogos: os encontros da nossa equipa acompanham
+            // as jornadas da competição.
+            if (setMatches) setMatches(syncCompetitionMatches(data.competitions, matches));
+            setStandingsEdit(false);
+            setStandingsOpen(true);
+          }}
+        />
+      )}
+      {statusOpen && (
+        <PlantelStatusModal
+          players={players}
+          onClose={() => setStatusOpen(false)}
+          onEditPlayer={setPlayers ? (p) => { setStatusOpen(false); setPlayerModal(p); } : null}
+        />
+      )}
+      {playerModal && (
+        <PlayerModal
+          player={playerModal}
+          onClose={() => { setPlayerModal(null); setStatusOpen(true); }}
+          onSave={(data) => {
+            setPlayers(players.map(x => (x.id === data.id ? data : x)));
+            setPlayerModal(null);
+            setStatusOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 }
 
+/* Nomes de competição como "Campeonato distrital U19 - 1ª Divisão" ficam
+   partidos a meio no telemóvel. Separa-se pelo último hífen: a parte da
+   esquerda fica no título e a da direita passa a subtítulo. */
+function splitCompetitionName(name) {
+  const txt = String(name || '').trim();
+  const m = txt.match(/^(.*\S)\s*[-–—]\s*(\S.*)$/);
+  return m ? { title: m[1], subtitle: m[2] } : { title: txt, subtitle: '' };
+}
+
 /* Classificação completa, aberta a partir do cartão da Visão Geral. */
-function StandingsFullModal({ standings, season, onClose }) {
+function StandingsFullModal({ standings, season, onClose, onEdit }) {
   const { competitions } = normalizeStandings(standings);
   const [viewId, setViewId] = useState(null);
   const comp = competitions.find(c => c.id === viewId) || activeCompetitionOf(standings);
@@ -1254,9 +1308,17 @@ function StandingsFullModal({ standings, season, onClose }) {
     return a === b || b.includes(a) || a.includes(b.split('·')[0].trim());
   };
   const th = { textAlign: 'center', padding: '6px 4px', fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em' };
+  // Só no telemóvel: em ecrã largo o nome inteiro cabe numa linha.
+  const isNarrow = useIsMobile(700);
+  const nome = splitCompetitionName((comp && comp.name) || 'Classificação');
 
   return (
-    <Modal title={(comp && comp.name) || 'Classificação'} onClose={onClose} wide>
+    <Modal
+      title={isNarrow ? nome.title : ((comp && comp.name) || 'Classificação')}
+      subtitle={isNarrow ? nome.subtitle : ''}
+      onClose={onClose}
+      wide
+    >
       {competitions.length > 1 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
           {competitions.map(c => (
@@ -1297,19 +1359,25 @@ function StandingsFullModal({ standings, season, onClose }) {
           </table>
         </div>
       )}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+        {onEdit && <Btn onClick={onEdit}><Pencil size={14} /> Editar classificação</Btn>}
       </div>
     </Modal>
   );
 }
 
 /* Matriz de estatuto: jogador, estatuto principal e secundário. */
-function PlantelStatusModal({ players, onClose }) {
+function PlantelStatusModal({ players, onClose, onEditPlayer }) {
   const th = { textAlign: 'left', padding: '7px 8px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}` };
   const td = { padding: '8px', fontSize: 13, color: T.mutedDim };
   return (
-    <Modal title="Estatuto de plantel" onClose={onClose} wide>
+    <Modal
+      title="Estatuto de plantel"
+      subtitle={onEditPlayer ? 'Toca num jogador para alterar o estatuto.' : ''}
+      onClose={onClose}
+      wide
+    >
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 440 }}>
           <thead>
@@ -1317,14 +1385,23 @@ function PlantelStatusModal({ players, onClose }) {
               <th style={th}>Jogador</th>
               <th style={th}>Estatuto principal</th>
               <th style={th}>Estatuto secundário</th>
+              {onEditPlayer && <th style={{ ...th, width: 34 }} />}
             </tr>
           </thead>
           <tbody>
             {sortByPosition(players).map(p => (
-              <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+              <tr
+                key={p.id}
+                onClick={onEditPlayer ? () => onEditPlayer(p) : undefined}
+                title={onEditPlayer ? 'Editar jogador' : undefined}
+                style={{ borderBottom: `1px solid ${T.line}`, cursor: onEditPlayer ? 'pointer' : 'default' }}
+              >
                 <td style={{ ...td, color: T.cream, whiteSpace: 'nowrap' }}>{p.position ? `${p.position} · ` : ''}{p.name}</td>
                 <td style={td}>{p.statusMain || '—'}</td>
                 <td style={td}>{p.statusSecondary || '—'}</td>
+                {onEditPlayer && (
+                  <td style={{ ...td, textAlign: 'right' }}><Pencil size={13} /></td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -5903,14 +5980,18 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
 
       {daySessions.map((s, si) => (
         <div key={s.id} style={{ marginBottom: 22, paddingBottom: 18, borderBottom: si < daySessions.length - 1 ? `1px solid ${T.line}` : 'none' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-            <div>
+          {/* Sem quebra de linha: no telemóvel o subtítulo (fase · intensidade
+              · adversário) é comprido e, com flexWrap, atirava o lápis para
+              uma linha só dele, desalinhado. Agora o texto quebra dentro do
+              seu próprio bloco e o lápis fica sempre em linha, à direita. */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'nowrap', gap: 10, marginBottom: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: T.cream, fontSize: 16, fontWeight: 600 }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</div>
               <div style={{ color: T.mutedDim, fontSize: 12 }}>
                 {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </div>
             </div>
-            <button onClick={() => onEditSession(s)} title="Editar sessão" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}>
+            <button onClick={() => onEditSession(s)} title="Editar sessão" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0, marginTop: 4 }}>
               <Pencil size={14} />
             </button>
           </div>
