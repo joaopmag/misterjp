@@ -402,6 +402,165 @@ function useCollectionSync(table, notifyEdit) {
   return [items, setItems, ready, recordMeta];
 }
 
+/* ---------------------------------------------------------------
+   ANULAR — rede de segurança para eliminações acidentais
+
+   Um clique a mais no caixote apagava um exercício, um jogador ou uma
+   sessão sem hipótese de recuperar. Em vez de pôr uma confirmação em
+   cada botão (que se acaba por carregar em automático e não protege
+   nada), o item é removido na mesma e fica uma barra em baixo, durante
+   alguns segundos, com a opção "Anular".
+
+   A reposição usa o MESMO id do registo. Isso é importante: o id é o que
+   liga um exercício às sessões onde está, um jogador às convocatórias e
+   às presenças, um jogo às notas. Repor com id novo partia essas
+   ligações; repor com o id original devolve tudo exatamente como estava.
+---------------------------------------------------------------- */
+const UNDO_SECONDS = 12;
+// Só há uma barra montada de cada vez (fica na App, ao lado do conteúdo).
+let undoHandler = null;
+function offerUndo(message, onUndo) {
+  if (typeof undoHandler === 'function') undoHandler({ key: uid(), message, onUndo });
+}
+
+/* Pedido de confirmação — a primeira das duas redes. Também é global:
+   quem chama não precisa de gerir estado nenhum. */
+let confirmHandler = null;
+function askConfirm(pedido) {
+  if (typeof confirmHandler === 'function') { confirmHandler({ key: uid(), ...pedido }); return; }
+  // Sem diálogo montado (não devia acontecer), não se apaga nada em
+  // silêncio: é preferível não fazer nada do que apagar sem confirmação.
+}
+
+/* Apaga um item de uma lista sincronizada, com DUAS redes de segurança:
+   1) pergunta primeiro, com o nome do registo à frente — para o clique
+      acidental no caixote não chegar a apagar nada;
+   2) depois de apagado, a barra "Anular" ainda permite repor durante
+      alguns segundos, para o caso de a confirmação ter sido dada
+      distraidamente.
+   `label` é o que aparece nas duas (ex: 'Exercício "1v1 Finalização"').
+   `depois` corre só se o utilizador confirmar (ex: fechar o formulário
+   aberto desse registo). */
+function removeWithUndo(list, setList, id, label, depois) {
+  const alvo = (list || []).find(x => x.id === id);
+  if (!alvo) return;
+  askConfirm({
+    label,
+    onConfirm: () => {
+      setList(prev => prev.filter(x => x.id !== id));
+      if (typeof depois === 'function') depois();
+      offerUndo(`${label} apagado.`, () => {
+        // Funcional e à prova de repetições: se entretanto o registo voltou
+        // (por exemplo por sincronização de outro dispositivo), não duplica.
+        setList(prev => (prev.some(x => x.id === id) ? prev : [...prev, alvo]));
+      });
+    },
+  });
+}
+
+function ConfirmDialog() {
+  const [pedido, setPedido] = useState(null);
+
+  useEffect(() => {
+    confirmHandler = (next) => setPedido(next);
+    return () => { confirmHandler = null; };
+  }, []);
+
+  // Aqui o Esc PODE fechar (ao contrário das janelas de edição): fechar
+  // este diálogo é cancelar, nunca destrói nada.
+  useEffect(() => {
+    if (!pedido) return;
+    const onKey = (e) => { if (e.key === 'Escape') setPedido(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pedido]);
+
+  if (!pedido) return null;
+
+  const confirmar = () => { try { pedido.onConfirm(); } catch (e) { console.error(e); } setPedido(null); };
+
+  return createPortal(
+    <div
+      onClick={() => setPedido(null)}
+      style={{
+        position: 'fixed', inset: 0, background: '#000000bb', zIndex: 100,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10,
+          width: '100%', maxWidth: 400, padding: 22, boxShadow: '0 20px 60px #00000090',
+        }}
+      >
+        <h3 style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>Apagar?</h3>
+        <p style={{ color: T.cream, fontSize: 13.5, margin: '0 0 4px', ...body }}>{pedido.label}</p>
+        <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 18px', ...body }}>
+          Ainda vais poder anular durante alguns segundos.
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <Btn variant="ghost" onClick={() => setPedido(null)}>Cancelar</Btn>
+          <Btn onClick={confirmar}><Trash2 size={15} /> Apagar</Btn>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// Nome legível de um registo, para a mensagem da barra.
+function itemLabel(item, fallback = 'Registo') {
+  const nome = item && (item.name || item.title || item.titulo || item.focus || item.opponent || item.adversario);
+  return nome ? `${fallback} "${nome}"` : fallback;
+}
+
+function UndoBar() {
+  const [aviso, setAviso] = useState(null);
+
+  useEffect(() => {
+    undoHandler = (next) => setAviso(next);
+    return () => { undoHandler = null; };
+  }, []);
+
+  useEffect(() => {
+    if (!aviso) return;
+    const t = setTimeout(() => setAviso(null), UNDO_SECONDS * 1000);
+    return () => clearTimeout(t);
+  }, [aviso]);
+
+  if (!aviso) return null;
+
+  return createPortal(
+    <div style={{
+      position: 'fixed', left: 14, right: 14, bottom: 18, zIndex: 90,
+      display: 'flex', justifyContent: 'center', pointerEvents: 'none',
+    }}>
+      <div style={{
+        pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12,
+        width: '100%', maxWidth: 520, background: T.surfaceRaise,
+        border: `1px solid ${T.line}`, borderRadius: 10, padding: '11px 14px',
+        boxShadow: '0 14px 44px #000000a0',
+      }}>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, ...body }}>{aviso.message}</span>
+        <button
+          onClick={() => { try { aviso.onUndo(); } catch (e) { console.error(e); } setAviso(null); }}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+            background: '#B5393F', color: TEXT_ON_ACCENT, border: 'none', borderRadius: 7,
+            padding: '7px 12px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', ...body,
+          }}
+        ><Undo2 size={14} /> Anular</button>
+        <button
+          onClick={() => setAviso(null)} title="Dispensar"
+          style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}
+        ><X size={16} /></button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // Calcula a média de bem-estar de um registo de monitorização, usando
 // apenas os campos que existirem (compatível com registos antigos, que
 // tinham 'hidratação', e novos, que têm 'humor'/'stress' em vez disso).
@@ -1091,6 +1250,10 @@ function App({ session }) {
         </div>
         </main>
       </div>
+      {/* Dupla rede contra eliminações acidentais, uma só para toda a
+          aplicação: primeiro pergunta, depois deixa anular. */}
+      <ConfirmDialog />
+      <UndoBar />
     </div>
   );
 }
@@ -2014,7 +2177,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
     }
     setModal(null);
   };
-  const remove = (id) => setPlayers(players.filter(p => p.id !== id));
+  const remove = (id) => removeWithUndo(players, setPlayers, id, itemLabel(players.find(x => x.id === id), 'Jogador'));
 
   return (
     <div>
@@ -2414,7 +2577,7 @@ function Exercicios({ exercises, setExercises, meta }) {
     else setExercises([...exercises, { ...data, id: uid() }]);
     setModal(null);
   };
-  const remove = (id) => setExercises(exercises.filter(x => x.id !== id));
+  const remove = (id) => removeWithUndo(exercises, setExercises, id, itemLabel(exercises.find(x => x.id === id), 'Exercício'));
   const doPrint = (x) => {
     // Um PDF anexado é o próprio documento a imprimir — abre-o numa nova
     // aba e deixa o visualizador de PDF do browser tratar da impressão,
@@ -2583,7 +2746,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
     else setIdeias([...ideias, { ...data, id: uid() }]);
     setModal(null);
   };
-  const remove = (id) => setIdeias(ideias.filter(x => x.id !== id));
+  const remove = (id) => removeWithUndo(ideias, setIdeias, id, itemLabel(ideias.find(x => x.id === id), 'Ideia'));
 
   const doPrint = (x) => {
     setPrintIdeia(x);
@@ -5384,7 +5547,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
     else setSessions([...sessions, { ...data, id: uid() }]);
     setModal(null);
   };
-  const remove = (id) => setSessions(sessions.filter(s => s.id !== id));
+  const remove = (id) => removeWithUndo(sessions, setSessions, id, itemLabel(sessions.find(x => x.id === id), 'Sessão'));
 
   const saveMatch = (data) => {
     if (data.id) setMatches(matches.map(m => m.id === data.id ? data : m));
@@ -7324,7 +7487,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
     else setMatches([...matches, { ...data, id: uid() }]);
     setModal(null);
   };
-  const remove = (id) => setMatches(matches.filter(m => m.id !== id));
+  const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
   const sorted = [...matches].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   return (
@@ -7558,7 +7721,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
       return [...prev, { ...data, id: uid() }];
     });
   };
-  const remove = (id) => setMonitoring(monitoring.filter(m => m.id !== id));
+  const remove = (id) => removeWithUndo(monitoring, setMonitoring, id, 'Registo de monitorização');
   const regenerateCode = (playerId) => {
     const used = new Set(players.filter(p => p.id !== playerId && p.code).map(p => p.code));
     setPlayers(players.map(p => p.id === playerId ? { ...p, code: genPlayerCode(used) } : p));
@@ -8932,7 +9095,7 @@ function Scouting({ scouting, setScouting }) {
     else setScouting([...scouting, { ...data, id: uid() }]);
     setModal(null);
   };
-  const remove = (id) => setScouting(scouting.filter(x => x.id !== id));
+  const remove = (id) => removeWithUndo(scouting, setScouting, id, itemLabel(scouting.find(x => x.id === id), 'Jogador observado'));
 
   const doShare = (x) => {
     const title = x.name || 'Jogador observado';
@@ -9625,10 +9788,10 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
     setFolderFilter(destino || null);
     setModal(null);
   };
-  const remove = (id) => {
-    setItems(items.filter(v => v.id !== id));
-    if (activeId === id) setActiveId(null);
-  };
+  const remove = (id) => removeWithUndo(
+    items, setItems, id, itemLabel(items.find(v => v.id === id), 'Ficheiro'),
+    () => { if (activeId === id) setActiveId(null); },
+  );
   const selectItem = (id) => { setActiveId(id); setLightboxOpen(false); };
 
   // As pastas não são registos próprios: são deduzidas do campo "pasta" dos
@@ -11022,7 +11185,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
     if (setMatches) setMatches(syncConvocatoriaMatch(registo, matches));
     setModal(null);
   };
-  const remove = (id) => setConvocatorias(convocatorias.filter(c => c.id !== id));
+  const remove = (id) => removeWithUndo(convocatorias, setConvocatorias, id, itemLabel(convocatorias.find(x => x.id === id), 'Convocatória'));
   const doPrint = (c) => {
     setPrintConvocatoria(c);
     setTimeout(() => window.print(), 80);
@@ -11315,10 +11478,10 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
     setFormOpen(true);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  const remove = (id) => {
-    setDiario(diario.filter(n => n.id !== id));
-    if (editingId === id) closeForm();
-  };
+  const remove = (id) => removeWithUndo(
+    diario, setDiario, id, itemLabel(diario.find(n => n.id === id), 'Nota'),
+    () => { if (editingId === id) closeForm(); },
+  );
 
   const filtered = search
     ? diario.filter(n => (n.titulo || '').toLowerCase().includes(search.toLowerCase()) || (n.nota || '').toLowerCase().includes(search.toLowerCase()))
