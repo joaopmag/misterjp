@@ -8,7 +8,7 @@ import {
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
-  Image as ImageIcon, Folder
+  Image as ImageIcon
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -9800,16 +9800,24 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
   // As pastas não são registos próprios: são deduzidas do campo "pasta" dos
   // itens. Consequência a ter em conta — uma pasta existe enquanto tiver
   // conteúdo; se o último item sair dela, a pasta desaparece da lista.
+  // Pesquisa por título, subtítulo, nome do ficheiro ou pasta. É o que
+  // torna a lista longa navegável sem a esconder atrás de acordeões.
+  const [busca, setBusca] = useState('');
   const folders = Array.from(new Set(items.map(v => cleanFolder(v.pasta)).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b, 'pt'));
   const countIn = (name) => (name === NO_FOLDER
     ? items.filter(v => !cleanFolder(v.pasta)).length
     : items.filter(v => cleanFolder(v.pasta) === name).length);
-  const visibleItems = folderFilter === null
+  const naPasta = folderFilter === null
     ? items
     : (folderFilter === NO_FOLDER
       ? items.filter(v => !cleanFolder(v.pasta))
       : items.filter(v => cleanFolder(v.pasta) === folderFilter));
+  const termo = busca.trim().toLowerCase();
+  const visibleItems = termo
+    ? naPasta.filter(v => [v.title, v.jornada, v.fileName, cleanFolder(v.pasta)]
+        .some(campo => String(campo || '').toLowerCase().includes(termo)))
+    : naPasta;
 
   // Mudar o nome de uma pasta = reescrever o campo em todos os seus itens.
   const applyRename = () => {
@@ -9857,16 +9865,6 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
 
-  /* Em "Tudo" não se mostram ficheiros nenhuns: mostram-se as pastas.
-     Com dezenas de ficheiros, a lista completa era ruído — o que interessa
-     ao chegar a este ecrã é escolher onde procurar. Os ficheiros aparecem
-     depois de entrar numa pasta (aqui ou pelos separadores de cima). */
-  const grupos = [
-    ...folders.map(name => ({ name, items: items.filter(v => cleanFolder(v.pasta) === name) })),
-    { name: NO_FOLDER, items: items.filter(v => !cleanFolder(v.pasta)) },
-  ].filter(g => g.items.length > 0);
-  const soPastas = folderFilter === null && folders.length > 0;
-
   /* Uma linha da lista. Extraída para poder ser usada tanto na lista
      corrida (dentro de uma pasta) como dentro de cada pasta fechada. */
   const renderRow = (v) => {
@@ -9900,6 +9898,11 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                   branco não dá para perceber nem para apagar. */}
               <div style={{ fontSize: 12.5, color: v.title ? T.cream : T.mutedDim }}>{v.title || v.fileName || '(sem título)'}</div>
               {(v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
+              {/* Só se mostra a pasta quando se está a ver tudo —
+                  dentro de uma pasta seria informação repetida. */}
+              {folderFilter === null && cleanFolder(v.pasta) && (
+                <div style={{ fontSize: 10.5, color: T.warn, marginTop: 2 }}>{cleanFolder(v.pasta)}</div>
+              )}
             </span>
           </button>
           {/* Mover para outra pasta sem abrir a janela de edição. */}
@@ -9982,7 +9985,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
             background: folderFilter === null ? '#B5393F' : 'transparent',
             color: folderFilter === null ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${folderFilter === null ? '#B5393F' : T.line}`,
-          }}>{folders.length > 0 ? 'Pastas' : 'Tudo'} ({items.length})</button>
+          }}>Tudo ({items.length})</button>
 
           {folders.map(name => {
             const on = folderFilter === name;
@@ -10040,46 +10043,6 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
-      ) : soPastas ? (
-        /* Vista de pastas: cartões grandes, um por pasta, com o número de
-           ficheiros e os primeiros títulos como pista do conteúdo. */
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-          {grupos.map(g => {
-            const semPasta = g.name === NO_FOLDER;
-            return (
-              <button
-                key={g.name}
-                onClick={() => setFolderFilter(g.name)}
-                title={semPasta ? 'Ficheiros por arrumar' : `Abrir a pasta ${g.name}`}
-                style={{
-                  textAlign: 'left', cursor: 'pointer', ...body,
-                  background: T.surface, border: `1px solid ${semPasta ? T.line : T.gold + '44'}`,
-                  borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 10,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <Folder size={20} color={semPasta ? T.mutedDim : T.warn} style={{ flexShrink: 0 }} />
-                  <span style={{
-                    flex: 1, minWidth: 0, fontSize: 14.5, fontWeight: 600,
-                    color: semPasta ? T.mutedDim : T.cream,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>{semPasta ? 'Sem pasta' : g.name}</span>
-                  <span style={{ ...mono, fontSize: 12, color: T.mutedDim, flexShrink: 0 }}>{g.items.length}</span>
-                </div>
-                {/* Duas ou três pistas do que lá está dentro, para não ser
-                    preciso entrar em cada pasta só para ver o que tem. */}
-                <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.5, minHeight: 34 }}>
-                  {g.items.slice(0, 2).map(v => (
-                    <div key={v.id} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {v.title || v.fileName || '(sem título)'}
-                    </div>
-                  ))}
-                  {g.items.length > 2 && <div>+ {g.items.length - 2} {g.items.length - 2 === 1 ? 'ficheiro' : 'ficheiros'}</div>}
-                </div>
-              </button>
-            );
-          })}
-        </div>
       ) : visibleItems.length === 0 ? (
         <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
       ) : (
@@ -10249,8 +10212,47 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
               </>
             )}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {visibleItems.map(renderRow)}
+          {/* A lista tem scroll próprio em vez de esticar a página: com
+              muitos ficheiros, a página inteira ficava com metros de altura
+              e o visualizador à esquerda saía do ecrã. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
+              <input
+                value={busca}
+                onChange={e => setBusca(e.target.value)}
+                placeholder="Procurar por título, pasta ou ficheiro..."
+                style={{
+                  width: '100%', boxSizing: 'border-box', padding: '8px 30px 8px 30px',
+                  background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+                  color: T.cream, fontSize: 12.5, outline: 'none', ...body,
+                }}
+              />
+              {busca && (
+                <button
+                  onClick={() => setBusca('')} title="Limpar pesquisa"
+                  style={{ position: 'absolute', right: 8, background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', padding: 0 }}
+                ><X size={14} /></button>
+              )}
+            </div>
+
+            {visibleItems.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '10px 2px' }}>
+                Nada encontrado para “{busca}”.
+              </div>
+            ) : (
+              <>
+                <div style={{ ...mono, fontSize: 11, color: T.mutedDim }}>
+                  {visibleItems.length} {visibleItems.length === 1 ? 'ficheiro' : 'ficheiros'}
+                </div>
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: 8,
+                  maxHeight: '62vh', overflowY: 'auto', paddingRight: 4,
+                }}>
+                  {visibleItems.map(renderRow)}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
