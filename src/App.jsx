@@ -1029,6 +1029,7 @@ function App({ session }) {
     { id: 'exercicios', label: 'Exercícios', icon: Dumbbell },
     { id: 'ideiajogo', label: 'Ideia de Jogo', icon: Lightbulb },
     { id: 'planeamento', label: 'Planeamento', icon: CalendarDays },
+    { id: 'simulador', label: 'Simulador', icon: RotateCw },
     { id: 'presencas', label: 'Presenças', icon: UserCheck },
     { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList },
     { id: 'jogos', label: 'Jogos', icon: Trophy },
@@ -1233,6 +1234,7 @@ function App({ session }) {
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} />}
+          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} />}
@@ -5537,6 +5539,378 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     </Modal>
   );
 }
+/* ================================================================
+   SIMULADOR DE TREINO
+
+   Dado quem apareceu ao treino e que exercícios se vão fazer, distribui
+   os jogadores pelos grupos/equipas de cada exercício.
+
+   A regra que manda é a rotação: em cada exercício entram primeiro os
+   jogadores com MENOS minutos acumulados até ali. Dentro de quem tem os
+   mesmos minutos, a escolha é aleatória. É isto que garante que ninguém
+   fica sempre de fora quando há mais jogadores do que lugares — e que
+   dois treinos seguidos não dão a mesma distribuição.
+
+   O número de lugares de cada exercício sai do campo "Nº de jogadores"
+   (ex: "10+1gr x 9+1gr"), lido pelo mesmo parsePlayersCount que o editor
+   de diagramas usa — não há aqui um segundo formato a manter.
+================================================================ */
+
+// Baralha uma lista (Fisher-Yates). Não mexe na original.
+function shuffled(list) {
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/* Lugares de um exercício, já achatados: um objeto por vaga.
+   Sem formato indicado, assume-se um grupo único que leva toda a gente. */
+function exerciseSlots(exercise, totalPresentes) {
+  const parsed = parsePlayersCount(exercise.playersCount);
+  if (!parsed) return [{ team: 'A', isKeeper: false, count: totalPresentes }];
+  return parsed.groups;
+}
+
+/* Distribui os presentes pelos exercícios escolhidos.
+   Devolve { plano, minutosPorJogador }.
+   `plano` = [{ exercise, minutos, equipas: [{team, isKeeper, jogadores}], descanso }] */
+function distribuirTreino(exerciciosEscolhidos, presentes, grNoCampo = true) {
+  const minutos = new Map(presentes.map(p => [p.id, 0]));
+  const plano = [];
+
+  exerciciosEscolhidos.forEach(({ exercise, minutos: dur }) => {
+    const grupos = exerciseSlots(exercise, presentes.length);
+
+    /* Ordem de entrada: menos minutos primeiro. O baralhar ANTES da
+       ordenação é o que dá a aleatoriedade — como o sort é estável,
+       jogadores com os mesmos minutos mantêm a ordem baralhada. */
+    const fila = shuffled(presentes).sort((a, b) => (minutos.get(a.id) || 0) - (minutos.get(b.id) || 0));
+
+    // Guarda-redes à parte: os lugares de "gr" devem ir a guarda-redes
+    // enquanto houver, em vez de calhar a um avançado por sorteio.
+    const guardaRedes = fila.filter(p => p.position === 'GR');
+    const linha = fila.filter(p => p.position !== 'GR');
+    const usados = new Set();
+
+    const tirar = (lista, n) => {
+      const out = [];
+      for (const p of lista) {
+        if (out.length >= n) break;
+        if (usados.has(p.id)) continue;
+        usados.add(p.id);
+        out.push(p);
+      }
+      return out;
+    };
+
+    // Primeiro os guarda-redes (lugares mais específicos), depois a linha.
+    const porGrupo = new Map();
+    grupos.forEach((g, i) => {
+      if (!g.isKeeper) return;
+      const escolhidos = tirar(guardaRedes, g.count);
+      // Faltando guarda-redes, completa-se com jogadores de linha.
+      if (escolhidos.length < g.count) escolhidos.push(...tirar(linha, g.count - escolhidos.length));
+      porGrupo.set(i, escolhidos);
+    });
+    grupos.forEach((g, i) => {
+      if (g.isKeeper) return;
+      /* Nos lugares de campo, com `grNoCampo` os guarda-redes concorrem em
+         pé de igualdade — vale só quem tem menos minutos. Sem isto, num
+         treino só com exercícios sem vaga de "gr" (ex: vários "4x4"), os
+         guarda-redes ficavam a zero minutos do princípio ao fim: eram
+         sempre os últimos da fila e nunca chegava a vez deles. */
+      const bolsa = grNoCampo ? fila : linha;
+      const escolhidos = tirar(bolsa, g.count);
+      // Faltando gente nessa bolsa, recorre-se a toda a gente.
+      if (escolhidos.length < g.count) escolhidos.push(...tirar(fila, g.count - escolhidos.length));
+      porGrupo.set(i, escolhidos);
+    });
+
+    const equipas = grupos.map((g, i) => ({
+      team: g.team,
+      isKeeper: g.isKeeper,
+      vagas: g.count,
+      jogadores: porGrupo.get(i) || [],
+    }));
+
+    equipas.forEach(e => e.jogadores.forEach(p => minutos.set(p.id, (minutos.get(p.id) || 0) + dur)));
+
+    plano.push({
+      exercise,
+      minutos: dur,
+      equipas,
+      descanso: presentes.filter(p => !usados.has(p.id)),
+      vagasTotais: grupos.reduce((a, g) => a + g.count, 0),
+    });
+  });
+
+  return { plano, minutosPorJogador: minutos };
+}
+
+function Simulador({ players, exercises, sessions }) {
+  const isNarrow = useIsMobile(760);
+  const [presentIds, setPresentIds] = useState([]);
+  // Exercícios escolhidos, pela ordem em que vão ser feitos: [{ id, minutos }]
+  const [escolhidos, setEscolhidos] = useState([]);
+  const [plano, setPlano] = useState(null);
+  const [filtroFase, setFiltroFase] = useState('Todas');
+  // Ver o comentário em distribuirTreino: sem isto os guarda-redes podem
+  // acabar o treino inteiro sem entrar em exercício nenhum.
+  const [grNoCampo, setGrNoCampo] = useState(true);
+
+  const presentes = players.filter(p => presentIds.includes(p.id));
+
+  /* Atalho: puxar as presenças já registadas no treino de hoje, para não
+     ser preciso marcar 20 jogadores à mão quando já foram marcados. */
+  const treinoHoje = (sessions || []).filter(s => s.date === todayStr() && Array.isArray(s.attendance));
+  const presencasHoje = Array.from(new Set(treinoHoje.flatMap(s => s.attendance)));
+
+  const toggle = (p) => setPresentIds(prev => (
+    prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
+  ));
+
+  const toggleExercicio = (x) => setEscolhidos(prev => (
+    prev.some(e => e.id === x.id)
+      ? prev.filter(e => e.id !== x.id)
+      : [...prev, { id: x.id, minutos: Number(x.defaultDuration) || 15 }]
+  ));
+  const setMinutos = (id, v) => setEscolhidos(prev => prev.map(e => (
+    e.id === id ? { ...e, minutos: Math.max(1, Number(v) || 0) } : e
+  )));
+  const moverExercicio = (id, delta) => setEscolhidos(prev => {
+    const i = prev.findIndex(e => e.id === id);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= prev.length) return prev;
+    const next = [...prev];
+    [next[i], next[j]] = [next[j], next[i]];
+    return next;
+  });
+
+  const gerar = () => {
+    const lista = escolhidos
+      .map(e => ({ exercise: exercises.find(x => x.id === e.id), minutos: e.minutos }))
+      .filter(e => e.exercise);
+    if (!presentes.length || !lista.length) return;
+    setPlano(distribuirTreino(lista, presentes, grNoCampo));
+  };
+
+  const fases = ['Todas', ...PHASES.filter(f => f !== 'Descanso')];
+  const exerciciosVisiveis = filtroFase === 'Todas' ? exercises : exercises.filter(x => x.phase === filtroFase);
+  const totalMinutos = escolhidos.reduce((a, e) => a + e.minutos, 0);
+
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
+  const rotulo = { ...display, color: T.cream, fontSize: 15, fontWeight: 600, margin: '0 0 4px' };
+  const nota = { color: T.mutedDim, fontSize: 12, margin: '0 0 12px' };
+
+  return (
+    <>
+      <SectionHeader
+        title="Simulador de treino"
+        subtitle="Quem apareceu, que exercícios se vão fazer — e a distribuição pelas equipas."
+        action={
+          <Btn onClick={gerar} disabled={!presentes.length || !escolhidos.length}>
+            <RotateCw size={15} /> {plano ? 'Baralhar de novo' : 'Distribuir'}
+          </Btn>
+        }
+      />
+
+      <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        {/* ---------- 1. Quem está presente ---------- */}
+        <div style={card}>
+          <h3 style={rotulo}>1 · Presentes</h3>
+          <p style={nota}>{presentes.length} de {players.length} jogadores.</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Btn variant="ghost" onClick={() => setPresentIds(players.map(p => p.id))}>Todos</Btn>
+            <Btn variant="ghost" onClick={() => setPresentIds([])}>Nenhum</Btn>
+            {presencasHoje.length > 0 && (
+              <Btn variant="ghost" onClick={() => setPresentIds(presencasHoje)}>
+                <UserCheck size={14} /> Presenças de hoje ({presencasHoje.length})
+              </Btn>
+            )}
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: T.muted, marginBottom: 12, cursor: 'pointer' }}>
+            <input type="checkbox" checked={grNoCampo} onChange={e => setGrNoCampo(e.target.checked)} />
+            Guarda-redes também ocupam lugares de campo
+          </label>
+          <PlayerChipList players={players} isOn={p => presentIds.includes(p.id)} onToggle={toggle} />
+        </div>
+
+        {/* ---------- 2. Que exercícios ---------- */}
+        <div style={card}>
+          <h3 style={rotulo}>2 · Exercícios</h3>
+          <p style={nota}>
+            {escolhidos.length === 0
+              ? 'Escolhe os exercícios do treino.'
+              : `${escolhidos.length} ${escolhidos.length === 1 ? 'exercício' : 'exercícios'} · ${totalMinutos} min no total.`}
+          </p>
+
+          {/* Ordem de execução, com os minutos de cada um. */}
+          {escolhidos.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+              {escolhidos.map((e, i) => {
+                const x = exercises.find(v => v.id === e.id);
+                if (!x) return null;
+                return (
+                  <div key={e.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '7px 9px',
+                  }}>
+                    <span style={{ ...mono, fontSize: 11, color: T.warn, flexShrink: 0 }}>{i + 1}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {x.name}
+                      {x.playersCount && <span style={{ color: T.mutedDim }}> · {x.playersCount}</span>}
+                    </span>
+                    <input
+                      type="number" min="1" max="90" value={e.minutos}
+                      onChange={ev => setMinutos(e.id, ev.target.value)}
+                      style={{
+                        width: 52, textAlign: 'center', padding: '4px 4px', flexShrink: 0,
+                        background: T.surface, border: `1px solid ${T.line}`, borderRadius: 6,
+                        color: T.cream, fontSize: 12, ...mono, outline: 'none',
+                      }}
+                    />
+                    <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>min</span>
+                    <button onClick={() => moverExercicio(e.id, -1)} disabled={i === 0} title="Subir"
+                      style={{ background: 'none', border: 'none', padding: 0, display: 'flex', color: i === 0 ? T.line : T.mutedDim, cursor: i === 0 ? 'default' : 'pointer' }}>
+                      <ChevronLeft size={14} style={{ transform: 'rotate(90deg)' }} />
+                    </button>
+                    <button onClick={() => moverExercicio(e.id, 1)} disabled={i === escolhidos.length - 1} title="Descer"
+                      style={{ background: 'none', border: 'none', padding: 0, display: 'flex', color: i === escolhidos.length - 1 ? T.line : T.mutedDim, cursor: i === escolhidos.length - 1 ? 'default' : 'pointer' }}>
+                      <ChevronRight size={14} style={{ transform: 'rotate(90deg)' }} />
+                    </button>
+                    <button onClick={() => toggleExercicio(x)} title="Tirar do treino"
+                      style={{ background: 'none', border: 'none', padding: 0, display: 'flex', color: T.mutedDim, cursor: 'pointer' }}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+            {fases.map(f => (
+              <button key={f} onClick={() => setFiltroFase(f)} style={{
+                padding: '4px 10px', borderRadius: 20, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: filtroFase === f ? '#B5393F' : 'transparent',
+                color: filtroFase === f ? TEXT_ON_ACCENT : T.muted,
+                border: `1px solid ${filtroFase === f ? '#B5393F' : T.line}`,
+              }}>{f}</button>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto', paddingRight: 4 }}>
+            {exerciciosVisiveis.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem exercícios nesta fase.</div>
+            ) : exerciciosVisiveis.map(x => {
+              const on = escolhidos.some(e => e.id === x.id);
+              return (
+                <button key={x.id} onClick={() => toggleExercicio(x)} style={{
+                  textAlign: 'left', cursor: 'pointer', ...body,
+                  background: on ? '#B5393F22' : 'transparent',
+                  border: `1px solid ${on ? '#B5393F' : T.line}`,
+                  borderRadius: 8, padding: '8px 10px',
+                }}>
+                  <div style={{ fontSize: 12.5, color: on ? T.cream : T.muted }}>{x.name}</div>
+                  <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 2 }}>
+                    {[x.phase, x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean).join(' · ')}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ---------- 3. Resultado ---------- */}
+      {!plano ? (
+        <EmptyState text="Marca os presentes, escolhe os exercícios e carrega em Distribuir." />
+      ) : (
+        <>
+          {plano.plano.map((p, i) => {
+            const faltam = p.vagasTotais - p.equipas.reduce((a, e) => a + e.jogadores.length, 0);
+            return (
+              <div key={`${p.exercise.id}-${i}`} style={{ ...card, marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <span style={{ ...mono, fontSize: 12, color: T.warn }}>{i + 1}</span>
+                  <h3 style={{ ...display, color: T.cream, fontSize: 15.5, fontWeight: 600, margin: 0 }}>{p.exercise.name}</h3>
+                  <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
+                    {p.minutos} min{p.exercise.playersCount ? ` · ${p.exercise.playersCount}` : ''}
+                  </span>
+                </div>
+
+                {faltam > 0 && (
+                  <div style={{ fontSize: 12, color: T.warn, marginBottom: 10 }}>
+                    Faltam {faltam} {faltam === 1 ? 'jogador' : 'jogadores'} para preencher o formato deste exercício.
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${isNarrow ? 140 : 190}px, 1fr))`, gap: 10 }}>
+                  {p.equipas.map((eq, k) => {
+                    const info = teamInfo(eq.team);
+                    return (
+                      <div key={k} style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
+                          <span style={{ width: 11, height: 11, borderRadius: '50%', background: info.fill, border: `1px solid ${T.line}`, flexShrink: 0 }} />
+                          <span style={{ fontSize: 11.5, color: T.muted }}>
+                            {info.label}{eq.isKeeper ? ' · Guarda-redes' : ''}
+                          </span>
+                          <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, marginLeft: 'auto' }}>{eq.jogadores.length}/{eq.vagas}</span>
+                        </div>
+                        {eq.jogadores.length === 0 ? (
+                          <div style={{ fontSize: 11.5, color: T.mutedDim }}>—</div>
+                        ) : eq.jogadores.map(j => (
+                          <div key={j.id} style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.55 }}>
+                            <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{j.position || '--'}</span>{' '}
+                            {shortPlayerName(j, players)}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {p.descanso.length > 0 && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: T.mutedDim }}>
+                    A descansar: {p.descanso.map(j => shortPlayerName(j, players)).join(', ')}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Controlo da rotação: quem levou mais e menos minutos. */}
+          <div style={card}>
+            <h3 style={rotulo}>Minutos por jogador</h3>
+            <p style={nota}>Serve para confirmar que a rotação ficou equilibrada.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isNarrow ? 130 : 160}px, 1fr))`, gap: 6 }}>
+              {sortByPosition(presentes).map(j => {
+                const m = plano.minutosPorJogador.get(j.id) || 0;
+                const max = Math.max(...Array.from(plano.minutosPorJogador.values()), 1);
+                return (
+                  <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                    <span style={{ flex: 1, minWidth: 0, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{j.position || '--'}</span>{' '}
+                      {shortPlayerName(j, players)}
+                    </span>
+                    <span style={{ ...mono, fontSize: 11.5, color: m === 0 ? T.mutedDim : T.warn, flexShrink: 0 }}>{m}′</span>
+                    <span style={{ width: 34, height: 4, background: T.line, borderRadius: 2, flexShrink: 0, overflow: 'hidden' }}>
+                      <span style={{ display: 'block', width: `${(m / max) * 100}%`, height: '100%', background: T.warn }} />
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
