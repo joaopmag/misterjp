@@ -874,6 +874,11 @@ function App({ session }) {
   const userEmail = session.user.email;
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
+  /* Ao trocar de secção, voltar ao topo. Sem isto, quem vinha a meio de
+     uma lista longa (Planeamento, Jogos) entrava na secção seguinte já
+     com o scroll a meio e não via o título nem os botões do topo. Em
+     ecrã largo quem faz scroll é o <main>; no telemóvel é a janela. */
+  const mainRef = useRef(null);
   /* A secção aberta fica no endereço (#plantel, #jogos…). Assim, ao
      recarregar a página volta-se à mesma secção em vez de ir sempre parar
      à Visão Geral, e os botões de retroceder/avançar do browser passam a
@@ -899,6 +904,13 @@ function App({ session }) {
     } else {
       window.history.pushState(null, '', `#${tab}`);
     }
+  }, [tab]);
+
+  // Sempre que muda a secção, o conteúdo recomeça no topo.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (mainRef.current) mainRef.current.scrollTop = 0;
+    window.scrollTo(0, 0);
   }, [tab]);
 
   // Botões de retroceder/avançar do browser.
@@ -1209,7 +1221,7 @@ function App({ session }) {
             ecrã. O limite de largura do conteúdo passou para o <div> de
             dentro; antes estava no próprio <main> e sobrava uma faixa
             escura à direita, fora da zona com scroll. */}
-        <main style={{
+        <main ref={mainRef} style={{
           flex: 1, minWidth: 0,
           ...(isMobile ? {} : { overflowY: 'auto', height: '100vh' }),
         }}>
@@ -1497,19 +1509,25 @@ function StandingsFullModal({ standings, season, onClose, onEdit }) {
         <EmptyState text="Sem classificação nesta competição." />
       ) : (
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460, tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <th style={{ ...th, textAlign: 'left' }}>#</th>
+                <th style={{ ...th, textAlign: 'left', width: 30 }}>#</th>
                 <th style={{ ...th, textAlign: 'left' }}>Equipa</th>
-                {['J', 'V', 'E', 'D', 'GM', 'GS', 'DG', 'P'].map(h => <th key={h} style={th}>{h}</th>)}
+                {['J', 'V', 'E', 'D', 'GM', 'GS', 'DG', 'P'].map(h => <th key={h} style={{ ...th, width: 34 }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {table.map((t, i) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.line}`, background: isUs(t) ? `${T.crimson}33` : 'transparent' }}>
                   <td style={{ ...mono, padding: '7px 4px', fontSize: 12.5, color: isUs(t) ? T.warn : T.mutedDim }}>{i + 1}</td>
-                  <td style={{ padding: '7px 4px', fontSize: 13, color: isUs(t) ? T.cream : T.muted }}>{t.name}</td>
+                  <td
+                    title={t.name}
+                    style={{
+                      padding: '7px 4px', fontSize: 13, color: isUs(t) ? T.cream : T.muted,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 0,
+                    }}
+                  >{t.name}</td>
                   {['J', 'V', 'E', 'D', 'GM', 'GS'].map(k => (
                     <td key={k} style={{ ...mono, padding: '7px 4px', fontSize: 12.5, color: T.mutedDim, textAlign: 'center' }}>{t[k]}</td>
                   ))}
@@ -3635,16 +3653,27 @@ function buildAnimationChainsPure(arrowList) {
 }
 function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
+/* Desenhos fixos a mostrar durante um passo da sequência.
+
+   Os passos gravados a partir de agora trazem `staticArrows`: só as linhas
+   que já existiam quando o passo foi gravado. Os passos gravados antes
+   desta correção não têm esse campo — nesse caso não há forma de saber
+   quando cada traço foi feito, e mantém-se o comportamento antigo
+   (mostrar tudo), para não fazer desaparecer desenhos de exercícios
+   antigos. Re-gravar a animação passa a mostrá-los na altura certa. */
+function stepStaticArrows(step, diagram) {
+  return Array.isArray(step && step.staticArrows) ? step.staticArrows : (diagram.arrows || []);
+}
+
 // Devolve { frames, hasAnimation } — frames é a lista de fotogramas SVG
 // (markup já pronto) que, mostrados um a seguir ao outro com o "holdMs"
 // indicado, reconstroem passo a passo a coreografia gravada no editor
 // (diagram.sequence). Sem sequência gravada, devolve só o fotograma final.
 function computeDiagramAnimationFrames(diagram, zones) {
   const sequence = diagram.sequence || [];
-  const staticArrows = diagram.arrows || [];
   const frames = [];
 
-  const pushFrame = (elements, holdMs) => {
+  const pushFrame = (elements, holdMs, staticArrows = diagram.arrows || []) => {
     frames.push({
       svg: ReactDOMServer.renderToStaticMarkup(
         <>
@@ -3666,6 +3695,7 @@ function computeDiagramAnimationFrames(diagram, zones) {
 
   const FRAME_MS = 55;
   sequence.forEach((step) => {
+    const stepArrows = stepStaticArrows(step, diagram);
     const chains = buildAnimationChainsPure(step.arrows).map(chainArrows => {
       let cursor = 0;
       const segments = chainArrows.map(a => {
@@ -3708,7 +3738,7 @@ function computeDiagramAnimationFrames(diagram, zones) {
         });
       });
       const frameElements = baseElements.map(el => (movedPositions.has(el.id) ? { ...el, x: movedPositions.get(el.id).x, y: movedPositions.get(el.id).y } : el));
-      pushFrame(frameElements, FRAME_MS);
+      pushFrame(frameElements, FRAME_MS, stepArrows);
     }
     frames[frames.length - 1].holdMs = 450; // pausa entre passos, igual à apresentação em direto
   });
@@ -4098,6 +4128,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     const stepSnapshot = {
       elements: baseElements.map(el => ({ ...el })),
       arrows: animArrows.map(a => ({ ...a })),
+      /* Desenhos fixos (linhas, zonas de pressão, setas sem animação) que
+         JÁ existem no momento em que este passo é gravado. Sem isto, a
+         apresentação desenhava todos os traços do exercício desde o
+         primeiro fotograma — mesmo os que só foram feitos no fim. */
+      staticArrows: arrows.filter(a => !animArrows.some(x => x.id === a.id)).map(a => ({ ...a })),
     };
     const maxDuration = Math.max(...chains.map(c => c.totalDuration));
     setIsPlaying(true);
@@ -4154,6 +4189,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // sem ser preciso guardar e abrir "Apresentar" para ver.
   const [isPresenting, setIsPresenting] = useState(false);
   const [presentElements, setPresentElements] = useState(null);
+  // Desenhos fixos a mostrar durante a pré-visualização (acompanham o passo).
+  const [presentArrows, setPresentArrows] = useState(null);
   const [presentAnimItems, setPresentAnimItems] = useState([]);
   const presentAnimRef = React.useRef(null);
   const presentTimeoutRef = React.useRef(null);
@@ -4167,6 +4204,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     presentAnimRef.current = null;
     setIsPresenting(false);
     setPresentElements(null);
+    setPresentArrows(null);
     setPresentAnimItems([]);
   };
   const runPresentStep = (idx, seq) => {
@@ -4197,6 +4235,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
     ];
     setPresentElements(baseElements);
+    setPresentArrows(stepStaticArrows(step, value));
     const maxDuration = Math.max(...chains.map(c => c.totalDuration));
     const start = performance.now();
     const tick = (now) => {
@@ -4646,7 +4685,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           })}
           <DiagramElements
             elements={(isPresenting ? presentElements || [] : elements).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
-            arrows={arrows}
+            arrows={isPresenting && presentArrows ? presentArrows : arrows}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
             selectedArrowId={selectedArrowId} interactive={!isPresenting}
             placingActive={tool !== 'select' && tool !== 'eraser'}
@@ -5238,7 +5277,11 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const diagram = exercise.diagram || { elements: [], arrows: [] };
   const sequence = diagram.sequence || [];
   const zones = getSpaceZones(diagram, exercise.space);
-  const staticArrows = diagram.arrows || [];
+  /* Os desenhos fixos deixam de ser fixos: acompanham o passo, para uma
+     linha só aparecer a partir do momento em que foi traçada. */
+  const [frameArrows, setFrameArrows] = useState(
+    sequence.length ? stepStaticArrows(sequence[0], diagram) : (diagram.arrows || [])
+  );
 
   const [frameElements, setFrameElements] = useState(sequence.length ? sequence[0].elements : (diagram.elements || []));
   const [animItems, setAnimItems] = useState([]);
@@ -5329,6 +5372,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
     ];
     setFrameElements(baseElements);
+    setFrameArrows(stepStaticArrows(step, diagram));
     const maxDuration = Math.max(...chains.map(c => c.totalDuration));
     const start = performance.now();
     const tick = (now) => {
@@ -5356,8 +5400,10 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         if (idx + 1 < sequence.length) {
           timeoutRef.current = setTimeout(() => runStep(idx + 1), 450);
         } else {
-          // Último passo: fica exatamente como o exercício está guardado hoje.
+          // Último passo: fica exatamente como o exercício está guardado hoje,
+          // já com todos os desenhos.
           setFrameElements(diagram.elements || []);
+          setFrameArrows(diagram.arrows || []);
           setPlaying(false);
           setFinished(true);
         }
@@ -5371,6 +5417,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setFinished(false);
     setPlaying(true);
     setFrameElements(sequence[0].elements);
+    setFrameArrows(stepStaticArrows(sequence[0], diagram));
     timeoutRef.current = setTimeout(() => runStep(0), 200);
   };
   const stop = () => {
@@ -5432,7 +5479,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           {zones.map(z => (
             <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
           ))}
-          <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={staticArrows} interactive={false} />
+          <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={frameArrows} interactive={false} />
           <AnimOverlay items={animItems} />
         </svg>
 
@@ -6839,21 +6886,21 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
             </div>
           )}
 
+          {/* Nomes longos ("FC Paços Ferreira (B)") partiam-se em duas
+              linhas e faziam essa linha da tabela ficar mais alta do que as
+              outras, desalinhando a coluna dos números. Agora o nome fica
+              sempre numa linha, com reticências se não couber, e a tabela
+              desliza na horizontal no telemóvel. */}
           {teams.length > 0 && (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, tableLayout: 'fixed', minWidth: 460 }}>
                 <thead>
                   <tr style={{ color: T.mutedDim, ...mono, fontSize: 11 }}>
-                    <th style={{ textAlign: 'left', padding: '4px 6px' }}>#</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', width: 30 }}>#</th>
                     <th style={{ textAlign: 'left', padding: '4px 6px' }}>Equipa</th>
-                    <th style={{ padding: '4px 6px' }}>P</th>
-                    <th style={{ padding: '4px 6px' }}>J</th>
-                    <th style={{ padding: '4px 6px' }}>V</th>
-                    <th style={{ padding: '4px 6px' }}>E</th>
-                    <th style={{ padding: '4px 6px' }}>D</th>
-                    <th style={{ padding: '4px 6px' }}>GM</th>
-                    <th style={{ padding: '4px 6px' }}>GS</th>
-                    <th style={{ padding: '4px 6px' }}>DG</th>
+                    {['P', 'J', 'V', 'E', 'D', 'GM', 'GS', 'DG'].map(h => (
+                      <th key={h} style={{ padding: '4px 6px', width: 34 }}>{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -6862,7 +6909,13 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                     return (
                       <tr key={t.id} style={{ color: isUs ? T.gold : T.cream, background: isUs ? `${T.crimson}22` : 'transparent', borderTop: `1px solid ${T.line}` }}>
                         <td style={{ padding: '5px 6px', ...mono }}>{i + 1}</td>
-                        <td style={{ padding: '5px 6px', fontWeight: isUs ? 600 : 400 }}>{t.name}</td>
+                        <td
+                          title={t.name}
+                          style={{
+                            padding: '5px 6px', fontWeight: isUs ? 600 : 400,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 0,
+                          }}
+                        >{t.name}</td>
                         <td style={{ padding: '5px 6px', textAlign: 'center', ...mono, fontWeight: 600 }}>{t.P}</td>
                         <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.J}</td>
                         <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.V}</td>
@@ -9979,9 +10032,24 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
       {/* PASTAS — filtro por pasta. As pastas criam-se ao escrever o nome
           no campo "Pasta" ao adicionar ou editar um item. */}
       {items.length > 0 && (folders.length > 0 || countIn(NO_FOLDER) > 0) && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
+        /* No telemóvel os separadores das pastas ficam numa faixa única que
+           desliza na horizontal, em vez de se partirem em três linhas
+           desalinhadas que empurravam o conteúdo todo para baixo. A faixa
+           sangra até às margens do ecrã (margens negativas) para se
+           perceber que continua para lá do que se vê. */
+        <div style={{
+          display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16,
+          ...(isNarrow
+            ? {
+                flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden',
+                margin: '0 -14px 16px', padding: '0 14px 4px',
+                WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none',
+              }
+            : { flexWrap: 'wrap' }),
+        }}>
           <button onClick={() => setFolderFilter(null)} style={{
             padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+            flexShrink: 0, whiteSpace: 'nowrap',
             background: folderFilter === null ? '#B5393F' : 'transparent',
             color: folderFilter === null ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${folderFilter === null ? '#B5393F' : T.line}`,
@@ -10010,13 +10078,13 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
             return (
               <span key={name} style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '5px 10px', borderRadius: 20,
+                padding: '5px 10px', borderRadius: 20, flexShrink: 0,
                 background: on ? '#B5393F' : 'transparent',
                 border: `1px solid ${on ? '#B5393F' : T.line}`,
               }}>
                 <button onClick={() => setFolderFilter(on ? null : name)} style={{
                   background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, ...body,
-                  color: on ? TEXT_ON_ACCENT : T.muted, padding: 0,
+                  color: on ? TEXT_ON_ACCENT : T.muted, padding: 0, whiteSpace: 'nowrap',
                 }}>{name} ({countIn(name)})</button>
                 {on && (
                   <>
@@ -10033,6 +10101,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
           {countIn(NO_FOLDER) > 0 && folders.length > 0 && (
             <button onClick={() => setFolderFilter(folderFilter === NO_FOLDER ? null : NO_FOLDER)} style={{
               padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+              flexShrink: 0, whiteSpace: 'nowrap',
               background: folderFilter === NO_FOLDER ? '#B5393F' : 'transparent',
               color: folderFilter === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
               border: `1px solid ${folderFilter === NO_FOLDER ? '#B5393F' : T.line}`,
