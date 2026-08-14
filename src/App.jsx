@@ -1031,10 +1031,16 @@ function App({ session }) {
         </aside>
 
         {/* MAIN */}
+        {/* O <main> ocupa toda a largura restante — é ele que faz o scroll,
+            por isso a barra de deslocamento fica encostada à direita do
+            ecrã. O limite de largura do conteúdo passou para o <div> de
+            dentro; antes estava no próprio <main> e sobrava uma faixa
+            escura à direita, fora da zona com scroll. */}
         <main style={{
-          flex: 1, minWidth: 0, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px', maxWidth: 1100,
+          flex: 1, minWidth: 0,
           ...(isMobile ? {} : { overflowY: 'auto', height: '100vh' }),
         }}>
+        <div style={{ maxWidth: 1100, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
@@ -1069,6 +1075,7 @@ function App({ session }) {
             />
           </div>
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
+        </div>
         </main>
       </div>
     </div>
@@ -9720,10 +9727,12 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                     title="Mover para uma pasta"
                     style={{
                       background: T.surfaceRaise, color: T.mutedDim, border: `1px solid ${T.line}`,
-                      // Sem largura máxima: o nome da pasta aparece por inteiro
-                      // em vez de cortado ("Modelo de jo…").
+                      // Largura fixa (e não automática): assim os seletores e
+                      // os ícones ficam todos na mesma coluna, em vez de cada
+                      // linha os colocar num sítio diferente conforme o
+                      // comprimento do nome da pasta.
                       borderRadius: 6, fontSize: 11, padding: '4px 6px', cursor: 'pointer', ...body,
-                      maxWidth: 200, flexShrink: 0,
+                      width: 150, flexShrink: 0,
                     }}
                   >
                     <option value="">Sem pasta</option>
@@ -9731,12 +9740,17 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                   </select>
                   {/* Imprimir sem ter de abrir o item primeiro. Só faz
                       sentido em documentos (PDF carregado ou do Drive). */}
-                  {(v.kind === 'pdf' || v.kind === 'drive') && (
+                  {/* O lugar da impressora existe sempre, mesmo nos itens que
+                      não se imprimem (vídeos, links) — senão o lápis e o
+                      caixote saltavam de linha para linha. */}
+                  {(v.kind === 'pdf' || v.kind === 'drive') ? (
                     <button
                       onClick={() => printDocumentItem(v)}
                       title="Abrir num separador novo e imprimir"
-                      style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}
+                      style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
                     ><Printer size={13} /></button>
+                  ) : (
+                    <span style={{ width: 20, flexShrink: 0 }} />
                   )}
                   <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                   <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
