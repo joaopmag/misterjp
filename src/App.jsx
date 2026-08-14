@@ -1048,7 +1048,9 @@ function App({ session }) {
           flex: 1, minWidth: 0,
           ...(isMobile ? {} : { overflowY: 'auto', height: '100vh' }),
         }}>
-        <div style={{ maxWidth: 1560, padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
+        {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
+            janela, já que a barra lateral ocupa a parte esquerda. */}
+        <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
@@ -1100,6 +1102,9 @@ function Overview({ season, setSeason, players, sessions, setSessions, exercises
   const [matchModal, setMatchModal] = useState(null);
   const [standingsOpen, setStandingsOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  // Número de colunas dos painéis, conforme a largura do ecrã.
+  const isMedium = !useIsMobile(700);
+  const isWide = !useIsMobile(1180);
   const today = new Date();
   const upcoming = [...sessions]
     .filter(s => new Date(s.date) >= new Date(today.toDateString()))
@@ -1138,9 +1143,13 @@ function Overview({ season, setSeason, players, sessions, setSessions, exercises
         </div>
       </div>
 
-      {/* Colunas mais largas: com o ecrã inteiro disponível, minmax(260px)
-          criava colunas estreitas e sobrava espaço à direita. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20, alignItems: 'start' }}>
+      {/* Colunas de largura igual que ocupam a página toda: três em ecrã
+          largo, duas em ecrã médio, uma no telemóvel. Sem alignItems:start,
+          para os painéis da mesma linha ficarem todos com a mesma altura. */}
+      <div style={{
+        display: 'grid', gap: 20,
+        gridTemplateColumns: isWide ? 'repeat(3, minmax(0, 1fr))' : isMedium ? 'repeat(2, minmax(0, 1fr))' : '1fr',
+      }}>
         <Panel title="Próximas sessões">
           {upcoming.length === 0 ? (
             <EmptyState text="Ainda não há sessões planeadas." />
@@ -1837,8 +1846,13 @@ function PlantelStatusSummary({ players }) {
 }
 
 function Panel({ title, children, action }) {
+  /* height:100% — numa grelha, todos os painéis da mesma linha ficam com a
+     mesma altura, em vez de cada um terminar onde o seu conteúdo acaba. */
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 18 }}>
+    <div style={{
+      background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 18,
+      height: '100%', boxSizing: 'border-box',
+    }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
         <h3 style={{ ...display, color: '#FFFFFF', fontSize: 15, fontWeight: 600, margin: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</h3>
         {action}
