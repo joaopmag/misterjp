@@ -2464,9 +2464,9 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                   <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
                 </div>
                 <DiagramThumb diagram={x.diagram} />
-                {/* Ícones por baixo da imagem, encostados à margem esquerda
-                    do cartão (mesmo alinhamento do título e do badge). */}
-                <div style={{ display: 'flex', gap: 16, marginTop: 8, marginLeft: 0, justifyContent: 'flex-start' }}>
+                {/* Ícones por baixo da imagem, encostados à margem direita
+                    do cartão. */}
+                <div style={{ display: 'flex', gap: 16, marginTop: 8, justifyContent: 'flex-end' }}>
                   <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
@@ -10355,6 +10355,42 @@ function AttachmentPreview({ item, tall }) {
       else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
     }
   };
+  /* IMPRIMIR documentos.
+
+     Um PDF não se imprime a partir da nossa página: quem o desenha é o
+     leitor de PDF do browser (ou o do Google, no caso do Drive), e só
+     esse é que tem o comando de impressão. Por isso abrimos o documento
+     num separador novo e pedimos a impressão aí. Se o browser bloquear a
+     janela, o separador fica aberto à mesma e basta usar o botão de
+     imprimir do próprio leitor.
+
+     No iPhone o Safari não permite disparar a impressão por código —
+     abre o documento e usa-se o botão de partilha › Imprimir. */
+  const canPrint = item.kind === 'pdf' || item.kind === 'drive';
+  const doPrintDoc = (e) => {
+    e.stopPropagation();
+    const url = item.kind === 'drive' ? driveOpenSrc(item.drive) : (pdfBlobUrl || item.dataUrl);
+    if (!url) return;
+    const win = window.open(url, '_blank');
+    if (!win) return; // janela bloqueada — o utilizador abre pelo botão do lado
+    // Dá tempo ao leitor de PDF para carregar antes de pedir a impressão.
+    setTimeout(() => {
+      try { win.focus(); win.print(); } catch (err) { /* o leitor tem o seu próprio botão */ }
+    }, 1500);
+  };
+  const PrintBtn = canPrint ? (
+    <button
+      onClick={doPrintDoc}
+      title="Abrir num separador novo e imprimir"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
+        background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+      }}
+    >
+      <Printer size={14} /> Imprimir
+    </button>
+  ) : null;
+
   const FsBar = (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
@@ -10408,6 +10444,8 @@ function AttachmentPreview({ item, tall }) {
           >
             <ExternalLink size={13} /> Abrir no Drive
           </a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          {PrintBtn}
           <button
             onClick={toggleFs}
             style={{
@@ -10418,6 +10456,7 @@ function AttachmentPreview({ item, tall }) {
             {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             {isFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
           </button>
+          </div>
         </div>
       </div>
     );
@@ -10451,6 +10490,8 @@ function AttachmentPreview({ item, tall }) {
           >
             <Download size={13} /> Abrir / descarregar
           </a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          {PrintBtn}
           <button
             onClick={toggleFs}
             style={{
@@ -10461,6 +10502,7 @@ function AttachmentPreview({ item, tall }) {
             {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             {isFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
           </button>
+          </div>
         </div>
       </div>
     );
