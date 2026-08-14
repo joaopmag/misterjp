@@ -708,7 +708,36 @@ function App({ session }) {
   const userEmail = session.user.email;
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
-  const [tab, setTab] = useState('geral');
+  /* A secção aberta fica no endereço (#plantel, #jogos…). Assim, ao
+     recarregar a página volta-se à mesma secção em vez de ir sempre parar
+     à Visão Geral, e os botões de retroceder/avançar do browser passam a
+     navegar entre secções. Endereços antigos, sem #, abrem na Visão Geral
+     como antes. */
+  const [tab, setTab] = useState(() => {
+    if (typeof window === 'undefined') return 'geral';
+    const fromHash = window.location.hash.replace('#', '').trim();
+    return fromHash || 'geral';
+  });
+
+  // Escreve a secção atual no endereço, sem criar entrada nova no
+  // histórico a cada clique (replace em vez de push).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash.replace('#', '') !== tab) {
+      window.history.replaceState(null, '', `#${tab}`);
+    }
+  }, [tab]);
+
+  // Botões de retroceder/avançar do browser.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onHash = () => {
+      const h = window.location.hash.replace('#', '').trim();
+      if (h) setTab(h);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
   const [season, setSeason] = useState({ name: '2026/2027', start: '', end: '', club: 'SC Salgueiros · Sub-19' });
   const [seasonReady, setSeasonReady] = useState(false);
   const [previewKiosk, setPreviewKiosk] = useState(false);
@@ -9691,12 +9720,24 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                     title="Mover para uma pasta"
                     style={{
                       background: T.surfaceRaise, color: T.mutedDim, border: `1px solid ${T.line}`,
-                      borderRadius: 6, fontSize: 11, padding: '3px 4px', maxWidth: 96, cursor: 'pointer', ...body,
+                      // Sem largura máxima: o nome da pasta aparece por inteiro
+                      // em vez de cortado ("Modelo de jo…").
+                      borderRadius: 6, fontSize: 11, padding: '4px 6px', cursor: 'pointer', ...body,
+                      maxWidth: 200, flexShrink: 0,
                     }}
                   >
                     <option value="">Sem pasta</option>
                     {folders.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
+                  {/* Imprimir sem ter de abrir o item primeiro. Só faz
+                      sentido em documentos (PDF carregado ou do Drive). */}
+                  {(v.kind === 'pdf' || v.kind === 'drive') && (
+                    <button
+                      onClick={() => printDocumentItem(v)}
+                      title="Abrir num separador novo e imprimir"
+                      style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}
+                    ><Printer size={13} /></button>
+                  )}
                   <button onClick={() => setModal(v)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                   <button onClick={() => remove(v.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                 </div>
@@ -9798,6 +9839,21 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 
    O ficheiro tem de estar partilhado como "qualquer pessoa com o link".
 --------------------------------------------------------------- */
+/* Abre o documento num separador novo e pede a impressão. Um PDF não se
+   imprime a partir da nossa página — quem o desenha é o leitor do browser
+   (ou o do Google, nos ficheiros do Drive), e só esse tem o comando de
+   imprimir. Se a janela for bloqueada, fica sempre o botão de abrir. */
+function printDocumentItem(item) {
+  if (!item) return;
+  const url = item.kind === 'drive' ? driveOpenSrc(item.drive) : item.dataUrl;
+  if (!url) return;
+  const win = window.open(url, '_blank');
+  if (!win) return;
+  setTimeout(() => {
+    try { win.focus(); win.print(); } catch (err) { /* o leitor tem o seu próprio botão */ }
+  }, 1500);
+}
+
 function parseDriveId(url) {
   if (!url) return null;
   const u = String(url).trim();
