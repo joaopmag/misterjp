@@ -2619,7 +2619,7 @@ function Exercicios({ exercises, setExercises, meta }) {
   };
   const doShare = (x) => {
     const meta = [x.phase, x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.material && `🎒 ${x.material}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean);
-    const block = buildDiagramBlockHtml(x.diagram, x.space, 'ex');
+    const block = buildDiagramBlockHtml(x.diagram, x.space, 'ex', x.phase);
     const html = buildShareableHtmlDoc({ title: x.name || 'Exercício', metaLines: meta, description: x.description, blocks: [block] });
     shareOrDownloadHtml(`${(x.name || 'exercicio').replace(/[^\w-]+/g, '_')}.html`, html, x.name || 'Exercício');
   };
@@ -2669,7 +2669,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                   <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                 </div>
               </div>
-              <DiagramThumb diagram={x.diagram} space={x.space} />
+              <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} />
               {x.attachment && (
                 x.attachment.type === 'image' ? (
                   <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: 95, objectFit: 'cover', borderRadius: 6, marginBottom: 8 }} />
@@ -2736,6 +2736,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                 elements={printExercise.diagram?.elements || []}
                 arrows={printExercise.diagram?.arrows || []}
                 interactive={false}
+                iconScale={iconScaleForPhase(printExercise.phase)}
                 printMode
               />
             </svg>
@@ -3038,8 +3039,42 @@ const LINE_TOOLS = ['arrow-pass', 'arrow-run', 'line-solid', 'line-dashed'];
 const MARKER_TOOLS = ['cone', 'ball', 'goalmarker', 'stake', 'coach'];
 const KEEPER_NUMBERS = [1, 12, 24];
 
+/* Espaços com nome, escritos por extenso no campo "Espaço" em vez de um
+   "20x20". As medidas e a posição saem das marcações reais do relvado
+   (ver PitchMarkings: o campo ocupa x 1→106 e y 1→69, ou seja 105×68 m,
+   com centro em 53.5,35), por isso o tracejado assenta exatamente por
+   cima das linhas verdadeiras em vez de ser um retângulo aproximado.
+
+   As frações são medidas ao COMPRIMENTO e encostadas à baliza da
+   esquerda — é assim que se usam no treino ("trabalhar em 3/4 de campo"
+   é da baliza até três quartos, não um retângulo no meio).
+
+   "Campo inteiro" é o único que não desenha nada: o campo já está lá. */
+const NAMED_SPACES = [
+  { re: /campo\s*(inteiro|todo|completo)|todo\s*o\s*campo/, label: 'Campo inteiro', fullPitch: true },
+  { re: /grande\s*[áa]rea/, label: 'Grande área', w: 16.5, h: 40.32, cx: 9.25, cy: 35 },
+  { re: /pequena\s*[áa]rea/, label: 'Pequena área', w: 5.5, h: 18.32, cx: 3.75, cy: 35 },
+  { re: /meio[\s-]*campo|1\s*\/\s*2\s*campo/, label: 'Meio campo', w: 52.5, h: 68, cx: 27.25, cy: 35 },
+  { re: /3\s*\/\s*4/, label: '3/4 de campo', w: 78.75, h: 68, cx: 40.375, cy: 35 },
+  { re: /1\s*\/\s*4/, label: '1/4 de campo', w: 26.25, h: 68, cx: 14.125, cy: 35 },
+];
+function parseNamedSpace(str) {
+  const raw = String(str || '').toLowerCase().trim();
+  if (!raw) return null;
+  const achado = NAMED_SPACES.find(sp => sp.re.test(raw));
+  if (!achado) return null;
+  if (achado.fullPitch) return { fullPitch: true, label: achado.label };
+  return {
+    label: achado.label, w: achado.w, h: achado.h,
+    dx: achado.cx - 53.5, dy: achado.cy - 35,
+  };
+}
+
 function parseSpace(str) {
   if (!str) return null;
+  // Os nomes têm prioridade sobre o "WxH": "grande área" não tem números.
+  const named = parseNamedSpace(str);
+  if (named) return named.fullPitch ? null : { w: named.w, h: named.h, dx: named.dx, dy: named.dy, label: named.label };
   const m = String(str).toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)/);
   if (!m) return null;
   const w = parseFloat(m[1].replace(',', '.'));
@@ -3100,8 +3135,15 @@ function getSpaceZones(diagram, spaceText) {
   if (diagram?.spaceZones?.length) return diagram.spaceZones;
   const meters = parseSpace(spaceText);
   if (!meters) return [];
-  const off = diagram?.spaceOffset || { dx: 0, dy: 0 };
-  return [{ id: 'legacy', w: meters.w, h: meters.h, dx: off.dx || 0, dy: off.dy || 0 }];
+  /* Um espaço com nome traz a sua própria posição (a grande área fica na
+     grande área, não no meio-campo). Um deslocamento gravado à mão pelo
+     treinador continua a mandar sobre ela. */
+  const off = diagram?.spaceOffset || {};
+  return [{
+    id: 'legacy', w: meters.w, h: meters.h, label: meters.label,
+    dx: off.dx !== undefined ? off.dx : (meters.dx || 0),
+    dy: off.dy !== undefined ? off.dy : (meters.dy || 0),
+  }];
 }
 
 // Substitui, em qualquer sítio só de leitura (fichas impressas, miniaturas,
@@ -3112,7 +3154,7 @@ function SpaceZonesReadOnly({ diagram, spaceText, printMode }) {
   return (
     <>
       {zones.map(z => (
-        <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode={printMode} />
+        <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode={printMode} />
       ))}
     </>
   );
@@ -3354,7 +3396,7 @@ function PitchMarkings({ printMode }) {
 /* Desenha a área de trabalho do exercício (ex: 20x20) à escala de
    um campo real (1 unidade da prancheta ≈ 1 metro). Arrasta-se pelo
    centro e redimensiona-se pela pega no canto inferior direito. */
-function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, interactive, printMode }) {
+function SpaceZone({ meters, center, label, onPointerDown, onResizeDown, onDelete, interactive, printMode }) {
   if (!meters || !meters.w || !meters.h) return null;
   const w = Math.min(meters.w, 105);
   const h = Math.min(meters.h, 68);
@@ -3374,7 +3416,7 @@ function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, inte
         onPointerDown={interactive ? onPointerDown : undefined}
         style={{ cursor: interactive ? 'grab' : 'default', touchAction: interactive ? 'none' : undefined, pointerEvents: interactive ? 'auto' : 'none' }} />
       <text x={cx} y={y - 1.3} textAnchor="middle" fontSize="2.4" fill={zoneStroke} style={{ fontFamily: "'Oswald', sans-serif", pointerEvents: 'none' }}>
-        {Math.round(w)}×{Math.round(h)} m
+        {label || `${Math.round(w)}×${Math.round(h)} m`}
       </text>
       {interactive && (
         <>
@@ -3393,7 +3435,22 @@ function SpaceZone({ meters, center, onPointerDown, onResizeDown, onDelete, inte
   );
 }
 
-function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive, printMode }) {
+/* Escala dos ícones de pessoas e bola conforme a fase de jogo.
+
+   Num exercício de Bola Parada trabalha-se dentro da grande área — 16,5 m
+   de profundidade num campo de 105 m. Com os ícones ao tamanho normal,
+   dez jogadores dentro da área ficavam sobrepostos e ilegíveis (ver o
+   canto defensivo, onde os círculos se encavalitam todos). A 60% cabem
+   com folga e continuam a ler-se.
+
+   Só encolhem pessoas e bola. Cones, estacas e balizas são material com
+   dimensão real e ficam como estão, para servirem de referência. */
+function iconScaleForPhase(phase) {
+  return phase === 'Bola Parada' ? 0.6 : 1;
+}
+
+function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive, printMode, iconScale = 1 }) {
+  const k = iconScale || 1;
   // Enquanto a ferramenta ativa é para colocar um novo item (jogador,
   // guarda-redes, bola, cone, baliza, estaca, técnico) ou desenhar uma
   // seta/linha, as áreas de toque dos elementos e das setas já colocadas
@@ -3535,10 +3592,10 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           // a preto — a dourado sobre fundo claro quase não se lia.
           return (
             <g key={el.id}>
-              {hitsEnabled && <circle cx={el.x} cy={el.y} r="1.9" onPointerDown={handler} style={hitStyle} />}
+              {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(1.9 * k, 1.6)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
-                <circle cx={el.x} cy={el.y} r="1.5" fill="#F0E7D6" stroke="#C9A227" strokeWidth="0.3" />
-                <text x={el.x} y={el.y + 0.62} textAnchor="middle" fontSize="1.85" fontWeight="700" fill="#111111" style={{ fontFamily: "'Oswald', sans-serif" }}>T</text>
+                <circle cx={el.x} cy={el.y} r={1.5 * k} fill="#F0E7D6" stroke="#C9A227" strokeWidth={0.3 * k} />
+                <text x={el.x} y={el.y + 0.62 * k} textAnchor="middle" fontSize={1.85 * k} fontWeight="700" fill="#111111" style={{ fontFamily: "'Oswald', sans-serif" }}>T</text>
               </g>
             </g>
           );
@@ -3546,9 +3603,9 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
         if (el.kind === 'ball') {
           return (
             <g key={el.id}>
-              {hitsEnabled && <circle cx={el.x} cy={el.y} r="1.8" onPointerDown={handler} style={hitStyle} />}
+              {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(1.8 * k, 1.6)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
-                <TriondaBall cx={el.x} cy={el.y} r={1.6} />
+                <TriondaBall cx={el.x} cy={el.y} r={1.6 * k} />
               </g>
             </g>
           );
@@ -3558,14 +3615,16 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           const isKeeper = el.kind === 'keeper';
           return (
             <g key={el.id}>
-              {hitsEnabled && <circle cx={el.x} cy={el.y} r="2.2" onPointerDown={handler} style={hitStyle} />}
+              {/* A área de toque nunca encolhe abaixo do dedo: mesmo com os
+                  ícones pequenos, continua a dar para agarrar e arrastar. */}
+              {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(2.2 * k, 1.8)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
                 {isKeeper ? (
-                  <rect x={el.x - 2} y={el.y - 2} width="4" height="4" rx="0.8" fill={tm.fill} stroke="#F0E7D6" strokeWidth="0.4" />
+                  <rect x={el.x - 2 * k} y={el.y - 2 * k} width={4 * k} height={4 * k} rx={0.8 * k} fill={tm.fill} stroke="#F0E7D6" strokeWidth={0.4 * k} />
                 ) : (
-                  <circle cx={el.x} cy={el.y} r="2" fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth="0.28" />
+                  <circle cx={el.x} cy={el.y} r={2 * k} fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth={0.28 * k} />
                 )}
-                <text x={el.x} y={el.y + 0.75} textAnchor="middle" fontSize={elementLabel(el.number, isKeeper).length > 2 ? '1.5' : '2.1'} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+                <text x={el.x} y={el.y + 0.75 * k} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.5 : 2.1) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {elementLabel(el.number, isKeeper)}
                 </text>
               </g>
@@ -3671,7 +3730,8 @@ function stepStaticArrows(step, diagram) {
 // (markup já pronto) que, mostrados um a seguir ao outro com o "holdMs"
 // indicado, reconstroem passo a passo a coreografia gravada no editor
 // (diagram.sequence). Sem sequência gravada, devolve só o fotograma final.
-function computeDiagramAnimationFrames(diagram, zones) {
+function computeDiagramAnimationFrames(diagram, zones, phase) {
+  const iconEscala = iconScaleForPhase(phase);
   const sequence = diagram.sequence || [];
   const frames = [];
 
@@ -3681,9 +3741,9 @@ function computeDiagramAnimationFrames(diagram, zones) {
         <>
           <PitchMarkings />
           {zones.map(z => (
-            <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
+            <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
           ))}
-          <DiagramElements elements={elements} arrows={staticArrows} interactive={false} />
+          <DiagramElements elements={elements} arrows={staticArrows} interactive={false} iconScale={iconEscala} />
         </>
       ),
       holdMs,
@@ -3755,9 +3815,9 @@ function escapeHtmlText(s) {
 // Constrói o bloco (campo + eventual botão "Apresentar") para um único
 // esquema tático, com um id único (blockId) para não colidir quando há
 // vários exercícios no mesmo ficheiro (caso da sessão de treino).
-function buildDiagramBlockHtml(diagram, space, blockId) {
+function buildDiagramBlockHtml(diagram, space, blockId, phase) {
   const zones = getSpaceZones(diagram, space);
-  const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, zones);
+  const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, zones, phase);
   const html = `
     <div class="pitch-wrap">
       <svg id="pitch-${blockId}" viewBox="-3 -2 113 74" preserveAspectRatio="none">${frames[0] ? frames[0].svg : ''}</svg>
@@ -3875,6 +3935,9 @@ const LINE_LABELS = {
 };
 
 function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll, onSpaceZonesChange, activeColor, onColorChange }) {
+  // Bola Parada trabalha-se dentro da grande área: ícones a 60% (ver
+  // iconScaleForPhase). Reage à fase escolhida no formulário, em direto.
+  const iconEscala = iconScaleForPhase(exerciseInfo?.phase);
   const svgRef = React.useRef(null);
   const [tool, setTool] = useState('select');
   // 'activeColor' já não é estado local — vem do componente pai (ExerciseModal)
@@ -3916,7 +3979,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // redimensionada ou apagada.
   const zones = value?.spaceZones && value.spaceZones.length
     ? value.spaceZones
-    : (spaceMeters ? [{ id: 'legacy', w: spaceMeters.w, h: spaceMeters.h, dx: value?.spaceOffset?.dx || 0, dy: value?.spaceOffset?.dy || 0 }] : []);
+    : (spaceMeters ? [{
+        id: 'legacy', w: spaceMeters.w, h: spaceMeters.h, label: spaceMeters.label,
+        dx: value?.spaceOffset?.dx !== undefined ? value.spaceOffset.dx : (spaceMeters.dx || 0),
+        dy: value?.spaceOffset?.dy !== undefined ? value.spaceOffset.dy : (spaceMeters.dy || 0),
+      }] : []);
   // Distância mínima de um ponto a um segmento de reta (para apagar setas
   // "ao roçar" durante o arrastamento da borracha).
   const distToSegment = (px, py, x1, y1, x2, y2) => {
@@ -4677,6 +4744,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               <SpaceZone
                 key={z.id}
                 meters={meters}
+                label={z.label}
                 center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }}
                 onPointerDown={(e) => onZonePointerDown(e, z.id)}
                 onResizeDown={(e) => onZoneResizeDown(e, z.id)}
@@ -4688,6 +4756,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           <DiagramElements
             elements={(isPresenting ? presentElements || [] : elements).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
             arrows={isPresenting && presentArrows ? presentArrows : arrows}
+            iconScale={iconEscala}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
             selectedArrowId={selectedArrowId} interactive={!isPresenting}
             placingActive={tool !== 'select' && tool !== 'eraser'}
@@ -4729,8 +4798,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             <line x1={drawing.x1} y1={drawing.y1} x2={drawing.x2} y2={drawing.y2}
               stroke="#C9A227" strokeWidth="0.45" strokeDasharray={drawing.type === 'arrow-run' || drawing.type === 'line-dashed' ? '2,1.5' : '1,1'} />
           )}
-          <AnimOverlay items={animItems} />
-          <AnimOverlay items={presentAnimItems} />
+          <AnimOverlay items={animItems} iconScale={iconEscala} />
+          <AnimOverlay items={presentAnimItems} iconScale={iconEscala} />
         </svg>
       </div>
 
@@ -4914,9 +4983,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
             {zones.map(z => (
-              <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
+              <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
             ))}
-            <DiagramElements elements={elements} arrows={arrows} interactive={false} printMode />
+            <DiagramElements elements={elements} arrows={arrows} interactive={false} iconScale={iconEscala} printMode />
           </svg>
         </div>,
         document.body
@@ -4928,14 +4997,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
 /* Bola/jogador "fantasma" que se desloca durante a animação de um passe
    ou corrida — usado tanto no editor tático como na apresentação do
    exercício, para não duplicar a mesma lógica de desenho. */
-function AnimOverlay({ items }) {
+function AnimOverlay({ items, iconScale = 1 }) {
+  const k = iconScale || 1;
   return (
     <>
       {items.map(it => {
         if (it.type === 'arrow-pass') {
           return (
             <g key={it.id} style={{ pointerEvents: 'none' }}>
-              <TriondaBall cx={it.x} cy={it.y} r={1.6} />
+              <TriondaBall cx={it.x} cy={it.y} r={1.6 * k} />
             </g>
           );
         }
@@ -4944,13 +5014,13 @@ function AnimOverlay({ items }) {
         return (
           <g key={it.id} style={{ pointerEvents: 'none' }}>
             {isKeeper ? (
-              <rect x={it.x - 2.3} y={it.y - 2.3} width="4.6" height="4.6" rx="0.9"
-                fill={tm ? tm.fill : T.warn} stroke="#F0E7D6" strokeWidth="0.45" opacity="0.92" />
+              <rect x={it.x - 2.3 * k} y={it.y - 2.3 * k} width={4.6 * k} height={4.6 * k} rx={0.9 * k}
+                fill={tm ? tm.fill : T.warn} stroke="#F0E7D6" strokeWidth={0.45 * k} opacity="0.92" />
             ) : (
-              <circle cx={it.x} cy={it.y} r="2.3" fill={tm ? tm.fill : T.warn} stroke={TEXT_ON_ACCENT} strokeWidth="0.3" opacity="0.92" />
+              <circle cx={it.x} cy={it.y} r={2.3 * k} fill={tm ? tm.fill : T.warn} stroke={TEXT_ON_ACCENT} strokeWidth={0.3 * k} opacity="0.92" />
             )}
             {it.mover && (
-              <text x={it.x} y={it.y + 0.85} textAnchor="middle" fontSize={elementLabel(it.mover.number, isKeeper).length > 2 ? '1.7' : '2.4'} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+              <text x={it.x} y={it.y + 0.85 * k} textAnchor="middle" fontSize={(elementLabel(it.mover.number, isKeeper).length > 2 ? 1.7 : 2.4) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                 {elementLabel(it.mover.number, isKeeper)}
               </text>
             )}
@@ -4961,7 +5031,7 @@ function AnimOverlay({ items }) {
   );
 }
 
-function DiagramThumb({ diagram, space }) {
+function DiagramThumb({ diagram, space, phase }) {
   const zones = getSpaceZones(diagram, space);
   const hasDiagram = diagram && (diagram.elements?.length || diagram.arrows?.length);
   if (!hasDiagram && !zones.length) return null;
@@ -4969,9 +5039,9 @@ function DiagramThumb({ diagram, space }) {
     <svg viewBox="-3 -2 113 74" style={{ width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
       <PitchMarkings />
       {zones.map(z => (
-        <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
+        <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
       ))}
-      <DiagramElements elements={diagram?.elements || []} arrows={diagram?.arrows || []} interactive={false} />
+      <DiagramElements elements={diagram?.elements || []} arrows={diagram?.arrows || []} interactive={false} iconScale={iconScaleForPhase(phase)} />
     </svg>
   );
 }
@@ -5279,6 +5349,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const diagram = exercise.diagram || { elements: [], arrows: [] };
   const sequence = diagram.sequence || [];
   const zones = getSpaceZones(diagram, exercise.space);
+  const iconEscala = iconScaleForPhase(exercise.phase);
   /* Os desenhos fixos deixam de ser fixos: acompanham o passo, para uma
      linha só aparecer a partir do momento em que foi traçada. */
   const [frameArrows, setFrameArrows] = useState(
@@ -5479,10 +5550,10 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         }>
           <PitchMarkings />
           {zones.map(z => (
-            <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
+            <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
           ))}
-          <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={frameArrows} interactive={false} />
-          <AnimOverlay items={animItems} />
+          <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={frameArrows} interactive={false} iconScale={iconEscala} />
+          <AnimOverlay items={animItems} iconScale={iconEscala} />
         </svg>
 
         {/* Em ecrã inteiro os controlos ficam no TOPO: no Android o sistema
@@ -5949,7 +6020,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
     const exBlocks = (s.exerciseIds || []).map((e, i) => {
       const ex = exercises.find(x => x.id === e.exId);
       if (!ex) return null;
-      const block = buildDiagramBlockHtml(ex.diagram, ex.space, `ex${i}`);
+      const block = buildDiagramBlockHtml(ex.diagram, ex.space, `ex${i}`, ex.phase);
       const exMeta = [ex.phase, `Duração na sessão: ${e.duration} min`, ex.space, ex.playersCount && `👥 ${ex.playersCount}`, ex.material && `🎒 ${ex.material}`].filter(Boolean);
       return {
         ...block,
@@ -6415,6 +6486,7 @@ function PrintExerciseBlock({ e, ex, index }) {
             elements={ex.diagram?.elements || []}
             arrows={ex.diagram?.arrows || []}
             interactive={false}
+            iconScale={iconScaleForPhase(ex.phase)}
             printMode
           />
         </svg>
@@ -6632,7 +6704,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
                       }}>
                         <PitchMarkings />
                         <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
-                        <DiagramElements elements={ex.diagram?.elements || []} arrows={ex.diagram?.arrows || []} interactive={false} />
+                        <DiagramElements elements={ex.diagram?.elements || []} arrows={ex.diagram?.arrows || []} interactive={false} iconScale={iconScaleForPhase(ex.phase)} />
                       </svg>
                     </div>
                     <div style={{ textAlign: 'right', marginTop: 4 }}>
