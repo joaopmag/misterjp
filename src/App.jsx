@@ -229,11 +229,24 @@ function useSingletonSync(table, fallback, notifyEdit) {
    ficheiros grandes guardados em base64), a app tem de o dizer. Sem isto o
    ecrã mostrava tudo bem e o conteúdo desaparecia no refresh seguinte. */
 const SYNC_ERROR_EVENT = 'mrjp-sync-error';
-function reportSyncError(table, error) {
+function reportSyncError(table, error, kind = 'write') {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent(SYNC_ERROR_EVENT, {
-    detail: { table, message: (error && error.message) || 'erro desconhecido' },
+    detail: { table, kind, message: (error && error.message) || 'erro desconhecido' },
   }));
+}
+
+/* LEITURA FALHADA — o caso mais perigoso de todos, porque não parece um
+   erro: parece que não há dados.
+
+   Se a sessão expirou ou a RLS recusa a leitura, o Supabase devolve muitas
+   vezes `data: []` SEM erro. A app mostrava "Sem exercícios" e o treinador
+   concluía, com razão, que tinha perdido tudo — quando na verdade os
+   registos estão intactos na base de dados e o que falhou foi o acesso.
+
+   Daí valer a pena distinguir os dois casos e dizê-lo por palavras. */
+function reportReadError(table, error) {
+  reportSyncError(table, error, 'read');
 }
 
 function SyncErrorBanner() {
@@ -253,11 +266,24 @@ function SyncErrorBanner() {
     }}>
       <div style={{ flex: 1, ...body }}>
         <div style={{ color: T.bad, fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-          Não foi possível guardar ({ACTIVITY_LABELS[err.table] || err.table})
+          {err.kind === 'read'
+            ? `Não foi possível ler os dados (${ACTIVITY_LABELS[err.table] || err.table})`
+            : `Não foi possível guardar (${ACTIVITY_LABELS[err.table] || err.table})`}
         </div>
         <div style={{ color: T.cream, fontSize: 12.5, lineHeight: 1.5 }}>
-          O que acabaste de introduzir está no ecrã mas NÃO ficou gravado — vai perder-se
-          se recarregares a página. Detalhe: {err.message}
+          {err.kind === 'read' ? (
+            <>
+              Esta secção pode aparecer vazia, mas <strong>os teus dados não foram apagados</strong> —
+              o que falhou foi o acesso à base de dados. Sai da conta e volta a entrar.
+              Enquanto isto durar, esta secção está bloqueada para escrita, para não gravar
+              por cima do que lá está. Detalhe: {err.message}
+            </>
+          ) : (
+            <>
+              O que acabaste de introduzir está no ecrã mas NÃO ficou gravado — vai perder-se
+              se recarregares a página. Detalhe: {err.message}
+            </>
+          )}
         </div>
       </div>
       <button onClick={() => setErr(null)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={16} /></button>
@@ -274,17 +300,59 @@ function useCollectionSync(table, notifyEdit) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase.from(table).select('id, data, updated_by_email, updated_at').order('created_at', { ascending: true });
-      if (cancelled) return;
-      if (error) { console.error(table, error); setReady(true); return; }
-      const rows = data || [];
-      const snap = new Map();
-      const meta = {};
-      rows.forEach(r => { snap.set(r.id, JSON.stringify(r.data)); meta[r.id] = { email: r.updated_by_email, at: r.updated_at }; });
-      snapshot.current = snap;
-      setRecordMeta(meta);
-      setItems(rows.map(r => ({ ...r.data, id: r.id })));
-      setReady(true);
+      /* Três tentativas antes de desistir. Uma falha de rede a meio de um
+         arranque não deve deixar a secção vazia para o resto da sessão. */
+      let ultimo = null;
+      for (let tentativa = 0; tentativa < 3; tentativa++) {
+        const { data, error } = await supabase.from(table)
+          .select('id, data, updated_by_email, updated_at')
+          .order('created_at', { ascending: true });
+        if (cancelled) return;
+        if (!error) {
+          const rows = data || [];
+
+          /* ZERO REGISTOS SEM ERRO — o caso silencioso.
+
+             Quando o token expira ou a RLS recusa a leitura, o Supabase
+             pode devolver uma lista vazia SEM erro nenhum. É
+             indistinguível de "esta tabela está mesmo vazia", e é a
+             explicação mais provável para conteúdo que "desaparece" e
+             volta sozinho a seguir.
+
+             Não conseguimos distinguir os dois casos pelo resultado, mas
+             conseguimos perguntar se ainda há sessão válida. Se não
+             houver, isto não é uma tabela vazia — é uma leitura falhada,
+             e trata-se como tal (sem `ready`, portanto sem escrita). */
+          if (rows.length === 0) {
+            const { data: sess } = await supabase.auth.getSession();
+            if (cancelled) return;
+            if (!sess || !sess.session) {
+              reportReadError(table, { message: 'A sessão expirou durante a leitura.' });
+              return;
+            }
+          }
+
+          const snap = new Map();
+          const meta = {};
+          rows.forEach(r => { snap.set(r.id, JSON.stringify(r.data)); meta[r.id] = { email: r.updated_by_email, at: r.updated_at }; });
+          snapshot.current = snap;
+          setRecordMeta(meta);
+          setItems(rows.map(r => ({ ...r.data, id: r.id })));
+          setReady(true);
+          return;
+        }
+        ultimo = error;
+        await new Promise(r => setTimeout(r, 400 * (tentativa + 1)));
+        if (cancelled) return;
+      }
+
+      /* Falhou as três vezes. `ready` FICA A FALSE de propósito: é ele que
+         autoriza o efeito de gravação. Com ele a false, esta tabela fica em
+         modo só-leitura e é impossível escrever (ou apagar) por cima de
+         dados que não conseguimos sequer ler. Antes punha-se ready=true
+         aqui, o que abria a porta a gravar sobre um estado vazio. */
+      console.error(table, ultimo);
+      reportReadError(table, ultimo);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -390,9 +458,29 @@ function useCollectionSync(table, notifyEdit) {
         });
       }
       if (toDelete.length) {
-        const { error } = await supabase.from(table).delete().in('id', toDelete);
-        if (!error) toDelete.forEach(id => snapshot.current.delete(id));
-        else { console.error(table, error); reportSyncError(table, error); }
+        /* TRAVÃO DE SEGURANÇA.
+
+           Na aplicação, apagar é sempre um registo de cada vez e com
+           confirmação — não há nenhum botão que apague vários. Portanto,
+           um pedido para apagar três ou mais registos de uma vez nunca
+           vem de uma ação deliberada: vem de o estado local ter ficado
+           vazio ou truncado por engano (uma sessão que caiu a meio, um
+           erro de renderização, um bug futuro nesta mesma função).
+
+           Nesse caso não se apaga nada e avisa-se. O custo de errar aqui é
+           assimétrico: não apagar deixa lixo recuperável na base de dados,
+           apagar por engano destrói trabalho de uma época inteira. */
+        if (toDelete.length >= 3) {
+          console.error(table, 'eliminação em massa bloqueada:', toDelete);
+          reportSyncError(table, {
+            message: `Foi travada a eliminação de ${toDelete.length} registos de uma só vez. `
+              + 'Nada foi apagado. Recarrega a página — se os registos voltarem, estava tudo bem.',
+          });
+        } else {
+          const { error } = await supabase.from(table).delete().in('id', toDelete);
+          if (!error) toDelete.forEach(id => snapshot.current.delete(id));
+          else { console.error(table, error); reportSyncError(table, error); }
+        }
       }
       if (toUpsert.length || toDelete.length) notifyEdit(table);
     })();
