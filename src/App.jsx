@@ -494,14 +494,17 @@ function ConfirmDialog() {
           width: '100%', maxWidth: 400, padding: 22, boxShadow: '0 20px 60px #00000090',
         }}
       >
-        <h3 style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>Apagar?</h3>
+        <h3 style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>{pedido.title || 'Apagar?'}</h3>
         <p style={{ color: T.cream, fontSize: 13.5, margin: '0 0 4px', ...body }}>{pedido.label}</p>
         <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 18px', ...body }}>
-          Ainda vais poder anular durante alguns segundos.
+          {pedido.note || 'Ainda vais poder anular durante alguns segundos.'}
         </p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <Btn variant="ghost" onClick={() => setPedido(null)}>Cancelar</Btn>
-          <Btn onClick={confirmar}><Trash2 size={15} /> Apagar</Btn>
+          <Btn onClick={confirmar}>
+            {pedido.destructive === false ? <Check size={15} /> : <Trash2 size={15} />}
+            {pedido.confirmLabel || 'Apagar'}
+          </Btn>
         </div>
       </div>
     </div>,
@@ -9817,9 +9820,28 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
     setRenaming(null);
   };
   // Desfazer a pasta: os itens ficam sem pasta, nada é apagado.
+  /* Desfazer uma pasta não apaga ficheiros — tira-lhes o campo `pasta` e a
+     pasta deixa de existir por ficar vazia. Mesmo assim leva confirmação:
+     o X fica encostado ao lápis e ao próprio nome da pasta, e um toque a
+     mais no telemóvel desarrumava a organização toda de uma vez. */
   const dissolveFolder = (name) => {
-    setItems(items.map(v => (cleanFolder(v.pasta) === name ? { ...v, pasta: '' } : v)));
-    if (folderFilter === name) setFolderFilter(null);
+    const dentro = items.filter(v => cleanFolder(v.pasta) === name).map(v => v.id);
+    if (!dentro.length) return;
+    askConfirm({
+      title: 'Desfazer a pasta?',
+      label: `Pasta "${name}" · ${dentro.length} ${dentro.length === 1 ? 'ficheiro' : 'ficheiros'}`,
+      note: 'Os ficheiros não são apagados — só deixam de estar nesta pasta. Podes anular a seguir.',
+      confirmLabel: 'Desfazer pasta',
+      destructive: false,
+      onConfirm: () => {
+        setItems(prev => prev.map(v => (cleanFolder(v.pasta) === name ? { ...v, pasta: '' } : v)));
+        if (folderFilter === name) setFolderFilter(null);
+        offerUndo(`Pasta "${name}" desfeita.`, () => {
+          setItems(prev => prev.map(v => (dentro.includes(v.id) ? { ...v, pasta: name } : v)));
+          setFolderFilter(name);
+        });
+      },
+    });
   };
   // Mover um item para outra pasta a partir da própria lista.
   const moveItem = (id, pasta) => setItems(items.map(v => (v.id === id ? { ...v, pasta: cleanFolder(pasta) } : v)));
