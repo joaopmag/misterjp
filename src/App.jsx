@@ -4638,8 +4638,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // pai (para atualizar o texto mostrado no campo Espaço, derivado das
   // zonas atuais — ver describeSpaceZones).
   const commitZones = (newZones) => {
-    commit({ ...value, spaceZones: newZones, spaceOffset: undefined });
-    if (onSpaceZonesChange) onSpaceZonesChange(newZones);
+    /* Assim que uma zona é mexida à mão, deixa de ser "a grande área" e
+       passa a ser um retângulo qualquer: tira-se o nome, para o rótulo
+       desenhado não contradizer o texto do campo Espaço (que a partir daí
+       mostra medidas). */
+    const semNome = newZones.map(z => (z.label ? { ...z, label: undefined } : z));
+    commit({ ...value, spaceZones: semNome, spaceOffset: undefined });
+    if (onSpaceZonesChange) onSpaceZonesChange(semNome);
   };
   const deleteZone = (zoneId) => {
     commitZones(zones.filter(z => z.id !== zoneId));
@@ -5181,6 +5186,31 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
       setF(prev => ({ ...prev, diagram: { ...(prev.diagram || {}), spaceZones: [], spaceOffset: undefined } }));
       return;
     }
+
+    /* Espaços com nome ("1/4", "grande área", "meio campo") têm posição
+       própria e são tratados à parte. Sem este ramo, ao sair do campo o
+       texto era convertido em medidas e a zona passava pelo
+       layoutSpaceZones, que centra tudo no meio-campo — ou seja, o
+       tracejado saltava da baliza para o centro e o nome desaparecia.
+       O texto é normalizado para o nome completo ("1/4" → "1/4 de
+       campo"), para ficar igual escreva-se como se escrever. */
+    const named = parseNamedSpace(text);
+    if (named) {
+      setF(prev => ({
+        ...prev,
+        space: named.label,
+        diagram: {
+          ...(prev.diagram || {}),
+          // "Campo inteiro" não desenha zona nenhuma: o campo já é a zona.
+          spaceZones: named.fullPitch
+            ? []
+            : [{ id: uid(), w: named.w, h: named.h, dx: named.dx, dy: named.dy, label: named.label }],
+          spaceOffset: undefined,
+        },
+      }));
+      return;
+    }
+
     const meters = parseSpace(text);
     if (!meters) return;
     const count = parseSpaceCount(text);
