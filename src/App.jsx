@@ -1221,9 +1221,35 @@ function App({ session }) {
             <X size={14} /> Fechar pré-visualização
           </button>
         )}
+        {/* Pré-visualização para o treinador ver o que o atleta vê.
+
+            Aqui NÃO se passa pelas funções checkin_* — o treinador já está
+            autenticado e tem acesso normal às tabelas. Escolhe-se um
+            jogador do plantel (o primeiro com código) só para o ecrã ter
+            alguém a quem se referir, e grava-se pelo caminho habitual.
+
+            A alternativa seria pedir o código de um atleta ao treinador,
+            o que não faz sentido: ele não os sabe de cor e não é esse o
+            objetivo da pré-visualização. */}
         <CheckinKiosk
-          players={players} monitoring={monitoring} setMonitoring={setMonitoring}
+          player={sortByPosition(players)[0]}
+          monitoring={monitoring}
           sessions={sessions}
+          onSave={(type, fields, date) => {
+            const jogador = sortByPosition(players)[0];
+            if (!jogador) return;
+            setMonitoring(prev => {
+              const i = prev.findIndex(m => m.playerId === jogador.id && m.date === date && m.type === type);
+              const entrada = { playerId: jogador.id, date, type, ...fields };
+              if (i >= 0) {
+                const copia = [...prev];
+                copia[i] = { ...prev[i], ...entrada };
+                return copia;
+              }
+              return [...prev, { ...entrada, id: uid() }];
+            });
+          }}
+          onLogout={() => setPreviewKiosk(false)}
         />
       </div>
     );
@@ -8990,6 +9016,10 @@ function greetingNow() {
 // desde que existem janelas horárias, responder em atraso deixou de ser
 // possível no questionário (ver CHECKIN_WINDOWS).
 const CHECKIN_DAYS_BACK = 6;
+// Muda a cada publicação. Aparece nos ecrãs de erro do quiosque: se o que
+// se vê no telemóvel não bater certo com o que está aqui, o browser está
+// a servir uma versão em cache e não vale a pena procurar o erro no código.
+const APP_BUILD = 'quiosque-rpc-3';
 
 // Com janelas horárias activas, o atleta só responde ao dia de hoje.
 // Se algum dia se quiser voltar a permitir preencher em atraso, basta pôr
@@ -9042,7 +9072,7 @@ function checkinWindowState(type, dateStr, now = new Date()) {
    rede — bastava abrir as ferramentas de programador. Agora a validação
    do código acontece no servidor (função checkin_bootstrap) e o que chega
    ao browser é apenas o registo de quem entrou. */
-function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout }) {
+function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnostico }) {
   const loggedPlayerId = player && player.id;
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
   const [selectedDate, setSelectedDate] = useState(todayStr());
@@ -9070,13 +9100,34 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout }) {
      renderizações, e o React rebenta com isso — trocaríamos um ecrã
      branco por outro. */
   if (!loggedPlayerId) {
+    // Mostra-se o que chegou, em vez de só dizer que falhou: sem isto, um
+    // erro que só acontece no telemóvel de outra pessoa é indiagnosticável.
+    const detalhe = (() => {
+      try {
+        return JSON.stringify({
+          build: APP_BUILD,
+          player,
+          nMonitoring: Array.isArray(monitoring) ? monitoring.length : typeof monitoring,
+          nSessions: Array.isArray(sessions) ? sessions.length : typeof sessions,
+          ...(diagnostico || {}),
+        }, null, 1).slice(0, 600);
+      } catch (e) { return `build ${APP_BUILD} · não foi possível ler os dados`; }
+    })();
     return (
-      <div style={{ maxWidth: 420, margin: '0 auto', padding: '60px 20px', textAlign: 'center' }}>
+      <div style={{ maxWidth: 460, margin: '0 auto', padding: '50px 20px', textAlign: 'center' }}>
         <div style={{ ...display, fontSize: 19, color: T.cream, marginBottom: 8 }}>Não foi possível abrir</div>
-        <div style={{ fontSize: 13.5, color: T.mutedDim, marginBottom: 18 }}>
+        <div style={{ fontSize: 13.5, color: T.mutedDim, marginBottom: 16 }}>
           Os teus dados não chegaram completos. Tenta outra vez ou fala com o staff.
         </div>
-        <Btn variant="ghost" onClick={onLogout}>Voltar</Btn>
+        <pre style={{
+          background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: 10,
+          fontSize: 10.5, color: T.muted, textAlign: 'left', whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word', maxHeight: 220, overflow: 'auto', ...mono,
+        }}>{detalhe}</pre>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+          <Btn onClick={() => { try { navigator.clipboard.writeText(detalhe); } catch (e) { /* seleciona à mão */ } }}>Copiar</Btn>
+          <Btn variant="ghost" onClick={onLogout}>Voltar</Btn>
+        </div>
       </div>
     );
   }
@@ -12498,13 +12549,19 @@ function CheckinApp() {
     </div>
   );
 
-  if (!dados) return moldura(<CheckinLogin onSubmit={entrar} />);
+  if (!dados) return moldura(
+    <>
+      <CheckinLogin onSubmit={entrar} />
+      <div style={{ textAlign: 'center', fontSize: 10, color: T.line, paddingBottom: 16, ...mono }}>{APP_BUILD}</div>
+    </>
+  );
 
   return moldura(
     <CheckinKiosk
       player={dados.player}
       monitoring={dados.monitoring || []}
       sessions={dados.sessions || []}
+      diagnostico={{ chavesRecebidas: Object.keys(dados || {}) }}
       onSave={guardar}
       onLogout={sair}
     />
