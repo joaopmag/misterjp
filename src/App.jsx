@@ -9043,7 +9043,7 @@ function checkinWindowState(type, dateStr, now = new Date()) {
    do código acontece no servidor (função checkin_bootstrap) e o que chega
    ao browser é apenas o registo de quem entrou. */
 function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout }) {
-  const loggedPlayerId = player.id;
+  const loggedPlayerId = player && player.id;
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
   const [selectedDate, setSelectedDate] = useState(todayStr());
 
@@ -9061,6 +9061,25 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout }) {
     const today = todayStr();
     if (selectedDate !== today && !CHECKIN_ALLOW_BACKFILL) setSelectedDate(today);
   }, [nowTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Cinto de segurança: sem jogador não há nada a mostrar, mas também não
+     se deixa a página em branco.
+
+     Fica AQUI, depois de todos os hooks, e não no topo da função: uma
+     saída antecipada antes dos hooks faz o número de hooks variar entre
+     renderizações, e o React rebenta com isso — trocaríamos um ecrã
+     branco por outro. */
+  if (!loggedPlayerId) {
+    return (
+      <div style={{ maxWidth: 420, margin: '0 auto', padding: '60px 20px', textAlign: 'center' }}>
+        <div style={{ ...display, fontSize: 19, color: T.cream, marginBottom: 8 }}>Não foi possível abrir</div>
+        <div style={{ fontSize: 13.5, color: T.mutedDim, marginBottom: 18 }}>
+          Os teus dados não chegaram completos. Tenta outra vez ou fala com o staff.
+        </div>
+        <Btn variant="ghost" onClick={onLogout}>Voltar</Btn>
+      </div>
+    );
+  }
 
   const now = new Date(nowTick);
   const wellnessWindow = checkinWindowState('wellness', selectedDate, now);
@@ -12392,12 +12411,34 @@ function CheckinApp() {
   const [dados, setDados] = useState(null); // { player, sessions, monitoring }
   const [erro, setErro] = useState('');
 
+  /* A resposta é normalizada antes de sair daqui, porque o mesmo `jsonb`
+     pode chegar de três formas diferentes conforme a versão do PostgREST
+     e do SDK: como objeto, como texto por interpretar, ou embrulhado num
+     array de uma posição. Aceitar as três aqui evita que o resto do
+     quiosque tenha de saber disto. */
   const buscar = async (code) => {
     const { data, error } = await supabase.rpc('checkin_bootstrap', {
       p_code: code, p_days: CHECKIN_DAYS_BACK,
     });
     if (error) throw error;
-    return data || null;
+
+    let d = data;
+    if (Array.isArray(d)) d = d[0];
+    if (typeof d === 'string') {
+      try { d = JSON.parse(d); } catch (e) { /* fica como está e falha a validação abaixo */ }
+    }
+    if (d === null || d === undefined) return null; // código não existe
+
+    // Se chegou aqui e não tem jogador, a forma é inesperada: não se
+    // segue em frente com dados incompletos (era isto que dava ecrã
+    // branco, ao tentar ler `player.id` de um `undefined`).
+    if (!d || typeof d !== 'object' || !d.player || !d.player.id) {
+      const amostra = (() => { try { return JSON.stringify(data).slice(0, 300); } catch (e) { return String(data); } })();
+      const err = new Error(`Resposta inesperada do servidor: ${amostra}`);
+      err.__forma = true;
+      throw err;
+    }
+    return d;
   };
 
   const entrar = async (code) => {
@@ -12410,7 +12451,9 @@ function CheckinApp() {
       return true;
     } catch (e) {
       console.error('checkin_bootstrap', e);
-      setErro('Não foi possível ligar. Verifica a internet e tenta outra vez.');
+      setErro(e && e.__forma
+        ? e.message
+        : 'Não foi possível ligar. Verifica a internet e tenta outra vez.');
       return false;
     }
   };
