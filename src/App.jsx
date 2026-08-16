@@ -12521,6 +12521,70 @@ function LoadingGate() {
 // autenticado. Cada conta criada fica com os seus dados isolados na
 // tabela por secção, graças às políticas RLS e aos gatilhos de auditoria
 // (ver supabase/schema.sql).
+/* REDE CONTRA O ECRÃ BRANCO.
+
+   Um erro durante a renderização faz o React desmontar a árvore toda e
+   deixar a página em branco. No computador vê-se a causa na consola; no
+   telemóvel não se vê nada — e "está tudo branco" é impossível de
+   diagnosticar à distância.
+
+   Isto apanha o erro e mostra-o no ecrã, com um botão para copiar. Custa
+   trinta linhas e transforma cada avaria futura num relatório em vez de
+   um mistério.
+
+   Tem de ser um componente de classe: os hooks não têm equivalente ao
+   componentDidCatch. */
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { erro: null, pilha: '' };
+  }
+
+  static getDerivedStateFromError(erro) {
+    return { erro };
+  }
+
+  componentDidCatch(erro, info) {
+    console.error('Erro de renderização:', erro, info);
+    this.setState({ pilha: (info && info.componentStack) || '' });
+  }
+
+  render() {
+    if (!this.state.erro) return this.props.children;
+
+    const texto = `${this.state.erro.message || this.state.erro}\n${this.state.pilha}`;
+    return (
+      <div style={{
+        background: '#182619', minHeight: '100vh', padding: 24, color: '#ECEFEA',
+        fontFamily: "'Inter', sans-serif", fontSize: 14, lineHeight: 1.6,
+      }}>
+        <div style={{ maxWidth: 640, margin: '0 auto' }}>
+          <h2 style={{ color: '#C25A5A', fontSize: 18, margin: '0 0 10px' }}>Alguma coisa correu mal</h2>
+          <p style={{ color: '#8FA091', margin: '0 0 16px' }}>
+            Os teus dados estão seguros — isto é um erro no ecrã, não na base de dados.
+            Copia a mensagem abaixo e envia-a, que diz exatamente onde é.
+          </p>
+          <pre style={{
+            background: '#202F22', border: '1px solid #3A4F3D', borderRadius: 8,
+            padding: 12, fontSize: 11.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            maxHeight: 300, overflow: 'auto', color: '#ECEFEA',
+          }}>{texto}</pre>
+          <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => { try { navigator.clipboard.writeText(texto); } catch (e) { /* sem clipboard: seleciona à mão */ } }}
+              style={{ background: '#B5393F', color: '#FBF3F0', border: 'none', borderRadius: 7, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}
+            >Copiar mensagem</button>
+            <button
+              onClick={() => window.location.reload()}
+              style={{ background: 'transparent', color: '#8FA091', border: '1px solid #3A4F3D', borderRadius: 7, padding: '9px 14px', fontSize: 13, cursor: 'pointer' }}
+            >Recarregar</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
 export default function AppRoot() {
   const [session, setSession] = useState(undefined); // undefined = a verificar
 
@@ -12538,7 +12602,7 @@ export default function AppRoot() {
   // de autenticação da plataforma.
   const isCheckin = typeof window !== 'undefined' &&
     (window.location.search.includes('checkin') || window.location.hash.includes('checkin'));
-  if (isCheckin) return <CheckinApp />;
+  if (isCheckin) return <ErrorBoundary><CheckinApp /></ErrorBoundary>;
 
   if (session === undefined) {
     return (
@@ -12548,5 +12612,5 @@ export default function AppRoot() {
     );
   }
   if (!session) return <AuthScreen />;
-  return <App session={session} />;
+  return <ErrorBoundary><App session={session} /></ErrorBoundary>;
 }
