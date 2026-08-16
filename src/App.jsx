@@ -339,11 +339,14 @@ function SyncErrorBanner() {
   );
 }
 
-/* `anonimo` — o quiosque do questionário (?checkin=1) lê `players`,
-   `sessions` e `monitoring` SEM login, através das políticas `anon`. Para
-   esse caso não se pode exigir sessão: exigi-la deixava os atletas sem
-   conseguir responder. Todas as outras utilizações exigem sessão válida. */
-function useCollectionSync(table, notifyEdit, { anonimo = false } = {}) {
+/* Toda a leitura por aqui exige sessão válida — sem exceções.
+
+   Houve um tempo em que o quiosque do questionário lia estas tabelas sem
+   login e era preciso abrir uma exceção. Deixou de ser: o quiosque passou
+   a usar as funções checkin_bootstrap/checkin_save (ver checkin_rpc.sql)
+   e não toca em tabela nenhuma. Sem exceção, não há forma de contornar a
+   verificação de sessão por engano. */
+function useCollectionSync(table, notifyEdit) {
   const [items, setItems] = useState([]);
   const [ready, setReady] = useState(false);
   const [recordMeta, setRecordMeta] = useState({}); // id -> { email, at }
@@ -356,16 +359,15 @@ function useCollectionSync(table, notifyEdit, { anonimo = false } = {}) {
          arranque não deve deixar a secção vazia para o resto da sessão. */
       let ultimo = null;
       for (let tentativa = 0; tentativa < 3; tentativa++) {
-        // Token válido primeiro; sem isto a leitura pode sair como `anon`.
-        if (!anonimo) {
-          const sessao = await ensureSession();
+        // Token válido primeiro; sem isto a leitura pode sair como `anon`
+        // e o Postgres devolve lista vazia sem erro nenhum.
+        const sessao = await ensureSession();
+        if (cancelled) return;
+        if (!sessao) {
+          ultimo = { message: 'Sem sessão válida — o token expirou e não foi possível renovar.' };
+          await new Promise(r => setTimeout(r, 400 * (tentativa + 1)));
           if (cancelled) return;
-          if (!sessao) {
-            ultimo = { message: 'Sem sessão válida — o token expirou e não foi possível renovar.' };
-            await new Promise(r => setTimeout(r, 400 * (tentativa + 1)));
-            if (cancelled) return;
-            continue;
-          }
+          continue;
         }
 
         const { data, error } = await supabase.from(table)
@@ -387,7 +389,7 @@ function useCollectionSync(table, notifyEdit, { anonimo = false } = {}) {
              conseguimos perguntar se ainda há sessão válida. Se não
              houver, isto não é uma tabela vazia — é uma leitura falhada,
              e trata-se como tal (sem `ready`, portanto sem escrita). */
-          if (rows.length === 0 && !anonimo) {
+          if (rows.length === 0) {
             const sess = await ensureSession();
             if (cancelled) return;
             if (!sess) {
@@ -9032,8 +9034,16 @@ function checkinWindowState(type, dateStr, now = new Date()) {
   return { open: true, reason: `Disponível hoje ${w.label}` };
 }
 
-function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
-  const [loggedPlayerId, setLoggedPlayerId] = useState(null);
+/* Recebe SÓ o jogador que se autenticou, e não o plantel inteiro.
+
+   Antes, o quiosque carregava a tabela `players` completa para o browser
+   do atleta e fazia o `find` pelo código em JavaScript. A interface só
+   mostrava o próprio nome, mas os dados de todos estavam na resposta de
+   rede — bastava abrir as ferramentas de programador. Agora a validação
+   do código acontece no servidor (função checkin_bootstrap) e o que chega
+   ao browser é apenas o registo de quem entrou. */
+function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout }) {
+  const loggedPlayerId = player.id;
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
   const [selectedDate, setSelectedDate] = useState(todayStr());
 
@@ -9056,7 +9066,6 @@ function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
   const wellnessWindow = checkinWindowState('wellness', selectedDate, now);
   const rpeWindow = checkinWindowState('rpe', selectedDate, now);
 
-  const player = players.find(p => p.id === loggedPlayerId);
   const sessionForDate = sessions.find(s => s.date === selectedDate);
 
   const hasDate = (type, date) => monitoring.some(m => m.playerId === loggedPlayerId && m.date === date &&
@@ -9066,31 +9075,9 @@ function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
   const dayStatus = {};
   recentDates.forEach(d => { dayStatus[d] = { wellness: hasDate('wellness', d), rpe: hasDate('rpe', d) }; });
 
-  const upsert = (type, fields) => {
-    setMonitoring(prev => {
-      const idx = prev.findIndex(m => m.playerId === loggedPlayerId && m.date === selectedDate && m.type === type);
-      const entry = { playerId: loggedPlayerId, date: selectedDate, type, ...fields };
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = { ...prev[idx], ...entry };
-        return copy;
-      }
-      return [...prev, { ...entry, id: uid() }];
-    });
-  };
-
-  if (players.length === 0) {
-    return (
-      <div style={{ maxWidth: 480, margin: '0 auto', padding: '60px 20px', textAlign: 'center' }}>
-        <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 8 }}>Ainda sem plantel</div>
-        <div style={{ fontSize: 14, color: T.mutedDim }}>Pede ao staff técnico para adicionar os jogadores antes de partilhar este link.</div>
-      </div>
-    );
-  }
-
-  if (!player) {
-    return <CheckinLogin players={players} onLogin={setLoggedPlayerId} />;
-  }
+  // A gravação vai ao servidor: é lá que se verifica de quem é o registo
+  // e se o dia está dentro da janela permitida.
+  const upsert = (type, fields) => onSave(type, fields, selectedDate);
 
   if (activeType === 'wellness') {
     const existing = monitoring.find(m => m.playerId === loggedPlayerId && m.date === selectedDate && typeof m.sono === 'number');
@@ -9125,14 +9112,18 @@ function CheckinKiosk({ players, monitoring, setMonitoring, sessions }) {
       wellnessWindow={wellnessWindow} rpeWindow={rpeWindow}
       onOpenWellness={() => { if (wellnessWindow.open) setActiveType('wellness'); }}
       onOpenRpe={() => { if (rpeWindow.open) setActiveType('rpe'); }}
-      onLogout={() => setLoggedPlayerId(null)}
+      onLogout={onLogout}
     />
   );
 }
 
-function CheckinLogin({ players, onLogin }) {
+/* `onSubmit` devolve uma promessa: true se o código existir, false se
+   não. A lista de jogadores já não passa por aqui — quem confirma o
+   código é a base de dados. */
+function CheckinLogin({ onSubmit }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState(false);
+  const [aVerificar, setAVerificar] = useState(false);
 
   const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
   const maxLen = 4;
@@ -9144,14 +9135,13 @@ function CheckinLogin({ players, onLogin }) {
     setValue(v => (v.length < maxLen ? v + d : v));
   };
 
-  const submit = () => {
-    const match = players.find(p => p.code === value);
-    if (match) {
-      onLogin(match.id);
-    } else {
-      setError(true);
-      setValue('');
-    }
+  const submit = async () => {
+    if (aVerificar || value.length < maxLen) return;
+    setAVerificar(true);
+    let ok = false;
+    try { ok = await onSubmit(value); } catch (e) { ok = false; }
+    setAVerificar(false);
+    if (!ok) { setError(true); setValue(''); }
   };
 
   return (
@@ -9181,7 +9171,7 @@ function CheckinLogin({ players, onLogin }) {
         ))}
       </div>
 
-      <BigButton onClick={submit} disabled={value.length !== maxLen} accent>Entrar</BigButton>
+      <BigButton onClick={submit} disabled={value.length !== maxLen || aVerificar} accent>{aVerificar ? 'A verificar…' : 'Entrar'}</BigButton>
       <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 18 }}>Não sabes o teu código? Pede-o ao staff técnico.</div>
     </div>
   );
@@ -12383,21 +12373,70 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
 // carrega só os dados de que precisa (jogadores, sessões, monitorização) e
 // autentica cada atleta pelo código pessoal de 4 dígitos dentro do próprio
 // CheckinKiosk.
+/* O quiosque NÃO lê tabelas.
+
+   Toda a informação passa por duas funções no Supabase (ver
+   checkin_rpc.sql): `checkin_bootstrap` valida o código e devolve só o
+   jogador, as sessões recentes e os registos DESSE jogador;
+   `checkin_save` grava, verificando no servidor de quem é o registo e se
+   o dia está dentro da janela.
+
+   Isto substitui o useCollectionSync sobre `players`, `sessions` e
+   `monitoring`, que obrigava a ter políticas `anon` de leitura sobre
+   essas tabelas — e portanto punha o plantel inteiro e os dados de saúde
+   de todos os atletas ao alcance de quem extraísse a chave pública do
+   site. O código de 4 dígitos deixa de ser um filtro no browser e passa
+   a ser uma credencial verificada na base de dados. */
 function CheckinApp() {
-  const notifyEdit = useCallback(() => {}, []);
-  // Sem login: ver a nota em useCollectionSync sobre `anonimo`.
-  const anon = { anonimo: true };
-  const [players, , playersReady] = useCollectionSync('players', notifyEdit, anon);
-  const [sessions, , sessionsReady] = useCollectionSync('sessions', notifyEdit, anon);
-  const [monitoring, setMonitoring, monitoringReady] = useCollectionSync('monitoring', notifyEdit, anon);
+  const [codigo, setCodigo] = useState(null);
+  const [dados, setDados] = useState(null); // { player, sessions, monitoring }
+  const [erro, setErro] = useState('');
 
-  const loading = !playersReady || !sessionsReady || !monitoringReady;
+  const buscar = async (code) => {
+    const { data, error } = await supabase.rpc('checkin_bootstrap', {
+      p_code: code, p_days: CHECKIN_DAYS_BACK,
+    });
+    if (error) throw error;
+    return data || null;
+  };
 
-  if (loading) {
-    return <LoadingGate />;
-  }
+  const entrar = async (code) => {
+    setErro('');
+    try {
+      const d = await buscar(code);
+      if (!d) return false; // código não existe
+      setCodigo(code);
+      setDados(d);
+      return true;
+    } catch (e) {
+      console.error('checkin_bootstrap', e);
+      setErro('Não foi possível ligar. Verifica a internet e tenta outra vez.');
+      return false;
+    }
+  };
 
-  return (
+  const sair = () => { setCodigo(null); setDados(null); };
+
+  /* Grava e volta a buscar. O recarregar é de propósito: garante que o
+     ecrã mostra o que ficou REALMENTE na base de dados, e não uma versão
+     otimista que pode não corresponder (por exemplo se o servidor tiver
+     recusado o dia por estar fora da janela). */
+  const guardar = async (type, fields, date) => {
+    setErro('');
+    try {
+      const { error } = await supabase.rpc('checkin_save', {
+        p_code: codigo, p_date: date, p_type: type, p_fields: fields, p_days: CHECKIN_DAYS_BACK,
+      });
+      if (error) throw error;
+      const d = await buscar(codigo);
+      if (d) setDados(d);
+    } catch (e) {
+      console.error('checkin_save', e);
+      setErro('A resposta não ficou guardada. Tenta outra vez ou fala com o staff.');
+    }
+  };
+
+  const moldura = (conteudo) => (
     <div style={{ background: T.bg, minHeight: '100vh', ...body }}>
       <style>{`
         ${FONTS}
@@ -12406,11 +12445,26 @@ function CheckinApp() {
         input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
       `}</style>
-      <CheckinKiosk
-        players={players} monitoring={monitoring} setMonitoring={setMonitoring}
-        sessions={sessions}
-      />
+      {erro && (
+        <div style={{
+          background: '#3A1F22', border: `1px solid ${T.bad}`, color: T.cream,
+          fontSize: 13, padding: '10px 14px', textAlign: 'center',
+        }}>{erro}</div>
+      )}
+      {conteudo}
     </div>
+  );
+
+  if (!dados) return moldura(<CheckinLogin onSubmit={entrar} />);
+
+  return moldura(
+    <CheckinKiosk
+      player={dados.player}
+      monitoring={dados.monitoring || []}
+      sessions={dados.sessions || []}
+      onSave={guardar}
+      onLogout={sair}
+    />
   );
 }
 
