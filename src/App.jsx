@@ -886,7 +886,20 @@ const inputStyle = {
   width: '100%', height: 40, lineHeight: '38px', boxSizing: 'border-box', minWidth: 0,
 };
 
-function Input(props) { return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />; }
+/* CAMPOS SOBREPOSTOS NO SAFARI / iPAD
+
+   Os `input type=date` e `type=time` do Safari trazem uma largura própria
+   imposta pelo aspeto nativo e ignoram o `width: 100%` — passam por cima
+   do campo do lado quando estão numa grelha de duas colunas. É o que
+   acontecia na Nova convocatória (Data, Hora do jogo, Hora de
+   concentração lado a lado) e acontece em qualquer formulário com datas:
+   ficha do jogador, sessão, jogo, filtros de monitorização.
+
+   `appearance: none` tira essa largura imposta e o campo passa a respeitar
+   a célula. Aplica-se só ao Input: no Select apagaria também a setinha
+   nativa, que é a única indicação de que a lista abre. */
+const inputResetStyle = { WebkitAppearance: 'none', appearance: 'none', maxWidth: '100%' };
+function Input(props) { return <input {...props} style={{ ...inputStyle, ...inputResetStyle, ...(props.style || {}) }} />; }
 function Select(props) { return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />; }
 function TextArea(props) {
   return <textarea {...props} style={{ ...inputStyle, height: 'auto', lineHeight: 1.5, padding: '9px 10px', resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />;
@@ -1440,7 +1453,7 @@ function App({ session }) {
           {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -5061,6 +5074,19 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             cursor: tool === 'select' ? 'default' : 'crosshair',
             userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none',
             WebkitUserDrag: 'none', KhtmlUserSelect: 'none',
+            /* PISCAR NO iPAD
+
+               Ao tocar para colocar um ícone, o Safari desenha o realce de
+               toque e o menu de seleção por cima do campo — no iPad isso
+               lê-se como um flash da janela inteira a cada toque. Estas
+               três propriedades desligam esses efeitos nativos; o toque
+               continua a funcionar porque é tratado por eventos de
+               ponteiro, não pelo comportamento por omissão do browser. */
+            WebkitTapHighlightColor: 'transparent',
+            WebkitTouchCallout: 'none',
+            // Isola o campo numa camada própria: assim uma alteração no
+            // desenho repinta só o campo e não o resto da janela.
+            willChange: 'contents',
           }}
           draggable="false"
           onDragStart={(e) => e.preventDefault()}
@@ -6494,8 +6520,10 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   const remove = (id) => removeWithUndo(sessions, setSessions, id, itemLabel(sessions.find(x => x.id === id), 'Sessão'));
 
   const saveMatch = (data) => {
-    if (data.id) setMatches(matches.map(m => m.id === data.id ? data : m));
-    else setMatches([...matches, { ...data, id: uid() }]);
+    const registo = data.id ? data : { ...data, id: uid() };
+    if (data.id) setMatches(matches.map(m => m.id === data.id ? registo : m));
+    else setMatches([...matches, registo]);
+    setSessions(prev => ensureFriendlySession(registo, prev));
     setMatchModal(null);
   };
 
@@ -7222,7 +7250,9 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
                 return (
                   <th key={d.match ? `m-${d.match.id}` : d.date} style={headCell}>
                     <div style={{ ...mono, color: d.match ? T.warn : T.mutedDim }}>{dayShort(d.date)}</div>
-                    <div style={{ fontSize: 9, color: T.mutedDim, marginBottom: 4 }}>{d.match ? 'jogo' : 'treino'}</div>
+                    <div style={{ fontSize: 9, color: T.mutedDim, marginBottom: 4 }}>
+                      {d.match ? (isFriendlyMatch(d.match) ? 'amigável' : 'jogo') : 'treino'}
+                    </div>
                     {/* Guardar fecha a coluna (fica só de leitura); Editar
                         volta a abri-la. Substitui os cartões dia a dia. */}
                     <button
@@ -7255,7 +7285,9 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
                   const on = isPresent(d, p.id);
                   const closed = dayClosed(d);
                   const rating = ratingOf(d, p.id);
-                  const label = d.match ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP');
+                  // Amigável conta presenças como um treino, não convocatória.
+                  const convocatoria = d.match && !isFriendlyMatch(d.match);
+                  const label = convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP');
                   return (
                     <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: 4, textAlign: 'center', verticalAlign: 'top' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
@@ -7352,30 +7384,35 @@ function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
       return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1).replace('.', ',') : 'NA';
     };
     const treinos = days.filter(d => !d.match);
-    const jogos = days.filter(d => !!d.match);
+    /* Amigáveis contam como presenças (P/NP) e não como convocatória: é a
+       mesma regra que a tabela no ecrã usa. */
+    const jogosOficiais = days.filter(d => !!d.match && !isFriendlyMatch(d.match));
+    const amigaveis = days.filter(d => !!d.match && isFriendlyMatch(d.match));
+    const jogos = jogosOficiais;
     const head = (list) => list.map(d => `${dayShort(d.date)}${d.match ? ' (J)' : ''}`);
 
-    rows.push(['TREINOS · PRESENÇAS (P = presente, NP = não presente)']);
-    rows.push(['Jogador', 'Posição', ...head(treinos), 'Presenças', 'Treinos', 'Assiduidade %']);
+    const comPresencas = [...treinos, ...amigaveis].sort((a, b) => new Date(a.date) - new Date(b.date));
+    rows.push(['TREINOS E AMIGÁVEIS · PRESENÇAS (P = presente, NP = não presente)']);
+    rows.push(['Jogador', 'Posição', ...head(comPresencas), 'Presenças', 'Sessões', 'Assiduidade %']);
     players.forEach(p => {
-      const cells = treinos.map(d => (presente(d, p) ? 'P' : 'NP'));
+      const cells = comPresencas.map(d => (presente(d, p) ? 'P' : 'NP'));
       const att = cells.filter(c => c === 'P').length;
       rows.push([
         p.name, p.position || '', ...cells,
-        att, treinos.length, treinos.length ? Math.round((att / treinos.length) * 100) : '',
+        att, comPresencas.length, comPresencas.length ? Math.round((att / comPresencas.length) * 100) : '',
       ]);
     });
     rows.push([]);
 
-    rows.push(['TREINOS · NOTAS (NA = sem nota atribuída)']);
-    rows.push(['Jogador', 'Posição', ...head(treinos), 'Nota média treino']);
+    rows.push(['TREINOS E AMIGÁVEIS · NOTAS (NA = sem nota atribuída)']);
+    rows.push(['Jogador', 'Posição', ...head(comPresencas), 'Nota média']);
     players.forEach(p => {
-      const cells = treinos.map(d => (presente(d, p) ? nota(d, p) : ''));
+      const cells = comPresencas.map(d => (presente(d, p) ? nota(d, p) : ''));
       rows.push([p.name, p.position || '', ...cells.map(c => (c === '' ? 'NA' : c)), media(cells)]);
     });
     rows.push([]);
 
-    rows.push(['JOGOS · CONVOCATÓRIA (C = convocado, NC = não convocado)']);
+    rows.push(['JOGOS OFICIAIS · CONVOCATÓRIA (C = convocado, NC = não convocado)']);
     rows.push(['Jogador', 'Posição', ...jogos.map(d => `${dayShort(d.date)} ${d.match.opponent || ''}`.trim()), 'Convocatórias', 'Jogos', '%']);
     players.forEach(p => {
       const cells = jogos.map(d => (presente(d, p) ? 'C' : 'NC'));
@@ -7987,6 +8024,41 @@ function syncCompetitionMatches(competitions, matches) {
 // gravaram "Jogo amigável"; `competitionLabel` converte-os na leitura, para
 // não ser preciso reescrever nada na base de dados.
 const FRIENDLY = 'Amigável';
+
+/* Um amigável não tem convocatória.
+
+   Num jogo oficial há uma lista fechada de convocados: quem lá está pode
+   jogar, quem não está fica de fora. Num amigável não — vai quem aparece,
+   e o que interessa registar é presença, tal como num treino. Daí a
+   distinção percorrer a app inteira: as etiquetas (C/NC vs P/NP), a
+   exportação, e o próprio formulário do jogo, que deixa de pedir
+   convocados e passa a pedir presenças. */
+function isFriendlyMatch(match) {
+  return competitionLabel(match && match.competition) === FRIENDLY;
+}
+
+/* Um amigável é, para efeitos de planeamento, uma sessão de trabalho: fica
+   na agenda com fase "Jogo", intensidade alta e formato 11x11, para
+   aparecer no Planeamento e entrar nas presenças como qualquer treino.
+
+   Só se cria se ainda não houver sessão nesse dia — nunca se sobrepõe a
+   um treino que o treinador já tenha planeado. */
+function ensureFriendlySession(match, sessions) {
+  const lista = sessions || [];
+  if (!match || !match.date || !isFriendlyMatch(match)) return lista;
+  if (lista.some(x => x.date === match.date)) return lista;
+  return [...lista, {
+    id: uid(),
+    date: match.date,
+    phase: 'Jogo',
+    intensity: 'Alta',
+    focus: '11x11',
+    opponent: match.opponent || '',
+    exerciseIds: [],
+    attendance: [...(match.convocados || [])],
+    sourceMatchId: match.id,
+  }];
+}
 function competitionLabel(name) {
   const txt = String(name || '').trim();
   return /^jogo\s+amig/i.test(txt) ? FRIENDLY : txt;
@@ -8430,12 +8502,15 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season }) {
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions }) {
   const [modal, setModal] = useState(null);
 
   const save = (data) => {
-    if (data.id) setMatches(matches.map(m => m.id === data.id ? data : m));
-    else setMatches([...matches, { ...data, id: uid() }]);
+    const registo = data.id ? data : { ...data, id: uid() };
+    if (data.id) setMatches(matches.map(m => m.id === data.id ? registo : m));
+    else setMatches([...matches, registo]);
+    // Amigável: entra também na agenda como sessão (ver ensureFriendlySession).
+    if (setSessions) setSessions(prev => ensureFriendlySession(registo, prev));
     setModal(null);
   };
   const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
@@ -8504,10 +8579,18 @@ function withConvocadosInAttendance(f) {
 }
 
 function MatchModal({ match, players, standings, season, onClose, onSave }) {
-  const [f, setF] = useState(match || {
+  /* Os campos de lista têm de existir SEMPRE, mesmo ao abrir um jogo
+     gravado antes de eles existirem. Sem isto, `f.report[p.id]` e
+     `f.starters.includes(...)` rebentam ao editar um jogo antigo — e o
+     resultado é a janela em branco, não uma mensagem. */
+  const [f, setF] = useState(() => ({
     date: todayStr(), opponent: '', competition: FRIENDLY, result: '', jornada: '',
     convocados: [], starters: [], report: {},
-  });
+    ...(match || {}),
+    convocados: (match && match.convocados) || [],
+    starters: (match && match.starters) || [],
+    report: (match && match.report) || {},
+  }));
   // Lista das competições configuradas + "Amigável" (valor por omissão).
   // Se o jogo tiver uma competição antiga que já não está configurada, ela
   // continua a aparecer na lista para não se perder.
@@ -8517,6 +8600,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
   // Quando a competição escolhida já está configurada em Jogos, o
   // adversário e a jornada deixam de ser texto livre e passam a listas
   // com o que lá está — e a data vem do calendário da competição.
+  const eAmigavel = competitionLabel(f.competition) === FRIENDLY;
   const comp = competitionByName(standings, f.competition);
   const equipas = competitionTeamNames(comp, season && season.club);
   const jornadas = competitionRoundLabels(comp);
@@ -8568,23 +8652,35 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
             <Input value={f.opponent} onChange={e => setF({ ...f, opponent: e.target.value })} placeholder="Ex: FC Foz" />
           )}
         </Field>
-        <Field label="Jornada">
-          {jornadas.length > 0 ? (
-            <Select value={f.jornada || ''} onChange={e => setFixture({ jornada: e.target.value })}>
-              <option value="">— sem jornada —</option>
-              {jornadas.map(j => <option key={j} value={j}>{j}</option>)}
-            </Select>
-          ) : (
-            <Input value={f.jornada || ''} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="ex: Jornada 12" />
-          )}
-        </Field>
+        {/* Um amigável não pertence a nenhuma jornada — o campo só
+            confundiria e ficaria sempre vazio. */}
+        {!eAmigavel && (
+          <Field label="Jornada">
+            {jornadas.length > 0 ? (
+              <Select value={f.jornada || ''} onChange={e => setFixture({ jornada: e.target.value })}>
+                <option value="">— sem jornada —</option>
+                {jornadas.map(j => <option key={j} value={j}>{j}</option>)}
+              </Select>
+            ) : (
+              <Input value={f.jornada || ''} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="ex: Jornada 12" />
+            )}
+          </Field>
+        )}
         <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
       </div>
 
+      {/* Num amigável não há convocatória: vai quem aparece. A lista é a
+          mesma, mas chama-se pelo que é — presenças — e a matriz de
+          presenças mostra P/NP em vez de C/NC (ver isFriendlyMatch). */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-          Convocados {f.convocados.length ? `· ${f.convocados.length}/${players.length}` : ''}
+          {eAmigavel ? 'Presenças' : 'Convocados'} {f.convocados.length ? `· ${f.convocados.length}/${players.length}` : ''}
+        </div>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8 }}>
+          {eAmigavel
+            ? 'Marca quem esteve presente. Fica disponível como P / NP na tabela de presenças.'
+            : 'Marca quem foi convocado. Fica disponível como C / NC na tabela de presenças.'}
         </div>
         <PlayerChipList
           players={players}
