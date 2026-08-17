@@ -62,7 +62,7 @@ function sortByPosition(players) {
     return diff !== 0 ? diff : (Number(a.number) || 99) - (Number(b.number) || 99);
   });
 }
-const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Ativação / Aquecimento', 'Preparação Física', 'Descanso'];
+const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Jogo', 'Ativação / Aquecimento', 'Preparação Física', 'Descanso'];
 // Fases de jogo disponíveis na edição de exercícios: "Descanso" é uma fase
 // de sessão (dia de folga), não faz sentido classificar um exercício assim.
 const EXERCISE_PHASES = PHASES.filter(p => p !== 'Descanso');
@@ -870,7 +870,11 @@ function TextArea(props) {
   return <textarea {...props} style={{ ...inputStyle, height: 'auto', lineHeight: 1.5, padding: '9px 10px', resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />;
 }
 
-function Modal({ title, subtitle, onClose, children, wide }) {
+/* `wide` alarga; `xwide` alarga mais ainda — é o tamanho das janelas com
+   campo tático, onde a precisão do desenho depende de o campo ser grande
+   no ecrã. Nos ecrãs pequenos os três tamanhos dão no mesmo, porque o
+   limite passa a ser a largura da janela. */
+function Modal({ title, subtitle, onClose, children, wide, xwide }) {
   // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
   // são quase todas de edição (exercício, sessão, jogo, jogador...) e um
   // clique acidental fora — muito fácil de dar ao arrastar peças no editor
@@ -886,7 +890,7 @@ function Modal({ title, subtitle, onClose, children, wide }) {
         onClick={e => e.stopPropagation()}
         style={{
           background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10,
-          width: '100%', maxWidth: wide ? 640 : 460, maxHeight: '88vh', overflowY: 'auto',
+          width: '100%', maxWidth: xwide ? 1100 : (wide ? 640 : 460), maxHeight: '92vh', overflowY: 'auto',
           padding: 22, boxShadow: '0 20px 60px #00000080',
         }}
       >
@@ -2906,7 +2910,7 @@ function Exercicios({ exercises, setExercises, meta }) {
               style={{ width: '100%', maxWidth: 640, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
             />
           ) : (
-            <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 640, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
               <PitchMarkings printMode />
               <SpaceZonesReadOnly diagram={printExercise.diagram} spaceText={printExercise.space} printMode />
               <DiagramElements
@@ -3034,7 +3038,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
           <div style={{ margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0' }}>
             <strong>Fase de jogo:</strong> {printIdeia.phase}
           </div>
-          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 640, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
             <SpaceZonesReadOnly diagram={printIdeia.diagram} printMode />
             <DiagramElements
@@ -3095,7 +3099,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
   };
 
   return (
-    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide>
+    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide>
       <div style={{ marginBottom: 12 }}>
         <Field label="Nome"><Input value={f.name || ''} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Construção a 3 com médio a cair" /></Field>
       </div>
@@ -3525,6 +3529,76 @@ function CornerFlag({ cx, cy, ox, oy, color }) {
   );
 }
 
+/* ENQUADRAMENTO DO CAMPO
+
+   O relvado ocupa x 1→106 e y 1→69 (105×68 m reais) e NÃO muda: todas as
+   posições já gravadas continuam onde estavam, e as zonas com nome (grande
+   área, meio campo) continuam a assentar nas linhas certas.
+
+   O que muda é a moldura à volta. Antes era `-3 -2 113 74`, uns escassos
+   3 m de folga; agora há espaço para o campo respirar e, em baixo, para os
+   bancos de supentes e as áreas técnicas — que existem no campo real e
+   ajudam a ler de que lado se está a jogar.
+
+   Estão num só sítio porque o mesmo enquadramento é usado em dez lugares
+   (editor, apresentação, miniaturas, impressão, ficheiro partilhável) e
+   um deles ficar para trás dá desalinhamentos difíceis de perceber. */
+const PITCH_VIEWBOX = '-6 -5 119 88';
+const PITCH_ASPECT = '119 / 88';
+// Limites para o mapeamento do rato (ver toPoint no DiagramEditor).
+const PITCH_BOX = { x: -6, y: -5, w: 119, h: 88 };
+/* Altura em percentagem da largura — é o truque do "padding-top" que
+   reserva o espaço certo antes de o SVG carregar. Calculado a partir do
+   enquadramento para nunca poder ficar dessincronizado dele: era um dos
+   sítios que ficava para trás quando o viewBox mudava à mão. */
+const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
+
+/* Bancos de suplentes e áreas técnicas.
+
+   Medidas do regulamento: a área técnica estende-se 1 m para cada lado dos
+   bancos e até 1 m da linha lateral. Os bancos ficam a 5 m da linha de
+   meio-campo, um de cada lado. Aqui ficam desenhados por baixo da linha
+   lateral de baixo (y = 69), na folga nova. */
+function BenchesAndTechnicalArea({ printMode }) {
+  const linha = printMode ? '#2A2A2A' : '#ffffff55';
+  const banco = printMode ? 'none' : '#ffffff14';
+  const bancoLinha = printMode ? '#2A2A2A' : '#ffffff66';
+
+  // Um lado: casa à esquerda do meio-campo, visitante à direita.
+  const lados = [
+    { x: 33.5, largura: 15 },  // termina 5 m antes do meio-campo
+    { x: 58.5, largura: 15 },  // começa 5 m depois
+  ];
+
+  return (
+    <>
+      {lados.map((l, i) => (
+        <g key={i}>
+          {/* Área técnica: tracejada, do rebordo do relvado até ao banco. */}
+          <path
+            d={`M ${l.x - 1} 69 L ${l.x - 1} 75.5 L ${l.x + l.largura + 1} 75.5 L ${l.x + l.largura + 1} 69`}
+            fill="none" stroke={linha} strokeWidth="0.3" strokeDasharray="1.2,1"
+          />
+          {/* Banco de suplentes. */}
+          <rect
+            x={l.x} y={76} width={l.largura} height={3.4} rx="0.8"
+            fill={banco} stroke={bancoLinha} strokeWidth="0.35"
+          />
+          {/* Traços dos lugares, só para dar a leitura de "banco". */}
+          {Array.from({ length: 5 }, (_, k) => (
+            <line
+              key={k}
+              x1={l.x + (l.largura / 5) * (k + 1)} y1={76.4}
+              x2={l.x + (l.largura / 5) * (k + 1)} y2={79}
+              stroke={bancoLinha} strokeWidth="0.2" opacity="0.7"
+            />
+          ))}
+        </g>
+      ))}
+    </>
+  );
+}
+
 function PitchMarkings({ printMode }) {
   // Em ecrã, linhas brancas translúcidas sobre o relvado escuro; em
   // impressão (fundo branco, para poupar tinto) linhas escuras sólidas,
@@ -3561,6 +3635,7 @@ function PitchMarkings({ printMode }) {
       <CornerFlag cx={106} cy={1} ox={D} oy={-D} color={flagColor} />
       <CornerFlag cx={1} cy={69} ox={-D} oy={D} color={flagColor} />
       <CornerFlag cx={106} cy={69} ox={D} oy={D} color={flagColor} />
+      <BenchesAndTechnicalArea printMode={printMode} />
       {/* balizas pequenas, com rede */}
       <rect x="-0.6" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
       <rect x="106" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
@@ -3997,7 +4072,7 @@ function buildDiagramBlockHtml(diagram, space, blockId, phase) {
   const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, zones, phase);
   const html = `
     <div class="pitch-wrap">
-      <svg id="pitch-${blockId}" viewBox="-3 -2 113 74" preserveAspectRatio="none">${frames[0] ? frames[0].svg : ''}</svg>
+      <svg id="pitch-${blockId}" viewBox="${PITCH_VIEWBOX}" preserveAspectRatio="none">${frames[0] ? frames[0].svg : ''}</svg>
     </div>
     ${hasAnimation ? `
     <div class="controls">
@@ -4029,8 +4104,8 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
   /* Largura fixa em vez de percentagem do ecrã: em ecrãs largos de
      desktop a prancheta fica sempre com o mesmo tamanho legível (não
      esticada à largura da janela), e o aspect-ratio garante sempre a
-     proporção exata do viewBox (113 × 74), sem distorcer o desenho. */
-  .pitch-wrap { position:relative; width:100%; max-width:640px; aspect-ratio:113/74; margin-top:12px; border-radius:8px; overflow:hidden; background:#1e3a24; border:1px solid #33513c; }
+     proporção exata do viewBox, sem distorcer o desenho. */
+  .pitch-wrap { position:relative; width:100%; max-width:640px; aspect-ratio:${PITCH_ASPECT.replace(' ', '')}; margin-top:12px; border-radius:8px; overflow:hidden; background:#1e3a24; border:1px solid #33513c; }
   .pitch-wrap svg { position:absolute; inset:0; width:100%; height:100%; display:block; }
   .controls { margin-top:12px; }
   button { background:#B5393F; color:#fff; border:none; border-radius:8px; padding:9px 16px; font-size:13.5px; cursor:pointer; }
@@ -4199,6 +4274,55 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const [past, setPast] = useState([]);
   const [future, setFuture] = useState([]);
   const HISTORY_LIMIT = 60;
+
+  /* PASSOS DA ANIMAÇÃO ANULADOS.
+
+     O Ctrl+Z geral só desfaz o que se fez NESTA sessão de edição: ao abrir
+     um exercício já gravado, o histórico está vazio, e por isso não havia
+     forma de tirar um passo de animação gravado noutro dia — só apagando
+     a animação toda e refazendo-a de raiz.
+
+     Estes dois botões trabalham diretamente sobre `value.sequence`. Cada
+     passo guarda tudo o que é preciso para desfazer o que ele próprio fez:
+     `elements` (as posições ANTES do movimento), `arrows` (as setas de
+     passe/corrida que a animação consumiu) e `staticArrows` (os desenhos
+     fixos que existiam nessa altura). Repor esses três campos devolve o
+     campo exatamente ao estado anterior ao passo. */
+  const [passosAnulados, setPassosAnulados] = useState([]);
+
+  const anularUltimoPasso = () => {
+    const seq = value.sequence || [];
+    if (!seq.length) return;
+    const ultimo = seq[seq.length - 1];
+    setPassosAnulados(p => [...p, ultimo]);
+    commit({
+      ...value,
+      elements: (ultimo.elements || []).map(el => ({ ...el })),
+      // As setas animadas voltam ao campo, para se poderem corrigir.
+      arrows: [...(ultimo.staticArrows || []), ...(ultimo.arrows || [])],
+      sequence: seq.slice(0, -1),
+    });
+    setSelectedId(null);
+    setSelectedArrowId(null);
+  };
+
+  const refazerPasso = () => {
+    if (!passosAnulados.length) return;
+    const passo = passosAnulados[passosAnulados.length - 1];
+    setPassosAnulados(p => p.slice(0, -1));
+    // Recoloca o passo e volta a pôr os elementos no fim do movimento.
+    const movidos = new Map();
+    (passo.arrows || []).forEach(a => { if (a.ownerId) movidos.set(a.ownerId, { x: a.x2, y: a.y2 }); });
+    const animadas = new Set((passo.arrows || []).map(a => a.id));
+    commit({
+      ...value,
+      elements: (passo.elements || []).map(el => (movidos.has(el.id) ? { ...el, x: movidos.get(el.id).x, y: movidos.get(el.id).y } : { ...el })),
+      arrows: (value.arrows || []).filter(a => !animadas.has(a.id)),
+      sequence: [...(value.sequence || []), passo],
+    });
+    setSelectedId(null);
+    setSelectedArrowId(null);
+  };
   const commit = (newValue) => {
     setPast(p => [...p.slice(-HISTORY_LIMIT + 1), value]);
     setFuture([]);
@@ -4244,9 +4368,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // ao pixel — sem faixas mortas nem deslocamento do cursor.
   const toPoint = (e) => {
     const rect = svgRef.current.getBoundingClientRect();
+    const { x: vx, y: vy, w: vw, h: vh } = PITCH_BOX;
     return {
-      x: Math.max(-3, Math.min(110, ((e.clientX - rect.left) / rect.width) * 113 - 3)),
-      y: Math.max(-2, Math.min(72, ((e.clientY - rect.top) / rect.height) * 74 - 2)),
+      x: Math.max(vx, Math.min(vx + vw, ((e.clientX - rect.left) / rect.width) * vw + vx)),
+      y: Math.max(vy, Math.min(vy + vh, ((e.clientY - rect.top) / rect.height) * vh + vy)),
     };
   };
   // Converte um ponto local (lx, ly), definido antes da rotação, para a
@@ -4420,6 +4545,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           arrows: arrows.filter(a => !animatedIds.has(a.id)),
           sequence: [...(value.sequence || []), stepSnapshot],
         });
+        // Um passo novo fecha a possibilidade de refazer os anulados —
+        // a partir daqui a coreografia seguiu outro caminho.
+        setPassosAnulados([]);
         if (selectedArrowId && animatedIds.has(selectedArrowId)) setSelectedArrowId(null);
         setIsPlaying(false);
         setAnimItems([]);
@@ -4899,10 +5027,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
       </div>
 
-      <div style={{ position: 'relative', width: '100%', paddingTop: '65.1%' }}>
+      <div style={{ position: 'relative', width: '100%', paddingTop: PITCH_PADDING_TOP }}>
         <svg
           ref={svgRef}
-          viewBox="-3 -2 113 74"
+          viewBox={PITCH_VIEWBOX}
           preserveAspectRatio="none"
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
@@ -5029,6 +5157,37 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           >
             <Printer size={14} color={TEXT_ON_ACCENT} />
           </button>
+          {/* Estado da animação gravada, com os passos a poderem ser
+              retirados um a um — inclusive os de sessões anteriores. */}
+          {((value.sequence || []).length > 0 || passosAnulados.length > 0) && (
+            <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, marginLeft: 2 }}>
+              {(value.sequence || []).length} {(value.sequence || []).length === 1 ? 'passo' : 'passos'}
+            </span>
+          )}
+          {(value.sequence || []).length > 0 && (
+            <button
+              type="button"
+              onClick={anularUltimoPasso}
+              title="Retira o último passo da animação e devolve as setas ao campo para as poderes corrigir"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
+                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: 'transparent', color: T.cream, border: `1px solid ${T.line}`,
+              }}
+            ><Undo2 size={12} /> Anular passo</button>
+          )}
+          {passosAnulados.length > 0 && (
+            <button
+              type="button"
+              onClick={refazerPasso}
+              title="Repõe o passo que acabaste de anular"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
+                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: 'transparent', color: T.cream, border: `1px solid ${T.line}`,
+              }}
+            ><Redo2 size={12} /> Refazer passo</button>
+          )}
           {(value.sequence || []).length > 0 && (
             <button
               type="button"
@@ -5162,7 +5321,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {exerciseInfo?.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
           )}
-          <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 640, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 640, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
             {zones.map(z => (
               <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
@@ -5218,7 +5377,7 @@ function DiagramThumb({ diagram, space, phase }) {
   const hasDiagram = diagram && (diagram.elements?.length || diagram.arrows?.length);
   if (!hasDiagram && !zones.length) return null;
   return (
-    <svg viewBox="-3 -2 113 74" style={{ width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
+    <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
       <PitchMarkings />
       {zones.map(z => (
         <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
@@ -5396,7 +5555,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
   };
 
   return (
-    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide>
+    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide>
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <div style={FIELD_FULL}>
           <Field label="Nome"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Jogo posicional 5v5+3" /></Field>
@@ -5567,6 +5726,18 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const [animItems, setAnimItems] = useState([]);
   const [playing, setPlaying] = useState(false);
   const [finished, setFinished] = useState(sequence.length === 0);
+  /* PAUSA.
+
+     Parar e retomar não é o mesmo que parar e recomeçar: o que interessa
+     numa reunião é congelar a imagem para explicar, e depois seguir dali.
+
+     Guardam-se duas coisas: em que passo se estava (`passoAtual`) e quanto
+     tempo já tinha decorrido dentro desse passo (`decorridoRef`). Ao
+     retomar, o passo volta a correr a partir desse instante em vez de
+     recomeçar do princípio. */
+  const [paused, setPaused] = useState(false);
+  const passoAtualRef = useRef(0);
+  const decorridoRef = useRef(0);
   const attachmentBlobUrl = useBlobUrl(exercise.attachment && exercise.attachment.type !== 'image' ? exercise.attachment.dataUrl : null);
   const animRef = React.useRef(null);
   const timeoutRef = React.useRef(null);
@@ -5618,7 +5789,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   // à que se viu ao criar o exercício — incluindo a regra do dono da seta.
   const buildAnimationChains = (arrowList) => buildAnimationChainsPure(arrowList);
 
-  const runStep = (idx) => {
+  const runStep = (idx, offsetMs = 0) => {
+    passoAtualRef.current = idx;
     const step = sequence[idx];
     const chains = buildAnimationChains(step.arrows).map(chainArrows => {
       let cursor = 0;
@@ -5654,9 +5826,12 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setFrameElements(baseElements);
     setFrameArrows(stepStaticArrows(step, diagram));
     const maxDuration = Math.max(...chains.map(c => c.totalDuration));
-    const start = performance.now();
+    // `offsetMs` recua o relógio: retomar em 3s é o mesmo que ter
+    // começado 3s antes de agora.
+    const start = performance.now() - offsetMs;
     const tick = (now) => {
       const elapsed = now - start;
+      decorridoRef.current = elapsed;
       setAnimItems(chains.map(({ id, segments, mover }) => {
         let active = segments[segments.length - 1];
         for (const seg of segments) {
@@ -5677,6 +5852,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         setFrameElements(baseElements.map(el => (moved.has(el.id) ? { ...el, x: moved.get(el.id).x, y: moved.get(el.id).y } : el)));
         setAnimItems([]);
         animRef.current = null;
+        decorridoRef.current = 0;
         if (idx + 1 < sequence.length) {
           timeoutRef.current = setTimeout(() => runStep(idx + 1), 450);
         } else {
@@ -5685,6 +5861,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           setFrameElements(diagram.elements || []);
           setFrameArrows(diagram.arrows || []);
           setPlaying(false);
+          setPaused(false);
+          passoAtualRef.current = 0;
           setFinished(true);
         }
       }
@@ -5696,6 +5874,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     if (sequence.length === 0) return;
     setFinished(false);
     setPlaying(true);
+    setPaused(false);
+    passoAtualRef.current = 0;
+    decorridoRef.current = 0;
     setFrameElements(sequence[0].elements);
     setFrameArrows(stepStaticArrows(sequence[0], diagram));
     timeoutRef.current = setTimeout(() => runStep(0), 200);
@@ -5705,14 +5886,35 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     animRef.current = null;
     setPlaying(false);
+    setPaused(false);
+    passoAtualRef.current = 0;
+    decorridoRef.current = 0;
     setAnimItems([]);
+  };
+
+  /* Pausa: congela onde está. Ao contrário do "Parar", guarda a posição
+     para se poder continuar dali. */
+  const pause = () => {
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    animRef.current = null;
+    timeoutRef.current = null;
+    setPaused(true);
+    setPlaying(false);
+  };
+
+  const resume = () => {
+    if (!sequence.length) return;
+    setPaused(false);
+    setPlaying(true);
+    runStep(passoAtualRef.current, decorridoRef.current);
   };
   // Repetir do início: garante que nenhuma animação anterior fica pendente
   // (era isso que impedia o segundo "play" logo a seguir ao fim).
   const restart = () => { stop(); setTimeout(start, 30); };
 
   return (
-    <Modal title={exercise.name} onClose={onClose} wide>
+    <Modal title={exercise.name} onClose={onClose} wide xwide>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
         <span style={{ fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '2px 9px', borderRadius: 12 }}>{exercise.phase}</span>
         {exercise.space && <span style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>📐 {exercise.space}</span>}
@@ -5748,9 +5950,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       <div ref={pitchWrapRef} style={
         isFull
           ? { position: 'fixed', inset: 0, zIndex: 100, background: '#0e1a12', display: 'flex', flexDirection: 'column', padding: 12 }
-          : { position: 'relative', width: '100%', paddingTop: '65.1%' }
+          : { position: 'relative', width: '100%', paddingTop: PITCH_PADDING_TOP }
       }>
-        <svg viewBox="-3 -2 113 74" preserveAspectRatio={isFull ? 'xMidYMid meet' : 'none'} style={
+        <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio={isFull ? 'xMidYMid meet' : 'none'} style={
           isFull
             ? { flex: 1, width: '100%', minHeight: 0, background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
             : { position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
@@ -5761,6 +5963,13 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           ))}
           <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={frameArrows} interactive={false} iconScale={iconEscala} />
           <AnimOverlay items={animItems} iconScale={iconEscala} />
+          {/* Marca dentro do próprio SVG: assim acompanha o campo em ecrã
+              inteiro e aparece também quando se guarda a imagem. */}
+          <text
+            x={PITCH_BOX.x + PITCH_BOX.w - 2} y={PITCH_BOX.y + PITCH_BOX.h - 2}
+            textAnchor="end" fontSize="2.6" fill="#ffffff55"
+            style={{ fontFamily: "'Oswald', sans-serif", letterSpacing: '0.08em', pointerEvents: 'none' }}
+          >™ Mister JP</text>
         </svg>
 
         {/* Em ecrã inteiro os controlos ficam no TOPO: no Android o sistema
@@ -5808,9 +6017,20 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         <div style={{ display: 'flex', gap: 8 }}>
           {onEdit && <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>}
           {sequence.length > 0 && (
-            <Btn onClick={playing ? stop : restart}>
-              {playing ? <><Square size={14} /> Parar</> : <><Play size={14} /> {finished ? 'Repetir apresentação' : 'Apresentar'}</>}
-            </Btn>
+            <>
+              {/* Pausa só faz sentido a meio; Parar só faz sentido se
+                  houver alguma coisa a decorrer ou congelada. */}
+              {(playing || paused) && (
+                <Btn variant="ghost" onClick={stop}><Square size={14} /> Parar</Btn>
+              )}
+              {playing ? (
+                <Btn onClick={pause}><Square size={14} /> Pausa</Btn>
+              ) : paused ? (
+                <Btn onClick={resume}><Play size={14} /> Continuar</Btn>
+              ) : (
+                <Btn onClick={restart}><Play size={14} /> {finished ? 'Repetir apresentação' : 'Apresentar'}</Btn>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -6686,7 +6906,7 @@ function PrintExerciseBlock({ e, ex, index }) {
           style={{ width: '100%', maxWidth: 540, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
         />
       ) : (
-        <svg viewBox="-3 -2 113 74" style={{ width: '100%', maxWidth: 540, aspectRatio: '113 / 74', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+        <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 540, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
           <PitchMarkings printMode />
           <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
           <DiagramElements
@@ -6904,8 +7124,8 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
                         )}
                       </div>
                     )}
-                    <div style={{ position: 'relative', width: '100%', paddingTop: '65.1%' }}>
-                      <svg viewBox="-3 -2 113 74" preserveAspectRatio="none" style={{
+                    <div style={{ position: 'relative', width: '100%', paddingTop: PITCH_PADDING_TOP }}>
+                      <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio="none" style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
                         background: '#1e3a24', borderRadius: 6, border: `1px solid ${T.line}`,
                       }}>
