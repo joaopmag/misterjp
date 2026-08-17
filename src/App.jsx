@@ -120,6 +120,28 @@ function fileToPhotoDataUrl(file) {
   });
 }
 
+/* PSE DE TREINO vs PSE DE JOGO
+
+   A carga de um jogo não é comparável à de um treino: o mesmo 7/10 quer
+   dizer coisas diferentes, e misturá-los na mesma média esconde justamente
+   o que interessa ver — se a equipa chega ao jogo fresca e se recupera
+   depois dele.
+
+   O contexto é gravado no registo (`contexto`), mas os registos antigos não
+   o têm. Para esses, deduz-se: se houve jogo nesse dia, o esforço foi de
+   jogo. Amigáveis contam como jogo porque são jogos — estão na mesma lista
+   de `matches`, não é preciso regra à parte. Uma sessão marcada com a fase
+   "Jogo" também conta, para o caso de o jogo não estar lançado em Jogos. */
+function rpeContexto(rec, { matches = [], sessions = [] } = {}) {
+  if (rec && (rec.contexto === 'jogo' || rec.contexto === 'treino')) return rec.contexto;
+  const d = rec && rec.date;
+  if (!d) return 'treino';
+  if ((matches || []).some(m => m.date === d)) return 'jogo';
+  if ((sessions || []).some(x => x.date === d && x.phase === 'Jogo')) return 'jogo';
+  return 'treino';
+}
+const RPE_CONTEXTO_LABEL = { treino: 'Treino', jogo: 'Jogo' };
+
 function genPlayerCode(usedSet) {  let code;
   do { code = String(Math.floor(1000 + Math.random() * 9000)); } while (usedSet.has(code));
   usedSet.add(code);
@@ -1419,7 +1441,7 @@ function App({ session }) {
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} />}
-          {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} onPreview={() => setPreviewKiosk(true)} />}
+          {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
              escondidos com CSS quando não é a tab ativa) em vez de serem
@@ -8618,7 +8640,9 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
 /* ---------------------------------------------------------------
    MONITORIZAÇÃO
 ---------------------------------------------------------------- */
-function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, sessions, onPreview }) {
+function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, sessions, matches = [], onPreview }) {
+  // Contexto de cada PSE (treino ou jogo) — ver rpeContexto.
+  const ctx = { matches, sessions };
   const [modal, setModal] = useState(false);
   const [showCodes, setShowCodes] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -8651,9 +8675,24 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
     });
   };
   const remove = (id) => removeWithUndo(monitoring, setMonitoring, id, 'Registo de monitorização');
+  /* Gerar um código novo invalida o antigo: o atleta deixa de conseguir
+     entrar até alguém lhe dar o novo. É destrutivo o suficiente para
+     merecer confirmação — e o botão fica ao lado do código, fácil de
+     acertar sem querer. */
   const regenerateCode = (playerId) => {
-    const used = new Set(players.filter(p => p.id !== playerId && p.code).map(p => p.code));
-    setPlayers(players.map(p => p.id === playerId ? { ...p, code: genPlayerCode(used) } : p));
+    const jogador = players.find(p => p.id === playerId);
+    if (!jogador) return;
+    askConfirm({
+      title: 'Gerar um código novo?',
+      label: `${jogador.name}${jogador.code ? ` · código atual ${jogador.code}` : ''}`,
+      note: 'O código atual deixa de funcionar. Tens de enviar o novo ao atleta para ele voltar a conseguir responder.',
+      confirmLabel: 'Gerar novo código',
+      destructive: false,
+      onConfirm: () => {
+        const used = new Set(players.filter(p => p.id !== playerId && p.code).map(p => p.code));
+        setPlayers(players.map(p => (p.id === playerId ? { ...p, code: genPlayerCode(used) } : p)));
+      },
+    });
   };
 
   const todayDateStr = todayStr();
@@ -8674,8 +8713,16 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
   // continua guardado; só não é listado aqui. Ordena por posição (e não
   // por dia): cada jogador aparece com todas as suas linhas juntas, mais
   // recente primeiro.
+  /* Intervalo de datas das respostas. Por omissão continua a mostrar
+     ontem e hoje, que é o que interessa no dia a dia; o intervalo serve
+     para ir buscar uma semana atrás sem sair do ecrã. */
+  const [deData, setDeData] = useState(yesterdayDateStr);
+  const [ateData, setAteData] = useState(todayDateStr);
+  const intervaloPadrao = deData === yesterdayDateStr && ateData === todayDateStr;
+  const dentroDoIntervalo = (d) => !!d && (!deData || d >= deData) && (!ateData || d <= ateData);
+
   const sorted = [...monitoring]
-    .filter(m => m.date === todayDateStr || m.date === yesterdayDateStr)
+    .filter(m => dentroDoIntervalo(m.date))
     .sort((a, b) => {
       const byPos = posRank(a.playerId) - posRank(b.playerId);
       if (byPos !== 0) return byPos;
@@ -8771,14 +8818,17 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   <th style={th2}>Estado</th>
                   <th style={th2}>Jogador</th>
                   <th style={th2}>Wellness (hoje)</th>
-                  <th style={th2}>Último RPE</th>
+                  <th style={th2}>Últ. PSE treino</th>
+                  <th style={th2}>Últ. PSE jogo</th>
                 </tr>
               </thead>
               <tbody>
                 {sortByPosition(players).map(p => {
                   const recs = monitoring.filter(m => m.playerId === p.id).sort((a, b) => new Date(b.date) - new Date(a.date));
                   const lastWellness = recs.find(r => typeof r.sono === 'number');
-                  const lastRpe = recs.find(r => typeof r.pse === 'number');
+                  const pseRecs = recs.filter(r => typeof r.pse === 'number');
+                  const lastRpeTreino = pseRecs.find(r => rpeContexto(r, ctx) === 'treino');
+                  const lastRpeJogo = pseRecs.find(r => rpeContexto(r, ctx) === 'jogo');
                   const todayWellness = recs.find(r => r.date === todayDateStr && typeof r.sono === 'number');
                   const wellnessToday = wellnessAvg(todayWellness);
                   const avg = wellnessAvg(lastWellness);
@@ -8794,7 +8844,8 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                       </td>
                       <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                       <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(1) : '—'}</td>
-                      <td style={{ ...td2, ...mono }}>{lastRpe ? lastRpe.pse : '—'}</td>
+                      <td style={{ ...td2, ...mono }} title={lastRpeTreino ? fmtDate(lastRpeTreino.date) : undefined}>{lastRpeTreino ? lastRpeTreino.pse : '—'}</td>
+                      <td style={{ ...td2, ...mono, color: lastRpeJogo ? T.warn : T.mutedDim }} title={lastRpeJogo ? fmtDate(lastRpeJogo.date) : undefined}>{lastRpeJogo ? lastRpeJogo.pse : '—'}</td>
                     </tr>
                   );
                 })}
@@ -8806,13 +8857,36 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registar dados de monitorização." />
-      ) : sorted.length === 0 ? (
-        <EmptyState text={`Sem respostas em ${formatShortDatePt(yesterdayDateStr)} nem ${formatShortDatePt(todayDateStr)}.`} action={<Btn onClick={() => setModal(true)}><Plus size={15} /> Registar agora</Btn>} />
       ) : (
         <>
-          <div style={{ fontSize: 12, color: T.mutedDim, margin: '0 0 8px' }}>
-            Respostas de {formatShortDatePt(yesterdayDateStr)} e {formatShortDatePt(todayDateStr)}.
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            margin: '0 0 10px', fontSize: 12, color: T.mutedDim,
+          }}>
+            <span>Respostas de</span>
+            <input type="date" value={deData} max={ateData || undefined}
+              onChange={e => setDeData(e.target.value)}
+              style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, color: T.cream, fontSize: 12, padding: '4px 7px', ...mono }} />
+            <span>a</span>
+            <input type="date" value={ateData} min={deData || undefined}
+              onChange={e => setAteData(e.target.value)}
+              style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, color: T.cream, fontSize: 12, padding: '4px 7px', ...mono }} />
+            {!intervaloPadrao && (
+              <button
+                onClick={() => { setDeData(yesterdayDateStr); setAteData(todayDateStr); }}
+                style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 11.5, ...body, padding: 0 }}
+              >Ontem e hoje</button>
+            )}
+            <span style={{ ...mono, fontSize: 11 }}>· {sorted.length} {sorted.length === 1 ? 'resposta' : 'respostas'}</span>
           </div>
+
+          {sorted.length === 0 ? (
+            <EmptyState
+              text={`Sem respostas entre ${formatShortDatePt(deData)} e ${formatShortDatePt(ateData)}.`}
+              action={<Btn onClick={() => setModal(true)}><Plus size={15} /> Registar agora</Btn>}
+            />
+          ) : (
+          <>
           <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
           <table>
             <thead>
@@ -8827,12 +8901,15 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                 const p = players.find(pl => pl.id === m.playerId);
                 const avg = wellnessAvg(m);
                 const color = avg === null ? T.mutedDim : avg >= 4 ? T.good : avg >= 2.5 ? T.warn : T.bad;
-                const typeLabel = m.type === 'wellness' ? 'Wellness' : m.type === 'rpe' ? 'RPE' : 'Manual';
+                const contexto = m.type === 'rpe' || typeof m.pse === 'number' ? rpeContexto(m, ctx) : null;
+                const typeLabel = m.type === 'wellness'
+                  ? 'Wellness'
+                  : (m.type === 'rpe' ? `PSE · ${RPE_CONTEXTO_LABEL[contexto]}` : 'Manual');
                 return (
                   <tr key={m.id} style={{ borderBottom: `1px solid ${T.line}` }}>
                     <td style={tdStyle}>{fmtDate(m.date)}</td>
                     <td style={{ ...tdStyle, color: T.cream }} title={p ? p.name : undefined}>{p ? `${p.position ? `${p.position} · ` : ''}${shortPlayerName(p, players)}` : '—'}</td>
-                    <td style={tdStyle}>{typeLabel}</td>
+                    <td style={{ ...tdStyle, color: contexto === 'jogo' ? T.warn : undefined }}>{typeLabel}</td>
                     <td style={{ ...tdStyle, ...mono }}>{typeof m.pse === 'number' ? `${m.pse}/10` : '—'}</td>
                     <td style={{ ...tdStyle, ...mono }}>{m.sono ?? '—'}</td>
                     <td style={{ ...tdStyle, ...mono }}>{m.fadiga ?? '—'}</td>
@@ -8849,16 +8926,18 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
             </tbody>
           </table>
           </div>
+          </>
+          )}
         </>
       )}
 
       {players.length > 0 && (
-        <PlantelHistorico players={players} monitoring={monitoring} />
+        <PlantelHistorico players={players} monitoring={monitoring} matches={matches} sessions={sessions} />
       )}
 
       {modal && (
         <ManualCheckinBoard
-          players={players} monitoring={monitoring} sessions={sessions}
+          players={players} monitoring={monitoring} sessions={sessions} matches={matches}
           onClose={() => setModal(false)} onSave={save}
         />
       )}
@@ -8900,10 +8979,23 @@ function dateRangeList(start, end) {
 // (null quando não há resposta nesse dia). O domínio é fixo (1-5 no
 // Wellness, 0-10 no PSE) para as linhas de jogadores diferentes serem
 // diretamente comparáveis entre si.
-function Sparkline({ points, min, max, color, width = 190, height = 44 }) {
-  const n = points.length;
-  const known = points.map((v, i) => ({ v, i })).filter(p => typeof p.v === 'number');
-  if (!n || known.length === 0) {
+/* Gráfico de evolução.
+
+   `labels` traz a data de cada posição, para o valor poder ser lido ao
+   passar o rato — sem isso, um ponto alto no meio do gráfico não diz em
+   que dia foi, que é justamente a pergunta seguinte de quem o vê.
+
+   `extraPoints` desenha uma segunda série no mesmo eixo (usado para
+   separar o PSE de jogo do PSE de treino sem duplicar o gráfico). */
+function Sparkline({
+  points, min, max, color, width = 190, height = 44,
+  labels = [], unit = '', mainLabel = '', extraPoints = null, extraColor = null, extraLabel = '',
+}) {
+  const n = Math.max(points.length, extraPoints ? extraPoints.length : 0);
+  const conhecidos = (lista) => (lista || []).map((v, i) => ({ v, i })).filter(p => typeof p.v === 'number');
+  const known = conhecidos(points);
+  const knownExtra = conhecidos(extraPoints);
+  if (!n || (known.length === 0 && knownExtra.length === 0)) {
     return <div style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>sem dados</div>;
   }
   const pad = 5;
@@ -8912,22 +9004,46 @@ function Sparkline({ points, min, max, color, width = 190, height = 44 }) {
     const clamped = Math.max(min, Math.min(max, v));
     return height - pad - ((clamped - min) / (max - min)) * (height - pad * 2);
   };
-  const line = known.map(p => `${x(p.i)},${y(p.v)}`).join(' ');
+  const raio = (lista) => (lista.length > 40 ? 1.3 : 2.4);
+
+  // Texto da dica: "seg, 11/08 · 7/10 (jogo)".
+  const dica = (p, etiqueta) => {
+    const dia = labels[p.i] ? formatShortDatePt(labels[p.i]) : '';
+    const valor = `${p.v}${unit}`;
+    const extra = etiqueta ? ` (${etiqueta})` : '';
+    return [dia, valor].filter(Boolean).join(' · ') + extra;
+  };
+
+  const serie = (lista, cor, etiqueta) => (
+    <>
+      {lista.length > 1 && (
+        <polyline points={lista.map(p => `${x(p.i)},${y(p.v)}`).join(' ')} fill="none" stroke={cor} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+      )}
+      {lista.map(p => (
+        <g key={`${etiqueta}-${p.i}`}>
+          <circle cx={x(p.i)} cy={y(p.v)} r={raio(lista)} fill={cor} />
+          {/* Alvo invisível maior do que o ponto: sem ele era preciso
+              acertar em 2px para ver o valor. */}
+          <circle cx={x(p.i)} cy={y(p.v)} r={7} fill="transparent" style={{ cursor: 'help' }}>
+            <title>{dica(p, etiqueta)}</title>
+          </circle>
+        </g>
+      ))}
+    </>
+  );
+
   return (
     <svg width={width} height={height} style={{ display: 'block', overflow: 'visible' }}>
       <line x1={0} y1={height - pad} x2={width} y2={height - pad} stroke={T.line} strokeWidth="1" />
       <line x1={0} y1={pad} x2={width} y2={pad} stroke={T.line} strokeWidth="1" strokeDasharray="2 3" />
-      {known.length > 1 && (
-        <polyline points={line} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
-      )}
-      {known.map(p => (
-        <circle key={p.i} cx={x(p.i)} cy={y(p.v)} r={known.length > 40 ? 1.3 : 2.4} fill={color} />
-      ))}
+      {serie(known, color, mainLabel)}
+      {knownExtra.length > 0 && serie(knownExtra, extraColor || color, extraLabel)}
     </svg>
   );
 }
 
-function PlantelHistorico({ players, monitoring }) {
+function PlantelHistorico({ players, monitoring, matches = [], sessions = [] }) {
+  const ctx = { matches, sessions };
   // Por omissão, os últimos 7 dias (incluindo hoje).
   const [start, setStart] = useState(() => addDays(todayStr(), -6));
   const [end, setEnd] = useState(() => todayStr());
@@ -8938,19 +9054,28 @@ function PlantelHistorico({ players, monitoring }) {
   const rows = sortByPosition(players).map(p => {
     const recs = monitoring.filter(m => m.playerId === p.id);
     const wellnessDaily = dates.map(d => wellnessAvg(recs.find(m => m.date === d && typeof m.sono === 'number')));
-    const pseDaily = dates.map(d => {
-      const r = recs.find(m => m.date === d && typeof m.pse === 'number');
+    // Uma série por contexto: a carga de jogo não se mistura com a de
+    // treino, senão a média esconde precisamente o que interessa ver.
+    const pseDe = (contexto) => dates.map(d => {
+      const r = recs.find(m => m.date === d && typeof m.pse === 'number' && rpeContexto(m, ctx) === contexto);
       return r ? r.pse : null;
     });
+    const pseTreinoDaily = pseDe('treino');
+    const pseJogoDaily = pseDe('jogo');
+    const pseDaily = dates.map((d, i) => (
+      typeof pseTreinoDaily[i] === 'number' ? pseTreinoDaily[i] : pseJogoDaily[i]
+    ));
     const mean = (arr) => {
       const vals = arr.filter(v => typeof v === 'number');
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     };
     return {
       player: p,
-      wellnessDaily, pseDaily,
+      wellnessDaily, pseDaily, pseTreinoDaily, pseJogoDaily,
       wellnessMean: mean(wellnessDaily),
       pseMean: mean(pseDaily),
+      pseTreinoMean: mean(pseTreinoDaily),
+      pseJogoMean: mean(pseJogoDaily),
       wellnessCount: wellnessDaily.filter(v => typeof v === 'number').length,
       pseCount: pseDaily.filter(v => typeof v === 'number').length,
     };
@@ -8993,7 +9118,8 @@ function PlantelHistorico({ players, monitoring }) {
                   <th style={th3}>Jogador</th>
                   <th style={th3}>Wellness (média)</th>
                   <th style={th3}>Wellness (evolução)</th>
-                  <th style={th3}>PSE (média)</th>
+                  <th style={th3}>PSE treino</th>
+                  <th style={th3}>PSE jogo</th>
                   <th style={th3}>PSE (evolução)</th>
                 </tr>
               </thead>
@@ -9010,14 +9136,24 @@ function PlantelHistorico({ players, monitoring }) {
                         <span style={{ color: T.mutedDim, fontSize: 11 }}> {r.wellnessCount ? `(${r.wellnessCount})` : ''}</span>
                       </td>
                       <td style={td3}>
-                        <Sparkline points={r.wellnessDaily} min={1} max={5} color={T.good} />
+                        <Sparkline points={r.wellnessDaily} labels={dates} min={1} max={5} color={T.good} unit="/5" mainLabel="wellness" />
                       </td>
-                      <td style={{ ...td3, ...mono, color: r.pseMean === null ? T.mutedDim : T.warn, whiteSpace: 'nowrap' }}>
-                        {r.pseMean === null ? '—' : r.pseMean.toFixed(1)}
-                        <span style={{ color: T.mutedDim, fontSize: 11 }}> {r.pseCount ? `(${r.pseCount})` : ''}</span>
+                      <td style={{ ...td3, ...mono, color: r.pseTreinoMean === null ? T.mutedDim : T.warn, whiteSpace: 'nowrap' }}>
+                        {r.pseTreinoMean === null ? '—' : r.pseTreinoMean.toFixed(1)}
+                        <span style={{ color: T.mutedDim, fontSize: 11 }}> {r.pseTreinoDaily.filter(v => typeof v === 'number').length ? `(${r.pseTreinoDaily.filter(v => typeof v === 'number').length})` : ''}</span>
+                      </td>
+                      <td style={{ ...td3, ...mono, color: r.pseJogoMean === null ? T.mutedDim : T.crimsonBright, whiteSpace: 'nowrap' }}>
+                        {r.pseJogoMean === null ? '—' : r.pseJogoMean.toFixed(1)}
+                        <span style={{ color: T.mutedDim, fontSize: 11 }}> {r.pseJogoDaily.filter(v => typeof v === 'number').length ? `(${r.pseJogoDaily.filter(v => typeof v === 'number').length})` : ''}</span>
                       </td>
                       <td style={td3}>
-                        <Sparkline points={r.pseDaily} min={0} max={10} color={T.warn} />
+                        {/* Duas séries no mesmo gráfico: treino a laranja,
+                            jogo a vermelho, para se ver a alternância. */}
+                        <Sparkline
+                          points={r.pseTreinoDaily} extraPoints={r.pseJogoDaily} extraColor={T.crimsonBright}
+                          labels={dates} min={0} max={10} color={T.warn}
+                          unit="/10" extraLabel="jogo" mainLabel="treino"
+                        />
                       </td>
                     </tr>
                   );
@@ -9047,7 +9183,7 @@ function PlantelHistorico({ players, monitoring }) {
    Ao contrário do questionário dos atletas, aqui NÃO há janelas
    horárias nem limite de dia: é sempre possível preencher.
 ---------------------------------------------------------------- */
-function ManualCheckinBoard({ players, monitoring, sessions, onClose, onSave }) {
+function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClose, onSave }) {
   const [type, setType] = useState('wellness');
   const [date, setDate] = useState(todayStr());
   const [activeId, setActiveId] = useState(null);
@@ -9099,6 +9235,7 @@ function ManualCheckinBoard({ players, monitoring, sessions, onClose, onSave }) 
       <RpeWizard
         player={activePlayer} session={session} date={date}
         initial={existing} notice={notice}
+        contexto={rpeContexto({ date, contexto: existing && existing.contexto }, { matches, sessions })}
         onBack={back} onSubmit={fields => submit(fields)}
       />
     );
@@ -9387,6 +9524,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return (
       <RpeWizard
         player={player} session={sessionForDate} date={selectedDate}
+        /* O quiosque não conhece a lista de Jogos (ver checkin_rpc.sql:
+           só recebe as sessões). A fase "Jogo" na sessão é o que permite
+           ao atleta responder ao PSE do jogo em vez do de treino. */
+        contexto={sessionForDate && sessionForDate.phase === 'Jogo' ? 'jogo' : 'treino'}
         onBack={() => setActiveType(null)}
         onSubmit={fields => upsert('rpe', fields)}
       />
@@ -9811,7 +9952,11 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
   );
 }
 
-function RpeWizard({ player, session, date, onBack, onSubmit, initial, notice }) {
+/* `contexto` ('treino' | 'jogo') vem de quem chama, que sabe se houve
+   jogo nesse dia. Fica GRAVADO no registo, para a distinção sobreviver
+   mesmo que o jogo seja mais tarde apagado da lista de Jogos. */
+function RpeWizard({ player, session, date, onBack, onSubmit, initial, notice, contexto = 'treino' }) {
+  const eJogo = contexto === 'jogo';
   // `initial` traz o registo já existente (registo manual a corrigir uma
   // resposta): a opção que o jogador escolheu aparece logo selecionada.
   const [value, setValue] = useState(
@@ -9820,26 +9965,28 @@ function RpeWizard({ player, session, date, onBack, onSubmit, initial, notice })
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
 
-  const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : 'Sem sessão definida';
+  const sessionLabel = session
+    ? (session.focus || session.phase || (eJogo ? 'Jogo de hoje' : 'Sessão de hoje'))
+    : (eJogo ? 'Jogo' : 'Sem sessão definida');
 
   const confirm = () => {
     if (value === null) return;
     setSaving(true);
     setTimeout(() => {
-      onSubmit({ pse: value, sessionId: session?.id || null, treino: sessionLabel });
+      onSubmit({ pse: value, sessionId: session?.id || null, treino: sessionLabel, contexto });
       setSaving(false);
       setDone(true);
       setTimeout(() => onBack(), 1100);
     }, 450);
   };
 
-  if (done) return <DoneScreen name={player.name} message={`RPE ${value} — registado`} />;
+  if (done) return <DoneScreen name={player.name} message={`PSE ${value} — registado`} />;
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '20px 18px 60px' }}>
-      <KioskHeader player={player} typeLabel="RPE" subLabel={sessionLabel} date={date} onBack={onBack} />
+      <KioskHeader player={player} typeLabel={eJogo ? 'PSE · jogo' : 'PSE · treino'} subLabel={sessionLabel} date={date} onBack={onBack} />
       {notice && <KioskNotice>{notice}</KioskNotice>}
-      <QuestionLabel>Quão intenso foi o treino?</QuestionLabel>
+      <QuestionLabel>{eJogo ? 'Quão intenso foi o jogo?' : 'Quão intenso foi o treino?'}</QuestionLabel>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 22 }}>
         {RPE_SCALE.map(opt => (
           <button key={opt.v} onClick={() => setValue(opt.v)} style={{
@@ -10483,10 +10630,29 @@ function parseYouTubeId(url) {
    suportados — o browser não consegue seguir o redirecionamento por
    causa de CORS; é preciso o link completo com "/video/{id}".
 ---------------------------------------------------------------- */
+/* O Instagram tem três caminhos de publicação e o embed responde no
+   MESMO caminho: /reel/, /p/ (publicação normal, incluindo vídeos) e /tv/
+   (IGTV). Antes guardava-se só o código e montava-se sempre um link
+   /reel/…/embed — o que funciona para reels mas falha nos vídeos
+   publicados como /p/, que é exatamente o caso dos que não reproduziam.
+
+   Agora o tipo viaja com o código. Os links de partilha novos
+   (instagram.com/share/…) também são reconhecidos; nesses não dá para
+   saber o tipo pelo endereço, por isso assume-se /reel/, que é o formato
+   da esmagadora maioria dos vídeos partilhados. */
 function parseInstagramId(url) {
   if (!url) return null;
-  const m = url.match(/instagram\.com\/(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/);
-  return m ? m[1] : null;
+  const direto = url.match(/instagram\.com\/(reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/);
+  if (direto) {
+    const tipo = direto[1] === 'reels' ? 'reel' : direto[1];
+    return { id: direto[2], tipo };
+  }
+  const partilha = url.match(/instagram\.com\/share\/(?:(reel|reels|p|tv)\/)?([a-zA-Z0-9_-]+)/);
+  if (partilha) {
+    const tipo = partilha[1] ? (partilha[1] === 'reels' ? 'reel' : partilha[1]) : 'reel';
+    return { id: partilha[2], tipo };
+  }
+  return null;
 }
 
 function parseTikTokId(url) {
@@ -10508,8 +10674,8 @@ function parseTikTokId(url) {
 function detectSocialEmbed(url) {
   if (!url) return null;
   if (/instagram\.com/.test(url)) {
-    const id = parseInstagramId(url);
-    return id ? { platform: 'instagram', id } : null;
+    const info = parseInstagramId(url);
+    return info ? { platform: 'instagram', id: info.id, tipo: info.tipo } : null;
   }
   if (/tiktok\.com/.test(url)) {
     const id = parseTikTokId(url);
@@ -10538,7 +10704,12 @@ const TIKTOK_PLAYER_PARAMS = 'rel=0&loop=1&description=0&music_info=0&controls=1
 
 function socialEmbedSrc(social) {
   if (!social) return '';
-  if (social.platform === 'instagram') return `https://www.instagram.com/reel/${social.id}/embed`;
+  if (social.platform === 'instagram') {
+    // Vídeos antigos, guardados antes desta correção, não têm `tipo`
+    // guardado — mantêm o comportamento de sempre (/reel/).
+    const tipo = social.tipo || 'reel';
+    return `https://www.instagram.com/${tipo}/${social.id}/embed`;
+  }
   if (social.platform === 'tiktok') return `https://www.tiktok.com/player/v1/${social.id}?${TIKTOK_PLAYER_PARAMS}`;
   return '';
 }
