@@ -3636,33 +3636,40 @@ function CornerFlag({ cx, cy, ox, oy, color }) {
    Estão num só sítio porque o mesmo enquadramento é usado em dez lugares
    (editor, apresentação, miniaturas, impressão, ficheiro partilhável) e
    um deles ficar para trás dá desalinhamentos difíceis de perceber. */
-const PITCH_VIEWBOX = '-6 -5 119 88';
-const PITCH_ASPECT = '119 / 88';
+const PITCH_VIEWBOX = '-4 -3 115 84';
+const PITCH_ASPECT = '115 / 84';
 // Limites para o mapeamento do rato (ver toPoint no DiagramEditor).
-const PITCH_BOX = { x: -6, y: -5, w: 119, h: 88 };
+const PITCH_BOX = { x: -4, y: -3, w: 115, h: 84 };
 /* Altura em percentagem da largura — é o truque do "padding-top" que
    reserva o espaço certo antes de o SVG carregar. Calculado a partir do
    enquadramento para nunca poder ficar dessincronizado dele: era um dos
    sítios que ficava para trás quando o viewBox mudava à mão. */
 const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 
-/* CAMPO QUE CABE NA JANELA
+/* CAMPO QUE CABE NA JANELA — SEM DISTORCER
 
-   O campo é quadrado-ish e cresce com a largura: numa janela larga passava
-   a ter 700px de altura e empurrava a barra de ferramentas e os botões de
-   anular/refazer para fora do ecrã — obrigando a fazer scroll a meio de um
-   desenho, que é precisamente quando não se pode perder o campo de vista.
+   O objetivo é que a barra de ferramentas e os botões de anular/refazer
+   caibam no ecrã ao mesmo tempo que o campo, sem obrigar a fazer scroll a
+   meio de um desenho.
 
-   Solução: o campo continua a ocupar a largura toda, mas nunca passa de
-   uma fatia da altura do ecrã. `aspectRatio` mantém a proporção e o
-   `maxHeight` corta o excesso; a margem automática mantém-no centrado.
+   ATENÇÃO à forma como isto se faz. A tentação é `width:100%` +
+   `aspectRatio` + `maxHeight`, mas isso NÃO funciona: o elemento mantém a
+   largura toda e só corta a altura, ficando com uma proporção diferente
+   da declarada. O desenho estica na horizontal e os jogadores aparecem
+   ovais em vez de redondos.
 
-   Os `vh` estão calibrados para o resto da janela (cabeçalho, campos do
-   formulário, barra de ferramentas, botões) caber no que sobra. */
+   O que resolve é limitar a LARGURA. Com a proporção fixa, limitar a
+   largura limita a altura na mesma medida, e a forma nunca se altera:
+
+       largura máxima = altura máxima × (largura / altura do enquadramento)
+
+   O cálculo é feito aqui a partir do próprio enquadramento, para não
+   ficar dessincronizado se um dia o viewBox mudar. */
+const PITCH_MAX_VH = 54;
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
-  maxHeight: '52vh',
+  maxWidth: `${(PITCH_MAX_VH * (PITCH_BOX.w / PITCH_BOX.h)).toFixed(1)}vh`,
   margin: '0 auto',
 };
 
@@ -4235,7 +4242,7 @@ function buildDiagramBlockHtml(diagram, space, blockId, phase) {
   const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, zones, phase);
   const html = `
     <div class="pitch-wrap">
-      <svg id="pitch-${blockId}" viewBox="${PITCH_VIEWBOX}" preserveAspectRatio="none">${frames[0] ? frames[0].svg : ''}</svg>
+      <svg id="pitch-${blockId}" viewBox="${PITCH_VIEWBOX}" preserveAspectRatio="xMidYMid meet">${frames[0] ? frames[0].svg : ''}</svg>
     </div>
     ${hasAnimation ? `
     <div class="controls">
@@ -4526,16 +4533,37 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [past, future, value]);
 
-  // O SVG mantém sempre a proporção exata do viewBox (via o invólucro
-  // com padding-top abaixo), por isso este mapeamento linear é preciso
-  // ao pixel — sem faixas mortas nem deslocamento do cursor.
+  /* Onde o dedo/rato tocou, em coordenadas do campo.
+
+     Usa-se a matriz do próprio SVG (`getScreenCTM`) e não uma regra de
+     três sobre o retângulo do elemento. A regra de três só está certa se o
+     desenho preencher o elemento exatamente; com `preserveAspectRatio`
+     em "meet" pode haver faixas mortas nas bordas, e aí o cursor e o
+     ícone colocado deixam de coincidir. A matriz sabe disso e converte
+     sempre bem, qualquer que seja o enquadramento. */
   const toPoint = (e) => {
-    const rect = svgRef.current.getBoundingClientRect();
+    const svg = svgRef.current;
     const { x: vx, y: vy, w: vw, h: vh } = PITCH_BOX;
-    return {
-      x: Math.max(vx, Math.min(vx + vw, ((e.clientX - rect.left) / rect.width) * vw + vx)),
-      y: Math.max(vy, Math.min(vy + vh, ((e.clientY - rect.top) / rect.height) * vh + vy)),
-    };
+    const limitar = (px, py) => ({
+      x: Math.max(vx, Math.min(vx + vw, px)),
+      y: Math.max(vy, Math.min(vy + vh, py)),
+    });
+    if (!svg) return limitar(0, 0);
+    try {
+      const ctm = svg.getScreenCTM();
+      if (ctm) {
+        const pt = svg.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        const p = pt.matrixTransform(ctm.inverse());
+        return limitar(p.x, p.y);
+      }
+    } catch (err) { /* browsers sem createSVGPoint: usa-se o cálculo abaixo */ }
+    const rect = svg.getBoundingClientRect();
+    return limitar(
+      ((e.clientX - rect.left) / rect.width) * vw + vx,
+      ((e.clientY - rect.top) / rect.height) * vh + vy,
+    );
   };
   // Converte um ponto local (lx, ly), definido antes da rotação, para a
   // posição real no campo — usado para colocar os manípulos de rotação e
@@ -5212,7 +5240,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         <svg
           ref={svgRef}
           viewBox={PITCH_VIEWBOX}
-          preserveAspectRatio="none"
+          /* "meet" e não "none": mesmo que o contentor fique com uma
+             proporção ligeiramente diferente (arredondamentos, limites de
+             largura), o desenho encaixa dentro sem esticar. Com "none" um
+             desvio de meio por cento transformava os jogadores em elipses. */
+          preserveAspectRatio="xMidYMid meet"
           style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
             background: '#1e3a24', borderRadius: 8,
@@ -6182,7 +6214,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           ? { position: 'fixed', inset: 0, zIndex: 100, background: '#0e1a12', display: 'flex', flexDirection: 'column', padding: 12 }
           : { position: 'relative', ...PITCH_FIT }
       }>
-        <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio={isFull ? 'xMidYMid meet' : 'none'} style={
+        <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio="xMidYMid meet" style={
           isFull
             ? { flex: 1, width: '100%', minHeight: 0, background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
             : { position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
@@ -7377,7 +7409,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
                       </div>
                     )}
                     <div style={{ position: 'relative', width: '100%', paddingTop: PITCH_PADDING_TOP }}>
-                      <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio="none" style={{
+                      <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio="xMidYMid meet" style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
                         background: '#1e3a24', borderRadius: 6, border: `1px solid ${T.line}`,
                       }}>
