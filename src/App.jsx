@@ -801,6 +801,45 @@ function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'bu
    diferentes de linha para linha. Campos que ocupam a linha toda usam
    FIELD_FULL. */
 const FIELD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 };
+
+/* Filtro por momento do jogo.
+
+   Em ecrã largo são botões, que se leem de uma vez. No telemóvel, nove
+   botões a 200px ocupavam meio ecrã antes de se ver um único exercício —
+   por isso passam a uma lista de escolha com o título "Momento", que
+   ocupa uma linha. */
+function MomentoFilter({ value, onChange, options }) {
+  const isNarrow = useIsMobile(700);
+  const todas = ['Todas', ...options];
+
+  if (isNarrow) {
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Momento">
+          <Select value={value} onChange={e => onChange(e.target.value)}>
+            {todas.map(ph => <option key={ph} value={ph}>{ph === 'Todas' ? 'Todos os momentos' : ph}</option>)}
+          </Select>
+        </Field>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Momentos</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8 }}>
+        {todas.map(ph => (
+          <button key={ph} onClick={() => onChange(ph)} style={{
+            padding: '8px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body, textAlign: 'center',
+            background: value === ph ? '#B5393F' : 'transparent',
+            color: value === ph ? TEXT_ON_ACCENT : T.muted,
+            border: `1px solid ${value === ph ? '#B5393F' : T.line}`,
+          }}>{ph}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
 const FIELD_FULL = { gridColumn: '1 / -1' };
 
 function Field({ label, children, labelColor }) {
@@ -2849,18 +2888,9 @@ function Exercicios({ exercises, setExercises, meta }) {
       {/* Grelha de duas colunas: com nomes de comprimentos muito diferentes,
           a lista em linha ficava aos saltos. Assim ficam alinhados, metade
           de cada lado. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginBottom: 18 }}>
-        {/* "Descanso" é uma fase de sessão (dia de folga), não classifica
-            exercícios — por isso não entra nos filtros da biblioteca. */}
-        {['Todas', ...EXERCISE_PHASES].map(ph => (
-          <button key={ph} onClick={() => setFilter(ph)} style={{
-            padding: '8px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body, textAlign: 'center',
-            background: filter === ph ? '#B5393F' : 'transparent',
-            color: filter === ph ? TEXT_ON_ACCENT : T.muted,
-            border: `1px solid ${filter === ph ? '#B5393F' : T.line}`,
-          }}>{ph}</button>
-        ))}
-      </div>
+      {/* "Descanso" é uma fase de sessão (dia de folga), não classifica
+          exercícios — por isso não entra nos filtros da biblioteca. */}
+      <MomentoFilter value={filter} onChange={setFilter} options={EXERCISE_PHASES} />
 
       {visible.length === 0 ? (
         <EmptyState text="Nenhum exercício aqui ainda." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar exercício</Btn>} />
@@ -3011,16 +3041,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
       <SectionHeader title="Ideia de Jogo" subtitle="A tua ideia de jogo."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ideia</Btn>} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginBottom: 18 }}>
-        {['Todas', ...EXERCISE_PHASES].map(ph => (
-          <button key={ph} onClick={() => setFilter(ph)} style={{
-            padding: '8px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body, textAlign: 'center',
-            background: filter === ph ? '#B5393F' : 'transparent',
-            color: filter === ph ? TEXT_ON_ACCENT : T.muted,
-            border: `1px solid ${filter === ph ? '#B5393F' : T.line}`,
-          }}>{ph}</button>
-        ))}
-      </div>
+      <MomentoFilter value={filter} onChange={setFilter} options={EXERCISE_PHASES} />
 
       {visible.length === 0 ? (
         <EmptyState text="Ainda sem ideias de jogo aqui." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar ideia</Btn>} />
@@ -3424,7 +3445,12 @@ function parsePlayersCount(str) {
       }
       const num = tok.match(/\d+/);
       if (!num) return;
-      const count = Math.min(11, parseInt(num[0], 10) || 0);
+      /* Antes o limite era 11 — pensado para uma equipa de onze. Mas o
+         campo de "Nº de jogadores" também serve para grupos grandes num
+         treino inteiro ("25"), e nesses casos o 25 virava 11 em silêncio.
+         A numeração já dá a volta sozinha (2..11 e recomeça em DD), por
+         isso só era o limite que estorvava. */
+      const count = Math.min(30, parseInt(num[0], 10) || 0);
       if (!count) return;
       const team = TEAMS[colorIdx % TEAMS.length].id;
       if (!sideTeam) sideTeam = team;
@@ -3457,10 +3483,20 @@ function autoPositions(n, laneIndex = 0, laneCount = 1) {
 
 // Jogadores: 2 a 11. Guarda-redes: sequência fixa 1, 12, 24 (números
 // habituais de guarda-redes), independente da cor.
+/* Depois do 11 (PL) a sequência recomeça no 2 (DD), em vez de ficar presa
+   a devolver sempre 11. Com 25 jogadores em campo — treinos de plantel
+   inteiro, jogos reduzidos com muitas equipas — passava-se a ter uma fila
+   de "PL" idênticos, impossível de ler. Agora repete DD, DC, DC, DE, MD…
+   tantas vezes quantas forem precisas. */
 function nextPlayerNumber(elements, team) {
-  const used = new Set(elements.filter(e => e.kind === 'player' && e.team === team).map(e => e.number));
-  for (let n = 2; n <= 11; n++) if (!used.has(n)) return n;
-  return 11;
+  const doTime = elements.filter(e => e.kind === 'player' && e.team === team);
+  const NUMEROS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  // Quantas voltas completas já foram dadas, e em que ponto da volta.
+  const contagem = new Map(NUMEROS.map(n => [n, 0]));
+  doTime.forEach(e => { if (contagem.has(e.number)) contagem.set(e.number, contagem.get(e.number) + 1); });
+  const minimo = Math.min(...NUMEROS.map(n => contagem.get(n)));
+  // O primeiro número que ainda não atingiu a volta seguinte.
+  return NUMEROS.find(n => contagem.get(n) === minimo) || 2;
 }
 function nextKeeperNumber(elements, team) {
   const count = elements.filter(e => e.kind === 'keeper' && e.team === team).length;
@@ -3470,6 +3506,28 @@ function nextKeeperNumber(elements, team) {
 // Em vez do número, as bolas mostram a letra da posição:
 // 2-DD 3-DC 4-DC 5-DE 6-MD 7-MC 8-MC 9-EX 10-EX 11-PL — GR para guarda-redes.
 const POSITION_LABELS = { 2: 'DD', 3: 'DC', 4: 'DC', 5: 'DE', 6: 'MD', 7: 'MC', 8: 'MC', 9: 'EX', 10: 'EX', 11: 'PL' };
+/* Parte o texto em linhas: primeiro pelos Enter escritos à mão, depois
+   pelo limite de caracteres. Palavras maiores do que o limite não são
+   cortadas a meio — ficam sozinhas na linha, que é o mal menor. */
+function quebrarTexto(texto, maxChars) {
+  const bruto = String(texto == null ? '' : texto);
+  if (!bruto) return [''];
+  const linhas = [];
+  bruto.split('\n').forEach(paragrafo => {
+    const palavras = paragrafo.split(/\s+/).filter(Boolean);
+    if (!palavras.length) { linhas.push(''); return; }
+    let atual = '';
+    palavras.forEach(palavra => {
+      const proposta = atual ? `${atual} ${palavra}` : palavra;
+      if (proposta.length <= maxChars || !atual) { atual = proposta; return; }
+      linhas.push(atual);
+      atual = palavra;
+    });
+    if (atual) linhas.push(atual);
+  });
+  return linhas.length ? linhas : [''];
+}
+
 function elementLabel(number, isKeeper) {
   if (isKeeper) return 'GR';
   return POSITION_LABELS[number] || String(number);
@@ -3588,6 +3646,26 @@ const PITCH_BOX = { x: -6, y: -5, w: 119, h: 88 };
    sítios que ficava para trás quando o viewBox mudava à mão. */
 const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 
+/* CAMPO QUE CABE NA JANELA
+
+   O campo é quadrado-ish e cresce com a largura: numa janela larga passava
+   a ter 700px de altura e empurrava a barra de ferramentas e os botões de
+   anular/refazer para fora do ecrã — obrigando a fazer scroll a meio de um
+   desenho, que é precisamente quando não se pode perder o campo de vista.
+
+   Solução: o campo continua a ocupar a largura toda, mas nunca passa de
+   uma fatia da altura do ecrã. `aspectRatio` mantém a proporção e o
+   `maxHeight` corta o excesso; a margem automática mantém-no centrado.
+
+   Os `vh` estão calibrados para o resto da janela (cabeçalho, campos do
+   formulário, barra de ferramentas, botões) caber no que sobra. */
+const PITCH_FIT = {
+  width: '100%',
+  aspectRatio: PITCH_ASPECT,
+  maxHeight: '52vh',
+  margin: '0 auto',
+};
+
 /* Bancos de suplentes e áreas técnicas.
 
    Medidas do regulamento: a área técnica estende-se 1 m para cada lado dos
@@ -3596,40 +3674,66 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
    lateral de baixo (y = 69), na folga nova. */
 function BenchesAndTechnicalArea({ printMode }) {
   const linha = printMode ? '#2A2A2A' : '#ffffff55';
-  const banco = printMode ? 'none' : '#ffffff14';
-  const bancoLinha = printMode ? '#2A2A2A' : '#ffffff66';
+  const estrutura = printMode ? '#666' : '#ffffff70';
+  const telha = printMode ? '#EEE' : '#ffffff1E';
+  const assento = printMode ? '#DDD' : '#ffffff2A';
 
-  // Um lado: casa à esquerda do meio-campo, visitante à direita.
+  // Casa à esquerda do meio-campo, visitante à direita, 5 m de intervalo.
   const lados = [
-    { x: 33.5, largura: 15 },  // termina 5 m antes do meio-campo
-    { x: 58.5, largura: 15 },  // começa 5 m depois
+    { x: 33.5, largura: 15 },
+    { x: 58.5, largura: 15 },
   ];
 
   return (
     <>
-      {lados.map((l, i) => (
-        <g key={i}>
-          {/* Área técnica: tracejada, do rebordo do relvado até ao banco. */}
-          <path
-            d={`M ${l.x - 1} 69 L ${l.x - 1} 75.5 L ${l.x + l.largura + 1} 75.5 L ${l.x + l.largura + 1} 69`}
-            fill="none" stroke={linha} strokeWidth="0.3" strokeDasharray="1.2,1"
-          />
-          {/* Banco de suplentes. */}
-          <rect
-            x={l.x} y={76} width={l.largura} height={3.4} rx="0.8"
-            fill={banco} stroke={bancoLinha} strokeWidth="0.35"
-          />
-          {/* Traços dos lugares, só para dar a leitura de "banco". */}
-          {Array.from({ length: 5 }, (_, k) => (
-            <line
-              key={k}
-              x1={l.x + (l.largura / 5) * (k + 1)} y1={76.4}
-              x2={l.x + (l.largura / 5) * (k + 1)} y2={79}
-              stroke={bancoLinha} strokeWidth="0.2" opacity="0.7"
+      {lados.map((l, i) => {
+        const cx = l.x + l.largura / 2;
+        const topoAbrigo = 75.8;
+        const alturaAbrigo = 3.6;
+        return (
+          <g key={i}>
+            {/* Área técnica: caixa tracejada aberta para o relvado, como no
+                regulamento — 1 m para cada lado do abrigo e até 1 m da
+                linha lateral. */}
+            <path
+              d={`M ${l.x - 1} 69 L ${l.x - 1} ${topoAbrigo} L ${l.x + l.largura + 1} ${topoAbrigo} L ${l.x + l.largura + 1} 69`}
+              fill="none" stroke={linha} strokeWidth="0.28" strokeDasharray="1.2,1"
             />
-          ))}
-        </g>
-      ))}
+
+            {/* Abrigo: telhado curvo assente em dois montantes, e não um
+                retângulo. É o perfil que se reconhece à distância. */}
+            <path
+              d={`M ${l.x} ${topoAbrigo + alturaAbrigo}
+                  L ${l.x} ${topoAbrigo + 1.1}
+                  Q ${cx} ${topoAbrigo - 0.9} ${l.x + l.largura} ${topoAbrigo + 1.1}
+                  L ${l.x + l.largura} ${topoAbrigo + alturaAbrigo} Z`}
+              fill={telha} stroke={estrutura} strokeWidth="0.3" strokeLinejoin="round"
+            />
+            {/* Aresta do telhado, para dar profundidade. */}
+            <path
+              d={`M ${l.x} ${topoAbrigo + 1.1} Q ${cx} ${topoAbrigo - 0.9} ${l.x + l.largura} ${topoAbrigo + 1.1}`}
+              fill="none" stroke={estrutura} strokeWidth="0.34"
+            />
+
+            {/* Banco corrido e os lugares sentados. */}
+            <rect
+              x={l.x + 0.8} y={topoAbrigo + 2.2} width={l.largura - 1.6} height={1.15} rx={0.25}
+              fill={assento} stroke={estrutura} strokeWidth="0.18"
+            />
+            {Array.from({ length: 7 }, (_, k) => {
+              const passo = (l.largura - 1.6) / 7;
+              return (
+                <line
+                  key={k}
+                  x1={l.x + 0.8 + passo * (k + 1)} y1={topoAbrigo + 2.2}
+                  x2={l.x + 0.8 + passo * (k + 1)} y2={topoAbrigo + 3.35}
+                  stroke={estrutura} strokeWidth="0.14" opacity="0.8"
+                />
+              );
+            })}
+          </g>
+        );
+      })}
     </>
   );
 }
@@ -3732,8 +3836,14 @@ function SpaceZone({ meters, center, label, onPointerDown, onResizeDown, onDelet
 
    Só encolhem pessoas e bola. Cones, estacas e balizas são material com
    dimensão real e ficam como estão, para servirem de referência. */
+/* Escala base 0.8: ao alargar a moldura do campo (ver PITCH_VIEWBOX), o
+   relvado passou a ocupar menos ecrã e os ícones, que não mudaram,
+   ficaram grandes de mais em relação às linhas. 0.8 devolve a proporção
+   que tinham antes. A Bola Parada mantém a redução própria, aplicada por
+   cima desta. */
+const ICON_SCALE_BASE = 0.8;
 function iconScaleForPhase(phase) {
-  return phase === 'Bola Parada' ? 0.6 : 1;
+  return phase === 'Bola Parada' ? ICON_SCALE_BASE * 0.75 : ICON_SCALE_BASE;
 }
 
 function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive, printMode, iconScale = 1 }) {
@@ -3851,25 +3961,40 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           );
         }
         if (el.kind === 'text') {
-          // Texto livre: serve de legenda solta ou para escrever dentro de
-          // um quadrado/zona já desenhado. A caixa de fundo é desenhada a
-          // partir do comprimento do texto (o SVG não tem auto-layout).
-          const label = el.text || '';
+          /* Texto livre, em várias linhas.
+
+             O SVG não sabe quebrar texto sozinho: cada linha tem de ser um
+             `<tspan>` colocado à mão. As linhas vêm de duas fontes — os
+             \n que o treinador escreveu (tecla Enter) e a quebra
+             automática quando uma linha passa do limite. Sem o limite, uma
+             frase comprida esticava a caixa até fora do campo.
+
+             A caixa acompanha a linha mais comprida, e não o total de
+             caracteres, para não ficar com margens enormes de um lado. */
           const size = el.size || 3;
-          const boxW = Math.max(3, label.length * size * 0.56 + size * 0.9);
-          const boxH = size * 1.55;
+          const maxChars = Math.max(8, Math.round(el.wrap || 26));
+          const linhas = quebrarTexto(el.text || '', maxChars);
+          const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
+          const alturaLinha = size * 1.22;
+          const boxW = Math.max(3, maiorLinha * size * 0.56 + size * 0.7);
+          const boxH = Math.max(size * 1.4, linhas.length * alturaLinha + size * 0.35);
           const fill = printMode ? '#1B1B1B' : '#F0E7D6';
+          const topo = el.y - boxH / 2;
           return (
             <g key={el.id}>
               {hitsEnabled && (
-                <rect x={el.x - boxW / 2} y={el.y - boxH / 2} width={boxW} height={boxH}
+                <rect x={el.x - boxW / 2} y={topo} width={boxW} height={boxH}
                   onPointerDown={handler} style={hitStyle} />
               )}
               <g style={{ pointerEvents: 'none' }}>
-                <rect x={el.x - boxW / 2} y={el.y - boxH / 2} width={boxW} height={boxH} rx={size * 0.32}
+                <rect x={el.x - boxW / 2} y={topo} width={boxW} height={boxH} rx={size * 0.32}
                   fill={printMode ? '#FFFFFF' : '#12241ACC'} stroke={printMode ? '#999' : '#F0E7D655'} strokeWidth="0.18" />
-                <text x={el.x} y={el.y + size * 0.36} textAnchor="middle" fontSize={size} fontWeight="600" fill={fill}
-                  style={{ fontFamily: "'Oswald', sans-serif" }}>{label}</text>
+                <text x={el.x} textAnchor="middle" fontSize={size} fontWeight="600" fill={fill}
+                  style={{ fontFamily: "'Oswald', sans-serif" }}>
+                  {linhas.map((linha, li) => (
+                    <tspan key={li} x={el.x} y={topo + size * 0.35 + alturaLinha * (li + 0.62)}>{linha}</tspan>
+                  ))}
+                </text>
               </g>
             </g>
           );
@@ -3906,12 +4031,15 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
                   ícones pequenos, continua a dar para agarrar e arrastar. */}
               {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(2.2 * k, 1.8)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
+                {/* Raio 1.7 e não 2: com a moldura nova o campo desenha-se
+                    maior no ecrã, e os círculos ao tamanho antigo passaram
+                    a tapar-se uns aos outros nas zonas com muita gente. */}
                 {isKeeper ? (
-                  <rect x={el.x - 2 * k} y={el.y - 2 * k} width={4 * k} height={4 * k} rx={0.8 * k} fill={tm.fill} stroke="#F0E7D6" strokeWidth={0.4 * k} />
+                  <rect x={el.x - 1.7 * k} y={el.y - 1.7 * k} width={3.4 * k} height={3.4 * k} rx={0.7 * k} fill={tm.fill} stroke="#F0E7D6" strokeWidth={0.36 * k} />
                 ) : (
-                  <circle cx={el.x} cy={el.y} r={2 * k} fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth={0.28 * k} />
+                  <circle cx={el.x} cy={el.y} r={1.7 * k} fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth={0.26 * k} />
                 )}
-                <text x={el.x} y={el.y + 0.75 * k} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.5 : 2.1) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+                <text x={el.x} y={el.y + 0.64 * k} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.3 : 1.8) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {elementLabel(el.number, isKeeper)}
                 </text>
               </g>
@@ -4058,7 +4186,7 @@ function computeDiagramAnimationFrames(diagram, zones, phase) {
       // Prioriza o dono gravado na própria seta; só recorre à procura por
       // proximidade para setas antigas, guardadas antes desta correção.
       let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
-        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper') : el.kind === 'ball') &&
+        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
       let isNewBall = false;
@@ -4629,7 +4757,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       });
       const first = chainArrows[0];
       let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
-        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper') : el.kind === 'ball') &&
+        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
       let isNewBall = false;
@@ -4933,6 +5061,24 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     if (!selectedEl || selectedEl.kind !== 'text') return;
     commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, text } : el)) });
   };
+  // Largura da caixa em caracteres por linha: é o que permite ter uma
+  // legenda estreita e alta em vez de uma faixa que atravessa o campo.
+  const changeSelectedTextWrap = (delta) => {
+    if (!selectedEl || selectedEl.kind !== 'text') return;
+    const wrap = Math.max(8, Math.min(60, (selectedEl.wrap || 26) + delta));
+    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, wrap } : el)) });
+  };
+
+  /* Duplicar: a cópia é um elemento novo, com id próprio, e por isso pode
+     receber setas de movimento e entrar na animação como qualquer outro.
+     Fica ligeiramente ao lado, para não tapar o original. */
+  const duplicateSelected = () => {
+    if (!selectedEl) return;
+    const copia = { ...selectedEl, id: uid(), x: selectedEl.x + 3, y: selectedEl.y + 2.5 };
+    commit({ ...value, elements: [...elements, copia] });
+    setSelectedId(copia.id);
+  };
+
   const changeSelectedTextSize = (delta) => {
     if (!selectedEl || selectedEl.kind !== 'text') return;
     const size = Math.max(1.5, Math.min(8, (selectedEl.size || 3) + delta));
@@ -5062,7 +5208,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
       </div>
 
-      <div style={{ position: 'relative', width: '100%', paddingTop: PITCH_PADDING_TOP }}>
+      <div style={{ position: 'relative', ...PITCH_FIT }}>
         <svg
           ref={svgRef}
           viewBox={PITCH_VIEWBOX}
@@ -5222,7 +5368,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
                 background: 'transparent', color: T.cream, border: `1px solid ${T.line}`,
               }}
-            ><Undo2 size={12} /> Anular passo</button>
+            ><Undo2 size={12} /> Anular</button>
           )}
           {passosAnulados.length > 0 && (
             <button
@@ -5234,7 +5380,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
                 background: 'transparent', color: T.cream, border: `1px solid ${T.line}`,
               }}
-            ><Redo2 size={12} /> Refazer passo</button>
+            ><Redo2 size={12} /> Refazer</button>
           )}
           {(value.sequence || []).length > 0 && (
             <button
@@ -5270,20 +5416,29 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           </span>
           {selectedEl.kind === 'text' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
-              <input
+              {/* Área de texto e não campo de linha: o Enter passa a
+                  baixar de linha em vez de não fazer nada. */}
+              <textarea
                 value={selectedEl.text || ''}
                 onChange={e => changeSelectedText(e.target.value)}
-                placeholder="Escreve aqui"
+                placeholder="Escreve aqui (Enter para nova linha)"
+                rows={2}
                 autoFocus
                 style={{
                   background: T.surface, border: `1px solid ${T.line}`, borderRadius: 6, padding: '5px 8px',
-                  color: T.cream, fontSize: 12.5, ...body, outline: 'none', minWidth: 160,
+                  color: T.cream, fontSize: 12.5, ...body, outline: 'none', minWidth: 170,
+                  resize: 'vertical', lineHeight: 1.35,
                 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ fontSize: 10.5, color: T.mutedDim }}>Tam.</span>
                 <button type="button" onClick={() => changeSelectedTextSize(-0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>−</button>
                 <button type="button" onClick={() => changeSelectedTextSize(0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>+</button>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 10.5, color: T.mutedDim }} title="Largura da caixa: menos = caixa mais estreita e mais linhas">Largura</span>
+                <button type="button" onClick={() => changeSelectedTextWrap(-4)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>−</button>
+                <button type="button" onClick={() => changeSelectedTextWrap(4)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>+</button>
               </div>
             </div>
           )}
@@ -5330,7 +5485,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               </div>
             </div>
           )}
-          <button type="button" onClick={deleteSelected} style={{ fontSize: 11.5, color: T.bad, background: 'none', border: 'none', cursor: 'pointer', marginLeft: (selectedEl.kind === 'player' || selectedEl.kind === 'keeper' || selectedEl.kind === 'goalmarker') ? 0 : 'auto' }}>Apagar</button>
+          <button type="button" onClick={duplicateSelected} title="Cria uma cópia — pode receber setas e entrar na animação como qualquer elemento" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: T.cream, background: 'none', border: 'none', cursor: 'pointer', marginLeft: (selectedEl.kind === 'player' || selectedEl.kind === 'keeper' || selectedEl.kind === 'goalmarker') ? 0 : 'auto' }}><Copy size={12} /> Duplicar</button>
+          <button type="button" onClick={deleteSelected} style={{ fontSize: 11.5, color: T.bad, background: 'none', border: 'none', cursor: 'pointer' }}>Apagar</button>
           <button type="button" onClick={() => setSelectedId(null)} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>Fechar</button>
         </div>
         {selectedEl.kind === 'goalmarker' && (
@@ -5398,18 +5554,44 @@ function AnimOverlay({ items, iconScale = 1 }) {
             </g>
           );
         }
+        /* Caixa de texto em movimento: desenha-se como no campo, para não
+           se transformar num círculo a meio da animação. */
+        if (it.mover && it.mover.kind === 'text') {
+          const size = (it.mover.size || 3) * k;
+          const maxChars = Math.max(8, Math.round(it.mover.wrap || 26));
+          const linhas = quebrarTexto(it.mover.text || '', maxChars);
+          const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
+          const compacto = linhas.length >= 3 ? (linhas.length >= 5 ? 0.72 : 0.85) : 1;
+          const alturaLinha = size * (1.22 * compacto);
+          const folgaY = size * 0.35 * compacto;
+          const boxW = Math.max(3, maiorLinha * size * 0.56 + size * 0.7 * compacto);
+          const boxH = Math.max(size * 1.4 * compacto, linhas.length * alturaLinha + folgaY);
+          const topo = it.y - boxH / 2;
+          return (
+            <g key={it.id} style={{ pointerEvents: 'none' }} opacity="0.95">
+              <rect x={it.x - boxW / 2} y={topo} width={boxW} height={boxH} rx={size * 0.32}
+                fill="#12241ACC" stroke="#F0E7D655" strokeWidth="0.18" />
+              <text x={it.x} textAnchor="middle" fontSize={size} fontWeight="600" fill="#F0E7D6"
+                style={{ fontFamily: "'Oswald', sans-serif" }}>
+                {linhas.map((linha, li) => (
+                  <tspan key={li} x={it.x} y={topo + folgaY + alturaLinha * (li + 0.66)}>{linha}</tspan>
+                ))}
+              </text>
+            </g>
+          );
+        }
         const tm = it.mover ? teamInfo(it.mover.team) : null;
         const isKeeper = it.mover?.kind === 'keeper';
         return (
           <g key={it.id} style={{ pointerEvents: 'none' }}>
             {isKeeper ? (
-              <rect x={it.x - 2.3 * k} y={it.y - 2.3 * k} width={4.6 * k} height={4.6 * k} rx={0.9 * k}
-                fill={tm ? tm.fill : T.warn} stroke="#F0E7D6" strokeWidth={0.45 * k} opacity="0.92" />
+              <rect x={it.x - 2 * k} y={it.y - 2 * k} width={4 * k} height={4 * k} rx={0.8 * k}
+                fill={tm ? tm.fill : T.warn} stroke="#F0E7D6" strokeWidth={0.4 * k} opacity="0.92" />
             ) : (
-              <circle cx={it.x} cy={it.y} r={2.3 * k} fill={tm ? tm.fill : T.warn} stroke={TEXT_ON_ACCENT} strokeWidth={0.3 * k} opacity="0.92" />
+              <circle cx={it.x} cy={it.y} r={2 * k} fill={tm ? tm.fill : T.warn} stroke={TEXT_ON_ACCENT} strokeWidth={0.28 * k} opacity="0.92" />
             )}
             {it.mover && (
-              <text x={it.x} y={it.y + 0.85 * k} textAnchor="middle" fontSize={(elementLabel(it.mover.number, isKeeper).length > 2 ? 1.7 : 2.4) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+              <text x={it.x} y={it.y + 0.72 * k} textAnchor="middle" fontSize={(elementLabel(it.mover.number, isKeeper).length > 2 ? 1.45 : 2.05) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                 {elementLabel(it.mover.number, isKeeper)}
               </text>
             )}
@@ -5854,7 +6036,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       // Prioriza o dono gravado na própria seta; só recorre à procura por
       // proximidade para setas antigas, guardadas antes desta correção.
       let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
-        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper') : el.kind === 'ball') &&
+        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
       // Passos gravados antes desta correção podem não ter nenhuma bola
@@ -5998,7 +6180,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       <div ref={pitchWrapRef} style={
         isFull
           ? { position: 'fixed', inset: 0, zIndex: 100, background: '#0e1a12', display: 'flex', flexDirection: 'column', padding: 12 }
-          : { position: 'relative', width: '100%', paddingTop: PITCH_PADDING_TOP }
+          : { position: 'relative', ...PITCH_FIT }
       }>
         <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio={isFull ? 'xMidYMid meet' : 'none'} style={
           isFull
@@ -6027,18 +6209,38 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           position: 'absolute', top: isFull ? 16 : 10, right: isFull ? 16 : 10, zIndex: 5,
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
+          {/* Os mesmos três estados da janela normal: em ecrã inteiro é
+              onde a pausa mais faz falta, porque é aqui que se apresenta ao
+              grupo e se precisa de congelar para explicar. */}
           {isFull && sequence.length > 0 && (
-            <button
-              type="button"
-              onClick={() => (playing ? stop() : restart())}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
-                background: playing ? '#0e1a12CC' : '#B5393F', border: `1px solid ${playing ? T.line : '#B5393F'}`,
-                color: playing ? T.cream : TEXT_ON_ACCENT, cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
-              }}
-            >
-              {playing ? <><Square size={14} /> Parar</> : <><Play size={14} /> {finished ? 'Repetir' : 'Apresentar'}</>}
-            </button>
+            <>
+              {(playing || paused) && (
+                <button
+                  type="button"
+                  onClick={stop}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
+                    background: '#0e1a12CC', border: `1px solid ${T.line}`,
+                    color: T.cream, cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
+                  }}
+                ><Square size={14} /> Parar</button>
+              )}
+              <button
+                type="button"
+                onClick={() => (playing ? pause() : paused ? resume() : restart())}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
+                  background: playing ? '#0e1a12CC' : '#B5393F', border: `1px solid ${playing ? T.line : '#B5393F'}`,
+                  color: playing ? T.cream : TEXT_ON_ACCENT, cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
+                }}
+              >
+                {playing
+                  ? <><Square size={14} /> Pausa</>
+                  : paused
+                    ? <><Play size={14} /> Continuar</>
+                    : <><Play size={14} /> {finished ? 'Repetir' : 'Apresentar'}</>}
+              </button>
+            </>
           )}
           <button
             type="button"
