@@ -813,13 +813,13 @@ function MomentoFilter({ value, onChange, options }) {
   const todas = ['Todas', ...options];
 
   if (isNarrow) {
+    // Sem etiqueta por cima: a própria opção já diz o que é, e no
+    // telemóvel cada linha a mais empurra a lista para fora do ecrã.
     return (
       <div style={{ marginBottom: 14 }}>
-        <Field label="Momento">
-          <Select value={value} onChange={e => onChange(e.target.value)}>
-            {todas.map(ph => <option key={ph} value={ph}>{ph === 'Todas' ? 'Todos os momentos' : ph}</option>)}
-          </Select>
-        </Field>
+        <Select value={value} onChange={e => onChange(e.target.value)}>
+          {todas.map(ph => <option key={ph} value={ph}>{ph === 'Todas' ? 'Momentos' : ph}</option>)}
+        </Select>
       </div>
     );
   }
@@ -3518,10 +3518,22 @@ function quebrarTexto(texto, maxChars) {
     if (!palavras.length) { linhas.push(''); return; }
     let atual = '';
     palavras.forEach(palavra => {
-      const proposta = atual ? `${atual} ${palavra}` : palavra;
+      /* Palavra maior do que a largura pedida parte-se à força.
+
+         Sem isto, os botões de largura não faziam nada em textos de uma só
+         palavra ("Basculação", um apelido): a palavra entrava sempre
+         inteira e a caixa ficava sempre do mesmo tamanho, por muito que se
+         carregasse no menos. */
+      let resto = palavra;
+      while (resto.length > maxChars) {
+        if (atual) { linhas.push(atual); atual = ''; }
+        linhas.push(resto.slice(0, maxChars));
+        resto = resto.slice(maxChars);
+      }
+      const proposta = atual ? `${atual} ${resto}` : resto;
       if (proposta.length <= maxChars || !atual) { atual = proposta; return; }
       linhas.push(atual);
-      atual = palavra;
+      atual = resto;
     });
     if (atual) linhas.push(atual);
   });
@@ -3564,22 +3576,37 @@ function ballPanels(cx, cy, r) {
    simplificada (sem o logótipo FIFA nem o texto), já que aqui aparece
    sempre muito pequena; o que importa a esta escala é reconhecer-se
    pelas cores, não pelo detalhe. */
-function triondaBlade(cx, cy, r, angle, color, key) {
-  const d = `M ${cx} ${cy} `
-    + `Q ${cx + r * 0.25} ${cy - r * 0.6} ${cx + r * 0.8} ${cy - r * 0.5} `
-    + `Q ${cx + r * 1.06} ${cy - r * 0.42} ${cx + r * 0.98} ${cy - r * 0.06} `
-    + `Q ${cx + r * 0.55} ${cy - r * 0.02} ${cx} ${cy} Z`;
-  return <path key={key} d={d} fill={color} transform={`rotate(${angle} ${cx} ${cy})`} />;
-}
 function TriondaBall({ cx, cy, r }) {
+  const contorno = '#1B2A6B';
+  // Células distribuídas à volta do centro, com tamanhos alternados para
+  // não ficar um padrão mecânico.
+  const celulas = [
+    { a: -90, d: 0.60, rr: 0.30, cor: '#12B5C9' },
+    { a: -30, d: 0.62, rr: 0.26, cor: '#E8DC3C' },
+    { a: 30, d: 0.58, rr: 0.29, cor: '#2FC46B' },
+    { a: 90, d: 0.62, rr: 0.25, cor: '#12B5C9' },
+    { a: 150, d: 0.58, rr: 0.29, cor: '#E8DC3C' },
+    { a: 210, d: 0.62, rr: 0.26, cor: '#2FC46B' },
+  ];
   return (
     <>
-      <circle cx={cx} cy={cy} r={r} fill="#FDFDFB" stroke="#1a1a1a" strokeWidth={r * 0.14} />
-      {triondaBlade(cx, cy, r * 0.92, -100, '#1651C7', 'b1')}
-      {triondaBlade(cx, cy, r * 0.92, -10, T.crimson, 'b2')}
-      {triondaBlade(cx, cy, r * 0.92, 80, '#2FAE58', 'b3')}
-      {triondaBlade(cx, cy, r * 0.92, 170, T.gold, 'b4')}
-      <circle cx={cx} cy={cy} r={r * 0.24} fill="#FDFDFB" stroke="#1a1a1a" strokeWidth={r * 0.06} />
+      <circle cx={cx} cy={cy} r={r} fill="#FBFBF8" stroke={contorno} strokeWidth={r * 0.13} />
+      {celulas.map((c, i) => {
+        const rad = (c.a * Math.PI) / 180;
+        return (
+          <circle
+            key={i}
+            cx={cx + Math.cos(rad) * r * c.d}
+            cy={cy + Math.sin(rad) * r * c.d}
+            r={r * c.rr}
+            fill={c.cor}
+            stroke={contorno}
+            strokeWidth={r * 0.07}
+          />
+        );
+      })}
+      {/* Célula central, ligeiramente maior, a fechar o desenho. */}
+      <circle cx={cx} cy={cy} r={r * 0.27} fill="#12B5C9" stroke={contorno} strokeWidth={r * 0.08} />
     </>
   );
 }
@@ -3665,7 +3692,7 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 
    O cálculo é feito aqui a partir do próprio enquadramento, para não
    ficar dessincronizado se um dia o viewBox mudar. */
-const PITCH_MAX_VH = 54;
+const PITCH_MAX_VH = 62;
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
@@ -3680,64 +3707,80 @@ const PITCH_FIT = {
    meio-campo, um de cada lado. Aqui ficam desenhados por baixo da linha
    lateral de baixo (y = 69), na folga nova. */
 function BenchesAndTechnicalArea({ printMode }) {
-  const linha = printMode ? '#2A2A2A' : '#ffffff55';
-  const estrutura = printMode ? '#666' : '#ffffff70';
-  const telha = printMode ? '#EEE' : '#ffffff1E';
-  const assento = printMode ? '#DDD' : '#ffffff2A';
+  const linha = printMode ? '#2A2A2A' : '#ffffff5A';
+  const estrutura = printMode ? '#666' : '#ffffff78';
+  const telha = printMode ? '#F2F2F2' : '#ffffff22';
+  const assento = printMode ? '#DDD' : '#ffffff30';
+  const sombra = printMode ? '#CCC' : '#00000033';
 
-  // Casa à esquerda do meio-campo, visitante à direita, 5 m de intervalo.
+  /* Casa e visitante bem separados: 11 m de cada lado da linha de
+     meio-campo, como num estádio a sério, em vez de dois abrigos quase
+     encostados um ao outro no meio. */
   const lados = [
-    { x: 33.5, largura: 15 },
-    { x: 58.5, largura: 15 },
+    { x: 27.5, largura: 15 },   // termina a 11 m do meio-campo
+    { x: 64.5, largura: 15 },   // começa a 11 m do meio-campo
   ];
+
+  const yLinha = 69;        // linha lateral
+  const yFrenteArea = 71;   // a área técnica começa 2 m atrás da linha
+  const yAbrigo = 75.6;     // frente do abrigo
+  const alturaAbrigo = 3.8;
 
   return (
     <>
       {lados.map((l, i) => {
         const cx = l.x + l.largura / 2;
-        const topoAbrigo = 75.8;
-        const alturaAbrigo = 3.6;
+        const eEsquerda = i === 0;
         return (
           <g key={i}>
-            {/* Área técnica: caixa tracejada aberta para o relvado, como no
-                regulamento — 1 m para cada lado do abrigo e até 1 m da
-                linha lateral. */}
-            <path
-              d={`M ${l.x - 1} 69 L ${l.x - 1} ${topoAbrigo} L ${l.x + l.largura + 1} ${topoAbrigo} L ${l.x + l.largura + 1} 69`}
-              fill="none" stroke={linha} strokeWidth="0.28" strokeDasharray="1.2,1"
+            {/* ÁREA TÉCNICA — retângulo tracejado com a abertura virada
+                para o relvado e as duas marcas de canto que a delimitam
+                no relvado, como as linhas pintadas em campo. */}
+            <rect
+              x={l.x - 1} y={yFrenteArea} width={l.largura + 2} height={yAbrigo - yFrenteArea}
+              fill="none" stroke={linha} strokeWidth="0.26" strokeDasharray="1.4,1.1"
             />
+            <line x1={l.x - 1} y1={yLinha} x2={l.x - 1} y2={yFrenteArea} stroke={linha} strokeWidth="0.26" />
+            <line x1={l.x + l.largura + 1} y1={yLinha} x2={l.x + l.largura + 1} y2={yFrenteArea} stroke={linha} strokeWidth="0.26" />
 
-            {/* Abrigo: telhado curvo assente em dois montantes, e não um
-                retângulo. É o perfil que se reconhece à distância. */}
+            {/* Sombra do abrigo no chão, para o separar do relvado. */}
+            <ellipse cx={cx} cy={yAbrigo + alturaAbrigo} rx={l.largura / 2 + 0.6} ry="0.5" fill={sombra} />
+
+            {/* ABRIGO — telhado curvo em consola sobre dois montantes.
+                É o perfil que se reconhece de longe. */}
             <path
-              d={`M ${l.x} ${topoAbrigo + alturaAbrigo}
-                  L ${l.x} ${topoAbrigo + 1.1}
-                  Q ${cx} ${topoAbrigo - 0.9} ${l.x + l.largura} ${topoAbrigo + 1.1}
-                  L ${l.x + l.largura} ${topoAbrigo + alturaAbrigo} Z`}
+              d={`M ${l.x - 0.6} ${yAbrigo + alturaAbrigo}
+                  L ${l.x - 0.6} ${yAbrigo + 1.5}
+                  Q ${cx} ${yAbrigo - 1.1} ${l.x + l.largura + 0.6} ${yAbrigo + 1.5}
+                  L ${l.x + l.largura + 0.6} ${yAbrigo + alturaAbrigo} Z`}
               fill={telha} stroke={estrutura} strokeWidth="0.3" strokeLinejoin="round"
             />
-            {/* Aresta do telhado, para dar profundidade. */}
+            {/* Aresta frontal do telhado. */}
             <path
-              d={`M ${l.x} ${topoAbrigo + 1.1} Q ${cx} ${topoAbrigo - 0.9} ${l.x + l.largura} ${topoAbrigo + 1.1}`}
-              fill="none" stroke={estrutura} strokeWidth="0.34"
+              d={`M ${l.x - 0.6} ${yAbrigo + 1.5} Q ${cx} ${yAbrigo - 1.1} ${l.x + l.largura + 0.6} ${yAbrigo + 1.5}`}
+              fill="none" stroke={estrutura} strokeWidth="0.38"
             />
+            {/* Montantes laterais. */}
+            <line x1={l.x - 0.6} y1={yAbrigo + 1.5} x2={l.x - 0.6} y2={yAbrigo + alturaAbrigo} stroke={estrutura} strokeWidth="0.34" />
+            <line x1={l.x + l.largura + 0.6} y1={yAbrigo + 1.5} x2={l.x + l.largura + 0.6} y2={yAbrigo + alturaAbrigo} stroke={estrutura} strokeWidth="0.34" />
 
-            {/* Banco corrido e os lugares sentados. */}
+            {/* Banco corrido com encosto e lugares separados. */}
             <rect
-              x={l.x + 0.8} y={topoAbrigo + 2.2} width={l.largura - 1.6} height={1.15} rx={0.25}
-              fill={assento} stroke={estrutura} strokeWidth="0.18"
+              x={l.x + 0.5} y={yAbrigo + 2.3} width={l.largura - 1} height={1.35} rx={0.28}
+              fill={assento} stroke={estrutura} strokeWidth="0.2"
             />
-            {Array.from({ length: 7 }, (_, k) => {
-              const passo = (l.largura - 1.6) / 7;
-              return (
-                <line
-                  key={k}
-                  x1={l.x + 0.8 + passo * (k + 1)} y1={topoAbrigo + 2.2}
-                  x2={l.x + 0.8 + passo * (k + 1)} y2={topoAbrigo + 3.35}
-                  stroke={estrutura} strokeWidth="0.14" opacity="0.8"
-                />
-              );
+            {Array.from({ length: 8 }, (_, k) => {
+              const passo = (l.largura - 1) / 9;
+              const px = l.x + 0.5 + passo * (k + 1);
+              return <line key={k} x1={px} y1={yAbrigo + 2.3} x2={px} y2={yAbrigo + 3.65} stroke={estrutura} strokeWidth="0.15" opacity="0.85" />;
             })}
+
+            {/* Quem é quem: sem isto os dois abrigos são indistinguíveis. */}
+            <text
+              x={cx} y={yAbrigo + 0.95} textAnchor="middle" fontSize="1.5"
+              fill={printMode ? '#555' : '#ffffff7A'}
+              style={{ fontFamily: "'Oswald', sans-serif", letterSpacing: '0.06em', pointerEvents: 'none' }}
+            >{eEsquerda ? 'CASA' : 'VISITANTE'}</text>
           </g>
         );
       })}
@@ -4042,11 +4085,11 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
                     maior no ecrã, e os círculos ao tamanho antigo passaram
                     a tapar-se uns aos outros nas zonas com muita gente. */}
                 {isKeeper ? (
-                  <rect x={el.x - 1.7 * k} y={el.y - 1.7 * k} width={3.4 * k} height={3.4 * k} rx={0.7 * k} fill={tm.fill} stroke="#F0E7D6" strokeWidth={0.36 * k} />
+                  <rect x={el.x - 1.9 * k} y={el.y - 1.9 * k} width={3.8 * k} height={3.8 * k} rx={0.78 * k} fill={tm.fill} stroke="#F0E7D6" strokeWidth={0.38 * k} />
                 ) : (
-                  <circle cx={el.x} cy={el.y} r={1.7 * k} fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth={0.26 * k} />
+                  <circle cx={el.x} cy={el.y} r={1.9 * k} fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth={0.27 * k} />
                 )}
-                <text x={el.x} y={el.y + 0.64 * k} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.3 : 1.8) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+                <text x={el.x} y={el.y + 0.71 * k} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.42 : 2) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {elementLabel(el.number, isKeeper)}
                 </text>
               </g>
@@ -4135,6 +4178,30 @@ function buildAnimationChainsPure(arrowList) {
   return chains;
 }
 function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+/* Mantém uma caixa de texto dentro da área desenhada.
+
+   Uma caixa colocada junto à margem ficava cortada a meio da palavra —
+   o texto existia mas não se lia, que é o oposto do objetivo de uma
+   legenda. Aqui empurra-se o centro para dentro o suficiente para a
+   caixa INTEIRA caber. */
+function clampTextElement(el) {
+  if (!el || el.kind !== 'text') return el;
+  const size = el.size || 3;
+  const maxChars = Math.max(8, Math.round(el.wrap || 26));
+  const linhas = quebrarTexto(el.text || '', maxChars);
+  const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
+  const compacto = linhas.length >= 3 ? (linhas.length >= 5 ? 0.72 : 0.85) : 1;
+  const boxW = Math.max(3, maiorLinha * size * 0.56 + size * 0.7 * compacto);
+  const boxH = Math.max(size * 1.4 * compacto, linhas.length * size * 1.22 * compacto + size * 0.35 * compacto);
+  const { x: vx, y: vy, w: vw, h: vh } = PITCH_BOX;
+  const margem = 0.6;
+  return {
+    ...el,
+    x: Math.max(vx + boxW / 2 + margem, Math.min(vx + vw - boxW / 2 - margem, el.x)),
+    y: Math.max(vy + boxH / 2 + margem, Math.min(vy + vh - boxH / 2 - margem, el.y)),
+  };
+}
 
 /* Desenhos fixos a mostrar durante um passo da sequência.
 
@@ -4609,11 +4676,32 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // Encontra o elemento (jogador/guarda-redes ou bola, conforme os tipos
   // pedidos) mais próximo do início de uma seta, para saber quem se desloca
   // na animação — e para, no final, o deixar mesmo colocado no destino.
+  /* Qual o elemento a que este ponto pertence.
+
+     Para jogadores e bolas basta a distância ao centro. Para uma CAIXA DE
+     TEXTO não: a caixa pode ter 20 m de largura e o treinador começa a
+     seta em cima da palavra, longe do centro. Media-se a distância ao
+     centro e a caixa nunca era apanhada — daí o texto não ficar animável.
+     Aqui a distância é medida à borda da caixa, não ao seu meio. */
   const nearestElementOfKind = (kinds, x, y, maxDist) => {
     let best = null, bestD = Infinity;
     for (const el of elements) {
       if (!kinds.includes(el.kind)) continue;
-      const d = Math.hypot(el.x - x, el.y - y);
+      let d;
+      if (el.kind === 'text') {
+        const size = el.size || 3;
+        const maxChars = Math.max(8, Math.round(el.wrap || 26));
+        const linhas = quebrarTexto(el.text || '', maxChars);
+        const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
+        const compacto = linhas.length >= 3 ? (linhas.length >= 5 ? 0.72 : 0.85) : 1;
+        const meiaW = Math.max(3, maiorLinha * size * 0.56 + size * 0.7 * compacto) / 2;
+        const meiaH = Math.max(size * 1.4 * compacto, linhas.length * size * 1.22 * compacto + size * 0.35 * compacto) / 2;
+        const dx = Math.max(0, Math.abs(el.x - x) - meiaW);
+        const dy = Math.max(0, Math.abs(el.y - y) - meiaH);
+        d = Math.hypot(dx, dy);
+      } else {
+        d = Math.hypot(el.x - x, el.y - y);
+      }
       if (d < bestD) { bestD = d; best = el; }
     }
     return best && bestD <= maxDist ? best : null;
@@ -4881,7 +4969,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       // Caixa de texto: entra com um texto de exemplo e fica logo
       // selecionada, para se escrever no campo do painel de baixo.
       const newId = uid();
-      commit({ ...value, elements: [...elements, { id: newId, kind: 'text', x: p.x, y: p.y, text: 'Texto', size: 3 }] });
+      /* Texto vazio e não "Texto": a caixa nasce selecionada com o cursor
+         já dentro da área de escrita (autoFocus), por isso o treinador
+         começa logo a escrever. Com "Texto" lá dentro, tinha primeiro de
+         apagar a palavra. */
+      commit({ ...value, elements: [...elements, { id: newId, kind: 'text', x: p.x, y: p.y, text: '', size: 3 }] });
       setSelectedId(newId);
     } else if (MARKER_TOOLS.includes(tool)) {
       commit({ ...value, elements: [...elements, { id: uid(), kind: tool, x: p.x, y: p.y }] });
@@ -5087,14 +5179,14 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const changeSelectedText = (text) => {
     if (!selectedEl || selectedEl.kind !== 'text') return;
-    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, text } : el)) });
+    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? clampTextElement({ ...el, text }) : el)) });
   };
   // Largura da caixa em caracteres por linha: é o que permite ter uma
   // legenda estreita e alta em vez de uma faixa que atravessa o campo.
   const changeSelectedTextWrap = (delta) => {
     if (!selectedEl || selectedEl.kind !== 'text') return;
     const wrap = Math.max(8, Math.min(60, (selectedEl.wrap || 26) + delta));
-    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, wrap } : el)) });
+    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? clampTextElement({ ...el, wrap }) : el)) });
   };
 
   /* Duplicar: a cópia é um elemento novo, com id próprio, e por isso pode
@@ -5196,11 +5288,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             onClick={() => setTool(t.id)}
             title={t.title || t.label}
             style={{
-              padding: t.symbol ? '5px 12px' : '5px 9px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+              padding: t.symbol ? '7px 14px' : '7px 12px', borderRadius: 7, fontSize: 13, cursor: 'pointer', ...body,
               background: tool === t.id ? '#B5393F' : 'transparent',
               color: tool === t.id ? TEXT_ON_ACCENT : T.muted,
               border: `1px solid ${tool === t.id ? '#B5393F' : T.line}`,
-              display: 'flex', alignItems: 'center', minHeight: 24,
+              display: 'flex', alignItems: 'center', minHeight: 34,
             }}
           >
             {t.symbol === 'solid' && (
@@ -6116,6 +6208,14 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         animRef.current = null;
         decorridoRef.current = 0;
         if (idx + 1 < sequence.length) {
+          /* O passo atual avança JÁ, antes da pausa de 450 ms entre passos.
+
+             Sem isto, quem carregasse em Pausa durante essa pausa ficava
+             com o marcador ainda no passo que acabou de terminar, e o
+             "Continuar" repetia-o do princípio — era o "volta ao passo
+             atrás" que se notava em ecrã inteiro, onde a apresentação é
+             mais lenta e a probabilidade de apanhar o intervalo é maior. */
+          passoAtualRef.current = idx + 1;
           timeoutRef.current = setTimeout(() => runStep(idx + 1), 450);
         } else {
           // Último passo: fica exatamente como o exercício está guardado hoje,
