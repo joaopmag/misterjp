@@ -3569,44 +3569,53 @@ function ballPanels(cx, cy, r) {
   return panels;
 }
 
-/* Bola "Trionda" (réplica da bola do Mundial 2026): em vez do preto e
-   branco tradicional, usa quatro "lâminas" curvas em pinwheel — azul,
-   bordô, verde e dourado — sobre uma base branca, para ficar mais viva
-   e fácil de identificar de relance na prancheta. É propositadamente
-   simplificada (sem o logótipo FIFA nem o texto), já que aqui aparece
-   sempre muito pequena; o que importa a esta escala é reconhecer-se
-   pelas cores, não pelo detalhe. */
+/* Bola do campo tático — branca com estrelas escuras.
+
+   Desenho ORIGINAL. O motivo "bola branca com estrelas" é comum no
+   futebol e é isso que aqui se desenha; NÃO se reproduz nenhuma bola de
+   marca — sem logótipos, sem marcas de competição e sem a geometria de
+   painéis de qualquer modelo comercial, que pertencem aos respetivos
+   titulares.
+
+   O que importa à leitura é distinguir-se de um jogador a qualquer
+   tamanho: daí o contraste forte entre o branco e as estrelas escuras,
+   que continua a ler-se com a bola a 3 mm no ecrã. */
+function StarShape({ cx, cy, r, rotation = 0, fill, stroke, strokeWidth }) {
+  // Estrela de cinco pontas: alterna raio exterior e interior.
+  const pontos = [];
+  for (let i = 0; i < 10; i++) {
+    const raio = i % 2 === 0 ? r : r * 0.42;
+    const ang = ((i * 36 - 90 + rotation) * Math.PI) / 180;
+    pontos.push(`${cx + Math.cos(ang) * raio},${cy + Math.sin(ang) * raio}`);
+  }
+  return <polygon points={pontos.join(' ')} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" />;
+}
+
 function TriondaBall({ cx, cy, r }) {
-  const contorno = '#1B2A6B';
-  // Células distribuídas à volta do centro, com tamanhos alternados para
+  const escuro = '#15181C';
+  const dourado = '#C9A227';
+  // Uma estrela ao centro e cinco à volta, com rotações diferentes para
   // não ficar um padrão mecânico.
-  const celulas = [
-    { a: -90, d: 0.60, rr: 0.30, cor: '#12B5C9' },
-    { a: -30, d: 0.62, rr: 0.26, cor: '#E8DC3C' },
-    { a: 30, d: 0.58, rr: 0.29, cor: '#2FC46B' },
-    { a: 90, d: 0.62, rr: 0.25, cor: '#12B5C9' },
-    { a: 150, d: 0.58, rr: 0.29, cor: '#E8DC3C' },
-    { a: 210, d: 0.62, rr: 0.26, cor: '#2FC46B' },
-  ];
+  const satelites = [-90, -18, 54, 126, 198];
   return (
     <>
-      <circle cx={cx} cy={cy} r={r} fill="#FBFBF8" stroke={contorno} strokeWidth={r * 0.13} />
-      {celulas.map((c, i) => {
-        const rad = (c.a * Math.PI) / 180;
+      <circle cx={cx} cy={cy} r={r} fill="#FCFCFA" stroke={escuro} strokeWidth={r * 0.11} />
+      {satelites.map((a, i) => {
+        const rad = (a * Math.PI) / 180;
         return (
-          <circle
+          <StarShape
             key={i}
-            cx={cx + Math.cos(rad) * r * c.d}
-            cy={cy + Math.sin(rad) * r * c.d}
-            r={r * c.rr}
-            fill={c.cor}
-            stroke={contorno}
-            strokeWidth={r * 0.07}
+            cx={cx + Math.cos(rad) * r * 0.6}
+            cy={cy + Math.sin(rad) * r * 0.6}
+            r={r * 0.36}
+            rotation={a + 90}
+            fill={escuro}
+            stroke={dourado}
+            strokeWidth={r * 0.05}
           />
         );
       })}
-      {/* Célula central, ligeiramente maior, a fechar o desenho. */}
-      <circle cx={cx} cy={cy} r={r * 0.27} fill="#12B5C9" stroke={contorno} strokeWidth={r * 0.08} />
+      <StarShape cx={cx} cy={cy} r={r * 0.36} fill={escuro} stroke={dourado} strokeWidth={r * 0.055} />
     </>
   );
 }
@@ -3730,7 +3739,6 @@ function BenchesAndTechnicalArea({ printMode }) {
     <>
       {lados.map((l, i) => {
         const cx = l.x + l.largura / 2;
-        const eEsquerda = i === 0;
         return (
           <g key={i}>
             {/* ÁREA TÉCNICA — retângulo tracejado com a abertura virada
@@ -3740,8 +3748,6 @@ function BenchesAndTechnicalArea({ printMode }) {
               x={l.x - 1} y={yFrenteArea} width={l.largura + 2} height={yAbrigo - yFrenteArea}
               fill="none" stroke={linha} strokeWidth="0.26" strokeDasharray="1.4,1.1"
             />
-            <line x1={l.x - 1} y1={yLinha} x2={l.x - 1} y2={yFrenteArea} stroke={linha} strokeWidth="0.26" />
-            <line x1={l.x + l.largura + 1} y1={yLinha} x2={l.x + l.largura + 1} y2={yFrenteArea} stroke={linha} strokeWidth="0.26" />
 
             {/* Sombra do abrigo no chão, para o separar do relvado. */}
             <ellipse cx={cx} cy={yAbrigo + alturaAbrigo} rx={l.largura / 2 + 0.6} ry="0.5" fill={sombra} />
@@ -3775,12 +3781,6 @@ function BenchesAndTechnicalArea({ printMode }) {
               return <line key={k} x1={px} y1={yAbrigo + 2.3} x2={px} y2={yAbrigo + 3.65} stroke={estrutura} strokeWidth="0.15" opacity="0.85" />;
             })}
 
-            {/* Quem é quem: sem isto os dois abrigos são indistinguíveis. */}
-            <text
-              x={cx} y={yAbrigo + 0.95} textAnchor="middle" fontSize="1.5"
-              fill={printMode ? '#555' : '#ffffff7A'}
-              style={{ fontFamily: "'Oswald', sans-serif", letterSpacing: '0.06em', pointerEvents: 'none' }}
-            >{eEsquerda ? 'CASA' : 'VISITANTE'}</text>
           </g>
         );
       })}
@@ -4025,24 +4025,46 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           const maxChars = Math.max(8, Math.round(el.wrap || 26));
           const linhas = quebrarTexto(el.text || '', maxChars);
           const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
-          const alturaLinha = size * 1.22;
-          const boxW = Math.max(3, maiorLinha * size * 0.56 + size * 0.7);
-          const boxH = Math.max(size * 1.4, linhas.length * alturaLinha + size * 0.35);
+          /* Caixa apertada quando há muito texto: uma nota de cinco linhas
+             com a folga de uma de uma linha tapava meio campo. */
+          const compacto = linhas.length >= 3 ? (linhas.length >= 5 ? 0.72 : 0.85) : 1;
+          const alturaLinha = size * (1.22 * compacto);
+          const folgaX = size * 0.7 * compacto;
+          const folgaY = size * 0.35 * compacto;
+          const boxW = Math.max(3, maiorLinha * size * 0.56 + folgaX);
+          const boxH = Math.max(size * 1.4 * compacto, linhas.length * alturaLinha + folgaY);
           const fill = printMode ? '#1B1B1B' : '#F0E7D6';
-          const topo = el.y - boxH / 2;
+
+          /* A caixa é DESENHADA sempre dentro da área visível.
+
+             O limite é aplicado no desenho e não só ao colocar: as caixas
+             já gravadas junto à margem, e as que se arrastam para lá,
+             passam a ser puxadas para dentro em vez de ficarem cortadas a
+             meio da palavra. Os dados não mudam, só o sítio onde se pinta —
+             por isso não há risco de mexer em exercícios antigos. */
+          const margemVista = 0.6;
+          const tx = Math.max(
+            PITCH_BOX.x + boxW / 2 + margemVista,
+            Math.min(PITCH_BOX.x + PITCH_BOX.w - boxW / 2 - margemVista, el.x),
+          );
+          const ty = Math.max(
+            PITCH_BOX.y + boxH / 2 + margemVista,
+            Math.min(PITCH_BOX.y + PITCH_BOX.h - boxH / 2 - margemVista, el.y),
+          );
+          const topo = ty - boxH / 2;
           return (
             <g key={el.id}>
               {hitsEnabled && (
-                <rect x={el.x - boxW / 2} y={topo} width={boxW} height={boxH}
+                <rect x={tx - boxW / 2} y={topo} width={boxW} height={boxH}
                   onPointerDown={handler} style={hitStyle} />
               )}
               <g style={{ pointerEvents: 'none' }}>
-                <rect x={el.x - boxW / 2} y={topo} width={boxW} height={boxH} rx={size * 0.32}
-                  fill={printMode ? '#FFFFFF' : '#12241ACC'} stroke={printMode ? '#999' : '#F0E7D655'} strokeWidth="0.18" />
-                <text x={el.x} textAnchor="middle" fontSize={size} fontWeight="600" fill={fill}
+                <rect x={tx - boxW / 2} y={topo} width={boxW} height={boxH} rx={size * 0.32}
+                  fill={printMode ? '#FFFFFF' : '#12241AE6'} stroke={printMode ? '#999' : '#F0E7D577'} strokeWidth="0.2" />
+                <text x={tx} textAnchor="middle" fontSize={size} fontWeight="600" fill={fill}
                   style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {linhas.map((linha, li) => (
-                    <tspan key={li} x={el.x} y={topo + size * 0.35 + alturaLinha * (li + 0.62)}>{linha}</tspan>
+                    <tspan key={li} x={tx} y={topo + folgaY + alturaLinha * (li + 0.66)}>{linha}</tspan>
                   ))}
                 </text>
               </g>
@@ -4427,6 +4449,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // Bola Parada trabalha-se dentro da grande área: ícones a 60% (ver
   // iconScaleForPhase). Reage à fase escolhida no formulário, em direto.
   const iconEscala = iconScaleForPhase(exerciseInfo?.phase);
+  const isNarrowEditor = useIsMobile(760);
   const svgRef = React.useRef(null);
   const [tool, setTool] = useState('select');
   // 'activeColor' já não é estado local — vem do componente pai (ExerciseModal)
@@ -4658,7 +4681,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     // Quem está debaixo do dedo neste momento — é este que vai ser o dono
     // da seta nova.
     const rawOwner = type === 'arrow-run'
-      ? nearestElementOfKind(['player', 'keeper'], x, y, SNAP_DIST)
+      ? nearestElementOfKind(['player', 'keeper', 'text'], x, y, SNAP_DIST)
       : nearestElementOfKind(['ball'], x, y, SNAP_DIST);
     let best = null, bestD = SNAP_DIST;
     for (const a of arrows) {
@@ -4745,7 +4768,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       let mover = first.ownerId ? elements.find(el => el.id === first.ownerId) : null;
       if (!mover) {
         mover = first.type === 'arrow-run'
-          ? nearestElementOfKind(['player', 'keeper'], first.x1, first.y1, 3.2)
+          ? nearestElementOfKind(['player', 'keeper', 'text'], first.x1, first.y1, 3.2)
           : nearestElementOfKind(['ball'], first.x1, first.y1, 3.2);
       }
       // Um "Passe" representa sempre a bola a deslocar-se. Se ainda não
@@ -4969,11 +4992,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       // Caixa de texto: entra com um texto de exemplo e fica logo
       // selecionada, para se escrever no campo do painel de baixo.
       const newId = uid();
-      /* Texto vazio e não "Texto": a caixa nasce selecionada com o cursor
-         já dentro da área de escrita (autoFocus), por isso o treinador
-         começa logo a escrever. Com "Texto" lá dentro, tinha primeiro de
-         apagar a palavra. */
-      commit({ ...value, elements: [...elements, { id: newId, kind: 'text', x: p.x, y: p.y, text: '', size: 3 }] });
+      /* Nasce com "Texto" para se ver a caixa, mas o campo de escrita
+         abaixo recebe o foco COM O TEXTO TODO SELECIONADO (ver o textarea
+         do painel): a primeira tecla substitui a palavra, sem ser preciso
+         apagá-la nem clicar na caixa. */
+      commit({ ...value, elements: [...elements, { id: newId, kind: 'text', x: p.x, y: p.y, text: 'Texto', size: 3 }] });
       setSelectedId(newId);
     } else if (MARKER_TOOLS.includes(tool)) {
       commit({ ...value, elements: [...elements, { id: uid(), kind: tool, x: p.x, y: p.y }] });
@@ -4994,7 +5017,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       // outro. Guardando o dono exato aqui, essa ambiguidade desaparece.
       let ownerId = null;
       if (tool === 'arrow-run') {
-        const owner = nearestElementOfKind(['player', 'keeper'], start.x, start.y, 3.2);
+        const owner = nearestElementOfKind(['player', 'keeper', 'text'], start.x, start.y, 3.2);
         ownerId = owner ? owner.id : null;
       } else if (tool === 'arrow-pass') {
         const owner = nearestElementOfKind(['ball'], start.x, start.y, 3.2);
@@ -5280,7 +5303,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         <span style={{ fontSize: 11, color: T.warn }}>{teamInfo(activeColor).label}</span>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+      {/* No telemóvel os botões entram numa grelha de colunas iguais: com
+          `flex-wrap` cada linha ficava com uma largura diferente e o bloco
+          parecia desalinhado. Em ecrã largo mantém-se a linha corrida. */}
+      <div style={{
+        marginBottom: 8,
+        ...(isNarrowEditor
+          ? { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }
+          : { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }),
+      }}>
         {BASE_TOOLS.map(t => (
           <button
             key={t.id}
@@ -5292,7 +5323,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               background: tool === t.id ? '#B5393F' : 'transparent',
               color: tool === t.id ? TEXT_ON_ACCENT : T.muted,
               border: `1px solid ${tool === t.id ? '#B5393F' : T.line}`,
-              display: 'flex', alignItems: 'center', minHeight: 34,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 34,
             }}
           >
             {t.symbol === 'solid' && (
@@ -5354,9 +5385,21 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                ponteiro, não pelo comportamento por omissão do browser. */
             WebkitTapHighlightColor: 'transparent',
             WebkitTouchCallout: 'none',
-            // Isola o campo numa camada própria: assim uma alteração no
-            // desenho repinta só o campo e não o resto da janela.
-            willChange: 'contents',
+            /* O campo passa a ter camada de composição PRÓPRIA no GPU.
+
+               `willChange: contents` não chegou no iPad. O `translateZ(0)`
+               força mesmo a criação da camada, e o `backfaceVisibility`
+               impede o Safari de a descartar e voltar a criar a cada toque
+               — que é o que produzia o flash da janela inteira.
+
+               Também se desliga a ampliação por duplo toque: no iPad, um
+               toque rápido para colocar dois ícones seguidos era
+               interpretado como duplo toque e o Safari respondia com um
+               salto de zoom. */
+            transform: 'translateZ(0)',
+            WebkitBackfaceVisibility: 'hidden',
+            backfaceVisibility: 'hidden',
+            touchAction: 'none',
           }}
           draggable="false"
           onDragStart={(e) => e.preventDefault()}
@@ -5548,6 +5591,19 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 placeholder="Escreve aqui (Enter para nova linha)"
                 rows={2}
                 autoFocus
+                /* Ao colocar uma caixa nova, o conteúdo fica selecionado:
+                   a primeira tecla substitui a palavra "Texto" e escreve-se
+                   logo, sem clicar em lado nenhum nem apagar nada.
+                   `selectionStart/End` em vez de `select()` porque este ramo
+                   corre em cada montagem e o `select()` do Safari perde-se
+                   se o elemento ainda não estiver visível. */
+                ref={(el) => {
+                  if (!el || el.dataset.iniciado === '1') return;
+                  el.dataset.iniciado = '1';
+                  if ((selectedEl.text || '') === 'Texto') {
+                    try { el.focus(); el.setSelectionRange(0, el.value.length); } catch (err) { /* sem suporte: escreve-se normalmente */ }
+                  }
+                }}
                 style={{
                   background: T.surface, border: `1px solid ${T.line}`, borderRadius: 6, padding: '5px 8px',
                   color: T.cream, fontSize: 12.5, ...body, outline: 'none', minWidth: 170,
@@ -8002,12 +8058,20 @@ function cardBadge(card) {
 /* Dashboard individual da aba Jogos — ranking de golos, assistências,
    cartões e nota média atribuída, usando o mesmo cálculo do Plantel. */
 function MatchDashboard({ players, matches }) {
+  /* Só jogos OFICIAIS entram aqui.
+
+     Num amigável não há convocatória — há presenças, e essas contam na
+     tabela de presenças como P/NP, tal como num treino. Misturá-los aqui
+     inflacionava as convocatórias e as suplências de toda a gente, e
+     dava a leitura errada de quem está a ser chamado a sério. */
+  const oficiais = (matches || []).filter(m => !isFriendlyMatch(m));
+
   // "Não convocado" só faz sentido em jogos onde houve mesmo convocatória.
   // Um jogo ainda sem ninguém escolhido não conta como não convocado para
   // toda a gente — era isso que punha a coluna sempre no total de jogos.
-  const totalMatches = matches.filter(m => (m.convocados || []).length > 0).length;
+  const totalMatches = oficiais.filter(m => (m.convocados || []).length > 0).length;
   const rows = players
-    .map(p => ({ player: p, s: playerStats(p, [], matches) }))
+    .map(p => ({ player: p, s: playerStats(p, [], oficiais) }))
     .filter(r => r.s.matchesPlayed > 0)
     .sort((a, b) => (b.s.avgMatchRating || 0) - (a.s.avgMatchRating || 0));
 
@@ -9010,11 +9074,6 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
           {eAmigavel ? 'Presenças' : 'Convocados'} {f.convocados.length ? `· ${f.convocados.length}/${players.length}` : ''}
-        </div>
-        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8 }}>
-          {eAmigavel
-            ? 'Marca quem esteve presente. Fica disponível como P / NP na tabela de presenças.'
-            : 'Marca quem foi convocado. Fica disponível como C / NC na tabela de presenças.'}
         </div>
         <PlayerChipList
           players={players}
@@ -11132,6 +11191,83 @@ function detectSocialEmbed(url) {
    deixa de ter cabeçalho/rodapé, ficando o vídeo com o ecrã todo. */
 const TIKTOK_PLAYER_PARAMS = 'rel=0&loop=1&description=0&music_info=0&controls=1&native_context_menu=0';
 
+/* Um item aberto, para a vista em coluna contínua.
+
+   Ao contrário do visualizador principal (um ficheiro de cada vez, com
+   controlos), aqui cada item aparece já aberto e percorre-se a rolar, como
+   numa rede social. É a forma natural de rever material de vídeo: não se
+   escolhe o que ver primeiro, passa-se por tudo.
+
+   Deliberadamente simples — sem ecrã inteiro nem detecção de bloqueio —
+   porque o objetivo é passar os olhos, não estudar um ficheiro. Para isso
+   há o botão que abre o item no visualizador completo. */
+function MediaFeedItem({ item, onOpen }) {
+  const fonte = item.youtubeId
+    ? `https://www.youtube.com/embed/${item.youtubeId}?rel=0&playsinline=1`
+    : (item.social ? socialEmbedSrc(item.social) : null);
+  const externo = item.youtubeId
+    ? `https://www.youtube.com/watch?v=${item.youtubeId}`
+    : (item.social ? socialExternalUrl(item.social) : (item.kind === 'drive' ? driveOpenSrc(item.drive) : null));
+
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', marginBottom: 14 }}>
+      <div style={{ padding: '11px 13px 9px' }}>
+        <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 600 }}>{item.title || item.fileName || '(sem título)'}</div>
+        {(item.jornada || cleanFolder(item.pasta)) && (
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>
+            {[item.jornada, cleanFolder(item.pasta)].filter(Boolean).join(' · ')}
+          </div>
+        )}
+      </div>
+
+      {fonte ? (
+        <div style={{ position: 'relative', width: '100%', paddingTop: item.social ? '125%' : '56.25%', background: '#000' }}>
+          <iframe
+            src={fonte}
+            title={item.title || 'media'}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+            allowFullScreen
+            loading="lazy"
+          />
+        </div>
+      ) : item.kind === 'image' && item.dataUrl ? (
+        <img src={item.dataUrl} alt={item.title || ''} style={{ display: 'block', width: '100%' }} />
+      ) : (
+        <div style={{ padding: '18px 13px', fontSize: 12.5, color: T.mutedDim }}>
+          Este ficheiro abre-se no visualizador.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 13px' }}>
+        <button
+          onClick={() => onOpen(item)}
+          style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}
+        >Abrir no visualizador</button>
+        {externo && (
+          <a
+            href={externo} target="_blank" rel="noopener noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, color: T.mutedDim, textDecoration: 'none', ...body }}
+          ><ExternalLink size={12} /> Abrir original</a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* Endereço da publicação original, para quando o Instagram recusa mostrar
+   o vídeo dentro da app (acontece em contas privadas e, cada vez mais, em
+   publicações normais, porque a plataforma passou a exigir sessão iniciada
+   para muitos embeds). É a única saída possível do nosso lado. */
+function socialExternalUrl(social) {
+  if (!social) return null;
+  if (social.platform === 'instagram') {
+    return `https://www.instagram.com/${social.tipo || 'reel'}/${social.id}/`;
+  }
+  if (social.platform === 'tiktok') return `https://www.tiktok.com/@_/video/${social.id}`;
+  return null;
+}
+
 function socialEmbedSrc(social) {
   if (!social) return '';
   if (social.platform === 'instagram') {
@@ -11373,6 +11509,10 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
       ? items.filter(v => !cleanFolder(v.pasta))
       : items.filter(v => cleanFolder(v.pasta) === folderFilter));
   const termo = busca.trim().toLowerCase();
+  /* Duas formas de percorrer a mesma pasta: o visualizador (um ficheiro
+     de cada vez, com controlos) ou a coluna contínua, com tudo aberto,
+     para rever material a rolar. */
+  const [modoFeed, setModoFeed] = useState(false);
   const visibleItems = termo
     ? naPasta.filter(v => [v.title, v.jornada, v.fileName, cleanFolder(v.pasta)]
         .some(campo => String(campo || '').toLowerCase().includes(termo)))
@@ -11620,6 +11760,22 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
         <EmptyState text={emptyText} action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
       ) : visibleItems.length === 0 ? (
         <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
+      ) : modoFeed ? (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+            <Btn variant="ghost" onClick={() => setModoFeed(false)}><LayoutGrid size={14} /> Voltar ao visualizador</Btn>
+            <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
+              {visibleItems.length} {visibleItems.length === 1 ? 'ficheiro' : 'ficheiros'}
+            </span>
+          </div>
+          {visibleItems.map(v => (
+            <MediaFeedItem
+              key={v.id}
+              item={v}
+              onOpen={(it) => { setActiveId(it.id); setModoFeed(false); }}
+            />
+          ))}
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
           <div>
@@ -11766,6 +11922,30 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                             </span>
                           );
                         })()}
+                        {/* SAÍDA PARA A PLATAFORMA.
+
+                            O Instagram recusa mostrar dentro de outros sites
+                            uma parte crescente das publicações — contas
+                            privadas sempre, e cada vez mais publicações
+                            normais, porque passou a exigir sessão iniciada.
+                            Quando isso acontece, o quadrado fica preto ou com
+                            um pedido de login e não há nada que se possa fazer
+                            do nosso lado: a decisão é da plataforma.
+
+                            Este atalho é a única saída — abre a publicação na
+                            app do Instagram, onde a sessão do treinador já
+                            está iniciada e o vídeo toca. */}
+                        {socialExternalUrl(active.social) && (
+                          <a
+                            href={socialExternalUrl(active.social)}
+                            target="_blank" rel="noopener noreferrer"
+                            title="Se o vídeo não aparecer, é a plataforma a bloquear — aqui abre na app"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#bbb',
+                              textDecoration: 'none', padding: '2px 4px', marginRight: 'auto',
+                            }}
+                          ><ExternalLink size={13} /> Abrir original</a>
+                        )}
                         <button
                           onClick={toggleSocialFullscreen}
                           style={{
@@ -11817,8 +11997,15 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
               </div>
             ) : (
               <>
-                <div style={{ ...mono, fontSize: 11, color: T.mutedDim }}>
-                  {visibleItems.length} {visibleItems.length === 1 ? 'ficheiro' : 'ficheiros'}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>
+                    {visibleItems.length} {visibleItems.length === 1 ? 'ficheiro' : 'ficheiros'}
+                  </span>
+                  <button
+                    onClick={() => setModoFeed(true)}
+                    title="Mostra tudo aberto numa coluna, para rever a rolar"
+                    style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 11.5, ...body, padding: 0 }}
+                  >Ver tudo aberto</button>
                 </div>
                 <div style={{
                   display: 'flex', flexDirection: 'column', gap: 8,
