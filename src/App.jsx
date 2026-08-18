@@ -2481,7 +2481,10 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
                 <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                   <Badge label={p.position} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div title={p.name} style={{ color: T.cream, fontSize: 15, fontWeight: 600, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shortFullName(p.name)}</div>
+                    <div title={p.name} style={{ display: 'flex', alignItems: 'center', gap: 6, color: T.cream, fontSize: 15, fontWeight: 600, lineHeight: 1.25 }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shortFullName(p.name)}</span>
+                      <CaptainArmband rank={p.captainRank} />
+                    </div>
                     <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>{playerBirthLine(p)}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 9 }}>
                       <button onClick={(e) => { e.stopPropagation(); doShare(p); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={15} /></button>
@@ -2770,6 +2773,39 @@ function playerBirthLine(player) {
 const LATERALITY = ['Destro', 'Esquerdo', 'Ambidestro'];
 const STATUS_OPTIONS = ['Dispensável', 'Reserva', 'Alternativa aos Titulares', 'Potencial Titular', 'Jogador de Elite'];
 
+/* CAPITANIA
+
+   O plantel tem uma hierarquia de quatro capitães, definida no início da
+   época e independente de cada jogo: se o 1º capitão não for convocado, a
+   braçadeira passa ao 2º, e assim por diante. É por isso um atributo do
+   JOGADOR (`captainRank`, 1 a 4) e não da convocatória.
+
+   Na convocatória escolhe-se depois quem leva a braçadeira NAQUELE jogo
+   (capitão e subcapitão), porque nem sempre coincide com a hierarquia —
+   um capitão pode entrar só na segunda parte. */
+const CAPTAIN_RANKS = [1, 2, 3, 4];
+const CAPTAIN_LABEL = { 1: '1º capitão', 2: '2º capitão', 3: '3º capitão', 4: '4º capitão' };
+
+/* Braçadeira: uma faixa com o número da capitania. Desenhada e não uma
+   imagem, para ficar nítida em qualquer tamanho e na impressão. */
+function CaptainArmband({ rank, size = 16, title }) {
+  if (!rank) return null;
+  return (
+    <span
+      title={title || CAPTAIN_LABEL[rank] || 'Capitão'}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: size, height: size * 0.72, borderRadius: 3, flexShrink: 0,
+        background: rank === 1 ? T.gold : (rank === 2 ? '#B08A1E' : T.line),
+        color: rank <= 2 ? '#1A1A1A' : T.cream,
+        border: `1px solid ${rank <= 2 ? '#8A6F1C' : T.line}`,
+        fontSize: size * 0.46, fontWeight: 700, lineHeight: 1,
+        fontFamily: "'Oswald', sans-serif",
+      }}
+    >{rank}</span>
+  );
+}
+
 function PlayerModal({ player, onClose, onSave }) {
   const [f, setF] = useState(player || {
     name: '', number: '', position: 'MC', nationality: '', birthdate: '', laterality: '', contact: '',
@@ -2821,6 +2857,15 @@ function PlayerModal({ player, onClose, onSave }) {
             <Select value={f.statusSecondary} onChange={e => setF({ ...f, statusSecondary: e.target.value })}>
               <option value="">—</option>
               {STATUS_OPTIONS.map((s, i) => <option key={s} value={s}>{i + 1} · {s}</option>)}
+            </Select>
+          </Field>
+          <Field label="Capitania">
+            <Select
+              value={f.captainRank || ''}
+              onChange={e => setF({ ...f, captainRank: e.target.value ? Number(e.target.value) : undefined })}
+            >
+              <option value="">— não é capitão —</option>
+              {CAPTAIN_RANKS.map(r => <option key={r} value={r}>{CAPTAIN_LABEL[r]}</option>)}
             </Select>
           </Field>
         </div>
@@ -7610,7 +7655,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
      · jogo   → C (convocado) / NC (não convocado), por omissão NC, mas já
                 marcado a C para quem consta da convocatória desse dia
    Dias fechados aparecem só de leitura. */
-function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onToggle, onRating, onSetClosed, monthControl }) {
+function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClosed, onToggle, onRating, onSetClosed, monthControl }) {
   const ordered = [...days].sort((a, b) => new Date(a.date) - new Date(b.date));
   if (ordered.length === 0 || players.length === 0) return null;
 
@@ -7673,12 +7718,14 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
                     no title, para quando houver dúvida. */}
                 <td style={nameCell} title={p.name}>{p.position ? `${p.position} · ` : ''}{firstNameInitial(p.name)}</td>
                 {ordered.map(d => {
-                  const on = isPresent(d, p.id);
+                  const estado = estadoDe(d, p.id);
+                  const on = estado === 'presente';
+                  const falta = estado === 'falta';
                   const closed = dayClosed(d);
                   const rating = ratingOf(d, p.id);
                   // Amigável conta presenças como um treino, não convocatória.
                   const convocatoria = d.match && !isFriendlyMatch(d.match);
-                  const label = convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP');
+                  const label = falta ? 'F' : (convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP'));
                   return (
                     <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: 4, textAlign: 'center', verticalAlign: 'top' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
@@ -7690,10 +7737,13 @@ function AttendanceMatrix({ days, players, isPresent, ratingOf, dayClosed, onTog
                         style={{
                           width: 34, padding: '4px 0', borderRadius: 6, fontSize: 11, ...mono, fontWeight: 600,
                           cursor: closed ? 'default' : 'pointer',
-                          background: on ? (d.match ? `${T.warn}33` : `${T.crimson}44`) : 'transparent',
-                          color: on ? T.cream : T.mutedDim,
-                          border: `1px solid ${on ? (d.match ? T.warn : T.gold) : T.line}`,
+                          // A falta salta à vista: é o estado que exige
+                          // reação do treinador, ao contrário do NP.
+                          background: falta ? `${T.bad}33` : (on ? (d.match ? `${T.warn}33` : `${T.crimson}44`) : 'transparent'),
+                          color: falta ? T.bad : (on ? T.cream : T.mutedDim),
+                          border: `1px solid ${falta ? T.bad : (on ? (d.match ? T.warn : T.gold) : T.line)}`,
                         }}
+                        title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → ausente → falta'}
                       >{label}</button>
                       {on && (
                         closed ? (
@@ -7873,6 +7923,14 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
     return [...new Set([...fromMatch, ...fromConv])];
   };
   const isPresent = (d, pid) => (d.match ? convocadosOf(d.match).includes(pid) : dayPresent(d.list, pid));
+  /* Estado de um jogador num dia: presente, falta ou ausente.
+     A ordem importa — quem está marcado como presente é presente, mesmo
+     que por engano também esteja na lista de faltas. */
+  const estadoDe = (d, pid) => {
+    if (isPresent(d, pid)) return 'presente';
+    const faltas = d.match ? (d.match.faltas || []) : (d.list || []).flatMap(x => x.faltas || []);
+    return faltas.includes(pid) ? 'falta' : 'ausente';
+  };
   const ratingOf = (d, pid) => (d.match ? ((d.match.ratings || {})[pid] ?? null) : dayRating(d.list, pid));
   const dayClosed = (d) => (d.match ? !!d.match.attendanceClosed : dayIsClosed(d.list));
   const mean = (arr) => (arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null);
@@ -7889,43 +7947,77 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       .map(Number);
     const treinoVals = notasDe(d => !d.match);
     const jogoVals = notasDe(d => !!d.match);
+
+    /* Totalizadores.
+
+       Os dias com convocatória (jogos oficiais) contam à parte dos dias de
+       presença (treinos e amigáveis): são coisas diferentes e somá-las
+       dava um número sem significado. As faltas contam-se em separado das
+       ausências — uma dispensa não é uma falta. */
+    const comPresenca = confirmedDays.filter(d => !d.match || isFriendlyMatch(d.match));
+    const comConvocatoria = confirmedDays.filter(d => d.match && !isFriendlyMatch(d.match));
+    const conta = (lista, estado) => lista.filter(d => estadoDe(d, p.id) === estado).length;
+
     return {
       player: p, attended, pct,
       avgTreino: mean(treinoVals), avgJogo: mean(jogoVals),
       countTreino: treinoVals.length, countJogo: jogoVals.length,
+      totais: {
+        presente: conta(comPresenca, 'presente'),
+        ausente: conta(comPresenca, 'ausente'),
+        convocado: conta(comConvocatoria, 'presente'),
+        naoConvocado: conta(comConvocatoria, 'ausente'),
+        falta: conta(confirmedDays, 'falta'),
+      },
     };
   });
 
   // Marca/desmarca presença em TODAS as sessões desse dia, para que baste
   // dar presença uma vez por dia, independentemente de quantos exercícios
   // (sessões) existam para essa data.
+  /* Um clique percorre presente → ausente → falta → presente.
+
+     Só a presença guarda nota: um jogador que não esteve não pode ser
+     avaliado, por isso ao sair de "presente" a nota é apagada. */
   const toggleAttendance = (day, playerId) => {
+    const estadoAtual = estadoDe(day, playerId);
+    const proximo = proximoEstadoPresenca(estadoAtual);
+
     if (day.match) {
       const m = day.match;
-      const base = convocadosOf(m); // parte da convocatória, se ainda não houver lista própria
-      const present = base.includes(playerId);
-      const next = present ? base.filter(id => id !== playerId) : [...base, playerId];
+      const base = convocadosOf(m);
+      const faltas = (m.faltas || []).filter(id => id !== playerId);
+      const convocados = base.filter(id => id !== playerId);
       setMatches(matches.map(x => {
         if (x.id !== m.id) return x;
         const ratings = { ...(x.ratings || {}) };
-        if (present) delete ratings[playerId];
-        // `attendance` e `convocados` andam sempre a par: marcar C aqui
-        // convoca o jogador no Planeamento/Jogos, e desmarcar retira-o.
-        return { ...x, attendance: next, convocados: next, ratings };
+        if (proximo !== 'presente') delete ratings[playerId];
+        return {
+          ...x,
+          // `attendance` e `convocados` andam sempre a par: marcar aqui
+          // convoca o jogador no Planeamento/Jogos, e desmarcar retira-o.
+          attendance: proximo === 'presente' ? [...convocados, playerId] : convocados,
+          convocados: proximo === 'presente' ? [...convocados, playerId] : convocados,
+          faltas: proximo === 'falta' ? [...faltas, playerId] : faltas,
+          ratings,
+        };
       }));
       return;
     }
+
     const date = day.date;
-    const daySessions = sessions.filter(s => s.date === date);
-    const present = daySessions.some(s => (s.attendance || []).includes(playerId));
     setSessions(sessions.map(s => {
       if (s.date !== date) return s;
-      if (present) {
-        const ratings = { ...(s.ratings || {}) };
-        delete ratings[playerId]; // sem presença, não faz sentido manter nota
-        return { ...s, attendance: (s.attendance || []).filter(id => id !== playerId), ratings };
-      }
-      return { ...s, attendance: (s.attendance || []).includes(playerId) ? s.attendance : [...(s.attendance || []), playerId] };
+      const ratings = { ...(s.ratings || {}) };
+      if (proximo !== 'presente') delete ratings[playerId];
+      const presentes = (s.attendance || []).filter(id => id !== playerId);
+      const faltas = (s.faltas || []).filter(id => id !== playerId);
+      return {
+        ...s,
+        attendance: proximo === 'presente' ? [...presentes, playerId] : presentes,
+        faltas: proximo === 'falta' ? [...faltas, playerId] : faltas,
+        ratings,
+      };
     }));
   };
   // A nota é guardada em todas as sessões desse dia, para se manter uma
@@ -7970,7 +8062,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
               informação em muito mais espaço. */}
           <AttendanceMatrix
             days={visibleDays} players={orderedPlayers}
-            isPresent={isPresent} ratingOf={ratingOf} dayClosed={dayClosed}
+            isPresent={isPresent} estadoDe={estadoDe} ratingOf={ratingOf} dayClosed={dayClosed}
             onToggle={toggleAttendance} onRating={setRating} onSetClosed={setDayClosed}
             monthControl={(
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -7992,7 +8084,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
             Assiduidade e nota média
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rows.map(({ player, attended, pct, avgTreino, avgJogo }) => {
+            {rows.map(({ player, attended, pct, avgTreino, avgJogo, totais }) => {
               const color = pct === null ? T.mutedDim : pct >= 80 ? T.good : pct >= 60 ? T.warn : T.bad;
               const noteColor = (v) => (v === null ? T.mutedDim : v >= 7 ? T.good : v >= 5 ? T.warn : T.bad);
               return (
@@ -8009,6 +8101,24 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                     <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color }} />
                   </div>
                   <span style={{ ...mono, color, fontSize: 13, width: 42, textAlign: 'right', flexShrink: 0 }}>{pct === null ? '—' : `${pct}%`}</span>
+                  <div style={{ width: 1, alignSelf: 'stretch', background: T.line, flexShrink: 0 }} />
+
+                  {/* Totalizadores ao lado da percentagem: a percentagem
+                      diz "quanto", estes números dizem "de quê". */}
+                  <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                    {[
+                      { v: totais.presente, l: 'P', cor: T.good, t: 'Presenças em treinos e amigáveis' },
+                      { v: totais.ausente, l: 'NP', cor: T.mutedDim, t: 'Não presente (dispensa, lesão, outro escalão)' },
+                      { v: totais.convocado, l: 'C', cor: T.warn, t: 'Convocado para jogos oficiais' },
+                      { v: totais.naoConvocado, l: 'NC', cor: T.mutedDim, t: 'Não convocado para jogos oficiais' },
+                      { v: totais.falta, l: 'F', cor: T.bad, t: 'Faltas — ausência sem justificação' },
+                    ].map(x => (
+                      <div key={x.l} title={x.t} style={{ textAlign: 'center', width: 26 }}>
+                        <div style={{ ...mono, fontSize: 13, color: x.v ? x.cor : T.mutedDim }}>{x.v}</div>
+                        <div style={{ fontSize: 9.5, color: T.mutedDim }}>{x.l}</div>
+                      </div>
+                    ))}
+                  </div>
                   <div style={{ width: 1, alignSelf: 'stretch', background: T.line, flexShrink: 0 }} />
                   <div style={{ textAlign: 'right', flexShrink: 0, width: 62 }}>
                     <div style={{ ...mono, color: noteColor(avgTreino), fontSize: 13 }}>{avgTreino === null ? 'NA' : avgTreino}</div>
@@ -8432,6 +8542,23 @@ const FRIENDLY = 'Amigável';
    distinção percorrer a app inteira: as etiquetas (C/NC vs P/NP), a
    exportação, e o próprio formulário do jogo, que deixa de pedir
    convocados e passa a pedir presenças. */
+/* TRÊS ESTADOS, NÃO DOIS.
+
+   "Não presente" e "falta" não são a mesma coisa e não podem contar o
+   mesmo: um jogador dispensado, lesionado ou a jogar noutro escalão não
+   esteve presente, mas não faltou. A falta é ausência sem justificação, e
+   é essa que interessa acompanhar.
+
+   Guarda-se numa lista à parte (`faltas`), tanto nas sessões como nos
+   jogos. Quem não está em `attendance` nem em `faltas` é simplesmente NP
+   ou NC — que é o estado de toda a gente antes de alguém marcar seja o que
+   for, e por isso continua a ser o valor por omissão dos registos antigos. */
+const PRESENCA_ESTADOS = ['presente', 'ausente', 'falta'];
+function proximoEstadoPresenca(atual) {
+  const i = PRESENCA_ESTADOS.indexOf(atual);
+  return PRESENCA_ESTADOS[(i + 1) % PRESENCA_ESTADOS.length];
+}
+
 function isFriendlyMatch(match) {
   return competitionLabel(match && match.competition) === FRIENDLY;
 }
@@ -11230,6 +11357,10 @@ function MediaFeedItem({ item, onOpen }) {
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             allowFullScreen
             playsInline
+            /* Sem barra de scroll dentro do vídeo: a roda do rato tem de
+               fazer avançar a coluna, não o interior do embed — senão fica-se
+               preso no primeiro vídeo ao tentar passar para o seguinte. */
+            scrolling="no"
             // Mesma sandbox do visualizador: o vídeo toca, mas um clique
             // no embed não substitui a app (ver INSTAGRAM_SANDBOX).
             sandbox={item.social && item.social.platform === 'instagram' ? INSTAGRAM_SANDBOX : undefined}
@@ -13028,11 +13159,21 @@ function syncConvocatoriaMatch(conv, matches) {
     competition: competitionLabel(conv.competicao) || '',
     jornada: conv.jornada || '',
     sourceConvocatoriaId: conv.id,
+    /* O onze da convocatória alimenta os titulares do jogo, e daí as
+       estatísticas (TITULAR / SUPL) e a assiduidade. Sem isto, o treinador
+       tinha de escolher o onze duas vezes: uma na convocatória e outra na
+       ficha do jogo. */
+    starters: (conv.convocados || []).slice(0, 11),
+    capitao: conv.capitao,
+    subcapitao: conv.subcapitao,
   };
   if (conv.casaFora) base.atHome = conv.casaFora === 'Casa';
 
   if (idx < 0) {
-    return [...list, { id: uid(), ...base, result: '', convocados: [...(conv.convocados || [])], starters: [], report: {} }];
+    // `...base` fica DEPOIS dos valores por omissão: é ele que traz os
+    // titulares vindos da convocatória, e antes eram apagados pelo
+    // `starters: []` que vinha a seguir.
+    return [...list, { id: uid(), result: '', convocados: [...(conv.convocados || [])], starters: [], report: {}, ...base }];
   }
   return list.map((m, i) => {
     if (i !== idx) return m;
@@ -13041,6 +13182,10 @@ function syncConvocatoriaMatch(conv, matches) {
        staff não tiver mexido nas presenças desse jogo. A partir daí manda a
        tabela de presenças (`attendance`) e não se reescreve nada. */
     if (!Array.isArray(m.attendance)) next.convocados = [...(conv.convocados || [])];
+    /* Os titulares só são reescritos enquanto ninguém os tiver mexido na
+       ficha do jogo: a partir daí manda o que o treinador registou no
+       relatório, que reflete o que aconteceu mesmo em campo. */
+    if ((m.starters || []).length > 0) next.starters = m.starters;
     return next;
   });
 }
@@ -13059,8 +13204,17 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
     setModal(null);
   };
   const remove = (id) => removeWithUndo(convocatorias, setConvocatorias, id, itemLabel(convocatorias.find(x => x.id === id), 'Convocatória'));
-  const doPrint = (c) => {
-    setPrintConvocatoria(c);
+  /* DUAS FOLHAS DIFERENTES, DO MESMO REGISTO.
+
+     A convocatória (`lista`) é o que se afixa e se envia aos atletas: os
+     nomes, sem revelar o onze. A ficha técnica (`ficha`) é a que fica com
+     o treinador e com a equipa de arbitragem: onze inicial, suplentes e
+     quem leva a braçadeira.
+
+     Distinguir uma da outra evita o erro clássico de afixar a folha errada
+     no balneário e o onze ser conhecido antes do tempo. */
+  const doPrint = (c, tipo = 'lista') => {
+    setPrintConvocatoria({ ...c, __tipo: tipo });
     setTimeout(() => window.print(), 80);
   };
 
@@ -13106,7 +13260,8 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                       três ícones empilhavam-se um debaixo do outro. */}
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'flex-end' }}>
-                      <button onClick={() => doPrint(c)} title="Imprimir convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
+                      <button onClick={() => doPrint(c, 'lista')} title="Imprimir a convocatória (só os nomes, para afixar)" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
+                      <button onClick={() => doPrint(c, 'ficha')} title="Imprimir a ficha técnica (onze, suplentes e capitães)" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><ClipboardList size={14} /></button>
                       <button onClick={() => setModal(c)} title="Editar convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                       <button onClick={() => remove(c.id)} title="Apagar convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                     </div>
@@ -13159,18 +13314,55 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}><strong>Outras informações:</strong> {printConvocatoria.outrasInfo}</p>
           )}
 
-          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>
-            Convocados {printConvocatoria.convocados?.length ? `(${printConvocatoria.convocados.length})` : ''}
-          </h3>
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '4px 16px',
-            fontSize: 12.5, marginBottom: 16,
-          }}>
-            {(printConvocatoria.convocados || []).map(pid => {
+          {(() => {
+            const ids = printConvocatoria.convocados || [];
+            const nome = (pid) => {
               const p = players.find(pl => pl.id === pid);
-              return p ? <div key={pid}>{p.number ? `${p.number} · ` : ''}{p.name}</div> : null;
-            })}
-          </div>
+              return p ? `${p.number ? `${p.number} · ` : ''}${p.name}` : null;
+            };
+            const bracadeira = (pid) => (
+              printConvocatoria.capitao === pid ? ' (C)'
+                : printConvocatoria.subcapitao === pid ? ' (SC)' : ''
+            );
+
+            // Folha para afixar: só os nomes, sem revelar o onze.
+            if (printConvocatoria.__tipo !== 'ficha') {
+              return (
+                <>
+                  <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Convocados {ids.length ? `(${ids.length})` : ''}</h3>
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '4px 16px',
+                    fontSize: 12.5, marginBottom: 16,
+                  }}>
+                    {ids.map(pid => { const n = nome(pid); return n ? <div key={pid}>{n}</div> : null; })}
+                  </div>
+                </>
+              );
+            }
+
+            // Ficha técnica: onze, banco e braçadeiras.
+            const onze = ids.slice(0, 11);
+            const banco = ids.slice(11, 20);
+            return (
+              <>
+                <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Onze inicial ({onze.length})</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '4px 16px', fontSize: 12.5, marginBottom: 14 }}>
+                  {onze.map((pid, i) => { const n = nome(pid); return n ? <div key={pid}>{i + 1}. {n}{bracadeira(pid)}</div> : null; })}
+                </div>
+
+                <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Suplentes ({banco.length})</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '4px 16px', fontSize: 12.5, marginBottom: 14 }}>
+                  {banco.map(pid => { const n = nome(pid); return n ? <div key={pid}>{n}{bracadeira(pid)}</div> : null; })}
+                </div>
+
+                <div style={{ fontSize: 12.5, marginBottom: 14 }}>
+                  <strong>Capitão:</strong> {nome(printConvocatoria.capitao) || '—'}
+                  {'   '}
+                  <strong>Subcapitão:</strong> {nome(printConvocatoria.subcapitao) || '—'}
+                </div>
+              </>
+            );
+          })()}
 
           <div style={{ fontSize: 12.5, borderTop: '1px solid #ccc', paddingTop: 8 }}>
             {printConvocatoria.treinador && <div><strong>Treinador:</strong> {printConvocatoria.treinador}</div>}
@@ -13190,9 +13382,50 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
     localConcentracao: '', outrasInfo: '', convocados: [], treinador: 'João Pedro', teamManager: 'Américo',
   });
 
+  /* A ORDEM DOS CLIQUES É A CONVOCATÓRIA.
+
+     Os primeiros 11 escolhidos são o onze inicial; os seguintes, até 9,
+     são suplentes. É a forma como o treinador pensa a convocatória — não
+     escolhe "vinte nomes" e depois separa, escolhe o onze e depois o
+     banco — e evita uma segunda lista para arrastar jogadores entre
+     grupos.
+
+     A ordem vive no próprio array `convocados`, por isso não há campo
+     novo a manter sincronizado: tirar um titular promove automaticamente
+     o primeiro suplente. */
+  const TITULARES = 11;
+  const MAX_CONVOCADOS = 20;
+  const titulares = f.convocados.slice(0, TITULARES);
+  const suplentes = f.convocados.slice(TITULARES, MAX_CONVOCADOS);
+  const excedentes = f.convocados.slice(MAX_CONVOCADOS);
+
   const toggleConvocado = (pid) => {
     const inList = f.convocados.includes(pid);
-    setF({ ...f, convocados: inList ? f.convocados.filter(id => id !== pid) : [...f.convocados, pid] });
+    const next = inList ? f.convocados.filter(id => id !== pid) : [...f.convocados, pid];
+    // Tirar um jogador da lista tira-lhe também a braçadeira.
+    setF({
+      ...f,
+      convocados: next,
+      capitao: next.includes(f.capitao) ? f.capitao : undefined,
+      subcapitao: next.includes(f.subcapitao) ? f.subcapitao : undefined,
+    });
+  };
+
+  /* Braçadeiras do JOGO (ver CAPTAIN_RANKS para a hierarquia do plantel).
+     Um clique atribui, outro tira; o capitão e o subcapitão nunca podem
+     ser a mesma pessoa. Escolhi cliques e não arrastar: no telemóvel,
+     arrastar sobre uma lista que rola é frustrante, e aqui não há nada
+     que o arrastar acrescente. */
+  const setBracadeira = (pid, papel) => {
+    setF(prev => {
+      const outro = papel === 'capitao' ? 'subcapitao' : 'capitao';
+      const jaTem = prev[papel] === pid;
+      return {
+        ...prev,
+        [papel]: jaTem ? undefined : pid,
+        [outro]: prev[outro] === pid ? undefined : prev[outro],
+      };
+    });
   };
   // As competições vêm das que estão configuradas em Jogos.
   const compAtual = competitionLabel(f.competicao);
@@ -13263,17 +13496,76 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
       </div>
 
       <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>
           Lista de convocados {f.convocados.length ? `· ${f.convocados.length}` : ''}
+        </div>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10 }}>
+          Os 11 primeiros que escolheres são o onze inicial; os seguintes, até 9, ficam no banco.
         </div>
         {players.length === 0 ? (
           <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores ao plantel antes de criar uma convocatória.</div>
         ) : (
-          <PlayerChipList
-            players={players}
-            isOn={p => f.convocados.includes(p.id)}
-            onToggle={p => toggleConvocado(p.id)}
-          />
+          <>
+            <PlayerChipList
+              players={players}
+              isOn={p => f.convocados.includes(p.id)}
+              onToggle={p => toggleConvocado(p.id)}
+            />
+
+            {f.convocados.length > 0 && (
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {[
+                  { titulo: `Onze inicial · ${titulares.length}/${TITULARES}`, ids: titulares, cor: T.gold },
+                  { titulo: `Suplentes · ${suplentes.length}/9`, ids: suplentes, cor: T.muted },
+                  { titulo: `A mais — não entram na ficha · ${excedentes.length}`, ids: excedentes, cor: T.bad },
+                ].filter(g => g.ids.length > 0).map(grupo => (
+                  <div key={grupo.titulo}>
+                    <div style={{ fontSize: 10.5, color: grupo.cor, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{grupo.titulo}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {grupo.ids.map((pid, i) => {
+                        const jog = players.find(x => x.id === pid);
+                        if (!jog) return null;
+                        const eCapitao = f.capitao === pid;
+                        const eSub = f.subcapitao === pid;
+                        return (
+                          <div key={pid} style={{
+                            display: 'flex', alignItems: 'center', gap: 8, padding: '5px 9px',
+                            background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7,
+                          }}>
+                            <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, width: 16 }}>
+                              {grupo.ids === titulares ? i + 1 : ''}
+                            </span>
+                            <CaptainArmband rank={jog.captainRank} size={14} />
+                            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {jog.position ? `${jog.position} · ` : ''}{jog.name}
+                            </span>
+                            {/* Braçadeira do jogo: um clique põe, outro tira. */}
+                            {[
+                              { papel: 'capitao', etiqueta: 'C', ativo: eCapitao, dica: 'Capitão neste jogo' },
+                              { papel: 'subcapitao', etiqueta: 'SC', ativo: eSub, dica: 'Subcapitão neste jogo' },
+                            ].map(b => (
+                              <button
+                                key={b.papel}
+                                type="button"
+                                onClick={() => setBracadeira(pid, b.papel)}
+                                title={b.dica}
+                                style={{
+                                  padding: '2px 8px', borderRadius: 5, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', ...mono,
+                                  background: b.ativo ? T.gold : 'transparent',
+                                  color: b.ativo ? '#1A1A1A' : T.mutedDim,
+                                  border: `1px solid ${b.ativo ? T.gold : T.line}`,
+                                }}
+                              >{b.etiqueta}</button>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
