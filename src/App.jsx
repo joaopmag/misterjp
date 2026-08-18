@@ -1492,7 +1492,7 @@ function App({ session }) {
           {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} matches={matches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -4067,37 +4067,12 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
 
              A caixa acompanha a linha mais comprida, e não o total de
              caracteres, para não ficar com margens enormes de um lado. */
-          const size = el.size || 3;
-          const maxChars = Math.max(8, Math.round(el.wrap || 26));
-          const linhas = quebrarTexto(el.text || '', maxChars);
-          const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
-          /* Caixa apertada quando há muito texto: uma nota de cinco linhas
-             com a folga de uma de uma linha tapava meio campo. */
-          const compacto = linhas.length >= 3 ? (linhas.length >= 5 ? 0.72 : 0.85) : 1;
-          const alturaLinha = size * (1.22 * compacto);
-          const folgaX = size * 0.7 * compacto;
-          const folgaY = size * 0.35 * compacto;
-          const boxW = Math.max(3, maiorLinha * size * 0.56 + folgaX);
-          const boxH = Math.max(size * 1.4 * compacto, linhas.length * alturaLinha + folgaY);
+          /* Medidas e posição vêm de textBoxMetrics — a MESMA fonte que a
+             animação e a deteção de setas usam. Tê-las calculadas em três
+             sítios diferentes foi o que fez o texto deixar de ser
+             animável: o desenho e a deteção deixavam de coincidir. */
+          const { size, linhas, alturaLinha, folgaY, w: boxW, h: boxH, cx: tx, topo } = textBoxMetrics(el);
           const fill = printMode ? '#1B1B1B' : '#F0E7D6';
-
-          /* A caixa é DESENHADA sempre dentro da área visível.
-
-             O limite é aplicado no desenho e não só ao colocar: as caixas
-             já gravadas junto à margem, e as que se arrastam para lá,
-             passam a ser puxadas para dentro em vez de ficarem cortadas a
-             meio da palavra. Os dados não mudam, só o sítio onde se pinta —
-             por isso não há risco de mexer em exercícios antigos. */
-          const margemVista = 0.6;
-          const tx = Math.max(
-            PITCH_BOX.x + boxW / 2 + margemVista,
-            Math.min(PITCH_BOX.x + PITCH_BOX.w - boxW / 2 - margemVista, el.x),
-          );
-          const ty = Math.max(
-            PITCH_BOX.y + boxH / 2 + margemVista,
-            Math.min(PITCH_BOX.y + PITCH_BOX.h - boxH / 2 - margemVista, el.y),
-          );
-          const topo = ty - boxH / 2;
           return (
             <g key={el.id}>
               {hitsEnabled && (
@@ -4246,6 +4221,37 @@ function buildAnimationChainsPure(arrowList) {
   return chains;
 }
 function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+/* Medidas e posição REAL de uma caixa de texto no campo.
+
+   Uma só fonte de verdade, usada por todos os que precisam de saber onde
+   a caixa está: o desenho, a animação e a deteção de qual elemento uma
+   seta agarra.
+
+   Existe por causa de um erro concreto: a caixa passou a ser DESENHADA
+   numa posição limitada (para não ficar cortada na margem), mas a deteção
+   da seta continuava a medir pela posição GUARDADA. Nas caixas junto à
+   margem as duas deixavam de coincidir, e uma seta de corrida traçada em
+   cima da caixa não a agarrava — daí o texto não animar. */
+function textBoxMetrics(el) {
+  const size = (el && el.size) || 3;
+  const maxChars = Math.max(8, Math.round((el && el.wrap) || 26));
+  const linhas = quebrarTexto((el && el.text) || '', maxChars);
+  const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
+  // Caixa apertada quando há muito texto: uma nota de cinco linhas com a
+  // folga de uma de uma linha tapava meio campo.
+  const compacto = linhas.length >= 3 ? (linhas.length >= 5 ? 0.72 : 0.85) : 1;
+  const alturaLinha = size * (1.22 * compacto);
+  const folgaX = size * 0.7 * compacto;
+  const folgaY = size * 0.35 * compacto;
+  const w = Math.max(3, maiorLinha * size * 0.56 + folgaX);
+  const h = Math.max(size * 1.4 * compacto, linhas.length * alturaLinha + folgaY);
+  // Nunca sai da área visível — nem no desenho, nem na deteção.
+  const margem = 0.6;
+  const cx = Math.max(PITCH_BOX.x + w / 2 + margem, Math.min(PITCH_BOX.x + PITCH_BOX.w - w / 2 - margem, (el && el.x) || 0));
+  const cy = Math.max(PITCH_BOX.y + h / 2 + margem, Math.min(PITCH_BOX.y + PITCH_BOX.h - h / 2 - margem, (el && el.y) || 0));
+  return { size, linhas, alturaLinha, folgaY, w, h, cx, cy, topo: cy - h / 2 };
+}
 
 /* Mantém uma caixa de texto dentro da área desenhada.
 
@@ -4758,15 +4764,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       if (!kinds.includes(el.kind)) continue;
       let d;
       if (el.kind === 'text') {
-        const size = el.size || 3;
-        const maxChars = Math.max(8, Math.round(el.wrap || 26));
-        const linhas = quebrarTexto(el.text || '', maxChars);
-        const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
-        const compacto = linhas.length >= 3 ? (linhas.length >= 5 ? 0.72 : 0.85) : 1;
-        const meiaW = Math.max(3, maiorLinha * size * 0.56 + size * 0.7 * compacto) / 2;
-        const meiaH = Math.max(size * 1.4 * compacto, linhas.length * size * 1.22 * compacto + size * 0.35 * compacto) / 2;
-        const dx = Math.max(0, Math.abs(el.x - x) - meiaW);
-        const dy = Math.max(0, Math.abs(el.y - y) - meiaH);
+        /* Distância à BORDA da caixa, e à posição onde ela está mesmo
+           desenhada (ver textBoxMetrics). Uma caixa larga tem o centro
+           longe da palavra onde se começa a seta; medir ao centro fazia
+           com que nunca fosse apanhada. */
+        const m = textBoxMetrics(el);
+        const dx = Math.max(0, Math.abs(m.cx - x) - m.w / 2);
+        const dy = Math.max(0, Math.abs(m.cy - y) - m.h / 2);
         d = Math.hypot(dx, dy);
       } else {
         d = Math.hypot(el.x - x, el.y - y);
@@ -5783,15 +5787,15 @@ function AnimOverlay({ items, iconScale = 1 }) {
         /* Caixa de texto em movimento: desenha-se como no campo, para não
            se transformar num círculo a meio da animação. */
         if (it.mover && it.mover.kind === 'text') {
-          const size = (it.mover.size || 3) * k;
-          const maxChars = Math.max(8, Math.round(it.mover.wrap || 26));
-          const linhas = quebrarTexto(it.mover.text || '', maxChars);
-          const maiorLinha = linhas.reduce((a, l) => Math.max(a, l.length), 1);
-          const compacto = linhas.length >= 3 ? (linhas.length >= 5 ? 0.72 : 0.85) : 1;
-          const alturaLinha = size * (1.22 * compacto);
-          const folgaY = size * 0.35 * compacto;
-          const boxW = Math.max(3, maiorLinha * size * 0.56 + size * 0.7 * compacto);
-          const boxH = Math.max(size * 1.4 * compacto, linhas.length * alturaLinha + folgaY);
+          // A caixa em movimento é desenhada no ponto da animação, mas com
+          // as MESMAS medidas que tem parada — só muda o centro.
+          const m = textBoxMetrics(it.mover);
+          const size = m.size * k;
+          const linhas = m.linhas;
+          const alturaLinha = m.alturaLinha * k;
+          const folgaY = m.folgaY * k;
+          const boxW = m.w * k;
+          const boxH = m.h * k;
           const topo = it.y - boxH / 2;
           return (
             <g key={it.id} style={{ pointerEvents: 'none' }} opacity="0.95">
@@ -9448,7 +9452,7 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions }) {
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions, convocatorias, setConvocatorias }) {
   const [modal, setModal] = useState(null);
 
   const save = (data) => {
@@ -9457,6 +9461,8 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
     else setMatches([...matches, registo]);
     // Amigável: entra também na agenda como sessão (ver ensureFriendlySession).
     if (setSessions) setSessions(prev => ensureFriendlySession(registo, prev));
+    // Jogo oficial com convocados: gera/atualiza a convocatória.
+    if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
     setModal(null);
   };
   const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
@@ -13650,6 +13656,48 @@ function syncConvocatoriaMatch(conv, matches) {
     if ((m.starters || []).length > 0) next.starters = m.starters;
     return next;
   });
+}
+
+/* O CAMINHO INVERSO: do jogo para a convocatória.
+
+   A convocatória já alimentava o jogo. Faltava o contrário: escolher os
+   convocados na ficha do jogo devia produzir a convocatória, em vez de
+   obrigar a repetir a mesma escolha nos dois sítios.
+
+   Duas regras evitam duplicados e enganos:
+   · liga-se pelo `sourceConvocatoriaId` e, na falta dele, por data —
+     nunca se cria uma segunda convocatória para o mesmo jogo;
+   · amigáveis não geram convocatória nenhuma. Não há convocatória num
+     amigável: há presenças, e essas vivem na tabela de presenças. */
+function syncMatchConvocatoria(match, convocatorias, season) {
+  const lista = convocatorias || [];
+  if (!match || !match.date || isFriendlyMatch(match)) return lista;
+  if (!(match.convocados || []).length) return lista;
+
+  let idx = lista.findIndex(c => c.id === match.sourceConvocatoriaId);
+  if (idx < 0) idx = lista.findIndex(c => c.data === match.date);
+
+  const base = {
+    data: match.date,
+    adversario: match.opponent || '',
+    competicao: competitionLabel(match.competition) || '',
+    jornada: match.jornada || '',
+    casaFora: match.atHome === undefined ? undefined : (match.atHome ? 'Casa' : 'Fora'),
+    convocados: [...(match.convocados || [])],
+  };
+  Object.keys(base).forEach(k => { if (base[k] === undefined) delete base[k]; });
+
+  if (idx < 0) {
+    return [...lista, {
+      id: uid(),
+      epoca: (season && season.name) || '',
+      escalao: 'Sub-19',
+      treinador: '', teamManager: '',
+      localJogo: '', horaJogo: '', horaConcentracao: '', localConcentracao: '', outrasInfo: '',
+      ...base,
+    }];
+  }
+  return lista.map((c, i) => (i === idx ? { ...c, ...base } : c));
 }
 
 function Convocatorias({ convocatorias, setConvocatorias, players, season, standings, matches, setMatches }) {
