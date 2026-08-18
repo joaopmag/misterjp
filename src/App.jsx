@@ -3569,53 +3569,54 @@ function ballPanels(cx, cy, r) {
   return panels;
 }
 
-/* Bola do campo tático — branca com estrelas escuras.
+/* Bola do campo tático — branca com pentágonos pretos.
 
-   Desenho ORIGINAL. O motivo "bola branca com estrelas" é comum no
-   futebol e é isso que aqui se desenha; NÃO se reproduz nenhuma bola de
-   marca — sem logótipos, sem marcas de competição e sem a geometria de
-   painéis de qualquer modelo comercial, que pertencem aos respetivos
-   titulares.
+   É o padrão clássico do futebol (o "Telstar"), um motivo genérico do
+   desporto e não a marca de ninguém: pentágonos pretos rodeados de
+   hexágonos brancos. Sem logótipos nem marcas de fabricante.
 
-   O que importa à leitura é distinguir-se de um jogador a qualquer
-   tamanho: daí o contraste forte entre o branco e as estrelas escuras,
-   que continua a ler-se com a bola a 3 mm no ecrã. */
-function StarShape({ cx, cy, r, rotation = 0, fill, stroke, strokeWidth }) {
-  // Estrela de cinco pontas: alterna raio exterior e interior.
+   O que importa a esta escala é distinguir-se de um jogador: o contraste
+   preto/branco continua a ler-se com a bola a 3 mm no ecrã, que é
+   precisamente a razão de este padrão ter sido inventado (para se ver
+   bem na televisão a preto e branco). */
+function PentagonShape({ cx, cy, r, rotation, fill }) {
   const pontos = [];
-  for (let i = 0; i < 10; i++) {
-    const raio = i % 2 === 0 ? r : r * 0.42;
-    const ang = ((i * 36 - 90 + rotation) * Math.PI) / 180;
-    pontos.push(`${cx + Math.cos(ang) * raio},${cy + Math.sin(ang) * raio}`);
+  for (let i = 0; i < 5; i++) {
+    const ang = ((i * 72 - 90 + rotation) * Math.PI) / 180;
+    pontos.push(`${cx + Math.cos(ang) * r},${cy + Math.sin(ang) * r}`);
   }
-  return <polygon points={pontos.join(' ')} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinejoin="round" />;
+  return <polygon points={pontos.join(' ')} fill={fill} />;
 }
 
 function TriondaBall({ cx, cy, r }) {
-  const escuro = '#15181C';
-  const dourado = '#C9A227';
-  // Uma estrela ao centro e cinco à volta, com rotações diferentes para
-  // não ficar um padrão mecânico.
+  const preto = '#16181A';
+  /* Um pentágono ao centro e cinco à volta, encostados às arestas — é a
+     leitura de uma bola vista de frente. Os de fora vão ligeiramente
+     cortados pelo bordo, como acontece na esfera real. */
   const satelites = [-90, -18, 54, 126, 198];
   return (
     <>
-      <circle cx={cx} cy={cy} r={r} fill="#FCFCFA" stroke={escuro} strokeWidth={r * 0.11} />
-      {satelites.map((a, i) => {
-        const rad = (a * Math.PI) / 180;
-        return (
-          <StarShape
-            key={i}
-            cx={cx + Math.cos(rad) * r * 0.6}
-            cy={cy + Math.sin(rad) * r * 0.6}
-            r={r * 0.36}
-            rotation={a + 90}
-            fill={escuro}
-            stroke={dourado}
-            strokeWidth={r * 0.05}
-          />
-        );
-      })}
-      <StarShape cx={cx} cy={cy} r={r * 0.36} fill={escuro} stroke={dourado} strokeWidth={r * 0.055} />
+      <circle cx={cx} cy={cy} r={r} fill="#FBFBF9" stroke={preto} strokeWidth={r * 0.1} />
+      {/* Recorte para os pentágonos de fora não saírem da bola. */}
+      <clipPath id={`bola-${Math.round(cx * 100)}-${Math.round(cy * 100)}`}>
+        <circle cx={cx} cy={cy} r={r * 0.94} />
+      </clipPath>
+      <g clipPath={`url(#bola-${Math.round(cx * 100)}-${Math.round(cy * 100)})`}>
+        <PentagonShape cx={cx} cy={cy} r={r * 0.34} rotation={0} fill={preto} />
+        {satelites.map((a, i) => {
+          const rad = (a * Math.PI) / 180;
+          return (
+            <PentagonShape
+              key={i}
+              cx={cx + Math.cos(rad) * r * 0.72}
+              cy={cy + Math.sin(rad) * r * 0.72}
+              r={r * 0.3}
+              rotation={a + 90}
+              fill={preto}
+            />
+          );
+        })}
+      </g>
     </>
   );
 }
@@ -6989,7 +6990,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     ...(isNarrow ? { justifyContent: 'space-between', paddingLeft: 60 } : {}),
                   }}>
                     <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
-                      {(s.convocados || []).length} convocados
+                      {(s.convocados || []).length} {isFriendlyMatch(s) ? 'presentes' : 'convocados'}
                     </span>
                     <button onClick={() => setMatchModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                   </div>
@@ -8945,7 +8946,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                       )}
                     </div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                      {fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} convocados
+                      {fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} {isFriendlyMatch(m) ? 'presentes' : 'convocados'}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -11228,6 +11229,10 @@ function MediaFeedItem({ item, onOpen }) {
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             allowFullScreen
+            playsInline
+            // Mesma sandbox do visualizador: o vídeo toca, mas um clique
+            // no embed não substitui a app (ver INSTAGRAM_SANDBOX).
+            sandbox={item.social && item.social.platform === 'instagram' ? INSTAGRAM_SANDBOX : undefined}
             loading="lazy"
           />
         </div>
@@ -11310,15 +11315,40 @@ const SOCIAL_CROP = {
   tiktok: { headerPx: 0, mediaRatio: 16 / 9, extraPx: 0 },
 };
 
-/* O embed do Instagram leva os cliques para fora da app (cabeçalho, rodapé
-   e sobretudo o ecrã que aparece no fim do vídeo). Como não há parâmetro
-   para o desligar, usamos o atributo "sandbox" do próprio browser: sem
-   allow-top-navigation e sem allow-popups, o iframe fica impedido de mudar
-   a página ou abrir separadores. O vídeo continua a tocar; os cliques que
-   levavam para o Instagram deixam simplesmente de fazer nada.
-   Se algum dia a reprodução deixar de funcionar por causa disto, basta
-   remover esta constante do <iframe>. */
-const INSTAGRAM_SANDBOX = 'allow-scripts allow-same-origin allow-presentation';
+/* SANDBOX DO INSTAGRAM — equilíbrio entre tocar e não fugir.
+
+   O embed do Instagram tenta levar os cliques para fora da app (cabeçalho,
+   rodapé e sobretudo o ecrã do fim do vídeo). O atributo `sandbox` do
+   browser trava isso: sem `allow-top-navigation`, o iframe não consegue
+   mudar a página onde está.
+
+   Ao mesmo tempo, uma sandbox demasiado apertada impede o próprio leitor
+   de arrancar e o vídeo nunca toca — que é o problema oposto e o que se
+   estava a notar. Daí a lista ser a mais permissiva possível SEM abrir a
+   porta que interessa manter fechada:
+
+   - allow-scripts / allow-same-origin  → o leitor arranca e reproduz
+   - allow-presentation                 → ecrã inteiro do próprio vídeo
+   - allow-forms                        → alguns embeds precisam para o
+                                          consentimento de cookies
+   - allow-popups + ...-to-escape-sandbox → um clique que insista em ir
+                                          para o Instagram abre um
+                                          separador NOVO em vez de roubar
+                                          a app; assim não se perde o que
+                                          se estava a fazer
+   - (sem allow-top-navigation)         → nunca substitui esta página
+
+   Se um vídeo continuar sem tocar depois disto, a causa já não é nossa: o
+   Instagram exige sessão iniciada para uma parte das publicações e
+   simplesmente recusa mostrá-las fora da app deles. */
+const INSTAGRAM_SANDBOX = [
+  'allow-scripts',
+  'allow-same-origin',
+  'allow-presentation',
+  'allow-forms',
+  'allow-popups',
+  'allow-popups-to-escape-sandbox',
+].join(' ');
 
 // Contas partilhadas pelas duas funções abaixo, para não divergirem.
 function socialCropMetrics(platform, boxSize, zoom, barH) {
@@ -11761,7 +11791,11 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
       ) : visibleItems.length === 0 ? (
         <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
       ) : modoFeed ? (
-        <div>
+        /* Largura de leitura, como numa rede social: em ecrã largo um vídeo
+           a ocupar 1400 px não se vê melhor, vê-se pior — obriga a mover a
+           cabeça e só cabe um por ecrã. 560 px é a medida a que estas
+           aplicações assentaram. */
+        <div style={{ maxWidth: 560, margin: '0 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
             <Btn variant="ghost" onClick={() => setModoFeed(false)}><LayoutGrid size={14} /> Voltar ao visualizador</Btn>
             <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
@@ -11880,9 +11914,12 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                               key={active.id}
                               src={socialEmbedSrc(active.social)}
                               style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                              allow="autoplay; encrypted-media; clipboard-write; fullscreen"
+                              allow="autoplay; encrypted-media; clipboard-write; picture-in-picture; fullscreen"
                               allowFullScreen
                               scrolling="no"
+                              // No iOS, sem isto o vídeo abre em ecrã inteiro
+                              // do sistema em vez de tocar dentro da caixa.
+                              playsInline
                               sandbox={active.social.platform === 'instagram' ? INSTAGRAM_SANDBOX : undefined}
                               title={active.title}
                             />
