@@ -991,6 +991,7 @@ const TextArea = React.forwardRef(function TextArea(props, ref) {
    no ecrã. Nos ecrãs pequenos os três tamanhos dão no mesmo, porque o
    limite passa a ser a largura da janela. */
 function Modal({ title, subtitle, onClose, children, wide, xwide }) {
+  const estreito = useIsMobile(620);
   // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
   // são quase todas de edição (exercício, sessão, jogo, jogador...) e um
   // clique acidental fora — muito fácil de dar ao arrastar peças no editor
@@ -1000,14 +1001,29 @@ function Modal({ title, subtitle, onClose, children, wide, xwide }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, background: '#000000aa', zIndex: 50,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: estreito ? 8 : 16,
     }}>
       <div
         onClick={e => e.stopPropagation()}
         style={{
           background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10,
-          width: '100%', maxWidth: xwide ? 1100 : (wide ? 640 : 460), maxHeight: '92vh', overflowY: 'auto',
-          padding: 22, boxShadow: '0 20px 60px #00000080',
+          width: '100%', maxWidth: xwide ? 1100 : (wide ? 640 : 460), maxHeight: '92vh',
+          /* `overflowY: auto` SOZINHO não chega — e era esta a origem do
+             arrastamento lateral no telemóvel.
+
+             Pelas regras do CSS, quando um dos eixos deixa de ser
+             `visible`, o outro passa automaticamente de `visible` a
+             `auto`. Ou seja: pedir scroll vertical dava scroll horizontal
+             de borla, e bastava um elemento uns pixéis mais largo para a
+             janela inteira deslizar de lado.
+
+             Declarar `overflowX: hidden` fecha essa porta. As tabelas que
+             precisam mesmo de rolar na horizontal (presenças,
+             classificação) têm o seu próprio invólucro com scroll e
+             continuam a funcionar. */
+          overflowY: 'auto', overflowX: 'hidden',
+          padding: estreito ? 14 : 22, boxShadow: '0 20px 60px #00000080',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
@@ -3186,16 +3202,29 @@ function Exercicios({ exercises, setExercises, meta }) {
                 )
               )}
               <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px' }}>{x.description}</p>
-              <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: T.mutedDim, ...mono }}>
-                {x.space && <span>📐 {x.space}</span>}
-                {x.playersCount && <span>👥 {x.playersCount}</span>}
-                {x.material && <span>🎒 {x.material}</span>}
-              </div>
+              {/* Espaço, jogadores e material ENCOSTADOS AO FUNDO do cartão.
+
+                  Numa grelha, os cartões têm todos a altura do mais alto,
+                  mas as descrições têm comprimentos diferentes. Com esta
+                  linha logo a seguir ao texto, ela ficava a meia altura em
+                  uns cartões e em baixo noutros, e a leitura em coluna —
+                  comparar as medidas de vários exercícios de relance —
+                  deixava de funcionar.
+
+                  O `marginTop: auto` está aqui e não no rodapé: empurra
+                  este bloco todo para baixo, e o rodapé vem colado a ele. */}
+              <div style={{ marginTop: 'auto' }}>
+                <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: T.mutedDim, ...mono, flexWrap: 'wrap' }}>
+                  {x.space && <span>📐 {x.space}</span>}
+                  {x.playersCount && <span>👥 {x.playersCount}</span>}
+                  {x.material && <span>🎒 {x.material}</span>}
+                </div>
               {m && m.email && (
-                <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 'auto', paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 8, paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   Adicionado/editado por {m.email} · {timeAgo(m.at)}
                 </div>
               )}
+              </div>
             </div>
             );
           })}
@@ -3466,7 +3495,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
           )}
           {importOpen && (
             <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8, background: T.surface, padding: 10 }}>
-              <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {importable.map(x => {
                   const label = (x.name && x.name.trim()) || `Ideia ${allIdeias.findIndex(i => i.id === x.id) + 1}`;
                   return (
@@ -4894,10 +4923,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     const remainingArrowIds = new Set(arrows.filter(a => distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) >= 1.6).map(a => a.id));
     if (selectedId && !remainingIds.has(selectedId)) setSelectedId(null);
     if (selectedArrowId && !remainingArrowIds.has(selectedArrowId)) setSelectedArrowId(null);
+    const apagados = new Set(elements.filter(el => !remainingIds.has(el.id)).map(el => el.id));
     commit({
       ...value,
       elements: elements.filter(el => remainingIds.has(el.id)),
       arrows: arrows.filter(a => remainingArrowIds.has(a.id)),
+      // Sai também de todos os passos gravados (ver limparDosPassos).
+      sequence: limparDosPassos(value.sequence, apagados),
     });
   };
 
@@ -5346,6 +5378,27 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
      significa o comportamento normal: só no estado atual. */
   const [inserirDesde, setInserirDesde] = useState(null);
 
+  /* APAGAR TEM DE APAGAR TAMBÉM DOS PASSOS GRAVADOS.
+
+     Cada passo da animação guarda uma fotografia do campo. Apagar um
+     elemento só do estado atual tirava-o do editor mas deixava-o em todas
+     as fotografias — e ao apresentar a animação ele reaparecia, mesmo
+     depois de guardar. Foi o que aconteceu com um item inserido num passo
+     e apagado a seguir.
+
+     Isto limpa o elemento de toda a coreografia: das fotografias, das
+     setas que ele possuía (uma seta órfã anima o vazio) e dos desenhos
+     fixos de cada passo. */
+  const limparDosPassos = (sequencia, idsApagados) => {
+    if (!sequencia || !sequencia.length || !idsApagados.size) return sequencia;
+    return sequencia.map(step => ({
+      ...step,
+      elements: (step.elements || []).filter(el => !idsApagados.has(el.id)),
+      arrows: (step.arrows || []).filter(a => !a.ownerId || !idsApagados.has(a.ownerId)),
+      staticArrows: (step.staticArrows || []).filter(a => !a.ownerId || !idsApagados.has(a.ownerId)),
+    }));
+  };
+
   const colocarElemento = (novo) => {
     const seq = value.sequence || [];
     const desde = inserirDesde;
@@ -5647,7 +5700,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? { ...el, w, h } : el)) });
   };
   const deleteSelected = () => {
-    commit({ ...value, elements: elements.filter(el => el.id !== selectedId) });
+    commit({
+      ...value,
+      elements: elements.filter(el => el.id !== selectedId),
+      sequence: limparDosPassos(value.sequence, new Set([selectedId])),
+    });
     setSelectedId(null);
   };
   const deleteSelectedArrow = () => {
@@ -5903,7 +5960,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       {/* Undo/Redo/Imprimir/Limpar tudo — por baixo do campo, à esquerda,
           para não competir por espaço com a barra de ferramentas em cima
           (que já é apertada em ecrãs pequenos). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+      {/* `minWidth: 0` nos filhos é o que lhes permite encolher: sem isso
+          um item recusa-se a passar abaixo da largura do seu conteúdo e
+          empurra a barra para fora do ecrã, mesmo com `flexWrap`. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
             type="button"
@@ -5948,9 +6008,23 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               retirados um a um — inclusive os de sessões anteriores. */}
           {((value.sequence || []).length > 0 || passosAnulados.length > 0) && (
             <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, marginLeft: 2 }}>
-              {(value.sequence || []).length} {(value.sequence || []).length === 1 ? 'passo' : 'passos'}
+              {(value.sequence || []).length} {(value.sequence || []).length === 1 ? 'animação' : 'animações'}
             </span>
           )}
+        </div>
+      </div>
+
+      {/* GESTÃO DAS ANIMAÇÕES — linha própria, alinhada à esquerda.
+
+          Estava na mesma linha do desfazer/refazer/imprimir, e o conjunto
+          ficava tão comprido que no telemóvel saía do ecrã. Separadas,
+          cada uma cabe na sua largura e lê-se o que é: em cima o que se faz
+          ao DESENHO, em baixo o que se faz à ANIMAÇÃO. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginTop: 8,
+        flexWrap: 'wrap', minWidth: 0, maxWidth: '100%',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
 
           {/* A partir de que passo entra o que se colocar a seguir.
 
@@ -5968,7 +6042,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               <Select
                 value={inserirDesde == null ? '' : String(inserirDesde)}
                 onChange={ev => setInserirDesde(ev.target.value === '' ? null : Number(ev.target.value))}
-                style={{ width: 92, height: 26, lineHeight: '24px', fontSize: 11.5, padding: '0 4px' }}
+                style={{ width: 92, minWidth: 0, height: 26, lineHeight: '24px', fontSize: 11.5, padding: '0 4px' }}
               >
                 {/* O índice é o do passo, começando em 0.
 
@@ -5976,9 +6050,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                     só DEPOIS do passo escolhido — escolher o último passo
                     não propagava para lado nenhum e o item aparecia apenas
                     no fim, que foi exatamente o que se notou. */}
+                {/* "Animar N" e não "passo N": é o nome do botão que os
+                    cria, e é assim que o treinador os conta. */}
                 <option value="">só agora</option>
                 {(value.sequence || []).map((_, i) => (
-                  <option key={i} value={i}>desde o passo {i + 1}</option>
+                  <option key={i} value={i}>desde animar {i + 1}</option>
                 ))}
               </Select>
             </label>
@@ -6024,8 +6100,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             </button>
           )}
         </div>
+        {/* À direita e afastado: é a única ação destrutiva da barra, e
+            encostada às outras era fácil acertar-lhe sem querer. */}
         {(elements.length > 0 || arrows.length > 0 || zones.length > 0) && (
-          <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>
+          <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>
             Limpar tudo
           </button>
         )}
@@ -6562,7 +6640,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
                   }}
                 />
               </div>
-              <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {importMatches.length === 0 ? (
                   <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '8px 4px' }}>Nenhum exercício encontrado.</div>
                 ) : importMatches.map(x => (
@@ -7899,7 +7977,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
               ))}
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto', paddingRight: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0 }}>
               {exerciciosVisiveis.length === 0 ? (
                 <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem exercícios nesta fase.</div>
               ) : exerciciosVisiveis.map(x => {
@@ -8161,7 +8239,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
             {jogo.periodos[trocar.periodo].onze[trocar.indice].lugar} · {jogo.periodos[trocar.periodo].numero}ª parte.
             Se escolheres alguém que já está em campo, os dois trocam de lugar.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '50vh', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '50vh', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
             <button onClick={() => aplicarTroca(null)} style={{
               textAlign: 'left', padding: '8px 10px', borderRadius: 7, cursor: 'pointer', ...body,
               background: 'transparent', border: `1px solid ${T.line}`, color: T.mutedDim, fontSize: 12.5,
@@ -8862,7 +8940,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
             {exercises.length === 0 ? (
               <div style={{ fontSize: 13, color: T.mutedDim }}>Cria exercícios primeiro no separador Exercícios.</div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
                 {exercises.map(x => {
                   const picked = f.exerciseIds.find(e => e.exId === x.id);
                   return (
@@ -11489,7 +11567,7 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
 
   const shell = (children) => (
     <div style={{
-      position: 'fixed', inset: 0, background: T.bg, zIndex: 60, overflowY: 'auto',
+      position: 'fixed', inset: 0, background: T.bg, zIndex: 60, overflowY: 'auto', overflowX: 'hidden',
       ...body, WebkitOverflowScrolling: 'touch',
     }}>
       {children}
@@ -13843,7 +13921,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
                 </div>
                 <div style={{
                   display: 'flex', flexDirection: 'column', gap: 8,
-                  maxHeight: '62vh', overflowY: 'auto', paddingRight: 4,
+                  maxHeight: '62vh', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
                 }}>
                   {visibleItems.map(renderRow)}
                 </div>
