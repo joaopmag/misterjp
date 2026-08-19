@@ -1509,7 +1509,7 @@ function App({ session }) {
         {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} lastEdits={lastEdits} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} />}
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
@@ -1558,7 +1558,7 @@ function App({ session }) {
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, lastEdits }) {
+function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits }) {
   // Cartões clicáveis: sessão e jogo abrem a respetiva janela de edição
   // aqui mesmo, sem obrigar a ir ao Planeamento ou aos Jogos.
   const [sessionModal, setSessionModal] = useState(null);
@@ -1718,7 +1718,13 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             setStandings(data);
             // Mesma regra dos Jogos: os encontros da nossa equipa acompanham
             // as jornadas da competição.
-            if (setMatches) setMatches(syncCompetitionMatches(data.competitions, matches));
+            if (setMatches) {
+              const jogos = syncCompetitionMatches(data.competitions, matches);
+              setMatches(jogos);
+              // Cada jogo nosso lançado na tabela ganha a sua convocatória,
+              // já com a moldura preenchida e os nomes por escolher.
+              if (setConvocatorias) setConvocatorias(prev => syncCompetitionConvocatorias(jogos, prev, season));
+            }
             setStandingsEdit(false);
             setStandingsOpen(true);
           }}
@@ -6935,7 +6941,31 @@ function Simulador({ players, exercises, sessions, matches }) {
   const [jogo, setJogo] = useState(null);
   const [trocar, setTrocar] = useState(null); // { periodo, indice }
 
-  const presentes = players.filter(p => presentIds.includes(p.id));
+  /* JOGADORES À EXPERIÊNCIA
+
+     Um miúdo que vem experimentar um treino tem de entrar na distribuição
+     — ocupa um lugar, precisa de minutos, conta para o número de equipas.
+     Mas NÃO pode entrar em mais nada: não é do plantel, não tem
+     assiduidade, não conta para presenças nem para estatísticas.
+
+     Por isso vivem SÓ aqui, neste estado local, e nunca são gravados. O
+     simulador é o único sítio que os conhece; fechar o ecrã leva-os. É
+     também o que torna esta funcionalidade segura: não há caminho nenhum
+     por onde possam contaminar os dados da equipa. */
+  const [convidados, setConvidados] = useState([]);
+  const [novoNome, setNovoNome] = useState('');
+  const [novaPos, setNovaPos] = useState('MC');
+
+  const adicionarConvidado = () => {
+    const nome = novoNome.trim();
+    if (!nome) return;
+    setConvidados(prev => [...prev, { id: `exp-${uid()}`, name: nome, position: novaPos, convidado: true }]);
+    setNovoNome('');
+  };
+  const removerConvidado = (id) => setConvidados(prev => prev.filter(c => c.id !== id));
+
+  const doPlantel = players.filter(p => presentIds.includes(p.id));
+  const presentes = [...doPlantel, ...convidados];
 
   const treinoHoje = (sessions || []).filter(s => s.date === todayStr() && Array.isArray(s.attendance));
   const presencasHoje = Array.from(new Set(treinoHoje.flatMap(s => s.attendance)));
@@ -7047,7 +7077,9 @@ function Simulador({ players, exercises, sessions, matches }) {
         <div style={card}>
           <h3 style={rotulo}>1 · Presentes</h3>
           <p style={nota}>
-            {presentes.length} de {players.length} · {presentes.filter(ehGuardaRedes).length} guarda-redes
+            {doPlantel.length} de {players.length} do plantel
+            {convidados.length > 0 && ` · ${convidados.length} à experiência`}
+            {' · '}{presentes.filter(ehGuardaRedes).length} guarda-redes
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
             <Btn variant="ghost" onClick={() => setPresentIds(players.map(p => p.id))}>Todos</Btn>
@@ -7059,6 +7091,45 @@ function Simulador({ players, exercises, sessions, matches }) {
             )}
           </div>
           <PlayerChipList players={players} isOn={p => presentIds.includes(p.id)} onToggle={toggle} />
+
+          {/* À experiência: entram na distribuição, não entram nos dados. */}
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}` }}>
+            <div style={{ fontSize: 12, color: T.muted, marginBottom: 3 }}>À experiência</div>
+            <div style={{ fontSize: 11, color: T.mutedDim, marginBottom: 8 }}>
+              Contam para a distribuição do treino. Não entram no plantel, nas presenças nem nas estatísticas.
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+              <Input
+                value={novoNome}
+                onChange={e => setNovoNome(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adicionarConvidado(); } }}
+                placeholder="Nome"
+                style={{ flex: 1, minWidth: 120, height: 34 }}
+              />
+              <Select value={novaPos} onChange={e => setNovaPos(e.target.value)} style={{ width: 86, height: 34 }}>
+                {POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+              </Select>
+              <Btn variant="ghost" onClick={adicionarConvidado} disabled={!novoNome.trim()}><Plus size={14} /> Juntar</Btn>
+            </div>
+            {convidados.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {convidados.map(c => (
+                  <span key={c.id} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, ...body,
+                    background: `${T.gold}1E`, border: `1px solid ${T.gold}66`, borderRadius: 20,
+                    padding: '4px 8px 4px 10px', fontSize: 12, color: T.cream,
+                  }}>
+                    <span style={{ ...mono, fontSize: 10, color: T.gold }}>{c.position}</span>
+                    {c.name}
+                    <button onClick={() => removerConvidado(c.id)} title="Tirar"
+                      style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}>
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ---------- Exercícios (treino) ou formato (jogo) ---------- */}
@@ -7237,7 +7308,7 @@ function Simulador({ players, exercises, sessions, matches }) {
                               {eq.jogadores.map(j => (
                                 <div key={j.id} style={{ fontSize: 11.5, color: T.cream, lineHeight: 1.5 }}>
                                   <span style={{ ...mono, fontSize: 9.5, color: T.mutedDim }}>{j.position || '--'}</span>{' '}
-                                  {shortPlayerName(j, players)}
+                                  {shortPlayerName(j, presentes)}
                                 </div>
                               ))}
                             </div>
@@ -7248,7 +7319,7 @@ function Simulador({ players, exercises, sessions, matches }) {
                   </div>
                   {parte.descanso.length > 0 && (
                     <div style={{ marginTop: 8, fontSize: 11.5, color: T.mutedDim }}>
-                      A descansar: {parte.descanso.map(j => shortPlayerName(j, players)).join(', ')}
+                      A descansar: {parte.descanso.map(j => shortPlayerName(j, presentes)).join(', ')}
                     </div>
                   )}
                 </div>
@@ -7271,7 +7342,7 @@ function Simulador({ players, exercises, sessions, matches }) {
                 {pi > 0 && (
                   <span style={{ fontSize: 11.5, color: T.warn }}>
                     Entram: {per.onze.filter(l => l.jogador && !jogo.periodos[pi - 1].onze.some(a => a.jogador && a.jogador.id === l.jogador.id))
-                      .map(l => shortPlayerName(l.jogador, players)).join(', ') || '—'}
+                      .map(l => shortPlayerName(l.jogador, presentes)).join(', ') || '—'}
                   </span>
                 )}
               </div>
@@ -7291,7 +7362,7 @@ function Simulador({ players, exercises, sessions, matches }) {
                   ) : per.suplentes.map(j => (
                     <div key={j.id} style={{ fontSize: 12, color: T.cream, lineHeight: 1.6 }}>
                       <span style={{ ...mono, fontSize: 10, color: T.mutedDim }}>{j.position || '--'}</span>{' '}
-                      {shortPlayerName(j, players)}
+                      {shortPlayerName(j, presentes)}
                     </div>
                   ))}
                 </div>
@@ -7351,8 +7422,11 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
           return (
             <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
               <span style={{ flex: 1, minWidth: 0, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{j.position || '--'}</span>{' '}
-                {shortPlayerName(j, players)}
+                <span style={{ ...mono, fontSize: 10.5, color: j.convidado ? T.gold : T.mutedDim }}>{j.position || '--'}</span>{' '}
+                {shortPlayerName(j, presentes)}
+                {/* Marca discreta: à experiência não é do plantel, e essa
+                    distinção tem de ser visível ao olhar para a lista. */}
+                {j.convidado && <span style={{ color: T.gold, fontSize: 10.5 }}> · exp</span>}
               </span>
               <span style={{ ...mono, fontSize: 11.5, color: m === 0 ? T.bad : T.warn, flexShrink: 0 }}>{m}′</span>
               <span style={{ width: 32, height: 4, background: T.line, borderRadius: 2, flexShrink: 0, overflow: 'hidden' }}>
@@ -8874,7 +8948,13 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
           onSave={(data) => {
             setStandings(data);
             // Cria/atualiza na lista de Jogos os encontros da nossa equipa.
-            if (setMatches) setMatches(syncCompetitionMatches(data.competitions, matches));
+            if (setMatches) {
+              const jogos = syncCompetitionMatches(data.competitions, matches);
+              setMatches(jogos);
+              // Cada jogo nosso lançado na tabela ganha a sua convocatória,
+              // já com a moldura preenchida e os nomes por escolher.
+              if (setConvocatorias) setConvocatorias(prev => syncCompetitionConvocatorias(jogos, prev, season));
+            }
             setEditing(false);
           }}
         />
@@ -9040,6 +9120,22 @@ function syncMatchIntoCompetition(match, standings, season) {
   const rounds = comp.rounds.map((r, i) => (i === ri ? { ...r, games: jogos } : r));
   const competitions = dados.competitions.map((c, i) => (i === ci ? { ...c, rounds } : c));
   return { ...dados, competitions };
+}
+
+/* Uma convocatória por cada jogo nosso lançado na tabela.
+
+   Lançar uma jornada na competição já criava os jogos; agora cria também
+   a convocatória correspondente, com adversário, data, jornada e
+   casa/fora já preenchidos e a lista de nomes por fazer. É o mesmo
+   princípio de syncMatchConvocatoria: a informação escreve-se uma vez, no
+   sítio onde é conhecida, e aparece onde faz falta. */
+function syncCompetitionConvocatorias(matches, convocatorias, season) {
+  let lista = convocatorias || [];
+  (matches || []).forEach(m => {
+    if (!m.sourceGameId) return; // só os jogos vindos da tabela
+    lista = syncMatchConvocatoria(m, lista, season);
+  });
+  return lista;
 }
 
 function syncCompetitionMatches(competitions, matches) {
@@ -13812,7 +13908,12 @@ function syncConvocatoriaMatch(conv, matches) {
 function syncMatchConvocatoria(match, convocatorias, season) {
   const lista = convocatorias || [];
   if (!match || !match.date || isFriendlyMatch(match)) return lista;
-  if (!(match.convocados || []).length) return lista;
+  /* A convocatória nasce COM O JOGO, ainda sem ninguém escolhido.
+
+     Antes só era criada depois de haver convocados, o que obrigava o
+     treinador a escrever adversário, data e jornada duas vezes: uma no
+     jogo e outra na convocatória. Agora o jogo lança a moldura e o
+     treinador só tem de acrescentar os nomes quando os souber. */
 
   let idx = lista.findIndex(c => c.id === match.sourceConvocatoriaId);
   if (idx < 0) idx = lista.findIndex(c => c.data === match.date);
@@ -13823,7 +13924,6 @@ function syncMatchConvocatoria(match, convocatorias, season) {
     competicao: competitionLabel(match.competition) || '',
     jornada: match.jornada || '',
     casaFora: match.atHome === undefined ? undefined : (match.atHome ? 'Casa' : 'Fora'),
-    convocados: [...(match.convocados || [])],
   };
   Object.keys(base).forEach(k => { if (base[k] === undefined) delete base[k]; });
 
@@ -13834,10 +13934,22 @@ function syncMatchConvocatoria(match, convocatorias, season) {
       escalao: 'Sub-19',
       treinador: '', teamManager: '',
       localJogo: '', horaJogo: '', horaConcentracao: '', localConcentracao: '', outrasInfo: '',
+      convocados: [...(match.convocados || [])],
       ...base,
     }];
   }
-  return lista.map((c, i) => (i === idx ? { ...c, ...base } : c));
+  /* Numa convocatória que já existe, os convocados só são reescritos se o
+     jogo tiver alguém e ela ainda estiver vazia. É a convocatória que
+     manda na lista de nomes — foi lá que o treinador escolheu o onze e o
+     banco, e gravar o jogo não pode desfazer essa escolha. */
+  return lista.map((c, i) => {
+    if (i !== idx) return c;
+    const next = { ...c, ...base };
+    if (!(c.convocados || []).length && (match.convocados || []).length) {
+      next.convocados = [...match.convocados];
+    }
+    return next;
+  });
 }
 
 function Convocatorias({ convocatorias, setConvocatorias, players, season, standings, matches, setMatches }) {
