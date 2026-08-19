@@ -3698,83 +3698,82 @@ function ballPanels(cx, cy, r) {
   return panels;
 }
 
-/* Bola do campo tático — esfera de painéis hexagonais com malha fina.
+/* Bola do campo tático — a clássica, branca com pentágonos pretos.
 
-   Desenho ORIGINAL: painéis hexagonais separados por sulcos escuros, sobre
-   um degradé do violeta ao azul, com uma trama fina por dentro que lhe dá
-   textura. Não copia nenhuma bola concreta — sem logótipos, sem marcas,
-   sem a geometria de painéis de qualquer modelo comercial.
+   É o padrão "Telstar": doze pentágonos pretos entre vinte hexágonos
+   brancos. É um motivo genérico do futebol, não a marca de ninguém — sem
+   logótipos nem referências a fabricantes.
 
-   Porquê estas cores e não o branco clássico: no relvado escuro da
-   prancheta uma bola branca confunde-se com um colete branco a três
-   milímetros de tamanho. O violeta não existe em mais nada no campo, por
-   isso a bola encontra-se de imediato.
+   Foi desenhado nos anos 60 precisamente para se distinguir bem numa
+   imagem pequena, o que continua a ser a razão certa para o usar aqui,
+   onde a bola aparece com três milímetros no ecrã.
 
-   Os painéis exteriores são desenhados MENORES e mais próximos do centro
-   do que os interiores, para dar a curvatura da esfera — vista de frente,
-   os painéis das bordas aparecem encurtados. */
+   Vista de frente, uma esfera encurta o que está nas margens: por isso os
+   pentágonos do anel são desenhados MENORES e mais perto do centro do que
+   a geometria plana daria. É esse detalhe que a faz parecer redonda em vez
+   de um autocolante. */
 function TriondaBall({ cx, cy, r }) {
-  // Ids únicos por posição: dois degradés com o mesmo id colidiriam.
+  const preto = '#17181A';
+  const costura = '#9A9A96';
   const gid = `bola-${Math.round(cx * 100)}-${Math.round(cy * 100)}`;
-  const sulco = '#1A1030';
 
-  const hexagono = (px, py, raio, rot) => {
+  const pentagono = (px, py, raio, rot) => {
     const pts = [];
-    for (let i = 0; i < 6; i++) {
-      const ang = ((i * 60 + rot) * Math.PI) / 180;
+    for (let i = 0; i < 5; i++) {
+      const ang = ((i * 72 - 90 + rot) * Math.PI) / 180;
       pts.push(`${px + Math.cos(ang) * raio},${py + Math.sin(ang) * raio}`);
     }
     return pts.join(' ');
   };
 
-  // Anel de painéis à volta do central, encolhidos pela curvatura.
-  const anel = [0, 60, 120, 180, 240, 300];
+  // Um pentágono de frente e cinco à volta.
+  const anel = [0, 72, 144, 216, 288];
 
   return (
     <>
       <defs>
-        <radialGradient id={gid} cx="34%" cy="28%" r="82%">
-          <stop offset="0%" stopColor="#C98AE8" />
-          <stop offset="45%" stopColor="#8A5BD8" />
-          <stop offset="100%" stopColor="#2B3A9E" />
+        {/* Iluminada de cima à esquerda, como uma bola num relvado. */}
+        <radialGradient id={gid} cx="36%" cy="30%" r="78%">
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="65%" stopColor="#F0F0EC" />
+          <stop offset="100%" stopColor="#B6B6B1" />
         </radialGradient>
-        {/* Trama fina dentro dos painéis. */}
-        <pattern id={`${gid}-m`} width={r * 0.16} height={r * 0.16} patternUnits="userSpaceOnUse">
-          <path d={`M0 0 L${r * 0.16} ${r * 0.16} M${r * 0.16} 0 L0 ${r * 0.16}`}
-            stroke="#FFFFFF" strokeWidth={r * 0.012} opacity="0.22" fill="none" />
-        </pattern>
         <clipPath id={`${gid}-c`}>
-          <circle cx={cx} cy={cy} r={r * 0.98} />
+          <circle cx={cx} cy={cy} r={r * 0.97} />
         </clipPath>
       </defs>
 
-      <circle cx={cx} cy={cy} r={r} fill={`url(#${gid})`} stroke={sulco} strokeWidth={r * 0.07} />
+      <circle cx={cx} cy={cy} r={r} fill={`url(#${gid})`} stroke={preto} strokeWidth={r * 0.07} />
 
       <g clipPath={`url(#${gid}-c)`}>
-        {/* Painel central, de frente e portanto o maior. */}
-        <polygon points={hexagono(cx, cy, r * 0.4, 0)} fill={`url(#${gid}-m)`} stroke={sulco} strokeWidth={r * 0.09} strokeLinejoin="round" />
-        {/* Anel intermédio. */}
+        <polygon points={pentagono(cx, cy, r * 0.33, 0)} fill={preto} />
         {anel.map((a, i) => {
-          const rad = (a * Math.PI) / 180;
+          const rad = ((a - 90) * Math.PI) / 180;
           return (
-            <polygon key={`m${i}`}
-              points={hexagono(cx + Math.cos(rad) * r * 0.66, cy + Math.sin(rad) * r * 0.66, r * 0.34, a + 30)}
-              fill={`url(#${gid}-m)`} stroke={sulco} strokeWidth={r * 0.085} strokeLinejoin="round" />
+            <polygon
+              key={i}
+              points={pentagono(cx + Math.cos(rad) * r * 0.76, cy + Math.sin(rad) * r * 0.76, r * 0.27, a + 180)}
+              fill={preto}
+            />
           );
         })}
-        {/* Bordo: painéis mais pequenos e achatados contra o horizonte. */}
+        {/* Costuras: dos vértices do pentágono central para os de fora.
+            Ténues, para não fazerem ruído a este tamanho. */}
         {anel.map((a, i) => {
-          const rad = ((a + 30) * Math.PI) / 180;
+          const rad = ((a - 90) * Math.PI) / 180;
           return (
-            <polygon key={`b${i}`}
-              points={hexagono(cx + Math.cos(rad) * r * 0.95, cy + Math.sin(rad) * r * 0.95, r * 0.26, a)}
-              fill={`url(#${gid}-m)`} stroke={sulco} strokeWidth={r * 0.075} strokeLinejoin="round" opacity="0.9" />
+            <line
+              key={`c${i}`}
+              x1={cx + Math.cos(rad) * r * 0.33} y1={cy + Math.sin(rad) * r * 0.33}
+              x2={cx + Math.cos(rad) * r * 0.52} y2={cy + Math.sin(rad) * r * 0.52}
+              stroke={costura} strokeWidth={r * 0.05} strokeLinecap="round" opacity="0.75"
+            />
           );
         })}
       </g>
 
       {/* Brilho no canto superior esquerdo: dá-lhe volume de esfera. */}
-      <ellipse cx={cx - r * 0.32} cy={cy - r * 0.36} rx={r * 0.28} ry={r * 0.18} fill="#FFFFFF" opacity="0.22" />
+      <ellipse cx={cx - r * 0.34} cy={cy - r * 0.38} rx={r * 0.24} ry={r * 0.15} fill="#FFFFFF" opacity="0.55" />
     </>
   );
 }
@@ -3860,32 +3859,40 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 
    O cálculo é feito aqui a partir do próprio enquadramento, para não
    ficar dessincronizado se um dia o viewBox mudar. */
-/* Altura máxima do campo, em percentagem da altura do ecrã.
+/* QUANTO PODE O CAMPO CRESCER
 
-   Sobe até onde ainda deixa caber, no mesmo ecrã e sem scroll, a barra de
-   ferramentas por cima e a faixa do elemento selecionado por baixo. Passar
-   daqui obriga a rolar a meio de um desenho, que é o pior momento para
-   perder o campo de vista. */
-/* Altura máxima do campo, em percentagem da altura do ecrã.
+   A versão anterior usava uma percentagem da altura do ecrã (50vh). O
+   problema é que o que está à volta do campo — barra de ferramentas,
+   painel de edição, botões — ocupa uma altura mais ou menos FIXA em
+   pixéis, não uma percentagem. Resultado: num portátil pequeno 50vh já
+   era demais, e num monitor grande ficava muito aquém do espaço
+   disponível, deixando o campo pequeno com meia janela vazia à volta.
 
-   O valor é um compromisso, e vale a pena dizer entre o quê: o campo, a
-   barra de ferramentas por cima e o painel de edição por baixo têm de
-   caber TODOS no mesmo ecrã. Cada ponto que o campo cresce é um ponto que
-   o painel de texto perde — e sem ele não se consegue escrever.
+   Agora a conta é a certa: ao espaço da janela tira-se o que a moldura
+   ocupa, e o que sobra é do campo. Num monitor de 1500 px o campo fica
+   com ~860 px de altura; num portátil de 800 px encolhe sozinho.
 
-   50vh é o valor em que os três cabem num portátil comum (≈800 px de
-   altura). O cálculo está no teste "campo + barra + painel cabem num
-   portátil de 800px": se alguém subir este número, o teste falha e diz
-   quantos pixéis faltam. Num monitor grande sobra espaço, mas aumentar
-   aqui quebraria os ecrãs pequenos, onde o painel voltaria a ficar
-   cortado — e sem ele não se consegue escrever. */
-const PITCH_MAX_VH = 50;
+   O mínimo de 340 px existe para ecrãs baixos: abaixo disso o campo
+   deixaria de ser utilizável, e é preferível rolar um pouco a página do
+   que desenhar às cegas. */
+const PITCH_CHROME_PX = 500;   // barra, etiquetas, painel de edição e margens
+const PITCH_MIN_PX = 340;      // abaixo disto o campo deixa de dar para trabalhar
+const PITCH_RATIO = PITCH_BOX.w / PITCH_BOX.h;
+
+/* A LARGURA é que é limitada, nunca a altura.
+
+   Com a proporção fixa, limitar a largura limita a altura na mesma medida
+   e a forma nunca se altera. Limitar a altura, pelo contrário, deixa o
+   elemento com a largura toda e uma proporção diferente da declarada — o
+   desenho estica e os jogadores ficam ovais. Já aconteceu; daí o aviso. */
+const PITCH_ALTURA_DISPONIVEL = `max(${PITCH_MIN_PX}px, 92vh - ${PITCH_CHROME_PX}px)`;
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
-  maxWidth: `${(PITCH_MAX_VH * (PITCH_BOX.w / PITCH_BOX.h)).toFixed(1)}vh`,
+  maxWidth: `calc(${PITCH_ALTURA_DISPONIVEL} * ${PITCH_RATIO.toFixed(4)})`,
   margin: '0 auto',
 };
+
 
 /* Bancos de suplentes e áreas técnicas.
 
