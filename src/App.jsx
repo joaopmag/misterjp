@@ -1543,7 +1543,7 @@ function App({ session }) {
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} />}
-          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} matches={matches} />}
+          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
@@ -7003,7 +7003,35 @@ function distribuirAmigavel(presentes, opcoes = {}) {
 
      `janelas = 1` mantém o comportamento clássico (trocas só ao
      intervalo). */
-  const janelas = Math.max(1, Math.min(4, opcoes.janelas || 1));
+  /* `janelas: 'auto'` (o valor por omissão) calcula o mínimo necessário
+     para NINGUÉM ficar a zero minutos.
+
+     A conta tem de separar guarda-redes de jogadores de campo, porque os
+     lugares NÃO são intermutáveis: um guarda-redes nunca ocupa um lugar de
+     linha (ver escolherParaLugar). Contar 11 lugares para toda a gente
+     dava contas erradas — com 22 presentes e só 2 guarda-redes, os 20 de
+     campo não cabem nos 20 lugares... mas com 3 guarda-redes já sobra um
+     de campo sem sítio.
+
+     Por isso calcula-se o número de janelas que cada grupo precisa e fica
+     o maior dos dois:
+       · campo:         partes × janelas × 10 >= jogadores de campo
+       · guarda-redes:  partes × janelas ×  1 >= guarda-redes
+
+     Um número escolhido à mão é respeitado tal e qual — o treinador pode
+     querer menos paragens e aceitar que alguém não entre. */
+  const formatoBase = FORMATOS_JOGO.find(f => f.id === formatoId) || FORMATOS_JOGO[0];
+  const lugaresBase = FORMACOES[formacaoId] || FORMACOES['4-3-3'];
+  const lugaresGR = lugaresBase.filter(l => l === 'GR').length || 1;
+  const lugaresCampo = lugaresBase.length - lugaresGR;
+  const nGR = presentes.filter(ehGuardaRedes).length;
+  const nCampo = presentes.length - nGR;
+  const janelas = opcoes.janelas && opcoes.janelas !== 'auto'
+    ? Math.max(1, Math.min(4, opcoes.janelas))
+    : Math.max(1, Math.min(4, Math.max(
+        Math.ceil(nCampo / (formatoBase.partes * lugaresCampo)),
+        Math.ceil(nGR / (formatoBase.partes * lugaresGR)),
+      )));
   const formato = FORMATOS_JOGO.find(f => f.id === formatoId) || FORMATOS_JOGO[0];
   const lugares = FORMACOES[formacaoId] || FORMACOES['4-3-3'];
 
@@ -7076,40 +7104,45 @@ function distribuirAmigavel(presentes, opcoes = {}) {
    Cada linha destas segue a ordem dos lugares da formação (ver FORMACOES),
    por isso a coordenada tem de bater certo com o lugar que ocupa nessa
    lista — trocar um sem trocar o outro põe o jogador errado no sítio. */
+/* Onde cada lugar fica desenhado no campo, em fração da largura/altura.
+
+   A vertical segue a convenção do treinador: o lado DIREITO da equipa (DD,
+   MD, ED) fica em CIMA e o esquerdo em baixo. É como ele lê a prancheta,
+   e é o que interessa — quem usa isto é quem escreve o onze. */
 const LAYOUT_FORMACAO = {
   //         GR            DD            DC            DC            DE
   '4-3-3': [
-    [0.07, 0.50], [0.24, 0.84], [0.22, 0.62], [0.22, 0.38], [0.24, 0.16],
+    [0.07, 0.5], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
     //   MD            MC            MOC
-    [0.45, 0.72], [0.45, 0.50], [0.45, 0.28],
+    [0.45, 0.28], [0.45, 0.5], [0.45, 0.72],
     //   ED            PL            EE
-    [0.72, 0.82], [0.76, 0.50], [0.72, 0.18],
+    [0.72, 0.18], [0.76, 0.5], [0.72, 0.82],
   ],
   //         GR            DD            DC            DC            DE
   '4-4-2': [
-    [0.07, 0.50], [0.24, 0.84], [0.22, 0.62], [0.22, 0.38], [0.24, 0.16],
+    [0.07, 0.5], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
     //   ED            MC            MC            EE
-    [0.48, 0.86], [0.45, 0.60], [0.45, 0.40], [0.48, 0.14],
+    [0.48, 0.14], [0.45, 0.4], [0.45, 0.6], [0.48, 0.86],
     //   PL            PL
-    [0.75, 0.62], [0.75, 0.38],
+    [0.75, 0.38], [0.75, 0.62],
   ],
   //           GR            DD            DC            DC            DE
   '4-2-3-1': [
-    [0.07, 0.50], [0.24, 0.84], [0.22, 0.62], [0.22, 0.38], [0.24, 0.16],
+    [0.07, 0.5], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
     //   MD            MC
-    [0.40, 0.62], [0.40, 0.38],
+    [0.40, 0.38], [0.40, 0.62],
     //   ED            MOC           EE
-    [0.62, 0.82], [0.60, 0.50], [0.62, 0.18],
+    [0.62, 0.18], [0.60, 0.5], [0.62, 0.82],
     //   PL
-    [0.80, 0.50],
+    [0.80, 0.5],
   ],
   //         GR            DC            DC            DC
   '3-4-3': [
-    [0.07, 0.50], [0.22, 0.72], [0.20, 0.50], [0.22, 0.28],
+    [0.07, 0.5], [0.22, 0.28], [0.20, 0.5], [0.22, 0.72],
     //   ED            MC            MC            EE
-    [0.45, 0.88], [0.44, 0.62], [0.44, 0.38], [0.45, 0.12],
+    [0.45, 0.12], [0.44, 0.38], [0.44, 0.62], [0.45, 0.88],
     //   ED            PL            EE
-    [0.72, 0.82], [0.76, 0.50], [0.72, 0.18],
+    [0.72, 0.18], [0.76, 0.5], [0.72, 0.82],
   ],
 };
 
@@ -7159,7 +7192,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar }) {
   );
 }
 
-function Simulador({ players, exercises, sessions, matches }) {
+function Simulador({ players, exercises, sessions, setSessions, matches }) {
   const isNarrow = useIsMobile(760);
   const [modo, setModo] = useState('treino'); // 'treino' | 'amigavel'
   const [presentIds, setPresentIds] = useState([]);
@@ -7168,11 +7201,79 @@ function Simulador({ players, exercises, sessions, matches }) {
   const [substituirAMeio, setSubstituirAMeio] = useState(true);
   const [formato, setFormato] = useState('2x45');
   const [formacao, setFormacao] = useState('4-3-3');
-  const [janelas, setJanelas] = useState(3);
+  // 'auto' calcula o mínimo de paragens para ninguém ficar sem jogar.
+  const [janelas, setJanelas] = useState('auto');
   const [dia, setDia] = useState(todayStr());
-  const [plano, setPlano] = useState(null);
+  const [planoBase, setPlanoBase] = useState(null);
   const [jogo, setJogo] = useState(null);
   const [trocar, setTrocar] = useState(null); // { periodo, indice }
+
+  /* EQUIPAS FIXADAS À MÃO
+
+     A distribuição é uma sugestão. Quando o treinador arruma uma equipa
+     como quer, essa escolha passa a mandar: fica guardada aqui por
+     exercício e por equipa, e o "Baralhar de novo" respeita-a — baralha
+     tudo o resto à volta.
+
+     A chave inclui a cópia (zona do campo) e o turno, porque o mesmo
+     exercício pode decorrer em três sítios ao mesmo tempo e cada um tem a
+     sua equipa. */
+  const [equipasFixas, setEquipasFixas] = useState({});
+  const [editarEquipa, setEditarEquipa] = useState(null);
+  const chaveEquipa = (bi, pi, xi, k) => `${bi}|${pi}|${xi}|${k}`;
+
+  const fixarEquipa = (chave, ids) => setEquipasFixas(prev => ({ ...prev, [chave]: ids }));
+  const soltarEquipa = (chave) => setEquipasFixas(prev => {
+    const next = { ...prev };
+    delete next[chave];
+    return next;
+  });
+
+  /* Aplica as equipas fixadas por cima do plano gerado.
+
+     Feito DEPOIS da distribuição e não durante: assim o algoritmo continua
+     simples (não tem de conhecer exceções) e as equipas fixadas nunca são
+     desfeitas por ele. Quem estava fixado sai de onde quer que o
+     algoritmo o tenha posto, para não aparecer em dois sítios ao mesmo
+     tempo. */
+  const aplicarFixas = (resultado, fixas = equipasFixas) => {
+    if (!resultado || !Object.keys(fixas).length) return resultado;
+    const porId = new Map(presentes.map(x => [x.id, x]));
+    const plano = resultado.plano.map((bloco, bi) => ({
+      ...bloco,
+      partes: bloco.partes.map((parte, pi) => {
+        const exercicios = parte.exercicios.map((ex, xi) => ({
+          ...ex,
+          equipas: ex.equipas.map((eq, k) => {
+            const ids = fixas[chaveEquipa(bi, pi, xi, k)];
+            if (!ids) return eq;
+            return { ...eq, fixa: true, jogadores: ids.map(id => porId.get(id)).filter(Boolean) };
+          }),
+        }));
+        // Quem foi fixado numa equipa sai de todas as outras deste momento.
+        const fixados = new Set(exercicios.flatMap((ex, xi) => ex.equipas.flatMap((eq, k) => (
+          fixas[chaveEquipa(bi, pi, xi, k)] ? eq.jogadores.map(j => j.id) : []
+        ))));
+        const limpos = exercicios.map((ex, xi) => ({
+          ...ex,
+          equipas: ex.equipas.map((eq, k) => (
+            fixas[chaveEquipa(bi, pi, xi, k)]
+              ? eq
+              : { ...eq, jogadores: eq.jogadores.filter(j => !fixados.has(j.id)) }
+          )),
+        }));
+        const emCampo = new Set(limpos.flatMap(ex => ex.equipas.flatMap(eq => eq.jogadores.map(j => j.id))));
+        return { ...parte, exercicios: limpos, descanso: presentes.filter(x => !emCampo.has(x.id)) };
+      }),
+    }));
+
+    // Os minutos são recontados sobre o plano já com as equipas fixadas.
+    const minutos = new Map(presentes.map(x => [x.id, 0]));
+    plano.forEach(bloco => bloco.partes.forEach(parte => parte.exercicios.forEach(ex => (
+      ex.equipas.forEach(eq => eq.jogadores.forEach(j => minutos.set(j.id, (minutos.get(j.id) || 0) + parte.minutos)))
+    ))));
+    return { plano, minutosPorJogador: minutos };
+  };
 
   /* JOGADORES À EXPERIÊNCIA
 
@@ -7228,12 +7329,45 @@ function Simulador({ players, exercises, sessions, matches }) {
       .filter(e => e.exercise);
     if (!presentes.length || !lista.length) return;
     setJogo(null);
-    setPlano(distribuirTreino(lista, presentes, { substituirAMeio }));
+    /* Guarda-se a distribuição CRUA. O plano que se vê é ela com as
+       equipas fixadas por cima — assim, fixar ou soltar uma equipa
+       reflete-se logo, sem ter de baralhar tudo outra vez. */
+    setPlanoBase(distribuirTreino(lista, presentes, { substituirAMeio }));
+  };
+
+  /* Escreve as equipas na sessão de treino do dia.
+
+     Guarda-se em texto já resolvido (nomes, não ids): a ficha impressa
+     precisa de nomes, e um jogador apagado do plantel não pode deixar a
+     ficha do treino com um lugar vazio e inexplicável. É um registo do que
+     foi feito naquele dia, não uma ligação viva ao plantel. */
+  const [guardado, setGuardado] = useState(false);
+  const guardarNoTreino = () => {
+    if (!plano || !setSessions) return;
+    const equipas = [];
+    plano.plano.forEach(bloco => bloco.partes.forEach((parte, pi) => parte.exercicios.forEach(ex => {
+      ex.equipas.forEach(eq => {
+        if (!eq.jogadores.length) return;
+        equipas.push({
+          exercicio: ex.exercise.name,
+          zona: ex.totalCopias > 1 ? ex.copia : null,
+          turno: bloco.partes.length > 1 ? pi + 1 : null,
+          minutos: parte.minutos,
+          equipa: teamInfo(eq.team).label,
+          guardaRedes: !!eq.isKeeper,
+          jogadores: eq.jogadores.map(j => j.name),
+        });
+      });
+    })));
+    const registo = { geradoEm: new Date().toISOString(), equipas };
+    setSessions(prev => prev.map(x => (x.date === dia ? { ...x, equipasSimulador: registo } : x)));
+    setGuardado(true);
+    setTimeout(() => setGuardado(false), 2500);
   };
 
   const gerarJogo = () => {
     if (!presentes.length) return;
-    setPlano(null);
+    setPlanoBase(null);
     setJogo(distribuirAmigavel(presentes, { formato, formacao, janelas }));
   };
 
@@ -7278,6 +7412,11 @@ function Simulador({ players, exercises, sessions, matches }) {
     ? exerciciosDoDia
     : exerciciosDoDia.filter(x => x.phase === filtroFase);
   const fases = ['Todas', ...Array.from(new Set(exerciciosDoDia.map(x => x.phase).filter(Boolean)))];
+
+  /* O plano que se vê = distribuição crua + equipas fixadas por cima.
+     Derivado e não guardado em estado: fixar ou soltar uma equipa
+     recalcula-o de imediato, sem ter de voltar a baralhar. */
+  const plano = aplicarFixas(planoBase);
   const totalMinutos = escolhidos.reduce((a, e) => a + e.minutos, 0);
 
   const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
@@ -7306,7 +7445,7 @@ function Simulador({ players, exercises, sessions, matches }) {
           está no topo porque muda tudo o que vem a seguir. */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {[{ id: 'treino', label: 'Treino' }, { id: 'amigavel', label: 'Jogo amigável' }].map(m => (
-          <button key={m.id} onClick={() => { setModo(m.id); setPlano(null); setJogo(null); }} style={{
+          <button key={m.id} onClick={() => { setModo(m.id); setPlanoBase(null); setJogo(null); }} style={{
             padding: '8px 16px', borderRadius: 8, fontSize: 13, cursor: 'pointer', ...body,
             background: modo === m.id ? '#B5393F' : 'transparent',
             color: modo === m.id ? TEXT_ON_ACCENT : T.muted,
@@ -7380,7 +7519,7 @@ function Simulador({ players, exercises, sessions, matches }) {
           <div style={card}>
             <h3 style={rotulo}>2 · Exercícios</h3>
             <Field label="Dia do treino">
-              <Input type="date" value={dia} onChange={e => { setDia(e.target.value); setEscolhidos([]); setPlano(null); }} />
+              <Input type="date" value={dia} onChange={e => { setDia(e.target.value); setEscolhidos([]); setPlanoBase(null); }} />
             </Field>
             <p style={{ ...nota, marginTop: 10 }}>
               {exerciciosDoDia.length === 0
@@ -7543,13 +7682,24 @@ function Simulador({ players, exercises, sessions, matches }) {
                   jogar. Com uma só, um plantel grande deixa sempre alguém
                   de fora — não há lugares que cheguem. */}
               <Field label="Trocas por parte">
-                <Select value={String(janelas)} onChange={e => setJanelas(Number(e.target.value))}>
+                <Select
+                  value={String(janelas)}
+                  onChange={e => setJanelas(e.target.value === 'auto' ? 'auto' : Number(e.target.value))}
+                >
+                  <option value="auto">As necessárias para todos jogarem</option>
                   <option value="1">Só ao intervalo</option>
                   <option value="2">1 troca a meio</option>
                   <option value="3">2 trocas por parte</option>
                   <option value="4">3 trocas por parte</option>
                 </Select>
               </Field>
+              {janelas === 'auto' && (
+                <div style={{ ...FIELD_FULL, fontSize: 11.5, color: T.mutedDim }}>
+                  Com {presentes.length} presentes e {(FORMATOS_JOGO.find(f => f.id === formato) || {}).partes} partes,
+                  são precisas {Math.max(1, Math.min(4, Math.ceil(presentes.length / (((FORMATOS_JOGO.find(f => f.id === formato) || {}).partes || 2) * 11))))} paragens
+                  por parte para toda a gente entrar.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -7593,12 +7743,20 @@ function Simulador({ players, exercises, sessions, matches }) {
                         </div>
                         {ex.equipas.map((eq, k) => {
                           const info = teamInfo(eq.team);
+                          const chave = chaveEquipa(bi, pi, xi, k);
+                          const fixa = !!equipasFixas[chave];
                           return (
                             <div key={k} style={{ marginBottom: 6 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: info.fill, flexShrink: 0 }} />
                                 <span style={{ fontSize: 10.5, color: T.muted }}>{info.label}{eq.isKeeper ? ' · GR' : ''}</span>
+                                {fixa && <span style={{ ...mono, fontSize: 9, color: T.gold }} title="Equipa escolhida à mão — o baralhar não lhe toca">fixa</span>}
                                 <span style={{ ...mono, fontSize: 10, color: T.mutedDim, marginLeft: 'auto' }}>{eq.jogadores.length}/{eq.vagas}</span>
+                                <button
+                                  onClick={() => setEditarEquipa({ chave, titulo: `${ex.exercise.name} · ${info.label}${eq.isKeeper ? ' · GR' : ''}`, vagas: eq.vagas, isKeeper: eq.isKeeper, atuais: eq.jogadores.map(j => j.id) })}
+                                  title="Escolher os jogadores desta equipa"
+                                  style={{ background: 'none', border: 'none', color: fixa ? T.gold : T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}
+                                ><Pencil size={11} /></button>
                               </div>
                               {eq.jogadores.map(j => (
                                 <div key={j.id} style={{ fontSize: 11.5, color: T.cream, lineHeight: 1.5 }}>
@@ -7678,7 +7836,45 @@ function Simulador({ players, exercises, sessions, matches }) {
         >
           <RotateCw size={15} /> {resultado ? 'Baralhar de novo' : 'Distribuir'}
         </Btn>
+        {/* Guardar leva as equipas para a sessão de treino desse dia, e é
+            de lá que saem para a ficha impressa — o simulador não guarda
+            nada por si, para não haver duas versões da verdade. */}
+        {modo === 'treino' && plano && setSessions && sessoesDoDia.length > 0 && (
+          <Btn variant="ghost" onClick={guardarNoTreino}>
+            <Check size={15} /> {guardado ? 'Guardado no treino' : 'Guardar equipas no treino'}
+          </Btn>
+        )}
       </div>
+
+      {/* Escolher à mão os jogadores de uma equipa de um exercício. */}
+      {editarEquipa && (
+        <Modal title="Equipa do exercício" onClose={() => setEditarEquipa(null)}>
+          <p style={{ color: T.cream, fontSize: 13, margin: '0 0 4px' }}>{editarEquipa.titulo}</p>
+          <p style={{ color: T.mutedDim, fontSize: 12, margin: '0 0 12px' }}>
+            {editarEquipa.vagas} {editarEquipa.vagas === 1 ? 'lugar' : 'lugares'}.
+            Uma equipa escolhida à mão fica fixa: o "Baralhar de novo" muda tudo à volta e não lhe toca.
+          </p>
+          <PlayerChipList
+            players={editarEquipa.isKeeper ? presentes.filter(ehGuardaRedes) : presentes.filter(x => !ehGuardaRedes(x))}
+            isOn={pl => editarEquipa.atuais.includes(pl.id)}
+            onToggle={pl => setEditarEquipa(prev => ({
+              ...prev,
+              atuais: prev.atuais.includes(pl.id)
+                ? prev.atuais.filter(id => id !== pl.id)
+                : [...prev.atuais, pl.id],
+            }))}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+            <Btn variant="ghost" onClick={() => { soltarEquipa(editarEquipa.chave); setEditarEquipa(null); }}>
+              Deixar o simulador decidir
+            </Btn>
+            <Btn onClick={() => {
+              fixarEquipa(editarEquipa.chave, editarEquipa.atuais);
+              setEditarEquipa(null);
+            }}><Check size={15} /> Fixar esta equipa</Btn>
+          </div>
+        </Modal>
+      )}
 
       {/* Escolher quem entra num lugar. */}
       {trocar && jogo && (
@@ -7974,6 +8170,29 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           {(printSession.exerciseIds || []).map((e, i) => (
             <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
           ))}
+          {/* Equipas vindas do Simulador, se lá tiverem sido guardadas.
+              É o que o treinador leva para o campo: quem joga com quem, em
+              que exercício e por quanto tempo. */}
+          {printSession.equipasSimulador && (printSession.equipasSimulador.equipas || []).length > 0 && (
+            <>
+              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipas</h3>
+              <div style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6 }}>
+                {printSession.equipasSimulador.equipas.map((g, i) => (
+                  <div key={i} style={{ marginBottom: 5 }}>
+                    <strong>
+                      {g.exercicio}
+                      {g.zona ? ` · zona ${g.zona}` : ''}
+                      {g.turno ? ` · turno ${g.turno}` : ''}
+                      {' · '}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}
+                      {g.minutos ? ` · ${g.minutos} min` : ''}:
+                    </strong>{' '}
+                    {g.jogadores.join(', ')}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
           <p style={{ fontSize: 13 }}>
             {(printSession.attendance || [])
