@@ -6830,55 +6830,127 @@ function escolherParaLugar(lugar, fila, usados, minutos) {
 function distribuirAmigavel(presentes, opcoes = {}) {
   const formatoId = opcoes.formato || '2x45';
   const formacaoId = opcoes.formacao || '4-3-3';
+  /* JANELAS DE SUBSTITUIÇÃO
+
+     Uma parte de 45 minutos com 11 lugares dá 11 lugares — e num plantel
+     de 25 há sempre quem fique a zero, por muito bem ordenada que esteja
+     a fila. Não é um problema de algoritmo, é de aritmética: não há
+     lugares que cheguem.
+
+     A solução é a que se usa num amigável a sério: mais paragens. Cada
+     parte divide-se em janelas iguais e as trocas fazem-se no fim de cada
+     uma. Com 3 janelas numa parte de 45, são 15 minutos cada e o número de
+     lugares triplica.
+
+     `janelas = 1` mantém o comportamento clássico (trocas só ao
+     intervalo). */
+  const janelas = Math.max(1, Math.min(4, opcoes.janelas || 1));
   const formato = FORMATOS_JOGO.find(f => f.id === formatoId) || FORMATOS_JOGO[0];
   const lugares = FORMACOES[formacaoId] || FORMACOES['4-3-3'];
 
   const minutos = new Map(presentes.map(p => [p.id, 0]));
   const periodos = [];
+  const minutosJanela = Math.round(formato.minutos / janelas);
 
-  for (let i = 0; i < formato.partes; i++) {
-    const usados = new Set();
-    const fila = filaPorMinutos(presentes, minutos);
-    const onze = lugares.map(lugar => {
-      const escolhido = escolherParaLugar(lugar, fila, usados, minutos);
-      if (escolhido) usados.add(escolhido.id);
-      return { lugar, jogador: escolhido || null };
-    });
-    onze.forEach(l => { if (l.jogador) minutos.set(l.jogador.id, (minutos.get(l.jogador.id) || 0) + formato.minutos); });
-    periodos.push({
-      numero: i + 1,
-      minutos: formato.minutos,
-      onze,
-      suplentes: presentes.filter(p => !usados.has(p.id)),
-    });
+  for (let parte = 0; parte < formato.partes; parte++) {
+    for (let jan = 0; jan < janelas; jan++) {
+      const usados = new Set();
+      const fila = filaPorMinutos(presentes, minutos);
+      const onze = lugares.map(lugar => {
+        const escolhido = escolherParaLugar(lugar, fila, usados, minutos);
+        if (escolhido) usados.add(escolhido.id);
+        return { lugar, jogador: escolhido || null };
+      });
+      onze.forEach(l => { if (l.jogador) minutos.set(l.jogador.id, (minutos.get(l.jogador.id) || 0) + minutosJanela); });
+      periodos.push({
+        numero: parte + 1,
+        janela: jan + 1,
+        totalJanelas: janelas,
+        minutos: minutosJanela,
+        onze,
+        suplentes: presentes.filter(p => !usados.has(p.id)),
+      });
+    }
   }
 
-  return { formato, formacao: formacaoId, periodos, minutosPorJogador: minutos };
+  /* Rede final: se mesmo assim alguém ficou a zero, entra à força.
+
+     Acontece com posições muito específicas — um guarda-redes a mais, por
+     exemplo, quando só há um lugar de baliza e poucas janelas. Nesse caso
+     troca-se pelo jogador do mesmo lugar com MAIS minutos, na janela em
+     que ele mais tem. É preferível um desequilíbrio pequeno entre dois do
+     que alguém vir ao jogo e não jogar. */
+  const semMinutos = presentes.filter(p => (minutos.get(p.id) || 0) === 0);
+  semMinutos.forEach(p => {
+    let melhor = null;
+    periodos.forEach((per, pi) => {
+      per.onze.forEach((l, li) => {
+        if (!l.jogador) { melhor = melhor || { pi, li, ganho: Infinity }; return; }
+        const compativel = ehGuardaRedes(p) === ehGuardaRedes(l.jogador);
+        if (!compativel) return;
+        const m = minutos.get(l.jogador.id) || 0;
+        if (m <= minutosJanela) return; // não se tira a quem também tem pouco
+        if (!melhor || m > melhor.ganho) melhor = { pi, li, ganho: m };
+      });
+    });
+    if (!melhor) return;
+    const per = periodos[melhor.pi];
+    const sai = per.onze[melhor.li].jogador;
+    per.onze[melhor.li] = { ...per.onze[melhor.li], jogador: p };
+    if (sai) minutos.set(sai.id, (minutos.get(sai.id) || 0) - per.minutos);
+    minutos.set(p.id, (minutos.get(p.id) || 0) + per.minutos);
+    const emCampo = new Set(per.onze.map(l => l.jogador && l.jogador.id).filter(Boolean));
+    per.suplentes = presentes.filter(x => !emCampo.has(x.id));
+  });
+
+  return { formato, formacao: formacaoId, janelas, periodos, minutosPorJogador: minutos };
 }
 
 /* Posições no campo, em fração da largura/altura, por formação.
    O campo é desenhado da esquerda (nossa baliza) para a direita. */
+/* LADOS DO CAMPO
+
+   Com o ataque para a direita, quem vê o campo de cima tem a ala DIREITA
+   em baixo e a ESQUERDA em cima. Estava ao contrário: o DD e o ED
+   apareciam do lado do DE e do EE.
+
+   Cada linha destas segue a ordem dos lugares da formação (ver FORMACOES),
+   por isso a coordenada tem de bater certo com o lugar que ocupa nessa
+   lista — trocar um sem trocar o outro põe o jogador errado no sítio. */
 const LAYOUT_FORMACAO = {
+  //         GR            DD            DC            DC            DE
   '4-3-3': [
-    [0.07, 0.50], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
-    [0.45, 0.28], [0.45, 0.50], [0.45, 0.72],
-    [0.72, 0.18], [0.76, 0.50], [0.72, 0.82],
+    [0.07, 0.50], [0.24, 0.84], [0.22, 0.62], [0.22, 0.38], [0.24, 0.16],
+    //   MD            MC            MOC
+    [0.45, 0.72], [0.45, 0.50], [0.45, 0.28],
+    //   ED            PL            EE
+    [0.72, 0.82], [0.76, 0.50], [0.72, 0.18],
   ],
+  //         GR            DD            DC            DC            DE
   '4-4-2': [
-    [0.07, 0.50], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
-    [0.48, 0.14], [0.45, 0.40], [0.45, 0.60], [0.48, 0.86],
-    [0.75, 0.38], [0.75, 0.62],
+    [0.07, 0.50], [0.24, 0.84], [0.22, 0.62], [0.22, 0.38], [0.24, 0.16],
+    //   ED            MC            MC            EE
+    [0.48, 0.86], [0.45, 0.60], [0.45, 0.40], [0.48, 0.14],
+    //   PL            PL
+    [0.75, 0.62], [0.75, 0.38],
   ],
+  //           GR            DD            DC            DC            DE
   '4-2-3-1': [
-    [0.07, 0.50], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
-    [0.40, 0.38], [0.40, 0.62],
-    [0.62, 0.18], [0.60, 0.50], [0.62, 0.82],
+    [0.07, 0.50], [0.24, 0.84], [0.22, 0.62], [0.22, 0.38], [0.24, 0.16],
+    //   MD            MC
+    [0.40, 0.62], [0.40, 0.38],
+    //   ED            MOC           EE
+    [0.62, 0.82], [0.60, 0.50], [0.62, 0.18],
+    //   PL
     [0.80, 0.50],
   ],
+  //         GR            DC            DC            DC
   '3-4-3': [
-    [0.07, 0.50], [0.22, 0.28], [0.20, 0.50], [0.22, 0.72],
-    [0.45, 0.12], [0.44, 0.38], [0.44, 0.62], [0.45, 0.88],
-    [0.72, 0.20], [0.76, 0.50], [0.72, 0.80],
+    [0.07, 0.50], [0.22, 0.72], [0.20, 0.50], [0.22, 0.28],
+    //   ED            MC            MC            EE
+    [0.45, 0.88], [0.44, 0.62], [0.44, 0.38], [0.45, 0.12],
+    //   ED            PL            EE
+    [0.72, 0.82], [0.76, 0.50], [0.72, 0.18],
   ],
 };
 
@@ -6937,6 +7009,8 @@ function Simulador({ players, exercises, sessions, matches }) {
   const [substituirAMeio, setSubstituirAMeio] = useState(true);
   const [formato, setFormato] = useState('2x45');
   const [formacao, setFormacao] = useState('4-3-3');
+  const [janelas, setJanelas] = useState(3);
+  const [dia, setDia] = useState(todayStr());
   const [plano, setPlano] = useState(null);
   const [jogo, setJogo] = useState(null);
   const [trocar, setTrocar] = useState(null); // { periodo, indice }
@@ -7001,7 +7075,7 @@ function Simulador({ players, exercises, sessions, matches }) {
   const gerarJogo = () => {
     if (!presentes.length) return;
     setPlano(null);
-    setJogo(distribuirAmigavel(presentes, { formato, formacao }));
+    setJogo(distribuirAmigavel(presentes, { formato, formacao, janelas }));
   };
 
   /* Trocar um jogador de um lugar do onze. A recomendação é um ponto de
@@ -7032,8 +7106,19 @@ function Simulador({ players, exercises, sessions, matches }) {
     setTrocar(null);
   };
 
-  const fases = ['Todas', ...PHASES.filter(f => f !== 'Descanso')];
-  const exerciciosVisiveis = filtroFase === 'Todas' ? exercises : exercises.filter(x => x.phase === filtroFase);
+  /* Só os exercícios que estão MESMO no treino desse dia.
+
+     A lista completa da biblioteca não serve aqui: o simulador distribui
+     um treino concreto, e escolher de novo os exercícios era repetir o
+     trabalho já feito no Planeamento — com o risco de simular uma coisa e
+     treinar outra. */
+  const sessoesDoDia = (sessions || []).filter(x => x.date === dia);
+  const idsDoDia = Array.from(new Set(sessoesDoDia.flatMap(x => x.exerciseIds || [])));
+  const exerciciosDoDia = idsDoDia.map(id => exercises.find(x => x.id === id)).filter(Boolean);
+  const exerciciosVisiveis = filtroFase === 'Todas'
+    ? exerciciosDoDia
+    : exerciciosDoDia.filter(x => x.phase === filtroFase);
+  const fases = ['Todas', ...Array.from(new Set(exerciciosDoDia.map(x => x.phase).filter(Boolean)))];
   const totalMinutos = escolhidos.reduce((a, e) => a + e.minutos, 0);
 
   const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
@@ -7049,14 +7134,13 @@ function Simulador({ players, exercises, sessions, matches }) {
 
   return (
     <>
+      {/* O botão vive no FIM da página, a seguir aos resultados.
+
+          Aqui em cima obrigava a subir ao topo para voltar a baralhar,
+          logo depois de ter descido para ver a distribuição. */}
       <SectionHeader
         title="Simulador"
         subtitle="Quem apareceu, o que se vai fazer — e quem joga com quem."
-        action={
-          <Btn onClick={modo === 'treino' ? gerarTreino : gerarJogo} disabled={!presentes.length || (modo === 'treino' && !escolhidos.length)}>
-            <RotateCw size={15} /> {resultado ? 'Baralhar de novo' : 'Distribuir'}
-          </Btn>
-        }
       />
 
       {/* Treino e jogo repartem tempo de maneiras diferentes; a escolha
@@ -7136,10 +7220,15 @@ function Simulador({ players, exercises, sessions, matches }) {
         {modo === 'treino' ? (
           <div style={card}>
             <h3 style={rotulo}>2 · Exercícios</h3>
-            <p style={nota}>
-              {escolhidos.length === 0
-                ? 'Escolhe o que se vai fazer.'
-                : `${escolhidos.length} ${escolhidos.length === 1 ? 'exercício' : 'exercícios'} · ${totalMinutos} min.`}
+            <Field label="Dia do treino">
+              <Input type="date" value={dia} onChange={e => { setDia(e.target.value); setEscolhidos([]); setPlano(null); }} />
+            </Field>
+            <p style={{ ...nota, marginTop: 10 }}>
+              {exerciciosDoDia.length === 0
+                ? 'Não há treino planeado neste dia. Cria a sessão no Planeamento e os exercícios aparecem aqui.'
+                : escolhidos.length === 0
+                  ? `${exerciciosDoDia.length} ${exerciciosDoDia.length === 1 ? 'exercício' : 'exercícios'} no treino deste dia.`
+                  : `${escolhidos.length} de ${exerciciosDoDia.length} · ${totalMinutos} min.`}
             </p>
 
             {escolhidos.length > 0 && (
@@ -7177,18 +7266,52 @@ function Simulador({ players, exercises, sessions, matches }) {
                         {/* Quantas cópias PODEM decorrer ao mesmo tempo. O
                             treinador dá o teto (o campo tem tantas secções);
                             o simulador decide quantas usar. */}
+                        {/* Lista em vez de campo numérico.
+
+                            Com <input type=number> a limitar entre 1 e 6 a
+                            cada tecla, apagar o valor era impossível: o campo
+                            vazio virava logo 1, e escrever "6" depois de um
+                            número existente dava sempre 6. Uma lista de seis
+                            opções resolve os dois problemas e ainda diz quais
+                            são os valores possíveis. */}
                         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }} title="Máximo de vezes que este exercício pode decorrer ao mesmo tempo, em secções diferentes do campo">
-                          <input type="number" min="1" max="6" value={e.maxSimultaneo}
-                            onChange={ev => patchExercicio(e.id, { maxSimultaneo: Math.max(1, Math.min(6, Number(ev.target.value) || 1)) })}
-                            style={numInput} /> em simultâneo (máx.)
+                          <Select
+                            value={String(e.maxSimultaneo)}
+                            onChange={ev => patchExercicio(e.id, { maxSimultaneo: Number(ev.target.value) })}
+                            style={{ width: 54, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 4px' }}
+                          >
+                            {[1, 2, 3, 4, 5, 6].map(v => <option key={v} value={v}>{v}</option>)}
+                          </Select>
+                          em simultâneo (máx.)
                         </label>
                         {/* Exercícios com o mesmo rótulo decorrem ao mesmo
                             tempo, em zonas diferentes do campo. */}
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 5 }} title="Escreve o mesmo rótulo em dois exercícios para eles decorrerem ao mesmo tempo">
+                        {/* "A par de" escolhe-se de uma lista dos OUTROS
+                            exercícios do treino, não se escreve um código.
+                            Escolher aqui põe os dois no mesmo grupo, e é o
+                            grupo que os faz decorrer ao mesmo tempo. */}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 5 }} title="Decorre ao mesmo tempo que este outro exercício, noutra zona do campo">
                           a par de
-                          <input type="text" value={e.grupo} placeholder="—" maxLength={6}
-                            onChange={ev => patchExercicio(e.id, { grupo: ev.target.value.trim() })}
-                            style={{ ...numInput, width: 58, textAlign: 'left', paddingLeft: 7 }} />
+                          <Select
+                            value={(escolhidos.find(o => o.id !== e.id && o.grupo && o.grupo === e.grupo) || {}).id || ''}
+                            onChange={ev => {
+                              const alvo = ev.target.value;
+                              if (!alvo) { patchExercicio(e.id, { grupo: '' }); return; }
+                              // Os dois passam a partilhar o mesmo grupo.
+                              const chave = `g${e.id}-${alvo}`;
+                              setEscolhidos(prev => prev.map(o => (
+                                o.id === e.id || o.id === alvo ? { ...o, grupo: chave } : o
+                              )));
+                            }}
+                            style={{ width: 132, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 4px' }}
+                          >
+                            <option value="">— sozinho —</option>
+                            {escolhidos.filter(o => o.id !== e.id).map(o => {
+                              const outro = exercises.find(v => v.id === o.id);
+                              if (!outro) return null;
+                              return <option key={o.id} value={o.id}>{outro.name}</option>;
+                            })}
+                          </Select>
                         </label>
                       </div>
                     </div>
@@ -7251,11 +7374,24 @@ function Simulador({ players, exercises, sessions, matches }) {
                 }}>{f.label}</button>
               ))}
             </div>
-            <Field label="Formação">
-              <Select value={formacao} onChange={e => setFormacao(e.target.value)}>
-                {Object.keys(FORMACOES).map(f => <option key={f} value={f}>{f}</option>)}
-              </Select>
-            </Field>
+            <div style={{ ...FIELD_GRID }}>
+              <Field label="Formação">
+                <Select value={formacao} onChange={e => setFormacao(e.target.value)}>
+                  {Object.keys(FORMACOES).map(f => <option key={f} value={f}>{f}</option>)}
+                </Select>
+              </Field>
+              {/* Mais janelas = mais paragens para trocar = mais gente a
+                  jogar. Com uma só, um plantel grande deixa sempre alguém
+                  de fora — não há lugares que cheguem. */}
+              <Field label="Trocas por parte">
+                <Select value={String(janelas)} onChange={e => setJanelas(Number(e.target.value))}>
+                  <option value="1">Só ao intervalo</option>
+                  <option value="2">1 troca a meio</option>
+                  <option value="3">2 trocas por parte</option>
+                  <option value="4">3 trocas por parte</option>
+                </Select>
+              </Field>
+            </div>
           </div>
         )}
       </div>
@@ -7337,6 +7473,7 @@ function Simulador({ players, exercises, sessions, matches }) {
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                 <h3 style={{ ...display, color: T.cream, fontSize: 15, fontWeight: 600, margin: 0 }}>
                   {per.numero}ª parte
+                  {per.totalJanelas > 1 && <span style={{ color: T.mutedDim, fontWeight: 400 }}> · {per.janela}º período</span>}
                 </h3>
                 <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>{per.minutos} min · {jogo.formacao}</span>
                 {pi > 0 && (
@@ -7372,6 +7509,17 @@ function Simulador({ players, exercises, sessions, matches }) {
           <MinutosPorJogador presentes={presentes} minutos={jogo.minutosPorJogador} players={players} isNarrow={isNarrow} />
         </>
       )}
+
+      {/* Ação principal, no fim: é aqui que se está depois de ler o
+          resultado, e é daqui que se quer voltar a baralhar. */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, margin: '18px 0 8px', flexWrap: 'wrap' }}>
+        <Btn
+          onClick={modo === 'treino' ? gerarTreino : gerarJogo}
+          disabled={!presentes.length || (modo === 'treino' && !escolhidos.length)}
+        >
+          <RotateCw size={15} /> {resultado ? 'Baralhar de novo' : 'Distribuir'}
+        </Btn>
+      </div>
 
       {/* Escolher quem entra num lugar. */}
       {trocar && jogo && (
@@ -8808,7 +8956,7 @@ function sortStandings(teams) {
     .sort((a, b) => b.P - a.P || b.DG - a.DG || b.GM - a.GM || a.name.localeCompare(b.name));
 }
 
-function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches }) {
+function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches, season, convocatorias, setConvocatorias }) {
   const [editing, setEditing] = useState(false);
   const [roundIdx, setRoundIdx] = useState(0);
   const { competitions } = normalizeStandings(standings);
@@ -9143,7 +9291,10 @@ function syncCompetitionMatches(competitions, matches) {
   (competitions || []).forEach(comp => {
     const mine = (comp.myTeam || '').trim();
     if (!mine) return;
-    (comp.rounds || []).forEach(r => (r.games || []).forEach(g => {
+    (comp.rounds || []).forEach((r, ri) => (r.games || []).forEach(g => {
+      // O rótulo da jornada viaja com o jogo: é ele que aparece depois na
+      // convocatória e na ficha, e sem isto ficava sempre em branco.
+      const jornada = r.label || `Jornada ${ri + 1}`;
       if (!g.id || !/^\d{4}-\d{2}-\d{2}$/.test(g.date || '')) return;
       const isHome = g.home === mine;
       const isAway = g.away === mine;
@@ -9157,13 +9308,13 @@ function syncCompetitionMatches(competitions, matches) {
       if (idx >= 0) {
         next[idx] = {
           ...next[idx],
-          date: g.date, opponent, atHome: isHome,
+          date: g.date, opponent, atHome: isHome, jornada,
           competition: comp.name || next[idx].competition,
           result: result || next[idx].result || '',
         };
       } else {
         next.push({
-          id: uid(), sourceGameId: g.id, date: g.date, opponent, atHome: isHome,
+          id: uid(), sourceGameId: g.id, date: g.date, opponent, atHome: isHome, jornada,
           competition: comp.name || '', result,
           convocados: [], starters: [], report: {},
         });
@@ -9708,7 +9859,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
 
       <div style={{ marginBottom: 20 }}>
-        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} />
+        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />
       </div>
       <div style={{ marginBottom: 20 }}>
         <MatchDashboard players={players} matches={matches} />
