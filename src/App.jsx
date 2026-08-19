@@ -1027,9 +1027,15 @@ function Modal({ title, subtitle, onClose, children, wide, xwide }) {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
+          {/* `wordBreak`/`overflowWrap` no título — sem isto, um nome de
+              exercício comprido (o do "Equipa do exercício", por exemplo)
+              conta como uma palavra só para efeitos de largura e alarga a
+              caixa toda no telemóvel, mesmo com `minWidth: 0` no pai. A
+              coluna passa a ficar sempre fixa em `maxWidth`, e o título
+              quebra por dentro em vez de esticar a janela. */}
           <div style={{ minWidth: 0 }}>
-            <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0 }}>{title}</h3>
-            {subtitle && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 3 }}>{subtitle}</div>}
+            <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0, wordBreak: 'break-word', overflowWrap: 'break-word' }}>{title}</h3>
+            {subtitle && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 3, wordBreak: 'break-word', overflowWrap: 'break-word' }}>{subtitle}</div>}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
             <X size={20} />
@@ -1272,6 +1278,16 @@ function App({ session }) {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  /* PONTE ENTRE O SIMULADOR E O RESTO DA APP.
+
+     Guardar equipas no Simulador não pode ficar a viver só ali: o
+     treinador quer ver logo o resultado onde ele passa a contar de
+     verdade — no Planeamento (treino) ou nos Jogos (amigável) — já
+     pronto para imprimir. Isto guarda só um pedido pendente (que dia/
+     jogo imprimir); é o Planeamento/Jogos que, ao montar com o pedido
+     por resolver, dispara o próprio `window.print()` e depois limpa o
+     pedido. */
+  const [autoPrint, setAutoPrint] = useState(null); // null | { type: 'session', date } | { type: 'match', id }
   const [season, setSeason] = useState({ name: '2026/2027', start: '', end: '', club: 'SC Salgueiros · Sub-19' });
   const [seasonReady, setSeasonReady] = useState(false);
   const [previewKiosk, setPreviewKiosk] = useState(false);
@@ -1644,11 +1660,13 @@ function App({ session }) {
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} />}
-          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} autoPrint={autoPrint} onAutoPrintDone={() => setAutoPrint(null)} />}
+          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches}
+            onGuardadoTreino={(date) => { setAutoPrint({ type: 'session', date }); goTab('planeamento'); }}
+            onGuardadoJogo={(matchId) => { setAutoPrint({ type: 'match', id: matchId }); goTab('jogos'); }} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autoPrint={autoPrint} onAutoPrintDone={() => setAutoPrint(null)} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -7593,7 +7611,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar }) {
   );
 }
 
-function Simulador({ players, exercises, sessions, setSessions, matches }) {
+function Simulador({ players, exercises, sessions, setSessions, matches, setMatches, onGuardadoTreino, onGuardadoJogo }) {
   const isNarrow = useIsMobile(760);
   const [modo, setModo] = useState('treino'); // 'treino' | 'amigavel'
   const [presentIds, setPresentIds] = useState([]);
@@ -7605,8 +7623,14 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
   // 'auto' calcula o mínimo de paragens para ninguém ficar sem jogar.
   const [janelas, setJanelas] = useState('auto');
   const [dia, setDia] = useState(todayStr());
+  // Dia do jogo amigável — equivalente ao "Dia do treino", mas para o modo
+  // 'amigavel'. Serve para ligar a distribuição a um jogo concreto (já
+  // registado em Jogos, ou por registar) quando se guarda.
+  const [diaJogo, setDiaJogo] = useState(todayStr());
   const [planoBase, setPlanoBase] = useState(null);
   const [jogo, setJogo] = useState(null);
+  const [printJogo, setPrintJogo] = useState(false);
+  const [guardadoJogo, setGuardadoJogo] = useState(false);
   const [trocar, setTrocar] = useState(null); // { periodo, indice }
 
   /* EQUIPAS FIXADAS À MÃO
@@ -7765,6 +7789,49 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
     setSessions(prev => prev.map(x => (x.date === dia ? { ...x, equipasSimulador: registo } : x)));
     setGuardado(true);
     setTimeout(() => setGuardado(false), 2500);
+    /* Depois de gravar, é para o treino desse dia que se vai — com a
+       ficha já pronta a sair da impressora, equipas incluídas em cada
+       exercício. Ficar no Simulador depois de gravar obrigava a sair à
+       mão e a ir procurar a sessão no Planeamento. */
+    if (onGuardadoTreino) onGuardadoTreino(dia);
+  };
+
+  /* O jogo amigável já registado nesse dia (se houver) — "Guardar" junta-se
+     a ele em vez de duplicar; sem jogo nenhum ainda, cria um novo. */
+  const jogoDoDia = (matches || []).find(m => m.date === diaJogo && isFriendlyMatch(m));
+
+  /* Escreve a distribuição do amigável no jogo desse dia — a mesma ideia do
+     "Guardar equipas no treino", mas para Jogos: entra no jogo já
+     registado (ou cria um, no dia escolhido) e, por essa via, também no
+     Planeamento — um amigável é sempre uma sessão de trabalho na agenda
+     (ver ensureFriendlySession). É dali que sai a ficha impressa. */
+  const guardarNoJogo = () => {
+    if (!jogo || !setMatches) return;
+    const registo = {
+      geradoEm: new Date().toISOString(),
+      formacao: jogo.formacao,
+      periodos: jogo.periodos.map(per => ({
+        numero: per.numero,
+        minutos: per.minutos,
+        onze: per.onze.map(l => ({ lugar: l.lugar, jogador: l.jogador ? l.jogador.name : null })),
+        suplentes: per.suplentes.map(j => j.name),
+      })),
+    };
+    // As presenças de um amigável são o plantel que apareceu — os
+    // convidados à experiência não entram no registo oficial do jogo.
+    const presencas = doPlantel.map(p => p.id);
+    const base = jogoDoDia || {
+      id: uid(), date: diaJogo, opponent: '', competition: FRIENDLY,
+      result: '', jornada: '', convocados: [], starters: [], report: {},
+    };
+    const atualizado = { ...base, convocados: presencas, escalacaoSimulador: registo };
+    setMatches(prev => (
+      prev.some(m => m.id === atualizado.id) ? prev.map(m => (m.id === atualizado.id ? atualizado : m)) : [...prev, atualizado]
+    ));
+    if (setSessions) setSessions(prev => ensureFriendlySession(atualizado, prev));
+    setGuardadoJogo(true);
+    setTimeout(() => setGuardadoJogo(false), 2500);
+    if (onGuardadoJogo) onGuardadoJogo(atualizado.id);
   };
 
   const gerarJogo = () => {
@@ -8098,6 +8165,14 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
               Num amigável não há limite de substituições. As trocas ficam marcadas
               para o início de cada parte, que é quando não interrompem o jogo.
             </p>
+            <Field label="Dia do jogo" solto>
+              <Input type="date" value={diaJogo} onChange={e => setDiaJogo(e.target.value)} />
+            </Field>
+            {jogoDoDia && (
+              <p style={{ ...nota, marginTop: 6 }}>
+                Já há um jogo amigável registado neste dia{jogoDoDia.opponent ? ` vs ${jogoDoDia.opponent}` : ''} — "Guardar" junta a distribuição a ele.
+              </p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {FORMATOS_JOGO.map(f => (
                 <button key={f.id} onClick={() => setFormato(f.id)} style={{
@@ -8310,12 +8385,60 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
             <Check size={15} /> {guardado ? 'Guardado no treino' : 'Guardar equipas no treino'}
           </Btn>
         )}
+        {/* No amigável há duas ações distintas: imprimir agora mesmo, sem
+            gravar nada (uma listagem rápida de quem está e a distribuição),
+            ou gravar de vez — o que junta a distribuição ao jogo desse dia
+            em Jogos e, por aí, também ao Planeamento. */}
+        {modo === 'amigavel' && jogo && (
+          <Btn variant="ghost" onClick={() => { setPrintJogo(true); setTimeout(() => window.print(), 80); }}>
+            <Printer size={15} /> Imprimir
+          </Btn>
+        )}
+        {modo === 'amigavel' && jogo && setMatches && (
+          <Btn variant="ghost" onClick={guardarNoJogo}>
+            <Check size={15} /> {guardadoJogo ? 'Guardado no jogo' : 'Guardar e enviar para os jogos'}
+          </Btn>
+        )}
       </div>
+
+      {/* Ficha de impressão do amigável: presentes + distribuição por
+          parte. Vive fora do fluxo normal (só aparece em @media print,
+          ver .print-sheet), tal como as fichas do Planeamento. */}
+      {printJogo && jogo && createPortal(
+        <div className="print-sheet">
+          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>Jogo amigável</h2>
+          <p style={{ margin: '0 0 18px', fontSize: 13 }}>
+            {[fmtDate(diaJogo), FORMATOS_JOGO.find(f => f.id === formato)?.label, jogo.formacao].filter(Boolean).join(' · ')}
+          </p>
+          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presentes ({presentes.length})</h3>
+          <p style={{ fontSize: 13, margin: '0 0 18px' }}>
+            {sortByPosition(presentes).map(p => (
+              (p.number ? `#${p.number} ` : '') + p.name + (p.convidado ? ' (exp.)' : '')
+            )).join(', ') || 'Sem registo'}
+          </p>
+          {jogo.periodos.map((per, pi) => (
+            <div key={pi} style={{ margin: '0 0 16px', pageBreakInside: 'avoid' }}>
+              <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>
+                {per.numero}ª parte {per.totalJanelas > 1 ? `· ${per.janela}º período` : ''} · {per.minutos} min
+              </h3>
+              <p style={{ fontSize: 12.5, margin: '0 0 6px' }}>
+                <strong>Onze: </strong>
+                {per.onze.map(l => `${l.lugar}${l.jogador ? ` — ${l.jogador.name}` : ' — —'}`).join('; ')}
+              </p>
+              <p style={{ fontSize: 12.5, margin: 0 }}>
+                <strong>Suplentes: </strong>
+                {per.suplentes.map(j => j.name).join(', ') || '—'}
+              </p>
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
 
       {/* Escolher à mão os jogadores de uma equipa de um exercício. */}
       {editarEquipa && (
         <Modal title="Equipa do exercício" onClose={() => setEditarEquipa(null)}>
-          <p style={{ color: T.cream, fontSize: 13, margin: '0 0 4px' }}>{editarEquipa.titulo}</p>
+          <p style={{ color: T.cream, fontSize: 13, margin: '0 0 4px', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{editarEquipa.titulo}</p>
           <p style={{ color: T.mutedDim, fontSize: 12, margin: '0 0 12px' }}>
             {editarEquipa.vagas} {editarEquipa.vagas === 1 ? 'lugar' : 'lugares'}.
             Uma equipa escolhida à mão fica fixa: o "Baralhar de novo" muda tudo à volta e não lhe toca.
@@ -8419,7 +8542,7 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
   );
 }
 
-function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season }) {
+function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season, autoPrint, onAutoPrintDone }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
   const [printSession, setPrintSession] = useState(null);
@@ -8438,6 +8561,18 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
       openAndPrintPdfSequential(collectPdfAttachments([s], exercises));
     }, 80);
   };
+
+  /* Pedido vindo do Simulador: acabou de gravar equipas num treino e quer
+     ver logo a ficha impressa. Resolve-se assim que a sessão desse dia
+     existir aqui — e limpa-se logo a seguir, para não voltar a imprimir
+     sozinho da próxima vez que o Planeamento for montado. */
+  useEffect(() => {
+    if (!autoPrint || autoPrint.type !== 'session') return;
+    const s = sessions.find(x => x.date === autoPrint.date);
+    if (s) doPrint(s);
+    if (onAutoPrintDone) onAutoPrintDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrint]);
 
   // Imprime TODAS as sessões de um dia numa única ficha; qualquer imagem
   // anexada aos exercícios sai na própria ficha, e qualquer PDF anexado
@@ -8662,31 +8797,43 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             {[fmtDate(printSession.date), printSession.phase, intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
           </p>
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
-          {(printSession.exerciseIds || []).map((e, i) => (
-            <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
-          ))}
-          {/* Equipas vindas do Simulador, se lá tiverem sido guardadas.
-              É o que o treinador leva para o campo: quem joga com quem, em
-              que exercício e por quanto tempo. */}
-          {printSession.equipasSimulador && (printSession.equipasSimulador.equipas || []).length > 0 && (
-            <>
-              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipas</h3>
-              <div style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6 }}>
-                {printSession.equipasSimulador.equipas.map((g, i) => (
-                  <div key={i} style={{ marginBottom: 5 }}>
-                    <strong>
-                      {g.exercicio}
-                      {g.zona ? ` · zona ${g.zona}` : ''}
-                      {g.turno ? ` · turno ${g.turno}` : ''}
-                      {' · '}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}
-                      {g.minutos ? ` · ${g.minutos} min` : ''}:
-                    </strong>{' '}
-                    {g.jogadores.join(', ')}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+          {/* As equipas do Simulador saem AQUI, dentro de cada exercício —
+              não numa lista à parte no fim da ficha. O treinador chega ao
+              exercício e as equipas já lá estão, coladas ao esquema. Um
+              registo cujo nome já não bate certo com nenhum exercício desta
+              sessão (ex. foi apagado ou renomeado) cai num resto no fim,
+              para não se perder informação já gravada. */}
+          {(printSession.exerciseIds || []).map((e, i) => {
+            const ex = exercises.find(x => x.id === e.exId);
+            const teams = ex ? printSessionEquipasPorExercicio(printSession, ex.name) : [];
+            return <PrintExerciseBlock key={e.exId} e={e} ex={ex} index={i} teams={teams} />;
+          })}
+          {(() => {
+            const nomesConhecidos = new Set((printSession.exerciseIds || [])
+              .map(e => exercises.find(x => x.id === e.exId)?.name).filter(Boolean));
+            const resto = ((printSession.equipasSimulador && printSession.equipasSimulador.equipas) || [])
+              .filter(g => !nomesConhecidos.has(g.exercicio));
+            if (!resto.length) return null;
+            return (
+              <>
+                <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipas</h3>
+                <div style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6 }}>
+                  {resto.map((g, i) => (
+                    <div key={i} style={{ marginBottom: 5 }}>
+                      <strong>
+                        {g.exercicio}
+                        {g.zona ? ` · zona ${g.zona}` : ''}
+                        {g.turno ? ` · turno ${g.turno}` : ''}
+                        {' · '}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}
+                        {g.minutos ? ` · ${g.minutos} min` : ''}:
+                      </strong>{' '}
+                      {g.jogadores.join(', ')}
+                    </div>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
 
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
           <p style={{ fontSize: 13 }}>
@@ -8719,9 +8866,11 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
               <p style={{ margin: '0 0 12px', fontSize: 13 }}>
                 {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
-              {(s.exerciseIds || []).map((e, i) => (
-                <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
-              ))}
+              {(s.exerciseIds || []).map((e, i) => {
+                const ex = exercises.find(x => x.id === e.exId);
+                const teams = ex ? printSessionEquipasPorExercicio(s, ex.name) : [];
+                return <PrintExerciseBlock key={e.exId} e={e} ex={ex} index={i} teams={teams} />;
+              })}
             </div>
           ))}
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
@@ -8946,11 +9095,19 @@ function openAndPrintPdfSequential(attachments) {
     }, 700 * i);
   });
 }
+// As equipas guardadas pelo Simulador ficam associadas ao exercício pelo
+// nome (é assim que são gravadas — ver guardarNoTreino). Esta função separa,
+// de uma sessão, só as equipas de UM exercício, para irem coladas a ele na
+// ficha impressa.
+function printSessionEquipasPorExercicio(session, exerciseName) {
+  const equipas = (session && session.equipasSimulador && session.equipasSimulador.equipas) || [];
+  return equipas.filter(g => g.exercicio === exerciseName);
+}
 // Bloco de impressão de um exercício dentro de uma ficha de sessão/dia.
 // Se houver imagem anexada, mostra-a em vez do esquema tático (tal como
 // na impressão do exercício isolado); se for PDF, fica uma nota — o
 // ficheiro em si é impresso à parte (ver openAndPrintPdfSequential).
-function PrintExerciseBlock({ e, ex, index }) {
+function PrintExerciseBlock({ e, ex, index, teams }) {
   if (!ex) return <p style={{ fontSize: 13, margin: '0 0 14px' }}>{index + 1}. —</p>;
   return (
     <div style={{ margin: '0 0 20px', pageBreakInside: 'avoid' }}>
@@ -8995,6 +9152,21 @@ function PrintExerciseBlock({ e, ex, index }) {
       {!(ex.attachment && ex.attachment.type === 'image') && (
         <div style={{ textAlign: 'right', maxWidth: 540, margin: '2px 0 0' }}>
           <span style={{ fontSize: 9.5, color: '#888', letterSpacing: '.04em' }}>™ Mister JP</span>
+        </div>
+      )}
+      {/* Equipas do Simulador para ESTE exercício — não uma lista à parte
+          no fim da ficha. É aqui, ao lado do esquema, que o treinador quer
+          ver quem joga em cada equipa quando chega a este exercício. */}
+      {teams && teams.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6 }}>
+          {teams.map((g, i) => (
+            <div key={i} style={{ marginBottom: 3 }}>
+              <strong>
+                {g.zona ? `Zona ${g.zona} · ` : ''}{g.turno ? `Turno ${g.turno} · ` : ''}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}:
+              </strong>{' '}
+              {g.jogadores.join(', ')}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -10811,8 +10983,26 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions, convocatorias, setConvocatorias }) {
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions, convocatorias, setConvocatorias, autoPrint, onAutoPrintDone }) {
   const [modal, setModal] = useState(null);
+  const [printMatch, setPrintMatch] = useState(null);
+
+  const doPrintMatch = (m) => {
+    setPrintMatch(m);
+    setTimeout(() => window.print(), 80);
+  };
+
+  /* Pedido vindo do Simulador (amigável): acabou de gravar a distribuição
+     e quer logo a ficha impressa deste jogo. Mesma lógica do Planeamento
+     para os treinos — resolve-se assim que o jogo existir aqui, e limpa-se
+     logo a seguir. */
+  useEffect(() => {
+    if (!autoPrint || autoPrint.type !== 'match') return;
+    const m = matches.find(x => x.id === autoPrint.id);
+    if (m) doPrintMatch(m);
+    if (onAutoPrintDone) onAutoPrintDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrint]);
 
   const save = (data) => {
     const registo = data.id ? data : { ...data, id: uid() };
@@ -10899,6 +11089,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => doPrintMatch(m)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }} title="Imprimir ficha"><Printer size={14} /></button>
                     <button onClick={() => setModal(m)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
                     <button onClick={() => remove(m.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                   </div>
@@ -10911,6 +11102,44 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
       )}
 
       {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} onClose={() => setModal(null)} onSave={save} />}
+
+      {/* Ficha impressa do jogo. Fora de um amigável com distribuição
+          gravada pelo Simulador (escalacaoSimulador), mostra só presenças/
+          convocatória — o resto (resultado, golos) já sai noutro sítio. */}
+      {printMatch && createPortal(
+        <div className="print-sheet">
+          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
+            {isFriendlyMatch(printMatch) ? 'Jogo amigável' : (competitionLabel(printMatch.competition) || 'Jogo')} vs {printMatch.opponent || 'Adversário por definir'}
+          </h2>
+          <p style={{ margin: '0 0 18px', fontSize: 13 }}>
+            {[fmtDate(printMatch.date), printMatch.jornada, printMatch.atHome === undefined ? null : (printMatch.atHome ? 'Casa' : 'Fora'), printMatch.result].filter(Boolean).join(' · ')}
+          </p>
+          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>{isFriendlyMatch(printMatch) ? 'Presentes' : 'Convocados'} ({(printMatch.convocados || []).length})</h3>
+          <p style={{ fontSize: 13, margin: '0 0 18px' }}>
+            {(printMatch.convocados || [])
+              .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
+              .filter(Boolean).join(', ') || 'Sem registo'}
+          </p>
+          {printMatch.escalacaoSimulador && (printMatch.escalacaoSimulador.periodos || []).length > 0 && (
+            <>
+              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Distribuição ({printMatch.escalacaoSimulador.formacao})</h3>
+              {printMatch.escalacaoSimulador.periodos.map((per, pi) => (
+                <div key={pi} style={{ margin: '0 0 12px', pageBreakInside: 'avoid' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>{per.numero}ª parte · {per.minutos} min</div>
+                  <p style={{ fontSize: 12.5, margin: '0 0 4px' }}>
+                    <strong>Onze: </strong>
+                    {per.onze.map(l => `${l.lugar}${l.jogador ? ` — ${l.jogador}` : ' — —'}`).join('; ')}
+                  </p>
+                  <p style={{ fontSize: 12.5, margin: 0 }}>
+                    <strong>Suplentes: </strong>{(per.suplentes || []).join(', ') || '—'}
+                  </p>
+                </div>
+              ))}
+            </>
+          )}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
