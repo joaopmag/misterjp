@@ -7089,7 +7089,24 @@ const FAMILIA = {
   DC: 'DEF', DE: 'DEF', DD: 'DEF',
   MD: 'MEIO', MC: 'MEIO', MOC: 'MEIO',
   EE: 'ATA', ED: 'ATA', PL: 'ATA',
+  // 'EX' é o que a PRANCHETA escreve nos ícones 9 e 10 (extremo, sem
+  // dizer de que lado). O PLANTEL usa EE e ED. Sem esta entrada, um
+  // extremo desenhado no exercício não encontrava família nenhuma e
+  // qualquer jogador levava a penalização máxima — era por isso que
+  // apareciam extremos onde o desenho não os pedia.
+  EX: 'ATA',
 };
+
+/* O lugar pedido pelo desenho corresponde a este jogador?
+
+   'EX' vale por EE e ED: na prancheta o ícone não distingue o lado, e
+   exigir o lado exato faria falhar todos os extremos. */
+function posicaoServe(pedida, jogador) {
+  if (!pedida || !jogador) return false;
+  if (jogador.position === pedida) return true;
+  if (pedida === 'EX') return jogador.position === 'EE' || jogador.position === 'ED';
+  return false;
+}
 const familiaDe = (p) => FAMILIA[p && p.position] || 'MEIO';
 
 /* Ordem de entrada: quem tem menos minutos primeiro; entre iguais, sorteio.
@@ -7110,10 +7127,47 @@ function filaPorMinutos(jogadores, minutos) {
    - `grupo`: exercícios com o mesmo rótulo decorrem em simultâneo, e
      portanto partilham os jogadores disponíveis nesse período.
 ---------------------------------------------------------------- */
+/* AS POSIÇÕES DESENHADAS NO EXERCÍCIO MANDAM.
+
+   O esquema tático de um exercício não é decoração: se o treinador
+   desenhou um EE, um MC e dois DC numa equipa, é isso que quer ver em
+   campo. Até aqui a distribuição olhava só para o NÚMERO de vagas
+   ("8x8") e enchia-as por ordem de minutos, o que dava três extremos
+   esquerdos num exercício com um só.
+
+   Aqui lê-se o desenho e extrai-se, por equipa, a lista de posições
+   pedidas. `elementLabel` converte o número do ícone na posição (2 → DD,
+   3 → DC, …), que é a mesma convenção com que os jogadores estão
+   registados no plantel.
+
+   Se o exercício não tiver desenho, ou tiver menos ícones do que vagas,
+   as vagas restantes ficam sem posição pedida e são preenchidas como
+   antes — por minutos. */
+function posicoesDesenhadas(exercise) {
+  const els = (exercise && exercise.diagram && exercise.diagram.elements) || [];
+  const porEquipa = new Map();
+  els.forEach(el => {
+    if (el.kind !== 'player' && el.kind !== 'keeper') return;
+    const chave = `${el.team || 'A'}|${el.kind === 'keeper'}`;
+    if (!porEquipa.has(chave)) porEquipa.set(chave, []);
+    porEquipa.get(chave).push(elementLabel(el.number, el.kind === 'keeper'));
+  });
+  return porEquipa;
+}
+
 function slotsDoExercicio(exercise, totalPresentes) {
   const parsed = parsePlayersCount(exercise.playersCount);
-  if (!parsed) return [{ team: 'A', isKeeper: false, count: totalPresentes }];
-  return parsed.groups;
+  const desenhadas = posicoesDesenhadas(exercise);
+  const usadas = new Map();
+  const comPosicoes = (g) => {
+    const chave = `${g.team}|${!!g.isKeeper}`;
+    const lista = desenhadas.get(chave) || [];
+    const ja = usadas.get(chave) || 0;
+    usadas.set(chave, ja + g.count);
+    return { ...g, posicoes: lista.slice(ja, ja + g.count) };
+  };
+  if (!parsed) return [comPosicoes({ team: 'A', isKeeper: false, count: totalPresentes })];
+  return parsed.groups.map(comPosicoes);
 }
 
 const vagasPorCopia = (grupos) => grupos.reduce((a, g) => a + g.count, 0);
@@ -7160,23 +7214,50 @@ function blocosDeTreino(exerciciosEscolhidos) {
 function preencher(grupos, fila, usados, minutos) {
   const gr = fila.filter(ehGuardaRedes);
   const linha = fila.filter(p => !ehGuardaRedes(p));
-  const tirar = (lista, n) => {
+
+  /* Escolhe para um lugar com posição pedida.
+
+     Mesma regra do jogo amigável: mandam os MINUTOS, e a posição entra
+     como penalização. Se a posição mandasse, quem é o único da sua
+     posição fazia o exercício todo e quem tem concorrência ficava
+     parado — o oposto do que a rotação existe para garantir.
+
+     Penalizações menores do que no jogo (4 e 20 em vez de 8 e 40) porque
+     num treino os lugares são menos rígidos: o que interessa é não pôr
+     três extremos onde só há um, não recriar o onze. */
+  const escolherPara = (lista, posicaoPedida) => {
+    const livres = lista.filter(p => !usados.has(p.id));
+    if (!livres.length) return null;
+    if (!posicaoPedida) return livres[0];
+    const familiaPedida = FAMILIA[posicaoPedida] || 'MEIO';
+    const nota = (p) => {
+      const base = minutos.get(p.id) || 0;
+      if (posicaoServe(posicaoPedida, p)) return base;
+      if (familiaDe(p) === familiaPedida) return base + 4;
+      return base + 20;
+    };
+    return livres.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), livres[0]);
+  };
+
+  const tirar = (lista, g) => {
     const out = [];
-    for (const p of lista) {
-      if (out.length >= n) break;
-      if (usados.has(p.id)) continue;
-      usados.add(p.id);
-      out.push(p);
+    for (let k = 0; k < g.count; k++) {
+      const escolhido = escolherPara(lista, (g.posicoes || [])[k]);
+      if (!escolhido) break;
+      usados.add(escolhido.id);
+      out.push(escolhido);
     }
     return out;
   };
+
   const porIndice = new Map();
   // Guarda-redes primeiro: são o lugar mais específico.
-  grupos.forEach((g, i) => { if (g.isKeeper) porIndice.set(i, tirar(gr, g.count)); });
+  grupos.forEach((g, i) => { if (g.isKeeper) porIndice.set(i, tirar(gr, g)); });
   // Lugares de campo: SÓ jogadores de campo. Se faltarem, a vaga fica vazia.
-  grupos.forEach((g, i) => { if (!g.isKeeper) porIndice.set(i, tirar(linha, g.count)); });
+  grupos.forEach((g, i) => { if (!g.isKeeper) porIndice.set(i, tirar(linha, g)); });
   return grupos.map((g, i) => ({
-    team: g.team, isKeeper: g.isKeeper, vagas: g.count, jogadores: porIndice.get(i) || [],
+    team: g.team, isKeeper: g.isKeeper, vagas: g.count, posicoes: g.posicoes || [],
+    jogadores: porIndice.get(i) || [],
   }));
 }
 
@@ -8082,14 +8163,30 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
                 </span>
               </div>
 
+              {/* TURNOS LADO A LADO EM ECRÃ LARGO.
+
+                  Um exercício com dois turnos e duas equipas de oito dava
+                  quase quarenta nomes empilhados, e comparar quem sai e
+                  quem entra obrigava a rolar para cima e para baixo. Em
+                  colunas, os dois turnos veem-se ao mesmo tempo — que é
+                  precisamente o que interessa numa substituição.
+
+                  No telemóvel mantém-se empilhado: duas colunas de nomes
+                  em 380 px ficariam ilegíveis. */}
+              <div style={{
+                display: 'grid', gap: 14,
+                gridTemplateColumns: (!isNarrow && bloco.partes.length > 1)
+                  ? `repeat(${Math.min(bloco.partes.length, 3)}, minmax(0, 1fr))`
+                  : '1fr',
+              }}>
               {bloco.partes.map((parte, pi) => (
-                <div key={pi} style={{ marginBottom: pi < bloco.partes.length - 1 ? 14 : 0 }}>
+                <div key={pi} style={{ minWidth: 0 }}>
                   {bloco.partes.length > 1 && (
                     <div style={{ ...mono, fontSize: 11, color: T.warn, marginBottom: 6 }}>
                       Turno {pi + 1} · {parte.minutos} min
                     </div>
                   )}
-                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${isNarrow ? 150 : 210}px, 1fr))`, gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${isNarrow ? 150 : 180}px, 1fr))`, gap: 10, minWidth: 0 }}>
                     {parte.exercicios.map((ex, xi) => (
                       <div key={xi} style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 10 }}>
                         <div style={{ fontSize: 12, color: T.cream, marginBottom: 6 }}>
@@ -8132,6 +8229,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
                   )}
                 </div>
               ))}
+              </div>
             </div>
           ))}
           <MinutosPorJogador presentes={presentes} minutos={plano.minutosPorJogador} players={players} isNarrow={isNarrow} />
@@ -8291,17 +8389,27 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
         {sortByPosition(presentes).map(j => {
           const m = minutos.get(j.id) || 0;
           return (
-            <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+            /* Cada jogador numa CAIXA PRÓPRIA.
+
+               Em colunas lado a lado sem separação, os minutos de um
+               jogador encostavam ao nome do jogador seguinte e liam-se
+               como se fossem dele. A moldura fecha cada conjunto e acaba
+               com a ambiguidade. */
+            <div key={j.id} style={{
+              display: 'flex', alignItems: 'center', gap: 8, fontSize: 12,
+              background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7,
+              padding: '5px 8px', minWidth: 0,
+            }}>
+              <span style={{ ...mono, fontSize: 11.5, color: m === 0 ? T.bad : T.warn, flexShrink: 0, minWidth: 30, textAlign: 'right' }}>{m}′</span>
+              <span style={{ width: 26, height: 4, background: T.line, borderRadius: 2, flexShrink: 0, overflow: 'hidden' }}>
+                <span style={{ display: 'block', width: `${(m / max) * 100}%`, height: '100%', background: T.warn }} />
+              </span>
               <span style={{ flex: 1, minWidth: 0, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 <span style={{ ...mono, fontSize: 10.5, color: j.convidado ? T.gold : T.mutedDim }}>{j.position || '--'}</span>{' '}
                 {shortPlayerName(j, presentes)}
                 {/* Marca discreta: à experiência não é do plantel, e essa
                     distinção tem de ser visível ao olhar para a lista. */}
                 {j.convidado && <span style={{ color: T.gold, fontSize: 10.5 }}> · exp</span>}
-              </span>
-              <span style={{ ...mono, fontSize: 11.5, color: m === 0 ? T.bad : T.warn, flexShrink: 0 }}>{m}′</span>
-              <span style={{ width: 32, height: 4, background: T.line, borderRadius: 2, flexShrink: 0, overflow: 'hidden' }}>
-                <span style={{ display: 'block', width: `${(m / max) * 100}%`, height: '100%', background: T.warn }} />
               </span>
             </div>
           );
@@ -8360,7 +8468,17 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
     const attendanceNames = (s.attendance || [])
       .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
       .filter(Boolean);
-    const extraHtml = `<h2>Presenças</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
+    /* As equipas guardadas pelo Simulador entram também no ficheiro
+       partilhável, e não só na impressão: é o mesmo conteúdo e quem
+       partilha a sessão quer levar as equipas com ela. */
+    const equipasHtml = (s.equipasSimulador && (s.equipasSimulador.equipas || []).length)
+      ? `<h2>Equipas</h2>${s.equipasSimulador.equipas.map(g => {
+          const cabeca = [g.exercicio, g.zona ? `zona ${g.zona}` : '', g.turno ? `turno ${g.turno}` : '', g.equipa + (g.guardaRedes ? ' (GR)' : ''), g.minutos ? `${g.minutos} min` : '']
+            .filter(Boolean).join(' · ');
+          return `<p class="desc"><strong>${escapeHtmlText(cabeca)}:</strong> ${escapeHtmlText(g.jogadores.join(', '))}</p>`;
+        }).join('')}`
+      : '';
+    const extraHtml = `${equipasHtml}<h2>Presenças</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
     const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino');
     const html = buildShareableHtmlDoc({ title: sessionTitle, metaLines: meta, blocks: exBlocks, extraHtml });
     shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, sessionTitle);
@@ -8491,6 +8609,15 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                   }}>
                     <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {s.phase === 'Descanso' ? 'Dia de folga' : `${(s.exerciseIds || []).length} exercícios · ${(s.attendance || []).length} presentes`}
+                      {/* Sinal de que o Simulador já deixou aqui as equipas.
+                          Sem isto, o "Guardar equipas no treino" parecia não
+                          fazer nada: a informação existia mas só aparecia na
+                          ficha impressa. */}
+                      {s.equipasSimulador && (s.equipasSimulador.equipas || []).length > 0 && (
+                        <span style={{ color: T.warn }} title="Equipas do Simulador guardadas — saem na ficha impressa">
+                          {' · '}equipas guardadas
+                        </span>
+                      )}
                     </span>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
                       <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
