@@ -3669,54 +3669,78 @@ function ballPanels(cx, cy, r) {
   return panels;
 }
 
-/* Bola do campo tático — branca com pentágonos pretos.
+/* Bola do campo tático — painéis hexagonais com costuras luminosas.
 
-   É o padrão clássico do futebol (o "Telstar"), um motivo genérico do
-   desporto e não a marca de ninguém: pentágonos pretos rodeados de
-   hexágonos brancos. Sem logótipos nem marcas de fabricante.
+   Desenho ORIGINAL, no espírito das bolas de treino modernas: painéis
+   hexagonais em degradé do magenta ao azul, separados por costuras claras
+   que brilham. Não copia nenhuma bola concreta — não tem logótipos, marcas
+   nem a geometria de painéis de nenhum modelo comercial.
 
-   O que importa a esta escala é distinguir-se de um jogador: o contraste
-   preto/branco continua a ler-se com a bola a 3 mm no ecrã, que é
-   precisamente a razão de este padrão ter sido inventado (para se ver
-   bem na televisão a preto e branco). */
-function PentagonShape({ cx, cy, r, rotation, fill }) {
-  const pontos = [];
-  for (let i = 0; i < 5; i++) {
-    const ang = ((i * 72 - 90 + rotation) * Math.PI) / 180;
-    pontos.push(`${cx + Math.cos(ang) * r},${cy + Math.sin(ang) * r}`);
-  }
-  return <polygon points={pontos.join(' ')} fill={fill} />;
-}
-
+   Porquê esta e não a branca clássica: no relvado escuro da prancheta uma
+   bola branca com manchas pretas confunde-se com um colete branco a essa
+   escala. O magenta não existe em mais nada no campo, por isso a bola
+   encontra-se de imediato mesmo com 3 mm no ecrã. */
 function TriondaBall({ cx, cy, r }) {
-  const preto = '#16181A';
-  /* Um pentágono ao centro e cinco à volta, encostados às arestas — é a
-     leitura de uma bola vista de frente. Os de fora vão ligeiramente
-     cortados pelo bordo, como acontece na esfera real. */
-  const satelites = [-90, -18, 54, 126, 198];
+  // Id único por posição: dois degradés com o mesmo id colidiriam.
+  const gid = `bola-${Math.round(cx * 100)}-${Math.round(cy * 100)}`;
+  const costura = '#FFE9FB';
+
+  // Painéis à volta do centro. O ângulo dá a posição, o tom dá a
+  // profundidade — mais claro em cima, mais escuro em baixo.
+  const paineis = [
+    { a: -90, cor: '#E0329B' },
+    { a: -30, cor: '#B93BC9' },
+    { a: 30, cor: '#7A46D8' },
+    { a: 90, cor: '#4B5BE0' },
+    { a: 150, cor: '#7A46D8' },
+    { a: 210, cor: '#C9349F' },
+  ];
+
+  const hexagono = (px, py, raio, rot) => {
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const ang = ((i * 60 + rot) * Math.PI) / 180;
+      pts.push(`${px + Math.cos(ang) * raio},${py + Math.sin(ang) * raio}`);
+    }
+    return pts.join(' ');
+  };
+
   return (
     <>
-      <circle cx={cx} cy={cy} r={r} fill="#FBFBF9" stroke={preto} strokeWidth={r * 0.1} />
-      {/* Recorte para os pentágonos de fora não saírem da bola. */}
-      <clipPath id={`bola-${Math.round(cx * 100)}-${Math.round(cy * 100)}`}>
-        <circle cx={cx} cy={cy} r={r * 0.94} />
-      </clipPath>
-      <g clipPath={`url(#bola-${Math.round(cx * 100)}-${Math.round(cy * 100)})`}>
-        <PentagonShape cx={cx} cy={cy} r={r * 0.34} rotation={0} fill={preto} />
-        {satelites.map((a, i) => {
-          const rad = (a * Math.PI) / 180;
+      <defs>
+        <radialGradient id={gid} cx="35%" cy="30%" r="80%">
+          <stop offset="0%" stopColor="#9B5BF0" />
+          <stop offset="100%" stopColor="#3B2A6B" />
+        </radialGradient>
+        <clipPath id={`${gid}-c`}>
+          <circle cx={cx} cy={cy} r={r * 0.97} />
+        </clipPath>
+      </defs>
+
+      <circle cx={cx} cy={cy} r={r} fill={`url(#${gid})`} stroke="#2A1240" strokeWidth={r * 0.09} />
+      <g clipPath={`url(#${gid}-c)`}>
+        {paineis.map((p, i) => {
+          const rad = (p.a * Math.PI) / 180;
           return (
-            <PentagonShape
+            <polygon
               key={i}
-              cx={cx + Math.cos(rad) * r * 0.72}
-              cy={cy + Math.sin(rad) * r * 0.72}
-              r={r * 0.3}
-              rotation={a + 90}
-              fill={preto}
+              points={hexagono(cx + Math.cos(rad) * r * 0.66, cy + Math.sin(rad) * r * 0.66, r * 0.4, p.a)}
+              fill={p.cor}
+              stroke={costura}
+              strokeWidth={r * 0.075}
+              strokeLinejoin="round"
+              opacity="0.95"
             />
           );
         })}
+        {/* Painel central, o mais escuro, a fechar o desenho. */}
+        <polygon
+          points={hexagono(cx, cy, r * 0.42, 0)}
+          fill="#2E1F5E" stroke={costura} strokeWidth={r * 0.085} strokeLinejoin="round"
+        />
       </g>
+      {/* Brilho no canto superior esquerdo: dá-lhe volume de esfera. */}
+      <ellipse cx={cx - r * 0.3} cy={cy - r * 0.34} rx={r * 0.3} ry={r * 0.2} fill="#FFFFFF" opacity="0.28" />
     </>
   );
 }
@@ -3802,7 +3826,13 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 
    O cálculo é feito aqui a partir do próprio enquadramento, para não
    ficar dessincronizado se um dia o viewBox mudar. */
-const PITCH_MAX_VH = 62;
+/* Altura máxima do campo, em percentagem da altura do ecrã.
+
+   Sobe até onde ainda deixa caber, no mesmo ecrã e sem scroll, a barra de
+   ferramentas por cima e a faixa do elemento selecionado por baixo. Passar
+   daqui obriga a rolar a meio de um desenho, que é o pior momento para
+   perder o campo de vista. */
+const PITCH_MAX_VH = 70;
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
@@ -5424,11 +5454,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             onClick={() => setTool(t.id)}
             title={t.title || t.label}
             style={{
-              padding: t.symbol ? '7px 14px' : '7px 12px', borderRadius: 7, fontSize: 13, cursor: 'pointer', ...body,
+              padding: t.symbol ? '6px 11px' : '6px 10px', borderRadius: 7, fontSize: 12.5, cursor: 'pointer', ...body,
               background: tool === t.id ? '#B5393F' : 'transparent',
               color: tool === t.id ? TEXT_ON_ACCENT : T.muted,
               border: `1px solid ${tool === t.id ? '#B5393F' : T.line}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 34,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 32, whiteSpace: 'nowrap',
             }}
           >
             {t.symbol === 'solid' && (
@@ -5678,6 +5708,16 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         )}
       </div>
 
+      {/* SALTO DE SCROLL AO CLICAR FORA DA PRANCHETA
+
+          Este painel aparecia e desaparecia conforme houvesse ou não um
+          elemento selecionado. Clicar no campo para desmarcar tirava-o do
+          fluxo, a página encolhia de repente e o browser reposicionava o
+          scroll — lia-se como "salta sozinho para cima".
+
+          Agora o espaço fica sempre reservado (`minHeight`), com ou sem
+          seleção. A altura da página deixa de mudar e o scroll fica quieto. */}
+      <div style={{ minHeight: 52 }}>
       {selectedEl && (
         <div style={{ marginTop: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0', flexWrap: 'wrap' }}>
@@ -5706,7 +5746,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                   if (!el || el.dataset.iniciado === '1') return;
                   el.dataset.iniciado = '1';
                   if ((selectedEl.text || '') === 'Texto') {
-                    try { el.focus(); el.setSelectionRange(0, el.value.length); } catch (err) { /* sem suporte: escreve-se normalmente */ }
+                    /* `preventScroll` é essencial: sem ele o browser rola a
+                       janela para trazer o campo à vista, e o editor salta
+                       de sítio a meio de um desenho. */
+                    try { el.focus({ preventScroll: true }); el.setSelectionRange(0, el.value.length); } catch (err) { /* sem suporte: escreve-se normalmente */ }
                   }
                 }}
                 style={{
@@ -5781,6 +5824,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         )}
         </div>
       )}
+      </div>
 
       {selectedArrow && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7 }}>
@@ -10080,6 +10124,18 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
           </Field>
         )}
         <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
+        {/* Casa/fora decide de que lado o encontro é escrito na tabela da
+            competição e como o resultado é lido — sem isto, um jogo lançado
+            à mão entrava sempre como se fosse em casa. */}
+        <Field label="Casa / Fora">
+          <Select
+            value={f.atHome === false ? 'fora' : 'casa'}
+            onChange={e => setF({ ...f, atHome: e.target.value === 'casa' })}
+          >
+            <option value="casa">Casa</option>
+            <option value="fora">Fora</option>
+          </Select>
+        </Field>
         <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
       </div>
 
