@@ -861,17 +861,27 @@ const FIELD_FULL = { gridColumn: '1 / -1' };
    height:100% + marginTop:auto: quando os campos estão lado a lado numa
    grelha e uma etiqueta ocupa duas linhas (ex: "ANO DE NASCIMENTO"), as
    caixas continuam alinhadas em baixo. */
-function Field({ label, children, labelColor, bloco }) {
+/* `solto` — para um campo que está sozinho numa coluna, e não lado a lado
+   com outros numa grelha.
+
+   O `height: 100%` abaixo serve para alinhar as caixas em baixo quando os
+   campos estão emparelhados e uma etiqueta ocupa duas linhas. Num campo
+   solto dentro de um cartão faz o contrário do que se quer: o campo estica
+   até à altura toda do cartão, o `marginTop: auto` empurra a caixa para o
+   fundo, e tudo o que vinha a seguir sai para fora do cartão e fica por
+   cima do conteúdo seguinte. Era o que acontecia no Simulador, com o
+   "Dia do treino" a atirar a lista de exercícios para fora da caixa. */
+function Field({ label, children, labelColor, bloco, solto }) {
   const etiqueta = (
     <span style={{ fontSize: 12, color: labelColor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
   );
-  const estilo = { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, height: '100%', ...body };
+  const estilo = { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, ...(solto ? {} : { height: '100%' }), ...body };
 
   if (bloco) {
     return (
       <div style={estilo}>
         <label style={{ display: 'block' }}>{etiqueta}</label>
-        <div style={{ marginTop: 'auto', minWidth: 0 }}>{children}</div>
+        <div style={solto ? { minWidth: 0 } : { marginTop: 'auto', minWidth: 0 }}>{children}</div>
       </div>
     );
   }
@@ -879,7 +889,7 @@ function Field({ label, children, labelColor, bloco }) {
   return (
     <label style={estilo}>
       {etiqueta}
-      <div style={{ marginTop: 'auto', minWidth: 0 }}>{children}</div>
+      <div style={solto ? { minWidth: 0 } : { marginTop: 'auto', minWidth: 0 }}>{children}</div>
     </label>
   );
 }
@@ -7518,7 +7528,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
         {modo === 'treino' ? (
           <div style={card}>
             <h3 style={rotulo}>2 · Exercícios</h3>
-            <Field label="Dia do treino">
+            <Field label="Dia do treino" solto>
               <Input type="date" value={dia} onChange={e => { setDia(e.target.value); setEscolhidos([]); setPlanoBase(null); }} />
             </Field>
             <p style={{ ...nota, marginTop: 10 }}>
