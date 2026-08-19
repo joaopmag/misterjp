@@ -5315,6 +5315,32 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     presentTimeoutRef.current = setTimeout(() => runPresentStep(0, seq), 200);
   };
 
+  /* INSERIR UM ELEMENTO A PARTIR DE UM PASSO JÁ GRAVADO.
+
+     Cada passo da animação guarda uma fotografia do campo (`step.elements`).
+     Um elemento colocado depois de a coreografia estar feita só existia no
+     estado final — e ao rever a animação desde o início, aparecia do nada
+     no fim.
+
+     Com `inserirDesde` escolhido, o elemento é escrito também na fotografia
+     desse passo e de todos os seguintes: passa a estar em campo a partir
+     dali até ao fim, que é o que se quer para testar uma variante sem
+     desfazer o que já está feito.
+
+     `inserirDesde` é o índice do passo (0 = antes do primeiro). A null
+     significa o comportamento normal: só no estado atual. */
+  const [inserirDesde, setInserirDesde] = useState(null);
+
+  const colocarElemento = (novo) => {
+    const seq = value.sequence || [];
+    const desde = inserirDesde;
+    const sequencia = (desde == null || !seq.length)
+      ? seq
+      : seq.map((step, i) => (i < desde ? step : { ...step, elements: [...(step.elements || []), { ...novo }] }));
+    commit({ ...value, elements: [...elements, novo], sequence: sequencia });
+    return novo.id;
+  };
+
   const handleBgPointerDown = (e) => {
     if (isPresenting) return;
     // Impede o "clique fantasma" de compatibilidade que alguns browsers/
@@ -5330,13 +5356,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       eraseAt(p);
     } else if (tool === 'player') {
       const number = nextPlayerNumber(elements, activeColor);
-      commit({ ...value, elements: [...elements, { id: uid(), kind: 'player', team: activeColor, number, x: p.x, y: p.y }] });
+      colocarElemento({ id: uid(), kind: 'player', team: activeColor, number, x: p.x, y: p.y });
     } else if (tool === 'keeper') {
       const number = nextKeeperNumber(elements, activeColor);
-      commit({ ...value, elements: [...elements, { id: uid(), kind: 'keeper', team: activeColor, number, x: p.x, y: p.y }] });
+      colocarElemento({ id: uid(), kind: 'keeper', team: activeColor, number, x: p.x, y: p.y });
     } else if (tool === 'goalmarker') {
       const newId = uid();
-      commit({ ...value, elements: [...elements, { id: newId, kind: 'goalmarker', rotation: 0, w: 3.6, h: 2.2, x: p.x, y: p.y }] });
+      colocarElemento({ id: newId, kind: 'goalmarker', rotation: 0, w: 3.6, h: 2.2, x: p.x, y: p.y });
       // Seleciona logo a baliza acabada de colocar, para os manípulos de
       // rotação/redimensionamento aparecerem de imediato, sem ser preciso
       // mudar para "Mover / Selecionar" e tocar nela outra vez.
@@ -5356,10 +5382,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
          abaixo recebe o foco COM O TEXTO TODO SELECIONADO (ver o textarea
          do painel): a primeira tecla substitui a palavra, sem ser preciso
          apagá-la nem clicar na caixa. */
-      commit({ ...value, elements: [...elements, { id: newId, kind: 'text', x: p.x, y: p.y, text: 'Texto', size: 3 }] });
+      colocarElemento({ id: newId, kind: 'text', x: p.x, y: p.y, text: 'Texto', size: 3 });
       setSelectedId(newId);
     } else if (MARKER_TOOLS.includes(tool)) {
-      commit({ ...value, elements: [...elements, { id: uid(), kind: tool, x: p.x, y: p.y }] });
+      colocarElemento({ id: uid(), kind: tool, x: p.x, y: p.y });
     } else if (LINE_TOOLS.includes(tool)) {
       // Só faz sentido "colar" ao fim de uma seta anterior para os tipos
       // que entram em cadeias de animação (passe/corrida); linhas simples
@@ -5894,6 +5920,33 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, marginLeft: 2 }}>
               {(value.sequence || []).length} {(value.sequence || []).length === 1 ? 'passo' : 'passos'}
             </span>
+          )}
+
+          {/* A partir de que passo entra o que se colocar a seguir.
+
+              Sem isto, um elemento acrescentado depois da coreografia
+              pronta só existia no fim: ao rever a animação desde o
+              princípio, aparecia do nada. Escolher um passo aqui mete-o em
+              campo desde esse momento até ao fim, o que permite testar uma
+              variante sem desmanchar o que já está feito. */}
+          {(value.sequence || []).length > 0 && (
+            <label
+              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: inserirDesde == null ? T.mutedDim : T.gold }}
+              title="O que colocares a seguir passa a existir a partir deste passo da animação, e não só no fim"
+            >
+              inserir desde
+              <Select
+                value={inserirDesde == null ? '' : String(inserirDesde)}
+                onChange={ev => setInserirDesde(ev.target.value === '' ? null : Number(ev.target.value))}
+                style={{ width: 92, height: 26, lineHeight: '24px', fontSize: 11.5, padding: '0 4px' }}
+              >
+                <option value="">só agora</option>
+                <option value="0">o início</option>
+                {(value.sequence || []).map((_, i) => (
+                  <option key={i} value={i + 1}>passo {i + 1}</option>
+                ))}
+              </Select>
+            </label>
           )}
           {(value.sequence || []).length > 0 && (
             <button
@@ -7643,15 +7696,19 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
             <div style={{ fontSize: 11, color: T.mutedDim, marginBottom: 8 }}>
               Contam para a distribuição do treino. Não entram no plantel, nas presenças nem nas estatísticas.
             </div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            {/* No telemóvel o nome ocupa uma linha inteira e a posição
+                fica ao lado do botão: os três lado a lado não cabiam em
+                380 px e o campo do nome ficava demasiado estreito para se
+                ver o que se estava a escrever. */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', minWidth: 0 }}>
               <Input
                 value={novoNome}
                 onChange={e => setNovoNome(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adicionarConvidado(); } }}
                 placeholder="Nome"
-                style={{ flex: 1, minWidth: 120, height: 34 }}
+                style={{ flex: isNarrow ? '1 1 100%' : 1, minWidth: 0, height: 34 }}
               />
-              <Select value={novaPos} onChange={e => setNovaPos(e.target.value)} style={{ width: 86, height: 34 }}>
+              <Select value={novaPos} onChange={e => setNovaPos(e.target.value)} style={{ width: 86, height: 34, flexShrink: 0 }}>
                 {POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
               </Select>
               <Btn variant="ghost" onClick={adicionarConvidado} disabled={!novoNome.trim()}><Plus size={14} /> Juntar</Btn>
@@ -7718,7 +7775,17 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
                         </button>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11, color: T.mutedDim }}>
+                      {/* No telemóvel os três controlos em linha somam mais
+                          do que a largura do ecrã e a página passa a
+                          arrastar-se de lado. Em coluna cabem, e cada um
+                          fica com a largura toda — mais fácil de acertar
+                          com o dedo. */}
+                      <div style={{
+                        display: 'flex', gap: isNarrow ? 7 : 8, fontSize: 11, color: T.mutedDim, minWidth: 0,
+                        ...(isNarrow
+                          ? { flexDirection: 'column', alignItems: 'stretch' }
+                          : { alignItems: 'center', flexWrap: 'wrap' }),
+                      }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                           <input type="number" min="1" max="90" value={e.minutos}
                             onChange={ev => patchExercicio(e.id, { minutos: Math.max(1, Number(ev.target.value) || 0) })}
@@ -7739,7 +7806,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
                           <Select
                             value={String(e.maxSimultaneo)}
                             onChange={ev => patchExercicio(e.id, { maxSimultaneo: Number(ev.target.value) })}
-                            style={{ width: 54, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 4px' }}
+                            style={{ width: isNarrow ? 64 : 54, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 4px', flexShrink: 0 }}
                           >
                             {[1, 2, 3, 4, 5, 6].map(v => <option key={v} value={v}>{v}</option>)}
                           </Select>
@@ -7752,7 +7819,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
                             Escolher aqui põe os dois no mesmo grupo, e é o
                             grupo que os faz decorrer ao mesmo tempo. */}
                         <label style={{ display: 'flex', alignItems: 'center', gap: 5 }} title="Decorre ao mesmo tempo que este outro exercício, noutra zona do campo">
-                          a par de
+                          <span style={{ flexShrink: 0 }}>a par de</span>
                           <Select
                             value={(escolhidos.find(o => o.id !== e.id && o.grupo && o.grupo === e.grupo) || {}).id || ''}
                             onChange={ev => {
@@ -7764,7 +7831,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
                                 o.id === e.id || o.id === alvo ? { ...o, grupo: chave } : o
                               )));
                             }}
-                            style={{ width: 132, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 4px' }}
+                            style={{ width: isNarrow ? '100%' : 132, minWidth: 0, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 4px' }}
                           >
                             <option value="">— sozinho —</option>
                             {escolhidos.filter(o => o.id !== e.id).map(o => {
@@ -7991,8 +8058,21 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
       )}
 
       {/* Ação principal, no fim: é aqui que se está depois de ler o
-          resultado, e é daqui que se quer voltar a baralhar. */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, margin: '18px 0 8px', flexWrap: 'wrap' }}>
+          resultado, e é daqui que se quer voltar a baralhar.
+
+          No telemóvel fica COLADA AO FUNDO do ecrã (`position: sticky`).
+          Com 25 presentes e cinco exercícios, a página tem vários ecrãs de
+          altura, e ter de a percorrer toda de cada vez que se quer
+          baralhar torna a coisa impraticável. Em desktop cabe tudo à
+          vista e não é preciso. */}
+      <div style={{
+        display: 'flex', justifyContent: 'center', gap: 10, margin: '18px 0 8px', flexWrap: 'wrap',
+        ...(isNarrow ? {
+          position: 'sticky', bottom: 0, zIndex: 20,
+          background: `linear-gradient(to top, ${T.bg} 62%, transparent)`,
+          padding: '14px 0 12px', margin: '18px -14px 0',
+        } : {}),
+      }}>
         <Btn
           onClick={modo === 'treino' ? gerarTreino : gerarJogo}
           disabled={!presentes.length || (modo === 'treino' && !escolhidos.length)}
