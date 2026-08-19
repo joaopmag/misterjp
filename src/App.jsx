@@ -3859,39 +3859,31 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 
    O cálculo é feito aqui a partir do próprio enquadramento, para não
    ficar dessincronizado se um dia o viewBox mudar. */
-/* QUANTO PODE O CAMPO CRESCER
+/* O CAMPO OCUPA A LARGURA TODA. Ponto.
 
-   A versão anterior usava uma percentagem da altura do ecrã (50vh). O
-   problema é que o que está à volta do campo — barra de ferramentas,
-   painel de edição, botões — ocupa uma altura mais ou menos FIXA em
-   pixéis, não uma percentagem. Resultado: num portátil pequeno 50vh já
-   era demais, e num monitor grande ficava muito aquém do espaço
-   disponível, deixando o campo pequeno com meia janela vazia à volta.
+   Passei várias versões a tentar que o campo, a barra de ferramentas e o
+   painel de edição coubessem TODOS no ecrã sem rolar. Era a premissa
+   errada, e o resultado foi um campo cada vez mais pequeno: numa janela de
+   1012 px de conteúdo, a regra baseada na altura dava-lhe 465 px e
+   desperdiçava mais de metade do espaço.
 
-   Agora a conta é a certa: ao espaço da janela tira-se o que a moldura
-   ocupa, e o que sobra é do campo. Num monitor de 1500 px o campo fica
-   com ~860 px de altura; num portátil de 800 px encolhe sozinho.
+   A prancheta é a ferramenta de trabalho — é onde se desenha, arrasta e
+   lê. Vale mais rolar um pouco a página para chegar ao painel de edição do
+   que desenhar num campo apertado. Por isso o campo leva a largura toda do
+   que tem disponível, e a altura sai da proporção.
 
-   O mínimo de 340 px existe para ecrãs baixos: abaixo disso o campo
-   deixaria de ser utilizável, e é preferível rolar um pouco a página do
-   que desenhar às cegas. */
-const PITCH_CHROME_PX = 500;   // barra, etiquetas, painel de edição e margens
-const PITCH_MIN_PX = 340;      // abaixo disto o campo deixa de dar para trabalhar
-const PITCH_RATIO = PITCH_BOX.w / PITCH_BOX.h;
-
-/* A LARGURA é que é limitada, nunca a altura.
-
-   Com a proporção fixa, limitar a largura limita a altura na mesma medida
-   e a forma nunca se altera. Limitar a altura, pelo contrário, deixa o
-   elemento com a largura toda e uma proporção diferente da declarada — o
-   desenho estica e os jogadores ficam ovais. Já aconteceu; daí o aviso. */
-const PITCH_ALTURA_DISPONIVEL = `max(${PITCH_MIN_PX}px, 92vh - ${PITCH_CHROME_PX}px)`;
+   `aspectRatio` sozinho garante que nunca achata: a altura é sempre a
+   largura a dividir pela proporção do enquadramento. Não há aqui
+   `maxHeight` de propósito — limitar a altura deixaria o elemento com a
+   largura toda e uma proporção diferente da declarada, e o desenho
+   esticava (foi assim que os jogadores ficaram ovais, numa versão
+   anterior). */
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
-  maxWidth: `calc(${PITCH_ALTURA_DISPONIVEL} * ${PITCH_RATIO.toFixed(4)})`,
   margin: '0 auto',
 };
+
 
 
 /* Bancos de suplentes e áreas técnicas.
