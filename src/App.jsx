@@ -1143,6 +1143,53 @@ function useIsMobile(breakpoint = 860) {
   return isMobile;
 }
 
+function BotaoTopo({ alvoRef, isMobile }) {
+  /* VOLTAR AO TOPO.
+
+     No telemóvel, uma lista de exercícios ou de jogos de uma época
+     inteira obriga a dezenas de gestos para regressar ao início. O botão
+     só aparece depois de se ter descido um ecrã inteiro — antes disso não
+     serve para nada e só tapava conteúdo.
+
+     Em desktop não aparece: a barra de deslocamento e o teclado (Home)
+     resolvem o mesmo em menos gestos. */
+  const [visivel, setVisivel] = useState(false);
+
+  useEffect(() => {
+    if (!isMobile || typeof window === 'undefined') return undefined;
+    const alvo = (alvoRef && alvoRef.current) || null;
+    const ler = () => (alvo ? alvo.scrollTop : (window.scrollY || document.documentElement.scrollTop || 0));
+    const aoRolar = () => setVisivel(ler() > window.innerHeight);
+    const fonte = alvo || window;
+    aoRolar();
+    fonte.addEventListener('scroll', aoRolar, { passive: true });
+    return () => fonte.removeEventListener('scroll', aoRolar);
+  }, [isMobile, alvoRef]);
+
+  if (!isMobile || !visivel) return null;
+
+  const subir = () => {
+    const alvo = (alvoRef && alvoRef.current) || null;
+    if (alvo) alvo.scrollTo({ top: 0, behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  return (
+    <button
+      onClick={subir}
+      aria-label="Voltar ao topo"
+      style={{
+        position: 'fixed', right: 16, bottom: 78, zIndex: 40,
+        width: 44, height: 44, borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: T.surfaceRaise, border: `1px solid ${T.line}`,
+        color: T.cream, cursor: 'pointer',
+        boxShadow: '0 4px 14px rgba(0,0,0,0.45)',
+      }}
+    ><ChevronLeft size={20} style={{ transform: 'rotate(90deg)' }} /></button>
+  );
+}
+
 function App({ session }) {
   const userId = session.user.id;
   const userEmail = session.user.email;
@@ -1328,6 +1375,20 @@ function App({ session }) {
         <style>{`
           ${FONTS}
           * { box-sizing: border-box; }
+
+          /* ARRASTAMENTO LATERAL NO TELEMÓVEL.
+
+             Basta um elemento a passar uns pixéis da largura do ecrã — uma
+             tabela larga, uma imagem — para a página inteira poder ser
+             arrastada de lado. Fica com a sensação de estar solta e é
+             fácil perder a coluna onde se estava a ler.
+
+             Cortar aqui trava isso de uma vez, em toda a app. As zonas que
+             PRECISAM de rolar na horizontal (tabelas de presenças,
+             classificação) têm o seu próprio overflow-x:auto e
+             continuam a funcionar, porque o corte é só ao nível da
+             página. */
+          html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; }
           ::selection { background: ${T.gold}55; }
           input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -1588,6 +1649,7 @@ function App({ session }) {
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
         </div>
         </main>
+        <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
       </div>
       {/* Dupla rede contra eliminações acidentais, uma só para toda a
           aplicação: primeiro pergunta, depois deixa anular. */}
@@ -4691,6 +4753,18 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const iconEscala = iconScaleForPhase(exerciseInfo?.phase);
   const isNarrowEditor = useIsMobile(760);
 
+  /* ÍCONES MAIORES NO TELEMÓVEL.
+
+     Num ecrã de 380 px o campo inteiro tem a largura de um cartão de
+     crédito, e os jogadores ficam com 3 mm — impossíveis de acertar com o
+     dedo e de distinguir uns dos outros.
+
+     Aumentar as posições não resolveria nada (o campo é o mesmo); o que se
+     aumenta é o TAMANHO DESENHADO dos ícones. As coordenadas não mudam,
+     por isso um exercício feito no telemóvel abre igual no computador —
+     só com os ícones à escala certa para cada ecrã. */
+  const escalaEcra = isNarrowEditor ? 1.45 : 1;
+
   /* QUANTO PODE O CAMPO CRESCER — MEDIDO, NÃO ADIVINHADO.
 
      Passei várias versões a estimar em pixéis o que a barra de ferramentas
@@ -5723,7 +5797,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           <DiagramElements
             elements={(isPresenting ? presentElements || [] : elements).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
             arrows={isPresenting && presentArrows ? presentArrows : arrows}
-            iconScale={iconEscala}
+            iconScale={iconEscala * escalaEcra}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
             selectedArrowId={selectedArrowId} interactive={!isPresenting}
             placingActive={tool !== 'select' && tool !== 'eraser'}
@@ -5765,8 +5839,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             <line x1={drawing.x1} y1={drawing.y1} x2={drawing.x2} y2={drawing.y2}
               stroke="#C9A227" strokeWidth="0.45" strokeDasharray={drawing.type === 'arrow-run' || drawing.type === 'line-dashed' ? '2,1.5' : '1,1'} />
           )}
-          <AnimOverlay items={animItems} iconScale={iconEscala} />
-          <AnimOverlay items={presentAnimItems} iconScale={iconEscala} />
+          <AnimOverlay items={animItems} iconScale={iconEscala * escalaEcra} />
+          <AnimOverlay items={presentAnimItems} iconScale={iconEscala * escalaEcra} />
         </svg>
       </div>
 
@@ -8312,14 +8386,33 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
 }
 
 function WeekSummary({ itemsRaw, items: itemsProp }) {
-  // O resumo é sobre carga de treino — os jogos que também aparecem na
-  // lista não entram nestas contas.
-  const items = (itemsProp || itemsRaw || []).filter(s => !s.__match);
+  const todos = itemsProp || itemsRaw || [];
+
+  /* OS JOGOS CONTAM PARA A CARGA DA SEMANA.
+
+     Antes eram excluídos, e o resumo dizia "1× Alta" numa semana com dois
+     amigáveis — a leitura ficava errada precisamente onde mais interessa,
+     que é perceber quanto é que a equipa levou.
+
+     Um jogo é carga alta por definição: 90 minutos em competição pesam
+     mais do que qualquer treino. Por isso entram como fase "Jogo" e
+     intensidade alta, sem ser preciso lançar nada à mão.
+
+     Os minutos ficam de fora: o total em minutos é a soma das durações
+     dos exercícios planeados, e um jogo não tem exercícios. Somar-lhe 90
+     minutos misturaria duas coisas que se medem de maneiras diferentes. */
+  const sessoes = todos.filter(s => !s.__match);
+  const jogos = todos.filter(s => s.__match);
+  const items = sessoes;
+
   const totalMin = items.reduce((sum, s) => sum + (s.exerciseIds || []).reduce((a, e) => a + (Number(e.duration) || 0), 0), 0);
   const phaseCounts = {};
   items.forEach(s => { phaseCounts[s.phase] = (phaseCounts[s.phase] || 0) + 1; });
+  if (jogos.length) phaseCounts.Jogo = (phaseCounts.Jogo || 0) + jogos.length;
+
   const intensityCounts = { baixa: 0, media: 0, alta: 0 };
   items.forEach(s => { if (intensityCounts[s.intensity] != null) intensityCounts[s.intensity]++; });
+  intensityCounts.alta += jogos.length;
   const intensitySummary = INTENSITIES.filter(i => intensityCounts[i.value] > 0).map(i => `${intensityCounts[i.value]}× ${i.label}`).join(' · ');
   // Lista vertical: em coluna, cada indicador na sua linha — em ecrã
   // estreito a versão em linha partia-se a meio e ficava confusa.
@@ -8330,6 +8423,7 @@ function WeekSummary({ itemsRaw, items: itemsProp }) {
     }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: T.cream }}>
         <TrendingUp size={12} color={T.warn} /> {items.length} {items.length === 1 ? 'sessão' : 'sessões'} · {totalMin} min
+        {jogos.length > 0 && <span style={{ color: T.mutedDim }}> · {jogos.length} {jogos.length === 1 ? 'jogo' : 'jogos'}</span>}
       </span>
       {intensitySummary && <span>Intensidade: <span style={{ color: T.warn }}>{intensitySummary}</span></span>}
       {Object.entries(phaseCounts).map(([ph, c]) => (
@@ -9974,6 +10068,13 @@ const emptyCompetition = (name = '') => ({
 });
 
 function StandingsModal({ standings, onClose, onSave }) {
+  /* No telemóvel a linha de um jogo (equipa, golos, golos, equipa, data,
+     apagar) não cabe: são 6 colunas com larguras fixas que somam bem mais
+     do que 380 px. Em vez de deixar a janela arrastar-se de lado — o que
+     descentra tudo e faz perder a coluna onde se estava —, a linha
+     parte-se em duas: equipas e resultado em cima, data e apagar em baixo. */
+  const estreito = useIsMobile(620);
+  const colunasJogo = estreito ? '1fr 44px 44px 1fr' : '1fr 54px 54px 1fr 150px 24px';
   const initial = normalizeStandings(standings);
   const [competitions, setCompetitions] = useState(
     initial.competitions.length ? initial.competitions : [emptyCompetition('')]
@@ -10241,7 +10342,7 @@ function StandingsModal({ standings, onClose, onSave }) {
               </div>
 
               <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 54px 54px 1fr 150px 24px', gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 2px 6px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: colunasJogo, gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 2px 6px' }}>
                   <span>Equipa casa</span><span style={{ textAlign: 'center' }}>GM</span><span style={{ textAlign: 'center' }}>GS</span><span>Equipa fora</span><span>Data</span><span />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
@@ -10250,7 +10351,7 @@ function StandingsModal({ standings, onClose, onSave }) {
                     const gh = g.homeGoals !== undefined && g.homeGoals !== '' ? g.homeGoals : (sc ? sc.home : '');
                     const ga = g.awayGoals !== undefined && g.awayGoals !== '' ? g.awayGoals : (sc ? sc.away : '');
                     return (
-                      <div key={g.id || gi} style={{ display: 'grid', gridTemplateColumns: '1fr 54px 54px 1fr 150px 24px', gap: 6, alignItems: 'center' }}>
+                      <div key={g.id || gi} style={{ display: 'grid', gridTemplateColumns: colunasJogo, gap: 6, alignItems: 'center' }}>
                         <Select value={g.home} onChange={e => updateGame(gi, { home: e.target.value })}>
                           <option value="">— escolher —</option>
                           {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
@@ -10300,13 +10401,13 @@ function StandingsModal({ standings, onClose, onSave }) {
                   <p style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem equipas nem resultados nesta competição.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '24px 1fr repeat(8, 40px)', gap: 4, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: `24px minmax(0, 1fr) repeat(8, ${estreito ? 30 : 40}px)`, gap: 4, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 4px', minWidth: 0 }}>
                       <span>#</span><span>Equipa</span>
                       {['J', 'V', 'E', 'D', 'GM', 'GS', 'DG', 'P'].map(h => <span key={h} style={{ textAlign: 'center' }}>{h}</span>)}
                     </div>
                     {previewTeams.map((t, i) => (
                       <div key={t.id} style={{
-                        display: 'grid', gridTemplateColumns: '24px 1fr repeat(8, 40px)', gap: 4, alignItems: 'center',
+                        display: 'grid', gridTemplateColumns: `24px minmax(0, 1fr) repeat(8, ${estreito ? 30 : 40}px)`, gap: 4, alignItems: 'center', minWidth: 0,
                         background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '6px 4px', fontSize: 12.5, ...mono, color: T.mutedDim,
                       }}>
                         <span style={{ textAlign: 'center' }}>{i + 1}</span>
@@ -11130,7 +11231,7 @@ function PlantelHistorico({ players, monitoring, matches = [], sessions = [] }) 
           ficam com a mesma largura e alinhados, também no telemóvel.
           O espaço em cima separa-o da tabela anterior, que sem ele ficava
           encavalitada nas etiquetas das datas. */}
-      <div style={{ ...FIELD_GRID, marginTop: 16, marginBottom: 14 }}>
+      <div style={{ ...FIELD_GRID, marginTop: 28, marginBottom: 14 }}>
         <Field label="Data de início"><Input type="date" value={start} max={end || undefined} onChange={e => setStart(e.target.value)} /></Field>
         <Field label="Data de fim"><Input type="date" value={end} min={start || undefined} onChange={e => setEnd(e.target.value)} /></Field>
         <div style={{ ...FIELD_FULL, display: 'flex', gap: 6 }}>
