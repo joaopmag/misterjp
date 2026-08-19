@@ -4660,9 +4660,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       const campo = campoRef.current;
       if (!editor || !campo) return;
       const moldura = editor.offsetHeight - campo.offsetHeight; // tudo menos o campo
-      // A folga evita que o campo encoste ao limite do ecrã e deixa
-      // respiro para as margens da janela de edição.
-      const disponivel = window.innerHeight - moldura - 96;
+      /* Folga curta de propósito: 28 px chegam para o campo não encostar
+         ao limite do ecrã. Estava em 96 e deixava uma faixa vazia enorme
+         por baixo da barra de desfazer — espaço que é do campo. */
+      const disponivel = window.innerHeight - moldura - 28;
       // Nunca abaixo de 300 px: mais pequeno do que isto não dá para
       // trabalhar, e nesse caso é preferível rolar a página.
       setAlturaCampo(Math.max(300, Math.round(disponivel)));
@@ -5820,11 +5821,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
 
           Agora o espaço fica sempre reservado (`minHeight`), com ou sem
           seleção. A altura da página deixa de mudar e o scroll fica quieto. */}
-      {/* A altura reservada é a do MAIOR painel — o do texto, que tem a
-          caixa de escrita e os botões de tamanho e largura. Reservar menos
-          fazia a página crescer ao selecionar um texto, e era isso que
-          continuava a empurrar o scroll para baixo. */}
-      <div style={{ minHeight: 124 }}>
+      {/* A altura reservada é a do MAIOR painel — o do texto, com a caixa
+          de escrita e os botões de tamanho e largura. Reservar menos fazia
+          a página crescer ao selecionar um texto, e o scroll saltava.
+
+          Está no mínimo possível: a caixa de escrita passou a uma linha (o
+          texto continua a poder ter várias, só se rola dentro dela) para
+          esta faixa não roubar altura ao campo quando nada está
+          selecionado. */}
+      <div style={{ minHeight: 92 }}>
       {selectedEl && (
         <div style={{ marginTop: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0', flexWrap: 'wrap' }}>
@@ -5841,7 +5846,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 value={selectedEl.text || ''}
                 onChange={e => changeSelectedText(e.target.value)}
                 placeholder="Escreve aqui (Enter para nova linha)"
-                rows={2}
+                rows={1}
                 /* SEM `autoFocus`.
 
                    O atributo `autoFocus` do HTML dá o foco assim que o
