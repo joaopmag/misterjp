@@ -3866,7 +3866,20 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
    ferramentas por cima e a faixa do elemento selecionado por baixo. Passar
    daqui obriga a rolar a meio de um desenho, que é o pior momento para
    perder o campo de vista. */
-const PITCH_MAX_VH = 70;
+/* Altura máxima do campo, em percentagem da altura do ecrã.
+
+   O valor é um compromisso, e vale a pena dizer entre o quê: o campo, a
+   barra de ferramentas por cima e o painel de edição por baixo têm de
+   caber TODOS no mesmo ecrã. Cada ponto que o campo cresce é um ponto que
+   o painel de texto perde — e sem ele não se consegue escrever.
+
+   50vh é o valor em que os três cabem num portátil comum (≈800 px de
+   altura). O cálculo está no teste "campo + barra + painel cabem num
+   portátil de 800px": se alguém subir este número, o teste falha e diz
+   quantos pixéis faltam. Num monitor grande sobra espaço, mas aumentar
+   aqui quebraria os ecrãs pequenos, onde o painel voltaria a ficar
+   cortado — e sem ele não se consegue escrever. */
+const PITCH_MAX_VH = 50;
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
@@ -5751,7 +5764,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
 
           Agora o espaço fica sempre reservado (`minHeight`), com ou sem
           seleção. A altura da página deixa de mudar e o scroll fica quieto. */}
-      <div style={{ minHeight: 52 }}>
+      {/* A altura reservada é a do MAIOR painel — o do texto, que tem a
+          caixa de escrita e os botões de tamanho e largura. Reservar menos
+          fazia a página crescer ao selecionar um texto, e era isso que
+          continuava a empurrar o scroll para baixo. */}
+      <div style={{ minHeight: 124 }}>
       {selectedEl && (
         <div style={{ marginTop: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0', flexWrap: 'wrap' }}>
@@ -5769,13 +5786,16 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 onChange={e => changeSelectedText(e.target.value)}
                 placeholder="Escreve aqui (Enter para nova linha)"
                 rows={2}
-                autoFocus
-                /* Ao colocar uma caixa nova, o conteúdo fica selecionado:
-                   a primeira tecla substitui a palavra "Texto" e escreve-se
-                   logo, sem clicar em lado nenhum nem apagar nada.
-                   `selectionStart/End` em vez de `select()` porque este ramo
-                   corre em cada montagem e o `select()` do Safari perde-se
-                   se o elemento ainda não estiver visível. */
+                /* SEM `autoFocus`.
+
+                   O atributo `autoFocus` do HTML dá o foco assim que o
+                   elemento aparece e ARRASTA A JANELA para o trazer à vista.
+                   Como este campo está por baixo da prancheta, colocar uma
+                   caixa de texto fazia o editor saltar para baixo — e não há
+                   opção para o desligar.
+
+                   O foco é dado aqui em baixo, à mão, com `preventScroll`:
+                   o cursor fica no sítio certo e a janela não se mexe. */
                 ref={(el) => {
                   if (!el || el.dataset.iniciado === '1') return;
                   el.dataset.iniciado = '1';
