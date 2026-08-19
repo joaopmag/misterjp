@@ -7453,7 +7453,8 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
   const toggleExercicio = (x) => setEscolhidos(prev => (
     prev.some(e => e.id === x.id)
       ? prev.filter(e => e.id !== x.id)
-      : [...prev, { id: x.id, minutos: Number(x.defaultDuration) || 15, maxSimultaneo: 1, grupo: '' }]
+      // A duração vem do treino planeado; a do exercício é só o recurso.
+      : [...prev, { id: x.id, minutos: Number(duracaoNoTreino.get(x.id)) || Number(x.defaultDuration) || 15, maxSimultaneo: 1, grupo: '' }]
   ));
   const patchExercicio = (id, patch) => setEscolhidos(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
   const moverExercicio = (id, delta) => setEscolhidos(prev => {
@@ -7548,8 +7549,28 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
      trabalho já feito no Planeamento — com o risco de simular uma coisa e
      treinar outra. */
   const sessoesDoDia = (sessions || []).filter(x => x.date === dia);
-  const idsDoDia = Array.from(new Set(sessoesDoDia.flatMap(x => x.exerciseIds || [])));
-  const exerciciosDoDia = idsDoDia.map(id => exercises.find(x => x.id === id)).filter(Boolean);
+
+  /* ATENÇÃO ao formato de `exerciseIds`.
+
+     Apesar do nome, NÃO é uma lista de identificadores: é uma lista de
+     `{ exId, duration }` — o exercício mais a duração que ele tem NAQUELE
+     treino, que pode ser diferente da duração habitual.
+
+     A primeira versão disto procurava `exercises.find(x => x.id === item)`
+     com o objeto inteiro no lugar do id. Nunca encontrava nada, e o
+     simulador dizia sempre "não há treino planeado neste dia" mesmo com a
+     sessão criada. O nome do campo enganou-me.
+
+     A duração vem daqui e não do exercício: se o treinador pôs 12 minutos
+     naquele treino, é 12 que o simulador deve usar. */
+  const itensDoDia = [];
+  sessoesDoDia.forEach(x => (x.exerciseIds || []).forEach(item => {
+    const exId = item && typeof item === 'object' ? item.exId : item;
+    if (!exId || itensDoDia.some(v => v.exId === exId)) return;
+    itensDoDia.push({ exId, duration: (item && item.duration) || null });
+  }));
+  const duracaoNoTreino = new Map(itensDoDia.map(v => [v.exId, v.duration]));
+  const exerciciosDoDia = itensDoDia.map(v => exercises.find(x => x.id === v.exId)).filter(Boolean);
   const exerciciosVisiveis = filtroFase === 'Todas'
     ? exerciciosDoDia
     : exerciciosDoDia.filter(x => x.phase === filtroFase);
@@ -10959,8 +10980,12 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
         <>
           {/* Mesma grelha e mesmos atalhos do histórico do plantel, mais
               abaixo: dois filtros de data com aspetos diferentes na mesma
-              página obrigam a reaprender o mesmo gesto duas vezes. */}
-          <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+              página obrigam a reaprender o mesmo gesto duas vezes.
+
+              O espaço em cima separa-o da tabela do estado atual. Sem ele,
+              a etiqueta "DATA DE INÍCIO" encostava à última linha da
+              tabela e lia-se como se fizesse parte dela. */}
+          <div style={{ ...FIELD_GRID, marginTop: 28, marginBottom: 14 }}>
             <Field label="Data de início">
               <Input type="date" value={deData} max={ateData || undefined} onChange={e => setDeData(e.target.value)} />
             </Field>
