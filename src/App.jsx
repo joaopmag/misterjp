@@ -1157,10 +1157,21 @@ function BotaoTopo({ alvoRef, isMobile }) {
 
   useEffect(() => {
     if (!isMobile || typeof window === 'undefined') return undefined;
-    const alvo = (alvoRef && alvoRef.current) || null;
-    const ler = () => (alvo ? alvo.scrollTop : (window.scrollY || document.documentElement.scrollTop || 0));
-    const aoRolar = () => setVisivel(ler() > window.innerHeight);
-    const fonte = alvo || window;
+
+    /* QUEM É QUE ROLA?
+
+       Em desktop é o <main>, que tem altura fixa e overflow próprio. No
+       TELEMÓVEL é a janela — o <main> fica com a altura do conteúdo e
+       nunca se mexe.
+
+       A primeira versão lia sempre o <main>: no telemóvel dava scrollTop 0
+       para sempre e o botão nunca aparecia. Agora confirma-se qual dos
+       dois rola mesmo, em vez de assumir. */
+    const el = (alvoRef && alvoRef.current) || null;
+    const elRola = !!el && el.scrollHeight > el.clientHeight + 4;
+    const ler = () => (elRola ? el.scrollTop : (window.scrollY || document.documentElement.scrollTop || 0));
+    const aoRolar = () => setVisivel(ler() > window.innerHeight * 0.9);
+    const fonte = elRola ? el : window;
     aoRolar();
     fonte.addEventListener('scroll', aoRolar, { passive: true });
     return () => fonte.removeEventListener('scroll', aoRolar);
@@ -1169,8 +1180,9 @@ function BotaoTopo({ alvoRef, isMobile }) {
   if (!isMobile || !visivel) return null;
 
   const subir = () => {
-    const alvo = (alvoRef && alvoRef.current) || null;
-    if (alvo) alvo.scrollTo({ top: 0, behavior: 'smooth' });
+    const el = (alvoRef && alvoRef.current) || null;
+    const elRola = !!el && el.scrollHeight > el.clientHeight + 4;
+    if (elRola) el.scrollTo({ top: 0, behavior: 'smooth' });
     else window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -3503,10 +3515,13 @@ const TEAMS = [
 ];
 const teamInfo = (id) => TEAMS.find(t => t.id === id) || TEAMS[0];
 
+/* `curto` é a etiqueta usada no telemóvel, onde três botões por linha não
+   deixam espaço para "Mover / Selecionar" nem "Guarda-redes" numa linha
+   só. Não é abreviar por abreviar: são as duas únicas que não cabem. */
 const BASE_TOOLS = [
-  { id: 'select', label: 'Mover / Selecionar' },
+  { id: 'select', label: 'Mover / Selecionar', curto: 'Mover' },
   { id: 'player', label: 'Jogador' },
-  { id: 'keeper', label: 'Guarda-redes' },
+  { id: 'keeper', label: 'Guarda-redes', curto: 'GR' },
   { id: 'coach', label: 'T', title: 'Treinador' },
   { id: 'cone', label: 'Cone' },
   { id: 'goalmarker', label: 'Baliza' },
@@ -5692,10 +5707,22 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       {/* No telemóvel os botões entram numa grelha de colunas iguais: com
           `flex-wrap` cada linha ficava com uma largura diferente e o bloco
           parecia desalinhado. Em ecrã largo mantém-se a linha corrida. */}
+      {/* `minmax(0, 1fr)` e não `1fr`.
+
+          Um `1fr` é na verdade `minmax(auto, 1fr)`, e esse `auto` é a
+          largura MÍNIMA do conteúdo. Com um botão a dizer
+          "Mover / Selecionar" sem quebra de linha, a coluna era forçada a
+          essa largura, as quatro colunas somavam mais do que o ecrã e a
+          grelha transbordava — daí os botões terem tamanhos diferentes e a
+          página arrastar-se de lado.
+
+          Com `minmax(0, 1fr)` as colunas podem encolher abaixo do
+          conteúdo, ficam todas iguais, e o texto quebra em duas linhas
+          quando é preciso. */}
       <div style={{
         marginBottom: 8,
         ...(isNarrowEditor
-          ? { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }
+          ? { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }
           : { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }),
       }}>
         {BASE_TOOLS.map(t => (
@@ -5705,11 +5732,14 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             onClick={() => setTool(t.id)}
             title={t.title || t.label}
             style={{
-              padding: t.symbol ? '6px 11px' : '6px 10px', borderRadius: 7, fontSize: 12.5, cursor: 'pointer', ...body,
+              padding: t.symbol ? '6px 8px' : '6px 6px', borderRadius: 7, fontSize: isNarrowEditor ? 12 : 12.5, cursor: 'pointer', ...body,
               background: tool === t.id ? '#B5393F' : 'transparent',
               color: tool === t.id ? TEXT_ON_ACCENT : T.muted,
               border: `1px solid ${tool === t.id ? '#B5393F' : T.line}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 32, whiteSpace: 'nowrap',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 34,
+              // No telemóvel o texto pode quebrar; em linha corrida não.
+              whiteSpace: isNarrowEditor ? 'normal' : 'nowrap',
+              textAlign: 'center', lineHeight: 1.15, minWidth: 0, overflow: 'hidden',
             }}
           >
             {t.symbol === 'solid' && (
@@ -5721,7 +5751,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             {t.symbol === 'square' && (
               <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.4,1.8" /></svg>
             )}
-            {!t.symbol && t.label}
+            {!t.symbol && (isNarrowEditor && t.curto ? t.curto : t.label)}
           </button>
         ))}
         {arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') && (
@@ -5940,10 +5970,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 onChange={ev => setInserirDesde(ev.target.value === '' ? null : Number(ev.target.value))}
                 style={{ width: 92, height: 26, lineHeight: '24px', fontSize: 11.5, padding: '0 4px' }}
               >
+                {/* O índice é o do passo, começando em 0.
+
+                    A primeira versão usava `i + 1` e o elemento entrava
+                    só DEPOIS do passo escolhido — escolher o último passo
+                    não propagava para lado nenhum e o item aparecia apenas
+                    no fim, que foi exatamente o que se notou. */}
                 <option value="">só agora</option>
-                <option value="0">o início</option>
                 {(value.sequence || []).map((_, i) => (
-                  <option key={i} value={i + 1}>passo {i + 1}</option>
+                  <option key={i} value={i}>desde o passo {i + 1}</option>
                 ))}
               </Select>
             </label>
