@@ -842,14 +842,43 @@ function MomentoFilter({ value, onChange, options }) {
 }
 const FIELD_FULL = { gridColumn: '1 / -1' };
 
-function Field({ label, children, labelColor }) {
-  /* height:100% + marginTop:auto no conteúdo: quando os campos estão lado
-     a lado numa grelha e uma etiqueta ocupa duas linhas (ex: "ANO DE
-     NASCIMENTO", "HORA DE CONCENTRAÇÃO"), as caixas continuam todas
-     alinhadas em baixo, em vez de umas ficarem mais abaixo do que outras. */
+/* `bloco` — para campos que não são uma caixa de texto.
+
+   Um <label> do HTML transfere QUALQUER clique dentro dele para o primeiro
+   controlo que contém. Isso é útil num campo normal (clicar na palavra
+   "Nome" põe o cursor na caixa) e é um problema em blocos grandes:
+
+   · no Anexo, clicar no espaço vazio ao lado dos botões abria a janela de
+     escolher ficheiro — o clique ia parar ao <input type="file">;
+   · no Esquema tático, clicar na margem à volta do campo dava foco ao
+     primeiro botão da barra de ferramentas, e o browser rolava a janela
+     para o trazer à vista — era o "salta para cima".
+
+   Com `bloco`, a etiqueta continua a ser um <label> (para leitores de
+   ecrã), mas o conteúdo fica fora dele: os cliques no vazio não vão dar a
+   lado nenhum.
+
+   height:100% + marginTop:auto: quando os campos estão lado a lado numa
+   grelha e uma etiqueta ocupa duas linhas (ex: "ANO DE NASCIMENTO"), as
+   caixas continuam alinhadas em baixo. */
+function Field({ label, children, labelColor, bloco }) {
+  const etiqueta = (
+    <span style={{ fontSize: 12, color: labelColor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
+  );
+  const estilo = { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, height: '100%', ...body };
+
+  if (bloco) {
+    return (
+      <div style={estilo}>
+        <label style={{ display: 'block' }}>{etiqueta}</label>
+        <div style={{ marginTop: 'auto', minWidth: 0 }}>{children}</div>
+      </div>
+    );
+  }
+
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, height: '100%', ...body }}>
-      <span style={{ fontSize: 12, color: labelColor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</span>
+    <label style={estilo}>
+      {etiqueta}
       <div style={{ marginTop: 'auto', minWidth: 0 }}>{children}</div>
     </label>
   );
@@ -3268,7 +3297,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <Field label="Esquema tático">
+        <Field label="Esquema tático" bloco>
           <DiagramEditor
             value={f.diagram || { elements: [], arrows: [] }}
             onChange={d => setF(prev => ({ ...prev, diagram: d }))}
@@ -3669,32 +3698,25 @@ function ballPanels(cx, cy, r) {
   return panels;
 }
 
-/* Bola do campo tático — painéis hexagonais com costuras luminosas.
+/* Bola do campo tático — esfera de painéis hexagonais com malha fina.
 
-   Desenho ORIGINAL, no espírito das bolas de treino modernas: painéis
-   hexagonais em degradé do magenta ao azul, separados por costuras claras
-   que brilham. Não copia nenhuma bola concreta — não tem logótipos, marcas
-   nem a geometria de painéis de nenhum modelo comercial.
+   Desenho ORIGINAL: painéis hexagonais separados por sulcos escuros, sobre
+   um degradé do violeta ao azul, com uma trama fina por dentro que lhe dá
+   textura. Não copia nenhuma bola concreta — sem logótipos, sem marcas,
+   sem a geometria de painéis de qualquer modelo comercial.
 
-   Porquê esta e não a branca clássica: no relvado escuro da prancheta uma
-   bola branca com manchas pretas confunde-se com um colete branco a essa
-   escala. O magenta não existe em mais nada no campo, por isso a bola
-   encontra-se de imediato mesmo com 3 mm no ecrã. */
+   Porquê estas cores e não o branco clássico: no relvado escuro da
+   prancheta uma bola branca confunde-se com um colete branco a três
+   milímetros de tamanho. O violeta não existe em mais nada no campo, por
+   isso a bola encontra-se de imediato.
+
+   Os painéis exteriores são desenhados MENORES e mais próximos do centro
+   do que os interiores, para dar a curvatura da esfera — vista de frente,
+   os painéis das bordas aparecem encurtados. */
 function TriondaBall({ cx, cy, r }) {
-  // Id único por posição: dois degradés com o mesmo id colidiriam.
+  // Ids únicos por posição: dois degradés com o mesmo id colidiriam.
   const gid = `bola-${Math.round(cx * 100)}-${Math.round(cy * 100)}`;
-  const costura = '#FFE9FB';
-
-  // Painéis à volta do centro. O ângulo dá a posição, o tom dá a
-  // profundidade — mais claro em cima, mais escuro em baixo.
-  const paineis = [
-    { a: -90, cor: '#E0329B' },
-    { a: -30, cor: '#B93BC9' },
-    { a: 30, cor: '#7A46D8' },
-    { a: 90, cor: '#4B5BE0' },
-    { a: 150, cor: '#7A46D8' },
-    { a: 210, cor: '#C9349F' },
-  ];
+  const sulco = '#1A1030';
 
   const hexagono = (px, py, raio, rot) => {
     const pts = [];
@@ -3705,42 +3727,54 @@ function TriondaBall({ cx, cy, r }) {
     return pts.join(' ');
   };
 
+  // Anel de painéis à volta do central, encolhidos pela curvatura.
+  const anel = [0, 60, 120, 180, 240, 300];
+
   return (
     <>
       <defs>
-        <radialGradient id={gid} cx="35%" cy="30%" r="80%">
-          <stop offset="0%" stopColor="#9B5BF0" />
-          <stop offset="100%" stopColor="#3B2A6B" />
+        <radialGradient id={gid} cx="34%" cy="28%" r="82%">
+          <stop offset="0%" stopColor="#C98AE8" />
+          <stop offset="45%" stopColor="#8A5BD8" />
+          <stop offset="100%" stopColor="#2B3A9E" />
         </radialGradient>
+        {/* Trama fina dentro dos painéis. */}
+        <pattern id={`${gid}-m`} width={r * 0.16} height={r * 0.16} patternUnits="userSpaceOnUse">
+          <path d={`M0 0 L${r * 0.16} ${r * 0.16} M${r * 0.16} 0 L0 ${r * 0.16}`}
+            stroke="#FFFFFF" strokeWidth={r * 0.012} opacity="0.22" fill="none" />
+        </pattern>
         <clipPath id={`${gid}-c`}>
-          <circle cx={cx} cy={cy} r={r * 0.97} />
+          <circle cx={cx} cy={cy} r={r * 0.98} />
         </clipPath>
       </defs>
 
-      <circle cx={cx} cy={cy} r={r} fill={`url(#${gid})`} stroke="#2A1240" strokeWidth={r * 0.09} />
+      <circle cx={cx} cy={cy} r={r} fill={`url(#${gid})`} stroke={sulco} strokeWidth={r * 0.07} />
+
       <g clipPath={`url(#${gid}-c)`}>
-        {paineis.map((p, i) => {
-          const rad = (p.a * Math.PI) / 180;
+        {/* Painel central, de frente e portanto o maior. */}
+        <polygon points={hexagono(cx, cy, r * 0.4, 0)} fill={`url(#${gid}-m)`} stroke={sulco} strokeWidth={r * 0.09} strokeLinejoin="round" />
+        {/* Anel intermédio. */}
+        {anel.map((a, i) => {
+          const rad = (a * Math.PI) / 180;
           return (
-            <polygon
-              key={i}
-              points={hexagono(cx + Math.cos(rad) * r * 0.66, cy + Math.sin(rad) * r * 0.66, r * 0.4, p.a)}
-              fill={p.cor}
-              stroke={costura}
-              strokeWidth={r * 0.075}
-              strokeLinejoin="round"
-              opacity="0.95"
-            />
+            <polygon key={`m${i}`}
+              points={hexagono(cx + Math.cos(rad) * r * 0.66, cy + Math.sin(rad) * r * 0.66, r * 0.34, a + 30)}
+              fill={`url(#${gid}-m)`} stroke={sulco} strokeWidth={r * 0.085} strokeLinejoin="round" />
           );
         })}
-        {/* Painel central, o mais escuro, a fechar o desenho. */}
-        <polygon
-          points={hexagono(cx, cy, r * 0.42, 0)}
-          fill="#2E1F5E" stroke={costura} strokeWidth={r * 0.085} strokeLinejoin="round"
-        />
+        {/* Bordo: painéis mais pequenos e achatados contra o horizonte. */}
+        {anel.map((a, i) => {
+          const rad = ((a + 30) * Math.PI) / 180;
+          return (
+            <polygon key={`b${i}`}
+              points={hexagono(cx + Math.cos(rad) * r * 0.95, cy + Math.sin(rad) * r * 0.95, r * 0.26, a)}
+              fill={`url(#${gid}-m)`} stroke={sulco} strokeWidth={r * 0.075} strokeLinejoin="round" opacity="0.9" />
+          );
+        })}
       </g>
+
       {/* Brilho no canto superior esquerdo: dá-lhe volume de esfera. */}
-      <ellipse cx={cx - r * 0.3} cy={cy - r * 0.34} rx={r * 0.3} ry={r * 0.2} fill="#FFFFFF" opacity="0.28" />
+      <ellipse cx={cx - r * 0.32} cy={cy - r * 0.36} rx={r * 0.28} ry={r * 0.18} fill="#FFFFFF" opacity="0.22" />
     </>
   );
 }
@@ -6135,7 +6169,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
         </div>
       </div>
       <div style={{ marginBottom: 16 }}>
-        <Field label="Esquema tático">
+        <Field label="Esquema tático" bloco>
           <DiagramEditor
             value={f.diagram || { elements: [], arrows: [] }}
             onChange={d => setF(prev => ({ ...prev, diagram: d }))}
@@ -6149,7 +6183,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
         </Field>
       </div>
       <div style={{ marginBottom: 16 }}>
-        <Field label="Anexo (imagem, PDF ou exercício existente)">
+        <Field label="Anexo (imagem, PDF ou exercício existente)" bloco>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <label style={{
               display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
@@ -13540,7 +13574,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
         </div>
       ) : (
         <div style={{ marginBottom: 8 }}>
-          <Field label="Ficheiro">
+          <Field label="Ficheiro" bloco>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <label style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
@@ -14718,7 +14752,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
             <Field label="Nota"><TextArea value={f.nota} onChange={e => setF({ ...f, nota: e.target.value })} style={{ minHeight: 120 }} /></Field>
           </div>
           <div style={{ marginBottom: 14 }}>
-            <Field label="Anexo (foto ou PDF, opcional)">
+            <Field label="Anexo (foto ou PDF, opcional)" bloco>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <label style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
