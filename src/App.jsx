@@ -1349,11 +1349,36 @@ function App({ session }) {
         .print-sheet { display: none; }
         @media print {
           @page { size: A4; margin: 12mm; }
-          body * { visibility: hidden; }
-          .print-sheet, .print-sheet * { visibility: visible; }
-          .print-sheet { display: block; position: absolute; top: 0; left: 0; width: 100%; max-width: 172mm; padding: 0; color: #111; background: #fff; }
+
+          /* PÁGINA EM BRANCO NO FIM — porquê e como se resolve.
+
+             Antes escondia-se a app com visibility:hidden. Isso torna-a
+             invisível mas NÃO a tira do fluxo: continua a ocupar a altura
+             toda que ocupava no ecrã, e a impressora conta essa altura como
+             papel. Daí sair sempre pelo menos uma folha vazia a seguir ao
+             conteúdo.
+
+             display:none tira mesmo do fluxo. A folha de impressão vive
+             fora da app (é montada diretamente no body), por isso pode ser
+             a única coisa que sobra. */
+          html, body {
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            background: #fff !important;
+          }
+          body > *:not(.print-sheet) { display: none !important; }
+
+          .print-sheet {
+            display: block !important;
+            position: static;
+            width: 100%; max-width: 172mm; padding: 0; margin: 0;
+            color: #111; background: #fff;
+          }
           .print-sheet h2, .print-sheet h3 { font-family: 'Oswald', sans-serif; }
           .print-sheet svg { break-inside: avoid; page-break-inside: avoid; }
+          /* Nada gera quebra de página por si só; só o conteúdo é que decide. */
+          .print-sheet > *:last-child { page-break-after: auto; break-after: auto; }
         }
       `}</style>
 
@@ -2118,11 +2143,30 @@ function shortFullName(name) {
 /* Nome curto "inteligente": só o primeiro nome, e a inicial do apelido
    apenas quando há outro jogador com o mesmo primeiro nome. Evita ter
    "Cadilhe C." quando não há nenhum outro Cadilhe no plantel. */
+/* Nome curto que cresce só o necessário para ser único.
+
+   Três níveis, e passa-se ao seguinte apenas se o anterior for ambíguo:
+
+     1. "Pedro"          — se não houver outro Pedro
+     2. "Pedro C."       — se houver outro Pedro, mas de apelido diferente
+     3. "Pedro Cardoso"  — se houver outro "Pedro C." (Cardoso e Costa)
+
+   O terceiro nível existe porque o segundo não chegava: o plantel tem um
+   Pedro Cardoso e um Pedro Costa, e a lista mostrava "Pedro C." duas
+   vezes — dois jogadores diferentes com exatamente o mesmo rótulo, que é
+   pior do que um nome comprido. */
 function shortPlayerName(player, allPlayers) {
   if (!player) return '—';
+  const lista = allPlayers || [];
+  const outros = lista.filter(o => o && o.id !== player.id);
+
   const primeiro = firstNameOf(player.name);
-  const repetido = (allPlayers || []).some(o => o && o.id !== player.id && firstNameOf(o.name) === primeiro);
-  return repetido ? firstNameInitial(player.name) : primeiro;
+  if (!outros.some(o => firstNameOf(o.name) === primeiro)) return primeiro;
+
+  const comInicial = firstNameInitial(player.name);
+  if (!outros.some(o => firstNameInitial(o.name) === comInicial)) return comInicial;
+
+  return shortFullName(player.name);
 }
 
 /* Nome curto para tabelas estreitas: primeiro nome + inicial do apelido.
@@ -2786,8 +2830,13 @@ const STATUS_OPTIONS = ['Dispensável', 'Reserva', 'Alternativa aos Titulares', 
 const CAPTAIN_RANKS = [1, 2, 3, 4];
 const CAPTAIN_LABEL = { 1: '1º capitão', 2: '2º capitão', 3: '3º capitão', 4: '4º capitão' };
 
-/* Braçadeira: uma faixa com o número da capitania. Desenhada e não uma
-   imagem, para ficar nítida em qualquer tamanho e na impressão. */
+/* Braçadeira: uma faixa com um "C", como no braço.
+
+   Todos os quatro capitães levam "C" — é o que se vê num jogo e é assim
+   que o plantel os reconhece. A hierarquia não se perde: fica na COR
+   (dourada para o 1º, mais escura para o 2º, discreta para o 3º e 4º) e
+   na dica ao passar o rato, que diz qual é qual. Pôr o número no lugar
+   do C dava uma leitura que não corresponde a nada no campo. */
 function CaptainArmband({ rank, size = 16, title }) {
   if (!rank) return null;
   return (
@@ -2799,10 +2848,10 @@ function CaptainArmband({ rank, size = 16, title }) {
         background: rank === 1 ? T.gold : (rank === 2 ? '#B08A1E' : T.line),
         color: rank <= 2 ? '#1A1A1A' : T.cream,
         border: `1px solid ${rank <= 2 ? '#8A6F1C' : T.line}`,
-        fontSize: size * 0.46, fontWeight: 700, lineHeight: 1,
+        fontSize: size * 0.52, fontWeight: 700, lineHeight: 1,
         fontFamily: "'Oswald', sans-serif",
       }}
-    >{rank}</span>
+    >C</span>
   );
 }
 
@@ -8145,11 +8194,12 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                   const estado = estadoDe(d, p.id);
                   const on = estado === 'presente';
                   const falta = estado === 'falta';
+                  const lesao = estado === 'lesionado';
                   const closed = dayClosed(d);
                   const rating = ratingOf(d, p.id);
                   // Amigável conta presenças como um treino, não convocatória.
                   const convocatoria = d.match && !isFriendlyMatch(d.match);
-                  const label = falta ? 'F' : (convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP'));
+                  const label = lesao ? 'L' : (falta ? 'F' : (convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP')));
                   return (
                     <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: 4, textAlign: 'center', verticalAlign: 'top' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
@@ -8163,11 +8213,14 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                           cursor: closed ? 'default' : 'pointer',
                           // A falta salta à vista: é o estado que exige
                           // reação do treinador, ao contrário do NP.
-                          background: falta ? `${T.bad}33` : (on ? (d.match ? `${T.warn}33` : `${T.crimson}44`) : 'transparent'),
-                          color: falta ? T.bad : (on ? T.cream : T.mutedDim),
-                          border: `1px solid ${falta ? T.bad : (on ? (d.match ? T.warn : T.gold) : T.line)}`,
+                          /* A lesão tem cor própria (âmbar) e não a vermelha
+                             da falta: são ausências, mas uma é um problema
+                             de compromisso e a outra é clínico. */
+                          background: lesao ? `${T.gold}2A` : (falta ? `${T.bad}33` : (on ? (d.match ? `${T.warn}33` : `${T.crimson}44`) : 'transparent')),
+                          color: lesao ? T.gold : (falta ? T.bad : (on ? T.cream : T.mutedDim)),
+                          border: `1px solid ${lesao ? T.gold : (falta ? T.bad : (on ? (d.match ? T.warn : T.gold) : T.line))}`,
                         }}
-                        title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → ausente → falta'}
+                        title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → ausente → falta → lesionado'}
                       >{label}</button>
                       {on && (
                         closed ? (
@@ -8353,14 +8406,23 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   const estadoDe = (d, pid) => {
     if (isPresent(d, pid)) return 'presente';
     const faltas = d.match ? (d.match.faltas || []) : (d.list || []).flatMap(x => x.faltas || []);
-    return faltas.includes(pid) ? 'falta' : 'ausente';
+    if (faltas.includes(pid)) return 'falta';
+    const lesionados = d.match ? (d.match.lesionados || []) : (d.list || []).flatMap(x => x.lesionados || []);
+    return lesionados.includes(pid) ? 'lesionado' : 'ausente';
   };
   const ratingOf = (d, pid) => (d.match ? ((d.match.ratings || {})[pid] ?? null) : dayRating(d.list, pid));
   const dayClosed = (d) => (d.match ? !!d.match.attendanceClosed : dayIsClosed(d.list));
   const mean = (arr) => (arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null);
   const rows = orderedPlayers.map(p => {
     const attended = confirmedDays.filter(d => isPresent(d, p.id)).length;
-    const pct = confirmedDays.length ? Math.round((attended / confirmedDays.length) * 100) : null;
+    /* Os dias em que o jogador esteve LESIONADO saem do denominador.
+
+       Contá-los como ausências castigava quem se magoou: um jogador com
+       três semanas de paragem aparecia com 40% de assiduidade ao lado de
+       quem simplesmente não aparece. A assiduidade passa a medir o que
+       devia medir — a presença nos dias em que podia estar. */
+    const diasPossiveis = confirmedDays.filter(d => estadoDe(d, p.id) !== 'lesionado');
+    const pct = diasPossiveis.length ? Math.round((attended / diasPossiveis.length) * 100) : null;
     // Notas de treino e de jogo contam separadamente — são escalas
     // diferentes e misturá-las não diz nada. Notas em branco (NA) não
     // entram em nenhuma das médias.
@@ -8392,6 +8454,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
         convocado: conta(comConvocatoria, 'presente'),
         naoConvocado: conta(comConvocatoria, 'ausente'),
         falta: conta(confirmedDays, 'falta'),
+        lesionado: conta(confirmedDays, 'lesionado'),
       },
     };
   });
@@ -8399,7 +8462,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   // Marca/desmarca presença em TODAS as sessões desse dia, para que baste
   // dar presença uma vez por dia, independentemente de quantos exercícios
   // (sessões) existam para essa data.
-  /* Um clique percorre presente → ausente → falta → presente.
+  /* Um clique percorre ausente → presente → falta → lesionado → ausente.
 
      Só a presença guarda nota: um jogador que não esteve não pode ser
      avaliado, por isso ao sair de "presente" a nota é apagada. */
@@ -8411,6 +8474,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       const m = day.match;
       const base = convocadosOf(m);
       const faltas = (m.faltas || []).filter(id => id !== playerId);
+      const lesionados = (m.lesionados || []).filter(id => id !== playerId);
       const convocados = base.filter(id => id !== playerId);
       setMatches(matches.map(x => {
         if (x.id !== m.id) return x;
@@ -8423,6 +8487,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
           attendance: proximo === 'presente' ? [...convocados, playerId] : convocados,
           convocados: proximo === 'presente' ? [...convocados, playerId] : convocados,
           faltas: proximo === 'falta' ? [...faltas, playerId] : faltas,
+          lesionados: proximo === 'lesionado' ? [...lesionados, playerId] : lesionados,
           ratings,
         };
       }));
@@ -8436,10 +8501,12 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       if (proximo !== 'presente') delete ratings[playerId];
       const presentes = (s.attendance || []).filter(id => id !== playerId);
       const faltas = (s.faltas || []).filter(id => id !== playerId);
+      const lesionados = (s.lesionados || []).filter(id => id !== playerId);
       return {
         ...s,
         attendance: proximo === 'presente' ? [...presentes, playerId] : presentes,
         faltas: proximo === 'falta' ? [...faltas, playerId] : faltas,
+        lesionados: proximo === 'lesionado' ? [...lesionados, playerId] : lesionados,
         ratings,
       };
     }));
@@ -8532,10 +8599,11 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                   <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
                     {[
                       { v: totais.presente, l: 'P', cor: T.good, t: 'Presenças em treinos e amigáveis' },
-                      { v: totais.ausente, l: 'NP', cor: T.mutedDim, t: 'Não presente (dispensa, lesão, outro escalão)' },
+                      { v: totais.ausente, l: 'NP', cor: T.mutedDim, t: 'Não presente (dispensa, outro escalão)' },
                       { v: totais.convocado, l: 'C', cor: T.warn, t: 'Convocado para jogos oficiais' },
                       { v: totais.naoConvocado, l: 'NC', cor: T.mutedDim, t: 'Não convocado para jogos oficiais' },
                       { v: totais.falta, l: 'F', cor: T.bad, t: 'Faltas — ausência sem justificação' },
+                      { v: totais.lesionado, l: 'L', cor: T.gold, t: 'Lesionado — ausência por motivo clínico' },
                     ].map(x => (
                       <div key={x.l} title={x.t} style={{ textAlign: 'center', width: 26 }}>
                         <div style={{ ...mono, fontSize: 13, color: x.v ? x.cor : T.mutedDim }}>{x.v}</div>
@@ -8918,6 +8986,62 @@ function competitionTable(comp) {
    por isso corrigir a data ou o resultado atualiza o jogo já criado em
    vez de criar um duplicado. Apagar o jogo da jornada NÃO apaga o jogo
    já criado — as convocatórias e o relatório ficariam perdidos. */
+/* O CAMINHO INVERSO: do jogo criado à mão para a tabela da competição.
+
+   A tabela já criava jogos (syncCompetitionMatches). Faltava o contrário:
+   lançar um jogo à mão com competição, jornada e adversário devia
+   escrever esse encontro na jornada respetiva, em vez de obrigar a
+   introduzir a mesma informação duas vezes.
+
+   Nunca cria jornadas nem duplica encontros: só preenche o jogo que já lá
+   está por preencher, ou acrescenta um à jornada indicada. O resultado só
+   é escrito se o jogo ainda não tiver um — a tabela é a fonte oficial e
+   não se sobrepõe ao que lá foi lançado. */
+function syncMatchIntoCompetition(match, standings, season) {
+  const dados = normalizeStandings(standings);
+  const nomeComp = competitionLabel(match && match.competition);
+  const jornada = (match && match.jornada || '').trim();
+  const adversario = (match && match.opponent || '').trim();
+  const nosso = ((season && season.club) || '').trim();
+  if (!nomeComp || !jornada || !adversario || !nosso || isFriendlyMatch(match)) return dados;
+
+  const ci = dados.competitions.findIndex(c => (c.name || '').trim().toLowerCase() === nomeComp.toLowerCase());
+  if (ci < 0) return dados;
+
+  const comp = dados.competitions[ci];
+  const ri = (comp.rounds || []).findIndex((r, i) => (r.label || `Jornada ${i + 1}`) === jornada);
+  if (ri < 0) return dados; // jornada inexistente: não se inventam jornadas
+
+  const emCasa = match.atHome !== false;
+  const casa = emCasa ? nosso : adversario;
+  const fora = emCasa ? adversario : nosso;
+  const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+  const jogos = [...(comp.rounds[ri].games || [])];
+  // Um encontro entre as mesmas duas equipas nesta jornada já existe?
+  let gi = jogos.findIndex(g => (
+    (igual(g.home, casa) && igual(g.away, fora)) || (igual(g.home, fora) && igual(g.away, casa))
+  ));
+  if (gi < 0) {
+    // Ou uma linha vazia à espera de ser preenchida?
+    gi = jogos.findIndex(g => !String(g.home || '').trim() && !String(g.away || '').trim());
+  }
+
+  const novo = {
+    id: gi >= 0 && jogos[gi].id ? jogos[gi].id : uid(),
+    home: casa, away: fora,
+    date: match.date || (gi >= 0 ? jogos[gi].date : '') || '',
+    // O resultado da tabela manda: só se escreve se lá não houver nenhum.
+    score: (gi >= 0 && String(jogos[gi].score || '').trim()) || match.result || '',
+  };
+  if (gi >= 0) jogos[gi] = { ...jogos[gi], ...novo };
+  else jogos.push(novo);
+
+  const rounds = comp.rounds.map((r, i) => (i === ri ? { ...r, games: jogos } : r));
+  const competitions = dados.competitions.map((c, i) => (i === ci ? { ...c, rounds } : c));
+  return { ...dados, competitions };
+}
+
 function syncCompetitionMatches(competitions, matches) {
   const next = [...(matches || [])];
   (competitions || []).forEach(comp => {
@@ -8977,7 +9101,19 @@ const FRIENDLY = 'Amigável';
    jogos. Quem não está em `attendance` nem em `faltas` é simplesmente NP
    ou NC — que é o estado de toda a gente antes de alguém marcar seja o que
    for, e por isso continua a ser o valor por omissão dos registos antigos. */
-const PRESENCA_ESTADOS = ['presente', 'ausente', 'falta'];
+/* Ordem do ciclo: cada clique avança um passo.
+
+   ausente → presente → falta → LESIONADO → ausente
+
+   A lesão fica a seguir à falta porque são os dois estados de ausência que
+   exigem alguma coisa do treinador — mas por razões opostas: a falta é um
+   problema de compromisso, a lesão é um problema clínico. Separá-las é o
+   que permite ler a assiduidade sem penalizar quem se magoou. */
+/* A ORDEM DESTA LISTA É O CICLO DOS CLIQUES, e começa em 'ausente'
+   porque é esse o estado de partida de toda a gente. Com 'presente' à
+   cabeça, o primeiro clique num jogador por marcar saltava para 'falta' —
+   dois cliques para o caso mais comum de todos. */
+const PRESENCA_ESTADOS = ['ausente', 'presente', 'falta', 'lesionado'];
 function proximoEstadoPresenca(atual) {
   const i = PRESENCA_ESTADOS.indexOf(atual);
   return PRESENCA_ESTADOS[(i + 1) % PRESENCA_ESTADOS.length];
@@ -9463,6 +9599,8 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
     if (setSessions) setSessions(prev => ensureFriendlySession(registo, prev));
     // Jogo oficial com convocados: gera/atualiza a convocatória.
     if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
+    // E o encontro entra na jornada da competição, se ela existir.
+    if (setStandings) setStandings(prev => syncMatchIntoCompetition(registo, prev, season));
     setModal(null);
   };
   const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
@@ -10172,8 +10310,10 @@ function PlantelHistorico({ players, monitoring, matches = [], sessions = [] }) 
   return (
     <Panel title="Plantel — histórico">
       {/* Mesma grelha dos restantes formulários: as duas datas e os atalhos
-          ficam com a mesma largura e alinhados, também no telemóvel. */}
-      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+          ficam com a mesma largura e alinhados, também no telemóvel.
+          O espaço em cima separa-o da tabela anterior, que sem ele ficava
+          encavalitada nas etiquetas das datas. */}
+      <div style={{ ...FIELD_GRID, marginTop: 16, marginBottom: 14 }}>
         <Field label="Data de início"><Input type="date" value={start} max={end || undefined} onChange={e => setStart(e.target.value)} /></Field>
         <Field label="Data de fim"><Input type="date" value={end} min={start || undefined} onChange={e => setEnd(e.target.value)} /></Field>
         <div style={{ ...FIELD_FULL, display: 'flex', gap: 6 }}>
@@ -13841,10 +13981,9 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                 <>
                   <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Convocados {ids.length ? `(${ids.length})` : ''}</h3>
                   <div style={{
-                    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '4px 16px',
-                    fontSize: 12.5, marginBottom: 16,
+                    fontSize: 12.5, marginBottom: 16, lineHeight: 1.65,
                   }}>
-                    {ids.map(pid => { const n = nome(pid); return n ? <div key={pid}>{n}</div> : null; })}
+                    {ids.map((pid, i) => { const n = nome(pid); return n ? <div key={pid}>{i + 1}. {n}</div> : null; })}
                   </div>
                 </>
               );
@@ -13855,13 +13994,19 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
             const banco = ids.slice(11, 20);
             return (
               <>
+                {/* UMA COLUNA, e não uma grelha que se espalha pela folha.
+
+                    Uma ficha técnica lê-se de cima para baixo, à procura de
+                    um nome ou de um número. Em três colunas a ordem quebra-se
+                    e é preciso saltar de coluna para seguir a numeração.
+                    Vinte nomes numa coluna cabem folgadamente numa A4. */}
                 <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Onze inicial ({onze.length})</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '4px 16px', fontSize: 12.5, marginBottom: 14 }}>
+                <div style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.65 }}>
                   {onze.map((pid, i) => { const n = nome(pid); return n ? <div key={pid}>{i + 1}. {n}{bracadeira(pid)}</div> : null; })}
                 </div>
 
                 <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Suplentes ({banco.length})</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '4px 16px', fontSize: 12.5, marginBottom: 14 }}>
+                <div style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.65 }}>
                   {banco.map(pid => { const n = nome(pid); return n ? <div key={pid}>{n}{bracadeira(pid)}</div> : null; })}
                 </div>
 
