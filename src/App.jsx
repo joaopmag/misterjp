@@ -3202,29 +3202,16 @@ function Exercicios({ exercises, setExercises, meta }) {
                 )
               )}
               <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px' }}>{x.description}</p>
-              {/* Espaço, jogadores e material ENCOSTADOS AO FUNDO do cartão.
-
-                  Numa grelha, os cartões têm todos a altura do mais alto,
-                  mas as descrições têm comprimentos diferentes. Com esta
-                  linha logo a seguir ao texto, ela ficava a meia altura em
-                  uns cartões e em baixo noutros, e a leitura em coluna —
-                  comparar as medidas de vários exercícios de relance —
-                  deixava de funcionar.
-
-                  O `marginTop: auto` está aqui e não no rodapé: empurra
-                  este bloco todo para baixo, e o rodapé vem colado a ele. */}
-              <div style={{ marginTop: 'auto' }}>
-                <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: T.mutedDim, ...mono, flexWrap: 'wrap' }}>
-                  {x.space && <span>📐 {x.space}</span>}
-                  {x.playersCount && <span>👥 {x.playersCount}</span>}
-                  {x.material && <span>🎒 {x.material}</span>}
-                </div>
+              <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: T.mutedDim, ...mono }}>
+                {x.space && <span>📐 {x.space}</span>}
+                {x.playersCount && <span>👥 {x.playersCount}</span>}
+                {x.material && <span>🎒 {x.material}</span>}
+              </div>
               {m && m.email && (
-                <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 8, paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 'auto', paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   Adicionado/editado por {m.email} · {timeAgo(m.at)}
                 </div>
               )}
-              </div>
             </div>
             );
           })}
@@ -4579,6 +4566,28 @@ function clampTextElement(el) {
    quando cada traço foi feito, e mantém-se o comportamento antigo
    (mostrar tudo), para não fazer desaparecer desenhos de exercícios
    antigos. Re-gravar a animação passa a mostrá-los na altura certa. */
+/* Elementos de um passo, sem os que já não existem no campo.
+
+   PORQUÊ: cada passo guarda uma fotografia do campo. Um elemento apagado
+   deixava de existir no campo mas continuava em todas as fotografias, e
+   reaparecia na apresentação — sem forma de lá chegar para o tirar, porque
+   já não estava no editor.
+
+   A regra é simples e vale para esta app: quem existe é quem está no campo
+   agora. Um elemento não pode "desaparecer a meio" da animação — o que
+   pode é ENTRAR a meio (ver `inserirDesde`), e nesse caso continua a estar
+   no campo no fim. Logo, um id que esteja num passo mas não no campo é
+   lixo de uma remoção antiga.
+
+   Filtrar na leitura e não nos dados resolve também os exercícios já
+   gravados com o problema, sem lhes tocar. */
+function stepElements(step, diagram) {
+  const doPasso = (step && step.elements) || [];
+  const noCampo = new Set((diagram && diagram.elements ? diagram.elements : []).map(el => el.id));
+  if (!noCampo.size) return doPasso;
+  return doPasso.filter(el => noCampo.has(el.id));
+}
+
 function stepStaticArrows(step, diagram) {
   return Array.isArray(step && step.staticArrows) ? step.staticArrows : (diagram.arrows || []);
 }
@@ -4627,7 +4636,8 @@ function computeDiagramAnimationFrames(diagram, zones, phase) {
       const first = chainArrows[0];
       // Prioriza o dono gravado na própria seta; só recorre à procura por
       // proximidade para setas antigas, guardadas antes desta correção.
-      let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
+      const elementosDoPasso = stepElements(step, diagram);
+      let mover = (first.ownerId && elementosDoPasso.find(el => el.id === first.ownerId)) || elementosDoPasso.find(el =>
         (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
@@ -4638,7 +4648,7 @@ function computeDiagramAnimationFrames(diagram, zones, phase) {
       }
       return { segments, mover, isNewBall, totalDuration: cursor };
     });
-    const baseElements = [...step.elements, ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover }))];
+    const baseElements = [...stepElements(step, diagram), ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover }))];
     const maxDuration = Math.max(...chains.map(c => c.totalDuration));
     const nSteps = Math.max(1, Math.round(maxDuration / FRAME_MS));
     for (let f = 0; f <= nSteps; f++) {
@@ -5302,7 +5312,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         return segment;
       });
       const first = chainArrows[0];
-      let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
+      const elementosDoPasso = stepElements(step, value);
+      let mover = (first.ownerId && elementosDoPasso.find(el => el.id === first.ownerId)) || elementosDoPasso.find(el =>
         (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
@@ -5314,7 +5325,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       return { id: first.id, segments, mover, isNewBall, totalDuration: cursor };
     });
     const baseElements = [
-      ...step.elements,
+      ...stepElements(step, value),
       ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
     ];
     setPresentElements(baseElements);
@@ -6004,14 +6015,14 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           >
             <Printer size={14} color={TEXT_ON_ACCENT} />
           </button>
-          {/* Estado da animação gravada, com os passos a poderem ser
-              retirados um a um — inclusive os de sessões anteriores. */}
-          {((value.sequence || []).length > 0 || passosAnulados.length > 0) && (
-            <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, marginLeft: 2 }}>
-              {(value.sequence || []).length} {(value.sequence || []).length === 1 ? 'animação' : 'animações'}
-            </span>
-          )}
         </div>
+        {/* "Limpar tudo" volta para junto do imprimir: é uma ação sobre o
+            DESENHO, não sobre a animação, e é aí que se procura. */}
+        {(elements.length > 0 || arrows.length > 0 || zones.length > 0) && (
+          <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>
+            Limpar tudo
+          </button>
+        )}
       </div>
 
       {/* GESTÃO DAS ANIMAÇÕES — linha própria, alinhada à esquerda.
@@ -6025,6 +6036,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         flexWrap: 'wrap', minWidth: 0, maxWidth: '100%',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+          {/* A contagem abre a linha das animações: diz de imediato com
+              quantas se está a lidar, antes dos botões que lhes mexem. */}
+          {((value.sequence || []).length > 0 || passosAnulados.length > 0) && (
+            <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>
+              {(value.sequence || []).length} {(value.sequence || []).length === 1 ? 'animação' : 'animações'}
+            </span>
+          )}
 
           {/* A partir de que passo entra o que se colocar a seguir.
 
@@ -6100,13 +6118,6 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             </button>
           )}
         </div>
-        {/* À direita e afastado: é a única ação destrutiva da barra, e
-            encostada às outras era fácil acertar-lhe sem querer. */}
-        {(elements.length > 0 || arrows.length > 0 || zones.length > 0) && (
-          <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>
-            Limpar tudo
-          </button>
-        )}
       </div>
 
       {/* SALTO DE SCROLL AO CLICAR FORA DA PRANCHETA
@@ -6776,7 +6787,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       const first = chainArrows[0];
       // Prioriza o dono gravado na própria seta; só recorre à procura por
       // proximidade para setas antigas, guardadas antes desta correção.
-      let mover = (first.ownerId && step.elements.find(el => el.id === first.ownerId)) || step.elements.find(el =>
+      const elementosDoPasso = stepElements(step, diagram);
+      let mover = (first.ownerId && elementosDoPasso.find(el => el.id === first.ownerId)) || elementosDoPasso.find(el =>
         (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
@@ -6791,7 +6803,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       return { id: first.id, segments, mover, isNewBall, totalDuration: cursor };
     });
     const baseElements = [
-      ...step.elements,
+      ...stepElements(step, diagram),
       ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
     ];
     setFrameElements(baseElements);
