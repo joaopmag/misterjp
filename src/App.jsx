@@ -979,9 +979,12 @@ const inputStyle = {
 const inputResetStyle = { WebkitAppearance: 'none', appearance: 'none', maxWidth: '100%' };
 function Input(props) { return <input {...props} style={{ ...inputStyle, ...inputResetStyle, ...(props.style || {}) }} />; }
 function Select(props) { return <select {...props} style={{ ...inputStyle, ...(props.style || {}) }} />; }
-function TextArea(props) {
-  return <textarea {...props} style={{ ...inputStyle, height: 'auto', lineHeight: 1.5, padding: '9px 10px', resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />;
-}
+/* `forwardRef` porque quem usa isto precisa por vezes de chegar ao
+   elemento — por exemplo o Diário, que põe o cursor dentro da nota ao
+   carregar no lápis. Sem isto a `ref` era simplesmente ignorada. */
+const TextArea = React.forwardRef(function TextArea(props, ref) {
+  return <textarea ref={ref} {...props} style={{ ...inputStyle, height: 'auto', lineHeight: 1.5, padding: '9px 10px', resize: 'vertical', minHeight: 70, ...(props.style || {}) }} />;
+});
 
 /* `wide` alarga; `xwide` alarga mais ainda — é o tamanho das janelas com
    campo tático, onde a precisão do desenho depende de o campo ser grande
@@ -2238,6 +2241,9 @@ function matrixPoints(players, monitoring) {
       id: p.id,
       name: p.name,
       label: `${p.position ? `${p.position} ` : ''}${firstNameOf(p.name)}`,
+      // Nome completo para a etiqueta que aparece ao tocar/passar o rato:
+      // a abreviatura chega para o gráfico, mas não para identificar.
+      nome: `${p.position ? `${p.position} · ` : ''}${p.name}`,
       well: mean(wellVals),
       pse: mean(pseVals),
       dias: Math.max(wellVals.length, pseVals.length),
@@ -2260,6 +2266,13 @@ const QUADRANTS = {
 /* O gráfico em si. `scale` amplia tipos de letra e pontos na versão
    grande, sem duplicar o desenho. */
 function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
+  /* NO TELEMÓVEL NÃO HÁ RATO.
+
+     Os pontos sem etiqueta (os que ficariam por cima de outros) só se
+     identificavam ao passar o cursor — gesto que não existe num ecrã de
+     toque. O toque fixa aqui o ponto escolhido e mostra o nome; tocar fora
+     ou no mesmo ponto limpa. */
+  const [tocado, setTocado] = useState(null);
   const ml = 30 * scale, mr = 12 * scale, mt = 12 * scale, mb = 26 * scale;
   const plotW = W - ml - mr, plotH = H - mt - mb;
   const xOf = (well) => ml + ((Math.max(1, Math.min(5, well)) - 1) / 4) * plotW;
@@ -2279,6 +2292,8 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
+      {/* Tocar no fundo limpa a etiqueta fixada. */}
+      <rect x={0} y={0} width={W} height={H} fill="transparent" onPointerDown={() => setTocado(null)} />
       <rect x={ml} y={mt} width={midX - ml} height={midY - mt} fill={`${T.bad}18`} />
       <rect x={midX} y={mt} width={ml + plotW - midX} height={midY - mt} fill={`${T.warn}12`} />
       <rect x={ml} y={midY} width={midX - ml} height={mt + plotH - midY} fill={`${T.warn}10`} />
@@ -2305,13 +2320,45 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
         const color = QUADRANTS[quadrantOf(pt)].color;
         const dy = labelOffset(x, y);
         const anchor = x > ml + plotW - 40 * scale ? 'end' : x < ml + 40 * scale ? 'start' : 'middle';
+        const escolhido = tocado === pt.id;
+        const detalhe = `${pt.nome || pt.label} · wellness ${pt.well.toFixed(1)} · PSE ${pt.pse}`;
         return (
           <g key={pt.id}>
-            <circle cx={x} cy={y} r={3.2 * scale} fill={color} stroke={T.bg} strokeWidth={0.8 * scale} />
+            <circle cx={x} cy={y} r={(escolhido ? 4.6 : 3.2) * scale} fill={color} stroke={T.bg} strokeWidth={0.8 * scale} />
             <text x={x} y={y + dy} fontSize={fs} fill={T.cream} textAnchor={anchor} style={{ fontFamily: "'Inter', sans-serif" }}>{pt.label}</text>
+            {/* Alvo invisível maior do que o ponto: com o dedo é impossível
+                acertar em 3 px. O <title> serve o rato, o onPointerDown
+                serve o toque — no telemóvel não há "passar por cima". */}
+            <circle
+              cx={x} cy={y} r={11 * scale} fill="transparent" style={{ cursor: 'pointer' }}
+              onPointerDown={(e) => { e.stopPropagation(); setTocado(escolhido ? null : pt.id); }}
+            >
+              <title>{detalhe}</title>
+            </circle>
           </g>
         );
       })}
+
+      {/* Etiqueta fixada pelo toque. Desenhada no fim para ficar por cima
+          de tudo o resto. */}
+      {(() => {
+        const pt = points.find(v => v.id === tocado);
+        if (!pt) return null;
+        const x = xOf(pt.well), y = yOf(pt.pse);
+        const texto = `${pt.nome || pt.label} · W ${pt.well.toFixed(1)} · PSE ${pt.pse}`;
+        const larg = Math.max(70 * scale, texto.length * 5.4 * scale);
+        const lx = Math.max(2, Math.min(W - larg - 2, x - larg / 2));
+        const acima = y > H / 2;
+        const ly = acima ? y - 20 * scale : y + 9 * scale;
+        return (
+          <g style={{ pointerEvents: 'none' }}>
+            <rect x={lx} y={ly} width={larg} height={14 * scale} rx={3 * scale}
+              fill={T.surfaceRaise} stroke={QUADRANTS[quadrantOf(pt)].color} strokeWidth={0.8 * scale} />
+            <text x={lx + larg / 2} y={ly + 10 * scale} fontSize={fs} fill={T.cream} textAnchor="middle"
+              style={{ fontFamily: "'Inter', sans-serif" }}>{texto}</text>
+          </g>
+        );
+      })()}
     </svg>
   );
 }
@@ -7116,45 +7163,56 @@ function distribuirAmigavel(presentes, opcoes = {}) {
    lista — trocar um sem trocar o outro põe o jogador errado no sítio. */
 /* Onde cada lugar fica desenhado no campo, em fração da largura/altura.
 
-   A vertical segue a convenção do treinador: o lado DIREITO da equipa (DD,
-   MD, ED) fica em CIMA e o esquerdo em baixo. É como ele lê a prancheta,
-   e é o que interessa — quem usa isto é quem escreve o onze. */
+   Duas regras, ambas vindas do desenho do treinador sobre a prancheta:
+
+   1. O lado DIREITO da equipa (DD, ED) fica EM BAIXO e o esquerdo em cima.
+      É a leitura de quem está de fora a olhar para o campo com a nossa
+      baliza à esquerda.
+
+   2. MD é MÉDIO DEFENSIVO, não médio direito. Fica recuado e ao centro,
+      com MC e MOC à frente dele e abertos — o triângulo clássico de um
+      4-3-3. Tratá-lo como um lateral do meio-campo punha o trinco na
+      linha dos interiores, que é outra equipa.
+
+   A ordem tem de ser exatamente a de FORMACOES: cada posição aqui
+   corresponde ao lugar com o mesmo índice. */
 const LAYOUT_FORMACAO = {
   //         GR            DD            DC            DC            DE
   '4-3-3': [
-    [0.07, 0.5], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
-    //   MD            MC            MOC
-    [0.45, 0.28], [0.45, 0.5], [0.45, 0.72],
+    [0.07, 0.50], [0.23, 0.84], [0.20, 0.62], [0.20, 0.38], [0.23, 0.16],
+    //   MD (trinco)   MC            MOC
+    [0.38, 0.50], [0.53, 0.34], [0.53, 0.66],
     //   ED            PL            EE
-    [0.72, 0.18], [0.76, 0.5], [0.72, 0.82],
+    [0.74, 0.84], [0.80, 0.50], [0.74, 0.16],
   ],
   //         GR            DD            DC            DC            DE
   '4-4-2': [
-    [0.07, 0.5], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
+    [0.07, 0.50], [0.23, 0.84], [0.20, 0.62], [0.20, 0.38], [0.23, 0.16],
     //   ED            MC            MC            EE
-    [0.48, 0.14], [0.45, 0.4], [0.45, 0.6], [0.48, 0.86],
+    [0.48, 0.86], [0.45, 0.60], [0.45, 0.40], [0.48, 0.14],
     //   PL            PL
-    [0.75, 0.38], [0.75, 0.62],
+    [0.78, 0.60], [0.78, 0.40],
   ],
-  //           GR            DD            DC            DC            DE
+  //         GR            DD            DC            DC            DE
   '4-2-3-1': [
-    [0.07, 0.5], [0.24, 0.16], [0.22, 0.38], [0.22, 0.62], [0.24, 0.84],
+    [0.07, 0.50], [0.23, 0.84], [0.20, 0.62], [0.20, 0.38], [0.23, 0.16],
     //   MD            MC
-    [0.40, 0.38], [0.40, 0.62],
+    [0.38, 0.60], [0.38, 0.40],
     //   ED            MOC           EE
-    [0.62, 0.18], [0.60, 0.5], [0.62, 0.82],
+    [0.60, 0.82], [0.60, 0.50], [0.60, 0.18],
     //   PL
-    [0.80, 0.5],
+    [0.80, 0.50],
   ],
   //         GR            DC            DC            DC
   '3-4-3': [
-    [0.07, 0.5], [0.22, 0.28], [0.20, 0.5], [0.22, 0.72],
+    [0.07, 0.50], [0.20, 0.70], [0.18, 0.50], [0.20, 0.30],
     //   ED            MC            MC            EE
-    [0.45, 0.12], [0.44, 0.38], [0.44, 0.62], [0.45, 0.88],
+    [0.45, 0.88], [0.44, 0.62], [0.44, 0.38], [0.45, 0.12],
     //   ED            PL            EE
-    [0.72, 0.18], [0.76, 0.5], [0.72, 0.82],
+    [0.74, 0.80], [0.80, 0.50], [0.74, 0.20],
   ],
 };
+
 
 /* Prancheta do onze: nomes ao lado da posição, suplentes fora das quatro
    linhas. Cada lugar é clicável para trocar de jogador — a distribuição é
@@ -10317,6 +10375,24 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
   const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
   const sorted = [...matches].sort((a, b) => new Date(b.date) - new Date(a.date));
 
+  /* Separadores por competição.
+
+     Com uma época inteira, a lista corrida obriga a percorrer amigáveis e
+     taças para chegar ao campeonato. Os separadores saem das competições
+     que os jogos REALMENTE têm — não de uma lista fixa — para não haver
+     separadores vazios nem jogos sem sítio.
+
+     Dentro de cada um, do mais recente para o mais antigo: é o último jogo
+     que se vai ver, não o primeiro. */
+  const [compAberta, setCompAberta] = useState('Todas');
+  const competicoesComJogos = Array.from(new Set(
+    matches.map(m => competitionLabel(m.competition)).filter(Boolean),
+  )).sort((a, b) => a.localeCompare(b, 'pt'));
+  const separadores = ['Todas', ...competicoesComJogos];
+  const visiveis = compAberta === 'Todas'
+    ? sorted
+    : sorted.filter(m => competitionLabel(m.competition) === compAberta);
+
   return (
     <div>
       <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
@@ -10333,8 +10409,25 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
       ) : sorted.length === 0 ? (
         <EmptyState text="Ainda sem jogos registados." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Registar o primeiro jogo</Btn>} />
       ) : (
+        <>
+          {separadores.length > 2 && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+              {separadores.map(c => {
+                const n = c === 'Todas' ? sorted.length : sorted.filter(m => competitionLabel(m.competition) === c).length;
+                const on = compAberta === c;
+                return (
+                  <button key={c} onClick={() => setCompAberta(c)} style={{
+                    padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                    background: on ? '#B5393F' : 'transparent',
+                    color: on ? TEXT_ON_ACCENT : T.muted,
+                    border: `1px solid ${on ? '#B5393F' : T.line}`,
+                  }}>{c} ({n})</button>
+                );
+              })}
+            </div>
+          )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {sorted.map(m => {
+          {visiveis.map(m => {
             const reports = m.convocados ? m.convocados.map(pid => (m.report && m.report[pid]) || {}) : [];
             const goals = reports.reduce((a, r) => a + (Number(r.goals) || 0), 0);
             return (
@@ -10360,6 +10453,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
             );
           })}
         </div>
+        </>
       )}
 
       {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} onClose={() => setModal(null)} onSave={save} />}
@@ -14993,6 +15087,9 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [attachError, setAttachError] = useState('');
+  const [verTudo, setVerTudo] = useState(false);
+  // Para levar o cursor direito à nota ao editar (ver startEdit).
+  const notaRef = useRef(null);
 
   const handleAttachmentFile = async (file) => {
     setAttachError('');
@@ -15035,7 +15132,18 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
     setEditingId(n.id);
     setAttachError('');
     setFormOpen(true);
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+    /* O cursor vai direito ao texto da nota.
+
+       Antes só se rolava a página para cima e o treinador tinha ainda de
+       procurar a caixa e clicar nela. O `setTimeout` é preciso porque o
+       formulário ainda não existe no ecrã no instante em que se carrega no
+       lápis — só depois de o React o desenhar é que há onde pôr o cursor. */
+    setTimeout(() => {
+      const el = notaRef.current;
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      try { el.focus({ preventScroll: true }); } catch (err) { el.focus(); }
+    }, 60);
   };
   const remove = (id) => removeWithUndo(
     diario, setDiario, id, itemLabel(diario.find(n => n.id === id), 'Nota'),
@@ -15045,7 +15153,18 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
   const filtered = search
     ? diario.filter(n => (n.titulo || '').toLowerCase().includes(search.toLowerCase()) || (n.nota || '').toLowerCase().includes(search.toLowerCase()))
     : diario;
-  const sorted = [...filtered].sort((a, b) => new Date(b.data) - new Date(a.data));
+
+  /* Por omissão só a última semana.
+
+     O diário acumula depressa e a página ficava com meses de notas
+     abertas. Sete dias é o que se consulta no dia a dia; o resto está a um
+     clique. Uma pesquisa mostra sempre tudo — quem procura é precisamente
+     porque a nota não é de agora. */
+  const limiteSemana = addDays(todayStr(), -6);
+  const recentes = filtered.filter(n => (n.data || '') >= limiteSemana);
+  const antigas = filtered.length - recentes.length;
+  const visiveis = (search || verTudo) ? filtered : recentes;
+  const sorted = [...visiveis].sort((a, b) => new Date(b.data) - new Date(a.data));
 
   return (
     <div>
@@ -15059,7 +15178,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
             <Field label="Título (opcional)"><Input value={f.titulo} onChange={e => setF({ ...f, titulo: e.target.value })} /></Field>
           </div>
           <div style={{ marginBottom: 14 }}>
-            <Field label="Nota"><TextArea value={f.nota} onChange={e => setF({ ...f, nota: e.target.value })} style={{ minHeight: 120 }} /></Field>
+            <Field label="Nota"><TextArea ref={notaRef} value={f.nota} onChange={e => setF({ ...f, nota: e.target.value })} style={{ minHeight: 120 }} /></Field>
           </div>
           <div style={{ marginBottom: 14 }}>
             <Field label="Anexo (foto ou PDF, opcional)" bloco>
@@ -15120,6 +15239,19 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
         <EmptyState text="Ainda sem notas. Escreve a primeira." />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Escape para o resto do diário, só quando há resto. */}
+          {!search && !verTudo && antigas > 0 && (
+            <button
+              onClick={() => setVerTudo(true)}
+              style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
+            >Ver todas ({antigas} notas mais antigas)</button>
+          )}
+          {!search && verTudo && (
+            <button
+              onClick={() => setVerTudo(false)}
+              style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
+            >Mostrar só a última semana</button>
+          )}
           {sorted.map(n => (
             <div key={n.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
