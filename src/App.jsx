@@ -1763,7 +1763,7 @@ function splitCompetitionName(name) {
 
 /* Classificação completa, aberta a partir do cartão da Visão Geral. */
 function StandingsFullModal({ standings, season, onClose, onEdit }) {
-  const { competitions } = normalizeStandings(standings);
+  const { competitions } = limparEquipaDuplicada(standings, season);
   const [viewId, setViewId] = useState(null);
   const comp = competitions.find(c => c.id === viewId) || activeCompetitionOf(standings);
   const table = competitionTable(comp);
@@ -8959,7 +8959,20 @@ function sortStandings(teams) {
 function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches, season, convocatorias, setConvocatorias }) {
   const [editing, setEditing] = useState(false);
   const [roundIdx, setRoundIdx] = useState(0);
-  const { competitions } = normalizeStandings(standings);
+  // Repara a equipa duplicada, se existir (ver limparEquipaDuplicada).
+  const { competitions } = limparEquipaDuplicada(standings, season);
+
+  /* A reparação também é GRAVADA, e não só mostrada: se ficasse apenas na
+     leitura, a linha a mais voltava a aparecer a cada recarregamento. Corre
+     uma vez, quando há mesmo alguma coisa a reparar. */
+  useEffect(() => {
+    if (!setStandings || !season) return;
+    const limpo = limparEquipaDuplicada(standings, season);
+    if (JSON.stringify(limpo.competitions) !== JSON.stringify(normalizeStandings(standings).competitions)) {
+      setStandings({ ...normalizeStandings(standings), ...limpo });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [standings, season]);
   // Competição a ver neste painel. Arranca na ativa (a última editada) e
   // pode alternar-se sem abrir a janela de configuração.
   const [viewId, setViewId] = useState(null);
@@ -9214,6 +9227,56 @@ function competitionTable(comp) {
    por isso corrigir a data ou o resultado atualiza o jogo já criado em
    vez de criar um duplicado. Apagar o jogo da jornada NÃO apaga o jogo
    já criado — as convocatórias e o relatório ficariam perdidos. */
+/* LIMPEZA DA EQUIPA DUPLICADA
+
+   Uma versão anterior escrevia na tabela o nome do clube tal como está na
+   Época ("SC Salgueiros · Sub-19") em vez do nome inscrito na competição
+   ("SC Salgueiros"). O resultado foi uma segunda linha na classificação,
+   com o mesmo clube e outro nome.
+
+   Isto repara o estrago sem trabalho manual: sempre que a tabela é lida,
+   qualquer referência ao nome errado é reescrita para o nome certo e a
+   entrada duplicada desaparece da lista de equipas. Corre em silêncio e
+   não faz nada se não houver nada a reparar.
+
+   Só junta nomes quando a competição tem `myTeam` definida — sem isso não
+   há forma de saber qual dos dois nomes é o bom, e o mais seguro é não
+   mexer. */
+function limparEquipaDuplicada(standings, season) {
+  const dados = normalizeStandings(standings);
+  const clube = ((season && season.club) || '').trim();
+  if (!clube) return dados;
+
+  let mexeu = false;
+  const competitions = dados.competitions.map(comp => {
+    const certo = (comp.myTeam || '').trim();
+    if (!certo || certo === clube) return comp;
+    // O nome errado só é um problema se estiver mesmo lá.
+    const aparece = (comp.teamNames || []).some(t => (t || '').trim() === clube)
+      || (comp.rounds || []).some(r => (r.games || []).some(g => (
+        (g.home || '').trim() === clube || (g.away || '').trim() === clube
+      )));
+    if (!aparece) return comp;
+    mexeu = true;
+
+    const trocar = (nome) => ((nome || '').trim() === clube ? certo : nome);
+    return {
+      ...comp,
+      teamNames: [...new Set((comp.teamNames || []).map(trocar).filter(Boolean))],
+      teams: (comp.teams || [])
+        .map(t => ({ ...t, name: trocar(t.name) }))
+        // Depois de renomear pode haver duas entradas com o mesmo nome.
+        .filter((t, i, arr) => arr.findIndex(o => (o.name || '') === (t.name || '')) === i),
+      rounds: (comp.rounds || []).map(r => ({
+        ...r,
+        games: (r.games || []).map(g => ({ ...g, home: trocar(g.home), away: trocar(g.away) })),
+      })),
+    };
+  });
+
+  return mexeu ? { ...dados, competitions } : dados;
+}
+
 /* O CAMINHO INVERSO: do jogo criado à mão para a tabela da competição.
 
    A tabela já criava jogos (syncCompetitionMatches). Faltava o contrário:
@@ -9230,13 +9293,26 @@ function syncMatchIntoCompetition(match, standings, season) {
   const nomeComp = competitionLabel(match && match.competition);
   const jornada = (match && match.jornada || '').trim();
   const adversario = (match && match.opponent || '').trim();
-  const nosso = ((season && season.club) || '').trim();
-  if (!nomeComp || !jornada || !adversario || !nosso || isFriendlyMatch(match)) return dados;
+  if (!nomeComp || !jornada || !adversario || isFriendlyMatch(match)) return dados;
 
   const ci = dados.competitions.findIndex(c => (c.name || '').trim().toLowerCase() === nomeComp.toLowerCase());
   if (ci < 0) return dados;
 
   const comp = dados.competitions[ci];
+
+  /* O NOME DA NOSSA EQUIPA TEM DE SER O DA COMPETIÇÃO.
+
+     Na app o clube chama-se "SC Salgueiros · Sub-19" (season.club), mas na
+     tabela da AF está inscrito como "SC Salgueiros" (comp.myTeam). Usar o
+     primeiro para escrever na tabela criava uma SEGUNDA equipa com o mesmo
+     clube e outro nome — foi o que apareceu na classificação.
+
+     Manda sempre o nome da competição. O `season.club` só serve de recurso
+     quando a competição ainda não tem equipa nossa definida. */
+  const nosso = ((comp.myTeam || '').trim())
+    || (comp.teamNames || []).find(t => (t || '').trim() === ((season && season.club) || '').trim())
+    || ((season && season.club) || '').trim();
+  if (!nosso) return dados;
   const ri = (comp.rounds || []).findIndex((r, i) => (r.label || `Jornada ${i + 1}`) === jornada);
   if (ri < 0) return dados; // jornada inexistente: não se inventam jornadas
 
