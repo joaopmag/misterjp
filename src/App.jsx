@@ -4633,6 +4633,53 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // iconScaleForPhase). Reage à fase escolhida no formulário, em direto.
   const iconEscala = iconScaleForPhase(exerciseInfo?.phase);
   const isNarrowEditor = useIsMobile(760);
+
+  /* QUANTO PODE O CAMPO CRESCER — MEDIDO, NÃO ADIVINHADO.
+
+     Passei várias versões a estimar em pixéis o que a barra de ferramentas
+     e o painel de edição ocupam, e a errar sempre: ora o campo ficava
+     minúsculo, ora empurrava a caixa de texto para fora do ecrã.
+
+     Agora mede-se. `editorRef` envolve o editor inteiro e `campoRef` só a
+     prancheta: a diferença entre as duas alturas é EXATAMENTE o que está à
+     volta do campo, seja o que for e mude o que mudar. O que sobra da
+     janela é do campo.
+
+     Recalcula-se quando a janela muda de tamanho e quando o conteúdo à
+     volta muda de altura (o painel de edição aparece e desaparece), via
+     ResizeObserver. */
+  const editorRef = useRef(null);
+  const campoRef = useRef(null);
+  const [alturaCampo, setAlturaCampo] = useState(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const medir = () => {
+      const editor = editorRef.current;
+      const campo = campoRef.current;
+      if (!editor || !campo) return;
+      const moldura = editor.offsetHeight - campo.offsetHeight; // tudo menos o campo
+      // A folga evita que o campo encoste ao limite do ecrã e deixa
+      // respiro para as margens da janela de edição.
+      const disponivel = window.innerHeight - moldura - 96;
+      // Nunca abaixo de 300 px: mais pequeno do que isto não dá para
+      // trabalhar, e nesse caso é preferível rolar a página.
+      setAlturaCampo(Math.max(300, Math.round(disponivel)));
+    };
+
+    medir();
+    window.addEventListener('resize', medir);
+    let obs = null;
+    if (typeof ResizeObserver !== 'undefined' && editorRef.current) {
+      obs = new ResizeObserver(medir);
+      obs.observe(editorRef.current);
+    }
+    return () => {
+      window.removeEventListener('resize', medir);
+      if (obs) obs.disconnect();
+    };
+  }, []);
   const svgRef = React.useRef(null);
   const [tool, setTool] = useState('select');
   // 'activeColor' já não é estado local — vem do componente pai (ExerciseModal)
@@ -5461,7 +5508,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
 
   return (
-    <div>
+    <div ref={editorRef}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6, alignItems: 'center' }}>
         <span style={{ fontSize: 11, color: T.mutedDim }}>Cor:</span>
         {TEAMS.map(tm => (
@@ -5540,7 +5587,17 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
       </div>
 
-      <div style={{ position: 'relative', ...PITCH_FIT }}>
+      {/* A largura sai da altura disponível, para a proporção nunca mudar:
+          limitar a altura diretamente deixaria o elemento com a largura
+          toda e uma forma diferente da declarada — e o desenho esticava. */}
+      <div
+        ref={campoRef}
+        style={{
+          ...PITCH_FIT,
+          position: 'relative',
+          ...(alturaCampo ? { maxWidth: Math.round(alturaCampo * (PITCH_BOX.w / PITCH_BOX.h)) } : {}),
+        }}
+      >
         <svg
           ref={svgRef}
           viewBox={PITCH_VIEWBOX}
