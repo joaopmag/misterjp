@@ -1324,6 +1324,26 @@ function App({ session }) {
     'league_standings', { competition: '', teams: [], rounds: [] }, notifyEdit
   );
 
+  /* LIMPEZA DOS JOGOS DUPLICADOS — ao nível da app, não de um ecrã.
+
+     Estava dentro do separador Jogos, e por isso só corria quando esse
+     separador era aberto: quem entrasse nas Presenças ou nas Convocatórias
+     via os duplicados na mesma. Aqui corre uma vez, assim que os dados
+     estão carregados, e vale para a app inteira.
+
+     `jogosLimpos` garante que não volta a correr: sem essa marca, cada
+     gravação disparava uma nova verificação em cadeia. */
+  const jogosLimpos = useRef(false);
+  useEffect(() => {
+    if (jogosLimpos.current || !matchesReady || !(matches || []).length) return;
+    const limpo = limparJogosDuplicados(matches);
+    jogosLimpos.current = true;
+    if (limpo.length !== matches.length) {
+      console.warn(`Jogos duplicados juntados: ${matches.length} → ${limpo.length}`);
+      setMatches(limpo);
+    }
+  }, [matchesReady, matches, setMatches]);
+
   const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
     || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
     || !desenvolvimentoReady || !standingsReady;
@@ -11784,10 +11804,21 @@ function syncCompetitionConvocatorias(matches, convocatorias, season) {
    que estava vazio. */
 function limparJogosDuplicados(matches) {
   const lista = matches || [];
+  /* A CHAVE É A DATA MAIS O ADVERSÁRIO. A competição fica de fora.
+
+     A primeira versão incluía a competição, e por isso NÃO juntava um par
+     em que um dos jogos tinha a competição por preencher — que é
+     precisamente o caso dos jogos criados a partir de uma convocatória
+     incompleta. Ficavam os dois na lista.
+
+     Numa época real, não há duas partidas contra o mesmo adversário no
+     mesmo dia. Data e adversário chegam para identificar o encontro, e a
+     competição é justamente um dos campos que um dos lados pode ter
+     esquecido — usá-la para decidir era pedir ao dado incompleto que
+     resolvesse o problema causado por estar incompleto. */
   const chave = (m) => [
     (m.date || '').trim(),
     (m.opponent || '').trim().toLowerCase(),
-    competitionLabel(m.competition).toLowerCase(),
   ].join('|');
 
   // Quanta informação tem este jogo? Serve para escolher qual fica.
@@ -11797,20 +11828,47 @@ function limparJogosDuplicados(matches) {
     + Object.keys(m.report || {}).length * 5
     + (String(m.result || '').trim() ? 20 : 0)
     + (m.sourceGameId ? 3 : 0)
+    + (m.sourceConvocatoriaId ? 3 : 0)
+    + (String(m.competition || '').trim() ? 2 : 0)
+    + (m.atHome !== undefined ? 2 : 0)
     + (String(m.jornada || '').trim() ? 1 : 0)
   );
 
   const grupos = new Map();
   lista.forEach(m => {
     const k = chave(m);
-    if (!k.replace(/\|/g, '')) return; // sem data nem adversário: não se agrupa
+    // Sem data OU sem adversário não há como ter a certeza de que são o
+    // mesmo encontro — e juntar por engano é pior do que deixar dois.
+    if (!(m.date || '').trim() || !(m.opponent || '').trim()) return;
     if (!grupos.has(k)) grupos.set(k, []);
     grupos.get(k).push(m);
   });
 
+  /* A COMPETIÇÃO DESEMPATA, MAS SÓ QUANDO OS DOIS A TÊM.
+
+     Dois jogos na mesma data contra o mesmo adversário são o mesmo
+     encontro — exceto se ambos disserem competições diferentes, e nesse
+     caso são mesmo dois jogos distintos (campeonato e taça, por exemplo).
+
+     Quando um deles tem a competição por preencher não se pode concluir
+     nada: é justamente esse o campo que ficou por preencher, e usá-lo
+     para decidir seria pedir ao dado incompleto que resolvesse o
+     problema causado por estar incompleto. */
+  const separadas = new Map();
+  grupos.forEach((g, k) => {
+    const comps = new Set(g.map(m => competitionLabel(m.competition).trim().toLowerCase()).filter(Boolean));
+    if (comps.size <= 1) { separadas.set(k, g); return; }
+    g.forEach(m => {
+      const c = competitionLabel(m.competition).trim().toLowerCase();
+      const sub = `${k}|${c}`;
+      if (!separadas.has(sub)) separadas.set(sub, []);
+      separadas.get(sub).push(m);
+    });
+  });
+
   const substituir = new Map();
   const remover = new Set();
-  grupos.forEach(g => {
+  separadas.forEach(g => {
     if (g.length < 2) return;
     const vencedor = [...g].sort((a, b) => peso(b) - peso(a))[0];
     const juntado = { ...vencedor };
@@ -11824,6 +11882,9 @@ function limparJogosDuplicados(matches) {
       if (!String(juntado.result || '').trim() && String(m.result || '').trim()) juntado.result = m.result;
       if (!juntado.sourceGameId && m.sourceGameId) juntado.sourceGameId = m.sourceGameId;
       if (!String(juntado.jornada || '').trim() && String(m.jornada || '').trim()) juntado.jornada = m.jornada;
+      if (!String(juntado.competition || '').trim() && String(m.competition || '').trim()) juntado.competition = m.competition;
+      if (juntado.atHome === undefined && m.atHome !== undefined) juntado.atHome = m.atHome;
+      if (!juntado.sourceConvocatoriaId && m.sourceConvocatoriaId) juntado.sourceConvocatoriaId = m.sourceConvocatoriaId;
     });
     substituir.set(vencedor.id, juntado);
   });
@@ -12421,18 +12482,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
   };
   const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
 
-  /* Repara os duplicados criados pela versão anterior (ver
-     limparJogosDuplicados). Corre uma vez, quando há mesmo o que reparar,
-     e grava — se ficasse só na leitura, voltavam a aparecer a cada
-     recarregamento. */
-  useEffect(() => {
-    if (!setMatches) return;
-    const limpo = limparJogosDuplicados(matches);
-    if (limpo.length !== (matches || []).length) setMatches(limpo);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matches]);
-
-  const sorted = [...limparJogosDuplicados(matches)].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sorted = [...matches].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   /* Separadores por competição.
 
