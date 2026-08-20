@@ -370,6 +370,11 @@ function SyncErrorBanner() {
    verificação de sessão por engano. */
 function useCollectionSync(table, notifyEdit) {
   const [items, setItems] = useState([]);
+  /* Autorização de UMA remoção em massa (ver o travão de segurança mais
+     abaixo). Fica num ref e não no estado porque não afeta o que se vê e
+     tem de estar disponível na gravação seguinte, sem esperar por um
+     novo desenho do ecrã. */
+  const remocaoAutorizada = useRef(false);
   const [ready, setReady] = useState(false);
   const [recordMeta, setRecordMeta] = useState({}); // id -> { email, at }
   const snapshot = useRef(new Map()); // id -> JSON da última versão gravada
@@ -548,23 +553,33 @@ function useCollectionSync(table, notifyEdit) {
       if (toDelete.length) {
         /* TRAVÃO DE SEGURANÇA.
 
-           Na aplicação, apagar é sempre um registo de cada vez e com
-           confirmação — não há nenhum botão que apague vários. Portanto,
-           um pedido para apagar três ou mais registos de uma vez nunca
-           vem de uma ação deliberada: vem de o estado local ter ficado
-           vazio ou truncado por engano (uma sessão que caiu a meio, um
-           erro de renderização, um bug futuro nesta mesma função).
+           Apagar três ou mais registos de uma vez quase nunca é
+           deliberado: costuma vir de o estado local ter ficado vazio ou
+           truncado por engano (uma sessão que caiu a meio, um erro de
+           renderização, um bug nesta mesma função). Nesses casos não se
+           apaga nada e avisa-se, porque o custo de errar é assimétrico:
+           não apagar deixa lixo recuperável na base de dados, apagar por
+           engano destrói trabalho de uma época inteira.
 
-           Nesse caso não se apaga nada e avisa-se. O custo de errar aqui é
-           assimétrico: não apagar deixa lixo recuperável na base de dados,
-           apagar por engano destrói trabalho de uma época inteira. */
-        if (toDelete.length >= 3) {
+           MAS há uma exceção legítima, e ela nasceu com o Desenvolvimento
+           Individual: apagar um momento de avaliação apaga também a linha
+           de cada jogador — dezenas de registos de uma vez. Sem porta de
+           saída, o travão tornava impossível apagar um momento, e a
+           mensagem parecia um erro quando era a proteção a funcionar.
+
+           `remocaoAutorizada` abre a porta para UMA gravação, e é ligada
+           pelo código que sabe que a remoção é intencional. Nunca fica
+           ligada de forma permanente — é isso que a mantém uma exceção e
+           não um buraco. */
+        if (toDelete.length >= 3 && !remocaoAutorizada.current) {
           console.error(table, 'eliminação em massa bloqueada:', toDelete);
           reportSyncError(table, {
             message: `Foi travada a eliminação de ${toDelete.length} registos de uma só vez. `
               + 'Nada foi apagado. Recarrega a página — se os registos voltarem, estava tudo bem.',
           });
         } else {
+          // Consome a autorização: vale para esta gravação e mais nenhuma.
+          remocaoAutorizada.current = false;
           const { error } = await supabase.from(table).delete().in('id', toDelete);
           if (!error) toDelete.forEach(id => snapshot.current.delete(id));
           else { console.error(table, error); reportSyncError(table, error); }
@@ -575,7 +590,7 @@ function useCollectionSync(table, notifyEdit) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, ready]);
 
-  return [items, setItems, ready, recordMeta];
+  return [items, setItems, ready, recordMeta, () => { remocaoAutorizada.current = true; }];
 }
 
 /* ---------------------------------------------------------------
@@ -1299,7 +1314,10 @@ function App({ session }) {
   // Momentos de avaliação do Desenvolvimento Individual. Guarda os
   // momentos e, dentro de cada um, um registo por jogador — não duplica o
   // plantel, referencia-o pelo id.
-  const [desenvolvimento, setDesenvolvimento, desenvolvimentoReady] = useCollectionSync('desenvolvimento', notifyEdit);
+  /* O quinto valor autoriza uma remoção em massa. É preciso aqui porque
+     apagar um momento apaga também a linha de cada jogador — dezenas de
+     registos de uma vez, que o travão de segurança bloquearia. */
+  const [desenvolvimento, setDesenvolvimento, desenvolvimentoReady, , autorizarApagarMomento] = useCollectionSync('desenvolvimento', notifyEdit);
   // Classificação/resultados da competição — registo único, atualizado
   // manualmente (jornada a jornada), partilhado por toda a equipa técnica.
   const [standings, setStandings, standingsReady, standingsMeta] = useSingletonSync(
@@ -1684,6 +1702,7 @@ function App({ session }) {
               players={players}
               desenvolvimento={desenvolvimento}
               setDesenvolvimento={setDesenvolvimento}
+              autorizarRemocaoEmMassa={autorizarApagarMomento}
               userEmail={session && session.user && session.user.email}
             />
           )}
@@ -7730,7 +7749,7 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
   );
 }
 
-function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolvimento, userEmail }) {
+function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolvimento, autorizarRemocaoEmMassa, userEmail }) {
   const isNarrow = useIsMobile(760);
   const [aba, setAba] = useState('geral');
   const [momentoId, setMomentoId] = useState(null);
@@ -7769,6 +7788,11 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
       onConfirm: () => {
         const pertencem = (x) => x && (x.id === m.id || (x.tipo === 'registo' && x.momentoId === m.id));
         const apagadas = (desenvolvimento || []).filter(pertencem);
+        /* Avisa o mecanismo de gravação de que esta remoção em massa é
+           deliberada. Sem isto, o travão de segurança bloqueia-a e o
+           momento fica impossível de apagar. Vale só para a gravação
+           imediatamente a seguir. */
+        if (autorizarRemocaoEmMassa) autorizarRemocaoEmMassa();
         setDesenvolvimento(prev => (prev || []).filter(x => !pertencem(x)));
         if (momentoId === m.id) setMomentoId(null);
         offerUndo(`Momento "${m.nome}" apagado.`, () => {
