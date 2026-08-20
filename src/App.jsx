@@ -11704,8 +11704,19 @@ function syncMatchIntoCompetition(match, standings, season) {
     gi = jogos.findIndex(g => !String(g.home || '').trim() && !String(g.away || '').trim());
   }
 
+  /* O ENCONTRO NA TABELA FICA COM O ID DO PRÓPRIO JOGO.
+
+     Era aqui que nascia a duplicação. Lançar um jogo à mão escrevia-o na
+     jornada com um id NOVO; depois, ao gravar a classificação, o caminho
+     inverso (syncCompetitionMatches) via um encontro que não reconhecia
+     — procura pelo `sourceGameId` — e criava um segundo jogo para o
+     mesmo encontro. Ficavam dois, exatamente iguais.
+
+     Usar o id do jogo como id do encontro fecha o círculo: o
+     `sourceGameId` que se grava a seguir aponta para ele, e os dois lados
+     passam a reconhecer-se um ao outro. */
   const novo = {
-    id: gi >= 0 && jogos[gi].id ? jogos[gi].id : uid(),
+    id: gi >= 0 && jogos[gi].id ? jogos[gi].id : (match.id || uid()),
     home: casa, away: fora,
     date: match.date || (gi >= 0 ? jogos[gi].date : '') || '',
     // O resultado da tabela manda: só se escreve se lá não houver nenhum.
@@ -11733,6 +11744,70 @@ function syncCompetitionConvocatorias(matches, convocatorias, season) {
     lista = syncMatchConvocatoria(m, lista, season);
   });
   return lista;
+}
+
+/* LIMPEZA DOS JOGOS DUPLICADOS
+
+   Uma versão anterior criava dois jogos para o mesmo encontro: o lançado
+   à mão e outro gerado pela tabela da competição, por não se
+   reconhecerem um ao outro (ver syncMatchIntoCompetition).
+
+   Isto junta-os. Dois jogos são o MESMO encontro quando têm a mesma
+   data, o mesmo adversário e a mesma competição — é a combinação que
+   identifica um jogo de forma única num calendário real.
+
+   Fica o que tem mais informação, e o que sobrevive herda o que o outro
+   tivesse de útil: convocados, titulares, relatório, resultado. Nunca se
+   perde trabalho — o pior que pode acontecer é ficar um campo preenchido
+   que estava vazio. */
+function limparJogosDuplicados(matches) {
+  const lista = matches || [];
+  const chave = (m) => [
+    (m.date || '').trim(),
+    (m.opponent || '').trim().toLowerCase(),
+    competitionLabel(m.competition).toLowerCase(),
+  ].join('|');
+
+  // Quanta informação tem este jogo? Serve para escolher qual fica.
+  const peso = (m) => (
+    (m.convocados || []).length * 10
+    + (m.starters || []).length * 10
+    + Object.keys(m.report || {}).length * 5
+    + (String(m.result || '').trim() ? 20 : 0)
+    + (m.sourceGameId ? 3 : 0)
+    + (String(m.jornada || '').trim() ? 1 : 0)
+  );
+
+  const grupos = new Map();
+  lista.forEach(m => {
+    const k = chave(m);
+    if (!k.replace(/\|/g, '')) return; // sem data nem adversário: não se agrupa
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(m);
+  });
+
+  const substituir = new Map();
+  const remover = new Set();
+  grupos.forEach(g => {
+    if (g.length < 2) return;
+    const vencedor = [...g].sort((a, b) => peso(b) - peso(a))[0];
+    const juntado = { ...vencedor };
+    g.forEach(m => {
+      if (m.id === vencedor.id) return;
+      remover.add(m.id);
+      // Herda o que o vencedor não tem.
+      if (!(juntado.convocados || []).length && (m.convocados || []).length) juntado.convocados = m.convocados;
+      if (!(juntado.starters || []).length && (m.starters || []).length) juntado.starters = m.starters;
+      if (!Object.keys(juntado.report || {}).length && Object.keys(m.report || {}).length) juntado.report = m.report;
+      if (!String(juntado.result || '').trim() && String(m.result || '').trim()) juntado.result = m.result;
+      if (!juntado.sourceGameId && m.sourceGameId) juntado.sourceGameId = m.sourceGameId;
+      if (!String(juntado.jornada || '').trim() && String(m.jornada || '').trim()) juntado.jornada = m.jornada;
+    });
+    substituir.set(vencedor.id, juntado);
+  });
+
+  if (!remover.size) return lista;
+  return lista.filter(m => !remover.has(m.id)).map(m => substituir.get(m.id) || m);
 }
 
 function syncCompetitionMatches(competitions, matches) {
@@ -12302,12 +12377,40 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
     if (setSessions) setSessions(prev => ensureFriendlySession(registo, prev));
     // Jogo oficial com convocados: gera/atualiza a convocatória.
     if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
-    // E o encontro entra na jornada da competição, se ela existir.
-    if (setStandings) setStandings(prev => syncMatchIntoCompetition(registo, prev, season));
+    /* O encontro entra na jornada da competição, se ela existir, E o jogo
+       fica a saber qual é — sem essa ligação, a tabela criaria um segundo
+       jogo para o mesmo encontro (ver syncMatchIntoCompetition). */
+    if (setStandings) {
+      const antes = normalizeStandings(standings);
+      const depois = syncMatchIntoCompetition(registo, antes, season);
+      if (JSON.stringify(depois.competitions) !== JSON.stringify(antes.competitions)) {
+        setStandings(depois);
+        const jornada = (registo.jornada || '').trim();
+        const nomeComp = competitionLabel(registo.competition);
+        const comp = depois.competitions.find(c => (c.name || '').trim().toLowerCase() === nomeComp.toLowerCase());
+        const ronda = comp && (comp.rounds || []).find((r, i) => (r.label || `Jornada ${i + 1}`) === jornada);
+        const encontro = ronda && (ronda.games || []).find(g => g.id === registo.id);
+        if (encontro) {
+          setMatches(prev => prev.map(m => (m.id === registo.id ? { ...m, sourceGameId: encontro.id } : m)));
+        }
+      }
+    }
     setModal(null);
   };
   const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
-  const sorted = [...matches].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  /* Repara os duplicados criados pela versão anterior (ver
+     limparJogosDuplicados). Corre uma vez, quando há mesmo o que reparar,
+     e grava — se ficasse só na leitura, voltavam a aparecer a cada
+     recarregamento. */
+  useEffect(() => {
+    if (!setMatches) return;
+    const limpo = limparJogosDuplicados(matches);
+    if (limpo.length !== (matches || []).length) setMatches(limpo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matches]);
+
+  const sorted = [...limparJogosDuplicados(matches)].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   /* Separadores por competição.
 
