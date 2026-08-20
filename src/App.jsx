@@ -11707,7 +11707,7 @@ function limparEquipaDuplicada(standings, season) {
    está por preencher, ou acrescenta um à jornada indicada. O resultado só
    é escrito se o jogo ainda não tiver um — a tabela é a fonte oficial e
    não se sobrepõe ao que lá foi lançado. */
-function syncMatchIntoCompetition(match, standings, season) {
+function syncMatchIntoCompetition(match, standings, season, matches) {
   const dados = normalizeStandings(standings);
   const nomeComp = competitionLabel(match && match.competition);
   const jornada = (match && match.jornada || '').trim();
@@ -11760,9 +11760,25 @@ function syncMatchIntoCompetition(match, standings, season) {
 
      Usar o id do jogo como id do encontro fecha o círculo: o
      `sourceGameId` que se grava a seguir aponta para ele, e os dois lados
-     passam a reconhecer-se um ao outro. */
+     passam a reconhecer-se um ao outro.
+
+     ISTO TINHA DE VALER TAMBÉM QUANDO `gi >= 0` — ou seja, quando a
+     jornada já tinha o encontro (equipas preenchidas de antemão, como
+     acontece ao copiar o calendário oficial da competição). Antes, esse
+     caso mantinha sempre o id antigo da jornada, e o encontro nunca
+     chegava a reconhecer o jogo lançado à mão: cada gravação seguinte da
+     classificação voltava a criar um jogo novo para o mesmo encontro.
+
+     A exceção: se esse id antigo já pertencer a OUTRO jogo (via
+     sourceGameId), trocá-lo desligava esse outro jogo da jornada. Nesse
+     caso concreto mantém-se o id como estava — o que sobra fica para a
+     limpeza de duplicados tratar, em vez de trocar um problema por
+     outro. */
+  const idReclamado = gi >= 0 && jogos[gi].id
+    ? (matches || []).some(m => m.id !== match.id && m.sourceGameId === jogos[gi].id)
+    : false;
   const novo = {
-    id: gi >= 0 && jogos[gi].id ? jogos[gi].id : (match.id || uid()),
+    id: gi >= 0 && jogos[gi].id && idReclamado ? jogos[gi].id : (match.id || uid()),
     home: casa, away: fora,
     date: match.date || (gi >= 0 ? jogos[gi].date : '') || '',
     // O resultado da tabela manda: só se escreve se lá não houver nenhum.
@@ -12469,7 +12485,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
        jogo para o mesmo encontro (ver syncMatchIntoCompetition). */
     if (setStandings) {
       const antes = normalizeStandings(standings);
-      const depois = syncMatchIntoCompetition(registo, antes, season);
+      const depois = syncMatchIntoCompetition(registo, antes, season, matches);
       if (JSON.stringify(depois.competitions) !== JSON.stringify(antes.competitions)) {
         setStandings(depois);
         const jornada = (registo.jornada || '').trim();
