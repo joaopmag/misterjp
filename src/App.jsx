@@ -1027,15 +1027,9 @@ function Modal({ title, subtitle, onClose, children, wide, xwide }) {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
-          {/* `wordBreak`/`overflowWrap` no título — sem isto, um nome de
-              exercício comprido (o do "Equipa do exercício", por exemplo)
-              conta como uma palavra só para efeitos de largura e alarga a
-              caixa toda no telemóvel, mesmo com `minWidth: 0` no pai. A
-              coluna passa a ficar sempre fixa em `maxWidth`, e o título
-              quebra por dentro em vez de esticar a janela. */}
           <div style={{ minWidth: 0 }}>
-            <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0, wordBreak: 'break-word', overflowWrap: 'break-word' }}>{title}</h3>
-            {subtitle && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 3, wordBreak: 'break-word', overflowWrap: 'break-word' }}>{subtitle}</div>}
+            <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0 }}>{title}</h3>
+            {subtitle && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 3 }}>{subtitle}</div>}
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
             <X size={20} />
@@ -1278,16 +1272,6 @@ function App({ session }) {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  /* PONTE ENTRE O SIMULADOR E O RESTO DA APP.
-
-     Guardar equipas no Simulador não pode ficar a viver só ali: o
-     treinador quer ver logo o resultado onde ele passa a contar de
-     verdade — no Planeamento (treino) ou nos Jogos (amigável) — já
-     pronto para imprimir. Isto guarda só um pedido pendente (que dia/
-     jogo imprimir); é o Planeamento/Jogos que, ao montar com o pedido
-     por resolver, dispara o próprio `window.print()` e depois limpa o
-     pedido. */
-  const [autoPrint, setAutoPrint] = useState(null); // null | { type: 'session', date } | { type: 'match', id }
   const [season, setSeason] = useState({ name: '2026/2027', start: '', end: '', club: 'SC Salgueiros · Sub-19' });
   const [seasonReady, setSeasonReady] = useState(false);
   const [previewKiosk, setPreviewKiosk] = useState(false);
@@ -1312,6 +1296,10 @@ function App({ session }) {
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit);
   const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit);
+  // Momentos de avaliação do Desenvolvimento Individual. Guarda os
+  // momentos e, dentro de cada um, um registo por jogador — não duplica o
+  // plantel, referencia-o pelo id.
+  const [desenvolvimento, setDesenvolvimento, desenvolvimentoReady] = useCollectionSync('desenvolvimento', notifyEdit);
   // Classificação/resultados da competição — registo único, atualizado
   // manualmente (jornada a jornada), partilhado por toda a equipa técnica.
   const [standings, setStandings, standingsReady, standingsMeta] = useSingletonSync(
@@ -1320,7 +1308,7 @@ function App({ session }) {
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
     || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
-    || !standingsReady;
+    || !desenvolvimentoReady || !standingsReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
   // lateral, quando o link inclui ?checkin=1 — é este o link a partilhar
@@ -1401,6 +1389,7 @@ function App({ session }) {
     { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList },
     { id: 'jogos', label: 'Jogos', icon: Trophy },
     { id: 'monitorizacao', label: 'Monitorização', icon: Activity },
+    { id: 'desenvolvimento', label: 'Desenvolvimento', icon: TrendingUp },
     { id: 'scouting', label: 'Scouting', icon: Search },
     { id: 'videos', label: 'FutchannelYouT', icon: Tv },
     { id: 'apresentacoes', label: 'Apresentações', icon: Presentation },
@@ -1660,13 +1649,11 @@ function App({ session }) {
           {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} autoPrint={autoPrint} onAutoPrintDone={() => setAutoPrint(null)} />}
-          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches}
-            onGuardadoTreino={(date) => { setAutoPrint({ type: 'session', date }); goTab('planeamento'); }}
-            onGuardadoJogo={(matchId) => { setAutoPrint({ type: 'match', id: matchId }); goTab('jogos'); }} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} />}
+          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autoPrint={autoPrint} onAutoPrintDone={() => setAutoPrint(null)} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -1692,6 +1679,14 @@ function App({ session }) {
               emptyFirstLabel="Adicionar o primeiro ficheiro"
             />
           </div>
+          {tab === 'desenvolvimento' && (
+            <DesenvolvimentoIndividual
+              players={players}
+              desenvolvimento={desenvolvimento}
+              setDesenvolvimento={setDesenvolvimento}
+              userEmail={session && session.user && session.user.email}
+            />
+          )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
         </div>
         </main>
@@ -7067,6 +7062,1352 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   );
 }
 /* ================================================================
+   DESENVOLVIMENTO INDIVIDUAL — motor de cálculo
+
+   Escrito e testado à parte antes de entrar no App.jsx. Tudo aqui são
+   funções puras: dados a entrar, dados a sair, sem estado nem interface.
+   É isso que permite testar cada regra sozinha — e foi assim que se
+   apanharam vários erros antes de chegarem ao ecrã.
+================================================================ */
+
+/* AS SEIS DIMENSÕES E OS SEUS PESOS.
+
+   Os pesos somam 1 e são usados para o Score Global. Ficam aqui, num
+   sítio só, porque o documento prevê poder alterá-los mais tarde sem
+   mexer no resto. */
+const DI_DIMENSOES = [
+  { id: 'valores', label: 'Valores & Comportamento', peso: 0.20 },
+  { id: 'tecnica', label: 'Técnica', peso: 0.20 },
+  { id: 'tatica', label: 'Tática & Inteligência de Jogo', peso: 0.25 },
+  { id: 'fisica', label: 'Capacidade Física', peso: 0.15 },
+  { id: 'mental', label: 'Mental & Competitivo', peso: 0.10 },
+  { id: 'aprendizagem', label: 'Aprendizagem & Desenvolvimento', peso: 0.10 },
+];
+
+/* OS 40 INDICADORES.
+
+   `id` é curto e estável: é ele que fica gravado em cada resposta. Se um
+   dia o texto da pergunta mudar, as respostas antigas continuam a fazer
+   sentido porque estão ligadas ao id e não ao texto.
+
+   `curto` é o rótulo do radar detalhado, onde a frase inteira não cabe. */
+const DI_INDICADORES = [
+  // VALORES & COMPORTAMENTO (7)
+  { id: 'v1', dim: 'valores', curto: 'Pontualidade', texto: 'Cumpro os horários definidos pela equipa sem precisar que me lembrem.' },
+  { id: 'v2', dim: 'valores', curto: 'Compromisso no treino', texto: 'Demonstro compromisso e intensidade em todos os treinos.' },
+  { id: 'v3', dim: 'valores', curto: 'Respeito', texto: 'Respeito colegas, treinadores, adversários e árbitros.' },
+  { id: 'v4', dim: 'valores', curto: 'Regras da equipa', texto: 'Cumpro as regras e normas da equipa mesmo quando ninguém está a controlar.' },
+  { id: 'v5', dim: 'valores', curto: 'Equipa acima do individual', texto: 'Coloco os objetivos da equipa acima dos meus interesses individuais.' },
+  { id: 'v6', dim: 'valores', curto: 'Atitude na dificuldade', texto: 'Mantenho uma atitude positiva perante dificuldades, erros ou decisões com que não concordo.' },
+  { id: 'v7', dim: 'valores', curto: 'Conduta dentro e fora', texto: 'Tenho comportamentos dentro e fora do campo compatíveis com um jogador de formação.' },
+
+  // TÉCNICA (8)
+  { id: 't1', dim: 'tecnica', curto: 'Receção e preparação', texto: 'Consigo receber a bola e preparar o próximo gesto técnico com qualidade.' },
+  { id: 't2', dim: 'tecnica', curto: 'Passe curto', texto: 'Consigo executar passes curtos com precisão e velocidade.' },
+  { id: 't3', dim: 'tecnica', curto: 'Passe médio e longo', texto: 'Consigo executar passes médios e longos com qualidade quando necessário.' },
+  { id: 't4', dim: 'tecnica', curto: 'Condução', texto: 'Consigo conduzir e transportar a bola mantendo controlo e velocidade.' },
+  { id: 't5', dim: 'tecnica', curto: '1x1 ofensivo', texto: 'Consigo superar um adversário no 1x1 ofensivo quando a situação o exige.' },
+  { id: 't6', dim: 'tecnica', curto: 'Finalização', texto: 'Consigo executar a finalização com qualidade e eficácia.' },
+  { id: 't7', dim: 'tecnica', curto: 'Técnica sob pressão', texto: 'Consigo executar ações técnicas com qualidade mesmo sob pressão do adversário.' },
+  { id: 't8', dim: 'tecnica', curto: 'Velocidade de execução', texto: 'Consigo executar os gestos técnicos à velocidade exigida pelo jogo.' },
+
+  // TÁTICA & INTELIGÊNCIA DE JOGO (9)
+  { id: 'x1', dim: 'tatica', curto: 'Função no modelo', texto: 'Compreendo claramente a minha função dentro do modelo de jogo.' },
+  { id: 'x2', dim: 'tatica', curto: 'Ocupação de espaços', texto: 'Ocupo corretamente os espaços em função da posição da bola e dos meus colegas.' },
+  { id: 'x3', dim: 'tatica', curto: 'Linhas de passe', texto: 'Consigo identificar e criar linhas de passe para ajudar a equipa.' },
+  { id: 'x4', dim: 'tatica', curto: 'Tomada de decisão', texto: 'Tomo boas decisões sobre quando passar, conduzir, jogar para a frente ou conservar a bola.' },
+  { id: 'x5', dim: 'tatica', curto: 'Gestão do ritmo', texto: 'Compreendo quando devo acelerar ou controlar o ritmo do jogo.' },
+  { id: 'x6', dim: 'tatica', curto: 'Reação à perda', texto: 'Reajo rapidamente à perda da bola e cumpro os princípios de pressão definidos pela equipa.' },
+  { id: 'x7', dim: 'tatica', curto: 'Transição ofensiva', texto: 'Quando recuperamos a bola, identifico rapidamente oportunidades para progredir.' },
+  { id: 'x8', dim: 'tatica', curto: 'Organização defensiva', texto: 'Compreendo os comportamentos coletivos defensivos e cumpro a minha função.' },
+  { id: 'x9', dim: 'tatica', curto: 'Adaptação', texto: 'Consigo adaptar o meu comportamento às diferentes situações que o jogo apresenta.' },
+
+  // CAPACIDADE FÍSICA (6)
+  { id: 'f1', dim: 'fisica', curto: 'Intensidade mantida', texto: 'Consigo manter uma intensidade elevada durante o treino e o jogo.' },
+  { id: 'f2', dim: 'fisica', curto: 'Repetir esforços', texto: 'Tenho capacidade para repetir esforços de alta intensidade.' },
+  { id: 'f3', dim: 'fisica', curto: 'Velocidade', texto: 'Tenho velocidade e aceleração adequadas às exigências da minha posição.' },
+  { id: 'f4', dim: 'fisica', curto: 'Força e contacto', texto: 'Tenho força e capacidade de contacto adequadas às exigências da minha posição.' },
+  { id: 'f5', dim: 'fisica', curto: 'Agilidade', texto: 'Tenho agilidade e capacidade para mudar de direção rapidamente.' },
+  { id: 'f6', dim: 'fisica', curto: 'Recuperação', texto: 'Consigo recuperar adequadamente entre esforços e manter o meu rendimento.' },
+
+  // MENTAL & COMPETITIVO (5)
+  { id: 'm1', dim: 'mental', curto: 'Concentração', texto: 'Mantenho a concentração durante todo o treino e jogo.' },
+  { id: 'm2', dim: 'mental', curto: 'Reação ao erro', texto: 'Reajo positivamente aos meus erros e tento corrigi-los imediatamente.' },
+  { id: 'm3', dim: 'mental', curto: 'Rendimento sob pressão', texto: 'Consigo manter o meu rendimento quando estou sob pressão.' },
+  { id: 'm4', dim: 'mental', curto: 'Assumir responsabilidade', texto: 'Demonstro confiança para assumir responsabilidades dentro do jogo.' },
+  { id: 'm5', dim: 'mental', curto: 'Competir até ao fim', texto: 'Continuo a competir e a dar o máximo mesmo quando as coisas não estão a correr bem.' },
+
+  // APRENDIZAGEM & DESENVOLVIMENTO (5)
+  { id: 'a1', dim: 'aprendizagem', curto: 'Compreender a instrução', texto: 'Procuro perceber o motivo pelo qual o treinador me dá determinada instrução.' },
+  { id: 'a2', dim: 'aprendizagem', curto: 'Aceitar feedback', texto: 'Aceito o feedback dos treinadores e tento aplicá-lo.' },
+  { id: 'a3', dim: 'aprendizagem', curto: 'Autoconhecimento', texto: 'Consigo identificar os meus principais pontos fortes e os aspetos em que preciso de melhorar.' },
+  { id: 'a4', dim: 'aprendizagem', curto: 'Evolução', texto: 'Demonstro evolução ao longo do tempo.' },
+  { id: 'a5', dim: 'aprendizagem', curto: 'Procura de melhoria', texto: 'Procuro ativamente formas de melhorar como jogador.' },
+];
+
+/* Escala de frequência (e não de qualidade): os indicadores estão escritos
+   como comportamentos, e o que se mede é quantas vezes acontecem. */
+const DI_ESCALA = [
+  { valor: 1, label: 'Nunca', desc: 'Não demonstro este comportamento.' },
+  { valor: 2, label: 'Raramente', desc: 'Poucas vezes e de forma inconsistente.' },
+  { valor: 3, label: 'Às vezes', desc: 'Em algumas situações, ainda com inconsistência.' },
+  { valor: 4, label: 'Frequentemente', desc: 'Na maioria das situações.' },
+  { valor: 5, label: 'Quase sempre', desc: 'De forma consistente, incluindo em situações exigentes.' },
+];
+
+/* As três perguntas abertas do jogador, a seguir às 40 fechadas. */
+const DI_ABERTAS = [
+  { id: 'q41', texto: 'Qual consideras ser atualmente o teu principal ponto forte como jogador?' },
+  { id: 'q42', texto: 'Qual consideras ser atualmente o aspeto do teu jogo que mais precisas de melhorar?' },
+  { id: 'q43', texto: 'O que estás disposto a fazer concretamente para melhorar esse aspeto?' },
+];
+
+const diIndicadoresDa = (dimId) => DI_INDICADORES.filter(i => i.dim === dimId);
+
+/* ----------------------------------------------------------------
+   MÉDIAS POR DIMENSÃO
+
+   `respostas` é um objeto { indicadorId: 1..5 | 'na' | undefined }.
+
+   O N/A não é zero: sai do numerador E do denominador. Contá-lo como
+   zero castigaria o jogador por o treinador não ter tido oportunidade de
+   o observar, que é exatamente o contrário do que o N/A significa.
+---------------------------------------------------------------- */
+function diMediaDimensao(respostas, dimId) {
+  const indicadores = diIndicadoresDa(dimId);
+  const validas = indicadores
+    .map(i => respostas && respostas[i.id])
+    .filter(v => typeof v === 'number' && v >= 1 && v <= 5);
+  if (!validas.length) return { media: null, validos: 0, total: indicadores.length };
+  const soma = validas.reduce((a, v) => a + v, 0);
+  return {
+    media: soma / validas.length,
+    validos: validas.length,
+    total: indicadores.length,
+  };
+}
+
+function diMedias(respostas) {
+  const out = {};
+  DI_DIMENSOES.forEach(d => { out[d.id] = diMediaDimensao(respostas, d.id); });
+  return out;
+}
+
+/* ----------------------------------------------------------------
+   SCORE GLOBAL
+
+   Média das dimensões, ponderada pelos pesos. Uma dimensão SEM nenhuma
+   resposta válida não pode entrar com zero — sairia um score baixíssimo
+   por falta de dados e não por falta de qualidade. Por isso é excluída, e
+   os pesos das restantes são renormalizados para continuarem a somar 1.
+
+   `fiabilidade` avisa quando há poucas respostas: com metade dos
+   indicadores por responder, o número existe mas vale pouco, e quem o lê
+   tem de saber disso.
+---------------------------------------------------------------- */
+function diScoreGlobal(respostas) {
+  const medias = diMedias(respostas);
+  const comDados = DI_DIMENSOES.filter(d => medias[d.id].media != null);
+  if (!comDados.length) return { score: null, fiabilidade: 'sem dados', medias, validos: 0, total: DI_INDICADORES.length };
+
+  const pesoTotal = comDados.reduce((a, d) => a + d.peso, 0);
+  const score = comDados.reduce((a, d) => a + medias[d.id].media * (d.peso / pesoTotal), 0);
+
+  const validos = DI_DIMENSOES.reduce((a, d) => a + medias[d.id].validos, 0);
+  const total = DI_INDICADORES.length;
+  const proporcao = validos / total;
+  const fiabilidade = proporcao >= 0.85 ? 'alta' : (proporcao >= 0.6 ? 'média' : 'baixa');
+
+  return { score, fiabilidade, medias, validos, total, dimensoesSemDados: DI_DIMENSOES.length - comDados.length };
+}
+
+/* ----------------------------------------------------------------
+   GAP = autoavaliação − avaliação da equipa técnica
+
+   Positivo: o jogador vê-se acima do que a equipa técnica vê.
+   Negativo: vê-se abaixo.
+   Perto de zero: perceções alinhadas.
+
+   Não se classifica o GAP como bom ou mau: é um indicador de
+   AUTOCONSCIÊNCIA, e tanto o excesso como a falta de confiança são
+   informação útil para a conversa — não um defeito a corrigir.
+
+   Um indicador só entra no GAP se AMBOS o responderam. Comparar uma
+   resposta com um N/A não é uma diferença de perceção, é ausência de
+   dados dos dois lados.
+---------------------------------------------------------------- */
+function diGapIndicadores(auto, staff) {
+  const out = {};
+  DI_INDICADORES.forEach(i => {
+    const a = auto && auto[i.id];
+    const s = staff && staff[i.id];
+    if (typeof a === 'number' && typeof s === 'number') out[i.id] = a - s;
+  });
+  return out;
+}
+
+function diGapDimensoes(auto, staff) {
+  const gaps = diGapIndicadores(auto, staff);
+  const out = {};
+  DI_DIMENSOES.forEach(d => {
+    const vals = diIndicadoresDa(d.id).map(i => gaps[i.id]).filter(v => typeof v === 'number');
+    out[d.id] = vals.length ? { gap: vals.reduce((a, v) => a + v, 0) / vals.length, indicadores: vals.length } : { gap: null, indicadores: 0 };
+  });
+  return out;
+}
+
+function diGapGlobal(auto, staff) {
+  const sa = diScoreGlobal(auto).score;
+  const ss = diScoreGlobal(staff).score;
+  if (sa == null || ss == null) return null;
+  return sa - ss;
+}
+
+/* ----------------------------------------------------------------
+   CLASSIFICAÇÃO DE UM SCORE
+---------------------------------------------------------------- */
+const DI_FAIXAS = [
+  { id: 'alta', ate: 3.00, label: 'Prioridade alta', cor: 'bad' },
+  { id: 'desenvolvimento', ate: 3.50, label: 'Prioridade de desenvolvimento', cor: 'warn' },
+  { id: 'emCurso', ate: 4.00, label: 'Competência em desenvolvimento', cor: 'muted' },
+  { id: 'forte', ate: Infinity, label: 'Ponto forte', cor: 'good' },
+];
+
+function diClassificar(score) {
+  if (score == null) return null;
+  // `<` e não `<=`: 3,00 exato já não é "prioridade alta" (o documento diz
+  // "< 3,00" para alta e "3,00–3,49" para a faixa seguinte).
+  return DI_FAIXAS.find(f => score < f.ate) || DI_FAIXAS[DI_FAIXAS.length - 1];
+}
+
+/* ----------------------------------------------------------------
+   TOP 3 PRIORIDADES — SUGESTÃO, não decisão
+
+   Ordena as dimensões por uma nota que junta os critérios do documento:
+
+   · score mais baixo pesa mais (é o critério principal);
+   · o PESO da dimensão amplifica: uma tática fraca custa mais à equipa do
+     que uma aprendizagem fraca, com o mesmo score;
+   · regressão desde o momento anterior sobe a prioridade — um jogador que
+     PIOROU precisa de atenção antes de um que está estável;
+   · GAP grande sobe ligeiramente: o jogador não vê o que a equipa vê, e
+     isso costuma ser trabalho de conversa antes de ser de campo.
+
+   Devolve sempre uma lista ordenada com o motivo de cada uma, para o
+   treinador poder discordar com conhecimento de causa.
+---------------------------------------------------------------- */
+function diPrioridades(staffResp, autoResp, mediasAnteriores) {
+  const medias = diMedias(staffResp);
+  const gaps = diGapDimensoes(autoResp, staffResp);
+
+  const linhas = DI_DIMENSOES.map(d => {
+    const m = medias[d.id].media;
+    if (m == null) return null;
+
+    const anterior = mediasAnteriores && mediasAnteriores[d.id] != null ? mediasAnteriores[d.id] : null;
+    const evolucao = anterior == null ? null : m - anterior;
+    const gap = gaps[d.id].gap;
+
+    // Nota alta = mais prioritário.
+    let nota = (5 - m) * (1 + d.peso);
+    const motivos = [];
+    if (m < 3) motivos.push('score abaixo de 3,0');
+    else if (m < 3.5) motivos.push('score na faixa de desenvolvimento');
+
+    if (evolucao != null && evolucao < -0.2) {
+      nota += 0.6;
+      motivos.push(`desceu ${Math.abs(evolucao).toFixed(1)} desde a avaliação anterior`);
+    }
+    if (gap != null && Math.abs(gap) >= 0.8) {
+      nota += 0.3;
+      motivos.push(gap > 0 ? 'o jogador vê-se bastante acima da equipa técnica' : 'o jogador vê-se bastante abaixo da equipa técnica');
+    }
+    if (d.peso >= 0.20) motivos.push('dimensão de peso elevado');
+
+    return { dim: d.id, label: d.label, media: m, evolucao, gap, nota, motivos, faixa: diClassificar(m) };
+  }).filter(Boolean);
+
+  return linhas.sort((a, b) => b.nota - a.nota);
+}
+
+/* Pontos fortes: dimensões em 4,0 ou acima, da mais alta para a mais baixa. */
+function diPontosFortes(staffResp) {
+  const medias = diMedias(staffResp);
+  return DI_DIMENSOES
+    .map(d => ({ dim: d.id, label: d.label, media: medias[d.id].media }))
+    .filter(x => x.media != null && x.media >= 4)
+    .sort((a, b) => b.media - a.media);
+}
+
+/* ----------------------------------------------------------------
+   ESTADO DE UM JOGADOR DENTRO DE UM MOMENTO
+
+   Derivado dos dados e não guardado à parte: dois sítios a dizer em que
+   pé está o processo acabam sempre por discordar um do outro.
+---------------------------------------------------------------- */
+const DI_ESTADOS = [
+  { id: 'pendente', label: 'Pendente' },
+  { id: 'enviado', label: 'Questionário enviado' },
+  { id: 'auto', label: 'Autoavaliação concluída' },
+  { id: 'staff', label: 'Avaliação staff concluída' },
+  { id: 'combinada', label: 'Avaliações combinadas' },
+  { id: 'reuniao', label: 'Reunião realizada' },
+  { id: 'plano', label: 'Plano ativo' },
+  { id: 'concluido', label: 'Plano concluído' },
+];
+
+function diRespondido(respostas) {
+  if (!respostas) return 0;
+  return DI_INDICADORES.filter(i => {
+    const v = respostas[i.id];
+    return (typeof v === 'number' && v >= 1 && v <= 5) || v === 'na';
+  }).length;
+}
+
+function diEstado(registo) {
+  if (!registo) return 'pendente';
+  if (registo.planoConcluido) return 'concluido';
+  if (registo.plano && (registo.plano.objetivos || []).length) return 'plano';
+  if (registo.reuniaoFeita) return 'reuniao';
+  if (registo.combinada) return 'combinada';
+
+  const auto = diRespondido(registo.auto) === DI_INDICADORES.length;
+  const staff = diRespondido(registo.staff) === DI_INDICADORES.length;
+  if (staff) return 'staff';
+  if (auto) return 'auto';
+  if (registo.enviado) return 'enviado';
+  return 'pendente';
+}
+
+const DI_ESTADO_LABEL = (id) => (DI_ESTADOS.find(e => e.id === id) || {}).label || id;
+
+/* ----------------------------------------------------------------
+   PLANO INDIVIDUAL DE DESENVOLVIMENTO
+---------------------------------------------------------------- */
+const DI_ESTADOS_OBJETIVO = ['Não iniciado', 'Em desenvolvimento', 'Em progresso', 'Consolidado', 'Concluído'];
+const DI_RESPONSAVEIS = ['Jogador', 'Treinador', 'Jogador + Treinador', 'Outro elemento do staff'];
+const DI_MAX_OBJETIVOS = 3;
+
+function diObjetivoVazio(area) {
+  return {
+    id: `obj-${Math.random().toString(36).slice(2, 9)}`,
+    area: area || '',
+    objetivo: '',
+    porque: '',
+    acoes: [],
+    indicador: '',
+    prazo: '',
+    responsavel: 'Jogador + Treinador',
+    estado: 'Não iniciado',
+    progresso: 1,
+    observacoes: '',
+  };
+}
+
+/* ----------------------------------------------------------------
+   EVOLUÇÃO ENTRE MOMENTOS
+---------------------------------------------------------------- */
+function diEvolucao(registoA, registoB, fonte = 'staff') {
+  const a = diScoreGlobal(registoA && registoA[fonte]);
+  const b = diScoreGlobal(registoB && registoB[fonte]);
+  const dims = DI_DIMENSOES.map(d => {
+    const ma = a.medias[d.id].media;
+    const mb = b.medias[d.id].media;
+    return {
+      dim: d.id, label: d.label, antes: ma, depois: mb,
+      delta: (ma == null || mb == null) ? null : mb - ma,
+    };
+  });
+  return {
+    global: { antes: a.score, depois: b.score, delta: (a.score == null || b.score == null) ? null : b.score - a.score },
+    dimensoes: dims,
+  };
+}
+
+/* ================================================================
+   DESENVOLVIMENTO INDIVIDUAL — interface
+
+   Sete separadores sobre a MESMA estrutura de dados: uma lista de
+   momentos de avaliação, cada um com um registo por jogador. Nada é
+   duplicado — os jogadores vêm do Plantel, como em todo o resto da app.
+================================================================ */
+
+/* COMO OS DADOS ESTÃO GUARDADOS
+
+   A coleção `desenvolvimento` tem DUAS espécies de linha, distinguidas
+   pelo campo `tipo`:
+
+     · momento — nome, data, prazo, fechado. Uma linha por momento.
+     · registo — momentoId + playerId + as respostas de um jogador.
+                 Uma linha POR JOGADOR e por momento.
+
+   Porque não um momento com os jogadores todos lá dentro, que seria mais
+   arrumado de ler: porque a app grava um registo INTEIRO de cada vez que
+   alguma coisa muda. Um momento com 36 jogadores pesa ~230 KB, e cada
+   clique num indicador reenviava esses 230 KB — nove megabytes para
+   avaliar um jogador, e a aproximar-se do limite de 1 MB do realtime do
+   Supabase.
+
+   Separado por jogador, cada linha tem ~6 KB e um clique reenvia só
+   esses. São 36 vezes menos dados por clique, e o limite deixa de estar
+   ao alcance por muito que o plantel cresça.
+
+   O preço é a leitura ser um pouco mais trabalhosa (juntar as linhas),
+   e é um preço que se paga uma vez aqui em cima em vez de a cada clique. */
+function diMomentoVazio(nome) {
+  return {
+    id: uid(),
+    tipo: 'momento',
+    nome: nome || '',
+    data: todayStr(),
+    prazo: '',
+    fechado: false,
+  };
+}
+
+function diRegistoVazio(momentoId, playerId) {
+  return { id: uid(), tipo: 'registo', momentoId, playerId, enviado: false };
+}
+
+// As linhas de momento, da mais recente para a mais antiga.
+function diMomentos(lista) {
+  return (lista || [])
+    .filter(x => x && x.tipo === 'momento')
+    .sort((a, b) => new Date(b.data) - new Date(a.data));
+}
+
+/* Os registos de um momento, indexados por jogador. Feito uma vez por
+   ecrã e não a cada consulta — com 36 jogadores, procurar na lista toda
+   dentro de um `map` seria trabalho a dobrar sem necessidade. */
+function diRegistosDoMomento(lista, momentoId) {
+  const mapa = new Map();
+  (lista || []).forEach(x => {
+    if (x && x.tipo === 'registo' && x.momentoId === momentoId) mapa.set(x.playerId, x);
+  });
+  return mapa;
+}
+
+const diRegisto = (mapa, playerId) => (mapa && mapa.get ? mapa.get(playerId) : null) || null;
+
+/* Radar de 6 eixos. Desenhado à mão em SVG e não com uma biblioteca:
+   é geometria simples e evita mais uma dependência para uma coisa que a
+   app usa num sítio só. */
+function DiRadar({ series, size = 260, max = 5 }) {
+  const cx = size / 2;
+  const cy = size / 2 + 6;
+  const raio = size * 0.34;
+  const n = DI_DIMENSOES.length;
+
+  const ponto = (i, valor) => {
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const r = raio * (Math.max(0, Math.min(max, valor || 0)) / max);
+    return [cx + Math.cos(ang) * r, cy + Math.sin(ang) * r];
+  };
+  const pontoEixo = (i, f) => {
+    const ang = (i / n) * Math.PI * 2 - Math.PI / 2;
+    return [cx + Math.cos(ang) * raio * f, cy + Math.sin(ang) * raio * f];
+  };
+
+  return (
+    <svg width={size} height={size} style={{ display: 'block', margin: '0 auto', overflow: 'visible' }}>
+      {/* Anéis de referência: 1 a 5. */}
+      {[0.2, 0.4, 0.6, 0.8, 1].map(f => (
+        <polygon
+          key={f}
+          points={DI_DIMENSOES.map((_, i) => pontoEixo(i, f).join(',')).join(' ')}
+          fill="none" stroke={T.line} strokeWidth="1"
+        />
+      ))}
+      {DI_DIMENSOES.map((_, i) => {
+        const [x, y] = pontoEixo(i, 1);
+        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke={T.line} strokeWidth="1" />;
+      })}
+
+      {series.map((s, si) => (
+        <g key={si}>
+          <polygon
+            points={DI_DIMENSOES.map((d, i) => ponto(i, s.valores[d.id]).join(',')).join(' ')}
+            fill={`${s.cor}2E`} stroke={s.cor} strokeWidth="2" strokeLinejoin="round"
+          />
+          {DI_DIMENSOES.map((d, i) => {
+            if (s.valores[d.id] == null) return null;
+            const [x, y] = ponto(i, s.valores[d.id]);
+            return <circle key={d.id} cx={x} cy={y} r="3" fill={s.cor} />;
+          })}
+        </g>
+      ))}
+
+      {/* Rótulos por fora, com o valor por baixo. */}
+      {DI_DIMENSOES.map((d, i) => {
+        const [x, y] = pontoEixo(i, 1.26);
+        const anchor = Math.abs(x - cx) < 6 ? 'middle' : (x > cx ? 'start' : 'end');
+        return (
+          <text key={d.id} x={x} y={y} textAnchor={anchor} fontSize="9.5" fill={T.muted}
+            style={{ fontFamily: "'Inter', sans-serif" }}>
+            {d.label.split(' ')[0]}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* Barra de um valor de 1 a 5, com a cor da faixa. */
+function DiBarra({ valor, largura = 78 }) {
+  const faixa = diClassificar(valor);
+  const cor = valor == null ? T.line : ({ bad: T.bad, warn: T.warn, muted: T.mutedDim, good: T.good })[faixa.cor];
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+      <span style={{ ...mono, fontSize: 11.5, color: cor, minWidth: 26, textAlign: 'right' }}>
+        {valor == null ? '—' : valor.toFixed(2)}
+      </span>
+      <span style={{ width: largura, height: 5, background: T.line, borderRadius: 3, overflow: 'hidden', flexShrink: 0 }}>
+        <span style={{ display: 'block', height: '100%', width: `${((valor || 0) / 5) * 100}%`, background: cor }} />
+      </span>
+    </span>
+  );
+}
+
+/* Formulário dos 40 indicadores. Serve o staff (com N/A) e, quando o
+   treinador regista a autoavaliação à mão, também o jogador (sem N/A). */
+function DiQuestionario({ titulo, subtitulo, respostas, comentarios, permitirNA, onChange, onComentario, onClose, onGuardar }) {
+  const [dimAberta, setDimAberta] = useState(DI_DIMENSOES[0].id);
+  const respondidos = diRespondido(respostas);
+
+  return (
+    <Modal title={titulo} subtitle={subtitulo} onClose={onClose} wide>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ ...mono, fontSize: 12, color: respondidos === 40 ? T.good : T.warn }}>
+          {respondidos} de 40 respondidos
+        </span>
+        <span style={{ flex: 1, minWidth: 80, height: 5, background: T.line, borderRadius: 3, overflow: 'hidden' }}>
+          <span style={{ display: 'block', height: '100%', width: `${(respondidos / 40) * 100}%`, background: T.warn }} />
+        </span>
+      </div>
+
+      {/* A escala fica sempre à vista: sem ela, o "3" de um treinador não
+          quer dizer o mesmo que o "3" de outro. */}
+      <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '9px 11px', marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>
+          Com que frequência este comportamento acontece
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11.5, color: T.mutedDim }}>
+          {DI_ESCALA.map(e => (
+            <span key={e.valor}><b style={{ color: T.cream }}>{e.valor}</b> {e.label}</span>
+          ))}
+          {permitirNA && <span><b style={{ color: T.cream }}>N/A</b> não observado</span>}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        {DI_DIMENSOES.map(d => {
+          const feitos = diIndicadoresDa(d.id).filter(i => respostas && respostas[i.id] != null).length;
+          const on = dimAberta === d.id;
+          return (
+            <button key={d.id} onClick={() => setDimAberta(d.id)} style={{
+              padding: '5px 11px', borderRadius: 20, fontSize: 11.5, cursor: 'pointer', ...body,
+              background: on ? '#B5393F' : 'transparent',
+              color: on ? TEXT_ON_ACCENT : (feitos === diIndicadoresDa(d.id).length ? T.good : T.muted),
+              border: `1px solid ${on ? '#B5393F' : T.line}`,
+            }}>
+              {d.label.split(' ')[0]} {feitos}/{diIndicadoresDa(d.id).length}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {diIndicadoresDa(dimAberta).map((ind, k) => {
+          const atual = respostas && respostas[ind.id];
+          return (
+            <div key={ind.id} style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px' }}>
+              <div style={{ fontSize: 12.5, color: T.cream, marginBottom: 8, lineHeight: 1.45 }}>
+                <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{k + 1}.</span> {ind.texto}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {DI_ESCALA.map(e => (
+                  <button
+                    key={e.valor}
+                    onClick={() => onChange(ind.id, atual === e.valor ? undefined : e.valor)}
+                    title={e.desc}
+                    style={{
+                      padding: '5px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', ...body,
+                      background: atual === e.valor ? '#B5393F' : 'transparent',
+                      color: atual === e.valor ? TEXT_ON_ACCENT : T.muted,
+                      border: `1px solid ${atual === e.valor ? '#B5393F' : T.line}`,
+                    }}
+                  >{e.valor}</button>
+                ))}
+                {permitirNA && (
+                  <button
+                    onClick={() => onChange(ind.id, atual === 'na' ? undefined : 'na')}
+                    title="Não observado — não entra nas médias nem prejudica o jogador"
+                    style={{
+                      padding: '5px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', ...body,
+                      background: atual === 'na' ? `${T.gold}33` : 'transparent',
+                      color: atual === 'na' ? T.gold : T.mutedDim,
+                      border: `1px solid ${atual === 'na' ? T.gold : T.line}`,
+                    }}
+                  >N/A</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {onComentario && (
+        <div style={{ marginTop: 14 }}>
+          <Field label={`Comentário — ${(DI_DIMENSOES.find(d => d.id === dimAberta) || {}).label}`} solto>
+            <TextArea
+              value={(comentarios && comentarios[dimAberta]) || ''}
+              onChange={e => onComentario(dimAberta, e.target.value)}
+              placeholder="Opcional. Uma nota que ajude a preparar a conversa."
+              style={{ minHeight: 60 }}
+            />
+          </Field>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+        <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+        {onGuardar && <Btn onClick={onGuardar}><Check size={15} /> Guardar</Btn>}
+      </div>
+    </Modal>
+  );
+}
+
+function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolvimento, userEmail }) {
+  const isNarrow = useIsMobile(760);
+  const [aba, setAba] = useState('geral');
+  const [momentoId, setMomentoId] = useState(null);
+  const [jogadorId, setJogadorId] = useState(null);
+  const [questionario, setQuestionario] = useState(null); // { fonte: 'auto'|'staff', playerId }
+  const [novoMomento, setNovoMomento] = useState(null);
+
+  const momentos = diMomentos(desenvolvimento);
+  const momento = momentos.find(m => m.id === momentoId) || momentos[0] || null;
+  const jogadoresOrdenados = sortByPosition(players);
+  const jogador = players.find(p => p.id === jogadorId) || null;
+
+  // Índice por jogador, calculado uma vez por ecrã (ver diRegistosDoMomento).
+  const registos = momento ? diRegistosDoMomento(desenvolvimento, momento.id) : new Map();
+  const registo = jogador ? diRegisto(registos, jogador.id) : null;
+
+  /* Altera SÓ a linha daquele jogador. É esta a razão de ser da estrutura
+     separada: nenhum outro registo é reenviado. */
+  const patchRegisto = (mId, pId, patch) => setDesenvolvimento(prev => {
+    const lista = prev || [];
+    const existe = lista.find(x => x && x.tipo === 'registo' && x.momentoId === mId && x.playerId === pId);
+    if (existe) return lista.map(x => (x.id === existe.id ? { ...x, ...patch } : x));
+    return [...lista, { ...diRegistoVazio(mId, pId), ...patch }];
+  });
+
+  const patchMomento = (mId, patch) => setDesenvolvimento(prev => (prev || []).map(m => (m.id === mId ? { ...m, ...patch } : m)));
+
+  /* O momento anterior serve para a evolução e para as prioridades: uma
+     dimensão que DESCEU é mais urgente do que uma que está estável no
+     mesmo valor. */
+  const momentoAnterior = momento
+    ? momentos.filter(m => new Date(m.data) < new Date(momento.data))[0] || null
+    : null;
+  const mediasAnteriores = (() => {
+    if (!momentoAnterior || !jogador) return null;
+    const reg = diRegisto(diRegistosDoMomento(desenvolvimento, momentoAnterior.id), jogador.id);
+    if (!reg || !reg.staff) return null;
+    const m = diMedias(reg.staff);
+    return Object.fromEntries(DI_DIMENSOES.map(d => [d.id, m[d.id].media]));
+  })();
+
+  const scoreAuto = registo ? diScoreGlobal(registo.auto) : null;
+  const scoreStaff = registo ? diScoreGlobal(registo.staff) : null;
+  const gapGlobal = registo ? diGapGlobal(registo.auto, registo.staff) : null;
+
+  const ABAS = [
+    { id: 'geral', label: 'Visão geral' },
+    { id: 'avaliacoes', label: 'Avaliações' },
+    { id: 'gap', label: 'Comparação / GAP' },
+    { id: 'radares', label: 'Radares' },
+    { id: 'reuniao', label: 'Reunião' },
+    { id: 'plano', label: 'Plano individual' },
+    { id: 'historico', label: 'Histórico' },
+  ];
+
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
+
+  const criarMomento = () => {
+    const m = diMomentoVazio(novoMomento.nome.trim() || `Avaliação ${fmtDate(novoMomento.data)}`);
+    m.data = novoMomento.data;
+    m.prazo = novoMomento.prazo;
+    // O momento e uma linha por jogador escolhido, tudo de uma vez.
+    const linhas = (novoMomento.jogadores || []).map(pid => diRegistoVazio(m.id, pid));
+    setDesenvolvimento(prev => [...(prev || []), m, ...linhas]);
+    setMomentoId(m.id);
+    setNovoMomento(null);
+  };
+
+  // ---------------------------------------------------------------
+  const cabecalhoJogador = (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      {jogadoresOrdenados
+        .filter(p => registos.size === 0 || registos.has(p.id))
+        .map(p => {
+          const on = jogadorId === p.id;
+          const est = diEstado(diRegisto(registos, p.id));
+          return (
+            <button key={p.id} onClick={() => setJogadorId(p.id)} style={{
+              padding: '6px 11px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
+              background: on ? '#B5393F' : 'transparent',
+              color: on ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${on ? '#B5393F' : T.line}`,
+            }}>
+              <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span>{' '}
+              {shortPlayerName(p, players)}
+              {est !== 'pendente' && <span style={{ color: on ? TEXT_ON_ACCENT : T.warn }}> ·</span>}
+            </button>
+          );
+        })}
+    </div>
+  );
+
+  const semMomento = (
+    <EmptyState
+      text="Ainda não há nenhum momento de avaliação. Cria o primeiro quando quiseres — não há periodicidade obrigatória."
+      action={<Btn onClick={() => setNovoMomento({ nome: '', data: todayStr(), prazo: '', jogadores: players.map(p => p.id) })}><Plus size={15} /> Novo momento</Btn>}
+    />
+  );
+
+  return (
+    <>
+      <SectionHeader
+        title="Desenvolvimento Individual"
+        subtitle="Onde está o jogador, como se vê, como o vemos — e o que vamos fazer."
+        action={
+          <Btn onClick={() => setNovoMomento({ nome: '', data: todayStr(), prazo: '', jogadores: players.map(p => p.id) })} disabled={!players.length}>
+            <Plus size={15} /> Novo momento
+          </Btn>
+        }
+      />
+
+      {players.length === 0 ? (
+        <EmptyState text="Adiciona jogadores no Plantel antes de criar avaliações." />
+      ) : !momento ? semMomento : (
+        <>
+          {/* Momento em causa: tudo o que está abaixo é sobre ele. */}
+          <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+            <Field label="Momento de avaliação" solto>
+              <Select value={momento.id} onChange={e => setMomentoId(e.target.value)}>
+                {momentos.map(m => (
+                  <option key={m.id} value={m.id}>{m.nome} · {fmtDate(m.data)}{m.fechado ? ' (fechado)' : ''}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {ABAS.map(a => {
+              const on = aba === a.id;
+              return (
+                <button key={a.id} onClick={() => setAba(a.id)} style={{
+                  padding: '7px 13px', borderRadius: 8, fontSize: 12.5, cursor: 'pointer', ...body,
+                  background: on ? '#B5393F' : 'transparent',
+                  color: on ? TEXT_ON_ACCENT : T.muted,
+                  border: `1px solid ${on ? '#B5393F' : T.line}`,
+                }}>{a.label}</button>
+              );
+            })}
+          </div>
+
+          {/* ---------------- VISÃO GERAL ---------------- */}
+          {aba === 'geral' && (
+            <div style={{ ...card, overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 620 }}>
+                <thead>
+                  <tr>
+                    {['Jogador', 'Auto', 'Staff', 'GAP', 'Prioridade', 'Estado'].map(h => (
+                      <th key={h} style={{ textAlign: h === 'Jogador' ? 'left' : 'center', fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', padding: '0 8px 8px', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {jogadoresOrdenados.filter(p => registos.size === 0 || registos.has(p.id)).map(p => {
+                    const reg = diRegisto(registos, p.id);
+                    const sa = diScoreGlobal(reg && reg.auto).score;
+                    const ss = diScoreGlobal(reg && reg.staff).score;
+                    const g = (sa != null && ss != null) ? sa - ss : null;
+                    const prior = ss != null ? diPrioridades(reg.staff, reg && reg.auto, null)[0] : null;
+                    return (
+                      <tr key={p.id} onClick={() => { setJogadorId(p.id); setAba('reuniao'); }}
+                        style={{ borderTop: `1px solid ${T.line}`, cursor: 'pointer' }}>
+                        <td style={{ padding: '8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>
+                          <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{p.position || '--'}</span>{' '}
+                          {shortPlayerName(p, players)}
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}><DiBarra valor={sa} largura={54} /></td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}><DiBarra valor={ss} largura={54} /></td>
+                        <td style={{ padding: '8px', textAlign: 'center', ...mono, fontSize: 11.5, color: g == null ? T.mutedDim : (Math.abs(g) < 0.3 ? T.good : T.warn) }}>
+                          {g == null ? '—' : `${g > 0 ? '+' : ''}${g.toFixed(2)}`}
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center', fontSize: 11.5, color: T.mutedDim }}>
+                          {prior ? prior.label.split(' ')[0] : '—'}
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>
+                          {DI_ESTADO_LABEL(diEstado(reg))}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* ---------------- AVALIAÇÕES ---------------- */}
+          {aba === 'avaliacoes' && (
+            <div style={card}>
+              <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 12px' }}>
+                Os mesmos 40 indicadores dos dois lados. A autoavaliação pode ser respondida pelo jogador
+                no questionário ou registada aqui pelo treinador.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {jogadoresOrdenados.filter(p => registos.size === 0 || registos.has(p.id)).map(p => {
+                  const reg = diRegisto(registos, p.id);
+                  const nAuto = diRespondido(reg && reg.auto);
+                  const nStaff = diRespondido(reg && reg.staff);
+                  return (
+                    <div key={p.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                      background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '9px 11px',
+                    }}>
+                      <span style={{ flex: 1, minWidth: 120, fontSize: 12.5, color: T.cream }}>
+                        <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{p.position || '--'}</span>{' '}
+                        {p.name}
+                      </span>
+                      <button onClick={() => { setJogadorId(p.id); setQuestionario({ fonte: 'auto', playerId: p.id }); }} style={{
+                        padding: '5px 10px', borderRadius: 7, fontSize: 11.5, cursor: 'pointer', ...body,
+                        background: 'transparent', border: `1px solid ${nAuto === 40 ? T.good : T.line}`,
+                        color: nAuto === 40 ? T.good : T.muted,
+                      }}>Autoavaliação {nAuto}/40</button>
+                      <button onClick={() => { setJogadorId(p.id); setQuestionario({ fonte: 'staff', playerId: p.id }); }} style={{
+                        padding: '5px 10px', borderRadius: 7, fontSize: 11.5, cursor: 'pointer', ...body,
+                        background: 'transparent', border: `1px solid ${nStaff === 40 ? T.good : T.line}`,
+                        color: nStaff === 40 ? T.good : T.muted,
+                      }}>Equipa técnica {nStaff}/40</button>
+                      {nAuto === 40 && nStaff === 40 && !(reg && reg.combinada) && (
+                        <Btn variant="ghost" onClick={() => patchRegisto(momento.id, p.id, { combinada: true, combinadaEm: new Date().toISOString() })}>
+                          Juntar avaliações
+                        </Btn>
+                      )}
+                      {reg && reg.combinada && <span style={{ ...mono, fontSize: 11, color: T.good }}>combinadas</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ---------------- GAP / RADARES / REUNIÃO / PLANO ---------------- */}
+          {['gap', 'radares', 'reuniao', 'plano'].includes(aba) && (
+            <>
+              {cabecalhoJogador}
+              {!jogador ? (
+                <EmptyState text="Escolhe um jogador acima." />
+              ) : (
+                <>
+                  {aba === 'gap' && (
+                    <div style={card}>
+                      <h3 style={{ ...display, color: T.cream, fontSize: 15, margin: '0 0 4px' }}>Onde as perceções divergem</h3>
+                      <p style={{ color: T.mutedDim, fontSize: 12, margin: '0 0 14px' }}>
+                        GAP = autoavaliação − equipa técnica. Positivo: o jogador vê-se acima. Negativo: vê-se abaixo.
+                        Não é bom nem mau — é matéria de conversa.
+                      </p>
+                      {!registo || !registo.auto || !registo.staff ? (
+                        <EmptyState text="Faltam as duas avaliações para comparar." />
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {DI_DIMENSOES.map(d => {
+                            const g = diGapDimensoes(registo.auto, registo.staff)[d.id];
+                            const ma = diMediaDimensao(registo.auto, d.id).media;
+                            const ms = diMediaDimensao(registo.staff, d.id).media;
+                            return (
+                              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 11px' }}>
+                                <span style={{ flex: 1, minWidth: 140, fontSize: 12.5, color: T.cream }}>{d.label}</span>
+                                <span style={{ fontSize: 11.5, color: T.mutedDim }}>jogador <b style={{ color: T.cream }}>{ma == null ? '—' : ma.toFixed(2)}</b></span>
+                                <span style={{ fontSize: 11.5, color: T.mutedDim }}>staff <b style={{ color: T.cream }}>{ms == null ? '—' : ms.toFixed(2)}</b></span>
+                                <span style={{ ...mono, fontSize: 12, minWidth: 52, textAlign: 'right', color: g.gap == null ? T.mutedDim : (Math.abs(g.gap) < 0.3 ? T.good : T.warn) }}>
+                                  {g.gap == null ? '—' : `${g.gap > 0 ? '+' : ''}${g.gap.toFixed(2)}`}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          <div style={{ marginTop: 8, fontSize: 12.5, color: T.cream }}>
+                            GAP global:{' '}
+                            <b style={{ color: gapGlobal == null ? T.mutedDim : (Math.abs(gapGlobal) < 0.3 ? T.good : T.warn) }}>
+                              {gapGlobal == null ? '—' : `${gapGlobal > 0 ? '+' : ''}${gapGlobal.toFixed(2)}`}
+                            </b>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {aba === 'radares' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : 'repeat(3, 1fr)', gap: 14 }}>
+                      {[
+                        { titulo: 'Autoavaliação', series: [{ cor: T.gold, valores: diMediasSimples(registo && registo.auto) }] },
+                        { titulo: 'Equipa técnica', series: [{ cor: T.crimsonBright, valores: diMediasSimples(registo && registo.staff) }] },
+                        { titulo: 'Comparativo', series: [
+                          { cor: T.gold, valores: diMediasSimples(registo && registo.auto) },
+                          { cor: T.crimsonBright, valores: diMediasSimples(registo && registo.staff) },
+                        ] },
+                      ].map(r => (
+                        <div key={r.titulo} style={card}>
+                          <h3 style={{ ...display, color: T.cream, fontSize: 14, margin: '0 0 8px', textAlign: 'center' }}>{r.titulo}</h3>
+                          <DiRadar series={r.series} size={isNarrow ? 240 : 230} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {aba === 'reuniao' && (
+                    <DiReuniao
+                      jogador={jogador} registo={registo} players={players}
+                      scoreAuto={scoreAuto} scoreStaff={scoreStaff} gapGlobal={gapGlobal}
+                      mediasAnteriores={mediasAnteriores} momentoAnterior={momentoAnterior}
+                      isNarrow={isNarrow}
+                      onNotas={(v) => patchRegisto(momento.id, jogador.id, { notasReuniao: v })}
+                      onFeita={() => patchRegisto(momento.id, jogador.id, { reuniaoFeita: true })}
+                      onIrParaPlano={() => setAba('plano')}
+                    />
+                  )}
+
+                  {aba === 'plano' && (
+                    <DiPlano
+                      registo={registo}
+                      onChange={(plano) => patchRegisto(momento.id, jogador.id, { plano })}
+                      onConcluir={(v) => patchRegisto(momento.id, jogador.id, { planoConcluido: v })}
+                    />
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {/* ---------------- HISTÓRICO ---------------- */}
+          {aba === 'historico' && (
+            <>
+              {cabecalhoJogador}
+              {!jogador ? <EmptyState text="Escolhe um jogador acima." /> : (
+                <DiHistorico jogador={jogador} momentos={momentos} colecao={desenvolvimento} isNarrow={isNarrow} />
+              )}
+            </>
+          )}
+
+          <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Btn variant="ghost" onClick={() => patchMomento(momento.id, { fechado: !momento.fechado })}>
+              {momento.fechado ? 'Reabrir momento' : 'Fechar momento'}
+            </Btn>
+            <span style={{ fontSize: 11.5, color: T.mutedDim, alignSelf: 'center' }}>
+              {momento.fechado
+                ? 'Fechado: fica como registo histórico. Reabre se precisares de corrigir.'
+                : `${registos.size} ${registos.size === 1 ? 'jogador' : 'jogadores'} neste momento.`}
+            </span>
+          </div>
+        </>
+      )}
+
+      {/* Questionário dos 40 indicadores. */}
+      {questionario && momento && (
+        <DiQuestionario
+          titulo={questionario.fonte === 'auto' ? 'Autoavaliação do jogador' : 'Avaliação da equipa técnica'}
+          subtitulo={`${(players.find(p => p.id === questionario.playerId) || {}).name} · ${momento.nome}`}
+          respostas={(diRegisto(registos, questionario.playerId) || {})[questionario.fonte]}
+          comentarios={(diRegisto(registos, questionario.playerId) || {}).comentarios}
+          permitirNA={questionario.fonte === 'staff'}
+          onChange={(indId, valor) => {
+            const reg = diRegisto(registos, questionario.playerId) || {};
+            const atual = { ...(reg[questionario.fonte] || {}) };
+            if (valor === undefined) delete atual[indId]; else atual[indId] = valor;
+            patchRegisto(momento.id, questionario.playerId, {
+              [questionario.fonte]: atual,
+              ...(questionario.fonte === 'staff' ? { avaliador: userEmail || '' } : {}),
+            });
+          }}
+          onComentario={questionario.fonte === 'staff'
+            ? (dimId, texto) => {
+              const reg = diRegisto(registos, questionario.playerId) || {};
+              patchRegisto(momento.id, questionario.playerId, { comentarios: { ...(reg.comentarios || {}), [dimId]: texto } });
+            }
+            : null}
+          onClose={() => setQuestionario(null)}
+        />
+      )}
+
+      {/* Criar momento. */}
+      {novoMomento && (
+        <Modal title="Novo momento de avaliação" onClose={() => setNovoMomento(null)} wide>
+          <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+            <Field label="Nome do momento">
+              <Input value={novoMomento.nome} onChange={e => setNovoMomento({ ...novoMomento, nome: e.target.value })} placeholder="Ex: Avaliação inicial" />
+            </Field>
+            <Field label="Data">
+              <Input type="date" value={novoMomento.data} onChange={e => setNovoMomento({ ...novoMomento, data: e.target.value })} />
+            </Field>
+            <Field label="Prazo de resposta">
+              <Input type="date" value={novoMomento.prazo} onChange={e => setNovoMomento({ ...novoMomento, prazo: e.target.value })} />
+            </Field>
+          </div>
+          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+            Jogadores · {(novoMomento.jogadores || []).length}/{players.length}
+          </div>
+          <PlayerChipList
+            players={players}
+            isOn={p => (novoMomento.jogadores || []).includes(p.id)}
+            onToggle={p => setNovoMomento(prev => ({
+              ...prev,
+              jogadores: prev.jogadores.includes(p.id) ? prev.jogadores.filter(id => id !== p.id) : [...prev.jogadores, p.id],
+            }))}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+            <Btn variant="ghost" onClick={() => setNovoMomento(null)}>Cancelar</Btn>
+            <Btn onClick={criarMomento} disabled={!(novoMomento.jogadores || []).length}><Check size={15} /> Criar momento</Btn>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/* Médias num objeto simples { dimId: valor }, que é o que o radar quer. */
+function diMediasSimples(respostas) {
+  const m = diMedias(respostas);
+  return Object.fromEntries(DI_DIMENSOES.map(d => [d.id, m[d.id].media]));
+}
+
+/* ---------------- REUNIÃO INDIVIDUAL ---------------- */
+function DiReuniao({ jogador, registo, players, scoreAuto, scoreStaff, gapGlobal, mediasAnteriores, momentoAnterior, isNarrow, onNotas, onFeita, onIrParaPlano }) {
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
+  if (!registo || !registo.staff) {
+    return <EmptyState text="Faz primeiro a avaliação da equipa técnica para preparar a reunião." />;
+  }
+  const prioridades = diPrioridades(registo.staff, registo.auto, mediasAnteriores);
+  const fortes = diPontosFortes(registo.staff);
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', gap: 14 }}>
+      <div style={card}>
+        <h3 style={{ ...display, color: T.cream, fontSize: 15, margin: '0 0 2px' }}>{jogador.name}</h3>
+        <p style={{ color: T.mutedDim, fontSize: 12, margin: '0 0 12px' }}>
+          {jogador.position || '—'}{momentoAnterior ? ` · comparado com ${momentoAnterior.nome}` : ''}
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ width: 92, fontSize: 12, color: T.mutedDim }}>Autoavaliação</span>
+            <DiBarra valor={scoreAuto && scoreAuto.score} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ width: 92, fontSize: 12, color: T.mutedDim }}>Equipa técnica</span>
+            <DiBarra valor={scoreStaff && scoreStaff.score} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ width: 92, fontSize: 12, color: T.mutedDim }}>GAP global</span>
+            <span style={{ ...mono, fontSize: 12, color: gapGlobal == null ? T.mutedDim : (Math.abs(gapGlobal) < 0.3 ? T.good : T.warn) }}>
+              {gapGlobal == null ? '—' : `${gapGlobal > 0 ? '+' : ''}${gapGlobal.toFixed(2)}`}
+            </span>
+          </div>
+          {scoreStaff && scoreStaff.fiabilidade !== 'alta' && (
+            <div style={{ fontSize: 11.5, color: T.warn }}>
+              Fiabilidade {scoreStaff.fiabilidade}: {scoreStaff.validos} de {scoreStaff.total} indicadores observados.
+            </div>
+          )}
+        </div>
+
+        <DiRadar
+          series={[
+            { cor: T.gold, valores: diMediasSimples(registo.auto) },
+            { cor: T.crimsonBright, valores: diMediasSimples(registo.staff) },
+          ]}
+          size={isNarrow ? 240 : 250}
+        />
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 14, fontSize: 11.5, marginTop: 4 }}>
+          <span style={{ color: T.gold }}>● jogador</span>
+          <span style={{ color: T.crimsonBright }}>● equipa técnica</span>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={card}>
+          <h3 style={{ ...display, color: T.cream, fontSize: 14, margin: '0 0 8px' }}>Pontos fortes</h3>
+          {fortes.length === 0 ? (
+            <p style={{ color: T.mutedDim, fontSize: 12.5, margin: 0 }}>Ainda nenhuma dimensão em 4,0 ou acima.</p>
+          ) : fortes.map(x => (
+            <div key={x.dim} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5 }}>
+              <span style={{ flex: 1, fontSize: 12.5, color: T.cream }}>{x.label}</span>
+              <DiBarra valor={x.media} largura={60} />
+            </div>
+          ))}
+        </div>
+
+        <div style={card}>
+          <h3 style={{ ...display, color: T.cream, fontSize: 14, margin: '0 0 2px' }}>Prioridades sugeridas</h3>
+          <p style={{ color: T.mutedDim, fontSize: 11.5, margin: '0 0 10px' }}>
+            Sugestão, não decisão. Cada uma diz porque está na lista.
+          </p>
+          {prioridades.slice(0, 3).map((x, i) => (
+            <div key={x.dim} style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '9px 11px', marginBottom: 7 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ ...mono, fontSize: 11, color: T.warn }}>{i + 1}</span>
+                <span style={{ flex: 1, fontSize: 12.5, color: T.cream }}>{x.label}</span>
+                <DiBarra valor={x.media} largura={50} />
+              </div>
+              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4 }}>{x.motivos.join(' · ')}</div>
+            </div>
+          ))}
+        </div>
+
+        {registo.abertas && (
+          <div style={card}>
+            <h3 style={{ ...display, color: T.cream, fontSize: 14, margin: '0 0 8px' }}>Nas palavras do jogador</h3>
+            {DI_ABERTAS.map(q => (
+              registo.abertas[q.id] ? (
+                <div key={q.id} style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11.5, color: T.mutedDim }}>{q.texto}</div>
+                  <div style={{ fontSize: 12.5, color: T.cream }}>{registo.abertas[q.id]}</div>
+                </div>
+              ) : null
+            ))}
+          </div>
+        )}
+
+        {registo.comentarios && Object.values(registo.comentarios).some(Boolean) && (
+          <div style={card}>
+            <h3 style={{ ...display, color: T.cream, fontSize: 14, margin: '0 0 8px' }}>Notas da equipa técnica</h3>
+            {DI_DIMENSOES.map(d => (
+              registo.comentarios[d.id] ? (
+                <div key={d.id} style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11.5, color: T.mutedDim }}>{d.label}</div>
+                  <div style={{ fontSize: 12.5, color: T.cream }}>{registo.comentarios[d.id]}</div>
+                </div>
+              ) : null
+            ))}
+          </div>
+        )}
+
+        <div style={card}>
+          <Field label="Notas da reunião" solto>
+            <TextArea value={registo.notasReuniao || ''} onChange={e => onNotas(e.target.value)}
+              placeholder="O que ficou combinado com o jogador." style={{ minHeight: 80 }} />
+          </Field>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+            {!registo.reuniaoFeita && <Btn variant="ghost" onClick={onFeita}><Check size={15} /> Marcar reunião como feita</Btn>}
+            <Btn onClick={onIrParaPlano}>Criar plano individual</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- PLANO INDIVIDUAL ---------------- */
+function DiPlano({ registo, onChange, onConcluir }) {
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
+  const plano = (registo && registo.plano) || { objetivos: [] };
+  const objetivos = plano.objetivos || [];
+
+  const setObjetivos = (lista) => onChange({ ...plano, objetivos: lista });
+  const patch = (id, p) => setObjetivos(objetivos.map(o => (o.id === id ? { ...o, ...p } : o)));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* O aviso aparece quando se PASSA dos três, não quando se chega
+          aos três: com exatamente três está dentro do recomendado e não
+          há nada a assinalar. */}
+      {objetivos.length > DI_MAX_OBJETIVOS && (
+        <div style={{ background: `${T.warn}1A`, border: `1px solid ${T.warn}55`, borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: T.cream }}>
+          Para garantir foco e qualidade no desenvolvimento, recomenda-se trabalhar no máximo {DI_MAX_OBJETIVOS} prioridades
+          simultaneamente. Podes continuar se achares necessário.
+        </div>
+      )}
+
+      {objetivos.length === 0 && (
+        <EmptyState text="Sem objetivos definidos. Acrescenta o primeiro a partir das prioridades da reunião." />
+      )}
+
+      {objetivos.map((o, i) => (
+        <div key={o.id} style={card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ ...mono, fontSize: 11, color: T.warn }}>{i + 1}</span>
+            <span style={{ flex: 1, fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Objetivo</span>
+            <button onClick={() => setObjetivos(objetivos.filter(x => x.id !== o.id))}
+              style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+
+          <div style={{ ...FIELD_GRID, marginBottom: 10 }}>
+            <Field label="Área">
+              <Select value={o.area} onChange={e => patch(o.id, { area: e.target.value })}>
+                <option value="">— escolher —</option>
+                {DI_DIMENSOES.map(d => <option key={d.id} value={d.label}>{d.label}</option>)}
+              </Select>
+            </Field>
+            <Field label="Prazo"><Input type="date" value={o.prazo} onChange={e => patch(o.id, { prazo: e.target.value })} /></Field>
+            <Field label="Responsável">
+              <Select value={o.responsavel} onChange={e => patch(o.id, { responsavel: e.target.value })}>
+                {DI_RESPONSAVEIS.map(r => <option key={r} value={r}>{r}</option>)}
+              </Select>
+            </Field>
+            <Field label="Estado">
+              <Select value={o.estado} onChange={e => patch(o.id, { estado: e.target.value })}>
+                {DI_ESTADOS_OBJETIVO.map(e2 => <option key={e2} value={e2}>{e2}</option>)}
+              </Select>
+            </Field>
+          </div>
+
+          <Field label="Objetivo" solto>
+            <Input value={o.objetivo} onChange={e => patch(o.id, { objetivo: e.target.value })} placeholder="Ex: Melhorar a reação à perda." />
+          </Field>
+          <div style={{ height: 10 }} />
+          <Field label="Porquê este objetivo" solto>
+            <TextArea value={o.porque} onChange={e => patch(o.id, { porque: e.target.value })} style={{ minHeight: 50 }} />
+          </Field>
+
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Ações</div>
+            {(o.acoes || []).map((a, ai) => (
+              <div key={ai} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <Input value={a} onChange={e => patch(o.id, { acoes: o.acoes.map((v, k) => (k === ai ? e.target.value : v)) })} style={{ flex: 1, minWidth: 0 }} />
+                <button onClick={() => patch(o.id, { acoes: o.acoes.filter((_, k) => k !== ai) })}
+                  style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: '0 4px', display: 'flex', alignItems: 'center' }}>
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+            <Btn variant="ghost" onClick={() => patch(o.id, { acoes: [...(o.acoes || []), ''] })}><Plus size={14} /> Ação</Btn>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <Field label="Indicador de sucesso" solto>
+              <Input value={o.indicador} onChange={e => patch(o.id, { indicador: e.target.value })}
+                placeholder="Como é que sabemos que foi conseguido?" />
+            </Field>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: T.muted }}>Progresso</span>
+            {[1, 2, 3, 4, 5].map(v => (
+              <button key={v} onClick={() => patch(o.id, { progresso: v })} style={{
+                width: 30, height: 26, borderRadius: 6, fontSize: 12, cursor: 'pointer', ...body,
+                background: o.progresso === v ? '#B5393F' : 'transparent',
+                color: o.progresso === v ? TEXT_ON_ACCENT : T.muted,
+                border: `1px solid ${o.progresso === v ? '#B5393F' : T.line}`,
+              }}>{v}</button>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <Field label="Observações" solto>
+              <TextArea value={o.observacoes} onChange={e => patch(o.id, { observacoes: e.target.value })} style={{ minHeight: 44 }} />
+            </Field>
+          </div>
+        </div>
+      ))}
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <Btn onClick={() => setObjetivos([...objetivos, diObjetivoVazio('')])}><Plus size={15} /> Novo objetivo</Btn>
+        {objetivos.length > 0 && (
+          <Btn variant="ghost" onClick={() => onConcluir(!(registo && registo.planoConcluido))}>
+            {registo && registo.planoConcluido ? 'Reabrir plano' : 'Marcar plano como concluído'}
+          </Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- HISTÓRICO ---------------- */
+function DiHistorico({ jogador, momentos, colecao, isNarrow }) {
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
+  const [fonte, setFonte] = useState('staff');
+
+  /* Do mais antigo para o mais recente: um gráfico de evolução lê-se da
+     esquerda para a direita. */
+  const linha = [...momentos]
+    .sort((a, b) => new Date(a.data) - new Date(b.data))
+    .map(m => {
+      const reg = diRegisto(diRegistosDoMomento(colecao, m.id), jogador.id);
+      return { momento: m, registo: reg, score: diScoreGlobal(reg && reg[fonte]) };
+    })
+    .filter(x => x.score.score != null);
+
+  if (linha.length === 0) {
+    return <EmptyState text="Ainda não há avaliações concluídas para este jogador." />;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {[['staff', 'Equipa técnica'], ['auto', 'Autoavaliação']].map(([id, label]) => (
+          <button key={id} onClick={() => setFonte(id)} style={{
+            padding: '5px 11px', borderRadius: 20, fontSize: 11.5, cursor: 'pointer', ...body,
+            background: fonte === id ? '#B5393F' : 'transparent',
+            color: fonte === id ? TEXT_ON_ACCENT : T.muted,
+            border: `1px solid ${fonte === id ? '#B5393F' : T.line}`,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      <div style={{ ...card, overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 560 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', fontSize: 11, color: T.muted, textTransform: 'uppercase', padding: '0 8px 8px' }}>Momento</th>
+              {DI_DIMENSOES.map(d => (
+                <th key={d.id} style={{ textAlign: 'center', fontSize: 10.5, color: T.muted, padding: '0 6px 8px', whiteSpace: 'nowrap' }}>
+                  {d.label.split(' ')[0]}
+                </th>
+              ))}
+              <th style={{ textAlign: 'center', fontSize: 11, color: T.warn, padding: '0 8px 8px' }}>Global</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linha.map((x, i) => {
+              const anterior = i > 0 ? linha[i - 1] : null;
+              return (
+                <tr key={x.momento.id} style={{ borderTop: `1px solid ${T.line}` }}>
+                  <td style={{ padding: '8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>
+                    {x.momento.nome}
+                    <div style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{fmtDate(x.momento.data)}</div>
+                  </td>
+                  {DI_DIMENSOES.map(d => {
+                    const v = x.score.medias[d.id].media;
+                    const antes = anterior && anterior.score.medias[d.id].media;
+                    const delta = (v != null && antes != null) ? v - antes : null;
+                    return (
+                      <td key={d.id} style={{ padding: '8px 6px', textAlign: 'center', ...mono, fontSize: 11.5, color: T.cream }}>
+                        {v == null ? '—' : v.toFixed(2)}
+                        {delta != null && Math.abs(delta) >= 0.05 && (
+                          <div style={{ fontSize: 10, color: delta > 0 ? T.good : T.bad }}>
+                            {delta > 0 ? '+' : ''}{delta.toFixed(1)}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td style={{ padding: '8px', textAlign: 'center' }}>
+                    <DiBarra valor={x.score.score} largura={44} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
    SIMULADOR
 
    Duas coisas diferentes com o mesmo problema por baixo — repartir tempo
@@ -7611,7 +8952,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar }) {
   );
 }
 
-function Simulador({ players, exercises, sessions, setSessions, matches, setMatches, onGuardadoTreino, onGuardadoJogo }) {
+function Simulador({ players, exercises, sessions, setSessions, matches }) {
   const isNarrow = useIsMobile(760);
   const [modo, setModo] = useState('treino'); // 'treino' | 'amigavel'
   const [presentIds, setPresentIds] = useState([]);
@@ -7623,14 +8964,8 @@ function Simulador({ players, exercises, sessions, setSessions, matches, setMatc
   // 'auto' calcula o mínimo de paragens para ninguém ficar sem jogar.
   const [janelas, setJanelas] = useState('auto');
   const [dia, setDia] = useState(todayStr());
-  // Dia do jogo amigável — equivalente ao "Dia do treino", mas para o modo
-  // 'amigavel'. Serve para ligar a distribuição a um jogo concreto (já
-  // registado em Jogos, ou por registar) quando se guarda.
-  const [diaJogo, setDiaJogo] = useState(todayStr());
   const [planoBase, setPlanoBase] = useState(null);
   const [jogo, setJogo] = useState(null);
-  const [printJogo, setPrintJogo] = useState(false);
-  const [guardadoJogo, setGuardadoJogo] = useState(false);
   const [trocar, setTrocar] = useState(null); // { periodo, indice }
 
   /* EQUIPAS FIXADAS À MÃO
@@ -7789,49 +9124,6 @@ function Simulador({ players, exercises, sessions, setSessions, matches, setMatc
     setSessions(prev => prev.map(x => (x.date === dia ? { ...x, equipasSimulador: registo } : x)));
     setGuardado(true);
     setTimeout(() => setGuardado(false), 2500);
-    /* Depois de gravar, é para o treino desse dia que se vai — com a
-       ficha já pronta a sair da impressora, equipas incluídas em cada
-       exercício. Ficar no Simulador depois de gravar obrigava a sair à
-       mão e a ir procurar a sessão no Planeamento. */
-    if (onGuardadoTreino) onGuardadoTreino(dia);
-  };
-
-  /* O jogo amigável já registado nesse dia (se houver) — "Guardar" junta-se
-     a ele em vez de duplicar; sem jogo nenhum ainda, cria um novo. */
-  const jogoDoDia = (matches || []).find(m => m.date === diaJogo && isFriendlyMatch(m));
-
-  /* Escreve a distribuição do amigável no jogo desse dia — a mesma ideia do
-     "Guardar equipas no treino", mas para Jogos: entra no jogo já
-     registado (ou cria um, no dia escolhido) e, por essa via, também no
-     Planeamento — um amigável é sempre uma sessão de trabalho na agenda
-     (ver ensureFriendlySession). É dali que sai a ficha impressa. */
-  const guardarNoJogo = () => {
-    if (!jogo || !setMatches) return;
-    const registo = {
-      geradoEm: new Date().toISOString(),
-      formacao: jogo.formacao,
-      periodos: jogo.periodos.map(per => ({
-        numero: per.numero,
-        minutos: per.minutos,
-        onze: per.onze.map(l => ({ lugar: l.lugar, jogador: l.jogador ? l.jogador.name : null })),
-        suplentes: per.suplentes.map(j => j.name),
-      })),
-    };
-    // As presenças de um amigável são o plantel que apareceu — os
-    // convidados à experiência não entram no registo oficial do jogo.
-    const presencas = doPlantel.map(p => p.id);
-    const base = jogoDoDia || {
-      id: uid(), date: diaJogo, opponent: '', competition: FRIENDLY,
-      result: '', jornada: '', convocados: [], starters: [], report: {},
-    };
-    const atualizado = { ...base, convocados: presencas, escalacaoSimulador: registo };
-    setMatches(prev => (
-      prev.some(m => m.id === atualizado.id) ? prev.map(m => (m.id === atualizado.id ? atualizado : m)) : [...prev, atualizado]
-    ));
-    if (setSessions) setSessions(prev => ensureFriendlySession(atualizado, prev));
-    setGuardadoJogo(true);
-    setTimeout(() => setGuardadoJogo(false), 2500);
-    if (onGuardadoJogo) onGuardadoJogo(atualizado.id);
   };
 
   const gerarJogo = () => {
@@ -8165,14 +9457,6 @@ function Simulador({ players, exercises, sessions, setSessions, matches, setMatc
               Num amigável não há limite de substituições. As trocas ficam marcadas
               para o início de cada parte, que é quando não interrompem o jogo.
             </p>
-            <Field label="Dia do jogo" solto>
-              <Input type="date" value={diaJogo} onChange={e => setDiaJogo(e.target.value)} />
-            </Field>
-            {jogoDoDia && (
-              <p style={{ ...nota, marginTop: 6 }}>
-                Já há um jogo amigável registado neste dia{jogoDoDia.opponent ? ` vs ${jogoDoDia.opponent}` : ''} — "Guardar" junta a distribuição a ele.
-              </p>
-            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {FORMATOS_JOGO.map(f => (
                 <button key={f.id} onClick={() => setFormato(f.id)} style={{
@@ -8385,60 +9669,12 @@ function Simulador({ players, exercises, sessions, setSessions, matches, setMatc
             <Check size={15} /> {guardado ? 'Guardado no treino' : 'Guardar equipas no treino'}
           </Btn>
         )}
-        {/* No amigável há duas ações distintas: imprimir agora mesmo, sem
-            gravar nada (uma listagem rápida de quem está e a distribuição),
-            ou gravar de vez — o que junta a distribuição ao jogo desse dia
-            em Jogos e, por aí, também ao Planeamento. */}
-        {modo === 'amigavel' && jogo && (
-          <Btn variant="ghost" onClick={() => { setPrintJogo(true); setTimeout(() => window.print(), 80); }}>
-            <Printer size={15} /> Imprimir
-          </Btn>
-        )}
-        {modo === 'amigavel' && jogo && setMatches && (
-          <Btn variant="ghost" onClick={guardarNoJogo}>
-            <Check size={15} /> {guardadoJogo ? 'Guardado no jogo' : 'Guardar e enviar para os jogos'}
-          </Btn>
-        )}
       </div>
-
-      {/* Ficha de impressão do amigável: presentes + distribuição por
-          parte. Vive fora do fluxo normal (só aparece em @media print,
-          ver .print-sheet), tal como as fichas do Planeamento. */}
-      {printJogo && jogo && createPortal(
-        <div className="print-sheet">
-          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>Jogo amigável</h2>
-          <p style={{ margin: '0 0 18px', fontSize: 13 }}>
-            {[fmtDate(diaJogo), FORMATOS_JOGO.find(f => f.id === formato)?.label, jogo.formacao].filter(Boolean).join(' · ')}
-          </p>
-          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presentes ({presentes.length})</h3>
-          <p style={{ fontSize: 13, margin: '0 0 18px' }}>
-            {sortByPosition(presentes).map(p => (
-              (p.number ? `#${p.number} ` : '') + p.name + (p.convidado ? ' (exp.)' : '')
-            )).join(', ') || 'Sem registo'}
-          </p>
-          {jogo.periodos.map((per, pi) => (
-            <div key={pi} style={{ margin: '0 0 16px', pageBreakInside: 'avoid' }}>
-              <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>
-                {per.numero}ª parte {per.totalJanelas > 1 ? `· ${per.janela}º período` : ''} · {per.minutos} min
-              </h3>
-              <p style={{ fontSize: 12.5, margin: '0 0 6px' }}>
-                <strong>Onze: </strong>
-                {per.onze.map(l => `${l.lugar}${l.jogador ? ` — ${l.jogador.name}` : ' — —'}`).join('; ')}
-              </p>
-              <p style={{ fontSize: 12.5, margin: 0 }}>
-                <strong>Suplentes: </strong>
-                {per.suplentes.map(j => j.name).join(', ') || '—'}
-              </p>
-            </div>
-          ))}
-        </div>,
-        document.body
-      )}
 
       {/* Escolher à mão os jogadores de uma equipa de um exercício. */}
       {editarEquipa && (
         <Modal title="Equipa do exercício" onClose={() => setEditarEquipa(null)}>
-          <p style={{ color: T.cream, fontSize: 13, margin: '0 0 4px', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{editarEquipa.titulo}</p>
+          <p style={{ color: T.cream, fontSize: 13, margin: '0 0 4px' }}>{editarEquipa.titulo}</p>
           <p style={{ color: T.mutedDim, fontSize: 12, margin: '0 0 12px' }}>
             {editarEquipa.vagas} {editarEquipa.vagas === 1 ? 'lugar' : 'lugares'}.
             Uma equipa escolhida à mão fica fixa: o "Baralhar de novo" muda tudo à volta e não lhe toca.
@@ -8542,7 +9778,7 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
   );
 }
 
-function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season, autoPrint, onAutoPrintDone }) {
+function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
   const [printSession, setPrintSession] = useState(null);
@@ -8561,18 +9797,6 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
       openAndPrintPdfSequential(collectPdfAttachments([s], exercises));
     }, 80);
   };
-
-  /* Pedido vindo do Simulador: acabou de gravar equipas num treino e quer
-     ver logo a ficha impressa. Resolve-se assim que a sessão desse dia
-     existir aqui — e limpa-se logo a seguir, para não voltar a imprimir
-     sozinho da próxima vez que o Planeamento for montado. */
-  useEffect(() => {
-    if (!autoPrint || autoPrint.type !== 'session') return;
-    const s = sessions.find(x => x.date === autoPrint.date);
-    if (s) doPrint(s);
-    if (onAutoPrintDone) onAutoPrintDone();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPrint]);
 
   // Imprime TODAS as sessões de um dia numa única ficha; qualquer imagem
   // anexada aos exercícios sai na própria ficha, e qualquer PDF anexado
@@ -8797,43 +10021,31 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             {[fmtDate(printSession.date), printSession.phase, intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
           </p>
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
-          {/* As equipas do Simulador saem AQUI, dentro de cada exercício —
-              não numa lista à parte no fim da ficha. O treinador chega ao
-              exercício e as equipas já lá estão, coladas ao esquema. Um
-              registo cujo nome já não bate certo com nenhum exercício desta
-              sessão (ex. foi apagado ou renomeado) cai num resto no fim,
-              para não se perder informação já gravada. */}
-          {(printSession.exerciseIds || []).map((e, i) => {
-            const ex = exercises.find(x => x.id === e.exId);
-            const teams = ex ? printSessionEquipasPorExercicio(printSession, ex.name) : [];
-            return <PrintExerciseBlock key={e.exId} e={e} ex={ex} index={i} teams={teams} />;
-          })}
-          {(() => {
-            const nomesConhecidos = new Set((printSession.exerciseIds || [])
-              .map(e => exercises.find(x => x.id === e.exId)?.name).filter(Boolean));
-            const resto = ((printSession.equipasSimulador && printSession.equipasSimulador.equipas) || [])
-              .filter(g => !nomesConhecidos.has(g.exercicio));
-            if (!resto.length) return null;
-            return (
-              <>
-                <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipas</h3>
-                <div style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6 }}>
-                  {resto.map((g, i) => (
-                    <div key={i} style={{ marginBottom: 5 }}>
-                      <strong>
-                        {g.exercicio}
-                        {g.zona ? ` · zona ${g.zona}` : ''}
-                        {g.turno ? ` · turno ${g.turno}` : ''}
-                        {' · '}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}
-                        {g.minutos ? ` · ${g.minutos} min` : ''}:
-                      </strong>{' '}
-                      {g.jogadores.join(', ')}
-                    </div>
-                  ))}
-                </div>
-              </>
-            );
-          })()}
+          {(printSession.exerciseIds || []).map((e, i) => (
+            <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
+          ))}
+          {/* Equipas vindas do Simulador, se lá tiverem sido guardadas.
+              É o que o treinador leva para o campo: quem joga com quem, em
+              que exercício e por quanto tempo. */}
+          {printSession.equipasSimulador && (printSession.equipasSimulador.equipas || []).length > 0 && (
+            <>
+              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipas</h3>
+              <div style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6 }}>
+                {printSession.equipasSimulador.equipas.map((g, i) => (
+                  <div key={i} style={{ marginBottom: 5 }}>
+                    <strong>
+                      {g.exercicio}
+                      {g.zona ? ` · zona ${g.zona}` : ''}
+                      {g.turno ? ` · turno ${g.turno}` : ''}
+                      {' · '}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}
+                      {g.minutos ? ` · ${g.minutos} min` : ''}:
+                    </strong>{' '}
+                    {g.jogadores.join(', ')}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
           <p style={{ fontSize: 13 }}>
@@ -8866,11 +10078,9 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
               <p style={{ margin: '0 0 12px', fontSize: 13 }}>
                 {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
-              {(s.exerciseIds || []).map((e, i) => {
-                const ex = exercises.find(x => x.id === e.exId);
-                const teams = ex ? printSessionEquipasPorExercicio(s, ex.name) : [];
-                return <PrintExerciseBlock key={e.exId} e={e} ex={ex} index={i} teams={teams} />;
-              })}
+              {(s.exerciseIds || []).map((e, i) => (
+                <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
+              ))}
             </div>
           ))}
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
@@ -9095,19 +10305,11 @@ function openAndPrintPdfSequential(attachments) {
     }, 700 * i);
   });
 }
-// As equipas guardadas pelo Simulador ficam associadas ao exercício pelo
-// nome (é assim que são gravadas — ver guardarNoTreino). Esta função separa,
-// de uma sessão, só as equipas de UM exercício, para irem coladas a ele na
-// ficha impressa.
-function printSessionEquipasPorExercicio(session, exerciseName) {
-  const equipas = (session && session.equipasSimulador && session.equipasSimulador.equipas) || [];
-  return equipas.filter(g => g.exercicio === exerciseName);
-}
 // Bloco de impressão de um exercício dentro de uma ficha de sessão/dia.
 // Se houver imagem anexada, mostra-a em vez do esquema tático (tal como
 // na impressão do exercício isolado); se for PDF, fica uma nota — o
 // ficheiro em si é impresso à parte (ver openAndPrintPdfSequential).
-function PrintExerciseBlock({ e, ex, index, teams }) {
+function PrintExerciseBlock({ e, ex, index }) {
   if (!ex) return <p style={{ fontSize: 13, margin: '0 0 14px' }}>{index + 1}. —</p>;
   return (
     <div style={{ margin: '0 0 20px', pageBreakInside: 'avoid' }}>
@@ -9152,21 +10354,6 @@ function PrintExerciseBlock({ e, ex, index, teams }) {
       {!(ex.attachment && ex.attachment.type === 'image') && (
         <div style={{ textAlign: 'right', maxWidth: 540, margin: '2px 0 0' }}>
           <span style={{ fontSize: 9.5, color: '#888', letterSpacing: '.04em' }}>™ Mister JP</span>
-        </div>
-      )}
-      {/* Equipas do Simulador para ESTE exercício — não uma lista à parte
-          no fim da ficha. É aqui, ao lado do esquema, que o treinador quer
-          ver quem joga em cada equipa quando chega a este exercício. */}
-      {teams && teams.length > 0 && (
-        <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6 }}>
-          {teams.map((g, i) => (
-            <div key={i} style={{ marginBottom: 3 }}>
-              <strong>
-                {g.zona ? `Zona ${g.zona} · ` : ''}{g.turno ? `Turno ${g.turno} · ` : ''}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}:
-              </strong>{' '}
-              {g.jogadores.join(', ')}
-            </div>
-          ))}
         </div>
       )}
     </div>
@@ -10983,26 +12170,8 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions, convocatorias, setConvocatorias, autoPrint, onAutoPrintDone }) {
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions, convocatorias, setConvocatorias }) {
   const [modal, setModal] = useState(null);
-  const [printMatch, setPrintMatch] = useState(null);
-
-  const doPrintMatch = (m) => {
-    setPrintMatch(m);
-    setTimeout(() => window.print(), 80);
-  };
-
-  /* Pedido vindo do Simulador (amigável): acabou de gravar a distribuição
-     e quer logo a ficha impressa deste jogo. Mesma lógica do Planeamento
-     para os treinos — resolve-se assim que o jogo existir aqui, e limpa-se
-     logo a seguir. */
-  useEffect(() => {
-    if (!autoPrint || autoPrint.type !== 'match') return;
-    const m = matches.find(x => x.id === autoPrint.id);
-    if (m) doPrintMatch(m);
-    if (onAutoPrintDone) onAutoPrintDone();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoPrint]);
 
   const save = (data) => {
     const registo = data.id ? data : { ...data, id: uid() };
@@ -11089,7 +12258,6 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => doPrintMatch(m)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }} title="Imprimir ficha"><Printer size={14} /></button>
                     <button onClick={() => setModal(m)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
                     <button onClick={() => remove(m.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                   </div>
@@ -11102,44 +12270,6 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
       )}
 
       {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} onClose={() => setModal(null)} onSave={save} />}
-
-      {/* Ficha impressa do jogo. Fora de um amigável com distribuição
-          gravada pelo Simulador (escalacaoSimulador), mostra só presenças/
-          convocatória — o resto (resultado, golos) já sai noutro sítio. */}
-      {printMatch && createPortal(
-        <div className="print-sheet">
-          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
-            {isFriendlyMatch(printMatch) ? 'Jogo amigável' : (competitionLabel(printMatch.competition) || 'Jogo')} vs {printMatch.opponent || 'Adversário por definir'}
-          </h2>
-          <p style={{ margin: '0 0 18px', fontSize: 13 }}>
-            {[fmtDate(printMatch.date), printMatch.jornada, printMatch.atHome === undefined ? null : (printMatch.atHome ? 'Casa' : 'Fora'), printMatch.result].filter(Boolean).join(' · ')}
-          </p>
-          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>{isFriendlyMatch(printMatch) ? 'Presentes' : 'Convocados'} ({(printMatch.convocados || []).length})</h3>
-          <p style={{ fontSize: 13, margin: '0 0 18px' }}>
-            {(printMatch.convocados || [])
-              .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
-              .filter(Boolean).join(', ') || 'Sem registo'}
-          </p>
-          {printMatch.escalacaoSimulador && (printMatch.escalacaoSimulador.periodos || []).length > 0 && (
-            <>
-              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Distribuição ({printMatch.escalacaoSimulador.formacao})</h3>
-              {printMatch.escalacaoSimulador.periodos.map((per, pi) => (
-                <div key={pi} style={{ margin: '0 0 12px', pageBreakInside: 'avoid' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>{per.numero}ª parte · {per.minutos} min</div>
-                  <p style={{ fontSize: 12.5, margin: '0 0 4px' }}>
-                    <strong>Onze: </strong>
-                    {per.onze.map(l => `${l.lugar}${l.jogador ? ` — ${l.jogador}` : ' — —'}`).join('; ')}
-                  </p>
-                  <p style={{ fontSize: 12.5, margin: 0 }}>
-                    <strong>Suplentes: </strong>{(per.suplentes || []).join(', ') || '—'}
-                  </p>
-                </div>
-              ))}
-            </>
-          )}
-        </div>,
-        document.body
-      )}
     </div>
   );
 }
