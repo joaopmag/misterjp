@@ -1305,7 +1305,7 @@ function App({ session }) {
   const [ideias, setIdeias, ideiasReady, ideiasMeta] = useCollectionSync('ideias', notifyEdit);
   const [sessions, setSessions, sessionsReady, sessionsMeta] = useCollectionSync('sessions', notifyEdit);
   const [monitoring, setMonitoring, monitoringReady, monitoringMeta] = useCollectionSync('monitoring', notifyEdit);
-  const [matches, setMatches, matchesReady, matchesMeta] = useCollectionSync('matches', notifyEdit);
+  const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit);
   const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit);
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit);
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit);
@@ -1340,9 +1340,13 @@ function App({ session }) {
     jogosLimpos.current = true;
     if (limpo.length !== matches.length) {
       console.warn(`Jogos duplicados juntados: ${matches.length} → ${limpo.length}`);
+      // Esta remoção É deliberada — sem isto, o travão de segurança do
+      // useCollectionSync bloqueia sempre que há 3 ou mais duplicados,
+      // e a limpeza nunca chega a gravar-se (ver comentário no travão).
+      autorizarLimparJogos();
       setMatches(limpo);
     }
-  }, [matchesReady, matches, setMatches]);
+  }, [matchesReady, matches, setMatches, autorizarLimparJogos]);
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
     || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
