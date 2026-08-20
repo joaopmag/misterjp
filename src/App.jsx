@@ -10018,6 +10018,14 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
     .filter(m => m.date)
     .map(m => ({ ...m, __match: true }));
   const grouped = groupByWeek([...sessions, ...matchItems]);
+  /* A sessão que um amigável cria automaticamente (ver ensureFriendlySession)
+     continua a contar para a carga da semana — por isso entra em `grouped`
+     tal e qual. Mas na Lista o jogo já tem o seu próprio cartão (com
+     troféu, adversário e resultado); mostrar também a sessão dava duas
+     linhas para o mesmo dia. `idsDeJogos` identifica essas sessões pelo
+     `sourceMatchId` para esconder só o cartão a mais, sem tocar nos dados
+     nem no resumo semanal. */
+  const idsDeJogos = new Set((matches || []).map(m => m.id));
   const isEditing = modal && modal !== 'new' && modal.id;
   const presetDate = modal && modal !== 'new' && !modal.id ? modal.presetDate : undefined;
 
@@ -10055,7 +10063,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             <div style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{week}</div>
             <WeekSummary items={items} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {items.map(s => s.__match ? (
+              {items.filter(s => s.__match || !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId))).map(s => s.__match ? (
                 <div key={`m-${s.id}`} style={{
                   background: T.surface, border: `1px solid ${T.warn}55`, borderRadius: 10, padding: 14,
                   display: 'flex', gap: 10,
@@ -10358,6 +10366,9 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
   // domingo em baixo) — assim vê-se a semana inteira sem arrastar para o
   // lado. Em ecrã largo mantém-se a linha única com os 7 dias.
   const isMobile = useIsMobile(700);
+  // Mesma lógica da Lista: a sessão que um amigável cria sozinho não
+  // aparece aqui também — o jogo já tem o seu próprio cartão no dia.
+  const idsDeJogos = new Set((matches || []).map(m => m.id));
 
   return (
     <div>
@@ -10380,7 +10391,7 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
           : { gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))', overflowX: 'auto' }),
       }}>
         {days.map(d => {
-          const daySessions = sessions.filter(s => s.date === d);
+          const daySessions = sessions.filter(s => s.date === d && !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId)));
           const dayMatches = (matches || []).filter(m => m.date === d);
           const isToday = d === currentDayStr;
           return (
@@ -12477,6 +12488,8 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
     if (data.id) setMatches(matches.map(m => m.id === data.id ? registo : m));
     else setMatches([...matches, registo]);
     // Amigável: entra também na agenda como sessão (ver ensureFriendlySession).
+    // A Lista do Planeamento esconde o cartão repetido — a sessão continua
+    // a existir para a carga de treino e as presenças.
     if (setSessions) setSessions(prev => ensureFriendlySession(registo, prev));
     // Jogo oficial com convocados: gera/atualiza a convocatória.
     if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
