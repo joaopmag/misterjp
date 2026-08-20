@@ -7676,9 +7676,26 @@ function DiBarra({ valor, largura = 78 }) {
 function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, permitirNA, onChange, onComentario, onClose, onGuardar }) {
   const [dimAberta, setDimAberta] = useState(DI_DIMENSOES[0].id);
   const respondidos = diRespondido(respostas);
+  const topoRef = useRef(null);
+
+  /* Assim que a secção aberta fica 100% respondida, avançamos sozinhos
+     para a seguinte — sem isto, o user tinha de fazer scroll ao topo e
+     clicar na aba seguinte à mão, uma ação totalmente desnecessária. */
+  const dimIndex = DI_DIMENSOES.findIndex(d => d.id === dimAberta);
+  const feitosNaSeccao = diIndicadoresDa(dimAberta).filter(i => respostas && respostas[i.id] != null).length;
+  const totalNaSeccao = diIndicadoresDa(dimAberta).length;
+  const seccaoCompleta = feitosNaSeccao === totalNaSeccao;
+  const proximaDim = seccaoCompleta && dimIndex < DI_DIMENSOES.length - 1 ? DI_DIMENSOES[dimIndex + 1] : null;
+
+  const irParaProximaSeccao = () => {
+    if (!proximaDim) return;
+    setDimAberta(proximaDim.id);
+    if (topoRef.current) topoRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <Modal title={titulo} subtitle={subtitulo} onClose={onClose} wide>
+      <div ref={topoRef} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <span style={{ ...mono, fontSize: 12, color: respondidos === 40 ? T.good : T.warn }}>
           {respondidos} de 40 respondidos
@@ -7775,6 +7792,11 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
         {onGuardar && <Btn onClick={onGuardar}><Check size={15} /> Guardar</Btn>}
+        {proximaDim && (
+          <Btn onClick={irParaProximaSeccao}>
+            {proximaDim.label.split(' ')[0]} <ChevronRight size={15} />
+          </Btn>
+        )}
       </div>
     </Modal>
   );
@@ -7787,6 +7809,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   const [jogadorId, setJogadorId] = useState(null);
   const [questionario, setQuestionario] = useState(null); // { fonte: 'auto'|'staff', playerId }
   const [novoMomento, setNovoMomento] = useState(null);
+  const [adicionarJogadores, setAdicionarJogadores] = useState(null); // array de ids selecionados, ou null se fechado
 
   const momentos = diMomentos(desenvolvimento);
   const momento = momentos.find(m => m.id === momentoId) || momentos[0] || null;
@@ -7875,6 +7898,16 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
     setDesenvolvimento(prev => [...(prev || []), m, ...linhas]);
     setMomentoId(m.id);
     setNovoMomento(null);
+  };
+
+  /* Reabrir um momento fechado deve permitir juntar-lhe jogadores que
+     ficaram de fora — sem isto, um momento fechado por engano ficava
+     preso à lista original para sempre. */
+  const jogadoresForaDoMomento = players.filter(p => !registos.has(p.id));
+  const confirmarAdicionarJogadores = () => {
+    const linhas = (adicionarJogadores || []).map(pid => diRegistoVazio(momento.id, pid));
+    setDesenvolvimento(prev => [...(prev || []), ...linhas]);
+    setAdicionarJogadores(null);
   };
 
   // ---------------------------------------------------------------
@@ -8034,7 +8067,6 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                           Juntar avaliações
                         </Btn>
                       )}
-                      {reg && reg.combinada && <span style={{ ...mono, fontSize: 11, color: T.good }}>combinadas</span>}
                     </div>
                   );
                 })}
@@ -8066,11 +8098,16 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                             const ma = diMediaDimensao(registo.auto, d.id).media;
                             const ms = diMediaDimensao(registo.staff, d.id).media;
                             return (
-                              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 11px' }}>
-                                <span style={{ flex: 1, minWidth: 140, fontSize: 12.5, color: T.cream }}>{d.label}</span>
-                                <span style={{ fontSize: 11.5, color: T.mutedDim }}>jogador <b style={{ color: T.cream }}>{ma == null ? '—' : ma.toFixed(2)}</b></span>
-                                <span style={{ fontSize: 11.5, color: T.mutedDim }}>staff <b style={{ color: T.cream }}>{ms == null ? '—' : ms.toFixed(2)}</b></span>
-                                <span style={{ ...mono, fontSize: 12, minWidth: 52, textAlign: 'right', color: g.gap == null ? T.mutedDim : (Math.abs(g.gap) < 0.3 ? T.good : T.warn) }}>
+                              <div key={d.id} style={{
+                                display: 'grid',
+                                gridTemplateColumns: isNarrow ? '1fr' : 'minmax(140px, 320px) 90px 90px 64px',
+                                alignItems: 'center', gap: isNarrow ? 4 : 16,
+                                background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 11px',
+                              }}>
+                                <span style={{ fontSize: 12.5, color: T.cream }}>{d.label}</span>
+                                <span style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>jogador <b style={{ color: T.cream }}>{ma == null ? '—' : ma.toFixed(2)}</b></span>
+                                <span style={{ fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>staff <b style={{ color: T.cream }}>{ms == null ? '—' : ms.toFixed(2)}</b></span>
+                                <span style={{ ...mono, fontSize: 12, textAlign: isNarrow ? 'left' : 'right', color: g.gap == null ? T.mutedDim : (Math.abs(g.gap) < 0.3 ? T.good : T.warn) }}>
                                   {g.gap == null ? '—' : `${g.gap > 0 ? '+' : ''}${g.gap.toFixed(2)}`}
                                 </span>
                               </div>
@@ -8134,24 +8171,31 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
             <>
               {cabecalhoJogador}
               {!jogador ? <EmptyState text="Escolhe um jogador acima." /> : (
-                <DiHistorico jogador={jogador} momentos={momentos} colecao={desenvolvimento} isNarrow={isNarrow} />
+                <DiHistorico key={jogador.id} jogador={jogador} momentos={momentos} colecao={desenvolvimento} isNarrow={isNarrow} />
               )}
             </>
           )}
 
-          <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Btn variant="ghost" onClick={() => patchMomento(momento.id, { fechado: !momento.fechado })}>
-              {momento.fechado ? 'Reabrir momento' : 'Fechar momento'}
-            </Btn>
-            <Btn variant="ghost" onClick={() => apagarMomento(momento)} style={{ color: T.warn, borderColor: T.warn }}>
-              <Trash2 size={14} /> Apagar momento
-            </Btn>
-            <span style={{ fontSize: 11.5, color: T.mutedDim, alignSelf: 'center' }}>
-              {momento.fechado
-                ? 'Fechado: fica como registo histórico. Reabre se precisares de corrigir.'
-                : `${registos.size} ${registos.size === 1 ? 'jogador' : 'jogadores'} neste momento.`}
-            </span>
-          </div>
+          {aba === 'geral' && (
+            <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <Btn variant="ghost" onClick={() => patchMomento(momento.id, { fechado: !momento.fechado })}>
+                {momento.fechado ? 'Reabrir momento' : 'Fechar momento'}
+              </Btn>
+              {!momento.fechado && jogadoresForaDoMomento.length > 0 && (
+                <Btn variant="ghost" onClick={() => setAdicionarJogadores([])}>
+                  <Plus size={14} /> Adicionar jogadores
+                </Btn>
+              )}
+              <Btn variant="ghost" onClick={() => apagarMomento(momento)} style={{ color: T.warn, borderColor: T.warn }}>
+                <Trash2 size={14} /> Apagar momento
+              </Btn>
+              <span style={{ fontSize: 11.5, color: T.mutedDim, alignSelf: 'center' }}>
+                {momento.fechado
+                  ? 'Fechado: fica como registo histórico. Reabre se precisares de corrigir.'
+                  : `${registos.size} ${registos.size === 1 ? 'jogador' : 'jogadores'} neste momento.`}
+              </span>
+            </div>
+          )}
         </>
       )}
 
@@ -8223,6 +8267,44 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
             <Btn variant="ghost" onClick={() => setNovoMomento(null)}>Cancelar</Btn>
             <Btn onClick={criarMomento} disabled={!(novoMomento.jogadores || []).length}><Check size={15} /> Criar momento</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Adicionar jogadores a um momento já existente (tipicamente depois de o reabrir). */}
+      {adicionarJogadores && momento && (
+        <Modal title="Adicionar jogadores" subtitle={`${momento.nome} · ${fmtDate(momento.data)}`} onClose={() => setAdicionarJogadores(null)}>
+          {jogadoresForaDoMomento.length === 0 ? (
+            <EmptyState text="Todos os jogadores do plantel já estão neste momento." />
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                  Jogadores · {adicionarJogadores.length}/{jogadoresForaDoMomento.length}
+                </span>
+                <span style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" onClick={() => setAdicionarJogadores(jogadoresForaDoMomento.map(p => p.id))} style={{
+                    padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
+                    background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
+                  }}>Selecionar todos</button>
+                  <button type="button" onClick={() => setAdicionarJogadores([])} style={{
+                    padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
+                    background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
+                  }}>Limpar seleção</button>
+                </span>
+              </div>
+              <PlayerChipList
+                players={jogadoresForaDoMomento}
+                isOn={p => adicionarJogadores.includes(p.id)}
+                onToggle={p => setAdicionarJogadores(prev =>
+                  prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                )}
+              />
+            </>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+            <Btn variant="ghost" onClick={() => setAdicionarJogadores(null)}>Cancelar</Btn>
+            <Btn onClick={confirmarAdicionarJogadores} disabled={!adicionarJogadores.length}><Check size={15} /> Adicionar</Btn>
           </div>
         </Modal>
       )}
@@ -8480,7 +8562,16 @@ function DiPlano({ registo, onChange, onConcluir }) {
 /* ---------------- HISTÓRICO ---------------- */
 function DiHistorico({ jogador, momentos, colecao, isNarrow }) {
   const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
-  const [fonte, setFonte] = useState('staff');
+  /* Por defeito mostrava sempre "equipa técnica" — um jogador que só
+     tivesse a autoavaliação concluída (como o Vítor) ficava com o
+     histórico vazio até o user trocar manualmente para "Autoavaliação".
+     Arrancamos já na fonte que tem dados para este jogador. */
+  const [fonte, setFonte] = useState(() => {
+    const temStaff = momentos.some(m => diScoreGlobal((diRegisto(diRegistosDoMomento(colecao, m.id), jogador.id) || {}).staff).score != null);
+    if (temStaff) return 'staff';
+    const temAuto = momentos.some(m => diScoreGlobal((diRegisto(diRegistosDoMomento(colecao, m.id), jogador.id) || {}).auto).score != null);
+    return temAuto ? 'auto' : 'staff';
+  });
 
   /* Do mais antigo para o mais recente: um gráfico de evolução lê-se da
      esquerda para a direita. */
