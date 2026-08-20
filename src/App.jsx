@@ -7084,13 +7084,31 @@ const DI_DIMENSOES = [
   { id: 'aprendizagem', label: 'Aprendizagem & Desenvolvimento', peso: 0.10 },
 ];
 
+/* GRUPOS DE POSIÇÃO — para adaptar o TEXTO de alguns indicadores.
+
+   Só agrupa para efeitos de FRASE do questionário: o id, a dimensão e o
+   peso do indicador são sempre os mesmos para todos, por isso o score,
+   o GAP e o histórico continuam a comparar-se normalmente entre
+   jogadores de posições diferentes. Só muda o que se lê. */
+const DI_GRUPO_POSICAO = {
+  GR: 'GR',
+  DC: 'DEF', DE: 'DEF', DD: 'DEF',
+  MD: 'MEIO', MC: 'MEIO', MOC: 'MEIO',
+  EE: 'AVANCADO', ED: 'AVANCADO', PL: 'AVANCADO',
+};
+const diGrupoPosicao = (posicao) => DI_GRUPO_POSICAO[posicao] || null;
+
 /* OS 40 INDICADORES.
 
    `id` é curto e estável: é ele que fica gravado em cada resposta. Se um
    dia o texto da pergunta mudar, as respostas antigas continuam a fazer
    sentido porque estão ligadas ao id e não ao texto.
 
-   `curto` é o rótulo do radar detalhado, onde a frase inteira não cabe. */
+   `curto` é o rótulo do radar detalhado, onde a frase inteira não cabe.
+
+   `variantes` (opcional) reescreve `curto`/`texto` para um grupo de
+   posição, quando a frase original não faz sentido para essa posição
+   (ex: "finalização" para um GR). Sem variante, usa-se o texto normal. */
 const DI_INDICADORES = [
   // VALORES & COMPORTAMENTO (7)
   { id: 'v1', dim: 'valores', curto: 'Pontualidade', texto: 'Cumpro os horários definidos pela equipa sem precisar que me lembrem.' },
@@ -7106,8 +7124,22 @@ const DI_INDICADORES = [
   { id: 't2', dim: 'tecnica', curto: 'Passe curto', texto: 'Consigo executar passes curtos com precisão e velocidade.' },
   { id: 't3', dim: 'tecnica', curto: 'Passe médio e longo', texto: 'Consigo executar passes médios e longos com qualidade quando necessário.' },
   { id: 't4', dim: 'tecnica', curto: 'Condução', texto: 'Consigo conduzir e transportar a bola mantendo controlo e velocidade.' },
-  { id: 't5', dim: 'tecnica', curto: '1x1 ofensivo', texto: 'Consigo superar um adversário no 1x1 ofensivo quando a situação o exige.' },
-  { id: 't6', dim: 'tecnica', curto: 'Finalização', texto: 'Consigo executar a finalização com qualidade e eficácia.' },
+  {
+    id: 't5', dim: 'tecnica', curto: '1x1 ofensivo',
+    texto: 'Consigo superar um adversário no 1x1 ofensivo quando a situação o exige.',
+    variantes: {
+      GR: { curto: '1x1 defensivo', texto: 'Consigo resolver com segurança situações de 1x1 fora da área (saídas e coberturas).' },
+      DEF: { curto: '1x1 defensivo', texto: 'Consigo ganhar o duelo individual (1x1) quando um adversário vem em condução na minha direção.' },
+    },
+  },
+  {
+    id: 't6', dim: 'tecnica', curto: 'Finalização',
+    texto: 'Consigo executar a finalização com qualidade e eficácia.',
+    variantes: {
+      GR: { curto: 'Pontapés de baliza', texto: 'Consigo executar pontapés de baliza e reposições com distância e precisão adequadas.' },
+      DEF: { curto: 'Finalização em bola parada', texto: 'Consigo finalizar com eficácia as oportunidades que surgem em bola parada (cabeceamento, remate de segunda bola).' },
+    },
+  },
   { id: 't7', dim: 'tecnica', curto: 'Técnica sob pressão', texto: 'Consigo executar ações técnicas com qualidade mesmo sob pressão do adversário.' },
   { id: 't8', dim: 'tecnica', curto: 'Velocidade de execução', texto: 'Consigo executar os gestos técnicos à velocidade exigida pelo jogo.' },
 
@@ -7118,8 +7150,20 @@ const DI_INDICADORES = [
   { id: 'x4', dim: 'tatica', curto: 'Tomada de decisão', texto: 'Tomo boas decisões sobre quando passar, conduzir, jogar para a frente ou conservar a bola.' },
   { id: 'x5', dim: 'tatica', curto: 'Gestão do ritmo', texto: 'Compreendo quando devo acelerar ou controlar o ritmo do jogo.' },
   { id: 'x6', dim: 'tatica', curto: 'Reação à perda', texto: 'Reajo rapidamente à perda da bola e cumpro os princípios de pressão definidos pela equipa.' },
-  { id: 'x7', dim: 'tatica', curto: 'Transição ofensiva', texto: 'Quando recuperamos a bola, identifico rapidamente oportunidades para progredir.' },
-  { id: 'x8', dim: 'tatica', curto: 'Organização defensiva', texto: 'Compreendo os comportamentos coletivos defensivos e cumpro a minha função.' },
+  {
+    id: 'x7', dim: 'tatica', curto: 'Transição ofensiva',
+    texto: 'Quando recuperamos a bola, identifico rapidamente oportunidades para progredir.',
+    variantes: {
+      GR: { curto: 'Início da transição', texto: 'Quando recupero a posse, decido rapidamente entre jogar curto ou longo para iniciar a transição ofensiva da equipa.' },
+    },
+  },
+  {
+    id: 'x8', dim: 'tatica', curto: 'Organização defensiva',
+    texto: 'Compreendo os comportamentos coletivos defensivos e cumpro a minha função.',
+    variantes: {
+      GR: { curto: 'Organizar a defesa', texto: 'Compreendo os comportamentos coletivos defensivos e dou as indicações certas para organizar a linha defensiva.' },
+    },
+  },
   { id: 'x9', dim: 'tatica', curto: 'Adaptação', texto: 'Consigo adaptar o meu comportamento às diferentes situações que o jogo apresenta.' },
 
   // CAPACIDADE FÍSICA (6)
@@ -7163,6 +7207,15 @@ const DI_ABERTAS = [
 ];
 
 const diIndicadoresDa = (dimId) => DI_INDICADORES.filter(i => i.dim === dimId);
+
+/* Texto de um indicador, adaptado à posição do jogador quando existe
+   variante — caso contrário, o texto normal. O id nunca muda, por isso
+   isto é só sobre o que se lê, nunca sobre o que fica gravado. */
+function diTextoIndicador(ind, posicao) {
+  const grupo = diGrupoPosicao(posicao);
+  const v = grupo && ind.variantes && ind.variantes[grupo];
+  return (v && v.texto) || ind.texto;
+}
 
 /* ----------------------------------------------------------------
    MÉDIAS POR DIMENSÃO
@@ -7570,7 +7623,7 @@ function DiBarra({ valor, largura = 78 }) {
 
 /* Formulário dos 40 indicadores. Serve o staff (com N/A) e, quando o
    treinador regista a autoavaliação à mão, também o jogador (sem N/A). */
-function DiQuestionario({ titulo, subtitulo, respostas, comentarios, permitirNA, onChange, onComentario, onClose, onGuardar }) {
+function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, permitirNA, onChange, onComentario, onClose, onGuardar }) {
   const [dimAberta, setDimAberta] = useState(DI_DIMENSOES[0].id);
   const respondidos = diRespondido(respostas);
 
@@ -7622,7 +7675,7 @@ function DiQuestionario({ titulo, subtitulo, respostas, comentarios, permitirNA,
           return (
             <div key={ind.id} style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px' }}>
               <div style={{ fontSize: 12.5, color: T.cream, marginBottom: 8, lineHeight: 1.45 }}>
-                <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{k + 1}.</span> {ind.texto}
+                <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{k + 1}.</span> {diTextoIndicador(ind, posicao)}
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {DI_ESCALA.map(e => (
@@ -7705,6 +7758,29 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
 
   const patchMomento = (mId, patch) => setDesenvolvimento(prev => (prev || []).map(m => (m.id === mId ? { ...m, ...patch } : m)));
 
+  /* Apagar um momento tem de levar consigo todos os registos que lhe
+     pertencem — senão ficavam linhas órfãs, sem momento a que se ligar.
+     Segue a mesma rede de segurança do resto da app: pergunta primeiro
+     (askConfirm) e, depois de apagado, dá alguns segundos para anular
+     (offerUndo) antes de ser definitivo. */
+  const apagarMomento = (m) => {
+    askConfirm({
+      label: `Momento "${m.nome}" · ${fmtDate(m.data)}`,
+      onConfirm: () => {
+        const pertencem = (x) => x && (x.id === m.id || (x.tipo === 'registo' && x.momentoId === m.id));
+        const apagadas = (desenvolvimento || []).filter(pertencem);
+        setDesenvolvimento(prev => (prev || []).filter(x => !pertencem(x)));
+        if (momentoId === m.id) setMomentoId(null);
+        offerUndo(`Momento "${m.nome}" apagado.`, () => {
+          setDesenvolvimento(prev => {
+            const existentes = new Set((prev || []).map(x => x.id));
+            return [...(prev || []), ...apagadas.filter(x => !existentes.has(x.id))];
+          });
+        });
+      },
+    });
+  };
+
   /* O momento anterior serve para a evolução e para as prioridades: uma
      dimensão que DESCEU é mais urgente do que uma que está estável no
      mesmo valor. */
@@ -7773,7 +7849,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   const semMomento = (
     <EmptyState
       text="Ainda não há nenhum momento de avaliação. Cria o primeiro quando quiseres — não há periodicidade obrigatória."
-      action={<Btn onClick={() => setNovoMomento({ nome: '', data: todayStr(), prazo: '', jogadores: players.map(p => p.id) })}><Plus size={15} /> Novo momento</Btn>}
+      action={<Btn onClick={() => setNovoMomento({ nome: '', data: todayStr(), prazo: '', jogadores: [] })}><Plus size={15} /> Avaliar</Btn>}
     />
   );
 
@@ -7781,10 +7857,10 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
     <>
       <SectionHeader
         title="Desenvolvimento Individual"
-        subtitle="Onde está o jogador, como se vê, como o vemos — e o que vamos fazer."
+        subtitle="Avaliação e plano de desenvolvimento."
         action={
-          <Btn onClick={() => setNovoMomento({ nome: '', data: todayStr(), prazo: '', jogadores: players.map(p => p.id) })} disabled={!players.length}>
-            <Plus size={15} /> Novo momento
+          <Btn onClick={() => setNovoMomento({ nome: '', data: todayStr(), prazo: '', jogadores: [] })} disabled={!players.length}>
+            <Plus size={15} /> Avaliar
           </Btn>
         }
       />
@@ -7804,12 +7880,17 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
             </Field>
           </div>
 
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div style={{
+            display: isNarrow ? 'grid' : 'flex',
+            gridTemplateColumns: isNarrow ? 'repeat(2, 1fr)' : undefined,
+            gap: 6, flexWrap: 'wrap', marginBottom: 16,
+          }}>
             {ABAS.map(a => {
               const on = aba === a.id;
               return (
                 <button key={a.id} onClick={() => setAba(a.id)} style={{
                   padding: '7px 13px', borderRadius: 8, fontSize: 12.5, cursor: 'pointer', ...body,
+                  textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                   background: on ? '#B5393F' : 'transparent',
                   color: on ? TEXT_ON_ACCENT : T.muted,
                   border: `1px solid ${on ? '#B5393F' : T.line}`,
@@ -8007,6 +8088,9 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
             <Btn variant="ghost" onClick={() => patchMomento(momento.id, { fechado: !momento.fechado })}>
               {momento.fechado ? 'Reabrir momento' : 'Fechar momento'}
             </Btn>
+            <Btn variant="ghost" onClick={() => apagarMomento(momento)} style={{ color: T.warn, borderColor: T.warn }}>
+              <Trash2 size={14} /> Apagar momento
+            </Btn>
             <span style={{ fontSize: 11.5, color: T.mutedDim, alignSelf: 'center' }}>
               {momento.fechado
                 ? 'Fechado: fica como registo histórico. Reabre se precisares de corrigir.'
@@ -8021,6 +8105,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
         <DiQuestionario
           titulo={questionario.fonte === 'auto' ? 'Autoavaliação do jogador' : 'Avaliação da equipa técnica'}
           subtitulo={`${(players.find(p => p.id === questionario.playerId) || {}).name} · ${momento.nome}`}
+          posicao={(players.find(p => p.id === questionario.playerId) || {}).position}
           respostas={(diRegisto(registos, questionario.playerId) || {})[questionario.fonte]}
           comentarios={(diRegisto(registos, questionario.playerId) || {}).comentarios}
           permitirNA={questionario.fonte === 'staff'}
@@ -8045,7 +8130,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
 
       {/* Criar momento. */}
       {novoMomento && (
-        <Modal title="Novo momento de avaliação" onClose={() => setNovoMomento(null)} wide>
+        <Modal title="Avaliar" onClose={() => setNovoMomento(null)} wide>
           <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
             <Field label="Nome do momento">
               <Input value={novoMomento.nome} onChange={e => setNovoMomento({ ...novoMomento, nome: e.target.value })} placeholder="Ex: Avaliação inicial" />
@@ -8057,8 +8142,20 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
               <Input type="date" value={novoMomento.prazo} onChange={e => setNovoMomento({ ...novoMomento, prazo: e.target.value })} />
             </Field>
           </div>
-          <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-            Jogadores · {(novoMomento.jogadores || []).length}/{players.length}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              Jogadores · {(novoMomento.jogadores || []).length}/{players.length}
+            </span>
+            <span style={{ display: 'flex', gap: 6 }}>
+              <button type="button" onClick={() => setNovoMomento(prev => ({ ...prev, jogadores: players.map(p => p.id) }))} style={{
+                padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
+                background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
+              }}>Selecionar todos</button>
+              <button type="button" onClick={() => setNovoMomento(prev => ({ ...prev, jogadores: [] }))} style={{
+                padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
+                background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
+              }}>Limpar seleção</button>
+            </span>
           </div>
           <PlayerChipList
             players={players}
