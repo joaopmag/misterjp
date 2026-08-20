@@ -2908,9 +2908,16 @@ function dayRating(list, playerId) {
 }
 
 function playerStats(player, sessions, matches) {
-  // Dias de folga (fase "Descanso") não contam para a assiduidade —
-  // não há presenças nem notas a registar num dia sem treino.
-  const trainingSessions = (sessions || []).filter(s => s.phase !== 'Descanso');
+  /* Dias de folga (fase "Descanso") não contam para a assiduidade — não
+     há presenças nem notas a registar num dia sem treino.
+
+     As sessões geradas por um amigável também saem: o jogo já é contado
+     à parte, e deixá-las entrar fazia o mesmo dia contar duas vezes na
+     assiduidade — uma como treino e outra como jogo. */
+  const idsDeJogos = new Set((matches || []).map(m => m.id));
+  const trainingSessions = (sessions || []).filter(s => (
+    s.phase !== 'Descanso' && !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId))
+  ));
   const days = groupSessionsByDate(trainingSessions);
   const attended = days.filter(d => dayPresent(d.list, player.id)).length;
   const attendancePct = days.length ? Math.round((attended / days.length) * 100) : null;
@@ -10970,7 +10977,22 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   // (ex: uma por exercício), conta e edita-se como um único dia de treino.
   // Dias de folga (fase "Descanso") não entram na assiduidade — não há
   // presenças nem notas a registar num dia sem treino.
-  const trainingDays = groupSessionsByDate(sessions).filter(d => !d.list.every(s => s.phase === 'Descanso'));
+  /* AS SESSÕES CRIADAS A PARTIR DE UM AMIGÁVEL NÃO CONTAM AQUI.
+
+     Um amigável cria uma sessão no Planeamento (ver ensureFriendlySession)
+     para aparecer na agenda da semana e entrar na carga de treino. Mas o
+     jogo JÁ tem a sua própria coluna de presenças nesta tabela — a que
+     diz "amigável". Deixar a sessão entrar também dava duas colunas para
+     o mesmo dia: uma "treino" e outra "amigável", com as presenças a
+     serem marcadas em duplicado.
+
+     A sessão é reconhecida pelo `sourceMatchId`, que guarda o jogo que a
+     originou. Só se esconde se esse jogo ainda existir: se o jogo for
+     apagado, a sessão fica órfã e volta a valer por si, para não
+     desaparecer um dia de trabalho da tabela. */
+  const idsDeJogos = new Set((matches || []).map(m => m.id));
+  const sessoesProprias = (sessions || []).filter(x => !(x.sourceMatchId && idsDeJogos.has(x.sourceMatchId)));
+  const trainingDays = groupSessionsByDate(sessoesProprias).filter(d => !d.list.every(s => s.phase === 'Descanso'));
   const dayGroups = [...trainingDays, ...matchDays].sort((a, b) => new Date(b.date) - new Date(a.date));
   // Só conta como confirmado a partir do dia seguinte à data do treino.
   const confirmedDays = dayGroups.filter(d => new Date(d.date + 'T00:00:00') < todayStart);
