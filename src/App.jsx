@@ -6337,7 +6337,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             </div>
           )}
           {selectedEl.kind === 'goalmarker' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexWrap: 'wrap' }}>
+            <div
+              title="Arrasta o ponto dourado de cima para rodar livremente · arrasta o quadrado do canto para redimensionar"
+              style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexWrap: 'wrap' }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <RotateCw size={12} color={T.mutedDim} />
                 <button type="button" onClick={() => changeSelectedRotation(-15)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>↺</button>
@@ -6376,11 +6379,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           <button type="button" onClick={deleteSelected} style={{ fontSize: 11.5, color: T.bad, background: 'none', border: 'none', cursor: 'pointer' }}>Apagar</button>
           <button type="button" onClick={() => setSelectedId(null)} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>Fechar</button>
         </div>
-        {selectedEl.kind === 'goalmarker' && (
-          <div style={{ fontSize: 10.5, color: T.mutedDim, padding: '5px 10px', background: T.bg, border: `1px solid ${T.line}`, borderTop: 'none', borderRadius: '0 0 7px 7px' }}>
-            Arrasta o ponto dourado de cima para rodar livremente · arrasta o quadrado do canto para redimensionar
-          </div>
-        )}
+        {/* A dica de arrastar ficava numa segunda linha por baixo (ver
+            "Arrasta o ponto dourado..." aqui em cima, agora como tooltip):
+            essa linha extra ultrapassava a altura reservada mais abaixo
+            (pensada para o painel do texto, o maior dos "normais"), e o
+            campo encolhia visivelmente ao colocar a primeira baliza. */}
         </div>
       )}
       </div>
