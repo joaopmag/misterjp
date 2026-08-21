@@ -1177,17 +1177,18 @@ function useIsMobile(breakpoint = 860) {
 function BotaoTopo({ alvoRef, isMobile }) {
   /* VOLTAR AO TOPO.
 
-     No telemóvel, uma lista de exercícios ou de jogos de uma época
-     inteira obriga a dezenas de gestos para regressar ao início. O botão
-     só aparece depois de se ter descido um ecrã inteiro — antes disso não
-     serve para nada e só tapava conteúdo.
+     Numa lista de exercícios ou de jogos de uma época inteira, descer
+     dezenas de "gestos" (ou scrolls de rato) para regressar ao início é
+     desnecessário. O botão só aparece depois de se ter descido um ecrã
+     inteiro — antes disso não serve para nada e só tapava conteúdo.
 
-     Em desktop não aparece: a barra de deslocamento e o teclado (Home)
-     resolvem o mesmo em menos gestos. */
+     Aparece em telemóvel E em desktop: em desktop fica mais junto ao
+     canto (sem reservar espaço para a barra de navegação inferior, que
+     só existe no telemóvel). */
   const [visivel, setVisivel] = useState(false);
 
   useEffect(() => {
-    if (!isMobile || typeof window === 'undefined') return undefined;
+    if (typeof window === 'undefined') return undefined;
 
     /* QUEM É QUE ROLA?
 
@@ -1206,9 +1207,9 @@ function BotaoTopo({ alvoRef, isMobile }) {
     aoRolar();
     fonte.addEventListener('scroll', aoRolar, { passive: true });
     return () => fonte.removeEventListener('scroll', aoRolar);
-  }, [isMobile, alvoRef]);
+  }, [alvoRef]);
 
-  if (!isMobile || !visivel) return null;
+  if (!visivel) return null;
 
   const subir = () => {
     const el = (alvoRef && alvoRef.current) || null;
@@ -1222,14 +1223,14 @@ function BotaoTopo({ alvoRef, isMobile }) {
       onClick={subir}
       aria-label="Voltar ao topo"
       style={{
-        position: 'fixed', right: 16, bottom: 78, zIndex: 40,
-        width: 44, height: 44, borderRadius: '50%',
+        position: 'fixed', right: 16, bottom: isMobile ? 78 : 24, zIndex: 40,
+        width: isMobile ? 44 : 40, height: isMobile ? 44 : 40, borderRadius: '50%',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: T.surfaceRaise, border: `1px solid ${T.line}`,
         color: T.cream, cursor: 'pointer',
         boxShadow: '0 4px 14px rgba(0,0,0,0.45)',
       }}
-    ><ChevronLeft size={20} style={{ transform: 'rotate(90deg)' }} /></button>
+    ><ChevronLeft size={isMobile ? 20 : 18} style={{ transform: 'rotate(90deg)' }} /></button>
   );
 }
 
@@ -2322,6 +2323,15 @@ const STATUS_SUMMARY_COLORS = {
 function firstNameOf(name) {
   const parts = String(name || '').trim().split(/\s+/);
   return parts[0] || '—';
+}
+
+/* Apelido (último nome): usado nas tabelas de Monitorização e Presenças,
+   onde o espaço é apertado e o que identifica o jogador de relance é o
+   apelido, não o primeiro nome. */
+function lastNameOf(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '—';
+  return parts[parts.length - 1];
 }
 
 /* Nome "de cartão": primeiro e último nome, sem os do meio. É o formato
@@ -10914,10 +10924,10 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
           <tbody>
             {players.map(p => (
               <tr key={p.id} style={{ borderTop: `1px solid ${T.line}` }}>
-                {/* Nome curto (primeiro nome + inicial) para a coluna não
-                    roubar largura às colunas dos dias. O nome completo fica
+                {/* Apelido (último nome) para a coluna não roubar
+                    largura às colunas dos dias. O nome completo fica
                     no title, para quando houver dúvida. */}
-                <td style={nameCell} title={p.name}>{p.position ? `${p.position} · ` : ''}{firstNameInitial(p.name)}</td>
+                <td style={nameCell} title={p.name}>{p.position ? `${p.position} · ` : ''}{lastNameOf(p.name)}</td>
                 {ordered.map(d => {
                   const estado = estadoDe(d, p.id);
                   const on = estado === 'presente';
@@ -11328,7 +11338,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                 }}>
                   <Badge label={player.position} />
                   <div style={{ flex: 1, minWidth: 120 }}>
-                    <div style={{ color: T.cream, fontSize: 14 }}>{player.name}</div>
+                    <div style={{ color: T.cream, fontSize: 14 }}>{lastNameOf(player.name)}</div>
                     <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmedDays.length} confirmados</div>
                   </div>
                   <div style={{ width: 70, height: 6, background: T.bg, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
@@ -11440,7 +11450,7 @@ function MatchDashboard({ players, matches }) {
           <tbody>
             {rows.map(({ player, s }) => (
               <tr key={player.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                <td style={{ padding: '8px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>{player.number ? `#${player.number} ` : ''}{player.name}</td>
+                <td style={{ padding: '8px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>{player.number ? `#${player.number} ` : ''}{lastNameOf(player.name)}</td>
                 <td style={td}>{s.matchesPlayed}</td>
                 <td style={td}>{s.starts}</td>
                 <td style={td}>{s.matchesPlayed - s.starts}</td>
@@ -13017,7 +13027,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   <tbody>
                     {sortByPosition(players).map(p => (
                       <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                        <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
+                        <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{lastNameOf(p.name)}</td>
                         <td style={{ ...td2, ...mono, color: T.warn, letterSpacing: '.1em' }}>{p.code || '—'}</td>
                         <td style={td2}>
                           <button onClick={() => regenerateCode(p.id)} title="Gerar novo código"
@@ -13072,7 +13082,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                           {statusLabel}
                         </span>
                       </td>
-                      <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
+                      <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{lastNameOf(p.name)}</td>
                       <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(1) : '—'}</td>
                       <td style={{ ...td2, ...mono }} title={lastRpeTreino ? fmtDate(lastRpeTreino.date) : undefined}>{lastRpeTreino ? lastRpeTreino.pse : '—'}</td>
                       <td style={{ ...td2, ...mono, color: lastRpeJogo ? T.warn : T.mutedDim }} title={lastRpeJogo ? fmtDate(lastRpeJogo.date) : undefined}>{lastRpeJogo ? lastRpeJogo.pse : '—'}</td>
@@ -13153,7 +13163,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                 return (
                   <tr key={m.id} style={{ borderBottom: `1px solid ${T.line}` }}>
                     <td style={tdStyle}>{fmtDate(m.date)}</td>
-                    <td style={{ ...tdStyle, color: T.cream }} title={p ? p.name : undefined}>{p ? `${p.position ? `${p.position} · ` : ''}${shortPlayerName(p, players)}` : '—'}</td>
+                    <td style={{ ...tdStyle, color: T.cream }} title={p ? p.name : undefined}>{p ? `${p.position ? `${p.position} · ` : ''}${lastNameOf(p.name)}` : '—'}</td>
                     <td style={{ ...tdStyle, color: contexto === 'jogo' ? T.warn : undefined }}>{typeLabel}</td>
                     <td style={{ ...tdStyle, ...mono }}>{typeof m.pse === 'number' ? `${m.pse}/10` : '—'}</td>
                     <td style={{ ...tdStyle, ...mono }}>{m.sono ?? '—'}</td>
@@ -13577,7 +13587,10 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-        {sortByPosition(players).map(p => {
+        {/* Só aqui (novo registo manual) a grelha ordena e identifica por
+            número de camisola em vez de posição — é o que o staff vê no
+            banco/campo ao chamar cada atleta para responder. */}
+        {[...players].sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999)).map(p => {
           const wDone = !!recordFor(p.id, 'wellness');
           const rDone = !!recordFor(p.id, 'rpe');
           const done = type === 'wellness' ? wDone : rDone;
@@ -13592,8 +13605,8 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
                 <StatusPip emoji="💪" on={wDone} />
                 <StatusPip emoji="🏋" on={rDone} />
               </div>
-              <div style={{ ...display, fontSize: String(p.position || '').length > 2 ? 22 : 30, fontWeight: 700, color: done ? T.good : T.mutedDim, lineHeight: 1 }}>
-                {p.position || '–'}
+              <div style={{ ...display, fontSize: 30, fontWeight: 700, color: done ? T.good : T.mutedDim, lineHeight: 1 }}>
+                {p.number ? `#${p.number}` : '–'}
               </div>
               <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, marginTop: 12 }}>{p.name}</div>
             </button>
