@@ -1519,6 +1519,18 @@ function App({ session }) {
         * { box-sizing: border-box; }
         ::selection { background: ${T.gold}55; }
         .navbtn:hover { background: ${T.surfaceRaise}; }
+        /* Painel de edição do elemento selecionado (Baliza, Texto, etc.):
+           rola na horizontal mas NUNCA cresce na vertical por causa disso.
+           Sem isto, quando o conteúdo era mais largo que o ecrã (caso da
+           Baliza e da caixa de texto, que têm mais controlos), o browser
+           acrescentava uma barra de scroll horizontal e essa barra empurrava
+           a altura do painel para além do espaço reservado — o que fazia o
+           ResizeObserver do editor recalcular e o campo encolher visivelmente
+           mesmo com a altura mínima já reservada. Esconder a barra (o painel
+           continua a arrastar-se na horizontal com o dedo) tira essa
+           variável da equação. */
+        .mjp-painel-selecao { scrollbar-width: none; -ms-overflow-style: none; }
+        .mjp-painel-selecao::-webkit-scrollbar { display: none; height: 0; }
         .navbtn.active { background: ${T.surfaceRaise}; border-left: 3px solid ${T.gold}; }
         input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
         table { border-collapse: collapse; width: 100%; }
@@ -6285,7 +6297,18 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             espaço reservado ali em baixo (`minHeight: 92`), e era isso que
             fazia o campo encolher ao selecionar o primeiro item. Com altura
             sempre igual (uma linha só), o campo deixa de reagir. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0', flexWrap: 'nowrap', overflowX: 'auto' }}>
+        <div className="mjp-painel-selecao" style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', background: T.bg,
+          border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0', flexWrap: 'nowrap',
+          overflowX: 'auto', overflowY: 'hidden',
+          /* Altura fixa e não `padding` a decidi-la: com `height` (em vez de
+             deixar o conteúdo esticar a caixa), uma barra de scroll
+             horizontal fica DENTRO dos 38px, nunca a acrescentar-lhes.
+             É isto, mais a barra escondida acima, que impede o painel de
+             ultrapassar os 92px reservados — e por consequência, que impede
+             o campo de encolher ao selecionar a Baliza ou abrir o texto. */
+          height: 38, boxSizing: 'border-box',
+        }}>
           <span style={{ fontSize: 12, color: T.cream, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {selectedEl.kind === 'player' || selectedEl.kind === 'keeper'
               ? `${teamInfo(selectedEl.team)?.label} · ${elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}`
