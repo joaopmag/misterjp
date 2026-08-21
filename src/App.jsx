@@ -5492,6 +5492,33 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     }));
   };
 
+  /* ELEMENTOS ÓRFÃOS — resíduo de exercícios gravados antes da correção
+     acima existir.
+
+     Um elemento só devia aparecer numa fotografia de um passo se também
+     estiver no campo atual (`value.elements`): as fotografias são
+     cumulativas até ao estado de hoje. Se um id aparece nalgum passo mas
+     já não está no campo, é porque foi apagado antes de `limparDosPassos`
+     ter sido chamado — exatamente o caso de um jogador metido a partir de
+     "inserir desde" e depois apagado, que ficava preso num frame.
+
+     Isto detecta esses ids e o botão "Reparar animação" (mais abaixo)
+     limpa-os de todas as fotografias, sem tocar em mais nada. */
+  const idsOrfaosDaAnimacao = () => {
+    const atuais = new Set((value.elements || []).map(el => el.id));
+    const orfaos = new Set();
+    (value.sequence || []).forEach(step => {
+      (step.elements || []).forEach(el => { if (!atuais.has(el.id)) orfaos.add(el.id); });
+    });
+    return orfaos;
+  };
+
+  const repararAnimacao = () => {
+    const orfaos = idsOrfaosDaAnimacao();
+    if (!orfaos.size) return;
+    commit({ ...value, sequence: limparDosPassos(value.sequence, orfaos) });
+  };
+
   const colocarElemento = (novo) => {
     const seq = value.sequence || [];
     const desde = inserirDesde;
@@ -6198,6 +6225,18 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               {isPresenting ? <Square size={12} /> : <Play size={12} />}
               {isPresenting ? 'Parar' : 'Apresentar tudo'}
             </button>
+          )}
+          {(value.sequence || []).length > 0 && idsOrfaosDaAnimacao().size > 0 && (
+            <button
+              type="button"
+              onClick={repararAnimacao}
+              title="Remove elementos que ficaram presos numa fotografia da animação (ex: um jogador inserido a partir de um passo e depois apagado antes de esta correção existir)"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
+                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: `${T.warn}18`, color: T.warn, border: `1px solid ${T.warn}`,
+              }}
+            ><RefreshCw size={12} /> Reparar animação</button>
           )}
         </div>
       </div>
