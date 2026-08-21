@@ -62,7 +62,7 @@ function sortByPosition(players) {
     return diff !== 0 ? diff : (Number(a.number) || 99) - (Number(b.number) || 99);
   });
 }
-const PHASES = ['Organização Ofensiva', 'Organização Defensiva', 'Transição Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Jogo', 'Ativação / Aquecimento', 'Preparação Física', 'Descanso'];
+const PHASES = ['Organização Defensiva', 'Transição Ofensiva', 'Organização Ofensiva', 'Transição Defensiva', 'Bola Parada', 'Preparação Física', 'Ativação', 'Jogo', 'Individual', 'Descanso'];
 // Fases de jogo disponíveis na edição de exercícios: "Descanso" é uma fase
 // de sessão (dia de folga), não faz sentido classificar um exercício assim.
 const EXERCISE_PHASES = PHASES.filter(p => p !== 'Descanso');
@@ -2967,7 +2967,12 @@ function playerStats(player, sessions, matches) {
     .map(Number);
   const avgTrainingRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
 
-  const playerMatches = (matches || []).filter(m => (m.convocados || []).includes(player.id));
+  /* Jogos amigáveis não contam para as estatísticas de jogo (convocado,
+     titular, minutos, golos, notas...) — servem para treino/rodagem, não
+     são competição oficial. Ficam de fora aqui, centralizado, para não
+     ter de se lembrar de filtrar em cada sítio que usa playerStats. */
+  const jogosOficiais = (matches || []).filter(m => !isFriendlyMatch(m));
+  const playerMatches = jogosOficiais.filter(m => (m.convocados || []).includes(player.id));
   const reports = playerMatches.map(m => (m.report && m.report[player.id]) || {});
   const goals = reports.reduce((a, r) => a + (Number(r.goals) || 0), 0);
   const assists = reports.reduce((a, r) => a + (Number(r.assists) || 0), 0);
