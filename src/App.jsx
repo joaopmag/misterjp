@@ -6276,14 +6276,23 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       <div style={{ minHeight: 92 }}>
       {selectedEl && (
         <div style={{ marginTop: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: T.cream }}>
+        {/* NUNCA quebra para uma segunda linha (nowrap + scroll horizontal
+            em vez de flexWrap).
+
+            Isto tinha `flexWrap: 'wrap'`: em ecrãs mais estreitos, ou com
+            texto/baliza selecionados (que têm mais controlos), a linha não
+            cabia e quebrava para duas — o painel ficava mais alto do que o
+            espaço reservado ali em baixo (`minHeight: 92`), e era isso que
+            fazia o campo encolher ao selecionar o primeiro item. Com altura
+            sempre igual (uma linha só), o campo deixa de reagir. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0', flexWrap: 'nowrap', overflowX: 'auto' }}>
+          <span style={{ fontSize: 12, color: T.cream, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {selectedEl.kind === 'player' || selectedEl.kind === 'keeper'
               ? `${teamInfo(selectedEl.team)?.label} · ${elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}`
               : selectedEl.kind === 'goalmarker' ? 'Baliza' : selectedEl.kind === 'stake' ? 'Estaca' : selectedEl.kind === 'coach' ? 'Treinador' : selectedEl.kind === 'text' ? 'Texto' : selectedEl.kind === 'cone' ? 'Cone' : 'Bola'}
           </span>
           {selectedEl.kind === 'text' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'nowrap', flexShrink: 0 }}>
               {/* Área de texto e não campo de linha: o Enter passa a
                   baixar de linha em vez de não fazer nada. */}
               <textarea
@@ -6313,40 +6322,45 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 }}
                 style={{
                   background: T.surface, border: `1px solid ${T.line}`, borderRadius: 6, padding: '5px 8px',
-                  color: T.cream, fontSize: 12.5, ...body, outline: 'none', minWidth: 170,
-                  resize: 'vertical', lineHeight: 1.35,
+                  color: T.cream, fontSize: 12.5, ...body, outline: 'none', width: 170, flexShrink: 0,
+                  /* "resize: vertical" deixava o próprio user arrastar a
+                     caixa mais alta, o que voltava a fazer o painel
+                     ultrapassar a altura reservada — mesmo bug, causa
+                     diferente. A caixa continua a aceitar várias linhas
+                     (Enter), só se rola dentro dela, não cresce. */
+                  resize: 'none', overflowY: 'auto', maxHeight: 22, lineHeight: 1.35,
                 }}
               />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 10.5, color: T.mutedDim }}>Tam.</span>
-                <button type="button" onClick={() => changeSelectedTextSize(-0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>−</button>
-                <button type="button" onClick={() => changeSelectedTextSize(0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>+</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                <span style={{ fontSize: 10.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>Tam.</span>
+                <button type="button" onClick={() => changeSelectedTextSize(-0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
+                <button type="button" onClick={() => changeSelectedTextSize(0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 10.5, color: T.mutedDim }} title="Largura da caixa: menos = caixa mais estreita e mais linhas">Largura</span>
-                <button type="button" onClick={() => changeSelectedTextWrap(-4)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>−</button>
-                <button type="button" onClick={() => changeSelectedTextWrap(4)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>+</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                <span style={{ fontSize: 10.5, color: T.mutedDim, whiteSpace: 'nowrap' }} title="Largura da caixa: menos = caixa mais estreita e mais linhas">Largura</span>
+                <button type="button" onClick={() => changeSelectedTextWrap(-4)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
+                <button type="button" onClick={() => changeSelectedTextWrap(4)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
               </div>
             </div>
           )}
           {(selectedEl.kind === 'player' || selectedEl.kind === 'keeper') && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-              <button type="button" onClick={() => changeSelectedNumber(-1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>−</button>
-              <span style={{ ...mono, color: T.warn, width: 30, textAlign: 'center' }}>{elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}</span>
-              <button type="button" onClick={() => changeSelectedNumber(1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>+</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
+              <button type="button" onClick={() => changeSelectedNumber(-1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
+              <span style={{ ...mono, color: T.warn, width: 30, textAlign: 'center', flexShrink: 0 }}>{elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}</span>
+              <button type="button" onClick={() => changeSelectedNumber(1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
             </div>
           )}
           {selectedEl.kind === 'goalmarker' && (
             <div
               title="Arrasta o ponto dourado de cima para rodar livremente · arrasta o quadrado do canto para redimensionar"
-              style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexWrap: 'wrap' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexWrap: 'nowrap', flexShrink: 0 }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                 <RotateCw size={12} color={T.mutedDim} />
-                <button type="button" onClick={() => changeSelectedRotation(-15)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>↺</button>
-                <button type="button" onClick={() => changeSelectedRotation(15)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>↻</button>
+                <button type="button" onClick={() => changeSelectedRotation(-15)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>↺</button>
+                <button type="button" onClick={() => changeSelectedRotation(15)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>↻</button>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                 {[
                   { deg: 0, label: 'Vertical' },
                   { deg: 45, label: 'Diagonal' },
@@ -6362,28 +6376,24 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                       background: (selectedEl.rotation || 0) === o.deg ? '#B5393F' : 'transparent',
                       color: (selectedEl.rotation || 0) === o.deg ? TEXT_ON_ACCENT : T.cream,
                       border: `1px solid ${(selectedEl.rotation || 0) === o.deg ? '#B5393F' : T.line}`,
+                      whiteSpace: 'nowrap', flexShrink: 0,
                     }}
                   >
                     {o.label}
                   </button>
                 ))}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                 <Maximize2 size={12} color={T.mutedDim} />
-                <button type="button" onClick={() => changeSelectedScale(-0.2)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>−</button>
-                <button type="button" onClick={() => changeSelectedScale(0.2)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer' }}>+</button>
+                <button type="button" onClick={() => changeSelectedScale(-0.2)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
+                <button type="button" onClick={() => changeSelectedScale(0.2)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
               </div>
             </div>
           )}
-          <button type="button" onClick={duplicateSelected} title="Cria uma cópia — pode receber setas e entrar na animação como qualquer elemento" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: T.cream, background: 'none', border: 'none', cursor: 'pointer', marginLeft: (selectedEl.kind === 'player' || selectedEl.kind === 'keeper' || selectedEl.kind === 'goalmarker') ? 0 : 'auto' }}><Copy size={12} /> Duplicar</button>
-          <button type="button" onClick={deleteSelected} style={{ fontSize: 11.5, color: T.bad, background: 'none', border: 'none', cursor: 'pointer' }}>Apagar</button>
-          <button type="button" onClick={() => setSelectedId(null)} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>Fechar</button>
+          <button type="button" onClick={duplicateSelected} title="Cria uma cópia — pode receber setas e entrar na animação como qualquer elemento" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: T.cream, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, marginLeft: (selectedEl.kind === 'player' || selectedEl.kind === 'keeper' || selectedEl.kind === 'goalmarker') ? 0 : 'auto' }}><Copy size={12} /> Duplicar</button>
+          <button type="button" onClick={deleteSelected} style={{ fontSize: 11.5, color: T.bad, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>Apagar</button>
+          <button type="button" onClick={() => setSelectedId(null)} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>Fechar</button>
         </div>
-        {/* A dica de arrastar ficava numa segunda linha por baixo (ver
-            "Arrasta o ponto dourado..." aqui em cima, agora como tooltip):
-            essa linha extra ultrapassava a altura reservada mais abaixo
-            (pensada para o painel do texto, o maior dos "normais"), e o
-            campo encolhia visivelmente ao colocar a primeira baliza. */}
         </div>
       )}
       </div>
