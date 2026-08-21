@@ -4016,20 +4016,16 @@ function TriondaBall({ cx, cy, r }) {
    pequena área 5.5×18.32 m, baliza com 7.32 m de largura. */
 /* Rede de uma baliza — grelha de linhas finas dentro do retângulo da
    baliza, para dar profundidade em vez de um simples contorno vazio. */
-function GoalNet({ x, y, w, h, color, printMode }) {
+function GoalNet({ x, y, w, h, color }) {
   const cols = 5, rows = 4;
-  // Na impressão a rede também ficava fina demais para se ver — traço e
-  // opacidade sobem só nesse modo.
-  const strokeW = printMode ? '0.12' : '0.06';
-  const op = printMode ? '0.85' : '0.55';
   const lines = [];
   for (let i = 1; i < cols; i++) {
     const gx = x + (w * i) / cols;
-    lines.push(<line key={`v${i}`} x1={gx} y1={y} x2={gx} y2={y + h} stroke={color} strokeWidth={strokeW} opacity={op} />);
+    lines.push(<line key={`v${i}`} x1={gx} y1={y} x2={gx} y2={y + h} stroke={color} strokeWidth="0.06" opacity="0.55" />);
   }
   for (let j = 1; j < rows; j++) {
     const gy = y + (h * j) / rows;
-    lines.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke={color} strokeWidth={strokeW} opacity={op} />);
+    lines.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke={color} strokeWidth="0.06" opacity="0.55" />);
   }
   return <>{lines}</>;
 }
@@ -4210,13 +4206,6 @@ function PitchMarkings({ printMode }) {
   const netColor = printMode ? '#2A2A2A' : '#ffffff';
   const flagColor = printMode ? '#2A2A2A' : '#E7CD7A';
   const D = 0.70710678; // sen/cos de 45º, para as diagonais dos cantos
-  /* Em impressão a baliza (retângulo estreitíssimo, 1.6×7.32) com o
-     mesmo traço fino das restantes marcações praticamente desaparecia
-     no papel — é um risco fininho na margem da folha, fácil de confundir
-     com sujidade de impressão. Fica mais grossa e com um fundo cinza
-     muito claro, só na impressão, para se destacar do branco à volta. */
-  const goalStrokeWidth = printMode ? '0.9' : '0.5';
-  const goalFill = printMode ? '#2A2A2A12' : 'none';
 
   return (
     <>
@@ -4246,10 +4235,10 @@ function PitchMarkings({ printMode }) {
       <CornerFlag cx={106} cy={69} ox={D} oy={D} color={flagColor} />
       <BenchesAndTechnicalArea printMode={printMode} />
       {/* balizas pequenas, com rede */}
-      <rect x="-0.6" y="31.34" width="1.6" height="7.32" fill={goalFill} stroke={strokeGoal} strokeWidth={goalStrokeWidth} />
-      <rect x="106" y="31.34" width="1.6" height="7.32" fill={goalFill} stroke={strokeGoal} strokeWidth={goalStrokeWidth} />
-      <GoalNet x={-0.6} y={31.34} w={1.6} h={7.32} color={netColor} printMode={printMode} />
-      <GoalNet x={106} y={31.34} w={1.6} h={7.32} color={netColor} printMode={printMode} />
+      <rect x="-0.6" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
+      <rect x="106" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
+      <GoalNet x={-0.6} y={31.34} w={1.6} h={7.32} color={netColor} />
+      <GoalNet x={106} y={31.34} w={1.6} h={7.32} color={netColor} />
     </>
   );
 }
@@ -4360,7 +4349,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
               x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
               stroke={dashed ? dashedColor : arrowColor}
               strokeWidth={isDotted ? (isSelected ? '0.55' : '0.42') : (isSelected ? '0.55' : '0.35')}
-              strokeDasharray={isDotted ? '0.1,1.15' : (isRunDashed ? '2.4,1.8' : undefined)}
+              strokeDasharray={isDotted ? '0.1,2.1' : (isRunDashed ? '2.4,1.8' : undefined)}
               strokeLinecap={isDotted ? 'round' : (isRunDashed ? 'butt' : 'round')}
               markerEnd={isArrow ? 'url(#dg-arrow)' : undefined}
               style={{ pointerEvents: 'none' }}
@@ -4399,14 +4388,21 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           const post = Math.max(0.12, Math.min(0.3, w * 0.04));
           const cols = Math.max(3, Math.round(w / 0.7));
           const rows = Math.max(2, Math.round(h / 0.7));
+          /* Esta baliza usava sempre um creme claro (#F0E7D6), pensado
+             para o relvado escuro do ecrã — impresso em papel branco
+             ficava praticamente invisível (postes e rede quase da cor do
+             fundo). Em impressão passa a um cinza-escuro sólido, como as
+             restantes marcações do campo. */
+          const corBaliza = printMode ? '#2A2A2A' : '#F0E7D6';
+          const opRede = printMode ? '0.75' : '0.45';
           const netLines = [];
           for (let i = 1; i < cols; i++) {
             const gx = -w / 2 + (w * i) / cols;
-            netLines.push(<line key={`v${i}`} x1={gx} y1={-h / 2} x2={gx} y2={h / 2} stroke="#F0E7D6" strokeWidth="0.05" opacity="0.45" />);
+            netLines.push(<line key={`v${i}`} x1={gx} y1={-h / 2} x2={gx} y2={h / 2} stroke={corBaliza} strokeWidth="0.05" opacity={opRede} />);
           }
           for (let j = 1; j < rows; j++) {
             const gy = -h / 2 + (h * j) / rows;
-            netLines.push(<line key={`h${j}`} x1={-w / 2} y1={gy} x2={w / 2} y2={gy} stroke="#F0E7D6" strokeWidth="0.05" opacity="0.45" />);
+            netLines.push(<line key={`h${j}`} x1={-w / 2} y1={gy} x2={w / 2} y2={gy} stroke={corBaliza} strokeWidth="0.05" opacity={opRede} />);
           }
           return (
             <g key={el.id}>
@@ -4417,10 +4413,10 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
               <g transform={tr} style={{ pointerEvents: 'none' }}>
                 {netLines}
                 {/* poste esquerdo, poste direito e barra (fundo da rede) — a "boca" (frente, por onde entra a bola) fica aberta */}
-                <line x1={-w / 2} y1={-h / 2} x2={-w / 2} y2={h / 2} stroke="#F0E7D6" strokeWidth={post} strokeLinecap="round" />
-                <line x1={w / 2} y1={-h / 2} x2={w / 2} y2={h / 2} stroke="#F0E7D6" strokeWidth={post} strokeLinecap="round" />
-                <line x1={-w / 2} y1={-h / 2} x2={w / 2} y2={-h / 2} stroke="#F0E7D6" strokeWidth={post} strokeLinecap="round" />
-                <line x1={-w / 2} y1={h / 2} x2={w / 2} y2={h / 2} stroke="#F0E7D6" strokeWidth="0.12" strokeDasharray="0.35,0.35" opacity="0.6" />
+                <line x1={-w / 2} y1={-h / 2} x2={-w / 2} y2={h / 2} stroke={corBaliza} strokeWidth={post} strokeLinecap="round" />
+                <line x1={w / 2} y1={-h / 2} x2={w / 2} y2={h / 2} stroke={corBaliza} strokeWidth={post} strokeLinecap="round" />
+                <line x1={-w / 2} y1={-h / 2} x2={w / 2} y2={-h / 2} stroke={corBaliza} strokeWidth={post} strokeLinecap="round" />
+                <line x1={-w / 2} y1={h / 2} x2={w / 2} y2={h / 2} stroke={corBaliza} strokeWidth={printMode ? '0.2' : '0.12'} strokeDasharray="0.35,0.35" opacity={printMode ? '0.9' : '0.6'} />
               </g>
             </g>
           );
@@ -5940,7 +5936,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               <svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="currentColor" strokeWidth="2" /></svg>
             )}
             {t.symbol === 'dashed' && (
-              <svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeDasharray="0.1,3.3" /></svg>
+              <svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeDasharray="0.1,5" /></svg>
             )}
             {t.symbol === 'square' && (
               <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.4,1.8" /></svg>
@@ -6089,7 +6085,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             <line x1={drawing.x1} y1={drawing.y1} x2={drawing.x2} y2={drawing.y2}
               stroke="#C9A227" strokeWidth={drawing.type === 'line-dashed' ? '0.42' : '0.3'}
               strokeLinecap={drawing.type === 'line-dashed' ? 'round' : 'butt'}
-              strokeDasharray={drawing.type === 'line-dashed' ? '0.1,1.15' : (drawing.type === 'arrow-run' ? '2,1.5' : '1,1')} />
+              strokeDasharray={drawing.type === 'line-dashed' ? '0.1,2.1' : (drawing.type === 'arrow-run' ? '2,1.5' : '1,1')} />
           )}
           <AnimOverlay items={animItems} iconScale={iconEscala * escalaEcra} />
           <AnimOverlay items={presentAnimItems} iconScale={iconEscala * escalaEcra} />
