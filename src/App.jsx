@@ -2367,8 +2367,12 @@ function shortPlayerName(player, allPlayers) {
   const primeiro = firstNameOf(player.name);
   if (!outros.some(o => firstNameOf(o.name) === primeiro)) return primeiro;
 
-  const comInicial = firstNameInitial(player.name);
-  if (!outros.some(o => firstNameInitial(o.name) === comInicial)) return comInicial;
+  /* Havendo outro jogador com o mesmo primeiro nome, mostra-se o apelido
+     em vez de uma inicial — identifica sem ambiguidade e sem abreviar
+     demasiado (dois "Martim", dois "João" ficam "Sales"/"Costa" em vez
+     de "Martim S."/"João C."). */
+  const apelido = lastNameOf(player.name);
+  if (!outros.some(o => lastNameOf(o.name) === apelido)) return apelido;
 
   return shortFullName(player.name);
 }
@@ -2477,7 +2481,7 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
         const dy = labelOffset(x, y);
         const anchor = x > ml + plotW - 40 * scale ? 'end' : x < ml + 40 * scale ? 'start' : 'middle';
         const escolhido = tocado === pt.id;
-        const detalhe = `${pt.nome || pt.label} · wellness ${pt.well.toFixed(1)} · PSE ${pt.pse}`;
+        const detalhe = `${pt.nome || pt.label} · wellness ${pt.well.toFixed(1)} · PSE ${pt.pse.toFixed(1)}`;
         return (
           <g key={pt.id}>
             <circle cx={x} cy={y} r={(escolhido ? 4.6 : 3.2) * scale} fill={color} stroke={T.bg} strokeWidth={0.8 * scale} />
@@ -2501,7 +2505,7 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
         const pt = points.find(v => v.id === tocado);
         if (!pt) return null;
         const x = xOf(pt.well), y = yOf(pt.pse);
-        const texto = `${pt.nome || pt.label} · W ${pt.well.toFixed(1)} · PSE ${pt.pse}`;
+        const texto = `${pt.nome || pt.label} · W ${pt.well.toFixed(1)} · PSE ${pt.pse.toFixed(1)}`;
         const larg = Math.max(70 * scale, texto.length * 5.4 * scale);
         const lx = Math.max(2, Math.min(W - larg - 2, x - larg / 2));
         const acima = y > H / 2;
@@ -10924,10 +10928,10 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
           <tbody>
             {players.map(p => (
               <tr key={p.id} style={{ borderTop: `1px solid ${T.line}` }}>
-                {/* Apelido (último nome) para a coluna não roubar
-                    largura às colunas dos dias. O nome completo fica
+                {/* Nome curto: primeiro nome, ou apelido quando há outro
+                    jogador com o mesmo primeiro nome. O nome completo fica
                     no title, para quando houver dúvida. */}
-                <td style={nameCell} title={p.name}>{p.position ? `${p.position} · ` : ''}{lastNameOf(p.name)}</td>
+                <td style={nameCell} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                 {ordered.map(d => {
                   const estado = estadoDe(d, p.id);
                   const on = estado === 'presente';
@@ -11338,7 +11342,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                 }}>
                   <Badge label={player.position} />
                   <div style={{ flex: 1, minWidth: 120 }}>
-                    <div style={{ color: T.cream, fontSize: 14 }}>{lastNameOf(player.name)}</div>
+                    <div style={{ color: T.cream, fontSize: 14 }}>{player.name}</div>
                     <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmedDays.length} confirmados</div>
                   </div>
                   <div style={{ width: 70, height: 6, background: T.bg, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
@@ -11450,7 +11454,7 @@ function MatchDashboard({ players, matches }) {
           <tbody>
             {rows.map(({ player, s }) => (
               <tr key={player.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                <td style={{ padding: '8px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>{player.number ? `#${player.number} ` : ''}{lastNameOf(player.name)}</td>
+                <td style={{ padding: '8px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>{player.number ? `#${player.number} ` : ''}{player.name}</td>
                 <td style={td}>{s.matchesPlayed}</td>
                 <td style={td}>{s.starts}</td>
                 <td style={td}>{s.matchesPlayed - s.starts}</td>
@@ -13027,7 +13031,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   <tbody>
                     {sortByPosition(players).map(p => (
                       <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                        <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{lastNameOf(p.name)}</td>
+                        <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                         <td style={{ ...td2, ...mono, color: T.warn, letterSpacing: '.1em' }}>{p.code || '—'}</td>
                         <td style={td2}>
                           <button onClick={() => regenerateCode(p.id)} title="Gerar novo código"
@@ -13082,7 +13086,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                           {statusLabel}
                         </span>
                       </td>
-                      <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{lastNameOf(p.name)}</td>
+                      <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                       <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(1) : '—'}</td>
                       <td style={{ ...td2, ...mono }} title={lastRpeTreino ? fmtDate(lastRpeTreino.date) : undefined}>{lastRpeTreino ? lastRpeTreino.pse : '—'}</td>
                       <td style={{ ...td2, ...mono, color: lastRpeJogo ? T.warn : T.mutedDim }} title={lastRpeJogo ? fmtDate(lastRpeJogo.date) : undefined}>{lastRpeJogo ? lastRpeJogo.pse : '—'}</td>
@@ -13163,7 +13167,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                 return (
                   <tr key={m.id} style={{ borderBottom: `1px solid ${T.line}` }}>
                     <td style={tdStyle}>{fmtDate(m.date)}</td>
-                    <td style={{ ...tdStyle, color: T.cream }} title={p ? p.name : undefined}>{p ? `${p.position ? `${p.position} · ` : ''}${lastNameOf(p.name)}` : '—'}</td>
+                    <td style={{ ...tdStyle, color: T.cream }} title={p ? p.name : undefined}>{p ? `${p.position ? `${p.position} · ` : ''}${shortPlayerName(p, players)}` : '—'}</td>
                     <td style={{ ...tdStyle, color: contexto === 'jogo' ? T.warn : undefined }}>{typeLabel}</td>
                     <td style={{ ...tdStyle, ...mono }}>{typeof m.pse === 'number' ? `${m.pse}/10` : '—'}</td>
                     <td style={{ ...tdStyle, ...mono }}>{m.sono ?? '—'}</td>
@@ -13606,7 +13610,7 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
                 <StatusPip emoji="🏋" on={rDone} />
               </div>
               <div style={{ ...display, fontSize: 30, fontWeight: 700, color: done ? T.good : T.mutedDim, lineHeight: 1 }}>
-                {p.number ? `#${p.number}` : '–'}
+                {p.number ? `${p.number}` : '–'}
               </div>
               <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, marginTop: 12 }}>{p.name}</div>
             </button>
