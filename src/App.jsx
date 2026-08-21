@@ -6285,9 +6285,18 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           texto continua a poder ter várias, só se rola dentro dela) para
           esta faixa não roubar altura ao campo quando nada está
           selecionado. */}
-      <div style={{ minHeight: 92 }}>
+      {/* `marginTop: 8` fica aqui, no wrapper que existe SEMPRE — e não no
+          bloco de baixo, que só nasce quando `selectedEl` é verdadeiro.
+          Estava ao contrário: a margem só existia com o painel aberto, e
+          como este `<div>` não tem padding nem borda, essa margem "fugia"
+          para fora dele (colapso de margens) e empurrava a altura do editor
+          uns 8px só nesse momento — o resíduo de encolhimento que ainda
+          sobrava mesmo com a altura da faixa já fixa em 38px. Com a margem
+          sempre presente, a altura deste wrapper é 100% constante entre
+          aberto e fechado. */}
+      <div style={{ minHeight: 92, marginTop: 8 }}>
       {selectedEl && (
-        <div style={{ marginTop: 8 }}>
+        <div>
         {/* NUNCA quebra para uma segunda linha (nowrap + scroll horizontal
             em vez de flexWrap).
 
