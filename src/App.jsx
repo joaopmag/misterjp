@@ -10525,8 +10525,8 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
       ? equipaDoAmigavel({ session: s, jogo: jogoDaSessao(s), players })
       : null;
     const jogoHtml = equipa
-      ? `<h2>Equipa</h2><p class="desc"><strong>Titulares:</strong> ${escapeHtmlText(equipa.titulares.join(', ') || '—')}</p>`
-        + `<p class="desc"><strong>Suplentes:</strong> ${escapeHtmlText(equipa.suplentes.join(', ') || '—')}</p>`
+      ? `<h2>Equipa</h2><p class="desc"><strong>Titulares:</strong> ${escapeHtmlText(equipa.titulares.map(l => l.nome).join(', ') || '—')}</p>`
+        + `<p class="desc"><strong>Suplentes:</strong> ${escapeHtmlText(equipa.suplentes.map(l => l.nome).join(', ') || '—')}</p>`
         + `<h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(ideiasDaSessao(s) || '').trim() || '—')}</p>`
       : '';
     /* Num amigável a lista com toda a gente não entra: são os mesmos nomes
@@ -11271,14 +11271,18 @@ function equipaDoAmigavel({ session, jogo, players }) {
   const doSimulador = !!(dados && dados.onze && dados.onze.some(l => l.jogador));
   const comNumero = (p) => `${p.number ? `#${p.number} ` : ''}${p.name}`;
 
+  /* As listas saem sempre como [{ nome, x }]: `nome` para escrever, `x`
+     com os acontecimentos do jogo quando eles existem. O Simulador só
+     guarda nomes, por isso aí `x` vem vazio e a folha mostra a linha sem
+     símbolos — mas com o mesmo desenho. */
   if (doSimulador) {
     const formacao = dados.formacao || '4-3-3';
     const lugares = dados.onze.map(l => ({ lugar: l.lugar, nome: l.jogador || null }));
     return {
       formacao,
       lugares,
-      titulares: lugares.filter(l => l.nome).map(l => l.nome),
-      suplentes: dados.suplentes || [],
+      titulares: lugares.filter(l => l.nome).map(l => ({ nome: l.nome, x: null })),
+      suplentes: (dados.suplentes || []).map(n => ({ nome: n, x: null })),
     };
   }
 
@@ -11286,14 +11290,17 @@ function equipaDoAmigavel({ session, jogo, players }) {
     const formacao = jogo.formacao || '4-3-3';
     const eventos = eventosDoJogo(jogo, players || []);
     const d = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, jogo.alinhamento);
+    const porPosicao = sortByPosition(eventos.titulares.map(x => x.player))
+      .map(p => eventos.titulares.find(x => x.player.id === p.id))
+      .filter(Boolean);
     return {
       formacao,
       lugares: d.lugares.map((lugar, i) => ({
         lugar,
         nome: d.colocados[i] ? shortPlayerName(d.colocados[i], players) : null,
       })),
-      titulares: sortByPosition(eventos.titulares.map(x => x.player)).map(comNumero),
-      suplentes: eventos.suplentes.filter(Boolean).map(x => comNumero(x.player)),
+      titulares: porPosicao.map(x => ({ nome: comNumero(x.player), x })),
+      suplentes: eventos.suplentes.filter(Boolean).map(x => ({ nome: comNumero(x.player), x })),
     };
   }
 
@@ -11335,17 +11342,7 @@ function PrintOnzeAmigavel({ session, jogo, players, ideias }) {
           );
         })}
       </div>
-      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipa</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 12.5, marginBottom: 16 }}>
-        <div>
-          <strong>Titulares</strong>
-          <div style={{ marginTop: 4, lineHeight: 1.6 }}>{titulares.length ? titulares.join(', ') : '—'}</div>
-        </div>
-        <div>
-          <strong>Suplentes</strong>
-          <div style={{ marginTop: 4, lineHeight: 1.6 }}>{suplentes.length ? suplentes.join(', ') : '—'}</div>
-        </div>
-      </div>
+      <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} />
 
       {/* O título aparece mesmo sem nada escrito: numa folha impressa, um
           espaço em branco por baixo de "Ideias para o jogo" é útil — é
@@ -12437,8 +12434,21 @@ function IconeCartaoPrint({ card, size = 11 }) {
    direita, o que lhe aconteceu no jogo. Os símbolos ficam todos na mesma
    coluna, encostados à direita, para a lista se ler na vertical sem os
    olhos andarem à procura. */
-function LinhaJogadorPrint({ x }) {
-  if (!x || !x.player) return null;
+function LinhaJogadorPrint({ x, nome }) {
+  /* Sem dados de jogo (equipa vinda do Simulador, que só guarda nomes)
+     resta o nome — mas na MESMA linha, com a mesma altura e o mesmo
+     traço em baixo, para as duas folhas não parecerem duas folhas. */
+  if (!x || !x.player) {
+    if (!nome) return null;
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5, padding: '2.5px 0',
+        borderBottom: '1px solid #ececec', fontSize: 11,
+      }}>
+        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome}</span>
+      </div>
+    );
+  }
   const golos = Math.min(x.golos, 3);
   const minuto = x.saiuAo != null ? x.saiuAo : x.entrouAo;
   return (
@@ -12474,6 +12484,55 @@ function LinhaJogadorPrint({ x }) {
   );
 }
 
+/* A EQUIPA EM DUAS COLUNAS — A MESMA EM TODAS AS FOLHAS.
+
+   Titulares à esquerda, suplentes à direita, um jogador por linha. Estava
+   escrito duas vezes: a ficha do jogo em colunas, a folha do amigável do
+   Planeamento numa frase corrida com vírgulas. Eram a mesma informação
+   com dois aspetos diferentes — e quem imprime as duas nota logo. Agora
+   é um componente só, e as folhas ficam irmãs.
+
+   A legenda só aparece quando há símbolos para legendar: numa equipa
+   vinda do Simulador (só nomes, sem golos nem minutos) seria uma legenda
+   a explicar coisas que não estão na folha. */
+function EquipaEmColunasPrint({ titulares, suplentes }) {
+  const tituloColuna = { fontSize: 12, fontWeight: 700, borderBottom: '1.5px solid #111', paddingBottom: 3, marginBottom: 3 };
+  const vazio = <div style={{ fontSize: 11, color: '#999', paddingTop: 4 }}>—</div>;
+  const comSimbolos = [...titulares, ...suplentes].some(l => l && l.x);
+
+  const coluna = (titulo, lista) => (
+    <div>
+      <div style={tituloColuna}>{titulo} ({lista.length})</div>
+      {lista.length
+        ? lista.map((l, i) => <LinhaJogadorPrint key={(l.x && l.x.player.id) || `${l.nome}-${i}`} x={l.x} nome={l.nome} />)
+        : vazio}
+    </div>
+  );
+
+  return (
+    <>
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipa</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22, marginBottom: 10, breakInside: 'avoid' }}>
+        {coluna('Titulares', titulares)}
+        {coluna('Suplentes', suplentes)}
+      </div>
+      {comSimbolos && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', fontSize: 9.5, color: '#666', marginBottom: 18 }}>
+          {[
+            [<IconeGoloPrint key="g" size={10} />, 'golo'],
+            [<IconeAssistenciaPrint key="a" size={10} />, 'assistência'],
+            [<IconeSubstituicaoPrint key="s" size={10} />, 'entrou / saiu ao minuto'],
+            [<IconeCartaoPrint key="c" card="yellow" size={10} />, 'cartão'],
+          ].map(([icone, texto]) => (
+            <span key={texto} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{icone}{texto}</span>
+          ))}
+          <span>90' minutos jogados</span>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* A FICHA DO JOGO EM PAPEL.
 
    Fundo branco, linhas cinzentas, sem botões. O que na ficha do ecrã são
@@ -12482,19 +12541,12 @@ function LinhaJogadorPrint({ x }) {
    quem foi; uma seta ao lado do nome responde de imediato. */
 function PrintFichaJogo({ match, players, season }) {
   const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
-  const formacao = match.formacao || '4-3-3';
-  const eventos = eventosDoJogo(match, players);
-  const { lugares, colocados } = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, match.alinhamento);
+  /* Campo, titulares e suplentes saem todos da MESMA função que a folha
+     do Planeamento usa. Sem isto as duas folhas voltavam a divergir — na
+     ordem dos nomes, no formato (com número, sem número) e até em quem
+     ficava em que lugar do campo. */
+  const { formacao, lugares, titulares, suplentes } = equipaDoAmigavel({ session: null, jogo: match, players });
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
-
-  /* Titulares por posição (GR, defesas, médios, avançados) e não pela
-     ordem em que foram escolhidos — é assim que uma ficha de jogo se lê.
-     Os suplentes já vêm ordenados de `eventosDoJogo`. */
-  const titulares = sortByPosition(eventos.titulares.map(x => x.player))
-    .map(p => eventos.titulares.find(x => x.player.id === p.id))
-    .filter(Boolean);
-
-  const tituloColuna = { fontSize: 12, fontWeight: 700, borderBottom: '1.5px solid #111', paddingBottom: 3, marginBottom: 3 };
 
   return (
     <div className="print-sheet">
@@ -12518,58 +12570,26 @@ function PrintFichaJogo({ match, players, season }) {
         background: '#fff', margin: '0 auto 16px',
       }}>
         <MarcacoesCampoPrint />
-        {lugares.map((lugar, i) => {
+        {lugares.map((l, i) => {
           const [fx, fy] = layout[i] || [0.5, 0.5];
-          const p = colocados[i];
           return (
             <div key={i} style={{
               position: 'absolute', ...posCampoPrint(fx, fy),
               transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '20%',
             }}>
-              <div style={{ fontSize: 8.5, color: '#888' }}>{lugar}</div>
+              <div style={{ fontSize: 8.5, color: '#888' }}>{l.lugar}</div>
               <div style={{
                 fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, whiteSpace: 'nowrap',
-                overflow: 'hidden', textOverflow: 'ellipsis', color: p ? '#111' : '#bbb',
+                overflow: 'hidden', textOverflow: 'ellipsis', color: l.nome ? '#111' : '#bbb',
               }}>
-                {p ? shortPlayerName(p, players) : '—'}
+                {l.nome || '—'}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Titulares à esquerda, suplentes à direita: as duas metades da
-          convocatória lado a lado, cada uma a ler-se de cima para baixo.
-          `breakInside: avoid` para uma coluna não ficar cortada entre
-          folhas quando o plantel é grande. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22, marginBottom: 10, breakInside: 'avoid' }}>
-        <div>
-          <div style={tituloColuna}>Titulares ({titulares.length})</div>
-          {titulares.length
-            ? titulares.map(x => <LinhaJogadorPrint key={x.player.id} x={x} />)
-            : <div style={{ fontSize: 11, color: '#999', paddingTop: 4 }}>—</div>}
-        </div>
-        <div>
-          <div style={tituloColuna}>Suplentes ({eventos.suplentes.length})</div>
-          {eventos.suplentes.length
-            ? eventos.suplentes.map(x => <LinhaJogadorPrint key={x.player.id} x={x} />)
-            : <div style={{ fontSize: 11, color: '#999', paddingTop: 4 }}>—</div>}
-        </div>
-      </div>
-
-      {/* Sem legenda, os símbolos são um teste de adivinhação para quem
-          pega na folha e não a fez. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', fontSize: 9.5, color: '#666', marginBottom: 18 }}>
-        {[
-          [<IconeGoloPrint key="g" size={10} />, 'golo'],
-          [<IconeAssistenciaPrint key="a" size={10} />, 'assistência'],
-          [<IconeSubstituicaoPrint key="s" size={10} />, 'entrou / saiu ao minuto'],
-          [<IconeCartaoPrint key="c" card="yellow" size={10} />, 'cartão'],
-        ].map(([icone, texto]) => (
-          <span key={texto} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{icone}{texto}</span>
-        ))}
-        <span>90' minutos jogados</span>
-      </div>
+      <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} />
 
       <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Ideias para o jogo</h3>
       <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0, minHeight: 40 }}>
