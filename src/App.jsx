@@ -3433,7 +3433,21 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   const labelOf = (x) => (x.name && x.name.trim())
     ? x.name.trim()
     : `Ideia ${ideias.findIndex(i => i.id === x.id) + 1}`;
-  const visible = filter === 'Todas' ? ideias : ideias.filter(x => x.phase === filter);
+  /* Em "Todas" as ideias vinham pela ordem de criação — misturadas por
+     momento. Ordenam-se agora pela ordem dos momentos de jogo (mesma de
+     EXERCISE_PHASES): organização defensiva, transição ofensiva,
+     organização ofensiva, transição defensiva, bola parada, preparação
+     física, ativação e individual. Dentro do mesmo momento mantém-se a
+     ordem de criação (sort estável). Um filtro já ativo mostra só esse
+     momento, por isso a ordenação aqui não muda nada visualmente — só
+     importa mesmo com "Todas". */
+  const ordemMomento = (fase) => {
+    const i = EXERCISE_PHASES.indexOf(fase);
+    return i === -1 ? EXERCISE_PHASES.length : i;
+  };
+  const visible = (filter === 'Todas' ? ideias : ideias.filter(x => x.phase === filter))
+    .slice()
+    .sort((a, b) => ordemMomento(a.phase) - ordemMomento(b.phase));
 
   return (
     <div>
@@ -9593,25 +9607,48 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
      Guarda-se em texto já resolvido (nomes, não ids): a ficha impressa
      precisa de nomes, e um jogador apagado do plantel não pode deixar a
      ficha do treino com um lugar vazio e inexplicável. É um registo do que
-     foi feito naquele dia, não uma ligação viva ao plantel. */
+     foi feito naquele dia, não uma ligação viva ao plantel.
+
+     Funciona nos dois modos. Em 'treino' cada equipa vem de um exercício
+     (como já era). Em 'amigável' não há exercícios — cada período do
+     jogo simulado vira uma "equipa" (o onze titular desse período), no
+     mesmo formato de registo, para reaproveitar a mesma ficha impressa e
+     partilhável sem duplicar código nem criar um segundo formato de
+     dados. */
   const [guardado, setGuardado] = useState(false);
   const guardarNoTreino = () => {
-    if (!plano || !setSessions) return;
+    if (!resultado || !setSessions) return;
     const equipas = [];
-    plano.plano.forEach(bloco => bloco.partes.forEach((parte, pi) => parte.exercicios.forEach(ex => {
-      ex.equipas.forEach(eq => {
-        if (!eq.jogadores.length) return;
+    if (modo === 'treino') {
+      plano.plano.forEach(bloco => bloco.partes.forEach((parte, pi) => parte.exercicios.forEach(ex => {
+        ex.equipas.forEach(eq => {
+          if (!eq.jogadores.length) return;
+          equipas.push({
+            exercicio: ex.exercise.name,
+            zona: ex.totalCopias > 1 ? ex.copia : null,
+            turno: bloco.partes.length > 1 ? pi + 1 : null,
+            minutos: parte.minutos,
+            equipa: teamInfo(eq.team).label,
+            guardaRedes: !!eq.isKeeper,
+            jogadores: eq.jogadores.map(j => j.name),
+          });
+        });
+      })));
+    } else {
+      jogo.periodos.forEach(per => {
+        const titulares = per.onze.filter(l => l.jogador).map(l => l.jogador.name);
+        if (!titulares.length) return;
         equipas.push({
-          exercicio: ex.exercise.name,
-          zona: ex.totalCopias > 1 ? ex.copia : null,
-          turno: bloco.partes.length > 1 ? pi + 1 : null,
-          minutos: parte.minutos,
-          equipa: teamInfo(eq.team).label,
-          guardaRedes: !!eq.isKeeper,
-          jogadores: eq.jogadores.map(j => j.name),
+          exercicio: `Jogo amigável · ${jogo.formacao}`,
+          zona: null,
+          turno: jogo.periodos.length > 1 ? per.numero : null,
+          minutos: per.minutos,
+          equipa: 'Onze titular',
+          guardaRedes: false,
+          jogadores: titulares,
         });
       });
-    })));
+    }
     const registo = { geradoEm: new Date().toISOString(), equipas };
     setSessions(prev => prev.map(x => (x.date === dia ? { ...x, equipasSimulador: registo } : x)));
     setGuardado(true);
@@ -10155,8 +10192,11 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
         </Btn>
         {/* Guardar leva as equipas para a sessão de treino desse dia, e é
             de lá que saem para a ficha impressa — o simulador não guarda
-            nada por si, para não haver duas versões da verdade. */}
-        {modo === 'treino' && plano && setSessions && sessoesDoDia.length > 0 && (
+            nada por si, para não haver duas versões da verdade. Funciona
+            nos dois modos: em 'amigável' guarda o onze titular de cada
+            período, tal como em 'treino' guarda as equipas de cada
+            exercício. */}
+        {resultado && setSessions && sessoesDoDia.length > 0 && (
           <Btn variant="ghost" onClick={guardarNoTreino}>
             <Check size={15} /> {guardado ? 'Guardado no treino' : 'Guardar equipas no treino'}
           </Btn>
@@ -10193,11 +10233,12 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
         </Modal>
       )}
 
-      {/* Escolher quem entra num lugar. */}
+      {/* Escolher quem entra num lugar. Mesmo nome do modal equivalente em
+          FichaJogo ("Formação") — é a mesma ação (escolher quem ocupa um
+          lugar do onze), só que aqui o jogo é simulado, não real. */}
       {trocar && jogo && (
-        <Modal title="Quem joga aqui?" onClose={() => setTrocar(null)}>
+        <Modal title="Formação" subtitle={`${jogo.periodos[trocar.periodo].onze[trocar.indice].lugar} · ${jogo.periodos[trocar.periodo].numero}ª parte`} onClose={() => setTrocar(null)}>
           <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 12px' }}>
-            {jogo.periodos[trocar.periodo].onze[trocar.indice].lugar} · {jogo.periodos[trocar.periodo].numero}ª parte.
             Se escolheres alguém que já está em campo, os dois trocam de lugar.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '50vh', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
