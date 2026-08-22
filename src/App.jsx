@@ -12022,14 +12022,32 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
   const ordered = [...days].sort((a, b) => new Date(a.date) - new Date(b.date));
   if (ordered.length === 0 || players.length === 0) return null;
 
+  /* CABEÇALHO E COLUNA DO NOME FIXOS.
+
+     Com 37 jogadores e vinte e tal dias, ao descer perde-se a data e ao ir
+     para a direita perde-se o nome — e marca-se presença no jogador
+     errado, ou no dia errado. As duas coisas têm de ficar à vista.
+
+     Isto obriga o quadro a ter scroll PRÓPRIO (`maxHeight` + `overflow`).
+     `position: sticky` prende-se ao ancestral que faz scroll; com o
+     contentor a crescer até à altura do conteúdo, esse ancestral era a
+     página e o cabeçalho nunca colava. Dar-lhe altura máxima é o que o
+     torna o ancestral que faz scroll.
+
+     Os `zIndex` empilham-se: canto 3, cabeçalho 2, coluna do nome 1. E os
+     fundos têm de ser opacos, senão as células passam por baixo e lê-se
+     texto sobre texto. */
   const headCell = {
     padding: '6px 4px', fontSize: 10, color: T.muted, textAlign: 'center',
     borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap', minWidth: 78,
+    position: 'sticky', top: 0, background: T.surface, zIndex: 2,
   };
   const nameCell = {
     padding: '6px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap',
     position: 'sticky', left: 0, background: T.surface, zIndex: 1, borderRight: `1px solid ${T.line}`,
   };
+  // O canto pertence aos dois eixos, e fica por cima de ambos.
+  const cornerCell = { ...headCell, ...nameCell, position: 'sticky', top: 0, left: 0, zIndex: 3 };
 
   return (
     <div style={{ marginBottom: 22 }}>
@@ -12039,11 +12057,14 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
         </div>
         {monthControl}
       </div>
-      <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
+      <div style={{
+        overflow: 'auto', maxHeight: 'min(72vh, 640px)',
+        border: `1px solid ${T.line}`, borderRadius: 10,
+      }}>
         <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
           <thead>
             <tr>
-              <th style={{ ...headCell, ...nameCell, textAlign: 'left', color: T.muted, fontSize: 10 }}>Jogador</th>
+              <th style={{ ...cornerCell, textAlign: 'left', color: T.muted, fontSize: 10 }}>Jogador</th>
               {ordered.map(d => {
                 const closed = dayClosed(d);
                 return (
