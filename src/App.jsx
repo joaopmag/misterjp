@@ -12045,8 +12045,8 @@ const VISTAS_JOGO = [
   },
   {
     id: 'preepoca',
-    label: 'Pré-época e amigáveis',
-    desc: 'Amigáveis de qualquer altura do ano.',
+    label: 'Pré-época',
+    desc: '',
     colConv: 'Jogos', colNaoConv: 'NP',
     ajudaConv: 'Jogos em que esteve presente', ajudaNaoConv: 'Jogos em que não esteve presente',
   },
@@ -12088,7 +12088,11 @@ function MatchDashboard({ players, matches }) {
           );
         })}
       </div>
-      <div style={{ fontSize: 11.5, color: T.mutedDim }}>{vistaAtual.desc}</div>
+      {/* A descrição só aparece quando acrescenta alguma coisa. Repetir
+          por baixo o que o separador já diz é ruído. */}
+      {vistaAtual.desc && (
+        <div style={{ fontSize: 11.5, color: T.mutedDim }}>{vistaAtual.desc}</div>
+      )}
     </div>
   );
 
