@@ -11542,8 +11542,43 @@ function cardBadge(card) {
    mais exigentes — o guarda-redes, que só pode ser um guarda-redes —
    para que um lugar específico não fique sem ninguém por o candidato ter
    sido gasto num lugar que outro qualquer serviria. */
-function distribuirOnzeNoCampo(titulares, formacao) {
+function distribuirOnzeNoCampo(titulares, formacao, alinhamento) {
   const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
+
+  /* ALINHAMENTO ESCOLHIDO À MÃO tem prioridade sobre a sugestão.
+
+     `alinhamento` é uma lista de ids, uma por lugar. Quando existe, é ela
+     que manda: o treinador arrumou a equipa como quer e o cálculo
+     automático não lhe pode voltar a mexer.
+
+     Os jogadores que estejam no alinhamento mas já não sejam titulares
+     são ignorados, e os titulares que faltem ao alinhamento são colocados
+     a seguir pelo caminho normal — assim uma mudança no onze não obriga a
+     refazer tudo à mão. */
+  if (Array.isArray(alinhamento) && alinhamento.length) {
+    const porId = new Map(titulares.map(p => [p.id, p]));
+    const colocadosManual = lugares.map((_, i) => {
+      const id = alinhamento[i];
+      const p = id && porId.get(id);
+      if (p) porId.delete(id);
+      return p || null;
+    });
+    const restantes = [...porId.values()];
+    // Os que sobraram entram nos lugares ainda vazios, pela mesma regra.
+    if (restantes.length) {
+      const vazios = colocadosManual.map((v, i) => (v ? -1 : i)).filter(i => i >= 0);
+      const auto = distribuirOnzeNoCampo(restantes, formacao);
+      vazios.forEach(i => {
+        const cand = auto.colocados[i] || auto.colocados.find(Boolean);
+        if (!cand) return;
+        colocadosManual[i] = cand;
+        auto.colocados[auto.colocados.indexOf(cand)] = null;
+      });
+    }
+    const usados = new Set(colocadosManual.filter(Boolean).map(p => p.id));
+    return { lugares, colocados: colocadosManual, sobram: titulares.filter(p => !usados.has(p.id)) };
+  }
+
   const porColocar = [...titulares];
   const colocados = new Array(lugares.length).fill(null);
 
@@ -11669,14 +11704,25 @@ function EventosDoJogador({ x, compacto }) {
   );
 }
 
-function FichaJogo({ match, players, season, onClose, onEdit, onFormacao }) {
+/* Nome do clube sem o escalão.
+
+   Na Época o clube está guardado como "SC Salgueiros · Sub-19", porque
+   distingue a equipa nos sítios onde há mais do que uma. Numa ficha de
+   jogo o escalão é ruído: já se sabe de que equipa se trata, e o nome
+   comprido rouba espaço ao resultado, que é o que se quer ler. */
+function clubeSemEscalao(nome) {
+  return String(nome || '').split('·')[0].trim();
+}
+
+function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlinhamento, onStarters }) {
   const isNarrow = useIsMobile(760);
   const formacao = match.formacao || '4-3-3';
   const eventos = eventosDoJogo(match, players);
   const resumo = resumoDoJogo(eventos);
-  const { lugares, colocados, sobram } = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao);
+  const { lugares, colocados, sobram } = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, match.alinhamento);
+  const [trocar, setTrocar] = useState(null); // índice do lugar a mudar
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
-  const nosso = (season && season.club) || 'A nossa equipa';
+  const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
 
   const eventoDe = (p) => eventos.todos.find(x => x.player.id === p.id);
   const golosPorLado = (() => {
@@ -11747,13 +11793,24 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao }) {
               const x = eventoDe(p) || {};
               const eGR = lugares[i] === 'GR';
               return (
-                <div key={p.id} style={{
-                  position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
-                  transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '24%',
-                }}>
+                <button
+                  key={p.id}
+                  onClick={() => setTrocar(i)}
+                  title={`${lugares[i]} · ${p.name} — tocar para trocar de jogador`}
+                  style={{
+                    position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
+                    transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '24%',
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...body,
+                  }}
+                >
+                  {/* O guarda-redes de branco, como no equipamento: é a
+                      convenção de qualquer ficha de jogo e distingue-o do
+                      resto da equipa sem precisar de legenda. */}
                   <span style={{
                     display: 'inline-block', ...mono, fontSize: 11,
-                    background: eGR ? '#2B6CB0' : '#B5393F', color: '#fff',
+                    background: eGR ? '#F2F2EE' : '#B5393F',
+                    color: eGR ? '#16281B' : '#fff',
+                    border: eGR ? '1px solid #16281B55' : 'none',
                     borderRadius: 6, padding: '2px 5px',
                   }}>{p.number || lugares[i]}</span>
                   <div style={{
@@ -11767,7 +11824,27 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao }) {
                   <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'center', marginTop: 1 }}>
                     <EventosDoJogador x={x} compacto />
                   </div>
-                </div>
+                </button>
+              );
+            })}
+
+            {/* Lugares por preencher: continuam clicáveis, para se poder
+                pôr lá alguém sem ter de passar pela ficha de edição. */}
+            {colocados.map((p, i) => {
+              if (p) return null;
+              const [fx, fy] = layout[i] || [0.5, 0.5];
+              return (
+                <button
+                  key={`vazio-${i}`}
+                  onClick={() => setTrocar(i)}
+                  title={`${lugares[i]} — por preencher`}
+                  style={{
+                    position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
+                    transform: 'translate(-50%, -50%)', cursor: 'pointer', ...body,
+                    background: '#00000055', border: `1px dashed ${T.line}`, borderRadius: 6,
+                    padding: '4px 7px', color: T.mutedDim, fontSize: 10.5,
+                  }}
+                >{lugares[i]}</button>
               );
             })}
           </div>
@@ -11853,6 +11930,55 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao }) {
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
         <Btn onClick={onEdit}><Pencil size={15} /> Editar jogo</Btn>
       </div>
+
+      {/* TROCAR QUEM OCUPA UM LUGAR.
+
+          Duas coisas diferentes, conforme quem se escolhe:
+          · alguém que já está no campo → os dois trocam de lugar, e o onze
+            fica igual (é só uma questão de desenho);
+          · um suplente → passa a titular e quem lá estava vai para o banco,
+            o que muda mesmo a equipa. */}
+      {trocar != null && (
+        <Modal title="Quem joga aqui?" subtitle={`${lugares[trocar]} · ${formacao}`} onClose={() => setTrocar(null)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '52vh', overflowY: 'auto', overflowX: 'hidden' }}>
+            {sortByPosition((match.convocados || []).map(id => players.find(p => p.id === id)).filter(Boolean)).map(p => {
+              const noCampo = colocados.some(v => v && v.id === p.id);
+              const aqui = colocados[trocar] && colocados[trocar].id === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    const ids = colocados.map(v => (v ? v.id : null));
+                    const anterior = ids[trocar];
+                    const jaOnde = ids.indexOf(p.id);
+                    if (jaOnde >= 0) ids[jaOnde] = anterior;   // trocam de lugar
+                    ids[trocar] = p.id;
+                    onAlinhamento(ids);
+                    // Se veio do banco, passa a titular e o outro sai do onze.
+                    if (jaOnde < 0 && onStarters) {
+                      const titulares = ids.filter(Boolean);
+                      onStarters(titulares);
+                    }
+                    setTrocar(null);
+                  }}
+                  style={{
+                    textAlign: 'left', padding: '8px 10px', borderRadius: 7, cursor: 'pointer', ...body,
+                    background: aqui ? '#B5393F22' : 'transparent',
+                    border: `1px solid ${aqui ? '#B5393F' : T.line}`,
+                    color: T.cream, fontSize: 12.5,
+                  }}
+                >
+                  <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{p.position || '--'}</span>{' '}
+                  {p.name}
+                  <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, float: 'right' }}>
+                    {noCampo ? (aqui ? 'neste lugar' : 'em campo') : 'banco'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }
@@ -13163,7 +13289,12 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
             season={season}
             onClose={() => setFicha(null)}
             onEdit={() => { setFicha(null); setModal(atual); }}
-            onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f } : m)))}
+              /* Mudar de formação limpa o alinhamento manual: os lugares
+               passam a ser outros e as posições antigas deixam de fazer
+               sentido. A equipa é recolocada pela sugestão automática. */
+            onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
+            onAlinhamento={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
+            onStarters={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
           />
         );
       })()}
