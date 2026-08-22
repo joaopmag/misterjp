@@ -12456,8 +12456,12 @@ function LinhaJogadorPrint({ x, nome }) {
       display: 'flex', alignItems: 'center', gap: 5, padding: '2.5px 0',
       borderBottom: '1px solid #ececec', fontSize: 11,
     }}>
+      {/* Sem cardinal: o número tem coluna própria, alinhada à direita,
+          e nesse contexto o "#" é só ruído a repetir o que a coluna já
+          diz. Nas listas em linha corrida (partilha, estatísticas) ele
+          fica, porque aí separa o número do nome. */}
       <span style={{ width: 24, flexShrink: 0, textAlign: 'right', color: '#888' }}>
-        {x.player.number ? `#${x.player.number}` : '—'}
+        {x.player.number != null && x.player.number !== '' ? x.player.number : '—'}
       </span>
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {x.player.name}
