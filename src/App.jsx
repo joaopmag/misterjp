@@ -10436,6 +10436,11 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   // e qual em Jogos, e vice-versa — não há duas cópias dos dados.
   const [ficha, setFicha] = useState(null);
   const [printSession, setPrintSession] = useState(null);
+  /* A ficha do JOGO em papel (a mesma que Jogos usa), para o botão
+     Imprimir da janela de leitura do jogo. É diferente da folha da SESSÃO
+     que os ícones do cartão imprimem: aquela é o plano do dia de treino,
+     esta é a ficha do encontro. */
+  const [printMatch, setPrintMatch] = useState(null);
   const [dayModalDate, setDayModalDate] = useState(null); // data (YYYY-MM-DD) do dia a ver em detalhe
   const [printDayDate, setPrintDayDate] = useState(null); // data a imprimir com todas as sessões desse dia
   const [view, setView] = useState('lista'); // 'lista' | 'agenda'
@@ -10465,6 +10470,27 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
     }, 80);
   };
 
+  const doPrintMatch = (m) => {
+    setPrintSession(null);
+    setPrintDayDate(null);
+    setPrintMatch(m);
+    setTimeout(() => window.print(), 80);
+  };
+  /* As folhas de impressão vivem fora da app, montadas no body. Se
+     ficassem lá depois de imprimir, a impressão seguinte levava as duas
+     coladas. `afterprint` dispara quando o diálogo fecha, imprima-se ou
+     cancele-se. */
+  useEffect(() => {
+    if (!printMatch) return undefined;
+    const limpar = () => setPrintMatch(null);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [printMatch]);
+  const doShareMatch = (m) => {
+    const { title, html } = buildMatchShareHtml({ match: m, players, season });
+    shareOrDownloadHtml(`jogo_${(m.opponent || 'adversario').replace(/[^\w-]+/g, '_')}_${m.date}.html`, html, title);
+  };
+
   const doShare = (s) => {
     const meta = [fmtDate(s.date), s.phase, tempoJogoText(s), intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean);
     const exBlocks = (s.exerciseIds || []).map((e, i) => {
@@ -10491,16 +10517,17 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           return `<p class="desc"><strong>${escapeHtmlText(cabeca)}:</strong> ${escapeHtmlText(g.jogadores.join(', '))}</p>`;
         }).join('')}`
       : '';
-    /* Num amigável não há exercícios — a secção "Formação" mostra antes o
-       onze que jogou (titulares) e quem ficou no banco (suplentes), a mesma
-       informação que sai na ficha impressa. */
-    const onzeAmigavel = s.phase === 'Jogo' ? (s.equipasSimulador && s.equipasSimulador.onzeAmigavel) : null;
-    const jogoHtml = s.phase === 'Jogo'
-      ? `<h2>Equipa</h2><p class="desc"><strong>Titulares:</strong> ${onzeAmigavel && onzeAmigavel.onze
-          ? escapeHtmlText(onzeAmigavel.onze.filter(l => l.jogador).map(l => l.jogador).join(', ') || '—')
-          : '—'}</p><p class="desc"><strong>Suplentes:</strong> ${onzeAmigavel && onzeAmigavel.suplentes && onzeAmigavel.suplentes.length
-          ? escapeHtmlText(onzeAmigavel.suplentes.join(', '))
-          : '—'}</p><h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(ideiasDaSessao(s) || '').trim() || '—')}</p>`
+    /* Num amigável não há exercícios — a secção "Equipa" mostra antes o
+       onze que jogou (titulares) e quem ficou no banco (suplentes). Vai
+       buscá-los por `equipaDoAmigavel`, a mesma função da ficha impressa,
+       para as duas nunca dizerem coisas diferentes. */
+    const equipa = s.phase === 'Jogo'
+      ? equipaDoAmigavel({ session: s, jogo: jogoDaSessao(s), players })
+      : null;
+    const jogoHtml = equipa
+      ? `<h2>Equipa</h2><p class="desc"><strong>Titulares:</strong> ${escapeHtmlText(equipa.titulares.join(', ') || '—')}</p>`
+        + `<p class="desc"><strong>Suplentes:</strong> ${escapeHtmlText(equipa.suplentes.join(', ') || '—')}</p>`
+        + `<h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(ideiasDaSessao(s) || '').trim() || '—')}</p>`
       : '';
     /* Num amigável a lista com toda a gente não entra: são os mesmos nomes
        que já saem em Titulares e Suplentes. Num treino é a única lista de
@@ -10757,6 +10784,8 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             season={season}
             onClose={() => setFicha(null)}
             onEdit={() => { setFicha(null); setMatchModal(atual); }}
+            onShare={() => doShareMatch(atual)}
+            onPrint={() => doPrintMatch(atual)}
             onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
             onAlinhamento={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
             onStarters={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
@@ -10775,6 +10804,11 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
         />
       )}
 
+      {printMatch && createPortal(
+        <PrintFichaJogo match={printMatch} players={players} season={season} />,
+        document.body,
+      )}
+
       {printSession && createPortal(
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
@@ -10785,7 +10819,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           </p>
 
           {printSession.phase === 'Jogo' ? (
-            <PrintOnzeAmigavel session={printSession} ideias={ideiasDaSessao(printSession)} />
+            <PrintOnzeAmigavel session={printSession} jogo={jogoDaSessao(printSession)} players={players} ideias={ideiasDaSessao(printSession)} />
           ) : (
             <>
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
@@ -10856,7 +10890,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                 {[s.phase, tempoJogoText(s), intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
               {s.phase === 'Jogo' ? (
-                <PrintOnzeAmigavel session={s} ideias={ideiasDaSessao(s)} />
+                <PrintOnzeAmigavel session={s} jogo={jogoDaSessao(s)} players={players} ideias={ideiasDaSessao(s)} />
               ) : (
                 (s.exerciseIds || []).map((e, i) => (
                   <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
@@ -11152,6 +11186,66 @@ function PrintExerciseBlock({ e, ex, index }) {
   );
 }
 
+/* O CAMPO DESENHADO PARA PAPEL — BALIZAS E MARCAÇÕES.
+
+   As medidas são as reais (105 × 68 m), por isso não há aqui números
+   inventados: grande área 16,5 × 40,32; pequena área 5,5 × 18,32; círculo
+   central e arcos de grande penalidade com 9,15 de raio; marca de
+   penálti a 11 da linha; cantos com 1.
+
+   O `viewBox` é maior do que o campo (–3 –2 111 72) para as balizas
+   caberem POR FORA da linha de fundo, que é onde elas estão. Isso obriga
+   a converter as posições dos jogadores: o layout das formações fala em
+   fração do campo (0 a 1) e não do desenho todo, e sem a conversão os
+   jogadores saíam encostados a um dos lados. É o que `posCampoPrint`
+   faz — e é a razão de existir. */
+const VIEWBOX_CAMPO_PRINT = '-3 -2 111 72';
+const ASPECT_CAMPO_PRINT = '111 / 72';
+const posCampoPrint = (fx, fy) => ({
+  left: `${((fx * 105 + 3) / 111) * 100}%`,
+  top: `${((fy * 68 + 2) / 72) * 100}%`,
+});
+
+function MarcacoesCampoPrint({ traco = '#999', baliza = '#666' }) {
+  const linha = { fill: 'none', stroke: traco, strokeWidth: 0.4 };
+  return (
+    <svg
+      viewBox={VIEWBOX_CAMPO_PRINT}
+      preserveAspectRatio="none"
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+      aria-hidden="true"
+    >
+      {/* Linhas laterais e de fundo, meio-campo e círculo central */}
+      <rect x="0" y="0" width="105" height="68" {...linha} />
+      <line x1="52.5" y1="0" x2="52.5" y2="68" {...linha} />
+      <circle cx="52.5" cy="34" r="9.15" {...linha} />
+      <circle cx="52.5" cy="34" r="0.5" fill={traco} stroke="none" />
+
+      {/* Grandes e pequenas áreas */}
+      <rect x="0" y="13.84" width="16.5" height="40.32" {...linha} />
+      <rect x="0" y="24.84" width="5.5" height="18.32" {...linha} />
+      <rect x="88.5" y="13.84" width="16.5" height="40.32" {...linha} />
+      <rect x="99.5" y="24.84" width="5.5" height="18.32" {...linha} />
+
+      {/* Marcas de penálti e os arcos, que só existem fora da área */}
+      <circle cx="11" cy="34" r="0.5" fill={traco} stroke="none" />
+      <circle cx="94" cy="34" r="0.5" fill={traco} stroke="none" />
+      <path d="M16.5 26.69 A9.15 9.15 0 0 1 16.5 41.31" {...linha} />
+      <path d="M88.5 26.69 A9.15 9.15 0 0 0 88.5 41.31" {...linha} />
+
+      {/* Cantos */}
+      <path d="M0 1 A1 1 0 0 0 1 0" {...linha} />
+      <path d="M104 0 A1 1 0 0 0 105 1" {...linha} />
+      <path d="M105 67 A1 1 0 0 0 104 68" {...linha} />
+      <path d="M1 68 A1 1 0 0 0 0 67" {...linha} />
+
+      {/* Balizas: 7,32 de boca, desenhadas por fora da linha de fundo */}
+      <rect x="-2.2" y="30.34" width="2.2" height="7.32" fill="none" stroke={baliza} strokeWidth="0.6" />
+      <rect x="105" y="30.34" width="2.2" height="7.32" fill="none" stroke={baliza} strokeWidth="0.6" />
+    </svg>
+  );
+}
+
 /* Campo com o onze titular do jogo amigável, para a ficha impressa —
    mesmo espírito da Ficha de Jogo (campo com posições + banco), só que em
    papel: fundo branco, linhas cinzentas, sem cliques.
@@ -11164,42 +11258,78 @@ function PrintExerciseBlock({ e, ex, index }) {
    `ideias` é o plano escrito na edição do jogo. Vem de fora (a sessão não
    o tem; quem o guarda é o jogo) e sai no fim da folha, no lugar onde
    antes estava a lista com o nome de toda a gente — que era repetição:
-   quem jogou já está em Titulares e Suplentes, logo por cima. */
-function PrintOnzeAmigavel({ session, ideias }) {
-  const dados = session.equipasSimulador && session.equipasSimulador.onzeAmigavel;
-  const formacao = (dados && dados.formacao) || '4-3-3';
+   quem jogou já está em Titulares e Suplentes, logo por cima.
+
+   DUAS FONTES PARA O MESMO ONZE. O Simulador pode ter deixado uma equipa
+   guardada na sessão; mas quem preenche os titulares na ficha do JOGO
+   (em Jogos) não passa pelo Simulador, e essa folha saía vazia — com
+   travessões — mesmo com a equipa toda lançada. Agora o jogo é a fonte
+   por omissão e o Simulador só passa à frente quando lá está mesmo
+   alguém: é a informação mais recente e mais deliberada das duas. */
+function equipaDoAmigavel({ session, jogo, players }) {
+  const dados = session && session.equipasSimulador && session.equipasSimulador.onzeAmigavel;
+  const doSimulador = !!(dados && dados.onze && dados.onze.some(l => l.jogador));
+  const comNumero = (p) => `${p.number ? `#${p.number} ` : ''}${p.name}`;
+
+  if (doSimulador) {
+    const formacao = dados.formacao || '4-3-3';
+    const lugares = dados.onze.map(l => ({ lugar: l.lugar, nome: l.jogador || null }));
+    return {
+      formacao,
+      lugares,
+      titulares: lugares.filter(l => l.nome).map(l => l.nome),
+      suplentes: dados.suplentes || [],
+    };
+  }
+
+  if (jogo) {
+    const formacao = jogo.formacao || '4-3-3';
+    const eventos = eventosDoJogo(jogo, players || []);
+    const d = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, jogo.alinhamento);
+    return {
+      formacao,
+      lugares: d.lugares.map((lugar, i) => ({
+        lugar,
+        nome: d.colocados[i] ? shortPlayerName(d.colocados[i], players) : null,
+      })),
+      titulares: sortByPosition(eventos.titulares.map(x => x.player)).map(comNumero),
+      suplentes: eventos.suplentes.filter(Boolean).map(x => comNumero(x.player)),
+    };
+  }
+
+  return {
+    formacao: '4-3-3',
+    lugares: (FORMACOES['4-3-3'] || []).map(l => ({ lugar: l, nome: null })),
+    titulares: [],
+    suplentes: [],
+  };
+}
+
+function PrintOnzeAmigavel({ session, jogo, players, ideias }) {
+  const { formacao, lugares, titulares, suplentes } = equipaDoAmigavel({ session, jogo, players });
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
-  const lugares = (dados && dados.onze) || (FORMACOES[formacao] || FORMACOES['4-3-3']).map(l => ({ lugar: l, jogador: null }));
-  const suplentes = (dados && dados.suplentes) || [];
-  const titulares = lugares.filter(l => l.jogador).map(l => l.jogador);
 
   return (
     <div style={{ marginBottom: 16, pageBreakInside: 'avoid' }}>
       <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Formação</h3>
       <div style={{
-        position: 'relative', width: '100%', maxWidth: 480, aspectRatio: '105 / 68',
-        background: '#fff', border: '1px solid #ccc', borderRadius: 8, margin: '0 auto 14px',
+        position: 'relative', width: '100%', maxWidth: 480, aspectRatio: ASPECT_CAMPO_PRINT,
+        background: '#fff', margin: '0 auto 14px',
       }}>
-        <svg viewBox="0 0 105 68" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-          <rect x="0.5" y="0.5" width="104" height="67" fill="none" stroke="#999" strokeWidth="0.4" />
-          <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" stroke="#999" strokeWidth="0.4" />
-          <circle cx="52.5" cy="34" r="9.15" fill="none" stroke="#999" strokeWidth="0.4" />
-          <rect x="0.5" y="13.84" width="16.5" height="40.32" fill="none" stroke="#999" strokeWidth="0.4" />
-          <rect x="88" y="13.84" width="16.5" height="40.32" fill="none" stroke="#999" strokeWidth="0.4" />
-        </svg>
+        <MarcacoesCampoPrint />
         {lugares.map((l, i) => {
           const [fx, fy] = layout[i] || [0.5, 0.5];
           return (
             <div key={i} style={{
-              position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
-              transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '22%',
+              position: 'absolute', ...posCampoPrint(fx, fy),
+              transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '20%',
             }}>
               <div style={{ fontSize: 8.5, color: '#888' }}>{l.lugar}</div>
               <div style={{
                 fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, whiteSpace: 'nowrap',
-                overflow: 'hidden', textOverflow: 'ellipsis', color: l.jogador ? '#111' : '#bbb',
+                overflow: 'hidden', textOverflow: 'ellipsis', color: l.nome ? '#111' : '#bbb',
               }}>
-                {l.jogador || '—'}
+                {l.nome || '—'}
               </div>
             </div>
           );
@@ -12379,25 +12509,22 @@ function PrintFichaJogo({ match, players, season }) {
         ].filter(Boolean).join(' · ')}
       </p>
 
-      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Formação — {formacao}</h3>
+      {/* Sem o código da formação no título: a disposição está desenhada
+          logo por baixo, e escrever "4-3-3" ao lado é dizer duas vezes a
+          mesma coisa — uma delas em pior linguagem. */}
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Formação</h3>
       <div style={{
-        position: 'relative', width: '100%', maxWidth: 440, aspectRatio: '105 / 68',
-        background: '#fff', border: '1px solid #ccc', borderRadius: 8, margin: '0 auto 16px',
+        position: 'relative', width: '100%', maxWidth: 440, aspectRatio: ASPECT_CAMPO_PRINT,
+        background: '#fff', margin: '0 auto 16px',
       }}>
-        <svg viewBox="0 0 105 68" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-          <rect x="0.5" y="0.5" width="104" height="67" fill="none" stroke="#999" strokeWidth="0.4" />
-          <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" stroke="#999" strokeWidth="0.4" />
-          <circle cx="52.5" cy="34" r="9.15" fill="none" stroke="#999" strokeWidth="0.4" />
-          <rect x="0.5" y="13.84" width="16.5" height="40.32" fill="none" stroke="#999" strokeWidth="0.4" />
-          <rect x="88" y="13.84" width="16.5" height="40.32" fill="none" stroke="#999" strokeWidth="0.4" />
-        </svg>
+        <MarcacoesCampoPrint />
         {lugares.map((lugar, i) => {
           const [fx, fy] = layout[i] || [0.5, 0.5];
           const p = colocados[i];
           return (
             <div key={i} style={{
-              position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
-              transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '22%',
+              position: 'absolute', ...posCampoPrint(fx, fy),
+              transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '20%',
             }}>
               <div style={{ fontSize: 8.5, color: '#888' }}>{lugar}</div>
               <div style={{
@@ -12441,7 +12568,7 @@ function PrintFichaJogo({ match, players, season }) {
         ].map(([icone, texto]) => (
           <span key={texto} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{icone}{texto}</span>
         ))}
-        <span>80' minutos jogados</span>
+        <span>90' minutos jogados</span>
       </div>
 
       <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Ideias para o jogo</h3>
