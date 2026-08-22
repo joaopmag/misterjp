@@ -9655,6 +9655,16 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
     setTimeout(() => setGuardado(false), 2500);
   };
 
+  /* Apagar as equipas guardadas nesse dia — para quando o treinador muda
+     de ideias depois de já ter guardado. Alterar não precisa de botão
+     próprio: baralhar de novo e voltar a "Guardar" já substitui o registo
+     (ver `guardarNoTreino` acima); só faltava mesmo a forma de o remover
+     por completo, sem deixar lá umas equipas antigas por engano. */
+  const apagarDoTreino = () => {
+    if (!setSessions) return;
+    setSessions(prev => prev.map(x => (x.date === dia ? { ...x, equipasSimulador: null } : x)));
+  };
+
   const gerarJogo = () => {
     if (!presentes.length) return;
     setPlanoBase(null);
@@ -9696,6 +9706,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
      trabalho já feito no Planeamento — com o risco de simular uma coisa e
      treinar outra. */
   const sessoesDoDia = (sessions || []).filter(x => x.date === dia);
+  const equipasGuardadasHoje = sessoesDoDia.some(x => x.equipasSimulador && (x.equipasSimulador.equipas || []).length > 0);
 
   /* ATENÇÃO ao formato de `exerciseIds`.
 
@@ -10199,6 +10210,16 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
         {resultado && setSessions && sessoesDoDia.length > 0 && (
           <Btn variant="ghost" onClick={guardarNoTreino}>
             <Check size={15} /> {guardado ? 'Guardado no treino' : 'Guardar equipas no treino'}
+          </Btn>
+        )}
+        {/* Só aparece se já houver mesmo algo guardado nesse dia — para
+            desfazer o "Guardar" caso o treinador mude de ideias. Para
+            ALTERAR (em vez de apagar) não é preciso botão próprio: basta
+            baralhar de novo e guardar outra vez, que substitui o registo
+            anterior (ver `guardarNoTreino`). */}
+        {equipasGuardadasHoje && setSessions && (
+          <Btn variant="danger" onClick={apagarDoTreino}>
+            <Trash2 size={15} /> Apagar equipas guardadas
           </Btn>
         )}
       </div>
