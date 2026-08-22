@@ -2746,7 +2746,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
     const title = p.name || 'Jogador';
     const html = buildShareableHtmlDoc({
       title, metaLines: [], blocks: [],
-      extraHtml: buildPlayerReportHtml(p, playerStats(p, sessions, matches)),
+      extraHtml: buildPlayerReportHtml(p, playerStats(p, sessions, jogosOficiaisDe(matches))),
     });
     shareOrDownloadHtml(`jogador_${title.replace(/[^\w-]+/g, '_')}.html`, html, title);
   };
@@ -2775,7 +2775,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {sortByPosition(players).map(p => {
-            const stats = playerStats(p, sessions, matches);
+            const stats = playerStats(p, sessions, jogosOficiaisDe(matches));
             const attColor = stats.attendancePct === null ? T.mutedDim : stats.attendancePct >= 80 ? T.good : stats.attendancePct >= 60 ? T.warn : T.bad;
             const m = meta && meta[p.id];
             return (
@@ -2957,6 +2957,17 @@ function dayRating(list, playerId) {
   return null;
 }
 
+/* No Plantel, as estatísticas de jogo são as da COMPETIÇÃO: é o que a
+   ficha de um jogador quer dizer quando fala de jogos e minutos. Os
+   amigáveis têm o seu recorte próprio no separador Jogos.
+
+   Explícito e à vista, em vez de escondido dentro do playerStats — assim
+   quem lê a ficha do jogador percebe o que está a ver, e quem quiser
+   outro recorte passa outra lista. */
+function jogosOficiaisDe(matches) {
+  return (matches || []).filter(m => !isFriendlyMatch(m));
+}
+
 function playerStats(player, sessions, matches) {
   /* Dias de folga (fase "Descanso") não contam para a assiduidade — não
      há presenças nem notas a registar num dia sem treino.
@@ -2983,8 +2994,17 @@ function playerStats(player, sessions, matches) {
      titular, minutos, golos, notas...) — servem para treino/rodagem, não
      são competição oficial. Ficam de fora aqui, centralizado, para não
      ter de se lembrar de filtrar em cada sítio que usa playerStats. */
-  const jogosOficiais = (matches || []).filter(m => !isFriendlyMatch(m));
-  const playerMatches = jogosOficiais.filter(m => (m.convocados || []).includes(player.id));
+  /* QUEM DECIDE QUE JOGOS ENTRAM É QUEM CHAMA, não esta função.
+
+     Havia aqui um filtro que descartava os amigáveis. Fazia sentido
+     enquanto só existia uma tabela de estatísticas — mas agora há um
+     recorte de pré-época, e o filtro escondido tornava-o impossível: por
+     mais amigáveis que lhe fossem entregues, saíam sempre zeros.
+
+     Quem chama já escolhe a lista que quer analisar. Filtrar outra vez cá
+     dentro é decidir duas vezes a mesma coisa, e a segunda decisão era
+     invisível para quem lia o resultado. */
+  const playerMatches = (matches || []).filter(m => (m.convocados || []).includes(player.id));
   const reports = playerMatches.map(m => (m.report && m.report[player.id]) || {});
   const goals = reports.reduce((a, r) => a + (Number(r.goals) || 0), 0);
   const assists = reports.reduce((a, r) => a + (Number(r.assists) || 0), 0);
@@ -11939,9 +11959,23 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
           · um suplente → passa a titular e quem lá estava vai para o banco,
             o que muda mesmo a equipa. */}
       {trocar != null && (
-        <Modal title="Quem joga aqui?" subtitle={`${lugares[trocar]} · ${formacao}`} onClose={() => setTrocar(null)}>
+        <Modal title="Formação" subtitle={`${lugares[trocar]} · ${formacao}`} onClose={() => setTrocar(null)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '52vh', overflowY: 'auto', overflowX: 'hidden' }}>
-            {sortByPosition((match.convocados || []).map(id => players.find(p => p.id === id)).filter(Boolean)).map(p => {
+            {/* TITULARES EM CIMA, SUPLENTES EM BAIXO.
+
+                Numa lista ordenada só por posição, quem já está em campo
+                aparece salpicado no meio do banco e é preciso ler linha a
+                linha para perceber quem é quem. Separados, a lista responde
+                de imediato à pergunta que se está a fazer: quem está a
+                jogar e quem pode entrar. */}
+            {(() => {
+              const doJogo = (match.convocados || []).map(id => players.find(p => p.id === id)).filter(Boolean);
+              const emCampoIds = new Set(colocados.filter(Boolean).map(p => p.id));
+              return [
+                ...sortByPosition(doJogo.filter(p => emCampoIds.has(p.id))),
+                ...sortByPosition(doJogo.filter(p => !emCampoIds.has(p.id))),
+              ];
+            })().map(p => {
               const noCampo = colocados.some(v => v && v.id === p.id);
               const aqui = colocados[trocar] && colocados[trocar].id === p.id;
               return (
@@ -11970,8 +12004,8 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
                 >
                   <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{p.position || '--'}</span>{' '}
                   {p.name}
-                  <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim, float: 'right' }}>
-                    {noCampo ? (aqui ? 'neste lugar' : 'em campo') : 'banco'}
+                  <span style={{ ...mono, fontSize: 10.5, color: aqui ? T.warn : T.mutedDim, float: 'right' }}>
+                    {noCampo ? (aqui ? 'neste lugar' : 'titular') : 'suplente'}
                   </span>
                 </button>
               );
@@ -11983,39 +12017,51 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
   );
 }
 
-/* Os três recortes das estatísticas de jogo.
+/* OS DOIS RECORTES DAS ESTATÍSTICAS DE JOGO.
 
-   PORQUÊ SEPARAR: misturar amigáveis de julho com jogos do campeonato faz
-   o mesmo estrago que já corrigimos nas convocatórias — infla os números
-   de toda a gente e dá a leitura errada de quem está a ser chamado a
-   sério. Um jogador com 12 presenças em amigáveis de pré-época não tem a
-   mesma história de um com 12 convocatórias no campeonato.
+   Misturar amigáveis com jogos do campeonato faz o mesmo estrago que já
+   corrigimos nas convocatórias: infla os números de toda a gente e dá a
+   leitura errada de quem está a ser chamado a sério. Um jogador com 12
+   presenças em amigáveis não tem a mesma história de um com 12
+   convocatórias no campeonato.
 
-   PORQUÊ UMA DATA e não simplesmente "amigável = pré-época": há amigáveis
-   a meio da época, em pausas do campeonato, e esses não são pré-época; e
-   um torneio de pré-época pode ter jogos a sério. A data separa períodos,
-   o tipo de jogo separa naturezas — são duas coisas diferentes. */
+   A separação é pela NATUREZA do jogo e não por datas. Uma versão
+   anterior usava uma data de fim de pré-época, para apanhar torneios
+   oficiais de julho — mas obrigava a configurar uma coisa a mais para
+   resolver um caso raro, e sem ela nada funcionava. Amigável contra
+   oficial é uma distinção que a app já faz sozinha, em todo o lado.
+
+   As COLUNAS mudam com o recorte, porque as palavras não querem dizer o
+   mesmo: num amigável não há convocatória, há presenças. "Convocado" ali
+   seria a palavra errada — e é a palavra errada que faz uma tabela ser
+   mal lida. */
 const VISTAS_JOGO = [
-  { id: 'competicao', label: 'Competição', desc: 'Jogos oficiais do período competitivo.' },
-  { id: 'preepoca', label: 'Pré-época', desc: 'Tudo o que foi jogado antes do fim da pré-época.' },
-  { id: 'amigaveis', label: 'Amigáveis', desc: 'Amigáveis de qualquer altura do ano.' },
+  {
+    id: 'competicao',
+    label: 'Competição',
+    desc: 'Jogos oficiais: campeonato, taça e torneios a sério.',
+    colConv: 'Conv', colNaoConv: 'N conv',
+    ajudaConv: 'Convocatórias', ajudaNaoConv: 'Jogos em que não foi convocado',
+  },
+  {
+    id: 'preepoca',
+    label: 'Pré-época e amigáveis',
+    desc: 'Amigáveis de qualquer altura do ano.',
+    colConv: 'Jogos', colNaoConv: 'NP',
+    ajudaConv: 'Jogos em que esteve presente', ajudaNaoConv: 'Jogos em que não esteve presente',
+  },
 ];
 
-function filtrarJogosPorVista(matches, vista, fimPreEpoca) {
+function filtrarJogosPorVista(matches, vista) {
   const lista = matches || [];
-  const limite = (fimPreEpoca || '').trim();
-  // Sem data definida não há período de pré-época: tudo é competitivo.
-  const antesDoLimite = (m) => !!limite && (m.date || '') <= limite;
-
-  if (vista === 'amigaveis') return lista.filter(isFriendlyMatch);
-  if (vista === 'preepoca') return lista.filter(antesDoLimite);
-  return lista.filter(m => !isFriendlyMatch(m) && !antesDoLimite(m));
+  if (vista === 'preepoca') return lista.filter(isFriendlyMatch);
+  return lista.filter(m => !isFriendlyMatch(m));
 }
 
-function MatchDashboard({ players, matches, season, setSeason }) {
+function MatchDashboard({ players, matches }) {
   const [vista, setVista] = useState('competicao');
-  const fimPreEpoca = (season && season.fimPreEpoca) || '';
-  const escolhidos = filtrarJogosPorVista(matches, vista, fimPreEpoca);
+  const vistaAtual = VISTAS_JOGO.find(v => v.id === vista) || VISTAS_JOGO[0];
+  const escolhidos = filtrarJogosPorVista(matches, vista);
 
   // "Não convocado" só faz sentido em jogos onde houve mesmo convocatória.
   // Um jogo ainda sem ninguém escolhido não conta como não convocado para
@@ -12031,7 +12077,7 @@ function MatchDashboard({ players, matches, season, setSeason }) {
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
         {VISTAS_JOGO.map(v => {
           const on = vista === v.id;
-          const n = filtrarJogosPorVista(matches, v.id, fimPreEpoca).length;
+          const n = filtrarJogosPorVista(matches, v.id).length;
           return (
             <button key={v.id} onClick={() => setVista(v.id)} style={{
               padding: '5px 11px', borderRadius: 20, fontSize: 11.5, cursor: 'pointer', ...body,
@@ -12042,28 +12088,7 @@ function MatchDashboard({ players, matches, season, setSeason }) {
           );
         })}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: T.mutedDim }}>
-        <span style={{ flex: 1, minWidth: 180 }}>
-          {(VISTAS_JOGO.find(v => v.id === vista) || {}).desc}
-          {vista !== 'amigaveis' && !fimPreEpoca && (
-            <span style={{ color: T.warn }}> Define a data ao lado para separar os dois períodos.</span>
-          )}
-        </span>
-        {/* A data vive aqui, ao lado do que ela separa, e não perdida nas
-            definições da Época: é aqui que a sua falta se nota e é aqui
-            que se percebe para que serve. */}
-        {vista !== 'amigaveis' && setSeason && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            <span>Pré-época até</span>
-            <Input
-              type="date"
-              value={fimPreEpoca}
-              onChange={e => setSeason({ ...(season || {}), fimPreEpoca: e.target.value })}
-              style={{ width: 148, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 6px' }}
-            />
-          </label>
-        )}
-      </div>
+      <div style={{ fontSize: 11.5, color: T.mutedDim }}>{vistaAtual.desc}</div>
     </div>
   );
 
@@ -12088,7 +12113,19 @@ function MatchDashboard({ players, matches, season, setSeason }) {
           <thead>
             <tr style={{ background: T.bg }}>
               <th style={thName}>Jogador</th>
-              {['CONV', 'TITULAR', 'SUPL', 'SUPL UTI', 'N CONV', 'Min', 'Golos', 'Ass.', 'A', 'V', 'Nota'].map(h => <th key={h} style={th}>{h}</th>)}
+              {/* As duas primeiras colunas mudam de nome com o recorte:
+                  num amigável não há convocatória, há presença. */}
+              {[
+                { h: vistaAtual.colConv, t: vistaAtual.ajudaConv },
+                { h: 'Titular', t: 'Jogos em que foi titular' },
+                { h: 'Supl', t: 'Jogos em que começou no banco' },
+                { h: 'Supl uti', t: 'Jogos em que entrou vindo do banco' },
+                { h: vistaAtual.colNaoConv, t: vistaAtual.ajudaNaoConv },
+                { h: 'Min', t: 'Minutos jogados' },
+                { h: 'Golos' }, { h: 'Ass.', t: 'Assistências' },
+                { h: 'A', t: 'Cartões amarelos' }, { h: 'V', t: 'Cartões vermelhos' },
+                { h: 'Nota', t: 'Nota média' },
+              ].map(c => <th key={c.h} style={th} title={c.t}>{c.h}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -13290,7 +13327,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />
       </div>
       <div style={{ marginBottom: 20 }}>
-        <MatchDashboard players={players} matches={matches} season={season} setSeason={setSeason} />
+        <MatchDashboard players={players} matches={matches} />
       </div>
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registares um jogo." />
@@ -17489,7 +17526,25 @@ function AttachmentPreview({ item, tall }) {
    no Planeamento, na agenda semanal e na tabela de presenças. Se já houver
    um jogo na mesma data (por exemplo criado a partir das jornadas da
    competição), é esse que se atualiza, em vez de se criar um duplicado. */
-function syncConvocatoriaMatch(conv, matches) {
+/* Um onze plausível a partir de uma lista de convocados.
+
+   A versão anterior ficava com os PRIMEIROS ONZE da lista. Como a lista
+   de convocados está ordenada por posição, isso dava um onze com os
+   quatro guarda-redes e nenhum avançado — uma equipa que ninguém poria
+   em campo, e que o treinador tinha de desfazer à mão de cada vez.
+
+   Agora preenche-se um 4-3-3 pela posição de cada um, com a mesma regra
+   que a ficha de jogo usa para colocar os jogadores no campo. É uma
+   sugestão de partida, não uma decisão: o onze muda-se na ficha do jogo
+   com dois toques. */
+function onzeProvavel(ids, players) {
+  const lista = (ids || []).map(id => (players || []).find(p => p.id === id)).filter(Boolean);
+  if (lista.length <= 11) return lista.map(p => p.id);
+  const { colocados } = distribuirOnzeNoCampo(lista, '4-3-3');
+  return colocados.filter(Boolean).map(p => p.id);
+}
+
+function syncConvocatoriaMatch(conv, matches, players) {
   if (!conv || !conv.data) return matches || [];
   const list = matches || [];
   const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
@@ -17512,7 +17567,9 @@ function syncConvocatoriaMatch(conv, matches) {
        estatísticas (TITULAR / SUPL) e a assiduidade. Sem isto, o treinador
        tinha de escolher o onze duas vezes: uma na convocatória e outra na
        ficha do jogo. */
-    starters: (conv.convocados || []).slice(0, 11),
+    /* Sem `players` não há como saber posições — nesse caso mantém-se o
+       comportamento antigo, que pelo menos não perde ninguém. */
+    starters: players ? onzeProvavel(conv.convocados, players) : (conv.convocados || []).slice(0, 11),
     capitao: conv.capitao,
     subcapitao: conv.subcapitao,
   };
@@ -17607,7 +17664,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
     else setConvocatorias([...convocatorias, registo]);
     // Cria/atualiza o jogo correspondente, para a convocatória alimentar o
     // Planeamento, os Jogos e a tabela de presenças.
-    if (setMatches) setMatches(syncConvocatoriaMatch(registo, matches));
+    if (setMatches) setMatches(syncConvocatoriaMatch(registo, matches, players));
     setModal(null);
   };
   const remove = (id) => removeWithUndo(convocatorias, setConvocatorias, id, itemLabel(convocatorias.find(x => x.id === id), 'Convocatória'));
