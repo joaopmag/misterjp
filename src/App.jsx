@@ -1862,14 +1862,14 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {upcomingMatches.map(m => (
                 <div key={m.id} onClick={() => setMatchModal(m)} title="Abrir jogo" style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: 10,
                   padding: '10px 14px', background: T.bg, borderRadius: 8, border: `1px solid ${T.line}`,
                 }}>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{matchLabel(m, season)}</div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}</div>
                   </div>
-                  <div style={{ ...mono, color: T.warn, fontSize: 13 }}>{daysTo(m.date)}d</div>
+                  <div style={{ ...mono, color: T.warn, fontSize: 13, flexShrink: 0 }}>{daysTo(m.date)}d</div>
                 </div>
               ))}
             </div>
@@ -10637,26 +10637,39 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     </div>
                   </div>
                   <div style={{
-                    display: 'flex', gap: 8, alignItems: 'center',
-                    ...(isNarrow ? { justifyContent: 'space-between', paddingLeft: 60 } : {}),
+                    display: 'flex', gap: 12, alignItems: 'center',
+                    ...(isNarrow ? { justifyContent: 'space-between', paddingLeft: 60 } : { gap: 8 }),
                   }}>
-                    <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
+                    <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {(s.convocados || []).length} {isFriendlyMatch(s) ? 'presentes' : 'convocados'}
                     </span>
-                    {/* `stopPropagation` em todos: sem isto, cada ícone abria
-                        também a ficha do jogo por baixo. Partilhar/Imprimir
-                        usam a sessão do jogo (mesmas funções da ficha de uma
-                        sessão normal) — só aparecem se existir essa sessão. */}
-                    {sessaoJogo && (
-                      <>
-                        <button onClick={e => { e.stopPropagation(); doShare(sessaoJogo); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
-                        <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
-                      </>
-                    )}
-                    {equipasDoJogo && (
-                      <button onClick={e => { e.stopPropagation(); setSessions(sessions.map(x => (x.id === sessaoJogo.id ? { ...x, equipasSimulador: null } : x))); }} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
-                    )}
-                    <button onClick={e => { e.stopPropagation(); setMatchModal(s); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
+                    {/* OS ÍCONES VIVEM NUM BLOCO PRÓPRIO.
+
+                        Soltos ao lado do texto, o `space-between` do
+                        telemóvel espalhava-os um a um pela largura toda e
+                        cada cartão os punha num sítio diferente. Fechados
+                        aqui dentro são UM só elemento: o texto encosta à
+                        esquerda, o grupo encosta à direita, com o mesmo
+                        espaçamento dos cartões de treino — que é como
+                        estão em toda a app.
+
+                        `stopPropagation` em todos: sem isto, cada ícone
+                        abria também a ficha do jogo por baixo.
+                        Partilhar/Imprimir usam a sessão do jogo (mesmas
+                        funções da ficha de uma sessão normal) — só
+                        aparecem se existir essa sessão. */}
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+                      {equipasDoJogo && (
+                        <button onClick={e => { e.stopPropagation(); setSessions(sessions.map(x => (x.id === sessaoJogo.id ? { ...x, equipasSimulador: null } : x))); }} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                      )}
+                      {sessaoJogo && (
+                        <>
+                          <button onClick={e => { e.stopPropagation(); doShare(sessaoJogo); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
+                          <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
+                        </>
+                      )}
+                      <button onClick={e => { e.stopPropagation(); setMatchModal(s); }} title="Editar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
+                    </div>
                   </div>
                 </div>
                 );
@@ -10705,7 +10718,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     </span>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
                       {temEquipasSessao(s) && (
-                        <button onClick={() => setSessions(sessions.map(x => (x.id === s.id ? { ...x, equipasSimulador: null } : x)))} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={13} /></button>
+                        <button onClick={() => setSessions(sessions.map(x => (x.id === s.id ? { ...x, equipasSimulador: null } : x)))} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                       )}
                       <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
                       <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Imprimir ficha"><Printer size={14} /></button>
@@ -12341,7 +12354,11 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
                 <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
                   Ideias para o jogo
                 </div>
-                <div style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                {/* `overflowWrap` para o caso de virem links ou palavras
+                    compridas: no telemóvel, sem isto, uma linha sem
+                    espaços alarga o cartão e a janela ganha barra
+                    horizontal. */}
+                <div style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.7, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
                   {match.ideias}
                 </div>
               </div>
@@ -13846,7 +13863,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                 background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>
                       vs {m.opponent || 'Adversário por definir'}
                       {m.atHome !== undefined && (
@@ -13858,10 +13875,16 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                     </div>
                   </div>
                   {/* `stopPropagation`: sem isto, carregar no lápis abria
-                      a edição E a ficha por baixo. */}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={e => { e.stopPropagation(); setModal(m); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
-                    <button onClick={e => { e.stopPropagation(); remove(m.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
+                      a edição E a ficha por baixo.
+
+                      `marginLeft: 'auto'` + `flexShrink: 0`: no telemóvel o
+                      nome do adversário e a linha de baixo empurram os
+                      ícones para uma segunda linha; sem isto caíam
+                      encostados à esquerda, ao contrário de todos os
+                      outros cartões da app. */}
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
+                    <button onClick={e => { e.stopPropagation(); setModal(m); }} title="Editar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
+                    <button onClick={e => { e.stopPropagation(); remove(m.id); }} title="Apagar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                   </div>
                 </div>
               </div>
