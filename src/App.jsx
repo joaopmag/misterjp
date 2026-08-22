@@ -10255,6 +10255,12 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
 function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
+  // Ficha de leitura do jogo — o mesmo conceito usado em Jogos: o cartão
+  // abre a ficha (resultado, formação, destaques); o lápis continua a
+  // abrir a edição direta. Como `matches` é o MESMO estado partilhado
+  // entre Jogos e Planeamento, um jogo criado ou editado aqui aparece tal
+  // e qual em Jogos, e vice-versa — não há duas cópias dos dados.
+  const [ficha, setFicha] = useState(null);
   const [printSession, setPrintSession] = useState(null);
   const [dayModalDate, setDayModalDate] = useState(null); // data (YYYY-MM-DD) do dia a ver em detalhe
   const [printDayDate, setPrintDayDate] = useState(null); // data a imprimir com todas as sessões desse dia
@@ -10386,8 +10392,8 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             <WeekSummary items={items} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {items.filter(s => s.__match || !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId))).map(s => s.__match ? (
-                <div key={`m-${s.id}`} style={{
-                  background: T.surface, border: `1px solid ${T.warn}55`, borderRadius: 10, padding: 14,
+                <div key={`m-${s.id}`} onClick={() => setFicha(s)} style={{
+                  background: T.surface, border: `1px solid ${T.warn}55`, borderRadius: 10, padding: 14, cursor: 'pointer',
                   display: 'flex', gap: 10,
                   ...(isNarrow
                     ? { flexDirection: 'column', alignItems: 'stretch' }
@@ -10414,7 +10420,10 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
                       {(s.convocados || []).length} {isFriendlyMatch(s) ? 'presentes' : 'convocados'}
                     </span>
-                    <button onClick={() => setMatchModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
+                    {/* `stopPropagation`: sem isto, carregar no lápis abria a
+                        edição E a ficha por baixo — igual ao que já acontecia
+                        nos Jogos. */}
+                    <button onClick={e => { e.stopPropagation(); setMatchModal(s); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                   </div>
                 </div>
               ) : (
@@ -10484,6 +10493,26 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           onSave={save}
         />
       )}
+
+      {/* A ficha lê sempre a versão mais recente do jogo: se for editado
+          por baixo (aqui ou em Jogos, é o mesmo estado), o que se vê aqui
+          acompanha. */}
+      {ficha && (() => {
+        const atual = (matches || []).find(m => m.id === ficha.id);
+        if (!atual) return null;
+        return (
+          <FichaJogo
+            match={atual}
+            players={players}
+            season={season}
+            onClose={() => setFicha(null)}
+            onEdit={() => { setFicha(null); setMatchModal(atual); }}
+            onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
+            onAlinhamento={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
+            onStarters={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
+          />
+        );
+      })()}
 
       {matchModal && (
         <MatchModal
