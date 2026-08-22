@@ -12235,27 +12235,141 @@ function clubeSemEscalao(nome) {
   return String(nome || '').split('·')[0].trim();
 }
 
+/* SÍMBOLOS DA FICHA IMPRESSA.
+
+   Em papel não há tooltips nem cor de fundo para distinguir o que
+   aconteceu a cada jogador: ou se desenha, ou se escreve por extenso — e
+   por extenso a lista deixa de caber ao lado do campo. São SVG e não
+   emojis de propósito: um emoji imprime-se com a fonte que o sistema
+   tiver, muda de aspeto de máquina para máquina e em muitas impressoras
+   sai como um quadrado. Um traço desenhado sai sempre igual.
+
+   Tamanho por omissão pequeno (11px) porque vivem colados ao nome, à
+   altura de uma maiúscula. */
+function IconeGoloPrint({ size = 11 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" style={{ display: 'block' }} aria-hidden="true">
+      <circle cx="10" cy="10" r="8.6" fill="#fff" stroke="#111" strokeWidth="1.5" />
+      <polygon points="10,4.6 14.7,8 12.9,13.6 7.1,13.6 5.3,8" fill="#111" />
+    </svg>
+  );
+}
+
+/* Chuteira de perfil, para a assistência: calcanhar alto à esquerda,
+   bico baixo à direita, sola com pitons por baixo. */
+function IconeAssistenciaPrint({ size = 11 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" style={{ display: 'block' }} aria-hidden="true">
+      <path d="M2.6 4.2 h3.6 l1.7 4.3 c.5 1.3 1.6 2.2 3 2.4 l4.6 .7 c1.6 .25 2.5 1.2 2.5 2.5 v.7 h-15.4 z" fill="#111" />
+      <rect x="1.8" y="15.1" width="16.4" height="1.5" rx=".5" fill="#111" />
+      <rect x="4" y="16.9" width="1.6" height="1.6" fill="#111" />
+      <rect x="9.2" y="16.9" width="1.6" height="1.6" fill="#111" />
+      <rect x="14.4" y="16.9" width="1.6" height="1.6" fill="#111" />
+    </svg>
+  );
+}
+
+/* Substituição: uma seta com dois sentidos — sobe de um lado, desce do
+   outro. Serve para os dois casos, porque a coluna já diz qual é: um
+   titular com este símbolo saiu, um suplente entrou. */
+function IconeSubstituicaoPrint({ size = 11 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" style={{ display: 'block' }} aria-hidden="true">
+      <g stroke="#111" strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6.2 16.4 V4.6" />
+        <path d="M3.1 7.7 L6.2 4.6 L9.3 7.7" />
+        <path d="M13.8 3.6 V15.4" />
+        <path d="M10.7 12.3 L13.8 15.4 L16.9 12.3" />
+      </g>
+    </svg>
+  );
+}
+
+/* Cartão: um retângulo com a cor real. Numa impressora a preto e branco
+   o amarelo sai cinzento-claro e o vermelho cinzento-escuro — continuam
+   a distinguir-se, que é o que interessa. */
+function IconeCartaoPrint({ card, size = 11 }) {
+  const vermelho = card === 'red' || card === 'yellow2';
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" style={{ display: 'block' }} aria-hidden="true">
+      <rect
+        x="5.5" y="2.5" width="9" height="15" rx="1.4"
+        fill={vermelho ? '#C0392B' : '#E8C33A'} stroke="#111" strokeWidth="1.1"
+      />
+      {card === 'yellow2' && (
+        <rect x="2.6" y="4.6" width="7" height="12.5" rx="1.2" fill="#E8C33A" stroke="#111" strokeWidth="1.1" />
+      )}
+    </svg>
+  );
+}
+
+/* Uma linha da lista de jogadores na ficha impressa: número, nome e, à
+   direita, o que lhe aconteceu no jogo. Os símbolos ficam todos na mesma
+   coluna, encostados à direita, para a lista se ler na vertical sem os
+   olhos andarem à procura. */
+function LinhaJogadorPrint({ x }) {
+  if (!x || !x.player) return null;
+  const golos = Math.min(x.golos, 3);
+  const minuto = x.saiuAo != null ? x.saiuAo : x.entrouAo;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 5, padding: '2.5px 0',
+      borderBottom: '1px solid #ececec', fontSize: 11,
+    }}>
+      <span style={{ width: 24, flexShrink: 0, textAlign: 'right', color: '#888' }}>
+        {x.player.number ? `#${x.player.number}` : '—'}
+      </span>
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {x.player.name}
+      </span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+        {Array.from({ length: golos }).map((_, i) => <IconeGoloPrint key={`g${i}`} />)}
+        {x.golos > 3 && <span style={{ fontSize: 9.5 }}>×{x.golos}</span>}
+        {Array.from({ length: Math.min(x.assistencias, 3) }).map((_, i) => <IconeAssistenciaPrint key={`a${i}`} />)}
+        {x.assistencias > 3 && <span style={{ fontSize: 9.5 }}>×{x.assistencias}</span>}
+        {x.cartao && <IconeCartaoPrint card={x.cartao} />}
+        {minuto != null && (
+          <>
+            <IconeSubstituicaoPrint />
+            <span style={{ fontSize: 9.5, color: '#555' }}>{minuto}'</span>
+          </>
+        )}
+        {/* Os minutos jogados fecham a linha, sempre no mesmo sítio: é o
+            número que se procura primeiro ao rever a gestão do plantel. */}
+        <span style={{ width: 30, textAlign: 'right', fontSize: 10, color: x.jogou ? '#111' : '#bbb' }}>
+          {x.jogou ? `${x.minutos}'` : '—'}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 /* A FICHA DO JOGO EM PAPEL.
 
-   O mesmo conteúdo da ficha no ecrã — campo com o onze, banco, ideias e
-   destaques — mas com as cores da impressão: fundo branco, linhas
-   cinzentas, sem botões. Segue de perto o `PrintOnzeAmigavel`, que faz o
-   mesmo para a sessão de um amigável; a diferença é que aqui a fonte é o
-   JOGO (com resultado, cartões e minutos) e não a sessão. */
+   Fundo branco, linhas cinzentas, sem botões. O que na ficha do ecrã são
+   caixas de "Destaques" e "Números" aparece aqui colado a cada nome, em
+   símbolo: numa folha, ler "1 substituição" em baixo obriga a procurar
+   quem foi; uma seta ao lado do nome responde de imediato. */
 function PrintFichaJogo({ match, players, season }) {
   const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
   const formacao = match.formacao || '4-3-3';
   const eventos = eventosDoJogo(match, players);
-  const resumo = resumoDoJogo(eventos);
   const { lugares, colocados } = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, match.alinhamento);
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
-  const destaques = linhasDestaquesJogo(eventos, resumo, players);
-  const nomeNum = (p) => `${p.number ? `#${p.number} ` : ''}${p.name}`;
+
+  /* Titulares por posição (GR, defesas, médios, avançados) e não pela
+     ordem em que foram escolhidos — é assim que uma ficha de jogo se lê.
+     Os suplentes já vêm ordenados de `eventosDoJogo`. */
+  const titulares = sortByPosition(eventos.titulares.map(x => x.player))
+    .map(p => eventos.titulares.find(x => x.player.id === p.id))
+    .filter(Boolean);
+
+  const tituloColuna = { fontSize: 12, fontWeight: 700, borderBottom: '1.5px solid #111', paddingBottom: 3, marginBottom: 3 };
 
   return (
     <div className="print-sheet">
       <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{nosso} vs {match.opponent || 'Adversário por definir'}</h2>
-      <p style={{ margin: '0 0 18px', fontSize: 13 }}>
+      <p style={{ margin: '0 0 16px', fontSize: 13 }}>
         {[
           fmtDate(match.date),
           competitionLabel(match.competition),
@@ -12267,8 +12381,8 @@ function PrintFichaJogo({ match, players, season }) {
 
       <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Formação — {formacao}</h3>
       <div style={{
-        position: 'relative', width: '100%', maxWidth: 480, aspectRatio: '105 / 68',
-        background: '#fff', border: '1px solid #ccc', borderRadius: 8, margin: '0 auto 14px',
+        position: 'relative', width: '100%', maxWidth: 440, aspectRatio: '105 / 68',
+        background: '#fff', border: '1px solid #ccc', borderRadius: 8, margin: '0 auto 16px',
       }}>
         <svg viewBox="0 0 105 68" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
           <rect x="0.5" y="0.5" width="104" height="67" fill="none" stroke="#999" strokeWidth="0.4" />
@@ -12297,42 +12411,42 @@ function PrintFichaJogo({ match, players, season }) {
         })}
       </div>
 
-      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipa</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 12.5, marginBottom: 16 }}>
+      {/* Titulares à esquerda, suplentes à direita: as duas metades da
+          convocatória lado a lado, cada uma a ler-se de cima para baixo.
+          `breakInside: avoid` para uma coluna não ficar cortada entre
+          folhas quando o plantel é grande. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22, marginBottom: 10, breakInside: 'avoid' }}>
         <div>
-          <strong>Titulares</strong>
-          <div style={{ marginTop: 4, lineHeight: 1.6 }}>
-            {eventos.titulares.length ? eventos.titulares.map(x => nomeNum(x.player)).join(', ') : '—'}
-          </div>
+          <div style={tituloColuna}>Titulares ({titulares.length})</div>
+          {titulares.length
+            ? titulares.map(x => <LinhaJogadorPrint key={x.player.id} x={x} />)
+            : <div style={{ fontSize: 11, color: '#999', paddingTop: 4 }}>—</div>}
         </div>
         <div>
-          <strong>Suplentes</strong>
-          <div style={{ marginTop: 4, lineHeight: 1.6 }}>
-            {eventos.suplentes.length ? eventos.suplentes.map(x => nomeNum(x.player)).join(', ') : '—'}
-          </div>
+          <div style={tituloColuna}>Suplentes ({eventos.suplentes.length})</div>
+          {eventos.suplentes.length
+            ? eventos.suplentes.map(x => <LinhaJogadorPrint key={x.player.id} x={x} />)
+            : <div style={{ fontSize: 11, color: '#999', paddingTop: 4 }}>—</div>}
         </div>
       </div>
 
-      {/* Como na ficha do amigável: o título sai mesmo sem nada escrito,
-          porque o espaço em branco por baixo é onde se escreve à mão. */}
-      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Ideias para o jogo</h3>
-      <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: '0 0 16px', minHeight: 34 }}>
-        {String(match.ideias || '').trim() || '—'}
-      </p>
-
-      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Destaques</h3>
-      <div style={{ fontSize: 12.5, lineHeight: 1.7, marginBottom: 16 }}>
-        {destaques.length ? destaques.map((l, i) => <div key={i}>{l}</div>) : <div>Sem acontecimentos registados.</div>}
-      </div>
-
-      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Números</h3>
-      <p style={{ fontSize: 12.5, margin: 0 }}>
+      {/* Sem legenda, os símbolos são um teste de adivinhação para quem
+          pega na folha e não a fez. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', fontSize: 9.5, color: '#666', marginBottom: 18 }}>
         {[
-          `${isFriendlyMatch(match) ? 'Presentes' : 'Convocados'}: ${resumo.convocados}`,
-          `Minutos dados: ${resumo.minutos}`,
-          `Nota média: ${resumo.notaMedia == null ? '—' : resumo.notaMedia.toFixed(1)}`,
-          `Sem jogar: ${resumo.semJogar}`,
-        ].join(' · ')}
+          [<IconeGoloPrint key="g" size={10} />, 'golo'],
+          [<IconeAssistenciaPrint key="a" size={10} />, 'assistência'],
+          [<IconeSubstituicaoPrint key="s" size={10} />, 'entrou / saiu ao minuto'],
+          [<IconeCartaoPrint key="c" card="yellow" size={10} />, 'cartão'],
+        ].map(([icone, texto]) => (
+          <span key={texto} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{icone}{texto}</span>
+        ))}
+        <span>80' minutos jogados</span>
+      </div>
+
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Ideias para o jogo</h3>
+      <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0, minHeight: 40 }}>
+        {String(match.ideias || '').trim() || '—'}
       </p>
     </div>
   );
@@ -12896,8 +13010,11 @@ function MatchDashboard({ players, matches }) {
             }
           `}</style>
           <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>{tituloTabela}</h2>
+          {/* Sem data: o browser já a imprime no cabeçalho da folha, e
+              duas datas na mesma página só levantam a dúvida de qual é
+              qual. */}
           <p style={{ margin: '0 0 12px', fontSize: 11.5 }}>
-            {[`${escolhidos.length} jogos`, `${rows.length} jogadores`, new Date().toLocaleDateString('pt-PT')].join(' · ')}
+            {[`${escolhidos.length} jogos`, `${rows.length} jogadores`].join(' · ')}
           </p>
           <table>
             <thead>
@@ -14274,13 +14391,27 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
     setF(data ? { ...next, date: data } : next);
   };
 
+  /* PRESENÇAS NUM AMIGÁVEL: OS PRIMEIROS ONZE SÃO O ONZE.
+
+     Num jogo oficial os titulares vêm da convocatória (ver `onzeProvavel`)
+     e o treinador só afina. Num amigável não há convocatória nenhuma — a
+     lista começava toda no banco e obrigava a onze cliques extra em
+     "Titular" para dizer o óbvio: os primeiros que se escolhem são os que
+     começam a jogar.
+
+     Não há limite de presenças: num amigável podem ir os 37. O onze é que
+     tem onze lugares — a partir do décimo segundo escolhido, os seguintes
+     ficam suplentes, e qualquer troca continua a fazer-se no botão
+     Titular/Suplente da linha do jogador. */
   const toggleConvocado = (pid) => {
     const inList = f.convocados.includes(pid);
     if (inList) {
       const report = { ...f.report }; delete report[pid];
       setF({ ...f, convocados: f.convocados.filter(id => id !== pid), starters: f.starters.filter(id => id !== pid), report });
     } else {
-      setF({ ...f, convocados: [...f.convocados, pid] });
+      const convocados = [...f.convocados, pid];
+      const promover = eAmigavel && f.starters.length < 11;
+      setF({ ...f, convocados, starters: promover ? [...f.starters, pid] : f.starters });
     }
   };
   const toggleStarter = (pid) => {
@@ -14367,6 +14498,15 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
           {eAmigavel ? 'Presenças' : 'Convocados'} {f.convocados.length ? `· ${f.convocados.length}/${players.length}` : ''}
         </div>
+        {/* A regra é invisível se não for dita: quem escolhe o décimo
+            segundo jogador tem de perceber porque é que ele não ficou
+            titular como os anteriores. */}
+        {eAmigavel && (
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.5 }}>
+            Os primeiros onze escolhidos entram como titulares; os seguintes ficam suplentes.
+            Sem limite de presenças — podem ir todos. Trocas-se depois na linha de cada jogador.
+          </div>
+        )}
         <PlayerChipList
           players={players}
           isOn={p => f.convocados.includes(p.id)}
