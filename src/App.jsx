@@ -9666,7 +9666,24 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
         });
       });
     }
-    const registo = { geradoEm: new Date().toISOString(), equipas };
+    /* Só para o modo 'amigável': o onze do PRIMEIRO período (quem começa o
+       jogo), com o lugar de cada um — é o que dá para desenhar o campo na
+       ficha impressa, tal como na Ficha de Jogo. Os `equipas` acima
+       (nomes em texto corrido, sem lugar) continuam a existir à parte
+       para o resto da app que já os lê; isto é só o que falta para o
+       campo saber ONDE pôr cada jogador. */
+    const primeiroPeriodo = modo === 'amigavel' ? jogo.periodos[0] : null;
+    const onzeAmigavel = primeiroPeriodo
+      ? primeiroPeriodo.onze.map(l => ({ lugar: l.lugar, jogador: l.jogador ? l.jogador.name : null }))
+      : null;
+    const suplentesAmigavel = primeiroPeriodo
+      ? presentes.filter(p => !primeiroPeriodo.onze.some(l => l.jogador && l.jogador.id === p.id)).map(p => p.name)
+      : null;
+    const registo = {
+      geradoEm: new Date().toISOString(),
+      equipas,
+      ...(modo === 'amigavel' ? { onzeAmigavel: { formacao: jogo.formacao, onze: onzeAmigavel, suplentes: suplentesAmigavel } } : {}),
+    };
     setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: registo } : x)));
     setGuardado(true);
     setTimeout(() => setGuardado(false), 2500);
@@ -10459,8 +10476,19 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           return `<p class="desc"><strong>${escapeHtmlText(cabeca)}:</strong> ${escapeHtmlText(g.jogadores.join(', '))}</p>`;
         }).join('')}`
       : '';
-    const extraHtml = `${equipasHtml}<h2>Presenças</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
-    const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino');
+    /* Num amigável não há exercícios — o "Jogo 11x11" mostra antes o onze
+       que jogou (titulares) e quem ficou no banco (suplentes), a mesma
+       informação que sai na ficha impressa. */
+    const onzeAmigavel = s.phase === 'Jogo' ? (s.equipasSimulador && s.equipasSimulador.onzeAmigavel) : null;
+    const jogoHtml = s.phase === 'Jogo'
+      ? `<h2>Jogo 11x11</h2><p class="desc"><strong>Titulares:</strong> ${onzeAmigavel && onzeAmigavel.onze
+          ? escapeHtmlText(onzeAmigavel.onze.filter(l => l.jogador).map(l => l.jogador).join(', ') || '—')
+          : '—'}</p><p class="desc"><strong>Suplentes:</strong> ${onzeAmigavel && onzeAmigavel.suplentes && onzeAmigavel.suplentes.length
+          ? escapeHtmlText(onzeAmigavel.suplentes.join(', '))
+          : '—'}</p>`
+      : '';
+    const extraHtml = `${jogoHtml}${equipasHtml}<h2>${s.phase === 'Jogo' ? 'Equipa' : 'Presenças'}</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
+    const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (s.phase === 'Jogo' ? 'Amigável' : (s.focus || 'Sessão de treino'));
     const html = buildShareableHtmlDoc({ title: sessionTitle, metaLines: meta, blocks: exBlocks, extraHtml });
     shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, sessionTitle);
   };
@@ -10701,38 +10729,47 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
 
       {printSession && createPortal(
         <div className="print-sheet">
-          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{printSession.phase === 'Descanso' ? 'Folga' : (printSession.focus || 'Sessão de treino')}</h2>
+          <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
+            {printSession.phase === 'Descanso' ? 'Folga' : (printSession.phase === 'Jogo' ? 'Amigável' : (printSession.focus || 'Sessão de treino'))}
+          </h2>
           <p style={{ margin: '0 0 18px', fontSize: 13 }}>
             {[fmtDate(printSession.date), printSession.phase, intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
           </p>
-          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
-          {(printSession.exerciseIds || []).map((e, i) => (
-            <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
-          ))}
-          {/* Equipas vindas do Simulador, se lá tiverem sido guardadas.
-              É o que o treinador leva para o campo: quem joga com quem, em
-              que exercício e por quanto tempo. */}
-          {printSession.equipasSimulador && (printSession.equipasSimulador.equipas || []).length > 0 && (
+
+          {printSession.phase === 'Jogo' ? (
+            <PrintOnzeAmigavel session={printSession} />
+          ) : (
             <>
-              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipas</h3>
-              <div style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6 }}>
-                {printSession.equipasSimulador.equipas.map((g, i) => (
-                  <div key={i} style={{ marginBottom: 5 }}>
-                    <strong>
-                      {g.exercicio}
-                      {g.zona ? ` · zona ${g.zona}` : ''}
-                      {g.turno ? ` · turno ${g.turno}` : ''}
-                      {' · '}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}
-                      {g.minutos ? ` · ${g.minutos} min` : ''}:
-                    </strong>{' '}
-                    {g.jogadores.join(', ')}
+              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
+              {(printSession.exerciseIds || []).map((e, i) => (
+                <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
+              ))}
+              {/* Equipas vindas do Simulador, se lá tiverem sido guardadas.
+                  É o que o treinador leva para o campo: quem joga com quem, em
+                  que exercício e por quanto tempo. */}
+              {printSession.equipasSimulador && (printSession.equipasSimulador.equipas || []).length > 0 && (
+                <>
+                  <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipas</h3>
+                  <div style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6 }}>
+                    {printSession.equipasSimulador.equipas.map((g, i) => (
+                      <div key={i} style={{ marginBottom: 5 }}>
+                        <strong>
+                          {g.exercicio}
+                          {g.zona ? ` · zona ${g.zona}` : ''}
+                          {g.turno ? ` · turno ${g.turno}` : ''}
+                          {' · '}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}
+                          {g.minutos ? ` · ${g.minutos} min` : ''}:
+                        </strong>{' '}
+                        {g.jogadores.join(', ')}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              )}
             </>
           )}
 
-          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
+          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>{printSession.phase === 'Jogo' ? 'Equipa' : 'Presenças'}</h3>
           <p style={{ fontSize: 13 }}>
             {(printSession.attendance || [])
               .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
@@ -10759,13 +10796,17 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{fmtDate(printDayDate)}</h2>
           {sessions.filter(s => s.date === printDayDate).map(s => (
             <div key={s.id} style={{ marginBottom: 24 }}>
-              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</h3>
+              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.phase === 'Descanso' ? 'Folga' : (s.phase === 'Jogo' ? 'Amigável' : (s.focus || 'Sessão de treino'))}</h3>
               <p style={{ margin: '0 0 12px', fontSize: 13 }}>
                 {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
-              {(s.exerciseIds || []).map((e, i) => (
-                <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
-              ))}
+              {s.phase === 'Jogo' ? (
+                <PrintOnzeAmigavel session={s} />
+              ) : (
+                (s.exerciseIds || []).map((e, i) => (
+                  <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
+                ))
+              )}
             </div>
           ))}
           <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
@@ -11044,6 +11085,68 @@ function PrintExerciseBlock({ e, ex, index }) {
           <span style={{ fontSize: 9.5, color: '#888', letterSpacing: '.04em' }}>™ Mister JP</span>
         </div>
       )}
+    </div>
+  );
+}
+
+/* Campo com o onze titular do jogo amigável, para a ficha impressa —
+   mesmo espírito da Ficha de Jogo (campo com posições + banco), só que em
+   papel: fundo branco, linhas cinzentas, sem cliques.
+
+   O campo aparece SEMPRE, mesmo sem equipa gravada — só que vazio (cada
+   lugar mostra o travessão em vez de um nome). É mais fácil o treinador
+   preencher à mão no papel do que a ficha desaparecer só porque ainda
+   não se gravou nada no Simulador. */
+function PrintOnzeAmigavel({ session }) {
+  const dados = session.equipasSimulador && session.equipasSimulador.onzeAmigavel;
+  const formacao = (dados && dados.formacao) || '4-3-3';
+  const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
+  const lugares = (dados && dados.onze) || (FORMACOES[formacao] || FORMACOES['4-3-3']).map(l => ({ lugar: l, jogador: null }));
+  const suplentes = (dados && dados.suplentes) || [];
+  const titulares = lugares.filter(l => l.jogador).map(l => l.jogador);
+
+  return (
+    <div style={{ marginBottom: 16, pageBreakInside: 'avoid' }}>
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Jogo 11x11</h3>
+      <div style={{
+        position: 'relative', width: '100%', maxWidth: 480, aspectRatio: '105 / 68',
+        background: '#fff', border: '1px solid #ccc', borderRadius: 8, margin: '0 auto 14px',
+      }}>
+        <svg viewBox="0 0 105 68" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+          <rect x="0.5" y="0.5" width="104" height="67" fill="none" stroke="#999" strokeWidth="0.4" />
+          <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" stroke="#999" strokeWidth="0.4" />
+          <circle cx="52.5" cy="34" r="9.15" fill="none" stroke="#999" strokeWidth="0.4" />
+          <rect x="0.5" y="13.84" width="16.5" height="40.32" fill="none" stroke="#999" strokeWidth="0.4" />
+          <rect x="88" y="13.84" width="16.5" height="40.32" fill="none" stroke="#999" strokeWidth="0.4" />
+        </svg>
+        {lugares.map((l, i) => {
+          const [fx, fy] = layout[i] || [0.5, 0.5];
+          return (
+            <div key={i} style={{
+              position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
+              transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '22%',
+            }}>
+              <div style={{ fontSize: 8.5, color: '#888' }}>{l.lugar}</div>
+              <div style={{
+                fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis', color: l.jogador ? '#111' : '#bbb',
+              }}>
+                {l.jogador || '—'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 12.5, marginBottom: 16 }}>
+        <div>
+          <strong>Titulares</strong>
+          <div style={{ marginTop: 4, lineHeight: 1.6 }}>{titulares.length ? titulares.join(', ') : '—'}</div>
+        </div>
+        <div>
+          <strong>Suplentes</strong>
+          <div style={{ marginTop: 4, lineHeight: 1.6 }}>{suplentes.length ? suplentes.join(', ') : '—'}</div>
+        </div>
+      </div>
     </div>
   );
 }
