@@ -1708,7 +1708,7 @@ function App({ session }) {
           {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
           {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -11983,25 +11983,98 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
   );
 }
 
-function MatchDashboard({ players, matches }) {
-  /* Só jogos OFICIAIS entram aqui.
+/* Os três recortes das estatísticas de jogo.
 
-     Num amigável não há convocatória — há presenças, e essas contam na
-     tabela de presenças como P/NP, tal como num treino. Misturá-los aqui
-     inflacionava as convocatórias e as suplências de toda a gente, e
-     dava a leitura errada de quem está a ser chamado a sério. */
-  const oficiais = (matches || []).filter(m => !isFriendlyMatch(m));
+   PORQUÊ SEPARAR: misturar amigáveis de julho com jogos do campeonato faz
+   o mesmo estrago que já corrigimos nas convocatórias — infla os números
+   de toda a gente e dá a leitura errada de quem está a ser chamado a
+   sério. Um jogador com 12 presenças em amigáveis de pré-época não tem a
+   mesma história de um com 12 convocatórias no campeonato.
+
+   PORQUÊ UMA DATA e não simplesmente "amigável = pré-época": há amigáveis
+   a meio da época, em pausas do campeonato, e esses não são pré-época; e
+   um torneio de pré-época pode ter jogos a sério. A data separa períodos,
+   o tipo de jogo separa naturezas — são duas coisas diferentes. */
+const VISTAS_JOGO = [
+  { id: 'competicao', label: 'Competição', desc: 'Jogos oficiais do período competitivo.' },
+  { id: 'preepoca', label: 'Pré-época', desc: 'Tudo o que foi jogado antes do fim da pré-época.' },
+  { id: 'amigaveis', label: 'Amigáveis', desc: 'Amigáveis de qualquer altura do ano.' },
+];
+
+function filtrarJogosPorVista(matches, vista, fimPreEpoca) {
+  const lista = matches || [];
+  const limite = (fimPreEpoca || '').trim();
+  // Sem data definida não há período de pré-época: tudo é competitivo.
+  const antesDoLimite = (m) => !!limite && (m.date || '') <= limite;
+
+  if (vista === 'amigaveis') return lista.filter(isFriendlyMatch);
+  if (vista === 'preepoca') return lista.filter(antesDoLimite);
+  return lista.filter(m => !isFriendlyMatch(m) && !antesDoLimite(m));
+}
+
+function MatchDashboard({ players, matches, season, setSeason }) {
+  const [vista, setVista] = useState('competicao');
+  const fimPreEpoca = (season && season.fimPreEpoca) || '';
+  const escolhidos = filtrarJogosPorVista(matches, vista, fimPreEpoca);
 
   // "Não convocado" só faz sentido em jogos onde houve mesmo convocatória.
   // Um jogo ainda sem ninguém escolhido não conta como não convocado para
   // toda a gente — era isso que punha a coluna sempre no total de jogos.
-  const totalMatches = oficiais.filter(m => (m.convocados || []).length > 0).length;
+  const totalMatches = escolhidos.filter(m => (m.convocados || []).length > 0).length;
   const rows = players
-    .map(p => ({ player: p, s: playerStats(p, [], oficiais) }))
+    .map(p => ({ player: p, s: playerStats(p, [], escolhidos) }))
     .filter(r => r.s.matchesPlayed > 0)
     .sort((a, b) => (b.s.avgMatchRating || 0) - (a.s.avgMatchRating || 0));
 
-  if (rows.length === 0) return null;
+  const seletor = (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+        {VISTAS_JOGO.map(v => {
+          const on = vista === v.id;
+          const n = filtrarJogosPorVista(matches, v.id, fimPreEpoca).length;
+          return (
+            <button key={v.id} onClick={() => setVista(v.id)} style={{
+              padding: '5px 11px', borderRadius: 20, fontSize: 11.5, cursor: 'pointer', ...body,
+              background: on ? '#B5393F' : 'transparent',
+              color: on ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${on ? '#B5393F' : T.line}`,
+            }}>{v.label} ({n})</button>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: T.mutedDim }}>
+        <span style={{ flex: 1, minWidth: 180 }}>
+          {(VISTAS_JOGO.find(v => v.id === vista) || {}).desc}
+          {vista !== 'amigaveis' && !fimPreEpoca && (
+            <span style={{ color: T.warn }}> Define a data ao lado para separar os dois períodos.</span>
+          )}
+        </span>
+        {/* A data vive aqui, ao lado do que ela separa, e não perdida nas
+            definições da Época: é aqui que a sua falta se nota e é aqui
+            que se percebe para que serve. */}
+        {vista !== 'amigaveis' && setSeason && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span>Pré-época até</span>
+            <Input
+              type="date"
+              value={fimPreEpoca}
+              onChange={e => setSeason({ ...(season || {}), fimPreEpoca: e.target.value })}
+              style={{ width: 148, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 6px' }}
+            />
+          </label>
+        )}
+      </div>
+    </div>
+  );
+
+  if (rows.length === 0) {
+    return (
+      <Panel title="Estatísticas">
+        {seletor}
+        <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem jogos com relatório neste recorte.</div>
+      </Panel>
+    );
+  }
 
   const th = { textAlign: 'center', padding: '9px 8px', fontSize: 10, color: T.muted, textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap' };
   const thName = { ...th, textAlign: 'left' };
@@ -12009,6 +12082,7 @@ function MatchDashboard({ players, matches }) {
 
   return (
     <Panel title="Estatísticas">
+      {seletor}
       <div style={{ overflowX: 'auto' }}>
         <table>
           <thead>
@@ -13151,7 +13225,7 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions, convocatorias, setConvocatorias }) {
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias }) {
   const [modal, setModal] = useState(null);
   const [ficha, setFicha] = useState(null);
 
@@ -13216,7 +13290,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />
       </div>
       <div style={{ marginBottom: 20 }}>
-        <MatchDashboard players={players} matches={matches} />
+        <MatchDashboard players={players} matches={matches} season={season} setSeason={setSeason} />
       </div>
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registares um jogo." />
