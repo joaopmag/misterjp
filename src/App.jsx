@@ -4979,53 +4979,17 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
      só com os ícones à escala certa para cada ecrã. */
   const escalaEcra = isNarrowEditor ? 1.45 : 1;
 
-  /* QUANTO PODE O CAMPO CRESCER — MEDIDO, NÃO ADIVINHADO.
-
-     Passei várias versões a estimar em pixéis o que a barra de ferramentas
-     e o painel de edição ocupam, e a errar sempre: ora o campo ficava
-     minúsculo, ora empurrava a caixa de texto para fora do ecrã.
-
-     Agora mede-se. `editorRef` envolve o editor inteiro e `campoRef` só a
-     prancheta: a diferença entre as duas alturas é EXATAMENTE o que está à
-     volta do campo, seja o que for e mude o que mudar. O que sobra da
-     janela é do campo.
-
-     Recalcula-se quando a janela muda de tamanho e quando o conteúdo à
-     volta muda de altura (o painel de edição aparece e desaparece), via
-     ResizeObserver. */
-  const editorRef = useRef(null);
-  const campoRef = useRef(null);
-  const [alturaCampo, setAlturaCampo] = useState(null);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-
-    const medir = () => {
-      const editor = editorRef.current;
-      const campo = campoRef.current;
-      if (!editor || !campo) return;
-      const moldura = editor.offsetHeight - campo.offsetHeight; // tudo menos o campo
-      /* Folga curta de propósito: 28 px chegam para o campo não encostar
-         ao limite do ecrã. Estava em 96 e deixava uma faixa vazia enorme
-         por baixo da barra de desfazer — espaço que é do campo. */
-      const disponivel = window.innerHeight - moldura - 28;
-      // Nunca abaixo de 300 px: mais pequeno do que isto não dá para
-      // trabalhar, e nesse caso é preferível rolar a página.
-      setAlturaCampo(Math.max(300, Math.round(disponivel)));
-    };
-
-    medir();
-    window.addEventListener('resize', medir);
-    let obs = null;
-    if (typeof ResizeObserver !== 'undefined' && editorRef.current) {
-      obs = new ResizeObserver(medir);
-      obs.observe(editorRef.current);
-    }
-    return () => {
-      window.removeEventListener('resize', medir);
-      if (obs) obs.disconnect();
-    };
-  }, []);
+  /* O TAMANHO DO CAMPO JÁ NÃO É MEDIDO — é só CSS (ver PITCH_FIT: width
+     100% + aspectRatio). Havia aqui antes um ResizeObserver a medir
+     `editorRef` (o editor inteiro) para calcular uma altura máxima e
+     aplicá-la como `maxWidth` na prancheta (`campoRef`). O problema é que
+     `campoRef` está DENTRO de `editorRef`: mudar o tamanho da prancheta
+     mudava também a altura do editor inteiro, o que disparava o próprio
+     ResizeObserver outra vez, com um valor ligeiramente diferente — um
+     ciclo que nunca estabilizava e se via como a prancheta a tremer/
+     encolher e crescer repetidamente ao abrir o editor. Como o CSS já
+     resolve sozinho o ajuste à largura disponível, esta medição em
+     JavaScript era redundante e é isso que causava o tremor. */
   const svgRef = React.useRef(null);
   const [tool, setTool] = useState('select');
   // 'activeColor' já não é estado local — vem do componente pai (ExerciseModal)
@@ -5936,7 +5900,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
 
   return (
-    <div ref={editorRef}>
+    <div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6, alignItems: 'center' }}>
         <span style={{ fontSize: 11, color: T.mutedDim }}>Cor:</span>
         {TEAMS.map(tm => (
@@ -6034,11 +5998,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           limitar a altura diretamente deixaria o elemento com a largura
           toda e uma forma diferente da declarada — e o desenho esticava. */}
       <div
-        ref={campoRef}
         style={{
           ...PITCH_FIT,
           position: 'relative',
-          ...(alturaCampo ? { maxWidth: Math.round(alturaCampo * (PITCH_BOX.w / PITCH_BOX.h)) } : {}),
         }}
       >
         <svg
