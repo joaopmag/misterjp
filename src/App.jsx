@@ -4150,11 +4150,29 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
    `maxHeight` de propósito — limitar a altura deixaria o elemento com a
    largura toda e uma proporção diferente da declarada, e o desenho
    esticava (foi assim que os jogadores ficaram ovais, numa versão
-   anterior). */
+   anterior).
+
+   ONDE ISTO DEIXAVA DE CHEGAR: numa janela LARGA (computador), 100% da
+   largura disponível dava um campo tão alto que passava do fundo do
+   ecrã — era preciso rolar para ver a barra de ferramentas e o painel de
+   edição por baixo. A tentação é voltar a medir a altura disponível em
+   JavaScript, mas foi exatamente essa medição (um ResizeObserver a
+   vigiar o próprio contentor que ia redimensionar) que antes fazia o
+   campo tremer. Em vez disso, o limite sai também da PROPORÇÃO — mas
+   agora calculado a partir de uma altura-alvo em vh, não da largura do
+   contentor: `min(100%, altura-alvo-em-vh × proporção)`. Continua a ser
+   a LARGURA a ser limitada (a altura nunca se toca diretamente), por
+   isso a forma não se distorce; e como é só CSS, o browser recalcula
+   sozinho ao redimensionar a janela, sem qualquer ciclo de medição. Numa
+   janela estreita (telemóvel) o 100% já é mais pequeno do que este
+   limite, e o `min()` escolhe-o — o campo continua a ocupar a largura
+   toda como antes. */
+const PITCH_TARGET_VH = 58; // deixa espaço à barra de ferramentas e ao painel de edição por baixo
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
   margin: '0 auto',
+  maxWidth: `min(100%, ${(PITCH_TARGET_VH * (PITCH_BOX.w / PITCH_BOX.h)).toFixed(1)}vh)`,
 };
 
 
