@@ -12114,7 +12114,7 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                           color: escalao ? T.teamB : (lesao ? T.gold : (falta ? T.bad : (on ? T.cream : T.mutedDim))),
                           border: `1px solid ${escalao ? T.teamB : (lesao ? T.gold : (falta ? T.bad : (on ? (d.match ? T.warn : T.gold) : T.line)))}`,
                         }}
-                        title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → falta → lesionado → outro escalão → ausente'}
+                        title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → falta → outro escalão → lesionado → ausente'}
                       >{label}</button>
                       {on && (
                         closed ? (
@@ -12378,7 +12378,8 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   // Marca/desmarca presença em TODAS as sessões desse dia, para que baste
   // dar presença uma vez por dia, independentemente de quantos exercícios
   // (sessões) existam para essa data.
-  /* Um clique percorre ausente → presente → falta → lesionado → ausente.
+  /* Um clique percorre ausente → presente → falta → escalão → lesionado
+     → ausente (ver PRESENCA_ESTADOS, que é quem manda na ordem).
 
      Só a presença guarda nota: um jogador que não esteve não pode ser
      avaliado, por isso ao sair de "presente" a nota é apagada. */
@@ -14274,24 +14275,26 @@ const FRIENDLY = 'Amigável';
    jogos. Quem não está em `attendance` nem em `faltas` é simplesmente NP
    ou NC — que é o estado de toda a gente antes de alguém marcar seja o que
    for, e por isso continua a ser o valor por omissão dos registos antigos. */
-/* Ordem do ciclo: cada clique avança um passo.
+/* A ORDEM DESTA LISTA É O CICLO DOS CLIQUES.
 
-   ausente → presente → falta → LESIONADO → ausente
+   ausente → presente → falta → escalão → LESIONADO → ausente
 
-   A lesão fica a seguir à falta porque são os dois estados de ausência que
-   exigem alguma coisa do treinador — mas por razões opostas: a falta é um
-   problema de compromisso, a lesão é um problema clínico. Separá-las é o
-   que permite ler a assiduidade sem penalizar quem se magoou. */
-/* A ORDEM DESTA LISTA É O CICLO DOS CLIQUES, e começa em 'ausente'
-   porque é esse o estado de partida de toda a gente. Com 'presente' à
-   cabeça, o primeiro clique num jogador por marcar saltava para 'falta' —
-   dois cliques para o caso mais comum de todos. */
-/* O 'escalao' fecha o ciclo, logo a seguir ao 'lesionado' — são os dois
-   estados em que o jogador não esteve mas também não faltou. A diferença
-   é a razão: um é clínico, o outro é administrativo (subiu aos seniores,
-   foi emprestado a outro escalão nesse dia). Ambos saem do denominador
-   das médias; nenhum é falta. */
-const PRESENCA_ESTADOS = ['ausente', 'presente', 'falta', 'lesionado', 'escalao'];
+   Começa em 'ausente' porque é o estado de partida de toda a gente: com
+   'presente' à cabeça, o primeiro clique num jogador por marcar saltava
+   para 'falta' — dois cliques para o caso mais comum de todos.
+
+   Depois da falta vêm os dois estados em que o jogador não esteve mas
+   também não faltou, e que por isso saem do denominador das médias: o
+   'escalao' (subiu aos seniores, jogou noutro escalão nesse dia) e o
+   'lesionado'.
+
+   O LESIONADO É O ÚLTIMO de propósito, mesmo sendo mais frequente do que
+   o escalão. Marcá-lo pode abrir a proposta de registo no Boletim
+   Clínico, e é o único passo deste ciclo que interrompe quem está a
+   marcar presenças em série. Ficar no fim significa que se chega lá
+   sempre de forma deliberada, e que passar por ele para voltar a
+   'ausente' custa um clique só. */
+const PRESENCA_ESTADOS = ['ausente', 'presente', 'falta', 'escalao', 'lesionado'];
 /* Estados que NÃO são oportunidade de participação neste escalão. Quem
    calcular médias tem de perguntar aqui em vez de escrever a lista outra
    vez — foi a divergir assim que a assiduidade passou a castigar quem se
