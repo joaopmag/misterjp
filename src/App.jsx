@@ -8,7 +8,7 @@ import {
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
-  Image as ImageIcon
+  Image as ImageIcon, Stethoscope, AlertTriangle
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -91,6 +91,51 @@ const tempoJogoText = (s) => {
   const min = Number(s.tempoJogo);
   return `Tempo: ${min > 0 ? min : TEMPO_JOGO_PADRAO} min`;
 };
+
+/* ================================================================
+   BOLETIM CLÍNICO — DISPONIBILIDADE
+   ================================================================
+
+   Três níveis, e só enquanto a ocorrência está aberta. "Disponível" não é
+   um nível: é a ausência de ocorrência. "Alta" também não é: é a data de
+   fecho (`fim`). Guardar um campo "estado atual" na ocorrência era a
+   tentação óbvia e é a armadilha — passava a data de retorno e o registo
+   continuava a dizer "indisponível" até alguém o ir editar à mão. */
+const NIVEIS_CLINICOS = [
+  { id: 'indisponivel', label: 'Indisponível', curto: 'Indisponível', cor: '#C25A5A', avisaTreino: true, avisaJogo: true },
+  { id: 'condicionado', label: 'Treino condicionado', curto: 'Condicionado', cor: '#D9A72E', avisaTreino: false, avisaJogo: true },
+  { id: 'vigilancia', label: 'Apto com vigilância', curto: 'Vigilância', cor: '#4CA86B', avisaTreino: false, avisaJogo: false },
+];
+const nivelClinico = (id) => NIVEIS_CLINICOS.find(n => n.id === id) || NIVEIS_CLINICOS[0];
+
+/* A pergunta certa nunca é "este jogador está lesionado?" — é "este
+   jogador estava lesionado NAQUELE dia?". Uma sessão de 12/08 não pode
+   ser afetada por uma lesão que começou a 20/08, e o lançamento é quase
+   sempre retroativo. Por isso a data é obrigatória e não tem valor por
+   omissão: quem chamar esta função tem de dizer de que dia fala.
+
+   Devolve a ocorrência mais recente que cobre esse dia (`null` = sem
+   nada). `fim` vazio significa aberta — ainda a decorrer. */
+function estadoClinicoEm(jogadorId, data, clinico) {
+  if (!jogadorId || !data) return null;
+  const abertas = (clinico || []).filter(o =>
+    o.playerId === jogadorId
+    && o.inicio && o.inicio <= data
+    && (!o.fim || o.fim >= data));
+  if (!abertas.length) return null;
+  const o = abertas.sort((a, b) => (b.inicio || '').localeCompare(a.inicio || ''))[0];
+  return { ...nivelClinico(o.nivel), ocorrencia: o };
+}
+
+/* Texto curto para o aviso, sem obrigar quem o mostra a montar a frase.
+   Ex.: "Indisponível desde 21/08 · Lesão muscular (coxa)". */
+function resumoClinico(estado) {
+  if (!estado) return '';
+  const o = estado.ocorrencia;
+  const desde = o.inicio ? ` desde ${fmtDate(o.inicio).replace(/^\w+, /, '')}` : '';
+  const que = [o.tipo, o.zona && `(${o.zona})`].filter(Boolean).join(' ');
+  return [`${estado.label}${desde}`, que].filter(Boolean).join(' · ');
+}
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -1327,6 +1372,10 @@ function App({ session }) {
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit);
   const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit);
+  /* Uma ocorrência por registo — poucos campos, poucos bytes. Atenção:
+     é preciso criar as políticas RLS da tabela `clinico` no Supabase, ou
+     as gravações falham em SILÊNCIO, sem erro nenhum. */
+  const [clinico, setClinico, clinicoReady, clinicoMeta] = useCollectionSync('clinico', notifyEdit);
   // Momentos de avaliação do Desenvolvimento Individual. Guarda os
   // momentos e, dentro de cada um, um registo por jogador — não duplica o
   // plantel, referencia-o pelo id.
@@ -1366,7 +1415,7 @@ function App({ session }) {
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
     || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
-    || !desenvolvimentoReady || !standingsReady;
+    || !desenvolvimentoReady || !standingsReady || !clinicoReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
   // lateral, quando o link inclui ?checkin=1 — é este o link a partilhar
@@ -1444,6 +1493,7 @@ function App({ session }) {
     { id: 'planeamento', label: 'Planeamento', icon: CalendarDays },
     { id: 'simulador', label: 'Simulador', icon: RotateCw },
     { id: 'presencas', label: 'Presenças', icon: UserCheck },
+    { id: 'clinico', label: 'Boletim Clínico', icon: Stethoscope },
     { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList },
     { id: 'jogos', label: 'Jogos', icon: Trophy },
     { id: 'monitorizacao', label: 'Monitorização', icon: Activity },
@@ -1716,14 +1766,15 @@ function App({ session }) {
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} />}
-          {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} />}
+          {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} clinico={clinico} />}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} />}
-          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} />}
-          {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} />}
-          {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} />}
+          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} clinico={clinico} />}
+          {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
+          {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} />}
+          {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} clinico={clinico} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* FutchannelYouT e Apresentações ficam sempre montados (só
@@ -2173,7 +2224,7 @@ const ACTIVITY_LABELS = {
   season_config: 'Época', players: 'Plantel', exercises: 'Exercícios', ideias: 'Ideia de Jogo',
   sessions: 'Planeamento', monitoring: 'Monitorização', matches: 'Jogos',
   scouting: 'Scouting', videos: 'Vídeos', apresentacoes: 'Apresentações', convocatorias: 'Convocatórias', diario: 'Diário',
-  league_standings: 'Classificação',
+  league_standings: 'Classificação', clinico: 'Boletim Clínico',
 };
 
 function timeAgo(iso) {
@@ -2646,7 +2697,21 @@ function SheetActions({ onShare, onPrint, onEdit }) {
   );
 }
 
-function PlayerChipList({ players, isOn, onToggle }) {
+/* `estadoClinico` é opcional: uma função (jogador) => estado|null, já
+   com a data certa fechada por quem chama. Quando vem, o chip ganha um
+   ponto da cor do nível e o motivo no `title`, e selecionar alguém que o
+   nível manda avisar pede confirmação — UMA vez, e passa.
+
+   Avisar em vez de bloquear é deliberado. O lançamento é quase sempre
+   retroativo (preenche-se o jogo dias depois) e há o caso em que o
+   jogador se magoou DURANTE o jogo: tem de estar na convocatória. Um
+   bloqueio duro tornava a verdade impossível de registar.
+
+   `avisaEm` diz qual dos dois avisos usar: 'jogo' numa convocatória,
+   'treino' no simulador e no resto. É o que faz o "treino condicionado"
+   entrar na distribuição de equipas sem chatear, mas continuar a avisar
+   quando é para jogar a sério. */
+function PlayerChipList({ players, isOn, onToggle, estadoClinico, avisaEm = 'treino' }) {
   const isMobile = useIsMobile(560);
   /* Ordenação POR COLUNA: com gridAutoFlow "column" e um número de linhas
      fixo, a lista lê-se de cima para baixo em cada coluna (GR, GR, GR, GR,
@@ -2664,13 +2729,34 @@ function PlayerChipList({ players, isOn, onToggle }) {
     }}>
       {ordered.map(p => {
         const on = isOn(p);
+        const clinico = estadoClinico ? estadoClinico(p) : null;
+        const avisa = !!clinico && (avisaEm === 'jogo' ? clinico.avisaJogo : clinico.avisaTreino);
+        const motivo = clinico ? resumoClinico(clinico) : '';
+        const escolher = () => {
+          // Só pergunta ao SELECIONAR: tirar alguém da lista nunca precisa
+          // de justificação.
+          if (avisa && !on && typeof window !== 'undefined'
+            && !window.confirm(`${p.name} — ${motivo}.\n\nSelecionar mesmo assim?`)) return;
+          onToggle(p);
+        };
         return (
-          <button key={p.id} type="button" onClick={() => onToggle(p)} style={{
+          <button key={p.id} type="button" onClick={escolher} title={motivo || p.name} style={{
             padding: '9px 12px', borderRadius: 16, fontSize: 12.5, cursor: 'pointer', ...body,
             textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${on ? '#B5393F' : T.line}`,
-          }}>{p.position ? `${p.position} · ` : ''}{p.name}</button>
+            display: 'flex', alignItems: 'center', gap: 7,
+          }}>
+            {clinico && (
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                background: clinico.cor, boxShadow: on ? '0 0 0 1.5px rgba(255,255,255,.5)' : 'none',
+              }} />
+            )}
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {p.position ? `${p.position} · ` : ''}{p.name}
+            </span>
+          </button>
         );
       })}
     </div>
@@ -2750,7 +2836,7 @@ function fmtDate(d) {
 /* ---------------------------------------------------------------
    PLANTEL
 ---------------------------------------------------------------- */
-function Plantel({ players, setPlayers, sessions, matches, meta }) {
+function Plantel({ players, setPlayers, sessions, matches, meta, clinico }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
   const [statsFor, setStatsFor] = useState(null); // player object (view stats)
   const [printPlayer, setPrintPlayer] = useState(null); // ficha a imprimir
@@ -2837,7 +2923,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
       {modal && <PlayerModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
       {statsFor && (
         <PlayerStatsModal
-          player={statsFor} sessions={sessions} matches={matches}
+          player={statsFor} sessions={sessions} matches={matches} clinico={clinico}
           onClose={() => setStatsFor(null)}
           onShare={() => doShare(statsFor)}
           onPrint={() => { const p = statsFor; setStatsFor(null); setTimeout(() => doPrint(p), 60); }}
@@ -3041,7 +3127,7 @@ function playerStats(player, sessions, matches) {
   };
 }
 
-function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint, onEdit }) {
+function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint, onEdit, clinico }) {
   /* A ficha de um jogador conta JOGOS OFICIAIS.
 
      É o que ela quer dizer quando fala de convocatórias, titularidades e
@@ -3089,6 +3175,55 @@ function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint
         ['Vermelhos', s.red],
         ['Nota média jogo', s.avgMatchRating ?? '—'],
       ]} />
+
+      {/* HISTÓRICO CLÍNICO DESTE JOGADOR.
+
+          O Boletim Clínico responde a "quem tenho fora esta semana?".
+          Esta lista responde à outra pergunta, que é de outra natureza e
+          só se faz aqui: "este miúdo magoa-se muito? sempre no mesmo
+          sítio?". Só aparece se houver alguma coisa para mostrar. */}
+      {(() => {
+        const dele = (clinico || [])
+          .filter(o => o.playerId === player.id)
+          .sort((a, b) => (b.inicio || '').localeCompare(a.inicio || ''));
+        if (!dele.length) return null;
+        const diasFora = dele.reduce((t, o) => t + (diasDeOcorrencia(o) || 0), 0);
+        return (
+          <>
+            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 0 8px' }}>
+              Boletim clínico
+            </div>
+            <StatsGrid items={[
+              ['Ocorrências', dele.length],
+              ['Dias fora', diasFora],
+              ['Abertas', dele.filter(o => !o.fim).length],
+            ]} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+              {dele.map(o => {
+                const nivel = nivelClinico(o.nivel);
+                const dias = diasDeOcorrencia(o);
+                return (
+                  <div key={o.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, fontSize: 12,
+                    padding: '7px 10px', background: T.bg, borderRadius: 7,
+                    border: `1px solid ${T.line}`, borderLeft: `3px solid ${o.fim ? T.line : nivel.cor}`,
+                  }}>
+                    <span style={{ color: T.cream, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {[o.tipo, o.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
+                    </span>
+                    <span style={{ ...mono, color: T.mutedDim, fontSize: 11, flexShrink: 0 }}>
+                      {o.inicio ? fmtShort(o.inicio) : '—'}{dias != null ? ` · ${dias}d` : ''}
+                    </span>
+                    <span style={{ fontSize: 11, color: o.fim ? T.mutedDim : nivel.cor, flexShrink: 0 }}>
+                      {o.fim ? 'alta' : nivel.curto}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
@@ -9473,7 +9608,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar }) {
   );
 }
 
-function Simulador({ players, exercises, sessions, setSessions, matches }) {
+function Simulador({ players, exercises, sessions, setSessions, matches, clinico }) {
   const isNarrow = useIsMobile(760);
   const [modo, setModo] = useState('treino'); // 'treino' | 'amigavel'
   const [presentIds, setPresentIds] = useState([]);
@@ -9869,7 +10004,12 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
               </Btn>
             )}
           </div>
-          <PlayerChipList players={players} isOn={p => presentIds.includes(p.id)} onToggle={toggle} />
+          <PlayerChipList
+            players={players}
+            isOn={p => presentIds.includes(p.id)}
+            onToggle={toggle}
+            estadoClinico={p => estadoClinicoEm(p.id, dia, clinico)}
+          />
 
           {/* À experiência: entram na distribuição, não entram nos dados. */}
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}` }}>
@@ -10426,7 +10566,7 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
   );
 }
 
-function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season }) {
+function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season, clinico }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
   // Ficha de leitura do jogo — o mesmo conceito usado em Jogos: o cartão
@@ -10766,6 +10906,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           presetDate={presetDate}
           exercises={exercises}
           players={players}
+          clinico={clinico}
           onClose={() => setModal(null)}
           onSave={save}
         />
@@ -10799,6 +10940,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           players={players}
           standings={standings}
           season={season}
+          clinico={clinico}
           onClose={() => setMatchModal(null)}
           onSave={saveMatch}
         />
@@ -11355,6 +11497,284 @@ function PrintOnzeAmigavel({ session, jogo, players, ideias }) {
   );
 }
 
+/* ================================================================
+   BOLETIM CLÍNICO
+   ================================================================
+
+   O registo central de quem está fora e porquê. Uma ocorrência por
+   registo: quem, o quê, desde quando, que nível, quando se espera de
+   volta. Poucos campos de propósito — quem preenche isto é o treinador,
+   não o departamento médico, e uma ficha com dezoito campos não se
+   preenche nunca.
+
+   O que ESTE módulo não faz: não altera presenças, não apaga histórico,
+   não mexe em avaliações nem em estatísticas passadas. A lesão impede
+   participações novas; não reescreve o passado. */
+
+const TIPOS_OCORRENCIA = ['Lesão muscular', 'Lesão articular', 'Entorse', 'Fratura', 'Contusão', 'Sobrecarga', 'Doença', 'Pós-operatório', 'Outro'];
+const ZONAS_CORPORAIS = ['Tornozelo', 'Joelho', 'Coxa', 'Virilha', 'Anca', 'Perna', 'Pé', 'Ombro', 'Costas', 'Cabeça', 'Outra'];
+
+/* Ficha de uma ocorrência. `presetPlayerId` e `presetData` chegam
+   preenchidos quando a janela é aberta a partir de um L nas presenças —
+   é o que evita escrever duas vezes a mesma coisa. */
+function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onClose, onSave, onRemove }) {
+  const [f, setF] = useState(ocorrencia || {
+    playerId: presetPlayerId || '',
+    inicio: presetData || todayStr(),
+    fim: '',
+    /* Sem nível por omissão, de propósito. Um valor pré-escolhido é
+       aceite sem se pensar, e o nível é justamente a decisão que faz o
+       resto da app comportar-se de uma maneira ou de outra. Obriga a
+       escolher — é um clique. */
+    nivel: '',
+    tipo: '',
+    zona: '',
+    descricao: '',
+    previsaoRetorno: '',
+    restricoes: '',
+    notas: '',
+  });
+  const valido = f.playerId && f.inicio && f.nivel;
+
+  return (
+    <Modal
+      title={ocorrencia ? 'Editar ocorrência' : 'Nova ocorrência'}
+      subtitle={ocorrencia ? null : 'Boletim Clínico'}
+      onClose={onClose}
+      wide
+    >
+      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        <Field label="Jogador">
+          <Select value={f.playerId} onChange={e => setF({ ...f, playerId: e.target.value })}>
+            <option value="">Escolher…</option>
+            {sortByPosition(players).map(p => (
+              <option key={p.id} value={p.id}>{p.number ? `${p.number} · ` : ''}{p.name}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Nível">
+          <Select value={f.nivel} onChange={e => setF({ ...f, nivel: e.target.value })}>
+            <option value="">Escolher…</option>
+            {NIVEIS_CLINICOS.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+          </Select>
+        </Field>
+        <Field label="Início">
+          <Input type="date" value={f.inicio} onChange={e => setF({ ...f, inicio: e.target.value })} />
+        </Field>
+      </div>
+
+      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        <Field label="Tipo">
+          <Select value={f.tipo} onChange={e => setF({ ...f, tipo: e.target.value })}>
+            <option value="">—</option>
+            {TIPOS_OCORRENCIA.map(t => <option key={t} value={t}>{t}</option>)}
+          </Select>
+        </Field>
+        <Field label="Zona">
+          <Select value={f.zona} onChange={e => setF({ ...f, zona: e.target.value })}>
+            <option value="">—</option>
+            {ZONAS_CORPORAIS.map(z => <option key={z} value={z}>{z}</option>)}
+          </Select>
+        </Field>
+        <Field label="Previsão de retorno">
+          <Input type="date" value={f.previsaoRetorno} onChange={e => setF({ ...f, previsaoRetorno: e.target.value })} />
+        </Field>
+      </div>
+
+      {/* A DATA DE ALTA É O QUE FECHA A OCORRÊNCIA.
+
+          Não há botão "dar alta" nem estado "Alta": preencher esta data É
+          a alta. Um estado à parte seria um segundo sítio a dizer a mesma
+          coisa, e mais tarde ou mais cedo os dois discordavam. */}
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Data de alta (deixa vazio enquanto estiver a decorrer)" bloco solto>
+          <Input type="date" value={f.fim} onChange={e => setF({ ...f, fim: e.target.value })} />
+        </Field>
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Restrições" bloco solto>
+          <TextArea
+            value={f.restricoes}
+            onChange={e => setF({ ...f, restricoes: e.target.value })}
+            placeholder="Ex: corrida linear sim, mudanças de direção não · sem contacto · 30 min de treino integrado"
+            style={{ minHeight: 64 }}
+          />
+        </Field>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Notas" bloco solto>
+          <TextArea
+            value={f.notas}
+            onChange={e => setF({ ...f, notas: e.target.value })}
+            placeholder="Diagnóstico, quem avaliou, evolução, link do Drive para exames…"
+            style={{ minHeight: 64 }}
+          />
+        </Field>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+        {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> Apagar</Btn>}
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={() => valido && onSave(f)} disabled={!valido}>Guardar</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+/* Uma linha do boletim. A mesma no painel das ocorrências abertas e no
+   histórico — muda só a informação que faz sentido em cada um. */
+function LinhaOcorrencia({ o, jogador, onEdit, mostrarJogador = true }) {
+  const nivel = nivelClinico(o.nivel);
+  const aberta = !o.fim;
+  const dias = diasDeOcorrencia(o);
+  const atrasada = aberta && o.previsaoRetorno && o.previsaoRetorno < todayStr();
+
+  return (
+    <div
+      onClick={onEdit}
+      title="Abrir ocorrência"
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+        padding: '11px 14px', background: T.bg, borderRadius: 8,
+        border: `1px solid ${T.line}`, borderLeft: `3px solid ${aberta ? nivel.cor : T.line}`,
+      }}
+    >
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ color: T.cream, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {mostrarJogador && jogador ? `${jogador.number ? `#${jogador.number} ` : ''}${jogador.name} — ` : ''}
+          {[o.tipo, o.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
+        </div>
+        <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>
+          {[
+            aberta ? nivel.label : 'Alta',
+            o.inicio ? fmtDate(o.inicio) : null,
+            o.fim ? `até ${fmtDate(o.fim)}` : null,
+            dias != null ? `${dias} ${dias === 1 ? 'dia' : 'dias'}` : null,
+          ].filter(Boolean).join(' · ')}
+        </div>
+        {aberta && o.restricoes ? (
+          <div style={{ color: T.muted, fontSize: 11.5, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {o.restricoes}
+          </div>
+        ) : null}
+      </div>
+      {/* A previsão de retorno já passou e ninguém deu alta: não é um erro,
+          mas é a única coisa nesta lista que pede uma ação. */}
+      {atrasada && (
+        <span title={`Previsão de retorno era ${fmtDate(o.previsaoRetorno)}`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: T.warn, fontSize: 11.5, flexShrink: 0 }}>
+          <AlertTriangle size={13} /> rever
+        </span>
+      )}
+      <Pencil size={14} style={{ color: T.mutedDim, flexShrink: 0 }} />
+    </div>
+  );
+}
+
+/* Dias decorridos: até à alta, ou até hoje se ainda estiver aberta. */
+function diasDeOcorrencia(o) {
+  if (!o.inicio) return null;
+  const de = new Date(`${o.inicio}T00:00:00`);
+  const a = new Date(`${o.fim || todayStr()}T00:00:00`);
+  const d = Math.round((a - de) / 86400000);
+  return d >= 0 ? d + 1 : null;
+}
+
+function BoletimClinico({ players, clinico, setClinico }) {
+  const [modal, setModal] = useState(null); // 'new' | ocorrência
+  const [verHistorico, setVerHistorico] = useState(false);
+  const hoje = todayStr();
+
+  const jogadorDe = (id) => players.find(p => p.id === id);
+  const ordenar = (lista) => [...lista].sort((a, b) => (b.inicio || '').localeCompare(a.inicio || ''));
+
+  /* Abertas = sem data de alta. Não basta "cobre hoje": uma ocorrência
+     lançada com início na semana que vem também está por fechar e tem de
+     se ver. */
+  const abertas = ordenar((clinico || []).filter(o => !o.fim));
+  const fechadas = ordenar((clinico || []).filter(o => o.fim));
+
+  const save = (data) => {
+    if (data.id) setClinico(clinico.map(o => (o.id === data.id ? data : o)));
+    else setClinico([...clinico, { ...data, id: uid() }]);
+    setModal(null);
+  };
+  const remove = (id) => {
+    const o = clinico.find(x => x.id === id);
+    const j = o && jogadorDe(o.playerId);
+    removeWithUndo(clinico, setClinico, id, `Ocorrência${j ? ` de ${j.name}` : ''}`);
+    setModal(null);
+  };
+
+  const contagem = NIVEIS_CLINICOS.map(n => ({
+    nivel: n,
+    n: abertas.filter(o => o.nivel === n.id && o.inicio <= hoje).length,
+  }));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Panel
+        title="Fora esta semana"
+        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ocorrência</Btn>}
+      >
+        {/* Quantos e em que nível, antes da lista: é a pergunta que se faz
+            ao abrir o separador. */}
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: abertas.length ? 14 : 0 }}>
+          {contagem.map(({ nivel, n }) => (
+            <div key={nivel.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: nivel.cor, flexShrink: 0 }} />
+              <span style={{ ...mono, fontSize: 18, color: n ? T.cream : T.mutedDim }}>{n}</span>
+              <span style={{ fontSize: 12.5, color: T.muted }}>{nivel.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {abertas.length === 0 ? (
+          <EmptyState text="Ninguém no boletim. Plantel todo disponível." />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {abertas.map(o => (
+              <LinhaOcorrencia key={o.id} o={o} jogador={jogadorDe(o.playerId)} onEdit={() => setModal(o)} />
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      <Panel
+        title={`Histórico (${fechadas.length})`}
+        action={fechadas.length ? (
+          <Btn variant="ghost" onClick={() => setVerHistorico(v => !v)}>{verHistorico ? 'Esconder' : 'Ver'}</Btn>
+        ) : null}
+      >
+        {fechadas.length === 0 ? (
+          <EmptyState text="Ainda sem ocorrências fechadas." />
+        ) : !verHistorico ? (
+          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+            {fechadas.length} {fechadas.length === 1 ? 'ocorrência com alta' : 'ocorrências com alta'}.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {fechadas.map(o => (
+              <LinhaOcorrencia key={o.id} o={o} jogador={jogadorDe(o.playerId)} onEdit={() => setModal(o)} />
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {modal && (
+        <OcorrenciaModal
+          ocorrencia={modal === 'new' ? null : modal}
+          players={players}
+          onClose={() => setModal(null)}
+          onSave={save}
+          onRemove={modal !== 'new' ? () => remove(modal.id) : null}
+        />
+      )}
+    </div>
+  );
+}
+
 function dayLabel(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { weekday: 'short' }).replace('.', '');
 }
@@ -11362,7 +11782,7 @@ function fmtShort(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 }
 
-function SessionModal({ session, presetDate, exercises, players, onClose, onSave }) {
+function SessionModal({ session, presetDate, exercises, players, onClose, onSave, clinico }) {
   const [f, setF] = useState(session || {
     date: presetDate || todayStr(), focus: '', phase: PHASES[0],
     intensity: 'media', opponent: '', exerciseIds: [], attendance: [], ratings: {},
@@ -11466,6 +11886,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
                 players={players}
                 isOn={p => f.attendance.includes(p.id)}
                 onToggle={p => toggleAttendance(p.id)}
+                estadoClinico={p => estadoClinicoEm(p.id, f.date, clinico)}
               />
             )}
           </div>
@@ -11664,11 +12085,12 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                   const on = estado === 'presente';
                   const falta = estado === 'falta';
                   const lesao = estado === 'lesionado';
+                  const escalao = estado === 'escalao';
                   const closed = dayClosed(d);
                   const rating = ratingOf(d, p.id);
                   // Amigável conta presenças como um treino, não convocatória.
                   const convocatoria = d.match && !isFriendlyMatch(d.match);
-                  const label = lesao ? 'L' : (falta ? 'F' : (convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP')));
+                  const label = escalao ? 'E' : (lesao ? 'L' : (falta ? 'F' : (convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP'))));
                   return (
                     <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: 4, textAlign: 'center', verticalAlign: 'top' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
@@ -11685,11 +12107,14 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                           /* A lesão tem cor própria (âmbar) e não a vermelha
                              da falta: são ausências, mas uma é um problema
                              de compromisso e a outra é clínico. */
-                          background: lesao ? `${T.gold}2A` : (falta ? `${T.bad}33` : (on ? (d.match ? `${T.warn}33` : `${T.crimson}44`) : 'transparent')),
-                          color: lesao ? T.gold : (falta ? T.bad : (on ? T.cream : T.mutedDim)),
-                          border: `1px solid ${lesao ? T.gold : (falta ? T.bad : (on ? (d.match ? T.warn : T.gold) : T.line))}`,
+                          /* O E tem azul: é o único destes estados que não
+                             é ausência nenhuma — o jogador esteve a jogar,
+                             só que noutro escalão. */
+                          background: escalao ? `${T.teamB}2A` : (lesao ? `${T.gold}2A` : (falta ? `${T.bad}33` : (on ? (d.match ? `${T.warn}33` : `${T.crimson}44`) : 'transparent'))),
+                          color: escalao ? T.teamB : (lesao ? T.gold : (falta ? T.bad : (on ? T.cream : T.mutedDim))),
+                          border: `1px solid ${escalao ? T.teamB : (lesao ? T.gold : (falta ? T.bad : (on ? (d.match ? T.warn : T.gold) : T.line)))}`,
                         }}
-                        title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → ausente → falta → lesionado'}
+                        title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → falta → lesionado → outro escalão → ausente'}
                       >{label}</button>
                       {on && (
                         closed ? (
@@ -11831,7 +12256,11 @@ function exportAttendanceCSV({ players, dayGroups, monthKeys }) {
   return true;
 }
 
-function Presencas({ players, sessions, setSessions, matches, setMatches, convocatorias, season }) {
+function Presencas({ players, sessions, setSessions, matches, setMatches, convocatorias, season, clinico, setClinico }) {
+  /* Ocorrência a criar a partir de um L, já com jogador e data. Fica em
+     estado à parte porque a janela abre DEPOIS de a presença ser gravada:
+     o registo clínico é um extra, não uma condição para marcar presenças. */
+  const [novaOcorrencia, setNovaOcorrencia] = useState(null);
   const todayStart = new Date(new Date().toDateString());
   /* Os jogos entram nas presenças como um "dia" próprio, para se poder
      confirmar quem esteve presente e dar nota, tal como num treino. A
@@ -11892,7 +12321,9 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
     const faltas = d.match ? (d.match.faltas || []) : (d.list || []).flatMap(x => x.faltas || []);
     if (faltas.includes(pid)) return 'falta';
     const lesionados = d.match ? (d.match.lesionados || []) : (d.list || []).flatMap(x => x.lesionados || []);
-    return lesionados.includes(pid) ? 'lesionado' : 'ausente';
+    if (lesionados.includes(pid)) return 'lesionado';
+    const escalao = d.match ? (d.match.escalao || []) : (d.list || []).flatMap(x => x.escalao || []);
+    return escalao.includes(pid) ? 'escalao' : 'ausente';
   };
   const ratingOf = (d, pid) => (d.match ? ((d.match.ratings || {})[pid] ?? null) : dayRating(d.list, pid));
   const dayClosed = (d) => (d.match ? !!d.match.attendanceClosed : dayIsClosed(d.list));
@@ -11905,7 +12336,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
        três semanas de paragem aparecia com 40% de assiduidade ao lado de
        quem simplesmente não aparece. A assiduidade passa a medir o que
        devia medir — a presença nos dias em que podia estar. */
-    const diasPossiveis = confirmedDays.filter(d => estadoDe(d, p.id) !== 'lesionado');
+    const diasPossiveis = confirmedDays.filter(d => contaParaMedias(estadoDe(d, p.id)));
     const pct = diasPossiveis.length ? Math.round((attended / diasPossiveis.length) * 100) : null;
     // Notas de treino e de jogo contam separadamente — são escalas
     // diferentes e misturá-las não diz nada. Notas em branco (NA) não
@@ -11939,6 +12370,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
         naoConvocado: conta(comConvocatoria, 'ausente'),
         falta: conta(confirmedDays, 'falta'),
         lesionado: conta(confirmedDays, 'lesionado'),
+        escalao: conta(confirmedDays, 'escalao'),
       },
     };
   });
@@ -11954,11 +12386,29 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
     const estadoAtual = estadoDe(day, playerId);
     const proximo = proximoEstadoPresenca(estadoAtual);
 
+    /* AO MARCAR L, CONVIDA A REGISTAR NO BOLETIM.
+
+       Só quando NÃO há já uma ocorrência aberta a cobrir esse dia. Um
+       jogador com três semanas de paragem tem quinze sessões marcadas com
+       L; perguntar em todas seria insuportável e ensinava a carregar em
+       "não" sem ler. A ocorrência é uma; os L são a sua sombra nos dias.
+
+       A pergunta é só um convite — a presença fica marcada de qualquer
+       forma, responda-se o que se responder. */
+    if (proximo === 'lesionado' && setClinico && !estadoClinicoEm(playerId, day.date, clinico)) {
+      const j = players.find(p => p.id === playerId);
+      if (typeof window !== 'undefined'
+        && window.confirm(`${j ? j.name : 'Jogador'} marcado como lesionado em ${fmtDate(day.date)}.\n\nRegistar a ocorrência no Boletim Clínico?`)) {
+        setNovaOcorrencia({ playerId, data: day.date });
+      }
+    }
+
     if (day.match) {
       const m = day.match;
       const base = convocadosOf(m);
       const faltas = (m.faltas || []).filter(id => id !== playerId);
       const lesionados = (m.lesionados || []).filter(id => id !== playerId);
+      const escalao = (m.escalao || []).filter(id => id !== playerId);
       const convocados = base.filter(id => id !== playerId);
       setMatches(matches.map(x => {
         if (x.id !== m.id) return x;
@@ -11972,6 +12422,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
           convocados: proximo === 'presente' ? [...convocados, playerId] : convocados,
           faltas: proximo === 'falta' ? [...faltas, playerId] : faltas,
           lesionados: proximo === 'lesionado' ? [...lesionados, playerId] : lesionados,
+          escalao: proximo === 'escalao' ? [...escalao, playerId] : escalao,
           ratings,
         };
       }));
@@ -11986,11 +12437,13 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       const presentes = (s.attendance || []).filter(id => id !== playerId);
       const faltas = (s.faltas || []).filter(id => id !== playerId);
       const lesionados = (s.lesionados || []).filter(id => id !== playerId);
+      const escalao = (s.escalao || []).filter(id => id !== playerId);
       return {
         ...s,
         attendance: proximo === 'presente' ? [...presentes, playerId] : presentes,
         faltas: proximo === 'falta' ? [...faltas, playerId] : faltas,
         lesionados: proximo === 'lesionado' ? [...lesionados, playerId] : lesionados,
+        escalao: proximo === 'escalao' ? [...escalao, playerId] : escalao,
         ratings,
       };
     }));
@@ -12087,7 +12540,8 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                       { v: totais.convocado, l: 'C', cor: T.warn, t: 'Convocado para jogos oficiais' },
                       { v: totais.naoConvocado, l: 'NC', cor: T.mutedDim, t: 'Não convocado para jogos oficiais' },
                       { v: totais.falta, l: 'F', cor: T.bad, t: 'Faltas — ausência sem justificação' },
-                      { v: totais.lesionado, l: 'L', cor: T.gold, t: 'Lesionado — ausência por motivo clínico' },
+                      { v: totais.lesionado, l: 'L', cor: T.gold, t: 'Lesionado — ausência por motivo clínico, fora das médias' },
+                      { v: totais.escalao, l: 'E', cor: T.teamB, t: 'Noutro escalão — não era oportunidade de participação, fora das médias' },
                     ].map(x => (
                       <div key={x.l} title={x.t} style={{ textAlign: 'center', width: 26 }}>
                         <div style={{ ...mono, fontSize: 13, color: x.v ? x.cor : T.mutedDim }}>{x.v}</div>
@@ -12109,6 +12563,20 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
             })}
           </div>
         </>
+      )}
+
+      {/* Aberta a partir de um L. Guardar aqui grava no Boletim Clínico e
+          a partir daí os chips de convocatória e simulador passam a
+          avisar — sem que ninguém tenha de ir ao outro separador. */}
+      {novaOcorrencia && (
+        <OcorrenciaModal
+          ocorrencia={null}
+          players={players}
+          presetPlayerId={novaOcorrencia.playerId}
+          presetData={novaOcorrencia.data}
+          onClose={() => setNovaOcorrencia(null)}
+          onSave={(data) => { setClinico([...(clinico || []), { ...data, id: uid() }]); setNovaOcorrencia(null); }}
+        />
       )}
     </div>
   );
@@ -13818,7 +14286,18 @@ const FRIENDLY = 'Amigável';
    porque é esse o estado de partida de toda a gente. Com 'presente' à
    cabeça, o primeiro clique num jogador por marcar saltava para 'falta' —
    dois cliques para o caso mais comum de todos. */
-const PRESENCA_ESTADOS = ['ausente', 'presente', 'falta', 'lesionado'];
+/* O 'escalao' fecha o ciclo, logo a seguir ao 'lesionado' — são os dois
+   estados em que o jogador não esteve mas também não faltou. A diferença
+   é a razão: um é clínico, o outro é administrativo (subiu aos seniores,
+   foi emprestado a outro escalão nesse dia). Ambos saem do denominador
+   das médias; nenhum é falta. */
+const PRESENCA_ESTADOS = ['ausente', 'presente', 'falta', 'lesionado', 'escalao'];
+/* Estados que NÃO são oportunidade de participação neste escalão. Quem
+   calcular médias tem de perguntar aqui em vez de escrever a lista outra
+   vez — foi a divergir assim que a assiduidade passou a castigar quem se
+   magoou. */
+const ESTADOS_FORA_DAS_MEDIAS = ['lesionado', 'escalao'];
+const contaParaMedias = (estado) => !ESTADOS_FORA_DAS_MEDIAS.includes(estado);
 function proximoEstadoPresenca(atual) {
   const i = PRESENCA_ESTADOS.indexOf(atual);
   return PRESENCA_ESTADOS[(i + 1) % PRESENCA_ESTADOS.length];
@@ -14300,7 +14779,7 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias }) {
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, clinico }) {
   const [modal, setModal] = useState(null);
   const [ficha, setFicha] = useState(null);
   /* O jogo a imprimir. A folha vive fora da app (montada no body) e só
@@ -14480,7 +14959,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         );
       })()}
 
-      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} clinico={clinico} onClose={() => setModal(null)} onSave={save} />}
 
       {printMatch && createPortal(
         <PrintFichaJogo match={printMatch} players={players} season={season} />,
@@ -14502,7 +14981,7 @@ function withConvocadosInAttendance(f) {
   return { ...f, attendance: [...convocados], ratings };
 }
 
-function MatchModal({ match, players, standings, season, onClose, onSave }) {
+function MatchModal({ match, players, standings, season, onClose, onSave, clinico }) {
   /* Os campos de lista têm de existir SEMPRE, mesmo ao abrir um jogo
      gravado antes de eles existirem. Sem isto, `f.report[p.id]` e
      `f.starters.includes(...)` rebentam ao editar um jogo antigo — e o
@@ -14662,6 +15141,8 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
           players={players}
           isOn={p => f.convocados.includes(p.id)}
           onToggle={p => toggleConvocado(p.id)}
+          estadoClinico={p => estadoClinicoEm(p.id, f.date, clinico)}
+          avisaEm="jogo"
         />
       </div>
 
@@ -18774,7 +19255,7 @@ function syncMatchConvocatoria(match, convocatorias, season) {
   });
 }
 
-function Convocatorias({ convocatorias, setConvocatorias, players, season, standings, matches, setMatches }) {
+function Convocatorias({ convocatorias, setConvocatorias, players, season, standings, matches, setMatches, clinico }) {
   const [modal, setModal] = useState(null);
   const [printConvocatoria, setPrintConvocatoria] = useState(null);
 
@@ -18863,6 +19344,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
           players={players}
           season={season}
           standings={standings}
+          clinico={clinico}
           onClose={() => setModal(null)}
           onSave={save}
         />
@@ -18964,7 +19446,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
   );
 }
 
-function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, onSave }) {
+function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, onSave, clinico }) {
   const [f, setF] = useState(convocatoria || {
     epoca: season?.name || '', competicao: FRIENDLY, escalao: 'Sub-19', adversario: '', casaFora: 'Casa',
     jornada: '', data: '', horaJogo: '', localJogo: '', horaConcentracao: '',
@@ -19099,6 +19581,8 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
               players={players}
               isOn={p => f.convocados.includes(p.id)}
               onToggle={p => toggleConvocado(p.id)}
+              estadoClinico={p => estadoClinicoEm(p.id, f.data, clinico)}
+              avisaEm="jogo"
             />
 
             {f.convocados.length > 0 && (
