@@ -6327,7 +6327,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           sobrava mesmo com a altura da faixa já fixa em 38px. Com a margem
           sempre presente, a altura deste wrapper é 100% constante entre
           aberto e fechado. */}
-      <div style={{ minHeight: 92, marginTop: 8 }}>
+      <div style={{ minHeight: 92, marginTop: 4 }}>
       {selectedEl && (
         <div>
         {/* NUNCA quebra para uma segunda linha (nowrap + scroll horizontal
