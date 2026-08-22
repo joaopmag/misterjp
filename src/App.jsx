@@ -6360,7 +6360,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                      ultrapassar a altura reservada — mesmo bug, causa
                      diferente. A caixa continua a aceitar várias linhas
                      (Enter), só se rola dentro dela, não cresce. */
-                  resize: 'none', overflowY: 'auto', maxHeight: 22, lineHeight: 1.35,
+                  resize: 'none', overflowY: 'auto', overflowX: 'hidden', maxHeight: 22, lineHeight: 1.35,
                 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -11521,6 +11521,342 @@ function cardBadge(card) {
 
 /* Dashboard individual da aba Jogos — ranking de golos, assistências,
    cartões e nota média atribuída, usando o mesmo cálculo do Plantel. */
+/* ================================================================
+   FICHA DE JOGO
+
+   Abre ao clicar num jogo e mostra, num só ecrã, o que aconteceu:
+   o onze no campo, quem entrou, quem marcou, quem viu cartão.
+
+   Não pede nada de novo ao treinador — lê o relatório que ele já
+   preenche na ficha de edição (minutos, golos, assistências, cartão,
+   nota) e o onze que já escolheu.
+================================================================ */
+
+/* Coloca os titulares nos lugares da formação.
+
+   O treinador escolhe QUEM joga; a formação diz ONDE. Esta função junta
+   as duas coisas: para cada lugar do desenho, procura entre os titulares
+   ainda por colocar o que melhor lhe serve.
+
+   A ordem em que os lugares são preenchidos importa. Começa-se pelos
+   mais exigentes — o guarda-redes, que só pode ser um guarda-redes —
+   para que um lugar específico não fique sem ninguém por o candidato ter
+   sido gasto num lugar que outro qualquer serviria. */
+function distribuirOnzeNoCampo(titulares, formacao) {
+  const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
+  const porColocar = [...titulares];
+  const colocados = new Array(lugares.length).fill(null);
+
+  // Primeiro os lugares de guarda-redes, depois os restantes.
+  const ordem = lugares
+    .map((lugar, i) => ({ lugar, i }))
+    .sort((a, b) => (a.lugar === 'GR' ? -1 : 0) - (b.lugar === 'GR' ? -1 : 0));
+
+  ordem.forEach(({ lugar, i }) => {
+    const eGR = lugar === 'GR';
+    const candidatos = porColocar.filter(p => (eGR ? ehGuardaRedes(p) : !ehGuardaRedes(p)));
+    if (!candidatos.length) return;
+    const familiaLugar = FAMILIA[lugar] || 'MEIO';
+    const nota = (p) => {
+      if (posicaoServe(lugar, p) || p.position === lugar) return 0;
+      if (familiaDe(p) === familiaLugar) return 1;
+      return 2;
+    };
+    const escolhido = candidatos.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), candidatos[0]);
+    colocados[i] = escolhido;
+    porColocar.splice(porColocar.indexOf(escolhido), 1);
+  });
+
+  return { lugares, colocados, sobram: porColocar };
+}
+
+/* O que aconteceu a cada jogador, lido do relatório.
+
+   As SUBSTITUIÇÕES são deduzidas dos minutos, porque é o que temos: não
+   guardamos o minuto exato da troca. Um titular com menos minutos do que
+   a duração saiu a essa altura; um suplente com minutos entrou quando
+   faltavam esses minutos para o fim.
+
+   É uma aproximação e está assumida como tal — para um relatório de
+   treinador, saber que o médio saiu aos 66 chega; se um dia for preciso
+   o minuto exato, passa a ser um campo próprio. */
+function eventosDoJogo(match, players, duracao = 90) {
+  const report = (match && match.report) || {};
+  const convocados = (match && match.convocados) || [];
+  const titularesIds = (match && match.starters) || [];
+
+  const doJogador = (pid) => {
+    const p = players.find(x => x.id === pid);
+    if (!p) return null;
+    const r = report[pid] || {};
+    const min = Number(r.minutes);
+    const temMinutos = Number.isFinite(min) && min > 0;
+    const titular = titularesIds.includes(pid);
+    return {
+      player: p,
+      titular,
+      minutos: Number.isFinite(min) ? min : null,
+      golos: Number(r.goals) || 0,
+      assistencias: Number(r.assists) || 0,
+      cartao: r.card && r.card !== 'none' ? r.card : null,
+      nota: r.rating != null && r.rating !== '' ? Number(r.rating) : null,
+      // Saiu: titular que não fez o jogo todo. Entrou: suplente com minutos.
+      saiuAo: titular && temMinutos && min < duracao ? min : null,
+      entrouAo: !titular && temMinutos ? Math.max(0, duracao - min) : null,
+      jogou: temMinutos,
+    };
+  };
+
+  const todos = convocados.map(doJogador).filter(Boolean);
+  return {
+    titulares: todos.filter(x => x.titular),
+    suplentes: sortByPosition(todos.filter(x => !x.titular).map(x => x.player))
+      .map(p => todos.find(x => x.player.id === p.id)),
+    todos,
+  };
+}
+
+/* Números do jogo, para as caixas de resumo. */
+function resumoDoJogo(eventos) {
+  const { todos } = eventos;
+  const notas = todos.map(x => x.nota).filter(n => Number.isFinite(n));
+  return {
+    convocados: todos.length,
+    minutos: todos.reduce((a, x) => a + (x.minutos || 0), 0),
+    golos: todos.reduce((a, x) => a + x.golos, 0),
+    assistencias: todos.reduce((a, x) => a + x.assistencias, 0),
+    amarelos: todos.filter(x => x.cartao === 'yellow' || x.cartao === 'yellow2').length,
+    vermelhos: todos.filter(x => x.cartao === 'red' || x.cartao === 'yellow2').length,
+    substituicoes: todos.filter(x => x.entrouAo != null).length,
+    semJogar: todos.filter(x => !x.jogou).length,
+    notaMedia: notas.length ? notas.reduce((a, n) => a + n, 0) / notas.length : null,
+  };
+}
+
+/* Ícones de acontecimento ao lado do nome. Pequenos e sempre na mesma
+   ordem, para se lerem de relance sem legenda. */
+function EventosDoJogador({ x, compacto }) {
+  const tam = compacto ? 10 : 12;
+  return (
+    <>
+      {x.golos > 0 && (
+        <span style={{ ...mono, fontSize: tam, color: T.cream }} title={`${x.golos} golo${x.golos > 1 ? 's' : ''}`}>
+          {'⚽'.repeat(Math.min(x.golos, 3))}{x.golos > 3 ? `×${x.golos}` : ''}
+        </span>
+      )}
+      {x.assistencias > 0 && (
+        <span style={{ ...mono, fontSize: tam, color: T.good }} title={`${x.assistencias} assistência${x.assistencias > 1 ? 's' : ''}`}>
+          A{x.assistencias > 1 ? x.assistencias : ''}
+        </span>
+      )}
+      {x.cartao && (
+        <span
+          title={x.cartao === 'yellow' ? 'Amarelo' : (x.cartao === 'red' ? 'Vermelho' : 'Duplo amarelo')}
+          style={{
+            display: 'inline-block', width: tam * 0.62, height: tam * 0.9, borderRadius: 1.5,
+            background: x.cartao === 'yellow' ? T.gold : (x.cartao === 'red' ? T.bad : T.gold),
+            border: x.cartao === 'yellow2' ? `1.5px solid ${T.bad}` : 'none',
+          }}
+        />
+      )}
+      {x.saiuAo != null && (
+        <span style={{ ...mono, fontSize: tam, color: T.bad }} title={`Saiu aos ${x.saiuAo}'`}>↓{x.saiuAo}</span>
+      )}
+      {x.entrouAo != null && (
+        <span style={{ ...mono, fontSize: tam, color: T.good }} title={`Entrou aos ${x.entrouAo}'`}>↑{x.entrouAo}</span>
+      )}
+    </>
+  );
+}
+
+function FichaJogo({ match, players, season, onClose, onEdit, onFormacao }) {
+  const isNarrow = useIsMobile(760);
+  const formacao = match.formacao || '4-3-3';
+  const eventos = eventosDoJogo(match, players);
+  const resumo = resumoDoJogo(eventos);
+  const { lugares, colocados, sobram } = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao);
+  const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
+  const nosso = (season && season.club) || 'A nossa equipa';
+
+  const eventoDe = (p) => eventos.todos.find(x => x.player.id === p.id);
+  const golosPorLado = (() => {
+    const r = String(match.result || '').match(/^\s*(\d+)\s*[-–:]\s*(\d+)\s*$/);
+    if (!r) return null;
+    const casa = Number(r[1]);
+    const fora = Number(r[2]);
+    return match.atHome === false ? { nos: fora, eles: casa } : { nos: casa, eles: fora };
+  })();
+
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 };
+
+  return (
+    <Modal
+      title={`${nosso} vs ${match.opponent || 'Adversário por definir'}`}
+      subtitle={[
+        fmtDate(match.date),
+        competitionLabel(match.competition),
+        match.jornada,
+        match.atHome === undefined ? null : (match.atHome ? 'casa' : 'fora'),
+      ].filter(Boolean).join(' · ')}
+      onClose={onClose}
+      wide
+      xwide
+    >
+      {/* Resultado em destaque: é a primeira coisa que se procura. */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <span style={{ ...display, fontSize: 17, color: T.cream }}>{nosso}</span>
+        <span style={{ ...mono, fontSize: 24, color: T.warn }}>
+          {golosPorLado ? `${golosPorLado.nos} – ${golosPorLado.eles}` : (match.result || '—')}
+        </span>
+        <span style={{ ...display, fontSize: 17, color: T.cream }}>{match.opponent || '—'}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11.5, color: T.mutedDim }}>Formação</span>
+          <Select
+            value={formacao}
+            onChange={e => onFormacao(e.target.value)}
+            style={{ width: 96, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 6px' }}
+          >
+            {Object.keys(FORMACOES).map(f => <option key={f} value={f}>{f}</option>)}
+          </Select>
+        </div>
+      </div>
+
+      {eventos.titulares.length === 0 ? (
+        <EmptyState
+          text="Este jogo ainda não tem onze inicial. Marca os titulares na ficha de edição e a equipa aparece aqui no campo."
+          action={<Btn onClick={onEdit}><Pencil size={15} /> Editar jogo</Btn>}
+        />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : 'minmax(0, 1.35fr) minmax(0, 1fr)', gap: 14 }}>
+          {/* ---------- O CAMPO ---------- */}
+          <div style={{
+            position: 'relative', width: '100%', aspectRatio: '105 / 68',
+            background: '#1E3A24', border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden',
+          }}>
+            <svg viewBox="0 0 105 68" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+              <rect x="0.5" y="0.5" width="104" height="67" fill="none" stroke="#ffffff33" strokeWidth="0.4" />
+              <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" stroke="#ffffff33" strokeWidth="0.4" />
+              <circle cx="52.5" cy="34" r="9.15" fill="none" stroke="#ffffff33" strokeWidth="0.4" />
+              <rect x="0.5" y="13.84" width="16.5" height="40.32" fill="none" stroke="#ffffff33" strokeWidth="0.4" />
+              <rect x="88" y="13.84" width="16.5" height="40.32" fill="none" stroke="#ffffff33" strokeWidth="0.4" />
+            </svg>
+
+            {colocados.map((p, i) => {
+              if (!p) return null;
+              const [fx, fy] = layout[i] || [0.5, 0.5];
+              const x = eventoDe(p) || {};
+              const eGR = lugares[i] === 'GR';
+              return (
+                <div key={p.id} style={{
+                  position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
+                  transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '24%',
+                }}>
+                  <span style={{
+                    display: 'inline-block', ...mono, fontSize: 11,
+                    background: eGR ? '#2B6CB0' : '#B5393F', color: '#fff',
+                    borderRadius: 6, padding: '2px 5px',
+                  }}>{p.number || lugares[i]}</span>
+                  <div style={{
+                    fontSize: 11, color: T.cream, marginTop: 2, lineHeight: 1.2,
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {shortPlayerName(p, players)}
+                    {match.capitao === p.id && <span style={{ color: T.gold }}> C</span>}
+                    {match.subcapitao === p.id && <span style={{ color: T.gold }}> SC</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'center', marginTop: 1 }}>
+                    <EventosDoJogador x={x} compacto />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ---------- BANCO E DESTAQUES ---------- */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {sobram.length > 0 && (
+              <div style={{ ...card, borderColor: `${T.warn}66` }}>
+                <div style={{ fontSize: 11.5, color: T.warn }}>
+                  {sobram.length} {sobram.length === 1 ? 'titular não coube' : 'titulares não couberam'} na formação {formacao}:{' '}
+                  {sobram.map(p => shortPlayerName(p, players)).join(', ')}. Escolhe outra formação ou revê o onze.
+                </div>
+              </div>
+            )}
+
+            <div style={card}>
+              <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+                Suplentes ({eventos.suplentes.length})
+              </div>
+              {eventos.suplentes.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem suplentes registados.</div>
+              ) : eventos.suplentes.map(x => (
+                <div key={x.player.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5,
+                  color: x.jogou ? T.cream : T.mutedDim, lineHeight: 1.9,
+                }}>
+                  <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 22, textAlign: 'right', flexShrink: 0 }}>
+                    {x.player.number || '—'}
+                  </span>
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {shortPlayerName(x.player, players)}
+                  </span>
+                  <EventosDoJogador x={x} />
+                </div>
+              ))}
+            </div>
+
+            <div style={card}>
+              <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+                Destaques
+              </div>
+              {(() => {
+                const linhas = [];
+                const comGolos = eventos.todos.filter(x => x.golos > 0);
+                const comAssist = eventos.todos.filter(x => x.assistencias > 0);
+                const comCartao = eventos.todos.filter(x => x.cartao);
+                if (comGolos.length) {
+                  linhas.push(`${resumo.golos} ${resumo.golos === 1 ? 'golo' : 'golos'} · ${comGolos.map(x => `${shortPlayerName(x.player, players)}${x.golos > 1 ? ` (${x.golos})` : ''}`).join(', ')}`);
+                }
+                if (comAssist.length) {
+                  linhas.push(`${resumo.assistencias} ${resumo.assistencias === 1 ? 'assistência' : 'assistências'} · ${comAssist.map(x => shortPlayerName(x.player, players)).join(', ')}`);
+                }
+                if (comCartao.length) {
+                  linhas.push(`${comCartao.length} ${comCartao.length === 1 ? 'cartão' : 'cartões'} · ${comCartao.map(x => shortPlayerName(x.player, players)).join(', ')}`);
+                }
+                if (resumo.substituicoes) linhas.push(`${resumo.substituicoes} ${resumo.substituicoes === 1 ? 'substituição' : 'substituições'}`);
+                if (!linhas.length) return <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem acontecimentos registados.</div>;
+                return linhas.map((l, i) => (
+                  <div key={i} style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.8 }}>{l}</div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- NÚMEROS ---------- */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10, marginTop: 14 }}>
+        {[
+          { label: isFriendlyMatch(match) ? 'Presentes' : 'Convocados', valor: resumo.convocados },
+          { label: 'Minutos dados', valor: resumo.minutos },
+          { label: 'Nota média', valor: resumo.notaMedia == null ? '—' : resumo.notaMedia.toFixed(1), cor: T.warn },
+          { label: 'Sem jogar', valor: resumo.semJogar, cor: resumo.semJogar ? T.mutedDim : undefined },
+        ].map(x => (
+          <div key={x.label} style={{ background: T.bg, borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ fontSize: 11.5, color: T.mutedDim }}>{x.label}</div>
+            <div style={{ ...mono, fontSize: 19, color: x.cor || T.cream }}>{x.valor}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+        <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
+        <Btn onClick={onEdit}><Pencil size={15} /> Editar jogo</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function MatchDashboard({ players, matches }) {
   /* Só jogos OFICIAIS entram aqui.
 
@@ -12691,6 +13027,7 @@ function StandingsModal({ standings, onClose, onSave }) {
 
 function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, sessions, setSessions, convocatorias, setConvocatorias }) {
   const [modal, setModal] = useState(null);
+  const [ficha, setFicha] = useState(null);
 
   const save = (data) => {
     const registo = data.id ? data : { ...data, id: uid() };
@@ -12782,7 +13119,12 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
             const reports = m.convocados ? m.convocados.map(pid => (m.report && m.report[pid]) || {}) : [];
             const goals = reports.reduce((a, r) => a + (Number(r.goals) || 0), 0);
             return (
-              <div key={m.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 }}>
+              /* O cartão inteiro abre a ficha do jogo. O lápis continua a
+                 abrir a edição: ver e editar são coisas diferentes, e a
+                 mais usada — ver — merece o alvo maior. */
+              <div key={m.id} onClick={() => setFicha(m)} style={{
+                background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
+              }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
                   <div>
                     <div style={{ color: T.cream, fontSize: 15, fontWeight: 500 }}>
@@ -12795,9 +13137,11 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                       {fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} {isFriendlyMatch(m) ? 'presentes' : 'convocados'}
                     </div>
                   </div>
+                  {/* `stopPropagation`: sem isto, carregar no lápis abria
+                      a edição E a ficha por baixo. */}
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setModal(m)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
-                    <button onClick={() => remove(m.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
+                    <button onClick={e => { e.stopPropagation(); setModal(m); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
+                    <button onClick={e => { e.stopPropagation(); remove(m.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                   </div>
                 </div>
               </div>
@@ -12806,6 +13150,23 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         </div>
         </>
       )}
+
+      {/* A ficha lê sempre a versão mais recente do jogo: se for editado
+          por baixo, o que se vê aqui acompanha. */}
+      {ficha && (() => {
+        const atual = matches.find(m => m.id === ficha.id);
+        if (!atual) return null;
+        return (
+          <FichaJogo
+            match={atual}
+            players={players}
+            season={season}
+            onClose={() => setFicha(null)}
+            onEdit={() => { setFicha(null); setModal(atual); }}
+            onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f } : m)))}
+          />
+        );
+      })()}
 
       {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} onClose={() => setModal(null)} onSave={save} />}
     </div>
