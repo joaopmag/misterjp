@@ -12360,7 +12360,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
     const conta = (lista, estado) => lista.filter(d => estadoDe(d, p.id) === estado).length;
 
     return {
-      player: p, attended, pct,
+      player: p, attended, pct, possiveis: diasPossiveis.length,
       avgTreino: mean(treinoVals), avgJogo: mean(jogoVals),
       countTreino: treinoVals.length, countJogo: jogoVals.length,
       totais: {
@@ -12513,7 +12513,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
             Assiduidade e nota média
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rows.map(({ player, attended, pct, avgTreino, avgJogo, totais }) => {
+            {rows.map(({ player, attended, pct, possiveis, avgTreino, avgJogo, totais }) => {
               const color = pct === null ? T.mutedDim : pct >= 80 ? T.good : pct >= 60 ? T.warn : T.bad;
               const noteColor = (v) => (v === null ? T.mutedDim : v >= 7 ? T.good : v >= 5 ? T.warn : T.bad);
               return (
@@ -12524,7 +12524,17 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                   <Badge label={player.position} />
                   <div style={{ flex: 1, minWidth: 120 }}>
                     <div style={{ color: T.cream, fontSize: 14 }}>{player.name}</div>
-                    <div style={{ fontSize: 11.5, color: T.mutedDim }}>{attended}/{confirmedDays.length} confirmados</div>
+                    {/* O denominador é o MESMO da percentagem: só os dias
+                        que eram oportunidade de participação. Com o total
+                        de dias aqui e o total de possíveis na conta ao
+                        lado, a linha dizia duas coisas diferentes — um
+                        jogador com 1 presença em 1 dia possível aparecia
+                        como "1/11 confirmados · 100%". */}
+                    <div style={{ fontSize: 11.5, color: T.mutedDim }}>
+                      {possiveis === 0
+                        ? 'Sem dias a contar'
+                        : `${attended}/${possiveis} confirmados`}
+                    </div>
                   </div>
                   <div style={{ width: 70, height: 6, background: T.bg, borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
                     <div style={{ width: `${pct ?? 0}%`, height: '100%', background: color }} />
