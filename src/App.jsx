@@ -10496,13 +10496,19 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
        informação que sai na ficha impressa. */
     const onzeAmigavel = s.phase === 'Jogo' ? (s.equipasSimulador && s.equipasSimulador.onzeAmigavel) : null;
     const jogoHtml = s.phase === 'Jogo'
-      ? `<h2>Formação</h2><p class="desc"><strong>Titulares:</strong> ${onzeAmigavel && onzeAmigavel.onze
+      ? `<h2>Equipa</h2><p class="desc"><strong>Titulares:</strong> ${onzeAmigavel && onzeAmigavel.onze
           ? escapeHtmlText(onzeAmigavel.onze.filter(l => l.jogador).map(l => l.jogador).join(', ') || '—')
           : '—'}</p><p class="desc"><strong>Suplentes:</strong> ${onzeAmigavel && onzeAmigavel.suplentes && onzeAmigavel.suplentes.length
           ? escapeHtmlText(onzeAmigavel.suplentes.join(', '))
-          : '—'}</p>`
+          : '—'}</p><h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(ideiasDaSessao(s) || '').trim() || '—')}</p>`
       : '';
-    const extraHtml = `${jogoHtml}${equipasHtml}<h2>${s.phase === 'Jogo' ? 'Equipa' : 'Presenças'}</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
+    /* Num amigável a lista com toda a gente não entra: são os mesmos nomes
+       que já saem em Titulares e Suplentes. Num treino é a única lista de
+       presenças que existe, e mantém-se. */
+    const presencasHtml = s.phase === 'Jogo'
+      ? ''
+      : `<h2>Presenças</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
+    const extraHtml = `${jogoHtml}${equipasHtml}${presencasHtml}`;
     const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (s.phase === 'Jogo' ? 'Amigável' : (s.focus || 'Sessão de treino'));
     const html = buildShareableHtmlDoc({ title: sessionTitle, metaLines: meta, blocks: exBlocks, extraHtml });
     shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, sessionTitle);
@@ -10539,6 +10545,20 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
      `sourceMatchId` para esconder só o cartão a mais, sem tocar nos dados
      nem no resumo semanal. */
   const idsDeJogos = new Set((matches || []).map(m => m.id));
+
+  /* O caminho inverso de `sessaoDoJogo`: dada a sessão de um amigável,
+     qual é o jogo que lhe deu origem. É de lá que vêm as "Ideias para o
+     jogo" para a ficha impressa — a sessão não as tem. Sessões antigas,
+     criadas antes de existir `sourceMatchId`, ainda se apanham pela data. */
+  const jogoDaSessao = (s) => {
+    if (!s || s.phase !== 'Jogo') return null;
+    const lista = matches || [];
+    return lista.find(m => m.id === s.sourceMatchId)
+      || lista.find(m => m.date === s.date && isFriendlyMatch(m))
+      || null;
+  };
+  const ideiasDaSessao = (s) => { const m = jogoDaSessao(s); return m ? m.ideias : ''; };
+
   const isEditing = modal && modal !== 'new' && modal.id;
   const presetDate = modal && modal !== 'new' && !modal.id ? modal.presetDate : undefined;
 
@@ -10752,7 +10772,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           </p>
 
           {printSession.phase === 'Jogo' ? (
-            <PrintOnzeAmigavel session={printSession} />
+            <PrintOnzeAmigavel session={printSession} ideias={ideiasDaSessao(printSession)} />
           ) : (
             <>
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
@@ -10784,12 +10804,19 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             </>
           )}
 
-          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>{printSession.phase === 'Jogo' ? 'Equipa' : 'Presenças'}</h3>
-          <p style={{ fontSize: 13 }}>
-            {(printSession.attendance || [])
-              .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
-              .filter(Boolean).join(', ') || 'Sem registo'}
-          </p>
+          {/* Num amigável esta lista era repetição pura: os mesmos nomes
+              já saem em Titulares e Suplentes, logo acima. Num treino
+              continua a ser a única lista de presenças que há, e fica. */}
+          {printSession.phase !== 'Jogo' && (
+            <>
+              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
+              <p style={{ fontSize: 13 }}>
+                {(printSession.attendance || [])
+                  .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
+                  .filter(Boolean).join(', ') || 'Sem registo'}
+              </p>
+            </>
+          )}
         </div>,
         document.body
       )}
@@ -10816,7 +10843,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                 {[s.phase, tempoJogoText(s), intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
               {s.phase === 'Jogo' ? (
-                <PrintOnzeAmigavel session={s} />
+                <PrintOnzeAmigavel session={s} ideias={ideiasDaSessao(s)} />
               ) : (
                 (s.exerciseIds || []).map((e, i) => (
                   <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
@@ -10824,13 +10851,21 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
               )}
             </div>
           ))}
-          <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
-          <p style={{ fontSize: 13 }}>
-            {players
-              .filter(p => sessions.some(s => s.date === printDayDate && (s.attendance || []).includes(p.id)))
-              .map(p => (p.number ? `#${p.number} ` : '') + p.name)
-              .join(', ') || 'Sem registo'}
-          </p>
+          {/* Num dia só de amigável os nomes já saíram em Titulares e
+              Suplentes — repeti-los aqui em baixo não acrescenta nada. Se
+              o dia também tiver treino, a lista mantém-se: aí é mesmo a
+              única folha de presenças. */}
+          {sessions.some(s => s.date === printDayDate && s.phase !== 'Jogo') && (
+            <>
+              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
+              <p style={{ fontSize: 13 }}>
+                {players
+                  .filter(p => sessions.some(s => s.date === printDayDate && (s.attendance || []).includes(p.id)))
+                  .map(p => (p.number ? `#${p.number} ` : '') + p.name)
+                  .join(', ') || 'Sem registo'}
+              </p>
+            </>
+          )}
         </div>,
         document.body
       )}
@@ -11111,8 +11146,13 @@ function PrintExerciseBlock({ e, ex, index }) {
    O campo aparece SEMPRE, mesmo sem equipa gravada — só que vazio (cada
    lugar mostra o travessão em vez de um nome). É mais fácil o treinador
    preencher à mão no papel do que a ficha desaparecer só porque ainda
-   não se gravou nada no Simulador. */
-function PrintOnzeAmigavel({ session }) {
+   não se gravou nada no Simulador.
+
+   `ideias` é o plano escrito na edição do jogo. Vem de fora (a sessão não
+   o tem; quem o guarda é o jogo) e sai no fim da folha, no lugar onde
+   antes estava a lista com o nome de toda a gente — que era repetição:
+   quem jogou já está em Titulares e Suplentes, logo por cima. */
+function PrintOnzeAmigavel({ session, ideias }) {
   const dados = session.equipasSimulador && session.equipasSimulador.onzeAmigavel;
   const formacao = (dados && dados.formacao) || '4-3-3';
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
@@ -11152,6 +11192,7 @@ function PrintOnzeAmigavel({ session }) {
           );
         })}
       </div>
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipa</h3>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 12.5, marginBottom: 16 }}>
         <div>
           <strong>Titulares</strong>
@@ -11162,6 +11203,14 @@ function PrintOnzeAmigavel({ session }) {
           <div style={{ marginTop: 4, lineHeight: 1.6 }}>{suplentes.length ? suplentes.join(', ') : '—'}</div>
         </div>
       </div>
+
+      {/* O título aparece mesmo sem nada escrito: numa folha impressa, um
+          espaço em branco por baixo de "Ideias para o jogo" é útil — é
+          onde se escreve à mão o que ainda não foi lançado na app. */}
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Ideias para o jogo</h3>
+      <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: '0 0 16px', minHeight: 34 }}>
+        {String(ideias || '').trim() || '—'}
+      </p>
     </div>
   );
 }
