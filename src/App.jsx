@@ -9470,6 +9470,11 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
   // 'auto' calcula o mínimo de paragens para ninguém ficar sem jogar.
   const [janelas, setJanelas] = useState('auto');
   const [dia, setDia] = useState(todayStr());
+  // Qual amigável agendado se está a simular — só existe em modo 'amigavel'.
+  // Sem isto, `dia` ficava na data de hoje por omissão e o "Guardar" não
+  // encontrava sessão nenhuma nesse dia (a não ser que o jogo fosse mesmo
+  // hoje): parecia gravar, mas não ia parar a lado nenhum.
+  const [jogoAgendadoId, setJogoAgendadoId] = useState('');
   const [planoBase, setPlanoBase] = useState(null);
   const [jogo, setJogo] = useState(null);
   const [trocar, setTrocar] = useState(null); // { periodo, indice }
@@ -9614,10 +9619,22 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
      jogo simulado vira uma "equipa" (o onze titular desse período), no
      mesmo formato de registo, para reaproveitar a mesma ficha impressa e
      partilhável sem duplicar código nem criar um segundo formato de
-     dados. */
+     dados.
+
+     A sessão-alvo é encontrada por `sourceMatchId` quando há um jogo
+     amigável escolhido — mais seguro do que só a data, que podia
+     coincidir com outra sessão qualquer nesse dia. */
+  const encontrarSessaoAlvo = () => {
+    if (modo === 'amigavel' && jogoAgendadoId) {
+      return (sessions || []).find(x => x.sourceMatchId === jogoAgendadoId) || (sessions || []).find(x => x.date === dia);
+    }
+    return (sessions || []).find(x => x.date === dia);
+  };
   const [guardado, setGuardado] = useState(false);
   const guardarNoTreino = () => {
     if (!resultado || !setSessions) return;
+    const alvo = encontrarSessaoAlvo();
+    if (!alvo) return;
     const equipas = [];
     if (modo === 'treino') {
       plano.plano.forEach(bloco => bloco.partes.forEach((parte, pi) => parte.exercicios.forEach(ex => {
@@ -9650,7 +9667,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
       });
     }
     const registo = { geradoEm: new Date().toISOString(), equipas };
-    setSessions(prev => prev.map(x => (x.date === dia ? { ...x, equipasSimulador: registo } : x)));
+    setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: registo } : x)));
     setGuardado(true);
     setTimeout(() => setGuardado(false), 2500);
   };
@@ -9662,7 +9679,9 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
      por completo, sem deixar lá umas equipas antigas por engano. */
   const apagarDoTreino = () => {
     if (!setSessions) return;
-    setSessions(prev => prev.map(x => (x.date === dia ? { ...x, equipasSimulador: null } : x)));
+    const alvo = encontrarSessaoAlvo();
+    if (!alvo) return;
+    setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: null } : x)));
   };
 
   const gerarJogo = () => {
@@ -9706,7 +9725,32 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
      trabalho já feito no Planeamento — com o risco de simular uma coisa e
      treinar outra. */
   const sessoesDoDia = (sessions || []).filter(x => x.date === dia);
-  const equipasGuardadasHoje = sessoesDoDia.some(x => x.equipasSimulador && (x.equipasSimulador.equipas || []).length > 0);
+  /* Em 'treino' basta olhar para as sessões desse dia. Em 'amigável' tem
+     de ser a sessão do JOGO ESCOLHIDO especificamente — senão, sem jogo
+     escolhido, `dia` podia ainda apontar para uma data qualquer (a de
+     hoje, por omissão) e mostrar "Apagar equipas guardadas" para um
+     treino sem nada a ver com o simulador de jogo. */
+  const sessaoDoJogoEscolhido = jogoAgendadoId
+    ? (sessions || []).find(x => x.sourceMatchId === jogoAgendadoId) || (sessions || []).find(x => x.date === dia)
+    : null;
+  const temEquipas = (s) => !!(s && s.equipasSimulador && (s.equipasSimulador.equipas || []).length > 0);
+  const equipasGuardadasHoje = modo === 'amigavel'
+    ? temEquipas(sessaoDoJogoEscolhido)
+    : sessoesDoDia.some(temEquipas);
+  /* Amigáveis agendados (em Jogos ou Planeamento) para escolher no modo
+     'Jogo amigável' — mesmo conceito do "Dia do treino": não se simula um
+     jogo qualquer, simula-se UM jogo concreto que já está marcado. */
+  const amigaveisAgendados = (matches || [])
+    .filter(m => m.date && isFriendlyMatch(m))
+    .slice()
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const jogoAgendado = amigaveisAgendados.find(m => m.id === jogoAgendadoId) || null;
+  const escolherJogoAgendado = (id) => {
+    setJogoAgendadoId(id);
+    const m = amigaveisAgendados.find(x => x.id === id);
+    if (m) setDia(m.date);
+    setJogo(null);
+  };
 
   /* ATENÇÃO ao formato de `exerciseIds`.
 
@@ -9993,6 +10037,21 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
         ) : (
           <div style={card}>
             <h3 style={rotulo}>2 · Formato do jogo</h3>
+            <Field label="Jogo amigável agendado" solto>
+              <Select value={jogoAgendadoId} onChange={e => escolherJogoAgendado(e.target.value)}>
+                <option value="">— escolhe o jogo —</option>
+                {amigaveisAgendados.map(m => (
+                  <option key={m.id} value={m.id}>{fmtDate(m.date)} · vs {m.opponent || 'Adversário por definir'}</option>
+                ))}
+              </Select>
+            </Field>
+            <p style={{ ...nota, marginTop: 10 }}>
+              {amigaveisAgendados.length === 0
+                ? 'Não há amigáveis agendados. Cria o jogo em Jogos ou Planeamento e aparece aqui.'
+                : !jogoAgendado
+                  ? 'Escolhe o jogo para poderes guardar as equipas nele.'
+                  : `A simular ${fmtDate(jogoAgendado.date)} · vs ${jogoAgendado.opponent || 'Adversário por definir'}.`}
+            </p>
             <p style={nota}>
               Num amigável não há limite de substituições. As trocas ficam marcadas
               para o início de cada parte, que é quando não interrompem o jogo.
@@ -10206,10 +10265,13 @@ function Simulador({ players, exercises, sessions, setSessions, matches }) {
             nada por si, para não haver duas versões da verdade. Funciona
             nos dois modos: em 'amigável' guarda o onze titular de cada
             período, tal como em 'treino' guarda as equipas de cada
-            exercício. */}
-        {resultado && setSessions && sessoesDoDia.length > 0 && (
+            exercício. Em 'amigável' só aparece depois de escolhido o jogo
+            agendado — sem jogo escolhido não há sessão certa onde gravar. */}
+        {resultado && setSessions && (modo === 'treino' ? sessoesDoDia.length > 0 : !!jogoAgendado) && (
           <Btn variant="ghost" onClick={guardarNoTreino}>
-            <Check size={15} /> {guardado ? 'Guardado no treino' : 'Guardar equipas no treino'}
+            <Check size={15} /> {guardado
+              ? (modo === 'treino' ? 'Guardado no treino' : 'Guardado no jogo')
+              : (modo === 'treino' ? 'Guardar equipas no treino' : 'Guardar equipas no jogo')}
           </Btn>
         )}
         {/* Só aparece se já houver mesmo algo guardado nesse dia — para
@@ -10437,6 +10499,15 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   const isEditing = modal && modal !== 'new' && modal.id;
   const presetDate = modal && modal !== 'new' && !modal.id ? modal.presetDate : undefined;
 
+  /* A sessão que o jogo criou (ou aproveitou) automaticamente — é dela que
+     saem as equipas guardadas pelo Simulador, as presenças, e é nela que
+     `doPrint`/`doShare` já sabem trabalhar (são as mesmas funções da
+     ficha de uma sessão normal). Um jogo sem sessão associada (por
+     exemplo, uma competição oficial num dia sem treino) simplesmente não
+     tem o que imprimir/partilhar por aqui. */
+  const sessaoDoJogo = (m) => (sessions || []).find(x => x.sourceMatchId === m.id) || (sessions || []).find(x => x.date === m.date);
+  const temEquipasSessao = (s) => !!(s && s.equipasSimulador && (s.equipasSimulador.equipas || []).length > 0);
+
   return (
     <div>
       <SectionHeader title="Planeamento" subtitle="A semana de treino, sessão a sessão."
@@ -10471,7 +10542,10 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             <div style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{week}</div>
             <WeekSummary items={items} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {items.filter(s => s.__match || !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId))).map(s => s.__match ? (
+              {items.filter(s => s.__match || !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId))).map(s => s.__match ? (() => {
+                const sessaoJogo = sessaoDoJogo(s);
+                const equipasDoJogo = temEquipasSessao(sessaoJogo);
+                return (
                 <div key={`m-${s.id}`} onClick={() => setFicha(s)} style={{
                   background: T.surface, border: `1px solid ${T.warn}55`, borderRadius: 10, padding: 14, cursor: 'pointer',
                   display: 'flex', gap: 10,
@@ -10490,6 +10564,12 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                       </div>
                       <div style={{ color: T.mutedDim, fontSize: 12 }}>
                         {[competitionLabel(s.competition) || 'Jogo', s.atHome === undefined ? null : (s.atHome ? 'Casa' : 'Fora'), s.result].filter(Boolean).join(' · ')}
+                        {/* Mesmo sinal que já existia nas sessões de treino —
+                            só que este jogo tinha o cartão próprio escondido,
+                            e o sinal nunca aparecia em lado nenhum. */}
+                        {equipasDoJogo && (
+                          <span style={{ color: T.warn }} title="Equipas do Simulador guardadas — saem na ficha impressa"> · equipas guardadas</span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -10500,13 +10580,24 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                     <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>
                       {(s.convocados || []).length} {isFriendlyMatch(s) ? 'presentes' : 'convocados'}
                     </span>
-                    {/* `stopPropagation`: sem isto, carregar no lápis abria a
-                        edição E a ficha por baixo — igual ao que já acontecia
-                        nos Jogos. */}
+                    {/* `stopPropagation` em todos: sem isto, cada ícone abria
+                        também a ficha do jogo por baixo. Partilhar/Imprimir
+                        usam a sessão do jogo (mesmas funções da ficha de uma
+                        sessão normal) — só aparecem se existir essa sessão. */}
+                    {sessaoJogo && (
+                      <>
+                        <button onClick={e => { e.stopPropagation(); doShare(sessaoJogo); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
+                        <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
+                      </>
+                    )}
+                    {equipasDoJogo && (
+                      <button onClick={e => { e.stopPropagation(); setSessions(sessions.map(x => (x.id === sessaoJogo.id ? { ...x, equipasSimulador: null } : x))); }} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                    )}
                     <button onClick={e => { e.stopPropagation(); setMatchModal(s); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                   </div>
                 </div>
-              ) : (
+                );
+              })() : (
                 /* No telemóvel o cartão parte-se em dois andares: em cima a
                    data e o título, em baixo o resumo à esquerda e os ícones
                    à direita. Assim os ícones ficam na mesma coluna em todos
@@ -10550,6 +10641,9 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                       )}
                     </span>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+                      {temEquipasSessao(s) && (
+                        <button onClick={() => setSessions(sessions.map(x => (x.id === s.id ? { ...x, equipasSimulador: null } : x)))} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={13} /></button>
+                      )}
                       <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
                       <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Imprimir ficha"><Printer size={14} /></button>
                       <button onClick={() => setModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Editar sessão"><Pencil size={14} /></button>
