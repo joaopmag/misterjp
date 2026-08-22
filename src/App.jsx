@@ -12164,6 +12164,31 @@ function resumoDoJogo(eventos) {
   };
 }
 
+/* AS LINHAS DE "DESTAQUES", NUM SÍTIO SÓ.
+
+   São escritas em três lados — a ficha no ecrã, a ficha impressa e o
+   ficheiro partilhado. Enquanto o texto estava copiado nos três, bastava
+   corrigir um para os outros ficarem a dizer outra coisa. É a mesma razão
+   pela qual `textBoxMetrics` existe. */
+function linhasDestaquesJogo(eventos, resumo, players) {
+  const linhas = [];
+  const nome = (x) => shortPlayerName(x.player, players);
+  const comGolos = eventos.todos.filter(x => x.golos > 0);
+  const comAssist = eventos.todos.filter(x => x.assistencias > 0);
+  const comCartao = eventos.todos.filter(x => x.cartao);
+  if (comGolos.length) {
+    linhas.push(`${resumo.golos} ${resumo.golos === 1 ? 'golo' : 'golos'} · ${comGolos.map(x => `${nome(x)}${x.golos > 1 ? ` (${x.golos})` : ''}`).join(', ')}`);
+  }
+  if (comAssist.length) {
+    linhas.push(`${resumo.assistencias} ${resumo.assistencias === 1 ? 'assistência' : 'assistências'} · ${comAssist.map(nome).join(', ')}`);
+  }
+  if (comCartao.length) {
+    linhas.push(`${comCartao.length} ${comCartao.length === 1 ? 'cartão' : 'cartões'} · ${comCartao.map(nome).join(', ')}`);
+  }
+  if (resumo.substituicoes) linhas.push(`${resumo.substituicoes} ${resumo.substituicoes === 1 ? 'substituição' : 'substituições'}`);
+  return linhas;
+}
+
 /* Ícones de acontecimento ao lado do nome. Pequenos e sempre na mesma
    ordem, para se lerem de relance sem legenda. */
 function EventosDoJogador({ x, compacto }) {
@@ -12210,7 +12235,157 @@ function clubeSemEscalao(nome) {
   return String(nome || '').split('·')[0].trim();
 }
 
-function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlinhamento, onStarters }) {
+/* A FICHA DO JOGO EM PAPEL.
+
+   O mesmo conteúdo da ficha no ecrã — campo com o onze, banco, ideias e
+   destaques — mas com as cores da impressão: fundo branco, linhas
+   cinzentas, sem botões. Segue de perto o `PrintOnzeAmigavel`, que faz o
+   mesmo para a sessão de um amigável; a diferença é que aqui a fonte é o
+   JOGO (com resultado, cartões e minutos) e não a sessão. */
+function PrintFichaJogo({ match, players, season }) {
+  const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
+  const formacao = match.formacao || '4-3-3';
+  const eventos = eventosDoJogo(match, players);
+  const resumo = resumoDoJogo(eventos);
+  const { lugares, colocados } = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, match.alinhamento);
+  const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
+  const destaques = linhasDestaquesJogo(eventos, resumo, players);
+  const nomeNum = (p) => `${p.number ? `#${p.number} ` : ''}${p.name}`;
+
+  return (
+    <div className="print-sheet">
+      <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{nosso} vs {match.opponent || 'Adversário por definir'}</h2>
+      <p style={{ margin: '0 0 18px', fontSize: 13 }}>
+        {[
+          fmtDate(match.date),
+          competitionLabel(match.competition),
+          match.jornada,
+          match.atHome === undefined ? null : (match.atHome ? 'casa' : 'fora'),
+          match.result ? `Resultado: ${match.result}` : null,
+        ].filter(Boolean).join(' · ')}
+      </p>
+
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Formação — {formacao}</h3>
+      <div style={{
+        position: 'relative', width: '100%', maxWidth: 480, aspectRatio: '105 / 68',
+        background: '#fff', border: '1px solid #ccc', borderRadius: 8, margin: '0 auto 14px',
+      }}>
+        <svg viewBox="0 0 105 68" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+          <rect x="0.5" y="0.5" width="104" height="67" fill="none" stroke="#999" strokeWidth="0.4" />
+          <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" stroke="#999" strokeWidth="0.4" />
+          <circle cx="52.5" cy="34" r="9.15" fill="none" stroke="#999" strokeWidth="0.4" />
+          <rect x="0.5" y="13.84" width="16.5" height="40.32" fill="none" stroke="#999" strokeWidth="0.4" />
+          <rect x="88" y="13.84" width="16.5" height="40.32" fill="none" stroke="#999" strokeWidth="0.4" />
+        </svg>
+        {lugares.map((lugar, i) => {
+          const [fx, fy] = layout[i] || [0.5, 0.5];
+          const p = colocados[i];
+          return (
+            <div key={i} style={{
+              position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
+              transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '22%',
+            }}>
+              <div style={{ fontSize: 8.5, color: '#888' }}>{lugar}</div>
+              <div style={{
+                fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis', color: p ? '#111' : '#bbb',
+              }}>
+                {p ? shortPlayerName(p, players) : '—'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipa</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 12.5, marginBottom: 16 }}>
+        <div>
+          <strong>Titulares</strong>
+          <div style={{ marginTop: 4, lineHeight: 1.6 }}>
+            {eventos.titulares.length ? eventos.titulares.map(x => nomeNum(x.player)).join(', ') : '—'}
+          </div>
+        </div>
+        <div>
+          <strong>Suplentes</strong>
+          <div style={{ marginTop: 4, lineHeight: 1.6 }}>
+            {eventos.suplentes.length ? eventos.suplentes.map(x => nomeNum(x.player)).join(', ') : '—'}
+          </div>
+        </div>
+      </div>
+
+      {/* Como na ficha do amigável: o título sai mesmo sem nada escrito,
+          porque o espaço em branco por baixo é onde se escreve à mão. */}
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Ideias para o jogo</h3>
+      <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: '0 0 16px', minHeight: 34 }}>
+        {String(match.ideias || '').trim() || '—'}
+      </p>
+
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Destaques</h3>
+      <div style={{ fontSize: 12.5, lineHeight: 1.7, marginBottom: 16 }}>
+        {destaques.length ? destaques.map((l, i) => <div key={i}>{l}</div>) : <div>Sem acontecimentos registados.</div>}
+      </div>
+
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Números</h3>
+      <p style={{ fontSize: 12.5, margin: 0 }}>
+        {[
+          `${isFriendlyMatch(match) ? 'Presentes' : 'Convocados'}: ${resumo.convocados}`,
+          `Minutos dados: ${resumo.minutos}`,
+          `Nota média: ${resumo.notaMedia == null ? '—' : resumo.notaMedia.toFixed(1)}`,
+          `Sem jogar: ${resumo.semJogar}`,
+        ].join(' · ')}
+      </p>
+    </div>
+  );
+}
+
+/* A mesma ficha, mas como ficheiro para enviar (WhatsApp, email). Não
+   desenha o campo — o HTML partilhável não tem prancheta para jogos — mas
+   leva a mesma informação por palavras. */
+function buildMatchShareHtml({ match, players, season }) {
+  const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
+  const eventos = eventosDoJogo(match, players);
+  const resumo = resumoDoJogo(eventos);
+  const destaques = linhasDestaquesJogo(eventos, resumo, players);
+  const nomeNum = (x) => `${x.player.number ? `#${x.player.number} ` : ''}${x.player.name}`;
+  const lista = (arr) => (arr.length ? escapeHtmlText(arr.map(nomeNum).join(', ')) : '—');
+
+  const extraHtml = [
+    `<h2>Formação — ${escapeHtmlText(match.formacao || '4-3-3')}</h2>`,
+    `<h2>Equipa</h2>`,
+    `<p class="desc"><strong>Titulares:</strong> ${lista(eventos.titulares)}</p>`,
+    `<p class="desc"><strong>Suplentes:</strong> ${lista(eventos.suplentes)}</p>`,
+    `<h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(match.ideias || '').trim() || '—')}</p>`,
+    `<h2>Destaques</h2>${destaques.length
+      ? destaques.map(l => `<p class="desc">${escapeHtmlText(l)}</p>`).join('')
+      : '<p class="desc">Sem acontecimentos registados.</p>'}`,
+    `<h2>Números</h2><p class="desc">${escapeHtmlText([
+      `${isFriendlyMatch(match) ? 'Presentes' : 'Convocados'}: ${resumo.convocados}`,
+      `Minutos dados: ${resumo.minutos}`,
+      `Nota média: ${resumo.notaMedia == null ? '—' : resumo.notaMedia.toFixed(1)}`,
+      `Sem jogar: ${resumo.semJogar}`,
+    ].join(' · '))}</p>`,
+  ].join('');
+
+  const metaLines = [
+    fmtDate(match.date),
+    competitionLabel(match.competition),
+    match.jornada,
+    match.atHome === undefined ? null : (match.atHome ? 'casa' : 'fora'),
+    match.result ? `Resultado: ${match.result}` : null,
+  ].filter(Boolean);
+
+  return {
+    title: `${nosso} vs ${match.opponent || 'Adversário por definir'}`,
+    html: buildShareableHtmlDoc({
+      title: `${nosso} vs ${match.opponent || 'Adversário por definir'}`,
+      metaLines,
+      blocks: [],
+      extraHtml,
+    }),
+  };
+}
+
+function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, onFormacao, onAlinhamento, onStarters }) {
   const isNarrow = useIsMobile(760);
   const formacao = match.formacao || '4-3-3';
   const eventos = eventosDoJogo(match, players);
@@ -12403,20 +12578,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
                 Destaques
               </div>
               {(() => {
-                const linhas = [];
-                const comGolos = eventos.todos.filter(x => x.golos > 0);
-                const comAssist = eventos.todos.filter(x => x.assistencias > 0);
-                const comCartao = eventos.todos.filter(x => x.cartao);
-                if (comGolos.length) {
-                  linhas.push(`${resumo.golos} ${resumo.golos === 1 ? 'golo' : 'golos'} · ${comGolos.map(x => `${shortPlayerName(x.player, players)}${x.golos > 1 ? ` (${x.golos})` : ''}`).join(', ')}`);
-                }
-                if (comAssist.length) {
-                  linhas.push(`${resumo.assistencias} ${resumo.assistencias === 1 ? 'assistência' : 'assistências'} · ${comAssist.map(x => shortPlayerName(x.player, players)).join(', ')}`);
-                }
-                if (comCartao.length) {
-                  linhas.push(`${comCartao.length} ${comCartao.length === 1 ? 'cartão' : 'cartões'} · ${comCartao.map(x => shortPlayerName(x.player, players)).join(', ')}`);
-                }
-                if (resumo.substituicoes) linhas.push(`${resumo.substituicoes} ${resumo.substituicoes === 1 ? 'substituição' : 'substituições'}`);
+                const linhas = linhasDestaquesJogo(eventos, resumo, players);
                 if (!linhas.length) return <div style={{ fontSize: 12.5, color: T.mutedDim }}>Sem acontecimentos registados.</div>;
                 return linhas.map((l, i) => (
                   <div key={i} style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.8 }}>{l}</div>
@@ -12442,7 +12604,13 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
         ))}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+      {/* Partilhar/Imprimir à esquerda, fechar/editar à direita: as ações
+          que produzem alguma coisa ficam separadas das que fecham a
+          janela. `flexWrap` porque no telemóvel os quatro botões não cabem
+          numa linha — quebram em vez de encolher até ficarem ilegíveis. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+        {onShare && <Btn variant="ghost" onClick={onShare} style={{ marginRight: 'auto' }}><Share2 size={15} /> Partilhar</Btn>}
+        {onPrint && <Btn variant="ghost" onClick={onPrint}><Printer size={15} /> Imprimir</Btn>}
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
         <Btn onClick={onEdit}><Pencil size={15} /> Editar jogo</Btn>
       </div>
@@ -12556,6 +12724,7 @@ function filtrarJogosPorVista(matches, vista) {
 
 function MatchDashboard({ players, matches }) {
   const [vista, setVista] = useState('competicao');
+  const [imprimir, setImprimir] = useState(false);
   const vistaAtual = VISTAS_JOGO.find(v => v.id === vista) || VISTAS_JOGO[0];
   const escolhidos = filtrarJogosPorVista(matches, vista);
 
@@ -12567,6 +12736,70 @@ function MatchDashboard({ players, matches }) {
     .map(p => ({ player: p, s: playerStats(p, [], escolhidos) }))
     .filter(r => r.s.matchesPlayed > 0)
     .sort((a, b) => (b.s.avgMatchRating || 0) - (a.s.avgMatchRating || 0));
+
+  /* AS COLUNAS DEFINIDAS UMA VEZ SÓ.
+
+     A tabela é escrita em três sítios — ecrã, folha impressa e ficheiro
+     partilhado. Com os cabeçalhos e as contas copiados nos três, bastava
+     acrescentar uma coluna num deles para as versões deixarem de bater
+     certo. Aqui o cabeçalho e o valor de cada coluna andam juntos, e
+     quem desenha só percorre a lista. */
+  const colunas = [
+    { h: vistaAtual.colConv, t: vistaAtual.ajudaConv, v: s => s.matchesPlayed },
+    { h: 'Titular', t: 'Jogos em que foi titular', v: s => s.starts },
+    { h: 'Supl', t: 'Jogos em que começou no banco', v: s => s.matchesPlayed - s.starts },
+    { h: 'Supl uti', t: 'Jogos em que entrou vindo do banco', v: s => s.subsUsed },
+    { h: vistaAtual.colNaoConv, t: vistaAtual.ajudaNaoConv, v: s => Math.max(0, totalMatches - s.matchesPlayed) },
+    { h: 'Min', t: 'Minutos jogados', v: s => s.minutes },
+    { h: 'Golos', v: s => s.goals },
+    { h: 'Ass.', t: 'Assistências', v: s => s.assists },
+    { h: 'A', t: 'Cartões amarelos', v: s => s.yellow },
+    { h: 'V', t: 'Cartões vermelhos', v: s => s.red },
+    { h: 'Nota', t: 'Nota média', v: s => s.avgMatchRating ?? '—', destaque: true },
+  ];
+  const nomeJogador = (p) => `${p.number ? `#${p.number} ` : ''}${p.name}`;
+  const tituloTabela = `Estatísticas — ${vistaAtual.label}`;
+
+  const doPrint = () => {
+    setImprimir(true);
+    setTimeout(() => window.print(), 80);
+  };
+
+  /* A FOLHA TEM DE SAIR DO BODY DEPOIS DE IMPRIMIR.
+
+     Enquanto ficava montada, imprimir a seguir a ficha de um jogo levava
+     as duas coisas na mesma impressão — e, pior, o `@page landscape`
+     desta folha virava também a outra. `afterprint` dispara quando o
+     diálogo fecha, seja para imprimir ou para cancelar. */
+  useEffect(() => {
+    if (!imprimir) return undefined;
+    const limpar = () => setImprimir(false);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [imprimir]);
+
+  const doShare = () => {
+    const cabecalho = `<tr><th>Jogador</th>${colunas.map(c => `<th>${escapeHtmlText(c.h)}</th>`).join('')}</tr>`;
+    const corpo = rows.map(({ player, s }) =>
+      `<tr><td>${escapeHtmlText(nomeJogador(player))}</td>${colunas.map(c => `<td>${escapeHtmlText(String(c.v(s)))}</td>`).join('')}</tr>`
+    ).join('');
+    const html = buildShareableHtmlDoc({
+      title: tituloTabela,
+      metaLines: [`${escolhidos.length} jogos`, `${rows.length} jogadores`, new Date().toLocaleDateString('pt-PT')],
+      blocks: [],
+      extraHtml: `<table><thead>${cabecalho}</thead><tbody>${corpo}</tbody></table>`,
+    });
+    shareOrDownloadHtml(`estatisticas_${vistaAtual.id}.html`, html, tituloTabela);
+  };
+
+  /* Ícones no cabeçalho do painel, com o mesmo desenho dos cartões: bloco
+     próprio, encostados à direita, 14px, sem padding. */
+  const acoes = rows.length === 0 ? null : (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+      <button onClick={doShare} title="Partilhar as estatísticas como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
+      <button onClick={doPrint} title="Imprimir as estatísticas (uma folha, na horizontal)" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
+    </div>
+  );
 
   const seletor = (
     <div style={{ marginBottom: 12 }}>
@@ -12605,49 +12838,86 @@ function MatchDashboard({ players, matches }) {
   const thName = { ...th, textAlign: 'left' };
   const td = { padding: '8px 8px', fontSize: 12.5, color: T.mutedDim, textAlign: 'center', whiteSpace: 'nowrap' };
 
+  /* UMA FOLHA SÓ, SEMPRE.
+
+     A tabela tem doze colunas: em retrato não cabe, e o que sai é uma
+     folha cortada ao meio e outra com o resto. Por isso a impressão das
+     estatísticas muda a orientação para horizontal — e só a delas: o
+     `@page` vive dentro desta folha e desaparece com ela, sem afetar as
+     fichas de treino e de jogo, que continuam em retrato.
+
+     O tamanho da letra encolhe conforme o número de linhas, para um
+     plantel grande continuar a caber na mesma folha em vez de passar
+     para a segunda. Acima de 60 jogadores nem assim cabe — aí a segunda
+     folha é inevitável e mais vale ser legível. */
+  const nLinhas = rows.length;
+  const escala = nLinhas <= 26
+    ? { fonte: 9.5, celula: '3px 5px' }
+    : nLinhas <= 40
+      ? { fonte: 8, celula: '2px 4px' }
+      : { fonte: 6.8, celula: '1px 3px' };
+
+  const thPrint = { textAlign: 'center', padding: escala.celula, fontSize: escala.fonte, textTransform: 'uppercase', borderBottom: '1px solid #999', whiteSpace: 'nowrap' };
+  const tdPrint = { padding: escala.celula, fontSize: escala.fonte, textAlign: 'center', whiteSpace: 'nowrap', borderBottom: '1px solid #e2e2e2' };
+
   return (
-    <Panel title="Estatísticas">
+    <Panel title="Estatísticas" action={acoes}>
       {seletor}
       <div style={{ overflowX: 'auto' }}>
         <table>
           <thead>
             <tr style={{ background: T.bg }}>
               <th style={thName}>Jogador</th>
-              {/* As duas primeiras colunas mudam de nome com o recorte:
-                  num amigável não há convocatória, há presença. */}
-              {[
-                { h: vistaAtual.colConv, t: vistaAtual.ajudaConv },
-                { h: 'Titular', t: 'Jogos em que foi titular' },
-                { h: 'Supl', t: 'Jogos em que começou no banco' },
-                { h: 'Supl uti', t: 'Jogos em que entrou vindo do banco' },
-                { h: vistaAtual.colNaoConv, t: vistaAtual.ajudaNaoConv },
-                { h: 'Min', t: 'Minutos jogados' },
-                { h: 'Golos' }, { h: 'Ass.', t: 'Assistências' },
-                { h: 'A', t: 'Cartões amarelos' }, { h: 'V', t: 'Cartões vermelhos' },
-                { h: 'Nota', t: 'Nota média' },
-              ].map(c => <th key={c.h} style={th} title={c.t}>{c.h}</th>)}
+              {colunas.map(c => <th key={c.h} style={th} title={c.t}>{c.h}</th>)}
             </tr>
           </thead>
           <tbody>
             {rows.map(({ player, s }) => (
               <tr key={player.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                <td style={{ padding: '8px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>{player.number ? `#${player.number} ` : ''}{player.name}</td>
-                <td style={td}>{s.matchesPlayed}</td>
-                <td style={td}>{s.starts}</td>
-                <td style={td}>{s.matchesPlayed - s.starts}</td>
-                <td style={td}>{s.subsUsed}</td>
-                <td style={td}>{Math.max(0, totalMatches - s.matchesPlayed)}</td>
-                <td style={td}>{s.minutes}</td>
-                <td style={td}>{s.goals}</td>
-                <td style={td}>{s.assists}</td>
-                <td style={td}>{s.yellow}</td>
-                <td style={td}>{s.red}</td>
-                <td style={{ ...td, color: T.warn, ...mono }}>{s.avgMatchRating ?? '—'}</td>
+                <td style={{ padding: '8px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap' }}>{nomeJogador(player)}</td>
+                {colunas.map(c => (
+                  <td key={c.h} style={c.destaque ? { ...td, color: T.warn, ...mono } : td}>{c.v(s)}</td>
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {imprimir && createPortal(
+        <div className="print-sheet">
+          <style>{`
+            @media print {
+              @page { size: A4 landscape; margin: 10mm; }
+              .print-sheet { max-width: none !important; }
+              .print-sheet table { width: 100%; border-collapse: collapse; }
+              .print-sheet tr { break-inside: avoid; page-break-inside: avoid; }
+              .print-sheet thead { display: table-header-group; }
+            }
+          `}</style>
+          <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>{tituloTabela}</h2>
+          <p style={{ margin: '0 0 12px', fontSize: 11.5 }}>
+            {[`${escolhidos.length} jogos`, `${rows.length} jogadores`, new Date().toLocaleDateString('pt-PT')].join(' · ')}
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ ...thPrint, textAlign: 'left' }}>Jogador</th>
+                {colunas.map(c => <th key={c.h} style={thPrint}>{c.h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ player, s }) => (
+                <tr key={player.id}>
+                  <td style={{ ...tdPrint, textAlign: 'left' }}>{nomeJogador(player)}</td>
+                  {colunas.map(c => <td key={c.h} style={tdPrint}>{c.v(s)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+        document.body,
+      )}
     </Panel>
   );
 }
@@ -13765,6 +14035,28 @@ function StandingsModal({ standings, onClose, onSave }) {
 function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias }) {
   const [modal, setModal] = useState(null);
   const [ficha, setFicha] = useState(null);
+  /* O jogo a imprimir. A folha vive fora da app (montada no body) e só
+     existe enquanto a impressão acontece — o mesmo padrão do Planeamento.
+     O `setTimeout` dá ao React o tempo de a desenhar antes de chamar o
+     diálogo de impressão; sem ele imprime-se a folha vazia. */
+  const [printMatch, setPrintMatch] = useState(null);
+
+  const doPrintMatch = (m) => {
+    setPrintMatch(m);
+    setTimeout(() => window.print(), 80);
+  };
+  /* Ver a nota em MatchDashboard: sem isto a ficha ficava montada no body
+     e colava-se à impressão seguinte (por exemplo, à das estatísticas). */
+  useEffect(() => {
+    if (!printMatch) return undefined;
+    const limpar = () => setPrintMatch(null);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [printMatch]);
+  const doShareMatch = (m) => {
+    const { title, html } = buildMatchShareHtml({ match: m, players, season });
+    shareOrDownloadHtml(`jogo_${(m.opponent || 'adversario').replace(/[^\w-]+/g, '_')}_${m.date}.html`, html, title);
+  };
 
   const save = (data) => {
     const registo = data.id ? data : { ...data, id: uid() };
@@ -13883,6 +14175,8 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
                       encostados à esquerda, ao contrário de todos os
                       outros cartões da app. */}
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
+                    <button onClick={e => { e.stopPropagation(); doShareMatch(m); }} title="Partilhar ficha do jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
+                    <button onClick={e => { e.stopPropagation(); doPrintMatch(m); }} title="Imprimir ficha do jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
                     <button onClick={e => { e.stopPropagation(); setModal(m); }} title="Editar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                     <button onClick={e => { e.stopPropagation(); remove(m.id); }} title="Apagar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                   </div>
@@ -13906,6 +14200,8 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
             season={season}
             onClose={() => setFicha(null)}
             onEdit={() => { setFicha(null); setModal(atual); }}
+            onShare={() => doShareMatch(atual)}
+            onPrint={() => doPrintMatch(atual)}
               /* Mudar de formação limpa o alinhamento manual: os lugares
                passam a ser outros e as posições antigas deixam de fazer
                sentido. A equipa é recolocada pela sugestão automática. */
@@ -13917,6 +14213,11 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
       })()}
 
       {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} onClose={() => setModal(null)} onSave={save} />}
+
+      {printMatch && createPortal(
+        <PrintFichaJogo match={printMatch} players={players} season={season} />,
+        document.body,
+      )}
     </div>
   );
 }
