@@ -77,6 +77,21 @@ const intensityLabel = (v) => INTENSITIES.find(i => i.value === v)?.label || v |
 // vez de "Intensidade: —", em qualquer sítio onde a sessão é resumida.
 const intensityText = (s) => s.phase === 'Descanso' ? '' : `Intensidade: ${intensityLabel(s.intensity)}`;
 
+/* TEMPO DE JOGO NAS FICHAS DE AMIGÁVEL.
+
+   Um amigável não tem exercícios, por isso a soma das durações — que é o
+   que dá o tempo nas sessões de treino — daria sempre zero. O tempo de
+   jogo é, por omissão, os 90 minutos regulamentares; se um dia se quiser
+   gravar outro valor (dois tempos de 40, por exemplo), basta pôr
+   `tempoJogo` na sessão e esta função passa a usá-lo, sem mais nada
+   mudar. Só aparece na fase "Jogo": num treino não significa nada. */
+const TEMPO_JOGO_PADRAO = 90;
+const tempoJogoText = (s) => {
+  if (!s || s.phase !== 'Jogo') return '';
+  const min = Number(s.tempoJogo);
+  return `Tempo: ${min > 0 ? min : TEMPO_JOGO_PADRAO} min`;
+};
+
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 /* Lê um ficheiro (imagem ou PDF) escolhido pelo utilizador e devolve uma
@@ -10451,7 +10466,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   };
 
   const doShare = (s) => {
-    const meta = [fmtDate(s.date), s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean);
+    const meta = [fmtDate(s.date), s.phase, tempoJogoText(s), intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean);
     const exBlocks = (s.exerciseIds || []).map((e, i) => {
       const ex = exercises.find(x => x.id === e.exId);
       if (!ex) return null;
@@ -10476,12 +10491,12 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           return `<p class="desc"><strong>${escapeHtmlText(cabeca)}:</strong> ${escapeHtmlText(g.jogadores.join(', '))}</p>`;
         }).join('')}`
       : '';
-    /* Num amigável não há exercícios — o "Jogo 11x11" mostra antes o onze
-       que jogou (titulares) e quem ficou no banco (suplentes), a mesma
+    /* Num amigável não há exercícios — a secção "Formação" mostra antes o
+       onze que jogou (titulares) e quem ficou no banco (suplentes), a mesma
        informação que sai na ficha impressa. */
     const onzeAmigavel = s.phase === 'Jogo' ? (s.equipasSimulador && s.equipasSimulador.onzeAmigavel) : null;
     const jogoHtml = s.phase === 'Jogo'
-      ? `<h2>Jogo 11x11</h2><p class="desc"><strong>Titulares:</strong> ${onzeAmigavel && onzeAmigavel.onze
+      ? `<h2>Formação</h2><p class="desc"><strong>Titulares:</strong> ${onzeAmigavel && onzeAmigavel.onze
           ? escapeHtmlText(onzeAmigavel.onze.filter(l => l.jogador).map(l => l.jogador).join(', ') || '—')
           : '—'}</p><p class="desc"><strong>Suplentes:</strong> ${onzeAmigavel && onzeAmigavel.suplentes && onzeAmigavel.suplentes.length
           ? escapeHtmlText(onzeAmigavel.suplentes.join(', '))
@@ -10733,7 +10748,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             {printSession.phase === 'Descanso' ? 'Folga' : (printSession.phase === 'Jogo' ? 'Amigável' : (printSession.focus || 'Sessão de treino'))}
           </h2>
           <p style={{ margin: '0 0 18px', fontSize: 13 }}>
-            {[fmtDate(printSession.date), printSession.phase, intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
+            {[fmtDate(printSession.date), printSession.phase, tempoJogoText(printSession), intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
           </p>
 
           {printSession.phase === 'Jogo' ? (
@@ -10798,7 +10813,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             <div key={s.id} style={{ marginBottom: 24 }}>
               <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.phase === 'Descanso' ? 'Folga' : (s.phase === 'Jogo' ? 'Amigável' : (s.focus || 'Sessão de treino'))}</h3>
               <p style={{ margin: '0 0 12px', fontSize: 13 }}>
-                {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
+                {[s.phase, tempoJogoText(s), intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
               {s.phase === 'Jogo' ? (
                 <PrintOnzeAmigavel session={s} />
@@ -11107,7 +11122,7 @@ function PrintOnzeAmigavel({ session }) {
 
   return (
     <div style={{ marginBottom: 16, pageBreakInside: 'avoid' }}>
-      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Jogo 11x11</h3>
+      <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Formação</h3>
       <div style={{
         position: 'relative', width: '100%', maxWidth: 480, aspectRatio: '105 / 68',
         background: '#fff', border: '1px solid #ccc', borderRadius: 8, margin: '0 auto 14px',
@@ -11305,7 +11320,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: T.cream, fontSize: 16, fontWeight: 600 }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</div>
               <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                {[s.phase, intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
+                {[s.phase, tempoJogoText(s), intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </div>
             </div>
             <button onClick={() => onEditSession(s)} title="Editar sessão" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0, marginTop: 4 }}>
@@ -12193,7 +12208,8 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
         />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : 'minmax(0, 1.35fr) minmax(0, 1fr)', gap: 14 }}>
-          {/* ---------- O CAMPO ---------- */}
+          {/* ---------- O CAMPO (e, por baixo, as ideias para o jogo) ---------- */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
           <div style={{
             position: 'relative', width: '100%', aspectRatio: '105 / 68',
             background: '#1E3A24', border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden',
@@ -12266,6 +12282,21 @@ function FichaJogo({ match, players, season, onClose, onEdit, onFormacao, onAlin
                 >{lugares[i]}</button>
               );
             })}
+          </div>
+
+            {/* O plano escrito na edição do jogo, ao lado de quem o vai
+                executar. Só aparece se lá estiver alguma coisa: um cartão
+                vazio por baixo do campo era só ruído. */}
+            {String(match.ideias || '').trim() && (
+              <div style={card}>
+                <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+                  Ideias para o jogo
+                </div>
+                <div style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                  {match.ideias}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ---------- BANCO E DESTAQUES ---------- */}
@@ -13837,8 +13868,12 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
      resultado é a janela em branco, não uma mensagem. */
   const [f, setF] = useState(() => ({
     date: todayStr(), opponent: '', competition: FRIENDLY, result: '', jornada: '',
-    convocados: [], starters: [], report: {},
+    convocados: [], starters: [], report: {}, ideias: '',
     ...(match || {}),
+    // Jogos gravados antes deste campo existir vêm sem `ideias`; o
+    // `?? ''` evita que o textarea passe de não-controlado a controlado
+    // à primeira letra escrita (aviso do React e cursor a saltar).
+    ideias: (match && match.ideias) || '',
     convocados: (match && match.convocados) || [],
     starters: (match && match.starters) || [],
     report: (match && match.report) || {},
@@ -13932,6 +13967,24 @@ function MatchModal({ match, players, standings, season, onClose, onSave }) {
           </Select>
         </Field>
         <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
+      </div>
+
+      {/* IDEIAS PARA O JOGO.
+
+          O plano em palavras: como se quer atacar, como se quer pressionar,
+          o que fazer nas bolas paradas, o que vigiar no adversário. Fica
+          fora da grelha de campos curtos porque é texto corrido e precisa
+          da largura toda; aparece depois na ficha do jogo, por baixo do
+          campo, que é onde se lê antes de entrar. */}
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Ideias para o jogo" bloco solto>
+          <TextArea
+            value={f.ideias}
+            onChange={e => setF({ ...f, ideias: e.target.value })}
+            placeholder="Ex: pressão alta nos primeiros 15 min · sair a jogar pelo lado do 3 · atenção ao 9 deles nas bolas paradas"
+            style={{ minHeight: 90 }}
+          />
+        </Field>
       </div>
 
       {/* Num amigável não há convocatória: vai quem aparece. A lista é a
