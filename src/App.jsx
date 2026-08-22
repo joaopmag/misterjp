@@ -4167,7 +4167,7 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
    janela estreita (telemóvel) o 100% já é mais pequeno do que este
    limite, e o `min()` escolhe-o — o campo continua a ocupar a largura
    toda como antes. */
-const PITCH_TARGET_VH = 58; // deixa espaço à barra de ferramentas e ao painel de edição por baixo
+const PITCH_TARGET_VH = 70; // deixa espaço à barra de ferramentas e ao painel de edição por baixo
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
