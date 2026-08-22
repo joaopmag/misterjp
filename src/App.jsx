@@ -2831,7 +2831,7 @@ function Plantel({ players, setPlayers, sessions, matches, meta }) {
       )}
 
       {printPlayer && createPortal(
-        <PlayerPrintSheet player={printPlayer} stats={playerStats(printPlayer, sessions, matches)} />,
+        <PlayerPrintSheet player={printPlayer} stats={playerStats(printPlayer, sessions, jogosOficiaisDe(matches))} />,
         document.body
       )}
     </div>
@@ -3027,7 +3027,16 @@ function playerStats(player, sessions, matches) {
 }
 
 function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint, onEdit }) {
-  const s = playerStats(player, sessions, matches);
+  /* A ficha de um jogador conta JOGOS OFICIAIS.
+
+     É o que ela quer dizer quando fala de convocatórias, titularidades e
+     minutos: um jogador com 12 presenças em amigáveis de pré-época não
+     tem a mesma história de um com 12 convocatórias no campeonato, e a
+     ficha é usada para decidir sobre a segunda coisa.
+
+     Os amigáveis têm o seu recorte próprio na tabela de estatísticas do
+     separador Jogos. */
+  const s = playerStats(player, sessions, jogosOficiaisDe(matches));
   return (
     <Modal title={`${player.name} — estatísticas`} onClose={onClose}>
       {(onShare || onPrint || onEdit) && (
@@ -4708,11 +4717,35 @@ function clampTextElement(el) {
 
    Filtrar na leitura e não nos dados resolve também os exercícios já
    gravados com o problema, sem lhes tocar. */
+/* Elementos de um passo: a POSIÇÃO vem do passo, o CONTEÚDO vem do campo.
+
+   Um passo guarda uma fotografia — mas uma fotografia de ONDE as coisas
+   estavam, não do que diziam. O texto de uma caixa, o número de um
+   jogador, a cor da equipa, o tamanho: isso é o elemento, e o elemento é
+   um só.
+
+   Sem esta distinção, escrever numa caixa de texto DEPOIS de ela já estar
+   num passo deixava o passo com a cópia antiga — a animação mostrava a
+   caixa a dizer "Texto" e só no fim aparecia o que tinha sido escrito.
+   O mesmo valia para mudar um número ou a cor de um jogador.
+
+   Guardam-se do passo apenas os campos que descrevem a POSE: onde está,
+   virado para onde, com que tamanho de zona. Tudo o resto é lido do
+   elemento tal como ele é agora. */
+const CAMPOS_DE_POSE = ['x', 'y', 'rotation', 'w', 'h'];
+
 function stepElements(step, diagram) {
   const doPasso = (step && step.elements) || [];
-  const noCampo = new Set((diagram && diagram.elements ? diagram.elements : []).map(el => el.id));
-  if (!noCampo.size) return doPasso;
-  return doPasso.filter(el => noCampo.has(el.id));
+  const atuais = new Map(((diagram && diagram.elements) || []).map(el => [el.id, el]));
+  if (!atuais.size) return doPasso;
+  return doPasso
+    .filter(el => atuais.has(el.id))
+    .map(el => {
+      const atual = atuais.get(el.id);
+      const pose = {};
+      CAMPOS_DE_POSE.forEach(k => { if (el[k] !== undefined) pose[k] = el[k]; });
+      return { ...atual, ...pose };
+    });
 }
 
 function stepStaticArrows(step, diagram) {
@@ -7101,6 +7134,64 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setPlaying(true);
     runStep(passoAtualRef.current, decorridoRef.current);
   };
+
+  /* ANDAR PARA A FRENTE E PARA TRÁS, passo a passo.
+
+     A apresentação corrida serve para mostrar a ideia; explicá-la é outra
+     coisa — obriga a voltar atrás, a repetir um movimento, a ficar parado
+     num momento enquanto se fala. Sem isto, a única forma de rever o
+     terceiro passo era ver os dois primeiros de novo.
+
+     Ir para um passo CONGELA a apresentação nesse ponto: mostra-se o
+     estado final desse passo, sem animação. Quem quiser ver o movimento
+     carrega em Continuar a partir dali. */
+  const irParaPasso = (idx) => {
+    if (!sequence.length) return;
+    const alvo = Math.max(0, Math.min(sequence.length - 1, idx));
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    animRef.current = null;
+    timeoutRef.current = null;
+
+    passoAtualRef.current = alvo;
+    decorridoRef.current = 0;
+    setPlaying(false);
+    setPaused(true);
+    setFinished(false);
+    setAnimItems([]);
+
+    /* Mostra o campo COMO FICA no fim do passo anterior — que é o mesmo
+       que dizer: como está no início do passo escolhido. É a fotografia
+       do passo, com o conteúdo atual (ver stepElements). */
+    const step = sequence[alvo];
+    setFrameElements(stepElements(step, diagram));
+    setFrameArrows([...stepStaticArrows(step, diagram), ...(step.arrows || [])]);
+  };
+
+  const passoSeguinte = () => {
+    const proximo = passoAtualRef.current + 1;
+    if (proximo >= sequence.length) {
+      // Depois do último passo fica o estado final, tal como está gravado.
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      animRef.current = null;
+      passoAtualRef.current = sequence.length - 1;
+      setPlaying(false);
+      setPaused(false);
+      setFinished(true);
+      setAnimItems([]);
+      setFrameElements(diagram.elements || []);
+      setFrameArrows(diagram.arrows || []);
+      return;
+    }
+    irParaPasso(proximo);
+  };
+
+  const passoAnterior = () => {
+    // Vindo do fim, o "anterior" é o último passo e não o penúltimo.
+    if (finished) { irParaPasso(sequence.length - 1); return; }
+    irParaPasso(passoAtualRef.current - 1);
+  };
   // Repetir do início: garante que nenhuma animação anterior fica pendente
   // (era isso que impedia o segundo "play" logo a seguir ao fim).
   const restart = () => { stop(); setTimeout(start, 30); };
@@ -7187,6 +7278,28 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
                   }}
                 ><Square size={14} /> Parar</button>
               )}
+              {/* As mesmas setas do modo normal. Em ecrã inteiro fazem
+                  ainda mais falta: é aqui que se apresenta ao grupo e se
+                  precisa de voltar atrás sem sair da apresentação. */}
+              {[
+                { onClick: passoAnterior, icone: <ChevronLeft size={16} />, rotulo: 'Anterior', off: !finished && passoAtualRef.current <= 0 && !playing },
+                { onClick: passoSeguinte, icone: <ChevronRight size={16} />, rotulo: 'Seguinte', off: finished },
+              ].map(b => (
+                <button
+                  key={b.rotulo}
+                  type="button"
+                  onClick={b.onClick}
+                  disabled={b.off}
+                  aria-label={b.rotulo}
+                  title={b.rotulo}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 40, height: 38, borderRadius: 8,
+                    background: '#0e1a12CC', border: `1px solid ${T.line}`,
+                    color: b.off ? T.mutedDim : T.cream, cursor: b.off ? 'default' : 'pointer',
+                  }}
+                >{b.icone}</button>
+              ))}
               <button
                 type="button"
                 onClick={() => (playing ? pause() : paused ? resume() : restart())}
@@ -7231,7 +7344,18 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           {sequence.length > 0 && (
             <>
               {/* Pausa só faz sentido a meio; Parar só faz sentido se
-                  houver alguma coisa a decorrer ou congelada. */}
+                  houver alguma coisa a decorrer ou congelada.
+
+                  As setas andam passo a passo e estão SEMPRE disponíveis:
+                  é com elas que se explica, e ter de carregar em Pausa
+                  antes de poder recuar era um passo a mais no meio de uma
+                  conversa. */}
+              <Btn variant="ghost" onClick={passoAnterior} disabled={!finished && passoAtualRef.current <= 0 && !playing}>
+                <ChevronLeft size={14} /> Anterior
+              </Btn>
+              <Btn variant="ghost" onClick={passoSeguinte} disabled={finished}>
+                Seguinte <ChevronRight size={14} />
+              </Btn>
               {(playing || paused) && (
                 <Btn variant="ghost" onClick={stop}><Square size={14} /> Parar</Btn>
               )}
@@ -7241,6 +7365,13 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
                 <Btn onClick={resume}><Play size={14} /> Continuar</Btn>
               ) : (
                 <Btn onClick={restart}><Play size={14} /> {finished ? 'Repetir apresentação' : 'Apresentar'}</Btn>
+              )}
+              {/* Em que ponto vamos: sem isto, andar passo a passo é andar
+                  às cegas. */}
+              {(playing || paused) && (
+                <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, alignSelf: 'center' }}>
+                  animar {Math.min(passoAtualRef.current + 1, sequence.length)} de {sequence.length}
+                </span>
               )}
             </>
           )}
