@@ -137,6 +137,13 @@ function resumoClinico(estado) {
   return [`${estado.label}${desde}`, que].filter(Boolean).join(' · ');
 }
 
+/* Endereços antigos (#simulador, #convocatorias, #videos, #apresentacoes)
+   continuam a abrir alguma coisa em vez de darem página em branco — um
+   atalho guardado ou um separador aberto no telemóvel não têm de morrer
+   por causa de uma reorganização da navegação. */
+const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca' };
+const tabValida = (id) => TABS_ANTIGAS[id] || id;
+
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 /* Lê um ficheiro (imagem ou PDF) escolhido pelo utilizador e devolve uma
@@ -1116,6 +1123,40 @@ function Modal({ title, subtitle, onClose, children, wide, xwide }) {
   );
 }
 
+/* SUB-SEPARADORES DENTRO DE UMA SECÇÃO.
+
+   A barra lateral não pode crescer para sempre: cada separador novo
+   aproxima-a do scroll, e uma lista que se percorre a rolar deixa de se
+   ler de relance. Secções que são duas vistas da mesma coisa passam a
+   partilhar um separador e a dividir-se aqui dentro.
+
+   O desenho é o mesmo das pílulas de filtro que já existem nos Jogos e
+   nas Estatísticas — de propósito: quem já sabe carregar numa sabe
+   carregar nestas. */
+function SubTabs({ value, onChange, tabs }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+      {tabs.map(t => {
+        const on = value === t.id;
+        return (
+          <button key={t.id} type="button" onClick={() => onChange(t.id)} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 7,
+            padding: '7px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', ...body,
+            fontWeight: on ? 600 : 500,
+            background: on ? '#B5393F' : 'transparent',
+            color: on ? TEXT_ON_ACCENT : T.muted,
+            border: `1px solid ${on ? '#B5393F' : T.line}`,
+          }}>
+            {t.icon ? <t.icon size={14} /> : null}
+            {t.label}
+            {t.count != null && <span style={{ ...mono, opacity: .75 }}>{t.count}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function EmptyState({ text, action }) {
   return (
     <div style={{
@@ -1312,7 +1353,7 @@ function App({ session }) {
   const [tab, setTab] = useState(() => {
     if (typeof window === 'undefined') return 'geral';
     const fromHash = window.location.hash.replace('#', '').trim();
-    return fromHash || 'geral';
+    return fromHash ? tabValida(fromHash) : 'geral';
   });
 
   /* Cada secção passa a ser uma entrada no histórico (pushState), para os
@@ -1343,7 +1384,7 @@ function App({ session }) {
     if (typeof window === 'undefined') return undefined;
     const onHash = () => {
       const h = window.location.hash.replace('#', '').trim();
-      if (h) setTab(h);
+      if (h) setTab(tabValida(h));
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
@@ -1485,26 +1526,59 @@ function App({ session }) {
     });
   }, [players, loading]);
 
+  /* A BARRA LATERAL NÃO PODE CRESCER PARA SEMPRE.
+
+     Com dezasseis separadores a lista já não cabia num portátil e ganhava
+     scroll — e uma navegação que se percorre a rolar deixa de se ler de
+     relance, que é a única coisa que uma navegação tem de fazer.
+
+     Três saíram daqui, cada uma por uma razão própria e não só por causa
+     do espaço:
+
+     · Simulador — nunca foi um destino. Lê a sessão do dia e escreve-lhe
+       as equipas de volta. Agora abre-se do cartão do dia, no
+       Planeamento, já com a data certa.
+     · Convocatórias — nascem com o jogo (ver `syncMatchConvocatoria`, que
+       já lhes mantém adversário, data e jornada sincronizados). São a
+       outra vista do mesmo jogo, e vivem dentro de Jogos.
+     · FutchannelYouT e Apresentações — duas bibliotecas de media com o
+       mesmo comportamento. Juntaram-se numa. */
   const NAV = [
     { id: 'geral', label: 'Visão Geral', icon: LayoutGrid },
     { id: 'plantel', label: 'Plantel', icon: Users },
     { id: 'exercicios', label: 'Exercícios', icon: Dumbbell },
     { id: 'ideiajogo', label: 'Ideia de Jogo', icon: Lightbulb },
     { id: 'planeamento', label: 'Planeamento', icon: CalendarDays },
-    { id: 'simulador', label: 'Simulador', icon: RotateCw },
     { id: 'presencas', label: 'Presenças', icon: UserCheck },
     { id: 'clinico', label: 'Boletim Clínico', icon: Stethoscope },
-    { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList },
     { id: 'jogos', label: 'Jogos', icon: Trophy },
     { id: 'monitorizacao', label: 'Monitorização', icon: Activity },
     { id: 'desenvolvimento', label: 'Desenvolvimento', icon: TrendingUp },
     { id: 'scouting', label: 'Scouting', icon: Search },
-    { id: 'videos', label: 'FutchannelYouT', icon: Tv },
-    { id: 'apresentacoes', label: 'Apresentações', icon: Presentation },
+    { id: 'biblioteca', label: 'Biblioteca', icon: Presentation },
     { id: 'diario', label: 'Diário', icon: BookOpen },
   ];
 
-  const goTab = (id) => { setTab(id); setNavOpen(false); };
+
+
+  /* Qual das duas bibliotecas está aberta. Um #videos ou #apresentacoes
+     antigo não só abre a Biblioteca como escolhe a sub-aba certa. */
+  const [biblioteca, setBiblioteca] = useState(() => {
+    if (typeof window === 'undefined') return 'videos';
+    return window.location.hash.replace('#', '').trim() === 'apresentacoes' ? 'apresentacoes' : 'videos';
+  });
+  /* O id pedido ANTES de ser redirecionado. É o que permite a um
+     #convocatorias antigo abrir Jogos já na sub-aba certa. */
+  const [tabPedida, setTabPedida] = useState(() => {
+    if (typeof window === 'undefined') return 'geral';
+    return window.location.hash.replace('#', '').trim() || 'geral';
+  });
+  const goTab = (id) => {
+    setTabPedida(id);
+    if (id === 'videos' || id === 'apresentacoes') setBiblioteca(id);
+    setTab(tabValida(id));
+    setNavOpen(false);
+  };
 
   if (loading) {
     return <LoadingGate />;
@@ -1715,7 +1789,7 @@ function App({ session }) {
                 onClick={() => goTab(n.id)}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center', gap: 11,
-                  padding: '13px 20px', background: 'transparent', border: 'none',
+                  padding: '9px 20px', background: 'transparent', border: 'none',
                   borderLeft: '3px solid transparent', color: tab === n.id ? T.cream : T.muted,
                   cursor: 'pointer', fontSize: 13.5, fontWeight: 500, textAlign: 'left', ...body,
                 }}
@@ -1770,35 +1844,46 @@ function App({ session }) {
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} />}
-          {tab === 'simulador' && <Simulador players={players} exercises={exercises} sessions={sessions} setSessions={setSessions} matches={matches} clinico={clinico} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} />}
-          {tab === 'convocatorias' && <Convocatorias convocatorias={convocatorias} setConvocatorias={setConvocatorias} players={players} season={season} standings={standings} matches={matches} setMatches={setMatches} clinico={clinico} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
-          {/* FutchannelYouT e Apresentações ficam sempre montados (só
-             escondidos com CSS quando não é a tab ativa) em vez de serem
-             destruídos e recriados a cada troca de separador — assim um
-             vídeo do Instagram/TikTok que esteja a tocar continua
-             exatamente onde estava ao voltar a esta página. */}
-          <div style={{ display: tab === 'videos' ? 'block' : 'none' }}>
-            <MediaLibrary
-              items={videos} setItems={setVideos}
-              title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
-              addLabel="Adicionar vídeo"
-              emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok de uma jornada, ou carrega um ficheiro, para começares."
-              emptyFirstLabel="Adicionar o primeiro vídeo"
+          {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
+
+             Continuam ambas SEMPRE MONTADAS (escondidas com CSS, não
+             desmontadas) em vez de destruídas e recriadas a cada troca —
+             assim um vídeo do Instagram/TikTok que esteja a tocar
+             continua exatamente onde estava ao voltar. Era verdade quando
+             eram dois separadores e continua a ser agora que são duas
+             sub-abas: o `display: none` é justamente o que o permite. */}
+          <div style={{ display: tab === 'biblioteca' ? 'block' : 'none' }}>
+            <SubTabs
+              value={biblioteca}
+              onChange={setBiblioteca}
+              tabs={[
+                { id: 'videos', label: 'FutchannelYouT', icon: Tv, count: (videos || []).length },
+                { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
+              ]}
             />
-          </div>
-          <div style={{ display: tab === 'apresentacoes' ? 'block' : 'none' }}>
-            <MediaLibrary
-              items={apresentacoes} setItems={setApresentacoes}
-              title="Apresentações" subtitle="Partilha de ideias."
-              addLabel="Adicionar ficheiro"
-              emptyText="Ainda sem apresentações. Carrega um PDF ou PowerPoint, cola um link do Google Drive (para ficheiros grandes) ou um link de vídeo, para começares."
-              emptyFirstLabel="Adicionar o primeiro ficheiro"
-            />
+            <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
+              <MediaLibrary
+                items={videos} setItems={setVideos}
+                title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
+                addLabel="Adicionar vídeo"
+                emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok de uma jornada, ou carrega um ficheiro, para começares."
+                emptyFirstLabel="Adicionar o primeiro vídeo"
+              />
+            </div>
+            <div style={{ display: biblioteca === 'apresentacoes' ? 'block' : 'none' }}>
+              <MediaLibrary
+                items={apresentacoes} setItems={setApresentacoes}
+                title="Apresentações" subtitle="Partilha de ideias."
+                addLabel="Adicionar ficheiro"
+                emptyText="Ainda sem apresentações. Carrega um PDF ou PowerPoint, cola um link do Google Drive (para ficheiros grandes) ou um link de vídeo, para começares."
+                emptyFirstLabel="Adicionar o primeiro ficheiro"
+              />
+            </div>
           </div>
           {tab === 'desenvolvimento' && (
             <DesenvolvimentoIndividual
@@ -9608,7 +9693,9 @@ function PranchetaOnze({ periodo, formacao, onTrocar }) {
   );
 }
 
-function Simulador({ players, exercises, sessions, setSessions, matches, clinico }) {
+/* `diaInicial` chega preenchido quando o Simulador é aberto do cartão de
+   um dia no Planeamento, que passou a ser a única forma de lá chegar. */
+function Simulador({ players, exercises, sessions, setSessions, matches, clinico, diaInicial }) {
   const isNarrow = useIsMobile(760);
   const [modo, setModo] = useState('treino'); // 'treino' | 'amigavel'
   const [presentIds, setPresentIds] = useState([]);
@@ -9619,7 +9706,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
   const [formacao, setFormacao] = useState('4-3-3');
   // 'auto' calcula o mínimo de paragens para ninguém ficar sem jogar.
   const [janelas, setJanelas] = useState('auto');
-  const [dia, setDia] = useState(todayStr());
+  const [dia, setDia] = useState(diaInicial || todayStr());
   // Qual amigável agendado se está a simular — só existe em modo 'amigavel'.
   // Sem isto, `dia` ficava na data de hoje por omissão e o "Guardar" não
   // encontrava sessão nenhuma nesse dia (a não ser que o jogo fosse mesmo
@@ -10575,6 +10662,10 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
   // entre Jogos e Planeamento, um jogo criado ou editado aqui aparece tal
   // e qual em Jogos, e vice-versa — não há duas cópias dos dados.
   const [ficha, setFicha] = useState(null);
+  /* Dia para o qual o Simulador está aberto. `null` = fechado. Deixou de
+     ser separador próprio: é uma ferramenta que se aplica a um dia, e o
+     dia vem do cartão em que se carregou. */
+  const [simuladorDia, setSimuladorDia] = useState(null);
   const [printSession, setPrintSession] = useState(null);
   /* A ficha do JOGO em papel (a mesma que Jogos usa), para o botão
      Imprimir da janela de leitura do jogo. É diferente da folha da SESSÃO
@@ -10831,6 +10922,7 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                       )}
                       {sessaoJogo && (
                         <>
+                          <button onClick={e => { e.stopPropagation(); setSimuladorDia(sessaoJogo.date); }} title="Distribuir equipas para este jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><RotateCw size={14} /></button>
                           <button onClick={e => { e.stopPropagation(); doShare(sessaoJogo); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
                           <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
                         </>
@@ -10887,6 +10979,13 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                       {temEquipasSessao(s) && (
                         <button onClick={() => setSessions(sessions.map(x => (x.id === s.id ? { ...x, equipasSimulador: null } : x)))} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                       )}
+                      {/* O Simulador abre A PARTIR DO DIA, com a data já
+                          escolhida. Quando era separador próprio, o dia
+                          escolhia-se lá dentro e começava em hoje — bastava
+                          esquecer de o mudar para o "Guardar equipas" não
+                          encontrar sessão nenhuma e não fazer nada. Vindo
+                          daqui, esse engano deixa de ser possível. */}
+                      <button onClick={() => setSimuladorDia(s.date)} title="Distribuir equipas para este treino" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><RotateCw size={14} /></button>
                       <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
                       <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Imprimir ficha"><Printer size={14} /></button>
                       <button onClick={() => setModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Editar sessão"><Pencil size={14} /></button>
@@ -10898,6 +10997,36 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
             </div>
           </div>
         ))
+      )}
+
+      {/* O SIMULADOR EM ECRÃ INTEIRO, POR CIMA DO PLANEAMENTO.
+
+          Precisa da largura toda — 37 chips de jogadores, os blocos do
+          plano, a grelha de equipas. Num canto não cabia. O que muda em
+          relação ao separador que era é só o caminho: abre-se de um dia
+          concreto e fecha-se de volta para ele. */}
+      {simuladorDia && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 60, background: T.bg,
+          overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+        }}>
+          <div style={{ maxWidth: 1280, margin: '0 auto', padding: '18px 20px 60px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+              <Btn variant="ghost" onClick={() => setSimuladorDia(null)}>
+                <ChevronLeft size={15} /> Voltar ao Planeamento
+              </Btn>
+            </div>
+            <Simulador
+              players={players}
+              exercises={exercises}
+              sessions={sessions}
+              setSessions={setSessions}
+              matches={matches}
+              clinico={clinico}
+              diaInicial={simuladorDia}
+            />
+          </div>
+        </div>
       )}
 
       {modal && (
@@ -14813,7 +14942,12 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, clinico }) {
+function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, clinico, abaInicial }) {
+  /* Convocatórias deixaram de ter separador próprio e vivem aqui: nascem
+     com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
+     jornada sincronizados), por isso eram já a outra vista da mesma
+     coisa. */
+  const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : 'jogos');
   const [modal, setModal] = useState(null);
   const [ficha, setFicha] = useState(null);
   /* O jogo a imprimir. A folha vive fora da app (montada no body) e só
@@ -14891,8 +15025,36 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
     ? sorted
     : sorted.filter(m => competitionLabel(m.competition) === compAberta);
 
+  if (aba === 'convocatorias') {
+    return (
+      <div>
+        <SubTabs
+          value={aba}
+          onChange={setAba}
+          tabs={[
+            { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
+            { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
+          ]}
+        />
+        <Convocatorias
+          convocatorias={convocatorias} setConvocatorias={setConvocatorias}
+          players={players} season={season} standings={standings}
+          matches={matches} setMatches={setMatches} clinico={clinico}
+        />
+      </div>
+    );
+  }
+
   return (
     <div>
+      <SubTabs
+        value={aba}
+        onChange={setAba}
+        tabs={[
+          { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
+          { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
+        ]}
+      />
       <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
 
