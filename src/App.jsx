@@ -212,8 +212,31 @@ function rpeContexto(rec, { matches = [], sessions = [] } = {}) {
 }
 const RPE_CONTEXTO_LABEL = { treino: 'Treino', jogo: 'Jogo' };
 
-function genPlayerCode(usedSet) {  let code;
-  do { code = String(Math.floor(1000 + Math.random() * 9000)); } while (usedSet.has(code));
+/* CÓDIGO PESSOAL DO ATLETA.
+
+   Foi de quatro dígitos e passou a seis. A razão não é estética: quem
+   tiver o link do quiosque pode tentar códigos à sorte, e com quatro
+   dígitos há nove mil hipóteses para um plantel de quase quarenta —
+   acerta-se num atleta em poucas dezenas de tentativas. Com seis são um
+   milhão, e passam a ser precisas dezenas de milhares de tentativas para
+   sequer haver hipótese. É a diferença entre uma fechadura e um adereço.
+
+   Continua numérico de propósito: o quiosque tem um teclado de números,
+   que é o certo para um miúdo a responder no telemóvel de manhã. Letras
+   obrigariam ao teclado do sistema e a distinguir maiúsculas, zero de O,
+   um de I — troca má.
+
+   `Math.random` chega aqui: isto protege um questionário de bem-estar,
+   não uma conta bancária, e o atacante teria de adivinhar o código, não
+   prever a sequência. */
+const CHECKIN_CODE_LEN = 6;
+const CHECKIN_CODE_MIN = 4; // os códigos antigos ainda são aceites
+
+function genPlayerCode(usedSet) {
+  const min = 10 ** (CHECKIN_CODE_LEN - 1);
+  const max = 10 ** CHECKIN_CODE_LEN;
+  let code;
+  do { code = String(Math.floor(min + Math.random() * (max - min))); } while (usedSet.has(code));
   usedSet.add(code);
   return code;
 }
@@ -1960,7 +1983,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
-          {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
+          {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
 
@@ -16082,15 +16105,18 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
 /* ---------------------------------------------------------------
    MONITORIZAÇÃO
 ---------------------------------------------------------------- */
-function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, sessions, matches = [], onPreview }) {
+function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, sessions, matches = [], onPreview, teamId }) {
   // Contexto de cada PSE (treino ou jogo) — ver rpeContexto.
   const ctx = { matches, sessions };
   const [modal, setModal] = useState(false);
   const [showCodes, setShowCodes] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
+  /* O link leva a equipa. Sem ela, o servidor tem de adivinhar de quem é
+     o código — e com vários clubes na mesma base, adivinhar mal significa
+     um atleta a abrir o questionário de outro. */
   const checkinUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}${window.location.pathname}?checkin=1`
+    ? `${window.location.origin}${window.location.pathname}?checkin=1${teamId ? `&e=${teamId}` : ''}`
     : '';
 
   const copyCheckinUrl = async () => {
@@ -16121,6 +16147,28 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
      entrar até alguém lhe dar o novo. É destrutivo o suficiente para
      merecer confirmação — e o botão fica ao lado do código, fácil de
      acertar sem querer. */
+  /* Quem ainda tem código curto, e a forma de atualizar todos de uma vez.
+     Um a um seriam quarenta confirmações; mas continua a ser uma ação
+     deliberada, com aviso, porque todos esses atletas ficam sem conseguir
+     entrar até receberem o novo. */
+  const curtos = players.filter(p => p.code && String(p.code).length < CHECKIN_CODE_LEN);
+
+  const atualizarCodigosCurtos = () => askConfirm({
+    title: 'Atualizar os códigos antigos?',
+    label: `${curtos.length} ${curtos.length === 1 ? 'atleta' : 'atletas'}`,
+    note: 'Os códigos atuais deixam de funcionar. Tens de enviar o novo a cada um antes do próximo questionário.',
+    confirmLabel: 'Atualizar códigos',
+    destructive: false,
+    onConfirm: () => {
+      const used = new Set(players.map(p => p.code).filter(Boolean));
+      setPlayers(players.map(p => {
+        if (!p.code || String(p.code).length >= CHECKIN_CODE_LEN) return p;
+        used.delete(p.code);
+        return { ...p, code: genPlayerCode(used) };
+      }));
+    },
+  });
+
   const regenerateCode = (playerId) => {
     const jogador = players.find(p => p.id === playerId);
     if (!jogador) return;
@@ -16219,8 +16267,31 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
           </button>}>
           {showCodes ? (
             <>
+              {/* CÓDIGOS ANTIGOS, CURTOS.
+
+                  Os de quatro dígitos ainda entram, mas são adivinháveis:
+                  nove mil hipóteses para um plantel de quarenta. O aviso
+                  só aparece enquanto houver algum por atualizar, e
+                  desaparece sozinho quando deixar de haver — um aviso
+                  permanente deixa de ser lido. */}
+              {curtos.length > 0 && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                  padding: '11px 14px', marginBottom: 12, borderRadius: 8,
+                  background: `${T.warn}18`, border: `1px solid ${T.warn}55`,
+                }}>
+                  <AlertTriangle size={15} style={{ color: T.warn, flexShrink: 0 }} />
+                  <div style={{ fontSize: 12.5, color: T.cream, flex: 1, minWidth: 180, lineHeight: 1.5 }}>
+                    {curtos.length} {curtos.length === 1 ? 'atleta tem um código antigo' : 'atletas têm códigos antigos'} de 4 dígitos,
+                    fáceis de adivinhar por quem tenha o link.
+                  </div>
+                  <Btn variant="ghost" onClick={atualizarCodigosCurtos} style={{ flexShrink: 0 }}>
+                    <RefreshCw size={14} /> Atualizar
+                  </Btn>
+                </div>
+              )}
               <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 10, lineHeight: 1.5 }}>
-                Cada atleta tem um código pessoal de 4 dígitos. É o login dele: entra só com o próprio código e só vê o seu nome — nunca a lista do plantel. Envia o código individualmente a cada um (ex: mensagem privada).
+                Cada atleta tem um código pessoal de {CHECKIN_CODE_LEN} dígitos. É o login dele: entra só com o próprio código e só vê o seu nome — nunca a lista do plantel. Envia o código individualmente a cada um (ex: mensagem privada).
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table>
@@ -17050,7 +17121,12 @@ function CheckinLogin({ onSubmit }) {
   const [aVerificar, setAVerificar] = useState(false);
 
   const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
-  const maxLen = 4;
+  /* Aceita de 4 a 6 dígitos. Os códigos passaram a ter seis, mas os de
+     quatro continuam válidos até serem regenerados — e um plantel não se
+     atualiza todo no mesmo dia. Exigir seis deixaria metade da equipa de
+     fora sem explicação. */
+  const maxLen = CHECKIN_CODE_LEN;
+  const minLen = CHECKIN_CODE_MIN;
 
   const press = (d) => {
     setError(false);
@@ -17060,7 +17136,7 @@ function CheckinLogin({ onSubmit }) {
   };
 
   const submit = async () => {
-    if (aVerificar || value.length < maxLen) return;
+    if (aVerificar || value.length < minLen) return;
     setAVerificar(true);
     let ok = false;
     try { ok = await onSubmit(value); } catch (e) { ok = false; }
@@ -17078,7 +17154,10 @@ function CheckinLogin({ onSubmit }) {
         {[...Array(maxLen)].map((_, i) => (
           <div key={i} style={{
             width: 16, height: 16, borderRadius: '50%',
-            border: `1px solid ${T.line}`, background: i < value.length ? T.gold : 'transparent',
+            // As posições acima do mínimo aparecem mais esbatidas: quem
+            // tem um código de quatro percebe que já pode entrar.
+            border: `1px solid ${i < minLen ? T.line : T.line + '80'}`,
+            background: i < value.length ? T.gold : 'transparent',
           }} />
         ))}
       </div>
@@ -17095,7 +17174,7 @@ function CheckinLogin({ onSubmit }) {
         ))}
       </div>
 
-      <BigButton onClick={submit} disabled={value.length !== maxLen || aVerificar} accent>{aVerificar ? 'A verificar…' : 'Entrar'}</BigButton>
+      <BigButton onClick={submit} disabled={value.length < minLen || aVerificar} accent>{aVerificar ? 'A verificar…' : 'Entrar'}</BigButton>
       <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 18 }}>Não sabes o teu código? Pede-o ao staff técnico.</div>
     </div>
   );
@@ -20799,6 +20878,30 @@ function CheckinApp() {
   const [dados, setDados] = useState(null); // { player, sessions, monitoring }
   const [erro, setErro] = useState('');
 
+  /* A EQUIPA VEM NO LINK.
+
+     O código de 4 dígitos só é único dentro de um plantel — nunca foi um
+     identificador do mundo inteiro, apesar de estar a ser usado como tal.
+     Com clubes diferentes na mesma base, dois acabam com o mesmo código e
+     um atleta abriria o questionário de um miúdo de outro clube.
+
+     Cada equipa tem por isso o seu link, com `&e=<id>`. Links antigos, já
+     partilhados, vêm sem ele: nesse caso o servidor ainda procura o
+     código em todo o lado, mas RECUSA se encontrar mais do que um. Quem
+     já tem o link continua a responder; ninguém cai no clube errado. */
+  const equipaDoLink = (() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const q = new URLSearchParams(window.location.search).get('e');
+      if (q) return q;
+      // Também se aceita no fragmento (#checkin&e=...), porque é assim
+      // que alguns clientes de email reescrevem os endereços.
+      const h = window.location.hash.replace('#', '');
+      const m = h.match(/(?:^|&)e=([^&]+)/);
+      return m ? m[1] : null;
+    } catch (e) { return null; }
+  })();
+
   /* A resposta é normalizada antes de sair daqui, porque o mesmo `jsonb`
      pode chegar de três formas diferentes conforme a versão do PostgREST
      e do SDK: como objeto, como texto por interpretar, ou embrulhado num
@@ -20806,7 +20909,7 @@ function CheckinApp() {
      quiosque tenha de saber disto. */
   const buscar = async (code) => {
     const { data, error } = await supabase.rpc('checkin_bootstrap', {
-      p_code: code, p_days: CHECKIN_DAYS_BACK,
+      p_code: code, p_days: CHECKIN_DAYS_BACK, p_team: equipaDoLink,
     });
     if (error) throw error;
 
@@ -20839,9 +20942,15 @@ function CheckinApp() {
       return true;
     } catch (e) {
       console.error('checkin_bootstrap', e);
-      setErro(e && e.__forma
-        ? e.message
-        : 'Não foi possível ligar. Verifica a internet e tenta outra vez.');
+      /* "Código ambíguo" é a única mensagem do servidor que o atleta pode
+         resolver sozinho — pedindo o link certo. Vale a pena dizê-lo por
+         palavras dele, em vez do erro genérico de ligação. */
+      const ambiguo = /amb[íi]guo/i.test((e && e.message) || '');
+      setErro(ambiguo
+        ? 'Este link não diz de que equipa és. Pede ao treinador o link da tua equipa.'
+        : (e && e.__forma
+          ? e.message
+          : 'Não foi possível ligar. Verifica a internet e tenta outra vez.'));
       return false;
     }
   };
@@ -20856,7 +20965,8 @@ function CheckinApp() {
     setErro('');
     try {
       const { error } = await supabase.rpc('checkin_save', {
-        p_code: codigo, p_date: date, p_type: type, p_fields: fields, p_days: CHECKIN_DAYS_BACK,
+        p_code: codigo, p_date: date, p_type: type, p_fields: fields,
+        p_days: CHECKIN_DAYS_BACK, p_team: equipaDoLink,
       });
       if (error) throw error;
       const d = await buscar(codigo);
