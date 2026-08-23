@@ -1848,6 +1848,9 @@ function App({ session }) {
               monitoring={monitoring} setMonitoring={setMonitoring} matches={matches} setMatches={setMatches}
               scouting={scouting} setScouting={setScouting} videos={videos} setVideos={setVideos}
               apresentacoes={apresentacoes} setApresentacoes={setApresentacoes}
+              clinico={clinico} setClinico={setClinico}
+              desenvolvimento={desenvolvimento} setDesenvolvimento={setDesenvolvimento}
+              standings={standings} setStandings={setStandings}
               convocatorias={convocatorias} setConvocatorias={setConvocatorias} diario={diario} setDiario={setDiario}
             />
           </div>
@@ -2388,12 +2391,24 @@ function LastActivity({ lastEdits }) {
 }
 
 /* Exportar / importar — vive no rodapé da barra lateral. */
-function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, ideias, setIdeias, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario }) {
+function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, ideias, setIdeias, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario, clinico, setClinico, desenvolvimento, setDesenvolvimento, standings, setStandings }) {
   const fileInputRef = React.useRef(null);
   const [importOpen, setImportOpen] = useState(false);
 
   const doExport = () => {
-    const data = { season, players, exercises, ideias, sessions, monitoring, matches, scouting, videos, apresentacoes, convocatorias, diario, exportedAt: new Date().toISOString() };
+    /* TUDO O QUE A APP GUARDA — SEM EXCEÇÕES.
+
+       Esta lista tem de crescer com cada coleção nova. Já esteve três
+       módulos atrás: um ficheiro exportado antes desta correção não
+       levava o Boletim Clínico, o Desenvolvimento Individual nem a
+       classificação, e ninguém dava por isso até precisar de restaurar. */
+    const data = {
+      season, players, exercises, ideias, sessions, monitoring, matches,
+      scouting, videos, apresentacoes, convocatorias, diario,
+      clinico, desenvolvimento, standings,
+      exportedAt: new Date().toISOString(),
+      versao: 2,
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2425,6 +2440,12 @@ function DataTools({ season, setSeason, players, setPlayers, exercises, setExerc
         setApresentacoes(data.apresentacoes || []);
         setConvocatorias(data.convocatorias || []);
         setDiario(data.diario || []);
+        /* Só se o ficheiro os trouxer. Um backup antigo (versão 1) não os
+           tem, e escrever [] apagaria o que está na app — restaurar uma
+           coleção não pode significar destruir outra. */
+        if (data.clinico && setClinico) setClinico(data.clinico);
+        if (data.desenvolvimento && setDesenvolvimento) setDesenvolvimento(data.desenvolvimento);
+        if (data.standings && setStandings) setStandings(data.standings);
       } catch (err) {
         console.error('Importação falhou', err);
       }
