@@ -1872,7 +1872,7 @@ function App({ session }) {
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
-          {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} />}
+          {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
@@ -11858,7 +11858,122 @@ function diasDeOcorrencia(o) {
   return d >= 0 ? d + 1 : null;
 }
 
-function BoletimClinico({ players, clinico, setClinico }) {
+/* MARCAR L NOS DIAS DE UMA OCORRÊNCIA.
+
+   A ocorrência é uma; os L nas presenças são a sua sombra nos dias. Sem
+   isto, registar uma paragem de três semanas obrigava a ir às presenças
+   marcar L quinze vezes à mão — e bastava falhar um dia para a
+   assiduidade ficar errada.
+
+   O boletim PROPÕE, nunca reescreve sozinho: devolve-se aqui a lista de
+   dias e quem chama pergunta antes de aplicar. É a diferença entre uma
+   ajuda e uma surpresa — e presenças reescritas em silêncio são das
+   coisas que mais custa a descobrir e a desfazer.
+
+   Dias já guardados ("Guardar" na coluna) ficam de fora. Foram fechados
+   de propósito; se o boletim passasse por cima deles, o cadeado não
+   valeria nada. */
+function diasDaOcorrencia({ ocorrencia, sessions, matches, playerId }) {
+  const o = ocorrencia || {};
+  const inicio = o.inicio;
+  if (!inicio) return { marcar: [], limpar: [], fechados: 0 };
+
+  /* Até onde vai a paragem: a alta manda; sem alta, a previsão de
+     retorno; sem nenhuma das duas, até hoje — não se marcam dias que
+     ainda não aconteceram por causa de uma paragem sem fim previsto. */
+  const fim = o.fim || o.previsaoRetorno || todayStr();
+  const idsDeJogos = new Set((matches || []).map(m => m.id));
+
+  const alvos = [];
+  (matches || []).forEach(m => {
+    if (m.date) alvos.push({ tipo: 'match', id: m.id, date: m.date, fechado: !!m.attendanceClosed, lesionados: m.lesionados || [] });
+  });
+  (sessions || []).forEach(x => {
+    // A sessão de um amigável não conta: o jogo já tem a sua coluna nas
+    // presenças, e marcar nos dois dava L a dobrar no mesmo dia.
+    if (x.sourceMatchId && idsDeJogos.has(x.sourceMatchId)) return;
+    if (x.phase === 'Descanso' || !x.date) return;
+    alvos.push({ tipo: 'session', id: x.id, date: x.date, fechado: !!x.attendanceClosed, lesionados: x.lesionados || [] });
+  });
+
+  const dentro = (d) => d >= inicio && d <= fim;
+  const jaL = (a) => a.lesionados.includes(playerId);
+
+  const marcar = alvos.filter(a => dentro(a.date) && !jaL(a) && !a.fechado);
+
+  /* Se a alta chegou antes da previsão, sobram dias marcados como L
+     depois de o jogador já estar apto. São esses que se propõe limpar —
+     e só esses: L posteriores a outra ocorrência não são nossos. */
+  const limpar = o.fim
+    ? alvos.filter(a => a.date > o.fim && a.date <= (o.previsaoRetorno || o.fim) && jaL(a) && !a.fechado)
+    : [];
+
+  const fechados = alvos.filter(a => dentro(a.date) && !jaL(a) && a.fechado).length;
+  return { marcar, limpar, fechados };
+}
+
+/* Aplica o que `diasDaOcorrencia` devolveu. `valor` true põe L, false
+   tira-o e devolve o dia a "ausente" — nunca a "presente", porque não
+   sabemos se o jogador esteve; isso é o treinador que diz. */
+function aplicarLesionado({ alvos, playerId, valor, setSessions, setMatches }) {
+  const ids = { session: new Set(), match: new Set() };
+  alvos.forEach(a => ids[a.tipo].add(a.id));
+
+  const mexer = (registo) => {
+    const lesionados = (registo.lesionados || []).filter(id => id !== playerId);
+    if (!valor) return { ...registo, lesionados };
+    // Ao entrar em L sai de todos os outros estados do dia, e a nota vai
+    // com ele: quem não esteve não pode ter sido avaliado.
+    const ratings = { ...(registo.ratings || {}) };
+    delete ratings[playerId];
+    const base = {
+      ...registo,
+      lesionados: [...lesionados, playerId],
+      faltas: (registo.faltas || []).filter(id => id !== playerId),
+      escalao: (registo.escalao || []).filter(id => id !== playerId),
+      attendance: (registo.attendance || []).filter(id => id !== playerId),
+      ratings,
+    };
+    if (registo.convocados) base.convocados = registo.convocados.filter(id => id !== playerId);
+    return base;
+  };
+
+  if (ids.session.size && setSessions) setSessions(prev => prev.map(x => (ids.session.has(x.id) ? mexer(x) : x)));
+  if (ids.match.size && setMatches) setMatches(prev => prev.map(x => (ids.match.has(x.id) ? mexer(x) : x)));
+}
+
+/* A pergunta, com os números à frente. Devolve `true` se houve alguma
+   coisa a propor — quem chama usa isso para saber se já fez o trabalho ou
+   se pode seguir em silêncio. */
+function proporMarcacaoClinica({ ocorrencia, sessions, matches, setSessions, setMatches, jogador }) {
+  const { marcar, limpar, fechados } = diasDaOcorrencia({
+    ocorrencia, sessions, matches, playerId: ocorrencia.playerId,
+  });
+  if (!marcar.length && !limpar.length) return false;
+
+  const partes = [];
+  if (marcar.length) partes.push(`marcar ${marcar.length} ${marcar.length === 1 ? 'dia' : 'dias'} como lesionado`);
+  if (limpar.length) partes.push(`retirar o L de ${limpar.length} ${limpar.length === 1 ? 'dia' : 'dias'} depois da alta`);
+
+  const notas = [];
+  if (fechados) notas.push(`${fechados} ${fechados === 1 ? 'dia já guardado fica' : 'dias já guardados ficam'} como ${fechados === 1 ? 'está' : 'estão'}.`);
+  if (marcar.length) notas.push('Estes dias saem do cálculo da assiduidade.');
+
+  askConfirm({
+    title: 'Atualizar as presenças?',
+    label: `${jogador ? jogador.name : 'Jogador'} · ${partes.join(' e ')}`,
+    note: notas.join(' '),
+    confirmLabel: 'Atualizar',
+    destructive: false,
+    onConfirm: () => {
+      if (marcar.length) aplicarLesionado({ alvos: marcar, playerId: ocorrencia.playerId, valor: true, setSessions, setMatches });
+      if (limpar.length) aplicarLesionado({ alvos: limpar, playerId: ocorrencia.playerId, valor: false, setSessions, setMatches });
+    },
+  });
+  return true;
+}
+
+function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, matches, setMatches }) {
   const [modal, setModal] = useState(null); // 'new' | ocorrência
   const [verHistorico, setVerHistorico] = useState(false);
   const hoje = todayStr();
@@ -11873,9 +11988,15 @@ function BoletimClinico({ players, clinico, setClinico }) {
   const fechadas = ordenar((clinico || []).filter(o => o.fim));
 
   const save = (data) => {
-    if (data.id) setClinico(clinico.map(o => (o.id === data.id ? data : o)));
-    else setClinico([...clinico, { ...data, id: uid() }]);
+    const registo = data.id ? data : { ...data, id: uid() };
+    setClinico(data.id ? clinico.map(o => (o.id === data.id ? data : o)) : [...clinico, registo]);
     setModal(null);
+    // A ocorrência fica guardada de qualquer forma; as presenças só mudam
+    // se a resposta for sim.
+    proporMarcacaoClinica({
+      ocorrencia: registo, sessions, matches, setSessions, setMatches,
+      jogador: jogadorDe(registo.playerId),
+    });
   };
   const remove = (id) => {
     const o = clinico.find(x => x.id === id);
@@ -12791,7 +12912,15 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
           presetPlayerId={novaOcorrencia.playerId}
           presetData={novaOcorrencia.data}
           onClose={() => setNovaOcorrencia(null)}
-          onSave={(data) => { setClinico([...(clinico || []), { ...data, id: uid() }]); setNovaOcorrencia(null); }}
+          onSave={(data) => {
+            const registo = { ...data, id: uid() };
+            setClinico([...(clinico || []), registo]);
+            setNovaOcorrencia(null);
+            proporMarcacaoClinica({
+              ocorrencia: registo, sessions, matches, setSessions, setMatches,
+              jogador: players.find(p => p.id === registo.playerId),
+            });
+          }}
         />
       )}
     </div>
