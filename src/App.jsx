@@ -445,6 +445,19 @@ function useCollectionSync(table, notifyEdit) {
   const [ready, setReady] = useState(false);
   const [recordMeta, setRecordMeta] = useState({}); // id -> { email, at }
   const snapshot = useRef(new Map()); // id -> JSON da última versão gravada
+  /* IDs com uma gravação nossa em curso.
+
+     Sem isto, carregar depressa na mesma célula fazia-a saltar para trás.
+     A sequência: clico (falta) → grava; clico (escalão) → grava; e então
+     chega o eco de Realtime da PRIMEIRA gravação, que traz "falta" e
+     substitui o estado local, já em "escalão". O ecrã anda para trás
+     sozinho e parece que o clique falhou.
+
+     Enquanto uma gravação nossa estiver a decorrer, os ecos dessa linha
+     são ignorados: o que temos localmente é mais recente do que qualquer
+     coisa que o servidor nos possa devolver desse id. Os ecos de OUTRAS
+     linhas, e de outros dispositivos, continuam a entrar normalmente. */
+  const aGravar = useRef(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -554,6 +567,7 @@ function useCollectionSync(table, notifyEdit) {
         }
 
         function applyRow(row) {
+          if (aGravar.current.has(row.id)) return;
           snapshot.current.set(row.id, JSON.stringify(row.data));
           setItems(prev => {
             const item = { ...row.data, id: row.id };
@@ -598,8 +612,10 @@ function useCollectionSync(table, notifyEdit) {
          arrasta os outros, e o aviso passa a dizer QUAL falhou. */
       const failed = [];
       for (const rec of toUpsert) {
+        aGravar.current.add(rec.id);
         const { data, error } = await supabase.from(table).upsert([rec], { onConflict: 'id' })
           .select('id, data, updated_by_email, updated_at');
+        aGravar.current.delete(rec.id);
         if (error) {
           console.error(table, rec.id, error);
           const nome = (rec.data && (rec.data.title || rec.data.name)) || rec.id;
@@ -1980,11 +1996,23 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer',
                   padding: '10px 14px', background: T.bg, borderRadius: 8, border: `1px solid ${T.line}`,
                 }}>
-                  <div>
-                    <div style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || 'Sessão de treino')}</div>
+                  <div style={{ minWidth: 0 }}>
+                    {/* A sessão de um amigável tem foco "11x11" — o formato do
+                        exercício — e saía como título do cartão. Num painel
+                        de próximas sessões isso não diz nada: "11x11 · Jogo"
+                        obriga a adivinhar contra quem. Num dia de jogo o
+                        título é o adversário, que é a única coisa que se
+                        quer saber de relance. */}
+                    <div style={{ color: T.cream, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.phase === 'Descanso'
+                        ? 'Folga'
+                        : s.phase === 'Jogo'
+                          ? (s.opponent ? `vs ${s.opponent}` : 'Jogo')
+                          : (s.focus || 'Sessão de treino')}
+                    </div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>{fmtDate(s.date)} · {s.phase || '—'}</div>
                   </div>
-                  <div style={{ ...mono, color: T.warn, fontSize: 13 }}>{daysTo(s.date)}d</div>
+                  <div style={{ ...mono, color: T.warn, fontSize: 13, flexShrink: 0 }}>{daysTo(s.date)}d</div>
                 </div>
               ))}
             </div>
