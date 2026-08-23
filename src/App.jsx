@@ -129,12 +129,15 @@ function estadoClinicoEm(jogadorId, data, clinico) {
 
 /* Texto curto para o aviso, sem obrigar quem o mostra a montar a frase.
    Ex.: "Indisponível desde 21/08 · Lesão muscular (coxa)". */
-function resumoClinico(estado) {
+function resumoClinico(estado, { comNivel = true } = {}) {
   if (!estado) return '';
   const o = estado.ocorrencia;
-  const desde = o.inicio ? ` desde ${fmtDate(o.inicio).replace(/^\w+, /, '')}` : '';
+  const desde = o.inicio ? `desde ${fmtDate(o.inicio).replace(/^\w+, /, '')}` : '';
   const que = [o.tipo, o.zona && `(${o.zona})`].filter(Boolean).join(' ');
-  return [`${estado.label}${desde}`, que].filter(Boolean).join(' · ');
+  // Sem o nível quando quem mostra já o escreveu no título — repetido, só
+  // fazia a linha partir a meio.
+  const cabeca = comNivel ? `${estado.label}${desde ? ` ${desde}` : ''}` : desde;
+  return [cabeca, que].filter(Boolean).join(' · ');
 }
 
 /* Endereços antigos (#simulador, #convocatorias, #videos, #apresentacoes)
@@ -765,7 +768,7 @@ function ConfirmDialog() {
         onClick={e => e.stopPropagation()}
         style={{
           background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10,
-          width: '100%', maxWidth: 400, padding: 22, boxShadow: '0 20px 60px #00000090',
+          width: '100%', maxWidth: 460, padding: 22, boxShadow: '0 20px 60px #00000090',
         }}
       >
         <h3 style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>{pedido.title || 'Apagar?'}</h3>
@@ -2859,7 +2862,7 @@ function PlayerChipList({ players, isOn, onToggle, estadoClinico, avisaEm = 'tre
           if (avisa && !on) {
             askConfirm({
               title: clinico.label,
-              label: `${p.name} — ${motivo}.`,
+              label: `${p.name} · ${resumoClinico(clinico, { comNivel: false })}`,
               note: '',
               confirmLabel: 'Selecionar',
               destructive: false,
@@ -12595,7 +12598,10 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       const j = players.find(p => p.id === playerId);
       askConfirm({
         title: 'Registar no Boletim Clínico?',
-        label: `${j ? j.name : 'Jogador'} marcado como lesionado em ${fmtDate(day.date)}.`,
+        // Curto de propósito: a janela só aparece ao marcar L, por isso
+        // "marcado como lesionado em" era texto a mais a dizer o que já se
+        // sabe — e era o que fazia a data cair sozinha para a linha de baixo.
+        label: `${j ? j.name : 'Jogador'} · ${fmtDate(day.date)}`,
         note: '',
         confirmLabel: 'Registar',
         destructive: false,
