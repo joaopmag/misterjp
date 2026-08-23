@@ -2848,8 +2848,19 @@ function PlayerChipList({ players, isOn, onToggle, estadoClinico, avisaEm = 'tre
         const escolher = () => {
           // Só pergunta ao SELECIONAR: tirar alguém da lista nunca precisa
           // de justificação.
-          if (avisa && !on && typeof window !== 'undefined'
-            && !window.confirm(`${p.name} — ${motivo}.\n\nSelecionar mesmo assim?`)) return;
+          if (avisa && !on) {
+            askConfirm({
+              title: clinico.label,
+              label: `${p.name} — ${motivo}.`,
+              note: avisaEm === 'jogo'
+                ? 'Podes convocá-lo mesmo assim — por exemplo, se já recuperou e o boletim ainda não foi atualizado.'
+                : 'Podes selecioná-lo mesmo assim.',
+              confirmLabel: 'Selecionar',
+              destructive: false,
+              onConfirm: () => onToggle(p),
+            });
+            return;
+          }
           onToggle(p);
         };
         return (
@@ -12576,10 +12587,14 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
        forma, responda-se o que se responder. */
     if (proximo === 'lesionado' && setClinico && !estadoClinicoEm(playerId, day.date, clinico)) {
       const j = players.find(p => p.id === playerId);
-      if (typeof window !== 'undefined'
-        && window.confirm(`${j ? j.name : 'Jogador'} marcado como lesionado em ${fmtDate(day.date)}.\n\nRegistar a ocorrência no Boletim Clínico?`)) {
-        setNovaOcorrencia({ playerId, data: day.date });
-      }
+      askConfirm({
+        title: 'Registar no Boletim Clínico?',
+        label: `${j ? j.name : 'Jogador'} marcado como lesionado em ${fmtDate(day.date)}.`,
+        note: 'Abre a ficha da ocorrência já preenchida com o jogador e a data. A presença fica marcada de qualquer forma.',
+        confirmLabel: 'Registar',
+        destructive: false,
+        onConfirm: () => setNovaOcorrencia({ playerId, data: day.date }),
+      });
     }
 
     if (day.match) {
@@ -14811,12 +14826,18 @@ function StandingsModal({ standings, onClose, onSave }) {
           <button
             type="button"
             onClick={() => {
+              /* Único `window.confirm` que restava na app. Passa a usar o
+                 mesmo diálogo das outras confirmações — não é bonito ter
+                 uma caixa do browser a meio de tudo o resto. */
               const label = comp.name || 'sem nome';
               const temJogos = (comp.rounds || []).some(r => (r.games || []).length > 0);
-              const aviso = temJogos
-                ? `Apagar a competição "${label}"? Os resultados das jornadas serão perdidos.`
-                : `Apagar a competição "${label}"?`;
-              if (window.confirm(aviso)) removeCompetition(comp.id);
+              askConfirm({
+                label: `Competição "${label}"`,
+                note: temJogos
+                  ? 'Os resultados de todas as jornadas serão perdidos.'
+                  : 'Esta competição ainda não tem jornadas com jogos.',
+                onConfirm: () => removeCompetition(comp.id),
+              });
             }}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
