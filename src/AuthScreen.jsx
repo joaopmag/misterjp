@@ -27,7 +27,7 @@ export default function AuthScreen() {
       } else {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        setInfo('Conta criada. Verifica o teu email para confirmar (se a confirmação estiver ativa no Supabase), depois inicia sessão.');
+        setInfo('Conta criada. Confirma o teu email e depois inicia sessão — a seguir escolhes a tua equipa.');
       }
     } catch (err) {
       setError(err.message === 'Invalid login credentials'
@@ -52,8 +52,15 @@ export default function AuthScreen() {
         width: '100%', maxWidth: 360, background: T_SURFACE, border: `1px solid ${T_LINE}`,
         borderRadius: 14, padding: 28,
       }}>
+        {/* O NOME DO CLUBE SAIU DAQUI.
+
+            Este ecrã deixou de ser a porta de uma equipa e passou a ser a
+            porta da plataforma: quem chega aqui ainda não tem equipa
+            nenhuma, e pode estar a criar a sua. Dizer-lhe "SC Salgueiros
+            U19" antes de saber quem é seria errado — e é o clube dela que
+            aparece depois, no cabeçalho, vindo da equipa que escolher. */}
         <div style={{ fontSize: 12, letterSpacing: '.08em', color: T_GOLD, textTransform: 'uppercase', marginBottom: 4 }}>
-          SC Salgueiros U19
+          Mister JP
         </div>
         <h1 style={{ fontSize: 21, color: '#FFFFFF', margin: '0 0 20px' }}>
           {mode === 'login' ? 'Iniciar sessão' : 'Criar conta'}

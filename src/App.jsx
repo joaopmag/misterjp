@@ -237,28 +237,44 @@ import AuthScreen from './AuthScreen.jsx';
    Ao contrário das coleções (onde o snapshot vazio impedia eliminações),
    aqui não havia nada a travar a escrita. Com `ok: false`, o hook não fica
    pronto e a gravação nunca chega a acontecer. */
-async function loadSingleton(table, fallback) {
+/* REGISTO ÚNICO — MAS ÚNICO POR EQUIPA.
+
+   A Época e a Classificação viviam numa linha fixa, `id='default'`. Com
+   várias equipas isso deixa de funcionar: o `id` é chave primária da
+   tabela inteira, portanto só podia existir uma no sistema todo — a
+   segunda equipa a gravar a época esmagava a da primeira.
+
+   A busca passa a ser pelo `team_id` e não pelo `id`. As linhas antigas
+   mantêm o `id='default'` que já tinham (por isso `loadSingleton`
+   devolve o id encontrado, para a gravação lhe voltar a acertar); as de
+   equipas novas nascem com o id igual ao da equipa. Assim não é preciso
+   migrar nada do que já existe. */
+async function loadSingleton(table, fallback, teamId) {
   try {
     // Token válido primeiro — sem ele a RLS aplica o papel `anon` e a
     // resposta vem vazia, sem erro. Ver a nota em ensureSession.
     const sessao = await ensureSession();
     if (!sessao) throw new Error('Sem sessão válida — o token expirou e não foi possível renovar.');
+    if (!teamId) throw new Error('Sem equipa ativa.');
 
     const { data, error } = await supabase
-      .from(table).select('data, updated_by_email, updated_at').eq('id', 'default').maybeSingle();
+      .from(table).select('id, data, updated_by_email, updated_at')
+      .eq('team_id', teamId).maybeSingle();
     if (error) throw error;
     return data
-      ? { ok: true, value: data.data, editedBy: data.updated_by_email, editedAt: data.updated_at }
-      : { ok: true, value: fallback, editedBy: null, editedAt: null };
+      ? { ok: true, rowId: data.id, value: data.data, editedBy: data.updated_by_email, editedAt: data.updated_at }
+      : { ok: true, rowId: null, value: fallback, editedBy: null, editedAt: null };
   } catch (e) {
     console.error('Falha ao carregar', table, e);
     reportReadError(table, e);
-    return { ok: false, value: fallback, editedBy: null, editedAt: null };
+    return { ok: false, rowId: null, value: fallback, editedBy: null, editedAt: null };
   }
 }
-async function saveSingleton(table, value) {
+async function saveSingleton(table, value, teamId, rowId) {
   try {
-    const { error } = await supabase.from(table).upsert({ id: 'default', data: value }, { onConflict: 'id' });
+    if (!teamId) return;
+    const { error } = await supabase.from(table)
+      .upsert({ id: rowId || teamId, data: value, team_id: teamId }, { onConflict: 'id' });
     if (error) throw error;
   } catch (e) {
     console.error('Falha ao guardar', table, e);
@@ -269,10 +285,12 @@ async function saveSingleton(table, value) {
 // pelo próprio efeito de mudança de valor) e escuta alterações em tempo
 // real feitas por outra pessoa, para uma tabela de registo único
 // (colunas id='default', data jsonb, updated_by_email, updated_at).
-function useSingletonSync(table, fallback, notifyEdit) {
+function useSingletonSync(table, fallback, notifyEdit, teamId) {
   const [value, setValue] = useState(fallback);
   const [ready, setReady] = useState(false);
   const [meta, setMeta] = useState({ email: null, at: null });
+  // Id da linha desta equipa. Nulo até se saber — ver loadSingleton.
+  const rowIdRef = useRef(null);
   /* CICLO INFINITO — o Supabase Realtime devolve-nos as NOSSAS próprias
      escritas. Como `row.data` chega sempre como um objeto novo, o
      setValue mudava a identidade do estado, o efeito de gravação
@@ -284,18 +302,20 @@ function useSingletonSync(table, fallback, notifyEdit) {
 
   useEffect(() => {
     let cancelled = false;
+    if (!teamId) { setReady(false); return () => { cancelled = true; }; }
     (async () => {
-      const s = await loadSingleton(table, fallback);
+      const s = await loadSingleton(table, fallback, teamId);
       if (cancelled) return;
+      rowIdRef.current = s.rowId;
       syncedRef.current = JSON.stringify(s.value);
       setValue(s.value);
-      if (s.editedBy) setMeta({ email: s.editedBy, at: s.editedAt });
+      setMeta(s.editedBy ? { email: s.editedBy, at: s.editedAt } : { email: null, at: null });
       // Só fica pronto (= só autoriza gravar) se a leitura correu bem.
       if (s.ok) setReady(true);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
+  }, [table, teamId]);
 
   useEffect(() => {
     if (!ready) return;
@@ -304,26 +324,33 @@ function useSingletonSync(table, fallback, notifyEdit) {
     // carregar) — não voltar a gravar nem marcar nova atividade.
     if (signature === syncedRef.current) return;
     syncedRef.current = signature;
-    saveSingleton(table, value);
+    saveSingleton(table, value, teamId, rowIdRef.current);
+    if (!rowIdRef.current) rowIdRef.current = teamId;
     if (notifyEdit) notifyEdit(table);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, ready]);
 
   useEffect(() => {
-    const channel = supabase.channel(`${table}_rt`)
-      .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+    if (!teamId) return undefined;
+    /* O filtro é do lado do servidor: sem ele receberíamos as alterações
+       de todas as equipas e a época de outro clube entrava aqui. O nome
+       do canal leva a equipa para que trocar de equipa crie um canal
+       novo em vez de reaproveitar o antigo. */
+    const channel = supabase.channel(`${table}_rt_${teamId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table, filter: `team_id=eq.${teamId}` }, (payload) => {
         const row = payload.new;
         if (!row) return;
         const signature = JSON.stringify(row.data);
         if (signature === syncedRef.current) return; // é o eco da nossa própria gravação
         syncedRef.current = signature;
+        rowIdRef.current = row.id;
         setValue(row.data);
         setMeta({ email: row.updated_by_email, at: row.updated_at });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
+  }, [table, teamId]);
 
   return [value, setValue, ready, meta];
 }
@@ -438,7 +465,7 @@ function SyncErrorBanner() {
    a usar as funções checkin_bootstrap/checkin_save (ver checkin_rpc.sql)
    e não toca em tabela nenhuma. Sem exceção, não há forma de contornar a
    verificação de sessão por engano. */
-function useCollectionSync(table, notifyEdit) {
+function useCollectionSync(table, notifyEdit, teamId) {
   const [items, setItems] = useState([]);
   /* Autorização de UMA remoção em massa (ver o travão de segurança mais
      abaixo). Fica num ref e não no estado porque não afeta o que se vê e
@@ -464,6 +491,20 @@ function useCollectionSync(table, notifyEdit) {
 
   useEffect(() => {
     let cancelled = false;
+    /* TROCAR DE EQUIPA COMEÇA POR ESQUECER TUDO.
+
+       Sem isto, os registos da equipa anterior ficavam em `items` até a
+       nova leitura chegar — e, pior, no `snapshot`: a gravação seguinte
+       compararia a lista nova com a antiga, concluiria que dezenas de
+       registos "desapareceram" e tentaria apagá-los na equipa errada. O
+       travão de eliminação em massa apanharia o caso, mas isto não pode
+       depender de um travão. */
+    snapshot.current = new Map();
+    aGravar.current = new Set();
+    setItems([]);
+    setRecordMeta({});
+    setReady(false);
+    if (!teamId) return () => { cancelled = true; };
     (async () => {
       /* Três tentativas antes de desistir. Uma falha de rede a meio de um
          arranque não deve deixar a secção vazia para o resto da sessão. */
@@ -480,8 +521,13 @@ function useCollectionSync(table, notifyEdit) {
           continue;
         }
 
+        /* O filtro por equipa está aqui E na RLS, de propósito. A RLS é
+           a fronteira de segurança; este filtro é correção e velocidade —
+           não traz para o browser o que não vai ser usado. Se um dia um
+           deles falhar, o outro ainda segura. */
         const { data, error } = await supabase.from(table)
           .select('id, data, updated_by_email, updated_at')
+          .eq('team_id', teamId)
           .order('created_at', { ascending: true });
         if (cancelled) return;
         if (!error) {
@@ -532,11 +578,12 @@ function useCollectionSync(table, notifyEdit) {
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
+  }, [table, teamId]);
 
   useEffect(() => {
-    const channel = supabase.channel(`${table}_rt`)
-      .on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
+    if (!teamId) return undefined;
+    const channel = supabase.channel(`${table}_rt_${teamId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table, filter: `team_id=eq.${teamId}` }, (payload) => {
         if (payload.eventType === 'DELETE') {
           const id = payload.old.id;
           snapshot.current.delete(id);
@@ -582,10 +629,10 @@ function useCollectionSync(table, notifyEdit) {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table]);
+  }, [table, teamId]);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !teamId) return;
     (async () => {
       const currentIds = new Set(items.map(it => it.id));
       const toUpsert = [];
@@ -597,7 +644,10 @@ function useCollectionSync(table, notifyEdit) {
         // está na base de dados.
         if (Object.keys(rest).length === 0 && snapshot.current.has(id)) continue;
         const json = JSON.stringify(rest);
-        if (snapshot.current.get(id) !== json) toUpsert.push({ id, data: rest });
+        /* O `team_id` vai em cada gravação. É também o que a política de
+           INSERT valida no WITH CHECK: sem ele, ou com o de outra equipa,
+           o Postgres recusa a linha. */
+        if (snapshot.current.get(id) !== json) toUpsert.push({ id, data: rest, team_id: teamId });
       }
       const toDelete = [];
       for (const id of snapshot.current.keys()) if (!currentIds.has(id)) toDelete.push(id);
@@ -1362,7 +1412,7 @@ function BotaoTopo({ alvoRef, isMobile }) {
   );
 }
 
-function App({ session }) {
+function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMudaram }) {
   const userId = session.user.id;
   const userEmail = session.user.email;
   const isMobile = useIsMobile();
@@ -1428,33 +1478,33 @@ function App({ session }) {
 
   // Uma linha por registo em cada tabela — dá granularidade de "quem
   // editou ESTE jogador/sessão/jogo", disponível em playersMeta[id], etc.
-  const [players, setPlayers, playersReady, playersMeta] = useCollectionSync('players', notifyEdit);
-  const [exercises, setExercises, exercisesReady, exercisesMeta] = useCollectionSync('exercises', notifyEdit);
+  const [players, setPlayers, playersReady, playersMeta] = useCollectionSync('players', notifyEdit, teamId);
+  const [exercises, setExercises, exercisesReady, exercisesMeta] = useCollectionSync('exercises', notifyEdit, teamId);
   // Ideia de Jogo — esquemas táticos do modelo de jogo (tabela "ideias").
-  const [ideias, setIdeias, ideiasReady, ideiasMeta] = useCollectionSync('ideias', notifyEdit);
-  const [sessions, setSessions, sessionsReady, sessionsMeta] = useCollectionSync('sessions', notifyEdit);
-  const [monitoring, setMonitoring, monitoringReady, monitoringMeta] = useCollectionSync('monitoring', notifyEdit);
-  const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit);
-  const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit);
-  const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit);
-  const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit);
-  const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit);
-  const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit);
+  const [ideias, setIdeias, ideiasReady, ideiasMeta] = useCollectionSync('ideias', notifyEdit, teamId);
+  const [sessions, setSessions, sessionsReady, sessionsMeta] = useCollectionSync('sessions', notifyEdit, teamId);
+  const [monitoring, setMonitoring, monitoringReady, monitoringMeta] = useCollectionSync('monitoring', notifyEdit, teamId);
+  const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit, teamId);
+  const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit, teamId);
+  const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
+  const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit, teamId);
+  const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit, teamId);
+  const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit, teamId);
   /* Uma ocorrência por registo — poucos campos, poucos bytes. Atenção:
      é preciso criar as políticas RLS da tabela `clinico` no Supabase, ou
      as gravações falham em SILÊNCIO, sem erro nenhum. */
-  const [clinico, setClinico, clinicoReady, clinicoMeta] = useCollectionSync('clinico', notifyEdit);
+  const [clinico, setClinico, clinicoReady, clinicoMeta] = useCollectionSync('clinico', notifyEdit, teamId);
   // Momentos de avaliação do Desenvolvimento Individual. Guarda os
   // momentos e, dentro de cada um, um registo por jogador — não duplica o
   // plantel, referencia-o pelo id.
   /* O quinto valor autoriza uma remoção em massa. É preciso aqui porque
      apagar um momento apaga também a linha de cada jogador — dezenas de
      registos de uma vez, que o travão de segurança bloquearia. */
-  const [desenvolvimento, setDesenvolvimento, desenvolvimentoReady, , autorizarApagarMomento] = useCollectionSync('desenvolvimento', notifyEdit);
+  const [desenvolvimento, setDesenvolvimento, desenvolvimentoReady, , autorizarApagarMomento] = useCollectionSync('desenvolvimento', notifyEdit, teamId);
   // Classificação/resultados da competição — registo único, atualizado
   // manualmente (jornada a jornada), partilhado por toda a equipa técnica.
   const [standings, setStandings, standingsReady, standingsMeta] = useSingletonSync(
-    'league_standings', { competition: '', teams: [], rounds: [] }, notifyEdit
+    'league_standings', { competition: '', teams: [], rounds: [] }, notifyEdit, teamId
   );
 
   /* LIMPEZA DOS JOGOS DUPLICADOS — ao nível da app, não de um ecrã.
@@ -1496,44 +1546,58 @@ function App({ session }) {
   // useSingletonSync: a Época tem os seus próprios efeitos (é anterior ao
   // hook genérico) e sofria exatamente do mesmo problema.
   const seasonSyncedRef = useRef(null);
+  const seasonRowIdRef = useRef(null);
 
   useEffect(() => {
+    if (!teamId) return;
     (async () => {
-      const s = await loadSingleton('season_config', { name: '2026/2027', start: '', end: '', club: 'SC Salgueiros · Sub-19' });
+      /* A época por omissão deixou de nomear um clube. Antes dizia
+         "SC Salgueiros · Sub-19", o que era razoável quando havia uma
+         equipa só e passaria a ser errado em todas as outras. O clube
+         verdadeiro vem da equipa. */
+      const s = await loadSingleton('season_config', {
+        name: '', start: '', end: '',
+        club: [equipaAtiva && equipaAtiva.clube, equipaAtiva && equipaAtiva.escalao].filter(Boolean).join(' · '),
+      }, teamId);
+      seasonRowIdRef.current = s.rowId;
       seasonSyncedRef.current = JSON.stringify(s.value);
       setSeason(s.value);
-      if (s.editedBy) setLastEdits(prev => ({ ...prev, season_config: { email: s.editedBy, at: s.editedAt } }));
+      setLastEdits(prev => ({ ...prev, season_config: s.editedBy ? { email: s.editedBy, at: s.editedAt } : undefined }));
       // Mesma regra do useSingletonSync: leitura falhada não autoriza
       // gravar, para a época por omissão não ir por cima da verdadeira.
       if (s.ok) setSeasonReady(true);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId]);
 
   useEffect(() => {
-    if (!seasonReady) return;
+    if (!seasonReady || !teamId) return;
     const signature = JSON.stringify(season);
     if (signature === seasonSyncedRef.current) return;
     seasonSyncedRef.current = signature;
-    saveSingleton('season_config', season);
+    saveSingleton('season_config', season, teamId, seasonRowIdRef.current);
+    if (!seasonRowIdRef.current) seasonRowIdRef.current = teamId;
     notifyEdit('season_config');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [season, seasonReady]);
+  }, [season, seasonReady, teamId]);
 
   // Recebe em tempo real as alterações à Época feitas por outra pessoa.
   useEffect(() => {
-    const channel = supabase.channel('season_config_rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'season_config' }, (payload) => {
+    if (!teamId) return undefined;
+    const channel = supabase.channel(`season_config_rt_${teamId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'season_config', filter: `team_id=eq.${teamId}` }, (payload) => {
         const row = payload.new;
         if (!row) return;
         const signature = JSON.stringify(row.data);
         if (signature === seasonSyncedRef.current) return; // eco da nossa própria gravação
         seasonSyncedRef.current = signature;
+        seasonRowIdRef.current = row.id;
         setSeason(row.data);
         setLastEdits(prev => ({ ...prev, season_config: { email: row.updated_by_email, at: row.updated_at } }));
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [teamId]);
 
   // Garante que todos os jogadores têm um código pessoal de acesso ao
   // questionário (login individual, privado — cada atleta só vê o seu
@@ -1794,12 +1858,25 @@ function App({ session }) {
           } : { height: '100vh', overflow: 'hidden' }),
         }}>
           <div style={{ padding: '22px 20px 16px', borderBottom: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
+            {/* O nome da equipa deixou de estar escrito no código. Vem da
+                equipa ativa, e é ao mesmo tempo o seletor — estar sempre
+                à vista é a única defesa contra marcar presenças na equipa
+                errada, que é um erro silencioso e plausível. */}
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <img src={CREST_DATA_URI} alt="Emblema" style={{ width: 26, height: 26, objectFit: 'contain' }} />
-                <span style={{ ...display, color: '#FFFFFF', fontSize: 17, fontWeight: 600, letterSpacing: '.02em' }}>SC Salgueiros U19</span>
+                <img src={CREST_DATA_URI} alt="Emblema" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
+                <span style={{ ...display, color: '#FFFFFF', fontSize: 17, fontWeight: 600, letterSpacing: '.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {(equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || 'Mister JP'}
+                </span>
               </div>
-              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.4 }}>Mister JP • {season.name}</div>
+              <div style={{ marginTop: 6 }}>
+                <SeletorEquipa
+                  equipas={equipas || []}
+                  equipaAtiva={teamId}
+                  onNova={onNovaEquipa}
+                  onGerir={() => goTab('equipa')}
+                />
+              </div>
             </div>
             {isMobile && (
               <button onClick={() => setNavOpen(false)} aria-label="Fechar menu" style={{
@@ -1875,6 +1952,12 @@ function App({ session }) {
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
+          {tab === 'equipa' && (
+            <GestaoEquipa
+              equipa={equipaAtiva} session={session}
+              onEquipasMudaram={onEquipasMudaram}
+            />
+          )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} />}
@@ -2391,6 +2474,407 @@ function LastActivity({ lastEdits }) {
 }
 
 /* Exportar / importar — vive no rodapé da barra lateral. */
+/* ================================================================
+   EQUIPAS — o contexto em que tudo o resto vive
+   ================================================================
+
+   Cada registo da app pertence a uma equipa. Quem entra escolhe em qual
+   está a trabalhar, e a partir daí não vê mais nada. O isolamento a
+   sério é feito pela RLS no Postgres; isto é a camada de cima, a que
+   torna a coisa utilizável.
+
+   A equipa ativa vive no localStorage, POR DISPOSITIVO. Escolher Sub-19
+   no portátil não muda o telemóvel — e é o que se quer: cada aparelho
+   lembra-se do que se estava a fazer nele. */
+const CHAVE_EQUIPA = 'misterjp-equipa';
+
+function useEquipas() {
+  const [equipas, setEquipas] = useState(null); // null = ainda a carregar
+  const [erro, setErro] = useState('');
+
+  const carregar = useCallback(async () => {
+    try {
+      const sessao = await ensureSession();
+      if (!sessao) throw new Error('Sem sessão válida.');
+      /* A RLS já limita este select às equipas de que sou membro, por
+         isso não é preciso filtrar aqui. */
+      const { data, error } = await supabase
+        .from('teams').select('id, nome, clube, escalao, codigo').order('nome');
+      if (error) throw error;
+      setEquipas(data || []);
+    } catch (e) {
+      console.error('Falha a carregar equipas', e);
+      setErro(e.message || 'Não foi possível carregar as equipas.');
+      setEquipas([]);
+    }
+  }, []);
+
+  useEffect(() => { carregar(); }, [carregar]);
+  return { equipas, erro, recarregar: carregar };
+}
+
+/* Guardada à parte do componente para o `App` a poder ler no arranque
+   sem esperar por nada. */
+function equipaGuardada() {
+  try { return window.localStorage.getItem(CHAVE_EQUIPA) || null; } catch (e) { return null; }
+}
+function guardarEquipa(id) {
+  try { window.localStorage.setItem(CHAVE_EQUIPA, id); } catch (e) { /* modo privado */ }
+}
+
+/* TROCAR DE EQUIPA RECARREGA A PÁGINA, DE PROPÓSITO.
+
+   A app tem dezenas de componentes com estado próprio — filtros, mês
+   escolhido, rascunhos de modais, o simulador a meio. Recarregar em
+   memória obrigaria a limpar todos, e um esquecido significa ver dados
+   da equipa A dentro da equipa B: exatamente aquilo que esta separação
+   existe para impedir. Trocar de equipa é raro; um segundo de espera é
+   um preço barato por uma garantia. */
+function trocarDeEquipa(id) {
+  guardarEquipa(id);
+  window.location.reload();
+}
+
+/* Ecrã de quem ainda não tem equipa nenhuma: criar ou entrar com código.
+   É o primeiro que um treinador novo vê depois de confirmar o email. */
+function EscolherEquipa({ onPronto, onSair, temEquipas }) {
+  const [modo, setModo] = useState('criar'); // 'criar' | 'entrar'
+  const [nome, setNome] = useState('');
+  const [clube, setClube] = useState('');
+  const [escalao, setEscalao] = useState('');
+  const [codigo, setCodigo] = useState('');
+  const [aProcessar, setAProcessar] = useState(false);
+  const [erro, setErro] = useState('');
+
+  const criar = async () => {
+    if (!nome.trim()) { setErro('Dá um nome à equipa.'); return; }
+    setErro(''); setAProcessar(true);
+    try {
+      const { data, error } = await supabase.rpc('criar_equipa', {
+        p_nome: nome.trim(), p_clube: clube.trim(), p_escalao: escalao.trim(),
+      });
+      if (error) throw error;
+      onPronto(data);
+    } catch (e) {
+      setErro(e.message || 'Não foi possível criar a equipa.');
+      setAProcessar(false);
+    }
+  };
+
+  const entrar = async () => {
+    if (!codigo.trim()) { setErro('Escreve o código que te deram.'); return; }
+    setErro(''); setAProcessar(true);
+    try {
+      const { data, error } = await supabase.rpc('entrar_na_equipa', { p_codigo: codigo.trim() });
+      if (error) throw error;
+      onPronto(data);
+    } catch (e) {
+      setErro(/inválido/i.test(e.message || '') ? 'Código inválido. Confirma as seis letras.' : (e.message || 'Não foi possível entrar.'));
+      setAProcessar(false);
+    }
+  };
+
+  const aba = (id, texto) => (
+    <button type="button" onClick={() => { setModo(id); setErro(''); }} style={{
+      flex: 1, padding: '9px 12px', borderRadius: 8, fontSize: 13, cursor: 'pointer', ...body,
+      background: modo === id ? '#B5393F' : 'transparent',
+      color: modo === id ? TEXT_ON_ACCENT : T.muted,
+      border: `1px solid ${modo === id ? '#B5393F' : T.line}`,
+    }}>{texto}</button>
+  );
+
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: T.bg, padding: 20, ...body,
+    }}>
+      <div style={{
+        width: '100%', maxWidth: 420, background: T.surface,
+        border: `1px solid ${T.line}`, borderRadius: 14, padding: 28,
+      }}>
+        <h1 style={{ fontSize: 21, color: T.cream, margin: '0 0 6px', ...display }}>
+          {temEquipas ? 'Nova equipa' : 'Bem-vindo'}
+        </h1>
+        <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px', lineHeight: 1.6 }}>
+          {temEquipas
+            ? 'Cria outra equipa ou entra numa com o código que te deram.'
+            : 'Cria a tua equipa, ou entra numa existente com o código que o treinador te deu.'}
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+          {aba('criar', 'Criar equipa')}
+          {aba('entrar', 'Entrar com código')}
+        </div>
+
+        {modo === 'criar' ? (
+          <>
+            <Field label="Nome da equipa" bloco solto>
+              <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Sub-19" />
+            </Field>
+            <div style={{ height: 12 }} />
+            <Field label="Clube" bloco solto>
+              <Input value={clube} onChange={e => setClube(e.target.value)} placeholder="Ex: SC Salgueiros" />
+            </Field>
+            <div style={{ height: 12 }} />
+            <Field label="Escalão" bloco solto>
+              <Input value={escalao} onChange={e => setEscalao(e.target.value)} placeholder="Ex: Sub-19" />
+            </Field>
+          </>
+        ) : (
+          <Field label="Código da equipa" bloco solto>
+            <Input
+              value={codigo}
+              onChange={e => setCodigo(e.target.value.toUpperCase())}
+              placeholder="ABC123"
+              maxLength={6}
+              style={{ ...mono, fontSize: 18, letterSpacing: '.18em', textTransform: 'uppercase' }}
+            />
+          </Field>
+        )}
+
+        {erro && <div style={{ color: T.bad, fontSize: 12.5, marginTop: 14 }}>{erro}</div>}
+
+        <div style={{ marginTop: 20 }}>
+          <Btn
+            onClick={modo === 'criar' ? criar : entrar}
+            disabled={aProcessar}
+            style={{ width: '100%', justifyContent: 'center' }}
+          >
+            {aProcessar ? 'A processar…' : modo === 'criar' ? 'Criar equipa' : 'Entrar'}
+          </Btn>
+        </div>
+
+        <button type="button" onClick={onSair} style={{
+          width: '100%', marginTop: 12, padding: 8, background: 'transparent', border: 'none',
+          color: T.mutedDim, fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline', ...body,
+        }}>
+          {temEquipas ? 'Voltar' : 'Terminar sessão'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* Seletor no cabeçalho da barra lateral, onde antes estava o nome do
+   clube fixo. Com uma equipa só, é texto — não vale a pena um menu para
+   uma opção. Com mais, abre a lista.
+
+   Este é o elemento mais perigoso da app: marcar presenças na equipa
+   errada é silencioso e plausível. Daí estar sempre visível, e daí a
+   equipa ativa aparecer a cheio e não como uma linha entre outras. */
+/* Membros, código de convite, sair, e os poderes de quem criou a equipa.
+   Não é um separador da navegação — chega-se aqui pelo seletor de
+   equipa, que é onde a pergunta "quem mais tem acesso a isto?" nasce. */
+function GestaoEquipa({ equipa, session, onEquipasMudaram, onSair }) {
+  const [membros, setMembros] = useState(null);
+  const [erro, setErro] = useState('');
+  const [copiado, setCopiado] = useState(false);
+
+  const carregar = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('team_members').select('user_id, papel, created_at')
+        .eq('team_id', equipa.id).order('created_at');
+      if (error) throw error;
+      setMembros(data || []);
+    } catch (e) {
+      setErro(e.message || 'Não foi possível carregar os membros.');
+      setMembros([]);
+    }
+  }, [equipa.id]);
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const euId = session && session.user && session.user.id;
+  const eu = (membros || []).find(m => m.user_id === euId);
+  const souDono = eu && eu.papel === 'owner';
+
+  /* Só se veem os ids dos outros, não os emails: a tabela `auth.users`
+     não é legível pelo cliente, e expô-la seria dar a lista de contas da
+     plataforma a qualquer membro. O próprio reconhece-se por "tu". */
+  const rotulo = (m) => (m.user_id === euId ? (session.user.email || 'Tu') : `Membro ${String(m.user_id).slice(0, 8)}`);
+
+  const copiarCodigo = async () => {
+    try {
+      await navigator.clipboard.writeText(equipa.codigo);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch (e) { /* sem permissão para a área de transferência */ }
+  };
+
+  const remover = (m) => askConfirm({
+    title: 'Remover da equipa?',
+    label: rotulo(m),
+    note: 'Deixa de ver os dados desta equipa. Nada do que criou é apagado.',
+    confirmLabel: 'Remover',
+    onConfirm: async () => {
+      const { error } = await supabase.from('team_members').delete()
+        .eq('team_id', equipa.id).eq('user_id', m.user_id);
+      if (error) setErro(error.message); else carregar();
+    },
+  });
+
+  const passarPosse = (m) => askConfirm({
+    title: 'Passar a posse da equipa?',
+    label: rotulo(m),
+    note: 'Passa a ser esta pessoa a poder remover membros. Tu ficas membro e não podes desfazer isto sozinha.',
+    confirmLabel: 'Passar a posse',
+    onConfirm: async () => {
+      const a = await supabase.from('team_members').update({ papel: 'owner' })
+        .eq('team_id', equipa.id).eq('user_id', m.user_id);
+      if (a.error) { setErro(a.error.message); return; }
+      const b = await supabase.from('team_members').update({ papel: 'member' })
+        .eq('team_id', equipa.id).eq('user_id', euId);
+      if (b.error) setErro(b.error.message);
+      carregar();
+    },
+  });
+
+  const sairDaEquipa = () => askConfirm({
+    title: 'Sair desta equipa?',
+    label: [equipa.clube, equipa.escalao || equipa.nome].filter(Boolean).join(' · '),
+    note: souDono
+      ? 'És a dona desta equipa. Passa a posse a outra pessoa antes de saíres, ou ninguém poderá gerir membros.'
+      : 'Deixas de ver os dados desta equipa. Podes voltar a entrar com o código.',
+    confirmLabel: 'Sair',
+    onConfirm: async () => {
+      const { error } = await supabase.from('team_members').delete()
+        .eq('team_id', equipa.id).eq('user_id', euId);
+      if (error) { setErro(error.message); return; }
+      try { window.localStorage.removeItem(CHAVE_EQUIPA); } catch (e) { /* modo privado */ }
+      window.location.reload();
+    },
+  });
+
+  return (
+    <div>
+      <SectionHeader title="Equipa" subtitle="Quem tem acesso e como convidar." />
+
+      <Panel title={[equipa.clube, equipa.escalao || equipa.nome].filter(Boolean).join(' · ') || 'Equipa'}>
+        <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+          Código de convite
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+          <span style={{ ...mono, fontSize: 26, color: T.gold, letterSpacing: '.22em' }}>{equipa.codigo}</span>
+          <Btn variant="ghost" onClick={copiarCodigo}>
+            {copiado ? <><Check size={15} /> Copiado</> : <><Copy size={15} /> Copiar</>}
+          </Btn>
+        </div>
+        {/* Isto é uma consequência que não se adivinha, por isso fica. */}
+        <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.6 }}>
+          Quem tiver este código entra na equipa e vê tudo — plantel, presenças, boletim clínico.
+          Trata-o como uma palavra-passe.
+        </div>
+      </Panel>
+
+      <div style={{ height: 16 }} />
+
+      <Panel title={`Membros${membros ? ` (${membros.length})` : ''}`}>
+        {erro && <div style={{ color: T.bad, fontSize: 12.5, marginBottom: 12 }}>{erro}</div>}
+        {membros === null ? (
+          <div style={{ fontSize: 12.5, color: T.mutedDim }}>A carregar…</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {membros.map(m => (
+              <div key={m.user_id} style={{
+                display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                padding: '11px 14px', background: T.bg, borderRadius: 8, border: `1px solid ${T.line}`,
+              }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ color: T.cream, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {rotulo(m)}
+                  </div>
+                  <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>
+                    {m.papel === 'owner' ? 'Dono' : 'Membro'}
+                    {m.created_at ? ` · desde ${fmtDate(String(m.created_at).slice(0, 10))}` : ''}
+                  </div>
+                </div>
+                {souDono && m.user_id !== euId && (
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
+                    <button onClick={() => passarPosse(m)} title="Passar a posse da equipa" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Star size={14} /></button>
+                    <button onClick={() => remover(m)} title="Remover da equipa" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <Btn variant="ghost" onClick={sairDaEquipa}><LogOut size={15} /> Sair desta equipa</Btn>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function SeletorEquipa({ equipas, equipaAtiva, onNova, onGerir }) {
+  const [aberto, setAberto] = useState(false);
+  const atual = equipas.find(e => e.id === equipaAtiva);
+  const rotulo = atual ? [atual.clube, atual.escalao || atual.nome].filter(Boolean).join(' · ') : 'Sem equipa';
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setAberto(v => !v)}
+        title="Trocar de equipa"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+          background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          color: T.muted, fontSize: 12, textAlign: 'left', ...body,
+        }}
+      >
+        <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rotulo}</span>
+        <ChevronRight size={13} style={{ flexShrink: 0, transform: aberto ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
+      </button>
+
+      {aberto && (
+        <>
+          {/* Camada por baixo do menu: clicar fora fecha. */}
+          <div onClick={() => setAberto(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 8, zIndex: 41,
+            background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10,
+            boxShadow: '0 16px 40px #00000070', overflow: 'hidden',
+          }}>
+            {equipas.map(e => {
+              const on = e.id === equipaAtiva;
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => { setAberto(false); if (!on) trocarDeEquipa(e.id); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+                    padding: '10px 14px', background: on ? '#B5393F22' : 'transparent', border: 'none',
+                    borderBottom: `1px solid ${T.line}`, cursor: on ? 'default' : 'pointer',
+                    color: on ? T.cream : T.muted, fontSize: 13, ...body,
+                  }}
+                >
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {[e.clube, e.escalao || e.nome].filter(Boolean).join(' · ')}
+                  </span>
+                  {on && <Check size={14} style={{ flexShrink: 0, color: T.gold }} />}
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => { setAberto(false); onGerir(); }} style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+              padding: '10px 14px', background: 'transparent', border: 'none',
+              borderBottom: `1px solid ${T.line}`, cursor: 'pointer', color: T.muted, fontSize: 12.5, ...body,
+            }}><Users size={13} /> Membros e convite</button>
+            <button type="button" onClick={() => { setAberto(false); onNova(); }} style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+              padding: '10px 14px', background: 'transparent', border: 'none',
+              cursor: 'pointer', color: T.muted, fontSize: 12.5, ...body,
+            }}><Plus size={13} /> Nova equipa</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, ideias, setIdeias, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario, clinico, setClinico, desenvolvimento, setDesenvolvimento, standings, setStandings }) {
   const fileInputRef = React.useRef(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -20565,5 +21049,66 @@ export default function AppRoot() {
     );
   }
   if (!session) return <AuthScreen />;
-  return <ErrorBoundary><App session={session} /></ErrorBoundary>;
+  return <ErrorBoundary><PortaoEquipa session={session} /></ErrorBoundary>;
+}
+
+/* O PORTÃO ENTRE TER SESSÃO E TER CONTEXTO.
+
+   Estar autenticado não chega: sem equipa escolhida não há nada para
+   mostrar, e o `App` inteiro depende de um `teamId` para saber o que
+   ler. Este componente resolve essa pergunta antes de o `App` existir —
+   é a razão de ser um componente à parte e não um `useEffect` lá dentro.
+
+   Três estados: a carregar, sem equipa nenhuma (ecrã de criar/entrar), e
+   com equipa (a app). O quarto caso — ter equipas mas a guardada já não
+   existir, porque saíste dela noutro dispositivo — resolve-se caindo na
+   primeira da lista, em vez de mostrar um ecrã vazio. */
+function PortaoEquipa({ session }) {
+  const { equipas, erro, recarregar } = useEquipas();
+  const [aCriarNova, setACriarNova] = useState(false);
+
+  if (equipas === null) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#182619', color: '#8FA091' }}>
+        A carregar…
+      </div>
+    );
+  }
+
+  if (erro && equipas.length === 0) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', justifyContent: 'center', background: T.bg, color: T.muted, padding: 24, textAlign: 'center', ...body }}>
+        <div style={{ color: T.bad, fontSize: 14 }}>{erro}</div>
+        <Btn variant="ghost" onClick={recarregar}><RefreshCw size={15} /> Tentar de novo</Btn>
+      </div>
+    );
+  }
+
+  const escolhida = equipaGuardada();
+  const ativa = equipas.find(e => e.id === escolhida) || equipas[0];
+
+  if (!ativa || aCriarNova) {
+    return (
+      <EscolherEquipa
+        temEquipas={equipas.length > 0}
+        onPronto={(id) => { if (id) trocarDeEquipa(id); }}
+        onSair={() => { if (equipas.length > 0) setACriarNova(false); else supabase.auth.signOut(); }}
+      />
+    );
+  }
+
+  // A guardada já não servia (saíste dela, ou nunca escolheste): fixa a
+  // que vai ser usada, para o próximo arranque não voltar a decidir.
+  if (escolhida !== ativa.id) guardarEquipa(ativa.id);
+
+  return (
+    <App
+      session={session}
+      teamId={ativa.id}
+      equipas={equipas}
+      equipaAtiva={ativa}
+      onNovaEquipa={() => setACriarNova(true)}
+      onEquipasMudaram={recarregar}
+    />
+  );
 }
