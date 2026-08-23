@@ -770,9 +770,17 @@ function ConfirmDialog() {
       >
         <h3 style={{ ...display, color: T.warn, fontSize: 18, fontWeight: 600, margin: '0 0 8px' }}>{pedido.title || 'Apagar?'}</h3>
         <p style={{ color: T.cream, fontSize: 13.5, margin: '0 0 4px', ...body }}>{pedido.label}</p>
-        <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 18px', ...body }}>
-          {pedido.note || 'Ainda vais poder anular durante alguns segundos.'}
-        </p>
+        {/* Sem `note`, assume-se a rede de anular — é o caso das
+            eliminações, que são a maioria. Com `note: ''`, não sai
+            parágrafo nenhum: há diálogos em que o título e a linha do meio
+            já dizem tudo, e acrescentar texto é só ruído a explicar o
+            funcionamento a quem só quer decidir. */}
+        {(() => {
+          const nota = pedido.note === undefined ? 'Ainda vais poder anular durante alguns segundos.' : pedido.note;
+          return nota
+            ? <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 18px', ...body }}>{nota}</p>
+            : <div style={{ height: 14 }} />;
+        })()}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <Btn variant="ghost" onClick={() => setPedido(null)}>Cancelar</Btn>
           <Btn onClick={confirmar}>
@@ -2852,9 +2860,7 @@ function PlayerChipList({ players, isOn, onToggle, estadoClinico, avisaEm = 'tre
             askConfirm({
               title: clinico.label,
               label: `${p.name} — ${motivo}.`,
-              note: avisaEm === 'jogo'
-                ? 'Podes convocá-lo mesmo assim — por exemplo, se já recuperou e o boletim ainda não foi atualizado.'
-                : 'Podes selecioná-lo mesmo assim.',
+              note: '',
               confirmLabel: 'Selecionar',
               destructive: false,
               onConfirm: () => onToggle(p),
@@ -12590,7 +12596,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       askConfirm({
         title: 'Registar no Boletim Clínico?',
         label: `${j ? j.name : 'Jogador'} marcado como lesionado em ${fmtDate(day.date)}.`,
-        note: 'Abre a ficha da ocorrência já preenchida com o jogador e a data. A presença fica marcada de qualquer forma.',
+        note: '',
         confirmLabel: 'Registar',
         destructive: false,
         onConfirm: () => setNovaOcorrencia({ playerId, data: day.date }),
@@ -14833,9 +14839,8 @@ function StandingsModal({ standings, onClose, onSave }) {
               const temJogos = (comp.rounds || []).some(r => (r.games || []).length > 0);
               askConfirm({
                 label: `Competição "${label}"`,
-                note: temJogos
-                  ? 'Os resultados de todas as jornadas serão perdidos.'
-                  : 'Esta competição ainda não tem jornadas com jogos.',
+                // Só se avisa quando há mesmo alguma coisa a perder.
+                note: temJogos ? 'Os resultados de todas as jornadas serão perdidos.' : '',
                 onConfirm: () => removeCompetition(comp.id),
               });
             }}
@@ -15379,7 +15384,6 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
         {eAmigavel && (
           <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.5 }}>
             Os primeiros onze escolhidos entram como titulares; os seguintes ficam suplentes.
-            Sem limite de presenças — podem ir todos. Trocas-se depois na linha de cada jogador.
           </div>
         )}
         <PlayerChipList
