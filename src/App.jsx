@@ -1557,6 +1557,30 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const userEmail = session.user.email;
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
+
+  /* MENU ABERTO TRANCA A PÁGINA ATRÁS.
+
+     Sem isto, arrastar dentro do menu passava o movimento para a página
+     por baixo assim que a lista chegava ao fim — e, no telemóvel, esse
+     scroll faz o browser esconder e mostrar a barra do endereço, com o
+     ecrã a saltar. `position: fixed` no body é o que trava mesmo em iOS,
+     onde só `overflow: hidden` não chega; guardar e repor o `scrollY`
+     evita que fechar o menu atire a página para o topo. */
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    const y = window.scrollY;
+    const b = document.body.style;
+    const antes = { position: b.position, top: b.top, width: b.width, overflow: b.overflow };
+    b.position = 'fixed';
+    b.top = `-${y}px`;
+    b.width = '100%';
+    b.overflow = 'hidden';
+    return () => {
+      b.position = antes.position; b.top = antes.top;
+      b.width = antes.width; b.overflow = antes.overflow;
+      window.scrollTo(0, y);
+    };
+  }, [navOpen]);
   /* Ao trocar de secção, voltar ao topo. Sem isto, quem vinha a meio de
      uma lista longa (Planeamento, Jogos) entrava na secção seguinte já
      com o scroll a meio e não via o título nem os botões do topo. Em
@@ -1634,6 +1658,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      é preciso criar as políticas RLS da tabela `clinico` no Supabase, ou
      as gravações falham em SILÊNCIO, sem erro nenhum. */
   const [clinico, setClinico, clinicoReady, clinicoMeta] = useCollectionSync('clinico', notifyEdit, teamId);
+  const [tarefas, setTarefas, tarefasReady] = useCollectionSync('tarefas', notifyEdit, teamId);
   // Momentos de avaliação do Desenvolvimento Individual. Guarda os
   // momentos e, dentro de cada um, um registo por jogador — não duplica o
   // plantel, referencia-o pelo id.
@@ -1673,7 +1698,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
     || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
-    || !desenvolvimentoReady || !standingsReady || !clinicoReady;
+    || !desenvolvimentoReady || !standingsReady || !clinicoReady || !tarefasReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
   // lateral, quando o link inclui ?checkin=1 — é este o link a partilhar
@@ -1787,6 +1812,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     { id: 'desenvolvimento', label: 'Desenvolvimento', icon: TrendingUp },
     { id: 'scouting', label: 'Scouting', icon: Search },
     { id: 'biblioteca', label: 'Biblioteca', icon: Presentation },
+    { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, badge: tarefasAMinhaPorta(tarefas, euId) },
     { id: 'diario', label: 'Diário', icon: BookOpen },
   ];
 
@@ -1794,6 +1820,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 
   /* Qual das duas bibliotecas está aberta. Um #videos ou #apresentacoes
      antigo não só abre a Biblioteca como escolhe a sub-aba certa. */
+  const euId = session && session.user && session.user.id;
+  const { membros, recarregar: recarregarMembros } = useMembros(teamId);
+
   const [biblioteca, setBiblioteca] = useState(() => {
     if (typeof window === 'undefined') return 'videos';
     return window.location.hash.replace('#', '').trim() === 'apresentacoes' ? 'apresentacoes' : 'videos';
@@ -1986,6 +2015,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         {isMobile && navOpen && (
           <div onClick={() => setNavOpen(false)} style={{
             position: 'fixed', inset: 0, background: '#000000aa', zIndex: 45,
+            touchAction: 'none', overscrollBehavior: 'contain',
           }} />
         )}
 
@@ -1994,9 +2024,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           width: 220, background: T.surface, borderRight: `1px solid ${T.line}`,
           flexShrink: 0, display: 'flex', flexDirection: 'column',
           ...(isMobile ? {
-            position: 'fixed', top: 0, left: 0, height: '100vh', zIndex: 50,
+            position: 'fixed', top: 0, left: 0, height: '100dvh', zIndex: 50,
             transform: navOpen ? 'translateX(0)' : 'translateX(-100%)',
             transition: 'transform 0.25s ease', boxShadow: navOpen ? '4px 0 24px #00000066' : 'none',
+            // Trava o encadeamento do scroll: chegar ao fim da lista não
+            // passa o movimento para a página por baixo.
+            overscrollBehavior: 'contain',
+            // Mais largo no telemóvel — com 220 o nome da equipa não cabia
+            // ao lado do botão de fechar.
+            width: 'min(290px, 86vw)',
           } : { height: '100vh', overflow: 'hidden' }),
         }}>
           <div style={{ padding: '22px 20px 16px', borderBottom: `1px solid ${T.line}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2033,7 +2069,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               }}><X size={16} /></button>
             )}
           </div>
-          <nav style={{ padding: '10px 0', flex: 1, overflowY: 'auto' }}>
+          <nav style={{ padding: '10px 0', flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
             {NAV.map(n => (
               <button
                 key={n.id}
@@ -2048,6 +2084,17 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               >
                 <n.icon size={16} color={tab === n.id ? T.warn : T.mutedDim} />
                 {n.label}
+                {/* O badge conta só o que já está atrasado ou é para hoje
+                    e é meu. Um badge que conta tudo o que existe deixa de
+                    se ler ao fim de uma semana — e a partir daí não avisa
+                    de nada. */}
+                {n.badge > 0 && (
+                  <span style={{
+                    marginLeft: 'auto', minWidth: 18, height: 18, borderRadius: 9, padding: '0 5px',
+                    background: T.crimsonBright, color: TEXT_ON_ACCENT, ...mono, fontSize: 10.5,
+                    display: 'grid', placeItems: 'center', flexShrink: 0,
+                  }}>{n.badge}</span>
+                )}
               </button>
             ))}
           </nav>
@@ -2094,7 +2141,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} />}
           {tab === 'plantel' && (
             <Plantel
               players={players} setPlayers={setPlayers}
@@ -2171,6 +2218,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               userEmail={session && session.user && session.user.email}
             />
           )}
+          {tab === 'tarefas' && (
+            <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} />
+          )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
         </div>
         </main>
@@ -2187,7 +2237,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits }) {
+function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas }) {
   // Cartões clicáveis: sessão e jogo abrem a respetiva janela de edição
   // aqui mesmo, sem obrigar a ir ao Planeamento ou aos Jogos.
   const [sessionModal, setSessionModal] = useState(null);
@@ -2247,6 +2297,42 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         display: 'grid', gap: 20,
         gridTemplateColumns: isWide ? 'repeat(3, minmax(0, 1fr))' : isMedium ? 'repeat(2, minmax(0, 1fr))' : '1fr',
       }}>
+        {/* AS MINHAS TAREFAS, ONDE SE ENTRA.
+
+            Um quadro que só existe num separador próprio é um quadro que
+            se esquece. Aqui aparece o que é meu e já está atrasado ou é
+            para hoje — nada mais, ou deixava de se distinguir do resto da
+            página. Fecha-se com um clique, sem sair daqui. */}
+        {(() => {
+          const hoje = todayStr();
+          const minhas = (tarefas || [])
+            .filter(t => t.estado !== 'feita'
+              && (t.responsavel === euId || !t.responsavel)
+              && t.prazo && t.prazo <= hoje)
+            .sort((a, b) => String(a.prazo).localeCompare(String(b.prazo)));
+          if (!minhas.length) return null;
+          return (
+            <Panel
+              title="As minhas tarefas"
+              action={<Btn variant="ghost" onClick={onVerTarefas}>Ver todas</Btn>}
+            >
+              {minhas.slice(0, 6).map(t => (
+                <LinhaTarefa
+                  key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje}
+                  onAbrir={onVerTarefas}
+                  onAlternar={(x) => setTarefas(tarefas.map(y => (y.id === x.id
+                    ? { ...y, estado: 'feita', feitaEm: new Date().toISOString() } : y)))}
+                />
+              ))}
+              {minhas.length > 6 && (
+                <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 4 }}>
+                  e mais {minhas.length - 6}.
+                </div>
+              )}
+            </Panel>
+          );
+        })()}
+
         <Panel title="Próximas sessões">
           {upcoming.length === 0 ? (
             <EmptyState text="Ainda não há sessões planeadas." />
@@ -2598,7 +2684,7 @@ const ACTIVITY_LABELS = {
   season_config: 'Época', players: 'Plantel', exercises: 'Exercícios', ideias: 'Ideia de Jogo',
   sessions: 'Planeamento', monitoring: 'Monitorização', matches: 'Jogos',
   scouting: 'Scouting', videos: 'Vídeos', apresentacoes: 'Apresentações', convocatorias: 'Convocatórias', diario: 'Diário',
-  league_standings: 'Classificação', clinico: 'Boletim Clínico',
+  league_standings: 'Classificação', clinico: 'Boletim Clínico', tarefas: 'Tarefas',
 };
 
 function timeAgo(iso) {
@@ -2679,6 +2765,58 @@ function useEquipas() {
 
 /* Guardada à parte do componente para o `App` a poder ler no arranque
    sem esperar por nada. */
+/* OS MEMBROS DA EQUIPA, COM NOME.
+
+   A `auth.users` não é legível pelo cliente — e não deve ser, senão
+   qualquer membro ficava com a lista de contas da plataforma. Por isso o
+   nome não vem do email: é um campo que cada pessoa preenche para si na
+   vista da equipa.
+
+   Enquanto ninguém o preencher, mostra-se "Membro 3f2a…", que é feio mas
+   honesto. Passou a ser preciso a sério a partir das Tarefas: atribuir
+   trabalho a "Membro 3f2a…" não é utilizável. */
+function useMembros(teamId) {
+  const [membros, setMembros] = useState(null);
+
+  const carregar = useCallback(async () => {
+    if (!teamId) { setMembros([]); return; }
+    try {
+      const { data, error } = await supabase
+        .from('team_members').select('user_id, papel, nome, created_at')
+        .eq('team_id', teamId).order('created_at');
+      if (error) throw error;
+      setMembros(data || []);
+    } catch (e) {
+      console.error('Falha a carregar membros', e);
+      setMembros([]);
+    }
+  }, [teamId]);
+
+  useEffect(() => { carregar(); }, [carregar]);
+  return { membros, recarregar: carregar };
+}
+
+/* Nome a mostrar para um membro. O próprio vê-se como "Tu" — é mais
+   curto e evita a estranheza de ler o próprio nome numa lista de
+   atribuições. */
+function nomeDoMembro(userId, membros, euId) {
+  if (!userId) return 'Sem responsável';
+  if (userId === euId) return 'Tu';
+  const m = (membros || []).find(x => x.user_id === userId);
+  if (m && m.nome) return m.nome;
+  return `Membro ${String(userId).slice(0, 6)}`;
+}
+
+/* Cor estável por pessoa: a mesma sempre, sem a guardar em lado nenhum.
+   Serve só para as iniciais se distinguirem de relance numa lista. */
+const CORES_MEMBRO = ['#C9A227', '#4CA86B', '#D14056', '#3A6FC4', '#8C3F9E', '#D9A72E'];
+function corDoMembro(userId) {
+  if (!userId) return '#6B7A6D';
+  let n = 0;
+  for (let i = 0; i < String(userId).length; i++) n = (n + String(userId).charCodeAt(i)) % 997;
+  return CORES_MEMBRO[n % CORES_MEMBRO.length];
+}
+
 function equipaGuardada() {
   try { return window.localStorage.getItem(CHAVE_EQUIPA) || null; } catch (e) { return null; }
 }
@@ -2702,7 +2840,14 @@ function trocarDeEquipa(id) {
 /* Ecrã de quem ainda não tem equipa nenhuma: criar ou entrar com código.
    É o primeiro que um treinador novo vê depois de confirmar o email. */
 function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
-  const [modo, setModo] = useState('criar'); // 'criar' | 'entrar'
+  /* Começa SEM modo escolhido: só as duas opções, sem campos nenhuns.
+
+     Abrir já no formulário de criação decide por quem chega — e quem
+     chega com um código na mão via um formulário de criar equipa e um
+     botão pequeno ao lado, o que é a leitura errada de um ecrã onde as
+     duas hipóteses valem o mesmo. Os campos aparecem depois de a escolha
+     ser feita, e são os do caminho escolhido. */
+  const [modo, setModo] = useState(null); // null | 'criar' | 'entrar'
   const [nome, setNome] = useState('');
   const [clube, setClube] = useState('');
   const [escalao, setEscalao] = useState('');
@@ -2768,14 +2913,22 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
     }
   };
 
-  const aba = (id, texto) => (
-    <button type="button" onClick={() => { setModo(id); setErro(''); }} style={{
-      flex: 1, padding: '9px 12px', borderRadius: 8, fontSize: 13, cursor: 'pointer', ...body,
-      background: modo === id ? '#B5393F' : 'transparent',
-      color: modo === id ? TEXT_ON_ACCENT : T.muted,
-      border: `1px solid ${modo === id ? '#B5393F' : T.line}`,
-    }}>{texto}</button>
-  );
+  /* Antes de haver escolha, as duas opções pesam o mesmo e são o assunto
+     do ecrã — daí serem maiores. Depois de escolhida, encolhem e voltam a
+     ser o que são: um separador entre dois caminhos. */
+  const aba = (id, texto) => {
+    const on = modo === id;
+    return (
+      <button type="button" onClick={() => { setModo(id); setErro(''); }} style={{
+        flex: 1, padding: modo ? '9px 12px' : '13px 12px', borderRadius: 8,
+        fontSize: modo ? 13 : 14, fontWeight: on ? 600 : 500, cursor: 'pointer', ...body,
+        background: on ? '#B5393F' : 'transparent',
+        color: on ? TEXT_ON_ACCENT : T.cream,
+        border: `1px solid ${on ? '#B5393F' : T.line}`,
+        transition: 'padding .15s, font-size .15s',
+      }}>{texto}</button>
+    );
+  };
 
   return (
     <div style={{
@@ -2790,9 +2943,13 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
           {temEquipas ? 'Nova equipa' : 'Bem-vindo'}
         </h1>
         <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px', lineHeight: 1.6 }}>
-          {temEquipas
-            ? 'Cria outra equipa ou entra numa com o código que te deram.'
-            : 'Cria a tua equipa, ou entra numa existente com o código que o treinador te deu.'}
+          {modo === 'criar'
+            ? 'Podes mudar tudo isto depois.'
+            : modo === 'entrar'
+              ? 'São seis letras. Pede-as a quem já está na equipa.'
+              : (temEquipas
+                ? 'Cria outra equipa ou entra numa com o código que te deram.'
+                : 'Cria a tua equipa, ou entra numa existente com o código que o treinador te deu.')}
         </p>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
@@ -2800,7 +2957,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
           {aba('entrar', 'Entrar com código')}
         </div>
 
-        {modo === 'criar' ? (
+        {modo === 'criar' && (
           <>
             <Field label="Nome da equipa" bloco solto>
               <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Sub-19" />
@@ -2834,7 +2991,9 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
               Cola o endereço de uma imagem já publicada. Podes acrescentar ou trocar depois.
             </div>
           </>
-        ) : (
+        )}
+
+        {modo === 'entrar' && (
           <Field label="Código da equipa" bloco solto>
             <Input
               value={codigo}
@@ -2842,21 +3001,24 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
               placeholder="ABC123"
               maxLength={6}
               style={{ ...mono, fontSize: 18, letterSpacing: '.18em', textTransform: 'uppercase' }}
+              autoFocus
             />
           </Field>
         )}
 
         {erro && <div style={{ color: T.bad, fontSize: 12.5, marginTop: 14 }}>{erro}</div>}
 
-        <div style={{ marginTop: 20 }}>
-          <Btn
-            onClick={modo === 'criar' ? criar : entrar}
-            disabled={aProcessar}
-            style={{ width: '100%', justifyContent: 'center' }}
-          >
-            {aProcessar ? 'A processar…' : modo === 'criar' ? 'Criar equipa' : 'Entrar'}
-          </Btn>
-        </div>
+        {modo && (
+          <div style={{ marginTop: 20 }}>
+            <Btn
+              onClick={modo === 'criar' ? criar : entrar}
+              disabled={aProcessar}
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              {aProcessar ? 'A processar…' : modo === 'criar' ? 'Criar equipa' : 'Entrar'}
+            </Btn>
+          </div>
+        )}
 
         <button type="button" onClick={onSair} style={{
           width: '100%', marginTop: 12, padding: 8, background: 'transparent', border: 'none',
@@ -2950,6 +3112,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
   const [erro, setErro] = useState('');
   const [copiado, setCopiado] = useState(false);
   const [logo, setLogo] = useState(equipa.logo || '');
+  const [meuNome, setMeuNome] = useState('');
   const [aGuardarLogo, setAGuardarLogo] = useState(false);
 
   /* O LOGÓTIPO É UM ENDEREÇO, NÃO UM FICHEIRO.
@@ -2973,7 +3136,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
   const carregar = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from('team_members').select('user_id, papel, created_at')
+        .from('team_members').select('user_id, papel, nome, created_at')
         .eq('team_id', equipa.id).order('created_at');
       if (error) throw error;
       setMembros(data || []);
@@ -2984,14 +3147,35 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
   }, [equipa.id]);
   useEffect(() => { carregar(); }, [carregar]);
 
+  /* O NOME É DE CADA UM, E CADA UM ESCREVE O SEU.
+
+     Não vem do email — a `auth.users` não é legível pelo cliente, e
+     torná-la legível daria a lista de contas da plataforma a qualquer
+     membro. Também não o escreve o dono pelos outros: quem sabe como se
+     quer ser chamado é a própria pessoa.
+
+     Enquanto ninguém escrever, as Tarefas mostram "Membro 3f2a…", que é
+     feio o suficiente para se resolver depressa. */
+  const guardarNome = async () => {
+    setErro('');
+    const { error } = await supabase.from('team_members')
+      .update({ nome: meuNome.trim() || null })
+      .eq('team_id', equipa.id).eq('user_id', euId);
+    if (error) { setErro(error.message); return; }
+    carregar();
+  };
+
   const euId = session && session.user && session.user.id;
   const eu = (membros || []).find(m => m.user_id === euId);
   const souDono = eu && eu.papel === 'owner';
+  useEffect(() => { if (eu) setMeuNome(eu.nome || ''); }, [eu && eu.nome]);
 
   /* Só se veem os ids dos outros, não os emails: a tabela `auth.users`
      não é legível pelo cliente, e expô-la seria dar a lista de contas da
      plataforma a qualquer membro. O próprio reconhece-se por "tu". */
-  const rotulo = (m) => (m.user_id === euId ? (session.user.email || 'Tu') : `Membro ${String(m.user_id).slice(0, 8)}`);
+  const rotulo = (m) => (m.nome
+    ? m.nome
+    : (m.user_id === euId ? (session.user.email || 'Tu') : `Membro ${String(m.user_id).slice(0, 6)}`));
 
   const copiarCodigo = async () => {
     try {
@@ -3138,6 +3322,19 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
 
       <Panel title={`Membros${membros ? ` (${membros.length})` : ''}`}>
         {erro && <div style={{ color: T.bad, fontSize: 12.5, marginBottom: 12 }}>{erro}</div>}
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <Field label="O teu nome nesta equipa" bloco solto>
+              <Input value={meuNome} onChange={e => setMeuNome(e.target.value)} placeholder="Ex: JP" />
+            </Field>
+          </div>
+          <Btn variant="ghost" onClick={guardarNome}>Guardar</Btn>
+        </div>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 16, lineHeight: 1.6 }}>
+          É como apareces nas tarefas para os outros. Sem isto, veem-te como um código.
+        </div>
+
         {membros === null ? (
           <div style={{ fontSize: 12.5, color: T.mutedDim }}>A carregar…</div>
         ) : (
@@ -3225,7 +3422,14 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
 function SeletorEquipa({ equipas, equipaAtiva, onNova, onGerir }) {
   const [aberto, setAberto] = useState(false);
   const atual = equipas.find(e => e.id === equipaAtiva);
-  const rotulo = atual ? [atual.clube, atual.escalao || atual.nome].filter(Boolean).join(' · ') : 'Sem equipa';
+  /* Só o escalão, não o clube outra vez.
+
+     O clube está escrito na linha imediatamente acima, em maior. Repeti-lo
+     aqui dava "SC Salgueiros · Sub-19" debaixo de "SC Salgueiros" — e no
+     telemóvel, com o botão de fechar ao lado, não cabia e cortava
+     precisamente na parte que interessa: o escalão. Dentro da lista o
+     clube volta, porque aí é onde ele distingue. */
+  const rotulo = atual ? (atual.escalao || atual.nome || 'Equipa') : 'Sem equipa';
 
   return (
     <div style={{ position: 'relative' }}>
@@ -9196,7 +9400,12 @@ function DiBarra({ valor, largura = 78 }) {
   );
 }
 
-/* Formulário dos 40 indicadores. Serve o staff (com N/A) e, quando o
+/* Formulário dos indicadores.
+
+   O número deixou de estar escrito: vem sempre de `DI_INDICADORES.length`.
+   Estava em seis sítios, e mudar a lista sem mudar os seis dava contadores
+   a dizer 34/40 para sempre — errado de uma forma que ninguém repara.
+ Serve o staff (com N/A) e, quando o
    treinador regista a autoavaliação à mão, também o jogador (sem N/A). */
 function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, permitirNA, onChange, onComentario, onClose, onGuardar }) {
   const [dimAberta, setDimAberta] = useState(DI_DIMENSOES[0].id);
@@ -9222,11 +9431,11 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
     <Modal title={titulo} subtitle={subtitulo} onClose={onClose} wide>
       <div ref={topoRef} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-        <span style={{ ...mono, fontSize: 12, color: respondidos === 40 ? T.good : T.warn }}>
-          {respondidos} de 40 respondidos
+        <span style={{ ...mono, fontSize: 12, color: respondidos === DI_INDICADORES.length ? T.good : T.warn }}>
+          {respondidos} de {DI_INDICADORES.length} respondidos
         </span>
         <span style={{ flex: 1, minWidth: 80, height: 5, background: T.line, borderRadius: 3, overflow: 'hidden' }}>
-          <span style={{ display: 'block', height: '100%', width: `${(respondidos / 40) * 100}%`, background: T.warn }} />
+          <span style={{ display: 'block', height: '100%', width: `${(respondidos / DI_INDICADORES.length) * 100}%`, background: T.warn }} />
         </span>
       </div>
 
@@ -9236,26 +9445,55 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
         <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>
           Com que frequência este comportamento acontece
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11.5, color: T.mutedDim }}>
+        {/* Em grelha e não em linha com `flexWrap`.
+
+            Antes os cinco níveis fluíam como texto corrido: no telemóvel
+            partiam onde calhava, com o "5 Quase sempre" a cair sozinho e
+            desalinhado dos outros. Numa grelha ficam em colunas, cada
+            nível com o número por cima do rótulo, e nunca partem a meio. */}
+        <div style={{
+          display: 'grid', gap: '7px 12px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+          fontSize: 11.5, color: T.mutedDim,
+        }}>
           {DI_ESCALA.map(e => (
-            <span key={e.valor}><b style={{ color: T.cream }}>{e.valor}</b> {e.label}</span>
+            <span key={e.valor} style={{ display: 'flex', gap: 5, alignItems: 'baseline', minWidth: 0 }}>
+              <b style={{ color: T.cream, flexShrink: 0 }}>{e.valor}</b>
+              <span style={{ minWidth: 0 }}>{e.label}</span>
+            </span>
           ))}
-          {permitirNA && <span><b style={{ color: T.cream }}>N/A</b> não observado</span>}
+          {permitirNA && (
+            <span style={{ display: 'flex', gap: 5, alignItems: 'baseline' }}>
+              <b style={{ color: T.cream, flexShrink: 0 }}>N/A</b><span>não observado</span>
+            </span>
+          )}
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+      {/* AS SEIS DIMENSÕES EM GRELHA, TODAS DA MESMA LARGURA.
+
+          Com `flexWrap` cada pílula tinha a largura do seu texto e a
+          linha seguinte começava onde a anterior acabava: "Capacidade" e
+          "Aprendizagem" ficavam desencontradas das de cima. Numa grelha
+          de larguras iguais alinham em colunas, e a última linha não fica
+          esticada nem torta. */}
+      <div style={{
+        display: 'grid', gap: 6, marginBottom: 12,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+      }}>
         {DI_DIMENSOES.map(d => {
+          const total = diIndicadoresDa(d.id).length;
           const feitos = diIndicadoresDa(d.id).filter(i => respostas && respostas[i.id] != null).length;
           const on = dimAberta === d.id;
           return (
             <button key={d.id} onClick={() => setDimAberta(d.id)} style={{
-              padding: '5px 11px', borderRadius: 20, fontSize: 11.5, cursor: 'pointer', ...body,
+              padding: '7px 10px', borderRadius: 20, fontSize: 11.5, cursor: 'pointer', ...body,
               background: on ? '#B5393F' : 'transparent',
-              color: on ? TEXT_ON_ACCENT : (feitos === diIndicadoresDa(d.id).length ? T.good : T.muted),
+              color: on ? TEXT_ON_ACCENT : (feitos === total ? T.good : T.muted),
               border: `1px solid ${on ? '#B5393F' : T.line}`,
+              textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
-              {d.label.split(' ')[0]} {feitos}/{diIndicadoresDa(d.id).length}
+              {d.label.split(' ')[0]} {feitos}/{total}
             </button>
           );
         })}
@@ -9560,7 +9798,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
           {aba === 'avaliacoes' && (
             <div style={card}>
               <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 12px' }}>
-                Os mesmos 40 indicadores dos dois lados. A autoavaliação pode ser respondida pelo jogador
+                Os mesmos {DI_INDICADORES.length} indicadores dos dois lados. A autoavaliação pode ser respondida pelo jogador
                 no questionário ou registada aqui pelo treinador.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -9569,28 +9807,42 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                   const nAuto = diRespondido(reg && reg.auto);
                   const nStaff = diRespondido(reg && reg.staff);
                   return (
+                    /* NOME EM CIMA, OS DOIS BOTÕES POR BAIXO, IGUAIS.
+
+                       Estavam os três em linha com `flexWrap`: no telemóvel
+                       cabia o nome e o primeiro botão, e o segundo caía para
+                       a linha seguinte encostado à esquerda, com outra
+                       largura. Ficavam dois botões irmãos desalinhados e de
+                       tamanhos diferentes.
+
+                       Em coluna, com `1fr 1fr`, ficam sempre da mesma
+                       largura e alinhados entre si — em qualquer ecrã, e
+                       sem depender de caber ou não. */
                     <div key={p.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                      background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '9px 11px',
+                      background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '11px 12px',
                     }}>
-                      <span style={{ flex: 1, minWidth: 120, fontSize: 12.5, color: T.cream }}>
+                      <div style={{ fontSize: 12.5, color: T.cream, marginBottom: 9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{p.position || '--'}</span>{' '}
                         {p.name}
-                      </span>
-                      <button onClick={() => { setJogadorId(p.id); setQuestionario({ fonte: 'auto', playerId: p.id }); }} style={{
-                        padding: '5px 10px', borderRadius: 7, fontSize: 11.5, cursor: 'pointer', ...body,
-                        background: 'transparent', border: `1px solid ${nAuto === 40 ? T.good : T.line}`,
-                        color: nAuto === 40 ? T.good : T.muted,
-                      }}>Autoavaliação {nAuto}/40</button>
-                      <button onClick={() => { setJogadorId(p.id); setQuestionario({ fonte: 'staff', playerId: p.id }); }} style={{
-                        padding: '5px 10px', borderRadius: 7, fontSize: 11.5, cursor: 'pointer', ...body,
-                        background: 'transparent', border: `1px solid ${nStaff === 40 ? T.good : T.line}`,
-                        color: nStaff === 40 ? T.good : T.muted,
-                      }}>Equipa técnica {nStaff}/40</button>
-                      {nAuto === 40 && nStaff === 40 && !(reg && reg.combinada) && (
-                        <Btn variant="ghost" onClick={() => patchRegisto(momento.id, p.id, { combinada: true, combinadaEm: new Date().toISOString() })}>
-                          Juntar avaliações
-                        </Btn>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <button onClick={() => { setJogadorId(p.id); setQuestionario({ fonte: 'auto', playerId: p.id }); }} style={{
+                          padding: '7px 10px', borderRadius: 7, fontSize: 11.5, cursor: 'pointer', ...body,
+                          background: 'transparent', border: `1px solid ${nAuto === DI_INDICADORES.length ? T.good : T.line}`,
+                          color: nAuto === DI_INDICADORES.length ? T.good : T.muted, textAlign: 'center',
+                        }}>Autoavaliação {nAuto}/{DI_INDICADORES.length}</button>
+                        <button onClick={() => { setJogadorId(p.id); setQuestionario({ fonte: 'staff', playerId: p.id }); }} style={{
+                          padding: '7px 10px', borderRadius: 7, fontSize: 11.5, cursor: 'pointer', ...body,
+                          background: 'transparent', border: `1px solid ${nStaff === DI_INDICADORES.length ? T.good : T.line}`,
+                          color: nStaff === DI_INDICADORES.length ? T.good : T.muted, textAlign: 'center',
+                        }}>Equipa técnica {nStaff}/{DI_INDICADORES.length}</button>
+                      </div>
+                      {nAuto === DI_INDICADORES.length && nStaff === DI_INDICADORES.length && !(reg && reg.combinada) && (
+                        <div style={{ marginTop: 8 }}>
+                          <Btn variant="ghost" onClick={() => patchRegisto(momento.id, p.id, { combinada: true, combinadaEm: new Date().toISOString() })} style={{ width: '100%', justifyContent: 'center' }}>
+                            Juntar avaliações
+                          </Btn>
+                        </div>
                       )}
                     </div>
                   );
@@ -9724,7 +9976,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
         </>
       )}
 
-      {/* Questionário dos 40 indicadores. */}
+      {/* Questionário dos indicadores. */}
       {questionario && momento && (
         <DiQuestionario
           titulo={questionario.fonte === 'auto' ? 'Autoavaliação do jogador' : 'Avaliação da equipa técnica'}
@@ -21096,6 +21348,313 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
    DIÁRIO — notas datadas do treinador, com pesquisa.
 ---------------------------------------------------------------- */
 const EMPTY_NOTA = () => ({ data: todayStr(), titulo: '', nota: '', attachment: null });
+
+/* ================================================================
+   TAREFAS DA EQUIPA TÉCNICA
+   ================================================================
+
+   Agrupadas por PRAZO e não em colunas de estado.
+
+   Um quadro kanban mostra fluxo — onde é que o trabalho encrava. O
+   trabalho de uma equipa técnica não flui, tem data: convocatória até
+   quinta, coletes para sábado, vídeo da jornada. Num quadro clássico
+   quase tudo saltaria de "por fazer" para "feito" e a coluna do meio
+   estaria vazia, o que é sinal de se estar a mostrar o eixo errado.
+
+   As duas perguntas reais são "o que falta antes de sábado?" e "quem
+   está a dever o quê?". A primeira é a vista por omissão; a segunda é um
+   botão que reagrupa a MESMA lista. */
+
+const ESTADOS_TAREFA = ['aberta', 'curso', 'feita'];
+
+/* Em que grupo cai uma tarefa. Devolve também a ordem, para os grupos
+   aparecerem sempre na mesma sequência mesmo quando algum está vazio. */
+function grupoDaTarefa(tarefa, hoje) {
+  if (tarefa.estado === 'feita') return { id: 'feitas', rotulo: 'Concluídas', ordem: 9 };
+  if (!tarefa.prazo) return { id: 'sem', rotulo: 'Sem prazo', ordem: 5 };
+  const dias = Math.round((new Date(`${tarefa.prazo}T00:00:00`) - new Date(`${hoje}T00:00:00`)) / 86400000);
+  if (dias < 0) return { id: 'atraso', rotulo: 'Atrasadas', ordem: 1 };
+  if (dias === 0) return { id: 'hoje', rotulo: 'Hoje', ordem: 2 };
+  if (dias === 1) return { id: 'amanha', rotulo: 'Amanhã', ordem: 3 };
+  if (dias <= 7) return { id: 'semana', rotulo: 'Próximos 7 dias', ordem: 4 };
+  return { id: 'depois', rotulo: 'Mais tarde', ordem: 6 };
+}
+
+/* O texto do prazo, do ponto de vista de hoje. "sábado" diz mais do que
+   "30/08" a quem está a preparar o fim de semana. */
+const DIAS_SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+function prazoTexto(prazo, hoje) {
+  if (!prazo) return '';
+  const dias = Math.round((new Date(`${prazo}T00:00:00`) - new Date(`${hoje}T00:00:00`)) / 86400000);
+  if (dias === 0) return 'hoje';
+  if (dias === 1) return 'amanhã';
+  if (dias === -1) return 'ontem';
+  if (dias < 0) return `há ${Math.abs(dias)} dias`;
+  if (dias <= 6) return DIAS_SEMANA[new Date(`${prazo}T00:00:00`).getDay()];
+  return fmtShort(prazo);
+}
+
+/* O número do badge: o que já está atrasado ou é para hoje, atribuído a
+   mim. Só isso — um badge que conta tudo o que existe deixa de se ler ao
+   fim de uma semana. */
+function tarefasAMinhaPorta(tarefas, euId) {
+  const hoje = todayStr();
+  return (tarefas || []).filter(t =>
+    t.estado !== 'feita'
+    && (t.responsavel === euId || !t.responsavel)
+    && t.prazo && t.prazo <= hoje).length;
+}
+
+function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
+  const [f, setF] = useState(tarefa || {
+    titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta',
+  });
+  const valido = String(f.titulo || '').trim().length > 0;
+
+  return (
+    <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} wide>
+      <div style={{ marginBottom: 14 }}>
+        <Field label="O que é preciso fazer" bloco solto>
+          <Input
+            value={f.titulo}
+            onChange={e => setF({ ...f, titulo: e.target.value })}
+            placeholder="Ex: levar coletes e bolas para o jogo"
+            autoFocus
+          />
+        </Field>
+      </div>
+
+      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        <Field label="Responsável">
+          <Select value={f.responsavel} onChange={e => setF({ ...f, responsavel: e.target.value })}>
+            <option value="">Sem responsável</option>
+            {(membros || []).map(m => (
+              <option key={m.user_id} value={m.user_id}>{nomeDoMembro(m.user_id, membros, euId)}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Prazo">
+          <Input type="date" value={f.prazo} onChange={e => setF({ ...f, prazo: e.target.value })} />
+        </Field>
+        <Field label="Estado">
+          <Select value={f.estado} onChange={e => setF({ ...f, estado: e.target.value })}>
+            <option value="aberta">Por fazer</option>
+            <option value="curso">Começada</option>
+            <option value="feita">Concluída</option>
+          </Select>
+        </Field>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Notas" bloco solto>
+          <TextArea
+            value={f.notas}
+            onChange={e => setF({ ...f, notas: e.target.value })}
+            placeholder="Detalhes, links, o que for preciso saber para fazer isto."
+            style={{ minHeight: 72 }}
+          />
+        </Field>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+        {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> Apagar</Btn>}
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={() => valido && onSave(f)} disabled={!valido}>Guardar</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+/* Uma linha. A caixa à esquerda fecha a tarefa sem abrir nada — é o
+   gesto mais frequente de todos e não devia custar dois cliques. */
+function LinhaTarefa({ tarefa, membros, euId, hoje, onAbrir, onAlternar }) {
+  const feita = tarefa.estado === 'feita';
+  const atrasada = !feita && tarefa.prazo && tarefa.prazo < hoje;
+  const paraHoje = !feita && tarefa.prazo === hoje;
+  const cor = corDoMembro(tarefa.responsavel);
+
+  return (
+    <div style={{
+      display: 'flex', gap: 11, alignItems: 'flex-start',
+      padding: '11px 13px', background: T.bg, borderRadius: 9,
+      border: `1px solid ${T.line}`, marginBottom: 8,
+    }}>
+      <button
+        onClick={() => onAlternar(tarefa)}
+        title={feita ? 'Reabrir' : 'Marcar como concluída'}
+        style={{
+          width: 17, height: 17, borderRadius: 5, flexShrink: 0, marginTop: 2, cursor: 'pointer',
+          background: feita ? T.good : 'transparent',
+          border: `1.5px solid ${feita ? T.good : T.line}`,
+          display: 'grid', placeItems: 'center', padding: 0,
+        }}
+      >{feita && <Check size={11} style={{ color: '#0d140e' }} />}</button>
+
+      <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onAbrir(tarefa)}>
+        <div style={{
+          fontSize: 13.5, lineHeight: 1.45,
+          color: feita ? T.mutedDim : T.cream,
+          textDecoration: feita ? 'line-through' : 'none',
+        }}>{tarefa.titulo}</div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 7, flexWrap: 'wrap' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.muted }}>
+            <span style={{
+              width: 19, height: 19, borderRadius: '50%', background: cor, flexShrink: 0,
+              display: 'grid', placeItems: 'center', fontSize: 9, color: '#0d140e', fontWeight: 600, ...mono,
+            }}>{nomeDoMembro(tarefa.responsavel, membros, euId).charAt(0).toUpperCase()}</span>
+            {nomeDoMembro(tarefa.responsavel, membros, euId)}
+          </span>
+          {tarefa.estado === 'curso' && (
+            <span style={{ fontSize: 11.5, color: T.warn }}>• começada</span>
+          )}
+          {tarefa.notas ? <FileText size={12} style={{ color: T.mutedDim }} /> : null}
+          <span style={{
+            ...mono, fontSize: 11, marginLeft: 'auto', flexShrink: 0,
+            color: feita ? T.mutedDim : (atrasada ? T.bad : (paraHoje ? T.warn : T.mutedDim)),
+          }}>
+            {feita ? 'concluída' : prazoTexto(tarefa.prazo, hoje)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Tarefas({ tarefas, setTarefas, membros, euId }) {
+  const [modal, setModal] = useState(null); // 'new' | tarefa
+  const [porPessoa, setPorPessoa] = useState(false);
+  const [verFeitas, setVerFeitas] = useState(false);
+  const hoje = todayStr();
+
+  const save = (dados) => {
+    if (dados.id) setTarefas(tarefas.map(t => (t.id === dados.id ? dados : t)));
+    else setTarefas([...tarefas, { ...dados, id: uid(), criadoPor: euId, criadoEm: new Date().toISOString() }]);
+    setModal(null);
+  };
+  const remove = (id) => {
+    const t = tarefas.find(x => x.id === id);
+    removeWithUndo(tarefas, setTarefas, id, t ? t.titulo : 'Tarefa');
+    setModal(null);
+  };
+  const alternar = (t) => setTarefas(tarefas.map(x => (x.id === t.id
+    ? { ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString() }
+    : x)));
+
+  const abertas = tarefas.filter(t => t.estado !== 'feita');
+  const feitas = tarefas.filter(t => t.estado === 'feita')
+    .sort((a, b) => String(b.feitaEm || '').localeCompare(String(a.feitaEm || '')));
+
+  /* Por prazo: os grupos saem pela ordem definida em `grupoDaTarefa`, e
+     dentro de cada um pela data. Sem prazo fica no fim das abertas — não
+     é urgente por definição, mas também não desaparece. */
+  const gruposPorPrazo = () => {
+    const mapa = new Map();
+    abertas.forEach(t => {
+      const g = grupoDaTarefa(t, hoje);
+      if (!mapa.has(g.id)) mapa.set(g.id, { ...g, lista: [] });
+      mapa.get(g.id).lista.push(t);
+    });
+    return [...mapa.values()]
+      .sort((a, b) => a.ordem - b.ordem)
+      .map(g => ({ ...g, lista: g.lista.sort((a, b) => String(a.prazo || '9999').localeCompare(String(b.prazo || '9999'))) }));
+  };
+
+  /* Por pessoa: a mesma lista, outro corte. Toda a gente aparece, mesmo
+     sem tarefas — ver que alguém está a zero é informação. */
+  const gruposPorPessoa = () => {
+    const ids = [...new Set([...(membros || []).map(m => m.user_id), ...abertas.map(t => t.responsavel)])];
+    return ids.map(id => ({
+      id: id || 'sem',
+      rotulo: nomeDoMembro(id, membros, euId),
+      userId: id,
+      lista: abertas.filter(t => (t.responsavel || null) === (id || null))
+        .sort((a, b) => String(a.prazo || '9999').localeCompare(String(b.prazo || '9999'))),
+    })).filter(g => g.userId || g.lista.length);
+  };
+
+  const grupos = porPessoa ? gruposPorPessoa() : gruposPorPrazo();
+
+  return (
+    <div>
+      <SectionHeader
+        title="Tarefas"
+        subtitle="O que a equipa técnica tem para fazer."
+        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova tarefa</Btn>}
+      />
+
+      <SubTabs
+        value={porPessoa ? 'pessoa' : 'prazo'}
+        onChange={(v) => setPorPessoa(v === 'pessoa')}
+        tabs={[
+          { id: 'prazo', label: 'Por prazo', icon: CalendarDays },
+          { id: 'pessoa', label: 'Por pessoa', icon: Users },
+        ]}
+      />
+
+      <Panel title={porPessoa ? 'Quem está a dever o quê' : 'Por prazo'}>
+        {abertas.length === 0 ? (
+          <EmptyState
+            text="Nada por fazer. Cria a primeira tarefa da equipa técnica."
+            action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova tarefa</Btn>}
+          />
+        ) : (
+          grupos.map(g => (
+            <div key={g.id} style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 9 }}>
+                <span style={{
+                  ...display, fontSize: 14, fontWeight: 600,
+                  color: g.id === 'atraso' ? T.bad : (g.id === 'hoje' ? T.warn : T.cream),
+                }}>{g.rotulo}</span>
+                <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{g.lista.length}</span>
+                <span style={{ flex: 1, height: 1, background: T.line }} />
+              </div>
+              {g.lista.length === 0 ? (
+                <div style={{ fontSize: 12, color: T.mutedDim, fontStyle: 'italic', padding: '4px 2px 10px' }}>
+                  Sem tarefas pendentes.
+                </div>
+              ) : g.lista.map(t => (
+                <LinhaTarefa
+                  key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje}
+                  onAbrir={setModal} onAlternar={alternar}
+                />
+              ))}
+            </div>
+          ))
+        )}
+      </Panel>
+
+      <div style={{ height: 16 }} />
+
+      <Panel
+        title={`Concluídas (${feitas.length})`}
+        action={feitas.length ? <Btn variant="ghost" onClick={() => setVerFeitas(v => !v)}>{verFeitas ? 'Esconder' : 'Ver'}</Btn> : null}
+      >
+        {feitas.length === 0 ? (
+          <EmptyState text="Ainda sem tarefas concluídas." />
+        ) : !verFeitas ? (
+          <div style={{ fontSize: 12.5, color: T.mutedDim }}>{feitas.length} {feitas.length === 1 ? 'tarefa concluída' : 'tarefas concluídas'}.</div>
+        ) : feitas.map(t => (
+          <LinhaTarefa
+            key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje}
+            onAbrir={setModal} onAlternar={alternar}
+          />
+        ))}
+      </Panel>
+
+      {modal && (
+        <TarefaModal
+          tarefa={modal === 'new' ? null : modal}
+          membros={membros}
+          euId={euId}
+          onClose={() => setModal(null)}
+          onSave={save}
+          onRemove={modal !== 'new' ? () => remove(modal.id) : null}
+        />
+      )}
+    </div>
+  );
+}
 
 function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
   const [formOpen, setFormOpen] = useState(false);
