@@ -801,6 +801,113 @@ function askConfirm(pedido) {
    `label` é o que aparece nas duas (ex: 'Exercício "1v1 Finalização"').
    `depois` corre só se o utilizador confirmar (ex: fechar o formulário
    aberto desse registo). */
+/* APAGAR UM JOGADOR — E TUDO O QUE FICA PARA TRÁS.
+
+   Apagar a linha do `players` deixava o rasto todo na base de dados:
+   presenças, notas, minutos, convocatórias, wellness, boletim clínico e
+   desenvolvimento. Nada disso volta a aparecer no ecrã — as vistas
+   percorrem o plantel, e um id que já não existe não é percorrido —
+   portanto o problema é invisível e cresce sozinho.
+
+   São dois problemas, e o segundo é o sério:
+
+   1. As contas ficam erradas. Um jogador apagado continua nos
+      `convocados` de vinte jogos, e o denominador de quem sobra muda.
+
+   2. Ficam guardados dados de saúde de um menor que já não está no
+      clube. É exatamente o que o RGPD chama a obrigação de eliminação, e
+      é o que torna isto mais do que arrumação.
+
+   As dezoito referências estão nesta lista e em mais lado nenhum. Uma
+   coleção nova que passe a guardar ids de jogadores tem de ser
+   acrescentada AQUI, ou volta o mesmo problema em silêncio. */
+function limparRastoDoJogador({ playerId, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, clinico, setClinico, desenvolvimento, setDesenvolvimento }) {
+  const semId = (arr) => (Array.isArray(arr) ? arr.filter(x => x !== playerId) : arr);
+  const semChave = (obj) => {
+    if (!obj || typeof obj !== 'object') return obj;
+    const copia = { ...obj };
+    delete copia[playerId];
+    return copia;
+  };
+
+  /* Só se grava o que mudou mesmo. Reescrever todas as sessões e todos os
+     jogos faria dezenas de gravações por cada jogador apagado — e o
+     travão de eliminação em massa está lá precisamente para desconfiar de
+     alterações grandes de uma vez. */
+  const mudou = (antes, depois) => JSON.stringify(antes) !== JSON.stringify(depois);
+
+  if (setSessions) {
+    setSessions(prev => prev.map(s => {
+      const novo = {
+        ...s,
+        attendance: semId(s.attendance),
+        faltas: semId(s.faltas),
+        lesionados: semId(s.lesionados),
+        escalao: semId(s.escalao),
+        ratings: semChave(s.ratings),
+      };
+      return mudou(s, novo) ? novo : s;
+    }));
+  }
+
+  if (setMatches) {
+    setMatches(prev => prev.map(m => {
+      const novo = {
+        ...m,
+        convocados: semId(m.convocados),
+        attendance: semId(m.attendance),
+        faltas: semId(m.faltas),
+        lesionados: semId(m.lesionados),
+        escalao: semId(m.escalao),
+        starters: semId(m.starters),
+        // O alinhamento é posicional: tirar o jogador deixaria os
+        // seguintes a escorregar para o lugar errado no campo. Fica o
+        // buraco, que é o que aconteceu na realidade.
+        alinhamento: Array.isArray(m.alinhamento) ? m.alinhamento.map(x => (x === playerId ? null : x)) : m.alinhamento,
+        ratings: semChave(m.ratings),
+        report: semChave(m.report),
+      };
+      return mudou(m, novo) ? novo : m;
+    }));
+  }
+
+  if (setConvocatorias) {
+    setConvocatorias(prev => prev.map(c => {
+      const novo = { ...c, convocados: semId(c.convocados) };
+      return mudou(c, novo) ? novo : c;
+    }));
+  }
+
+  /* Estas três são uma linha por registo: apagam-se, não se editam. */
+  if (setMonitoring) setMonitoring(prev => prev.filter(m => m.playerId !== playerId));
+  if (setClinico) setClinico(prev => prev.filter(o => o.playerId !== playerId));
+  if (setDesenvolvimento) setDesenvolvimento(prev => prev.filter(d => d.playerId !== playerId));
+}
+
+/* Quantos registos é que apagar este jogador vai levar atrás. Serve para
+   a confirmação dizer um número em vez de uma vaguidade — "isto apaga 499
+   registos de wellness" é uma frase que faz parar quem estava a clicar
+   por hábito. */
+function contarRastoDoJogador({ playerId, sessions, matches, convocatorias, monitoring, clinico, desenvolvimento }) {
+  const temId = (arr) => Array.isArray(arr) && arr.includes(playerId);
+  const temChave = (obj) => !!(obj && typeof obj === 'object' && obj[playerId] !== undefined);
+
+  const dias = (sessions || []).filter(s =>
+    temId(s.attendance) || temId(s.faltas) || temId(s.lesionados) || temId(s.escalao) || temChave(s.ratings)).length;
+  const jogos = (matches || []).filter(m =>
+    temId(m.convocados) || temId(m.attendance) || temId(m.faltas) || temId(m.lesionados)
+    || temId(m.escalao) || temId(m.starters) || temChave(m.ratings) || temChave(m.report)).length;
+
+  return {
+    dias,
+    jogos,
+    convocatorias: (convocatorias || []).filter(c => temId(c.convocados)).length,
+    wellness: (monitoring || []).filter(m => m.playerId === playerId).length,
+    clinico: (clinico || []).filter(o => o.playerId === playerId).length,
+    desenvolvimento: (desenvolvimento || []).filter(d => d.playerId === playerId).length,
+  };
+}
+
 function removeWithUndo(list, setList, id, label, depois) {
   const alvo = (list || []).find(x => x.id === id);
   if (!alvo) return;
@@ -1988,7 +2095,18 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} />}
-          {tab === 'plantel' && <Plantel players={players} setPlayers={setPlayers} sessions={sessions} matches={matches} meta={playersMeta} clinico={clinico} />}
+          {tab === 'plantel' && (
+            <Plantel
+              players={players} setPlayers={setPlayers}
+              sessions={sessions} setSessions={setSessions}
+              matches={matches} setMatches={setMatches}
+              convocatorias={convocatorias} setConvocatorias={setConvocatorias}
+              monitoring={monitoring} setMonitoring={setMonitoring}
+              clinico={clinico} setClinico={setClinico}
+              desenvolvimento={desenvolvimento} setDesenvolvimento={setDesenvolvimento}
+              meta={playersMeta}
+            />
+          )}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} />}
@@ -3580,7 +3698,7 @@ function fmtDate(d) {
 /* ---------------------------------------------------------------
    PLANTEL
 ---------------------------------------------------------------- */
-function Plantel({ players, setPlayers, sessions, matches, meta, clinico }) {
+function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
   const [statsFor, setStatsFor] = useState(null); // player object (view stats)
   const [printPlayer, setPrintPlayer] = useState(null); // ficha a imprimir
@@ -3608,7 +3726,66 @@ function Plantel({ players, setPlayers, sessions, matches, meta, clinico }) {
     }
     setModal(null);
   };
-  const remove = (id) => removeWithUndo(players, setPlayers, id, itemLabel(players.find(x => x.id === id), 'Jogador'));
+  /* APAGAR UM JOGADOR APAGA MESMO O JOGADOR.
+
+     Antes tirava-se a linha do plantel e ficava tudo o resto: presenças,
+     notas, minutos, wellness, boletim clínico. Invisível, porque as
+     vistas percorrem o plantel e um id que já não existe não aparece — e
+     é essa invisibilidade que fazia disto um problema a sério e não uma
+     arrumação por fazer.
+
+     A confirmação diz os números antes de apagar. "Isto apaga 499
+     registos de bem-estar" faz parar quem estava a clicar por hábito, o
+     que uma frase genérica não faz.
+
+     O anular do `removeWithUndo` devolve o JOGADOR, não o rasto — por
+     isso o rasto só se limpa depois de a janela de anulação passar. Sem
+     isso, anular deixava o jogador de volta e o histórico dele apagado,
+     que é pior do que qualquer um dos dois estados. */
+  const remove = (id) => {
+    const jogador = players.find(x => x.id === id);
+    if (!jogador) return;
+    const c = contarRastoDoJogador({
+      playerId: id, sessions, matches, convocatorias, monitoring, clinico, desenvolvimento,
+    });
+    const partes = [
+      c.dias && `${c.dias} ${c.dias === 1 ? 'dia de presenças' : 'dias de presenças'}`,
+      c.jogos && `${c.jogos} ${c.jogos === 1 ? 'jogo' : 'jogos'}`,
+      c.convocatorias && `${c.convocatorias} ${c.convocatorias === 1 ? 'convocatória' : 'convocatórias'}`,
+      c.wellness && `${c.wellness} de bem-estar`,
+      c.clinico && `${c.clinico} do boletim clínico`,
+      c.desenvolvimento && `${c.desenvolvimento} de desenvolvimento`,
+    ].filter(Boolean);
+
+    askConfirm({
+      label: itemLabel(jogador, 'Jogador'),
+      note: partes.length
+        ? `Apaga também o histórico dele: ${partes.join(', ')}. Podes anular durante alguns segundos.`
+        : undefined,
+      onConfirm: () => {
+        setPlayers(prev => prev.filter(x => x.id !== id));
+        let anulado = false;
+        offerUndo(`${itemLabel(jogador, 'Jogador')} apagado.`, () => {
+          anulado = true;
+          setPlayers(prev => (prev.some(x => x.id === id) ? prev : [...prev, jogador]));
+        });
+        /* Espera-se a barra INTEIRA mais três segundos de folga. Ler a
+           duração da constante em vez de repetir o número evita o caso
+           silencioso: alguém aumenta a barra para 20s, isto continua em
+           12, e quem anula ao segundo 15 fica com o jogador de volta e o
+           histórico apagado. */
+        setTimeout(() => {
+          if (anulado) return;
+          limparRastoDoJogador({
+            playerId: id,
+            sessions, setSessions, matches, setMatches,
+            convocatorias, setConvocatorias, monitoring, setMonitoring,
+            clinico, setClinico, desenvolvimento, setDesenvolvimento,
+          });
+        }, (UNDO_SECONDS + 3) * 1000);
+      },
+    });
+  };
 
   return (
     <div>
