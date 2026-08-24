@@ -2583,6 +2583,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas }) {
   const [nome, setNome] = useState('');
   const [clube, setClube] = useState('');
   const [escalao, setEscalao] = useState('');
+  const [logo, setLogo] = useState('');
   const [codigo, setCodigo] = useState('');
   const [aProcessar, setAProcessar] = useState(false);
   const [erro, setErro] = useState('');
@@ -2593,6 +2594,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas }) {
     try {
       const { data, error } = await supabase.rpc('criar_equipa', {
         p_nome: nome.trim(), p_clube: clube.trim(), p_escalao: escalao.trim(),
+        p_logo: logo.trim() || null,
       });
       if (error) throw error;
       onPronto(data);
@@ -2660,6 +2662,26 @@ function EscolherEquipa({ onPronto, onSair, temEquipas }) {
             <Field label="Escalão" bloco solto>
               <Input value={escalao} onChange={e => setEscalao(e.target.value)} placeholder="Ex: Sub-19" />
             </Field>
+            <div style={{ height: 12 }} />
+            {/* O EMBLEMA PERGUNTA-SE AQUI, E NÃO SÓ DEPOIS.
+
+                Existia apenas dentro da vista da equipa, onde se descobre
+                por acaso — e uma equipa sem emblema fica sem ele durante
+                meses. Este é o momento em que a pessoa está a pensar no
+                clube; é aqui que a resposta está à mão.
+
+                Opcional de propósito: quem só quer começar carrega em
+                Criar equipa e resolve isto quando lhe apetecer. */}
+            <Field label="Emblema (opcional)" bloco solto>
+              <Input
+                value={logo}
+                onChange={e => setLogo(e.target.value)}
+                placeholder="https://… endereço de uma imagem"
+              />
+            </Field>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
+              Cola o endereço de uma imagem já publicada. Podes acrescentar ou trocar depois.
+            </div>
           </>
         ) : (
           <Field label="Código da equipa" bloco solto>
@@ -17218,8 +17240,11 @@ function CheckinLogin({ onSubmit, equipa }) {
       {equipa && equipa.logo ? (
         <img src={equipa.logo} alt="" style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: 14 }} />
       ) : null}
+      {/* "Boa noite, SC Salgueiros!" era estranho: cumprimentava o clube
+          e não o miúdo que está do outro lado. O emblema por cima já diz
+          de quem é o ecrã; a saudação é para quem lá chega. */}
       <div style={{ ...display, fontSize: 21, fontWeight: 700, color: T.cream, marginBottom: 6 }}>
-        {greetingNow()}{equipa && equipa.clube ? `, ${equipa.clube}` : ''}!
+        {greetingNow()}, craque!
       </div>
       <div style={{ fontSize: 13.5, color: T.mutedDim, marginBottom: 26 }}>Introduz o teu código pessoal para entrares.</div>
 
