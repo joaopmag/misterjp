@@ -3108,6 +3108,24 @@ function retratoDeDados({ players, monitoring, clinico, sessions, matches, desen
 }
 
 function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
+  const estreito = useIsMobile(640);
+
+  /* UMA REGRA SÓ PARA TODOS OS BOTÕES DESTE ECRÃ.
+
+     Estavam três barras de ação com três alinhamentos diferentes:
+     "Guardar" à esquerda, "Sair desta equipa" à direita, "Exportar" à
+     esquerda outra vez. Cada uma parecia certa isolada; juntas, o olho
+     não encontra padrão nenhum e a página lê-se como remendos.
+
+     No telemóvel empilham a toda a largura — é o que se toca melhor e
+     evita meias-larguras aleatórias. Em ecrã largo encostam à direita,
+     como o resto da app já faz nos rodapés das fichas. */
+  const barraAcoes = {
+    display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap',
+    ...(estreito ? { flexDirection: 'column' } : { justifyContent: 'flex-end' }),
+  };
+  const botaoAcao = estreito ? { width: '100%', justifyContent: 'center' } : {};
+
   const [membros, setMembros] = useState(null);
   const [erro, setErro] = useState('');
   const [copiado, setCopiado] = useState(false);
@@ -3297,24 +3315,28 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
           Emblema
         </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           {equipa.logo ? (
             <img src={equipa.logo} alt="" style={{ width: 44, height: 44, objectFit: 'contain', flexShrink: 0 }} />
           ) : null}
-          <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ flex: 1, minWidth: 180 }}>
             <Input
               value={logo}
               onChange={e => setLogo(e.target.value)}
               placeholder="https://… endereço da imagem"
             />
           </div>
-          <Btn variant="ghost" onClick={guardarLogo} disabled={aGuardarLogo}>
-            {aGuardarLogo ? 'A guardar…' : 'Guardar'}
-          </Btn>
         </div>
+        {/* A explicação antes do botão, e não depois: quem lê de cima para
+            baixo precisa de saber o que colar ANTES de decidir guardar. */}
         <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.6 }}>
           Cola o endereço de uma imagem já publicada — do site do clube, do Drive com partilha
           aberta, de onde for. Aparece na barra lateral e no ecrã do questionário dos atletas.
+        </div>
+        <div style={barraAcoes}>
+          <Btn variant="ghost" onClick={guardarLogo} disabled={aGuardarLogo} style={botaoAcao}>
+            {aGuardarLogo ? 'A guardar…' : 'Guardar emblema'}
+          </Btn>
         </div>
       </Panel>
 
@@ -3323,16 +3345,14 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
       <Panel title={`Membros${membros ? ` (${membros.length})` : ''}`}>
         {erro && <div style={{ color: T.bad, fontSize: 12.5, marginBottom: 12 }}>{erro}</div>}
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <Field label="O teu nome nesta equipa" bloco solto>
-              <Input value={meuNome} onChange={e => setMeuNome(e.target.value)} placeholder="Ex: JP" />
-            </Field>
-          </div>
-          <Btn variant="ghost" onClick={guardarNome}>Guardar</Btn>
-        </div>
-        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 16, lineHeight: 1.6 }}>
+        <Field label="O teu nome nesta equipa" bloco solto>
+          <Input value={meuNome} onChange={e => setMeuNome(e.target.value)} placeholder="Ex: JP" />
+        </Field>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.6 }}>
           É como apareces nas tarefas para os outros. Sem isto, veem-te como um código.
+        </div>
+        <div style={{ ...barraAcoes, marginBottom: 18 }}>
+          <Btn variant="ghost" onClick={guardarNome} style={botaoAcao}>Guardar nome</Btn>
         </div>
 
         {membros === null ? (
@@ -3364,8 +3384,8 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-          <Btn variant="ghost" onClick={sairDaEquipa}><LogOut size={15} /> Sair desta equipa</Btn>
+        <div style={barraAcoes}>
+          <Btn variant="ghost" onClick={sairDaEquipa} style={botaoAcao}><LogOut size={15} /> Sair desta equipa</Btn>
         </div>
       </Panel>
 
@@ -3401,10 +3421,10 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <Btn variant="ghost" onClick={exportar}><Download size={15} /> Exportar dados desta equipa</Btn>
+        <div style={barraAcoes}>
+          <Btn variant="ghost" onClick={exportar} style={botaoAcao}><Download size={15} /> Exportar dados desta equipa</Btn>
           {souDono && (
-            <Btn variant="danger" onClick={apagarEquipa} disabled={!souUnico} style={{ marginLeft: 'auto' }}>
+            <Btn variant="danger" onClick={apagarEquipa} disabled={!souUnico} style={botaoAcao}>
               <Trash2 size={15} /> Apagar equipa e todos os dados
             </Btn>
           )}
