@@ -1799,6 +1799,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
        outra vista do mesmo jogo, e vivem dentro de Jogos.
      · TV e Apresentações — duas bibliotecas de media com o
        mesmo comportamento. Juntaram-se numa. */
+  /* ANTES DO `NAV`, DE PROPÓSITO.
+
+     O `NAV` calcula o badge das Tarefas com `euId`. Um `const` só existe
+     a partir da linha onde é declarado — declará-lo depois dava
+     "Cannot access before initialization" e a app inteira parava, sem
+     pista de onde. Ficam aqui, encostados a quem os usa. */
+  const euId = session && session.user && session.user.id;
+  const { membros, recarregar: recarregarMembros } = useMembros(teamId);
+
   const NAV = [
     { id: 'geral', label: 'Visão Geral', icon: LayoutGrid },
     { id: 'plantel', label: 'Plantel', icon: Users },
@@ -1820,9 +1829,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 
   /* Qual das duas bibliotecas está aberta. Um #videos ou #apresentacoes
      antigo não só abre a Biblioteca como escolhe a sub-aba certa. */
-  const euId = session && session.user && session.user.id;
-  const { membros, recarregar: recarregarMembros } = useMembros(teamId);
-
   const [biblioteca, setBiblioteca] = useState(() => {
     if (typeof window === 'undefined') return 'videos';
     return window.location.hash.replace('#', '').trim() === 'apresentacoes' ? 'apresentacoes' : 'videos';
