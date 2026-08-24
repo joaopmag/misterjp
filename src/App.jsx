@@ -6016,9 +6016,28 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           return (
             <g key={el.id}>
               {hitsEnabled && <circle cx={el.x} cy={el.y} r="1.1" onPointerDown={handler} style={hitStyle} />}
+              {/* ESTACA, NÃO FÓSFORO.
+
+                  Era um pau amarelo com uma cabeça vermelha em cima, o que
+                  lida de longe é exatamente um fósforo. Uma estaca de
+                  treino tem base preta em disco, vara amarela fina e um
+                  anel preto a meio — e é por esses três traços que se
+                  reconhece à primeira, mesmo pequena.
+
+                  Desenhada de baixo para cima a partir de `el.y`, que é
+                  onde ela assenta no chão. */}
               <g style={{ pointerEvents: 'none' }}>
-                <rect x={el.x - 0.3} y={el.y - 2} width="0.6" height="3.6" rx="0.3" fill="#E7CD7A" stroke={TEXT_ON_ACCENT} strokeWidth="0.12" />
-                <circle cx={el.x} cy={el.y - 2} r="0.45" fill="#A32D3A" />
+                {/* Base: elipse achatada, porque o campo vê-se de cima em
+                    perspetiva e um círculo perfeito flutuava. */}
+                <ellipse cx={el.x} cy={el.y} rx="0.85" ry="0.32" fill="#23282A" />
+                <ellipse cx={el.x} cy={el.y - 0.12} rx="0.6" ry="0.22" fill="#3A4145" />
+                {/* Vara */}
+                <rect x={el.x - 0.17} y={el.y - 3.8} width="0.34" height="3.7" rx="0.17" fill="#E8C33A" />
+                {/* Brilho de um dos lados, para não parecer chapada */}
+                <rect x={el.x - 0.17} y={el.y - 3.8} width="0.13" height="3.7" rx="0.07" fill="#F2DC7E" opacity="0.85" />
+                {/* Anel preto a meio e ponta escura */}
+                <rect x={el.x - 0.19} y={el.y - 2.1} width="0.38" height="0.3" fill="#23282A" />
+                <rect x={el.x - 0.19} y={el.y - 3.85} width="0.38" height="0.22" rx="0.1" fill="#23282A" />
               </g>
             </g>
           );
@@ -7523,22 +7542,6 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             {!t.symbol && (isNarrowEditor && t.curto ? t.curto : t.label)}
           </button>
         ))}
-        {arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') && (
-          <button
-            type="button"
-            onClick={isPlaying ? stopAnimation : playAnimation}
-            title={isPlaying ? 'Parar animação' : 'Animar deslocamentos (bola no passe, jogador na corrida)'}
-            style={{
-              padding: '5px 10px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
-              background: isPlaying ? T.bad : T.crimsonBright,
-              color: T.cream, border: `1px solid ${isPlaying ? T.bad : T.crimsonBright}`,
-              display: 'flex', alignItems: 'center', gap: 5, minHeight: 24,
-            }}
-          >
-            {isPlaying ? <Square size={12} /> : <Play size={12} />}
-            {isPlaying ? 'Parar' : 'Animar'}
-          </button>
-        )}
       </div>
       <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6 }}>
         Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
@@ -7675,6 +7678,35 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       {/* `minWidth: 0` nos filhos é o que lhes permite encolher: sem isso
           um item recusa-se a passar abaixo da largura do seu conteúdo e
           empurra a barra para fora do ecrã, mesmo com `flexWrap`. */}
+      {/* O ANIMAR DEIXOU DE ESTAR NA BARRA DE CIMA.
+
+          Aparecia assim que houvesse a primeira seta e desaparecia ao
+          apagá-la — e como estava ACIMA do campo, cada vez que aparecia
+          empurrava a prancheta para baixo. No telemóvel isso é o desenho a
+          fugir por baixo do dedo a meio de o fazer.
+
+          Agora fica por baixo do campo, encostado à direita, e o espaço é
+          SEMPRE reservado (`minHeight`): mesmo sem setas nenhumas, nada se
+          mexe quando ele nasce. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, minHeight: 34, alignItems: 'center' }}>
+        {arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') && (
+          <button
+            type="button"
+            onClick={isPlaying ? stopAnimation : playAnimation}
+            title={isPlaying ? 'Parar animação' : 'Animar deslocamentos (bola no passe, jogador na corrida)'}
+            style={{
+              padding: '7px 14px', borderRadius: 7, fontSize: 12.5, cursor: 'pointer', ...body,
+              background: isPlaying ? T.bad : T.crimsonBright,
+              color: T.cream, border: `1px solid ${isPlaying ? T.bad : T.crimsonBright}`,
+              display: 'flex', alignItems: 'center', gap: 6, minHeight: 34,
+            }}
+          >
+            {isPlaying ? <Square size={13} /> : <Play size={13} />}
+            {isPlaying ? 'Parar' : 'Animar'}
+          </button>
+        )}
+      </div>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
@@ -7859,7 +7891,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           sobrava mesmo com a altura da faixa já fixa em 38px. Com a margem
           sempre presente, a altura deste wrapper é 100% constante entre
           aberto e fechado. */}
-      <div style={{ minHeight: 92, marginTop: 4 }}>
+      {/* O espaço reservado cresce no telemóvel, porque lá a barra quebra
+          em duas ou três linhas. Continua a ser um número FIXO por ecrã e
+          não o conteúdo a mandar — é isso que impede o campo de encolher
+          quando se seleciona um elemento. */}
+      <div style={{ minHeight: isNarrowEditor ? 150 : 92, marginTop: 4 }}>
       {selectedEl && (
         <div>
         {/* NUNCA quebra para uma segunda linha (nowrap + scroll horizontal
@@ -7871,17 +7907,33 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             espaço reservado ali em baixo (`minHeight: 92`), e era isso que
             fazia o campo encolher ao selecionar o primeiro item. Com altura
             sempre igual (uma linha só), o campo deixa de reagir. */}
+        {/* NO TELEMÓVEL QUEBRA EM RETÂNGULO; EM ECRÃ LARGO FICA NUMA LINHA.
+
+            Estava sempre numa linha com scroll horizontal: para chegar ao
+            "Horizontal" ou ao zoom era preciso arrastar a barra para o
+            lado, às cegas, sem sinal de que havia mais à direita. Uma
+            barra de ferramentas que se descobre por acaso não é uma barra
+            de ferramentas.
+
+            A razão original para a linha única continua válida — altura
+            variável fazia o campo encolher ao selecionar um elemento — e
+            por isso o que muda não é deixar o conteúdo mandar na altura,
+            é reservar mais espaço no telemóvel e deixá-lo quebrar dentro
+            desse espaço. */}
         <div className="mjp-painel-selecao" style={{
-          display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', background: T.bg,
-          border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0', flexWrap: 'nowrap',
-          overflowX: 'auto', overflowY: 'hidden',
+          display: 'flex', alignItems: 'center', gap: isNarrowEditor ? 8 : 10,
+          padding: isNarrowEditor ? '7px 8px' : '0 10px', background: T.bg,
+          border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0',
+          flexWrap: isNarrowEditor ? 'wrap' : 'nowrap',
+          overflowX: isNarrowEditor ? 'hidden' : 'auto', overflowY: 'hidden',
           /* Altura fixa e não `padding` a decidi-la: com `height` (em vez de
              deixar o conteúdo esticar a caixa), uma barra de scroll
              horizontal fica DENTRO dos 38px, nunca a acrescentar-lhes.
              É isto, mais a barra escondida acima, que impede o painel de
              ultrapassar os 92px reservados — e por consequência, que impede
              o campo de encolher ao selecionar a Baliza ou abrir o texto. */
-          height: 38, boxSizing: 'border-box',
+          ...(isNarrowEditor ? { minHeight: 38 } : { height: 38 }),
+          boxSizing: 'border-box',
         }}>
           <span style={{ fontSize: 12, color: T.cream, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {selectedEl.kind === 'player' || selectedEl.kind === 'keeper'
@@ -7950,7 +8002,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {selectedEl.kind === 'goalmarker' && (
             <div
               title="Arrasta o ponto dourado de cima para rodar livremente · arrasta o quadrado do canto para redimensionar"
-              style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexWrap: 'nowrap', flexShrink: 0 }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap', flexShrink: 0, ...(isNarrowEditor ? {} : { marginLeft: 'auto' }) }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                 <RotateCw size={12} color={T.mutedDim} />
