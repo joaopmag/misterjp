@@ -2192,14 +2192,14 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               value={biblioteca}
               onChange={setBiblioteca}
               tabs={[
-                { id: 'videos', label: 'TV', icon: Tv, count: (videos || []).length },
+                { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).length },
                 { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
               ]}
             />
             <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
               <MediaLibrary
                 items={videos} setItems={setVideos}
-                title="TV" subtitle="Vídeos de jogos e treinos."
+                title="Canal" subtitle="Vídeos de jogos e treinos."
                 addLabel="Adicionar vídeo"
                 emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
@@ -7895,7 +7895,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           em duas ou três linhas. Continua a ser um número FIXO por ecrã e
           não o conteúdo a mandar — é isso que impede o campo de encolher
           quando se seleciona um elemento. */}
-      <div style={{ minHeight: isNarrowEditor ? 150 : 92, marginTop: 4 }}>
+      <div style={{ minHeight: isNarrowEditor ? 200 : 92, marginTop: 4 }}>
       {selectedEl && (
         <div>
         {/* NUNCA quebra para uma segunda linha (nowrap + scroll horizontal
@@ -7925,7 +7925,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           padding: isNarrowEditor ? '7px 8px' : '0 10px', background: T.bg,
           border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0',
           flexWrap: isNarrowEditor ? 'wrap' : 'nowrap',
-          overflowX: isNarrowEditor ? 'hidden' : 'auto', overflowY: 'hidden',
+          overflowX: isNarrowEditor ? 'visible' : 'auto',
+          overflowY: isNarrowEditor ? 'visible' : 'hidden',
           /* Altura fixa e não `padding` a decidi-la: com `height` (em vez de
              deixar o conteúdo esticar a caixa), uma barra de scroll
              horizontal fica DENTRO dos 38px, nunca a acrescentar-lhes.
@@ -7941,7 +7942,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               : selectedEl.kind === 'goalmarker' ? 'Baliza' : selectedEl.kind === 'stake' ? 'Estaca' : selectedEl.kind === 'coach' ? 'Treinador' : selectedEl.kind === 'text' ? 'Texto' : selectedEl.kind === 'cone' ? 'Cone' : 'Bola'}
           </span>
           {selectedEl.kind === 'text' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexWrap: 'nowrap', flexShrink: 0 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+              ...(isNarrowEditor
+                ? { flexWrap: 'wrap', width: '100%' }
+                : { marginLeft: 'auto', flexWrap: 'nowrap' }),
+            }}>
               {/* Área de texto e não campo de linha: o Enter passa a
                   baixar de linha em vez de não fazer nada. */}
               <textarea
@@ -7977,15 +7983,34 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                      ultrapassar a altura reservada — mesmo bug, causa
                      diferente. A caixa continua a aceitar várias linhas
                      (Enter), só se rola dentro dela, não cresce. */
-                  resize: 'none', overflowY: 'auto', overflowX: 'hidden', maxHeight: 22, lineHeight: 1.35,
+                  resize: 'none', overflowY: 'auto', overflowX: 'hidden', lineHeight: 1.35,
+                  /* No telemóvel: linha própria, largura toda e três linhas
+                     de altura. Com 22px de altura via-se uma linha e o
+                     resto do que se escrevia ficava escondido — escrever
+                     às cegas dentro de uma caixa de 2 cm. */
+                  ...(isNarrowEditor
+                    ? { width: '100%', flex: '1 1 100%', minHeight: 54, maxHeight: 72 }
+                    : { maxHeight: 22 }),
+                }}
+                onFocus={(e) => {
+                  /* O teclado do telemóvel ocupa metade do ecrã e tapa
+                     esta caixa, que vive por baixo do campo. Trazê-la para
+                     o meio do que sobra do ecrã é o que permite ver o que
+                     se está a escrever. O atraso deixa o teclado abrir
+                     primeiro — sem ele, mede-se o ecrã inteiro e a caixa
+                     volta a ficar por baixo. */
+                  const alvo = e.currentTarget;
+                  setTimeout(() => {
+                    try { alvo.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { /* browsers antigos */ }
+                  }, 320);
                 }}
               />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap' }}>
                 <span style={{ fontSize: 10.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>Tam.</span>
                 <button type="button" onClick={() => changeSelectedTextSize(-0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
                 <button type="button" onClick={() => changeSelectedTextSize(0.5)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap' }}>
                 <span style={{ fontSize: 10.5, color: T.mutedDim, whiteSpace: 'nowrap' }} title="Largura da caixa: menos = caixa mais estreita e mais linhas">Largura</span>
                 <button type="button" onClick={() => changeSelectedTextWrap(-4)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
                 <button type="button" onClick={() => changeSelectedTextWrap(4)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
@@ -8004,12 +8029,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               title="Arrasta o ponto dourado de cima para rodar livremente · arrasta o quadrado do canto para redimensionar"
               style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap', flexShrink: 0, ...(isNarrowEditor ? {} : { marginLeft: 'auto' }) }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap' }}>
                 <RotateCw size={12} color={T.mutedDim} />
                 <button type="button" onClick={() => changeSelectedRotation(-15)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>↺</button>
                 <button type="button" onClick={() => changeSelectedRotation(15)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>↻</button>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap' }}>
                 {[
                   { deg: 0, label: 'Vertical' },
                   { deg: 45, label: 'Diagonal' },
@@ -8032,7 +8057,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                   </button>
                 ))}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap' }}>
                 <Maximize2 size={12} color={T.mutedDim} />
                 <button type="button" onClick={() => changeSelectedScale(-0.2)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
                 <button type="button" onClick={() => changeSelectedScale(0.2)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
@@ -8897,13 +8922,17 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         </div>
       </div>
 
+      {/* No telemóvel os botões não cabiam numa linha e o "Apresentar"
+          ficava cortado à direita, meio fora do ecrã — justamente o que
+          se quer carregar. Passam a poder quebrar e a ocupar a largura
+          toda, o que também os torna mais fáceis de acertar com o dedo. */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
         {sequence.length === 0 ? (
           <div style={{ fontSize: 12, color: T.mutedDim }}>
             Sem sequência de movimento gravada. Abre em "Editar" e usa "Animar" enquanto colocas as setas — cada animação fica guardada e passa a fazer parte desta apresentação.
           </div>
         ) : <span />}
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
           {onEdit && <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>}
           {sequence.length > 0 && (
             <>
@@ -11440,7 +11469,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
           logo depois de ter descido para ver a distribuição. */}
       <SectionHeader
         title="Simulador"
-        subtitle="Quem apareceu, o que se vai fazer — e quem joga com quem."
+        subtitle="Gere posições e tempos."
       />
 
       {/* Treino e jogo repartem tempo de maneiras diferentes; a escolha
