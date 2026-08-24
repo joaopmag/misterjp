@@ -2115,6 +2115,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <GestaoEquipa
               equipa={equipaAtiva} session={session}
               onEquipasMudaram={onEquipasMudaram}
+              dados={{
+                season, players, exercises, ideias, sessions, monitoring, matches,
+                scouting, videos, apresentacoes, convocatorias, diario,
+                clinico, desenvolvimento, standings,
+              }}
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
@@ -2696,7 +2701,7 @@ function trocarDeEquipa(id) {
 
 /* Ecrã de quem ainda não tem equipa nenhuma: criar ou entrar com código.
    É o primeiro que um treinador novo vê depois de confirmar o email. */
-function EscolherEquipa({ onPronto, onSair, temEquipas }) {
+function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
   const [modo, setModo] = useState('criar'); // 'criar' | 'entrar'
   const [nome, setNome] = useState('');
   const [clube, setClube] = useState('');
@@ -2706,8 +2711,20 @@ function EscolherEquipa({ onPronto, onSair, temEquipas }) {
   const [aProcessar, setAProcessar] = useState(false);
   const [erro, setErro] = useState('');
 
-  const criar = async () => {
-    if (!nome.trim()) { setErro('Dá um nome à equipa.'); return; }
+  /* Uma equipa igual a outra que já tenho.
+
+     Criar "Sub-19 · SC Salgueiros" duas vezes é fácil e sai caro: os
+     dados dividem-se por duas equipas com o mesmo aspeto, e depois de
+     haver conteúdo nas duas é trabalhoso arrumar. Compara-se sem
+     maiúsculas nem espaços das pontas, porque "sub-19 " e "Sub-19" são a
+     mesma coisa para quem escreve.
+
+     Avisa, não bloqueia: um clube pode ter mesmo duas equipas do mesmo
+     escalão (A e B), e não me cabe decidir por quem sabe. */
+  const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  const jaExiste = (equipas || []).find(e => igual(e.nome, nome) && igual(e.clube, clube));
+
+  const criarMesmoAssim = async () => {
     setErro(''); setAProcessar(true);
     try {
       const { data, error } = await supabase.rpc('criar_equipa', {
@@ -2720,6 +2737,22 @@ function EscolherEquipa({ onPronto, onSair, temEquipas }) {
       setErro(e.message || 'Não foi possível criar a equipa.');
       setAProcessar(false);
     }
+  };
+
+  const criar = () => {
+    if (!nome.trim()) { setErro('Dá um nome à equipa.'); return; }
+    if (jaExiste) {
+      askConfirm({
+        title: 'Já tens uma equipa assim',
+        label: [jaExiste.clube, jaExiste.escalao || jaExiste.nome].filter(Boolean).join(' · '),
+        note: 'Ficas com duas equipas com o mesmo nome, e os dados divididos entre elas. Se for mesmo uma segunda equipa (por exemplo, a B), continua.',
+        confirmLabel: 'Criar mesmo assim',
+        destructive: false,
+        onConfirm: criarMesmoAssim,
+      });
+      return;
+    }
+    criarMesmoAssim();
   };
 
   const entrar = async () => {
@@ -2846,7 +2879,73 @@ function EscolherEquipa({ onPronto, onSair, temEquipas }) {
 /* Membros, código de convite, sair, e os poderes de quem criou a equipa.
    Não é um separador da navegação — chega-se aqui pelo seletor de
    equipa, que é onde a pergunta "quem mais tem acesso a isto?" nasce. */
-function GestaoEquipa({ equipa, session, onEquipasMudaram, onSair }) {
+/* ================================================================
+   DADOS PESSOAIS — EXPORTAR, APAGAR, RETER
+   ================================================================
+
+   A app guarda dados de saúde de menores: wellness, RPE e o boletim
+   clínico. No RGPD isso é categoria especial (artigo 9.º), e traz três
+   obrigações que não se resolvem com boa vontade — têm de existir como
+   funcionalidade:
+
+   · PORTABILIDADE — o clube tem de conseguir levar os seus dados embora,
+     num formato que outra pessoa consiga ler.
+   · ELIMINAÇÃO — apagar tem de apagar mesmo, e não esconder.
+   · RETENÇÃO — não se guardam dados para sempre "por via das dúvidas".
+
+   O que isto NÃO é: aconselhamento jurídico. É a parte técnica, que é a
+   que eu posso construir. O contrato de subcontratação com cada clube, a
+   base legal e a política de privacidade são de um advogado, e são
+   necessários antes do primeiro clube que não seja o teu. */
+
+/* Tudo o que a app guarda sobre uma equipa, num ficheiro. Serve para os
+   três casos ao mesmo tempo: pedido de portabilidade de um clube, cópia
+   de segurança por equipa, e prova do que existia numa data. */
+function exportarDadosDaEquipa({ equipa, season, players, exercises, ideias, sessions, monitoring, matches, scouting, videos, apresentacoes, convocatorias, diario, clinico, desenvolvimento, standings }) {
+  const dados = {
+    formato: 'misterjp-equipa',
+    versao: 1,
+    exportadoEm: new Date().toISOString(),
+    equipa: { id: equipa.id, nome: equipa.nome, clube: equipa.clube, escalao: equipa.escalao },
+    season, players, exercises, ideias, sessions, monitoring, matches,
+    scouting, videos, apresentacoes, convocatorias, diario,
+    clinico, desenvolvimento, standings,
+  };
+  const nome = `${(equipa.clube || 'equipa').replace(/[^\w-]+/g, '_')}_${(equipa.escalao || equipa.nome || '').replace(/[^\w-]+/g, '_')}_${todayStr()}.json`;
+  const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nome;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return nome;
+}
+
+/* Quantos dados pessoais é que esta equipa guarda, e desde quando.
+
+   Um número não obriga a nada, mas responde à pergunta que se faz uma vez
+   por ano e que de outra forma não se faz: "ainda faz sentido guardar
+   isto?". É a diferença entre ter uma política de retenção e ter uma
+   intenção de retenção. */
+function retratoDeDados({ players, monitoring, clinico, sessions, matches, desenvolvimento }) {
+  const datas = [
+    ...(sessions || []).map(s => s.date),
+    ...(matches || []).map(m => m.date),
+    ...(monitoring || []).map(m => m.date),
+  ].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d || '')).sort();
+
+  return {
+    jogadores: (players || []).length,
+    // Estes três são os que pesam no artigo 9.º: são dados de saúde.
+    wellness: (monitoring || []).length,
+    clinico: (clinico || []).length,
+    desenvolvimento: (desenvolvimento || []).length,
+    maisAntigo: datas[0] || null,
+    maisRecente: datas[datas.length - 1] || null,
+  };
+}
+
+function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
   const [membros, setMembros] = useState(null);
   const [erro, setErro] = useState('');
   const [copiado, setCopiado] = useState(false);
@@ -2929,6 +3028,51 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, onSair }) {
       carregar();
     },
   });
+
+  const souUnico = (membros || []).length <= 1;
+  const retrato = retratoDeDados(dados || {});
+
+  const exportar = () => {
+    const nome = exportarDadosDaEquipa({ equipa, ...(dados || {}) });
+    offerUndo(`Exportado: ${nome}`, null);
+  };
+
+  /* APAGAR A EQUIPA APAGA A EQUIPA.
+
+     O `on delete cascade` das colunas `team_id` leva atrás plantel,
+     sessões, jogos, presenças, wellness, boletim clínico e
+     desenvolvimento. Não há aqui um "arquivo" nem uma lixeira: é o que a
+     obrigação de eliminação exige, e é o que o clube tem direito a pedir.
+
+     Três travões, porque isto não tem anular nenhum:
+     · só o dono;
+     · só quando não há mais ninguém na equipa, senão apagava-se o
+       trabalho de outra pessoa sem ela saber;
+     · e obriga a escrever o nome do clube à mão. Um clique dado por
+       distração não chega para destruir uma época. */
+  const apagarEquipa = () => {
+    const alvo = (equipa.clube || equipa.nome || '').trim();
+    const escrito = typeof window !== 'undefined'
+      ? window.prompt(`Vais apagar esta equipa e TODOS os seus dados: ${retrato.jogadores} jogadores, ${retrato.wellness} registos de bem-estar, ${retrato.clinico} do boletim clínico.\n\nIsto não tem volta e não há cópia.\n\nPara confirmar, escreve: ${alvo}`)
+      : null;
+    if (escrito === null) return;
+    if (String(escrito).trim().toLowerCase() !== alvo.toLowerCase()) {
+      setErro('O nome não coincide. Nada foi apagado.');
+      return;
+    }
+    askConfirm({
+      title: 'Apagar definitivamente?',
+      label: alvo,
+      note: 'Última confirmação. Depois disto os dados não se recuperam.',
+      confirmLabel: 'Apagar tudo',
+      onConfirm: async () => {
+        const { error } = await supabase.from('teams').delete().eq('id', equipa.id);
+        if (error) { setErro(error.message); return; }
+        try { window.localStorage.removeItem(CHAVE_EQUIPA); } catch (e) { /* modo privado */ }
+        window.location.reload();
+      },
+    });
+  };
 
   const sairDaEquipa = () => askConfirm({
     title: 'Sair desta equipa?',
@@ -3026,6 +3170,53 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, onSair }) {
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <Btn variant="ghost" onClick={sairDaEquipa}><LogOut size={15} /> Sair desta equipa</Btn>
         </div>
+      </Panel>
+
+      <div style={{ height: 16 }} />
+
+      <Panel title="Dados pessoais">
+        {/* O RETRATO PRIMEIRO, AS AÇÕES DEPOIS.
+
+            Quem chega aqui costuma vir com uma pergunta concreta — um
+            clube que pede os dados, um atleta que saiu. Os números
+            respondem antes de se carregar em nada, e são também a única
+            forma de a pergunta "ainda faz sentido guardar isto?" chegar a
+            ser feita. */}
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 16 }}>
+          {[
+            ['Jogadores', retrato.jogadores],
+            ['Registos de bem-estar', retrato.wellness],
+            ['Ocorrências clínicas', retrato.clinico],
+            ['Desenvolvimento', retrato.desenvolvimento],
+          ].map(([r, v]) => (
+            <div key={r}>
+              <div style={{ ...mono, fontSize: 20, color: T.cream }}>{v}</div>
+              <div style={{ fontSize: 11.5, color: T.mutedDim }}>{r}</div>
+            </div>
+          ))}
+        </div>
+
+        {retrato.maisAntigo && (
+          <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 16, lineHeight: 1.6 }}>
+            O registo mais antigo é de {fmtDate(retrato.maisAntigo)}.
+            Os dados de bem-estar e do boletim clínico são dados de saúde de menores:
+            vale a pena decidir quantos anos os guardas depois de um atleta sair, e cumprir essa decisão.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Btn variant="ghost" onClick={exportar}><Download size={15} /> Exportar dados desta equipa</Btn>
+          {souDono && (
+            <Btn variant="danger" onClick={apagarEquipa} disabled={!souUnico} style={{ marginLeft: 'auto' }}>
+              <Trash2 size={15} /> Apagar equipa e todos os dados
+            </Btn>
+          )}
+        </div>
+        {souDono && !souUnico && (
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 10 }}>
+            Para apagar a equipa, remove primeiro os outros membros — apagá-la agora destruiria o trabalho deles sem aviso.
+          </div>
+        )}
       </Panel>
     </div>
   );
@@ -21492,6 +21683,7 @@ function PortaoEquipa({ session }) {
     return (
       <EscolherEquipa
         temEquipas={equipas.length > 0}
+        equipas={equipas}
         onPronto={(id) => { if (id) trocarDeEquipa(id); }}
         onSair={() => { if (equipas.length > 0) setACriarNova(false); else supabase.auth.signOut(); }}
       />
