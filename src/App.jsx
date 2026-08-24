@@ -21631,7 +21631,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId }) {
     <div>
       <SectionHeader
         title="Tarefas"
-        subtitle="O que a equipa técnica tem para fazer."
+        subtitle="Missões da equipa técnica."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova tarefa</Btn>}
       />
 
@@ -21644,7 +21644,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId }) {
         ]}
       />
 
-      <Panel title={porPessoa ? 'Quem está a dever o quê' : 'Por prazo'}>
+      <Panel title={porPessoa ? 'Quem está com a missão' : 'Quando se executa'}>
         {abertas.length === 0 ? (
           <EmptyState
             text="Nada por fazer. Cria a primeira tarefa da equipa técnica."
