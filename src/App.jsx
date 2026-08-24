@@ -1799,7 +1799,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
        outra vista do mesmo jogo, e vivem dentro de Jogos.
      · TV e Apresentações — duas bibliotecas de media com o
        mesmo comportamento. Juntaram-se numa. */
-  const euId = session && session.user && session.user.id;
   const NAV = [
     { id: 'geral', label: 'Visão Geral', icon: LayoutGrid },
     { id: 'plantel', label: 'Plantel', icon: Users },
@@ -1821,6 +1820,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 
   /* Qual das duas bibliotecas está aberta. Um #videos ou #apresentacoes
      antigo não só abre a Biblioteca como escolhe a sub-aba certa. */
+  const euId = session && session.user && session.user.id;
   const { membros, recarregar: recarregarMembros } = useMembros(teamId);
 
   const [biblioteca, setBiblioteca] = useState(() => {
@@ -2853,6 +2853,13 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
   const [escalao, setEscalao] = useState('');
   const [logo, setLogo] = useState('');
   const [codigo, setCodigo] = useState('');
+  /* O NOME PEDE-SE À ENTRADA.
+
+     Sem ele, quem entra por código fica na lista dos outros como
+     "Membro 975c82" — e a atribuir tarefas a um código ninguém percebe
+     quem é. Pedi-lo aqui é o único momento em que a pessoa está mesmo a
+     apresentar-se; pedir depois significa que quase ninguém o faz. */
+  const [meuNome, setMeuNome] = useState('');
   const [aProcessar, setAProcessar] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -2874,7 +2881,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
     try {
       const { data, error } = await supabase.rpc('criar_equipa', {
         p_nome: nome.trim(), p_clube: clube.trim(), p_escalao: escalao.trim(),
-        p_logo: logo.trim() || null,
+        p_logo: logo.trim() || null, p_meu_nome: meuNome.trim() || null,
       });
       if (error) throw error;
       onPronto(data);
@@ -2902,9 +2909,12 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
 
   const entrar = async () => {
     if (!codigo.trim()) { setErro('Escreve o código que te deram.'); return; }
+    if (!meuNome.trim()) { setErro('Escreve o teu nome, para a equipa saber quem és.'); return; }
     setErro(''); setAProcessar(true);
     try {
-      const { data, error } = await supabase.rpc('entrar_na_equipa', { p_codigo: codigo.trim() });
+      const { data, error } = await supabase.rpc('entrar_na_equipa', {
+        p_codigo: codigo.trim(), p_nome: meuNome.trim() || null,
+      });
       if (error) throw error;
       onPronto(data);
     } catch (e) {
@@ -2990,6 +3000,10 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
             <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
               Cola o endereço de uma imagem já publicada. Podes acrescentar ou trocar depois.
             </div>
+            <div style={{ height: 12 }} />
+            <Field label="O teu nome" bloco solto>
+              <Input value={meuNome} onChange={e => setMeuNome(e.target.value)} placeholder="Nome e apelido" />
+            </Field>
           </>
         )}
 
@@ -3004,6 +3018,18 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
               autoFocus
             />
           </Field>
+        )}
+
+        {modo === 'entrar' && (
+          <>
+            <div style={{ height: 12 }} />
+            <Field label="O teu nome" bloco solto>
+              <Input value={meuNome} onChange={e => setMeuNome(e.target.value)} placeholder="Nome e apelido" />
+            </Field>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
+              É como apareces para o resto da equipa técnica nas tarefas.
+            </div>
+          </>
         )}
 
         {erro && <div style={{ color: T.bad, fontSize: 12.5, marginTop: 14 }}>{erro}</div>}
@@ -21438,7 +21464,7 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
           <Input
             value={f.titulo}
             onChange={e => setF({ ...f, titulo: e.target.value })}
-            placeholder="Ex: levar coletes e bolas para o jogo"
+            placeholder="Ex: análise de adversário"
             autoFocus
           />
         </Field>
@@ -21459,7 +21485,7 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
         <Field label="Estado">
           <Select value={f.estado} onChange={e => setF({ ...f, estado: e.target.value })}>
             <option value="aberta">Por fazer</option>
-            <option value="curso">Começada</option>
+            <option value="curso">Iniciada</option>
             <option value="feita">Concluída</option>
           </Select>
         </Field>
@@ -21526,7 +21552,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, onAbrir, onAlternar }) {
             {nomeDoMembro(tarefa.responsavel, membros, euId)}
           </span>
           {tarefa.estado === 'curso' && (
-            <span style={{ fontSize: 11.5, color: T.warn }}>• começada</span>
+            <span style={{ fontSize: 11.5, color: T.warn }}>• iniciada</span>
           )}
           {tarefa.notas ? <FileText size={12} style={{ color: T.mutedDim }} /> : null}
           <span style={{
