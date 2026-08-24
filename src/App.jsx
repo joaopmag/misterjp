@@ -1772,7 +1772,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      · Convocatórias — nascem com o jogo (ver `syncMatchConvocatoria`, que
        já lhes mantém adversário, data e jornada sincronizados). São a
        outra vista do mesmo jogo, e vivem dentro de Jogos.
-     · FutchannelYouT e Apresentações — duas bibliotecas de media com o
+     · TV e Apresentações — duas bibliotecas de media com o
        mesmo comportamento. Juntaram-se numa. */
   const NAV = [
     { id: 'geral', label: 'Visão Geral', icon: LayoutGrid },
@@ -2139,16 +2139,16 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               value={biblioteca}
               onChange={setBiblioteca}
               tabs={[
-                { id: 'videos', label: 'FutchannelYouT', icon: Tv, count: (videos || []).length },
+                { id: 'videos', label: 'TV', icon: Tv, count: (videos || []).length },
                 { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
               ]}
             />
             <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
               <MediaLibrary
                 items={videos} setItems={setVideos}
-                title="FutchannelYouT" subtitle="Jornadas no canal de youtube."
+                title="TV" subtitle="Vídeos de jogos e treinos."
                 addLabel="Adicionar vídeo"
-                emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok de uma jornada, ou carrega um ficheiro, para começares."
+                emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
               />
             </div>
@@ -20013,7 +20013,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
 }
 
 /* ---------------------------------------------------------------
-   APRESENTAÇÕES — mesmo layout do FutchannelYouT (painel principal
+   APRESENTAÇÕES — mesmo layout da TV (painel principal
    à esquerda + lista de itens à direita), mas para ficheiros
    carregados diretamente (PDF, PowerPoint, vídeo) em vez de links
    do YouTube. PDFs e vídeos abrem e reproduzem dentro da própria
