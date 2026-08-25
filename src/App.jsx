@@ -1934,9 +1934,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
            mesmo com a altura mínima já reservada. Esconder a barra (o painel
            continua a arrastar-se na horizontal com o dedo) tira essa
            variável da equação. */
-        /* Roda enquanto o GIF é codificado. */
-        @keyframes mjp-girar { to { transform: rotate(360deg); } }
-        .mjp-rodar { animation: mjp-girar 0.9s linear infinite; }
         .mjp-painel-selecao { scrollbar-width: none; -ms-overflow-style: none; }
         .mjp-painel-selecao::-webkit-scrollbar { display: none; height: 0; }
         .navbtn.active { background: ${T.surfaceRaise}; border-left: 3px solid ${T.gold}; }
@@ -4071,110 +4068,6 @@ function integrarConvidado({ convidado, players, setPlayers, aoRetirar }) {
   });
 }
 
-/* PRANCHETA COMO IMAGEM PNG.
-
-   O que se partilhava era um ficheiro HTML. Abre bem num browser, mas
-   quem o recebe no WhatsApp ou no email vê um anexo que o telemóvel não
-   sabe abrir — daí as queixas de "não abre" e "não reproduz". Uma imagem
-   PNG abre em tudo, sem exceção: aparece logo na conversa, guarda-se na
-   galeria, imprime-se.
-
-   O caminho é SVG → canvas → PNG. Duas armadilhas, e as duas estão
-   tratadas aqui:
-
-   1. O canvas recusa-se a exportar se o SVG trouxer conteúdo de outro
-      domínio ("tainted canvas"). Por isso a prancheta não pode ter
-      imagens externas — e não tem: é tudo formas e texto.
-
-   2. O SVG desenhado no canvas não herda os tipos de letra da página.
-      Sem uma família declarada dentro do próprio SVG, os números dos
-      jogadores saíam na fonte que o sistema quisesse. Injeta-se uma
-      declaração antes de converter.
-
-   Escala 2× para a imagem aguentar zoom e impressão sem ficar
-   pixelizada. */
-async function prancheteParaPng(svgEl, { escala = 2, fundo = '#23401F' } = {}) {
-  if (!svgEl) throw new Error('Sem prancheta para exportar.');
-
-  const clone = svgEl.cloneNode(true);
-  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-
-  const estilo = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-  estilo.textContent = "text, tspan { font-family: 'Inter', system-ui, -apple-system, Arial, sans-serif; }";
-  clone.insertBefore(estilo, clone.firstChild);
-
-  /* Se o elemento estiver escondido (numa aba fechada, por exemplo) o
-     rectângulo vem a zero e a imagem sairia 1×1. Nesse caso usa-se o
-     viewBox, que é a medida verdadeira do desenho. */
-  const caixa = svgEl.getBoundingClientRect();
-  const vb = (svgEl.getAttribute('viewBox') || '0 0 105 68').split(/[\s,]+/).map(Number);
-  const larg = Math.max(1, Math.round(caixa.width || (vb[2] * 8)));
-  const alt = Math.max(1, Math.round(caixa.height || (vb[3] * 8)));
-  clone.setAttribute('width', String(larg));
-  clone.setAttribute('height', String(alt));
-
-  /* Blob e não `data:` URL.
-
-     A versão anterior usava `data:image/svg+xml,` + encodeURIComponent.
-     Falhava em silêncio por duas vias: o SVG serializado leva texto do
-     treinador, e um `&` ou um caracter acentuado mal escapado torna o XML
-     inválido — o `Image` recusa-o sem dizer porquê; e nos desenhos
-     grandes o URL passava o limite que alguns browsers aceitam.
-
-     Um Blob não tem limite prático nem problema de escape. */
-  const texto = new XMLSerializer().serializeToString(clone);
-  const blobSvg = new Blob([texto], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(blobSvg);
-
-  let img;
-  try {
-    img = await new Promise((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error('O browser não conseguiu desenhar a prancheta.'));
-      i.src = url;
-    });
-  } finally {
-    // Liberta-se sempre, mesmo em erro, para não deixar memória presa.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = larg * escala;
-  canvas.height = alt * escala;
-  const ctx = canvas.getContext('2d');
-  // Fundo opaco: um PNG transparente fica ilegível sobre o fundo branco
-  // do WhatsApp, com as linhas do campo a desaparecer.
-  ctx.fillStyle = fundo;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Não foi possível gerar a imagem.'))), 'image/png');
-  });
-}
-
-/* Partilha nativa quando existe (telemóvel), descarga quando não existe
-   (computador). O `canShare` com o ficheiro à frente é obrigatório: há
-   browsers com `share` mas sem partilha de ficheiros, e aí a chamada
-   falha em silêncio. */
-async function partilharPng(blob, nome) {
-  const ficheiro = new File([blob], nome, { type: 'image/png' });
-  try {
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [ficheiro] })) {
-      await navigator.share({ files: [ficheiro], title: nome });
-      return 'partilhado';
-    }
-  } catch (e) {
-    if (e && e.name === 'AbortError') return 'cancelado';
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = nome;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  return 'descarregado';
-}
 
 function ConvidadosEditor({ convidados, onChange, onIntegrar, label = 'Convidados à experiência' }) {
   const [nome, setNome] = useState('');
@@ -4998,10 +4891,6 @@ function PlayerModal({ player, onClose, onSave }) {
    EXERCÍCIOS
 ---------------------------------------------------------------- */
 function Exercicios({ exercises, setExercises, meta }) {
-  /* Qual está a ser convertido. Um GIF de seis passos demora alguns
-     segundos; sem sinal nenhum, quem carrega uma vez carrega três, e
-     ficam três conversões ao mesmo tempo. */
-  const [aPartilhar, setAPartilhar] = useState(null);
   const [modal, setModal] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [filter, setFilter] = useState('Todas');
@@ -5066,18 +4955,7 @@ function Exercicios({ exercises, setExercises, meta }) {
               </div>
               <div style={{ marginBottom: 10 }}>
                 <div style={{ display: 'flex', gap: 16 }}>
-                  <button onClick={async (e) => {
-                    e.stopPropagation();
-                    setAPartilhar(x.id);
-                    try {
-                      const r = await partilharExercicio(x);
-                      if (r === 'descarregado') offerUndo('Ficheiro guardado nas transferências.', () => {});
-                    } catch (err) {
-                      askConfirm({ title: 'Não foi possível criar o ficheiro', label: err.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
-                    } finally {
-                      setAPartilhar(null);
-                    }
-                  }} title="Partilhar — GIF se houver animação, imagem se não houver" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}>{aPartilhar === x.id ? <Loader2 size={14} className="mjp-rodar" /> : <Share2 size={14} />}</button>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
@@ -5174,10 +5052,6 @@ function Exercicios({ exercises, setExercises, meta }) {
    não é um exercício de treino, é um princípio desenhado no campo.
 ---------------------------------------------------------------- */
 function IdeiaJogo({ ideias, setIdeias, meta }) {
-  /* Qual está a ser convertido. Um GIF de seis passos demora alguns
-     segundos; sem sinal nenhum, quem carrega uma vez carrega três, e
-     ficam três conversões ao mesmo tempo. */
-  const [aPartilhar, setAPartilhar] = useState(null);
   const [modal, setModal] = useState(null); // null | 'new' | ideia (edição)
   const [viewing, setViewing] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
@@ -5246,18 +5120,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                 {/* Ícones por baixo da imagem, encostados à margem direita
                     do cartão. */}
                 <div style={{ display: 'flex', gap: 16, marginTop: 8, justifyContent: 'flex-end' }}>
-                  <button onClick={async (e) => {
-                    e.stopPropagation();
-                    setAPartilhar(x.id);
-                    try {
-                      const r = await partilharExercicio(x);
-                      if (r === 'descarregado') offerUndo('Ficheiro guardado nas transferências.', () => {});
-                    } catch (err) {
-                      askConfirm({ title: 'Não foi possível criar o ficheiro', label: err.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
-                    } finally {
-                      setAPartilhar(null);
-                    }
-                  }} title="Partilhar — GIF se houver animação, imagem se não houver" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}>{aPartilhar === x.id ? <Loader2 size={14} className="mjp-rodar" /> : <Share2 size={14} />}</button>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={14} /></button>
@@ -6593,135 +6456,6 @@ function diagramaParaImpressao(diagram) {
   };
 }
 
-/* PNG DE UM EXERCÍCIO SEM ELE ESTAR ABERTO.
-
-   O botão de partilha do cartão dava um ficheiro HTML — que abre num
-   browser mas não no WhatsApp, e era a origem das queixas de "não abre".
-   Para dar PNG era preciso ter a prancheta desenhada no ecrã, e no
-   cartão ela não está.
-
-   A saída é desenhá-la fora do ecrã: o `renderToStaticMarkup` produz o
-   SVG em texto — o mesmo que a app desenharia — e daí segue o caminho
-   normal para PNG. Não há nada a montar nem a esperar. */
-/* ================================================================
-   GIF DA ANIMAÇÃO
-   ================================================================
-
-   Porque GIF e não o ficheiro HTML que a app fazia antes: o HTML é
-   autónomo e correto, mas quem o recebe abre-o dentro do WhatsApp ou dos
-   Ficheiros, e esses não executam JavaScript — o campo aparece e o botão
-   de apresentar não faz nada ("não reproduz"). No Android nem chega a
-   abrir, porque um `.html` descarregado não tem aplicação associada.
-
-   O GIF é o único formato de movimento que o WhatsApp pré-visualiza e
-   põe a tocar sozinho, sem ninguém carregar em nada e sem app nenhuma.
-
-   Dois cuidados de tamanho, porque um GIF cresce depressa:
-
-   · A animação é gerada a 55 ms por fotograma (18/s), o que dá bem mais
-     de cem fotogramas numa jogada de seis passos. Acima de 70 salta-se
-     um sim outro não e dobra-se a espera — o movimento fica ligeiramente
-     menos fluido e o ficheiro cai para metade.
-
-   · 480 px de largura chegam para um telemóvel e são quatro vezes menos
-     dados do que os 960 do ecrã.
-
-   128 cores em vez de 256: o campo é quase todo cores chapadas, e a
-   diferença não se vê. */
-const GIF_LARGURA = 480;
-const GIF_MAX_FOTOGRAMAS = 70;
-
-async function svgParaImageData(markup, larg, alt, fundo) {
-  const doc = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${PITCH_VIEWBOX}" width="${larg}" height="${alt}">`
-    + `<style>text,tspan{font-family:'Inter',system-ui,Arial,sans-serif}</style>${markup}</svg>`;
-  const url = URL.createObjectURL(new Blob([doc], { type: 'image/svg+xml;charset=utf-8' }));
-  try {
-    const img = await new Promise((ok, falha) => {
-      const i = new Image();
-      i.onload = () => ok(i);
-      i.onerror = () => falha(new Error('O browser não conseguiu desenhar um dos fotogramas.'));
-      i.src = url;
-    });
-    const canvas = document.createElement('canvas');
-    canvas.width = larg; canvas.height = alt;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.fillStyle = fundo;
-    ctx.fillRect(0, 0, larg, alt);
-    ctx.drawImage(img, 0, 0, larg, alt);
-    return ctx.getImageData(0, 0, larg, alt).data;
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
-}
-
-async function gifDaAnimacao(ex, aoProgredir) {
-  const { GIFEncoder, quantize, applyPalette } = await import('gifenc');
-  const zonas = getSpaceZones(ex.diagram, ex.space);
-  const { frames, hasAnimation } = computeDiagramAnimationFrames(ex.diagram, zonas, ex.phase);
-  if (!hasAnimation || frames.length < 2) return null;
-
-  const salto = frames.length > GIF_MAX_FOTOGRAMAS ? 2 : 1;
-  const vb = PITCH_VIEWBOX.split(/[\s,]+/).map(Number);
-  const larg = GIF_LARGURA;
-  const alt = Math.round((vb[3] / vb[2]) * larg);
-
-  const enc = GIFEncoder();
-  let feitos = 0;
-  for (let i = 0; i < frames.length; i += salto) {
-    const f = frames[i];
-    const dados = await svgParaImageData(f.svg, larg, alt, '#1E3A24');
-    const paleta = quantize(dados, 128);
-    const indices = applyPalette(dados, paleta);
-    /* O GIF conta a espera em centésimos de segundo, e muitos leitores
-       tratam 0 e 1 como "o mais rápido possível" — o que sai é um
-       borrão. Mínimo de 2. */
-    const espera = Math.max(2, Math.round(((f.holdMs || 55) * salto) / 10));
-    enc.writeFrame(indices, larg, alt, { palette: paleta, delay: espera });
-    feitos += 1;
-    if (aoProgredir) aoProgredir(feitos, Math.ceil(frames.length / salto));
-    // Devolve o controlo ao browser: sem isto o ecrã fica preso durante
-    // toda a codificação e o telemóvel parece bloqueado.
-    await new Promise(r => setTimeout(r, 0));
-  }
-  enc.finish();
-  return new Blob([enc.bytes()], { type: 'image/gif' });
-}
-
-/* Partilha o exercício: GIF quando há animação gravada, imagem quando
-   não há. Quem recebe não precisa de saber a diferença — nos dois casos
-   abre sozinho na conversa. */
-async function partilharExercicio(ex, aoProgredir) {
-  const base = String(ex.name || 'exercicio').replace(/[^\w-]+/g, '_');
-  const gif = await gifDaAnimacao(ex, aoProgredir);
-  if (gif) return partilharPng(gif, `${base}.gif`);
-  const el = svgDoExercicio(ex);
-  const blob = await prancheteParaPng(el, { escala: 1, fundo: '#1E3A24' });
-  return partilharPng(blob, `${base}.png`);
-}
-
-function svgDoExercicio(ex) {
-  const d = diagramaParaImpressao(ex.diagram);
-  const zonas = getSpaceZones(ex.diagram, ex.space);
-  const interior = ReactDOMServer.renderToStaticMarkup(
-    <>
-      <PitchMarkings />
-      <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
-      <DiagramElements
-        elements={d.elements}
-        arrows={d.arrows}
-        interactive={false}
-        iconScale={iconScaleForPhase(ex.phase)}
-      />
-    </>
-  );
-  const vb = PITCH_VIEWBOX.split(/[\s,]+/).map(Number);
-  const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  el.setAttribute('viewBox', PITCH_VIEWBOX);
-  el.setAttribute('width', String(vb[2] * 9));
-  el.setAttribute('height', String(vb[3] * 9));
-  el.innerHTML = interior;
-  return el;
-}
 
 
 function stepElements(step, diagram) {
