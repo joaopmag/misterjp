@@ -6610,11 +6610,23 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
   button { background:#B5393F; color:#fff; border:none; border-radius:8px; padding:9px 16px; font-size:13.5px; cursor:pointer; }
   button:disabled { opacity:.55; cursor:default; }
   .hint { font-size:11.5px; color:#8f8570; margin-top:6px; }
+  /* CAMPO E EQUIPA NO FICHEIRO PARTILHADO.
+
+     Antes a equipa saía como duas frases com vírgulas. Quem abre quer ver
+     o onze onde ele joga — é para isso que o campo existe no ecrã, e não
+     havia razão para o ficheiro dizer menos. */
+  .campo { width:100%; max-width:560px; margin:10px 0 18px; display:block; background:#1e3a24; border:1px solid #33513c; border-radius:10px; }
+  .equipa { display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-bottom:18px; }
+  .equipa h3 { font-size:13px; margin:0 0 6px; padding-bottom:4px; border-bottom:1px solid #3d4f42; color:#F0E7D6; }
+  .equipa ol { margin:0; padding:0; list-style:none; }
+  .equipa li { display:flex; gap:8px; font-size:13px; line-height:1.9; border-bottom:1px solid #24382b; }
+  .equipa li .n { width:22px; text-align:right; color:#8f8570; flex-shrink:0; }
+  @media (max-width:540px) { .equipa { grid-template-columns:1fr; gap:14px; } }
   table { border-collapse:collapse; margin-top:8px; font-size:13px; }
   td, th { padding:4px 10px 4px 0; text-align:left; }
   footer { margin-top:30px; font-size:11px; color:#6d6553; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
   footer .brand { display:inline-flex; align-items:baseline; gap:3px; font-weight:600; letter-spacing:.02em; color:#B9AF9C; padding:4px 10px; border:1px solid #3d4f42; border-radius:999px; background:rgba(255,255,255,0.03); }
-  footer .brand sup { font-size:9px; font-weight:600; color:#8f8570; }
+  footer .brand sup { font-size:7px; font-weight:600; color:#8f8570; letter-spacing:.06em; }
   @media (min-width:700px) {
     body { padding:40px; }
     h1 { font-size:26px; }
@@ -12340,8 +12352,8 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       ? equipaDoAmigavel({ session: s, jogo: jogoDaSessao(s), players })
       : null;
     const jogoHtml = equipa
-      ? `<h2>Equipa</h2><p class="desc"><strong>Titulares:</strong> ${escapeHtmlText(equipa.titulares.map(l => l.nome).join(', ') || '—')}</p>`
-        + `<p class="desc"><strong>Suplentes:</strong> ${escapeHtmlText(equipa.suplentes.map(l => l.nome).join(', ') || '—')}</p>`
+      ? `<h2>Formação</h2>${campoDaEquipaHtml(equipa)}`
+        + `<h2>Equipa</h2>${equipaEmColunasHtml(equipa.titulares, equipa.suplentes)}`
         + `<h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(ideiasDaSessao(s) || '').trim() || '—')}</p>`
       : '';
     /* Num amigável a lista com toda a gente não entra: são os mesmos nomes
@@ -13160,6 +13172,51 @@ function MarcacoesCampoPrint({ traco = '#999', baliza = '#666' }) {
    travessões — mesmo com a equipa toda lançada. Agora o jogo é a fonte
    por omissão e o Simulador só passa à frente quando lá está mesmo
    alguém: é a informação mais recente e mais deliberada das duas. */
+/* O CAMPO E A EQUIPA, PARA O FICHEIRO PARTILHADO.
+
+   O ficheiro dizia a equipa em duas frases com vírgulas. Quem o abre quer
+   ver o onze onde ele joga — é para isso que o campo existe no ecrã, e
+   não havia razão para o ficheiro dizer menos.
+
+   Tudo desenhado em SVG e escrito no ficheiro: sem imagens externas, sem
+   JavaScript, sem depender de nada. Abre igual em qualquer lado. */
+function campoDaEquipaHtml({ lugares, formacao }) {
+  const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
+  const vb = VIEWBOX_CAMPO_PRINT.split(/[\s,]+/).map(Number);
+  const marcacoes = ReactDOMServer.renderToStaticMarkup(
+    <MarcacoesCampoPrint traco="#ffffff40" baliza="#ffffff66" />
+  ).replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+
+  const nomes = lugares.map((l, i) => {
+    const [fx, fy] = layout[i] || [0.5, 0.5];
+    const x = fx * 105;
+    const y = fy * 68;
+    const lugar = escapeHtmlText(l.lugar || '');
+    const nome = escapeHtmlText(l.nome || '—');
+    return `<text x="${x.toFixed(2)}" y="${(y - 1.4).toFixed(2)}" text-anchor="middle" font-size="2.1" fill="#ffffff88">${lugar}</text>`
+      + `<text x="${x.toFixed(2)}" y="${(y + 1.6).toFixed(2)}" text-anchor="middle" font-size="2.7" font-weight="600" fill="${l.nome ? '#F0E7D6' : '#ffffff55'}">${nome}</text>`;
+  }).join('');
+
+  return `<svg class="campo" viewBox="${VIEWBOX_CAMPO_PRINT}" preserveAspectRatio="xMidYMid meet"`
+    + ` style="aspect-ratio:${vb[2]}/${vb[3]}" xmlns="http://www.w3.org/2000/svg">${marcacoes}${nomes}</svg>`;
+}
+
+/* As duas colunas, no mesmo desenho da folha impressa. */
+function equipaEmColunasHtml(titulares, suplentes) {
+  const coluna = (titulo, lista) => {
+    const itens = lista.length
+      ? lista.map(l => {
+        const m = String(l.nome || '').match(/^(\d+)\s+(.*)$/);
+        const num = m ? m[1] : '';
+        const nome = m ? m[2] : l.nome;
+        return `<li><span class="n">${escapeHtmlText(num)}</span><span>${escapeHtmlText(nome)}</span></li>`;
+      }).join('')
+      : '<li><span>—</span></li>';
+    return `<div><h3>${titulo} (${lista.length})</h3><ol>${itens}</ol></div>`;
+  };
+  return `<div class="equipa">${coluna('Titulares', titulares)}${coluna('Suplentes', suplentes)}</div>`;
+}
+
 function equipaDoAmigavel({ session, jogo, players }) {
   const dados = session && session.equipasSimulador && session.equipasSimulador.onzeAmigavel;
   const doSimulador = !!(dados && dados.onze && dados.onze.some(l => l.jogador));
@@ -15030,14 +15087,15 @@ function buildMatchShareHtml({ match, players, season }) {
   const eventos = eventosDoJogo(match, players);
   const resumo = resumoDoJogo(eventos);
   const destaques = linhasDestaquesJogo(eventos, resumo, players);
-  const nomeNum = (x) => `${x.player.number ? `${x.player.number} ` : ''}${x.player.name}`;
-  const lista = (arr) => (arr.length ? escapeHtmlText(arr.map(nomeNum).join(', ')) : '—');
+  /* A MESMA fonte do ecrã e da folha impressa: campo com o onze nos
+     lugares e as duas colunas por baixo. Antes eram duas frases com
+     vírgulas, e o ficheiro dizia menos do que qualquer das outras vistas
+     do mesmo jogo. */
+  const equipa = equipaDoAmigavel({ session: null, jogo: match, players });
 
   const extraHtml = [
-    `<h2>Formação — ${escapeHtmlText(match.formacao || '4-3-3')}</h2>`,
-    `<h2>Equipa</h2>`,
-    `<p class="desc"><strong>Titulares:</strong> ${lista(eventos.titulares)}</p>`,
-    `<p class="desc"><strong>Suplentes:</strong> ${lista(eventos.suplentes)}</p>`,
+    `<h2>Formação</h2>${campoDaEquipaHtml(equipa)}`,
+    `<h2>Equipa</h2>${equipaEmColunasHtml(equipa.titulares, equipa.suplentes)}`,
     `<h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(match.ideias || '').trim() || '—')}</p>`,
     `<h2>Destaques</h2>${destaques.length
       ? destaques.map(l => `<p class="desc">${escapeHtmlText(l)}</p>`).join('')
