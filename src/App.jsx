@@ -5059,7 +5059,15 @@ function Exercicios({ exercises, setExercises, meta }) {
               </div>
               <div style={{ marginBottom: 10 }}>
                 <div style={{ display: 'flex', gap: 16 }}>
-                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
+                  <button onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      const r = await partilharExercicioPng(x);
+                      if (r === 'descarregado') offerUndo('Imagem guardada nas transferências.', () => {});
+                    } catch (err) {
+                      askConfirm({ title: 'Não foi possível criar a imagem', label: err.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
+                    }
+                  }} title="Partilhar como imagem PNG" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
@@ -5224,7 +5232,15 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                 {/* Ícones por baixo da imagem, encostados à margem direita
                     do cartão. */}
                 <div style={{ display: 'flex', gap: 16, marginTop: 8, justifyContent: 'flex-end' }}>
-                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
+                  <button onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      const r = await partilharExercicioPng(x);
+                      if (r === 'descarregado') offerUndo('Imagem guardada nas transferências.', () => {});
+                    } catch (err) {
+                      askConfirm({ title: 'Não foi possível criar a imagem', label: err.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
+                    }
+                  }} title="Partilhar como imagem PNG" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={14} /></button>
@@ -6549,10 +6565,56 @@ const CAMPOS_DE_POSE = ['x', 'y', 'rotation', 'w', 'h'];
 function diagramaParaImpressao(diagram) {
   const seq = (diagram && diagram.sequence) || [];
   if (!seq.length) return { elements: (diagram && diagram.elements) || [], arrows: (diagram && diagram.arrows) || [] };
+  /* As setas do passo vêm de `stepStaticArrows`, a MESMA função que a
+     pré-visualização usa para o primeiro fotograma. Eu tinha lido
+     `seq[0].arrows`, que é outra coisa — as setas a ANIMAR nesse passo,
+     e não as que ficam desenhadas. Daí a folha sair com as posições
+     certas e sem setas nenhumas. */
   return {
     elements: stepElements(seq[0], diagram),
-    arrows: seq[0].arrows || [],
+    arrows: stepStaticArrows(seq[0], diagram),
   };
+}
+
+/* PNG DE UM EXERCÍCIO SEM ELE ESTAR ABERTO.
+
+   O botão de partilha do cartão dava um ficheiro HTML — que abre num
+   browser mas não no WhatsApp, e era a origem das queixas de "não abre".
+   Para dar PNG era preciso ter a prancheta desenhada no ecrã, e no
+   cartão ela não está.
+
+   A saída é desenhá-la fora do ecrã: o `renderToStaticMarkup` produz o
+   SVG em texto — o mesmo que a app desenharia — e daí segue o caminho
+   normal para PNG. Não há nada a montar nem a esperar. */
+function svgDoExercicio(ex) {
+  const d = diagramaParaImpressao(ex.diagram);
+  const zonas = getSpaceZones(ex.diagram, ex.space);
+  const interior = ReactDOMServer.renderToStaticMarkup(
+    <>
+      <PitchMarkings />
+      <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
+      <DiagramElements
+        elements={d.elements}
+        arrows={d.arrows}
+        interactive={false}
+        iconScale={iconScaleForPhase(ex.phase)}
+      />
+    </>
+  );
+  const vb = PITCH_VIEWBOX.split(/[\s,]+/).map(Number);
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  el.setAttribute('viewBox', PITCH_VIEWBOX);
+  el.setAttribute('width', String(vb[2] * 9));
+  el.setAttribute('height', String(vb[3] * 9));
+  el.innerHTML = interior;
+  return el;
+}
+
+async function partilharExercicioPng(ex) {
+  const el = svgDoExercicio(ex);
+  const blob = await prancheteParaPng(el, { escala: 1, fundo: '#1E3A24' });
+  const nome = `${String(ex.name || 'exercicio').replace(/[^\w-]+/g, '_')}.png`;
+  return partilharPng(blob, nome);
 }
 
 function stepElements(step, diagram) {
@@ -8000,25 +8062,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           >
             <Printer size={14} color={TEXT_ON_ACCENT} />
           </button>
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                const blob = await prancheteParaPng(svgRef.current);
-                const r = await partilharPng(blob, `prancheta_${todayStr()}.png`);
-                if (r === 'descarregado') offerUndo('Imagem guardada nas transferências.', null);
-              } catch (e) {
-                askConfirm({ title: 'Não foi possível criar a imagem', label: e.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
-              }
-            }}
-            title="Partilhar como imagem PNG — abre em qualquer telemóvel"
-            style={{
-              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: `1px solid ${T.line}`, color: T.muted, cursor: 'pointer',
-            }}
-          >
-            <ImageIcon size={14} />
-          </button>
+
         </div>
         {/* "Limpar tudo" volta para junto do imprimir: é uma ação sobre o
             DESENHO, não sobre a animação, e é aí que se procura. */}
@@ -8830,8 +8874,6 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const [paused, setPaused] = useState(false);
   const passoAtualRef = useRef(0);
   const decorridoRef = useRef(0);
-  const svgPreviewRef = useRef(null);
-  const [aExportar, setAExportar] = useState(false);
   const attachmentBlobUrl = useBlobUrl(exercise.attachment && exercise.attachment.type !== 'image' ? exercise.attachment.dataUrl : null);
   const animRef = React.useRef(null);
   const timeoutRef = React.useRef(null);
@@ -9046,38 +9088,6 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setFrameArrows([...stepStaticArrows(step, diagram), ...(step.arrows || [])]);
   };
 
-  /* UM PNG POR PASSO.
-
-     Um GIF parecia a resposta óbvia e não é: precisa de uma biblioteca de
-     codificação no browser, sai pesado e granulado, e o WhatsApp
-     converte-o em vídeo — muitas vezes mal. Uma sequência de imagens
-     comunica melhor, porque é o treinador a controlar o ritmo enquanto
-     explica, em vez de um ciclo a repetir-se.
-
-     A mecânica: percorre-se a sequência, deixa-se o React desenhar cada
-     passo, e captura-se. O `await` de um frame é o que garante que se
-     fotografa o passo certo — sem ele saíam N cópias do último. */
-  const exportarPassosPng = async () => {
-    if (!sequence.length || aExportar) return;
-    setAExportar(true);
-    try {
-      const paragem = passoAtualRef.current;
-      for (let i = 0; i < sequence.length; i++) {
-        irParaPasso(i);
-        // Dois frames: um para o React aplicar o estado, outro para o
-        // browser pintar. Com um só, a imagem saía do passo anterior.
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const blob = await prancheteParaPng(svgPreviewRef.current, { fundo: '#1E3A24' });
-        const nome = `${(exercise.name || 'prancheta').replace(/[^\w-]+/g, '_')}_${i + 1}de${sequence.length}.png`;
-        await partilharPng(blob, nome);
-      }
-      irParaPasso(paragem);
-    } catch (e) {
-      askConfirm({ title: 'Não foi possível criar as imagens', label: e.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
-    } finally {
-      setAExportar(false);
-    }
-  };
 
   const passoSeguinte = () => {
     const proximo = passoAtualRef.current + 1;
@@ -9146,7 +9156,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           ? { position: 'fixed', inset: 0, zIndex: 100, background: '#0e1a12', display: 'flex', flexDirection: 'column', padding: 12 }
           : { position: 'relative', ...PITCH_FIT }
       }>
-        <svg ref={svgPreviewRef} viewBox={PITCH_VIEWBOX} preserveAspectRatio="xMidYMid meet" style={
+        <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio="xMidYMid meet" style={
           isFull
             ? { flex: 1, width: '100%', minHeight: 0, background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
             : { position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
@@ -9256,25 +9266,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         ) : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
           {onEdit && <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>}
-          <Btn
-            variant="ghost"
-            onClick={async () => {
-              if (sequence.length > 0) { exportarPassosPng(); return; }
-              try {
-                const blob = await prancheteParaPng(svgPreviewRef.current, { fundo: '#1E3A24' });
-                const r = await partilharPng(blob, `${(exercise.name || 'prancheta').replace(/[^\w-]+/g, '_')}.png`);
-                if (r === 'descarregado') offerUndo('Imagem guardada nas transferências.', null);
-              } catch (e) {
-                askConfirm({ title: 'Não foi possível criar a imagem', label: e.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
-              }
-            }}
-            disabled={aExportar}
-            title={sequence.length > 0
-              ? 'Uma imagem por passo — abre em qualquer telemóvel'
-              : 'Imagem PNG — abre em qualquer telemóvel'}
-          >
-            <ImageIcon size={14} /> {aExportar ? 'A criar…' : (sequence.length > 0 ? `PNG (${sequence.length})` : 'PNG')}
-          </Btn>
+
           {sequence.length > 0 && (
             <>
               {/* Pausa só faz sentido a meio; Parar só faz sentido se
