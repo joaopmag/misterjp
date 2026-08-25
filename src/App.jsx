@@ -8018,7 +8018,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             </div>
           )}
           {(selectedEl.kind === 'player' || selectedEl.kind === 'keeper') && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              ...(isNarrowEditor ? { flexShrink: 1, minWidth: 0 } : { marginLeft: 'auto', flexShrink: 0 }),
+            }}>
               <button type="button" onClick={() => changeSelectedNumber(-1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>−</button>
               <span style={{ ...mono, color: T.warn, width: 30, textAlign: 'center', flexShrink: 0 }}>{elementLabel(selectedEl.number, selectedEl.kind === 'keeper')}</span>
               <button type="button" onClick={() => changeSelectedNumber(1)} style={{ width: 22, height: 22, borderRadius: 5, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, cursor: 'pointer', flexShrink: 0 }}>+</button>
@@ -8027,7 +8030,20 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {selectedEl.kind === 'goalmarker' && (
             <div
               title="Arrasta o ponto dourado de cima para rodar livremente · arrasta o quadrado do canto para redimensionar"
-              style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap', flexShrink: 0, ...(isNarrowEditor ? {} : { marginLeft: 'auto' }) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                /* A CAIXA TEM DE PODER ENCOLHER PARA OS FILHOS QUEBRAREM.
+
+                   Estava com `flexShrink: 0`: quebrava por dentro, mas ela
+                   própria recusava-se a ficar mais estreita do que o
+                   conteúdo, e por isso saía para fora do ecrã com o zoom
+                   pendurado à direita. Dar-lhe a largura toda e deixá-la
+                   encolher é o que faz os grupos passarem para a linha de
+                   baixo em vez de transbordarem. */
+                ...(isNarrowEditor
+                  ? { flexWrap: 'wrap', width: '100%', flexShrink: 1, minWidth: 0 }
+                  : { flexWrap: 'nowrap', flexShrink: 0, marginLeft: 'auto' }),
+              }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap' }}>
                 <RotateCw size={12} color={T.mutedDim} />
@@ -8959,13 +8975,11 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
               ) : (
                 <Btn onClick={restart}><Play size={14} /> {finished ? 'Repetir apresentação' : 'Apresentar'}</Btn>
               )}
-              {/* Em que ponto vamos: sem isto, andar passo a passo é andar
-                  às cegas. */}
-              {(playing || paused) && (
-                <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, alignSelf: 'center' }}>
-                  animar {Math.min(passoAtualRef.current + 1, sequence.length)} de {sequence.length}
-                </span>
-              )}
+              {/* A contagem "animar 2 de 6" saiu: num ecrã estreito era mais
+                  um item a empurrar os botões para fora, e quem está a
+                  apresentar a uma equipa olha para o campo, não para o
+                  número do passo. As setas Anterior/Seguinte já dizem que
+                  se anda passo a passo. */}
             </>
           )}
         </div>
