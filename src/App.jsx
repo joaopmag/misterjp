@@ -4099,35 +4099,80 @@ function integrarConvidado({ convidado, players, setPlayers, aoRetirar }) {
    O MD ENTRA NO MEIO. Um médio direito num plantel de formação é um
    médio; ter-lhe um lugar próprio deixava-o sozinho num canto do campo
    enquanto o miolo ficava vazio. */
-const LUGARES_PLANTEL = [
-  { id: 'GR', rotulo: 'GR', ponto: [0.07, 0.50] },
-  { id: 'DD', rotulo: 'DD', ponto: [0.20, 0.84] },
-  { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.62] },
-  { id: 'DC2', rotulo: 'DC', ponto: [0.19, 0.38] },
-  { id: 'DE', rotulo: 'DE', ponto: [0.20, 0.16] },
-  { id: 'MC1', rotulo: 'MC', ponto: [0.42, 0.72] },
-  { id: 'MC2', rotulo: 'MC', ponto: [0.42, 0.50] },
-  { id: 'MC3', rotulo: 'MC', ponto: [0.42, 0.28] },
-  { id: 'MOC', rotulo: 'MOC', ponto: [0.57, 0.50] },
-  { id: 'ED', rotulo: 'ED', ponto: [0.70, 0.84] },
-  { id: 'EE', rotulo: 'EE', ponto: [0.70, 0.16] },
-  { id: 'PL', rotulo: 'PL', ponto: [0.84, 0.50] },
-  { id: 'fora', rotulo: 'Sem lugar', ponto: [0.50, 0.965] },
-];
-
-/* Para onde vai cada posição quando ninguém arrastou nada. */
-const LUGARES_DA_POSICAO = {
-  GR: ['GR'],
-  DD: ['DD'],
-  DE: ['DE'],
-  DC: ['DC1', 'DC2'],
-  MD: ['MC1', 'MC2', 'MC3'],
-  MC: ['MC2', 'MC1', 'MC3'],
-  MOC: ['MOC'],
-  ED: ['ED'],
-  EE: ['EE'],
-  PL: ['PL'],
+const P = {
+  GR: [0.07, 0.50],
+  DD: [0.20, 0.84], DC1: [0.19, 0.66], DC2: [0.19, 0.50], DC3: [0.19, 0.34], DE: [0.20, 0.16],
+  MD: [0.40, 0.82], MC1: [0.42, 0.68], MC2: [0.42, 0.50], MC3: [0.42, 0.32], ME: [0.40, 0.18],
+  MOC1: [0.58, 0.66], MOC2: [0.58, 0.50], MOC3: [0.58, 0.34],
+  ED: [0.70, 0.84], EE: [0.70, 0.16], PL1: [0.84, 0.60], PL2: [0.84, 0.40], PL: [0.84, 0.50],
+  fora: [0.50, 0.965],
 };
+
+/* AS FORMAÇÕES DEFINEM OS LUGARES.
+
+   Um 4-3-3 tem três médios e um ponta de lança; um 3-5-2 tem três
+   centrais e dois avançados. Ter lugares fixos servia uma formação só, e
+   obrigava a arrumar tudo à mão nas outras.
+
+   O `de` diz que posições caem naturalmente em cada lugar, por ordem de
+   preferência — é o que faz um MD ir para o meio num 4-3-3 (que não tem
+   corredor de médio) e ter lugar próprio num 4-4-2. */
+const TATICAS = {
+  '4-3-3': [
+    { id: 'GR', rotulo: 'GR', ponto: P.GR, de: ['GR'] },
+    { id: 'DD', rotulo: 'DD', ponto: P.DD, de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.62], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.19, 0.38], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: P.DE, de: ['DE'] },
+    { id: 'MC1', rotulo: 'MC', ponto: P.MC1, de: ['MC', 'MD'] },
+    { id: 'MC2', rotulo: 'MC', ponto: P.MC2, de: ['MC', 'MD'] },
+    { id: 'MC3', rotulo: 'MC', ponto: P.MC3, de: ['MC', 'MOC'] },
+    { id: 'ED', rotulo: 'ED', ponto: P.ED, de: ['ED'] },
+    { id: 'EE', rotulo: 'EE', ponto: P.EE, de: ['EE'] },
+    { id: 'PL', rotulo: 'PL', ponto: P.PL, de: ['PL'] },
+  ],
+  '4-4-2': [
+    { id: 'GR', rotulo: 'GR', ponto: P.GR, de: ['GR'] },
+    { id: 'DD', rotulo: 'DD', ponto: P.DD, de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.62], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.19, 0.38], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: P.DE, de: ['DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: P.MD, de: ['MD', 'ED'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.42, 0.62], de: ['MC', 'MOC'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.42, 0.38], de: ['MC'] },
+    { id: 'ME', rotulo: 'ME', ponto: P.ME, de: ['EE'] },
+    { id: 'PL1', rotulo: 'PL', ponto: P.PL1, de: ['PL'] },
+    { id: 'PL2', rotulo: 'PL', ponto: P.PL2, de: ['PL', 'MOC'] },
+  ],
+  '4-2-3-1': [
+    { id: 'GR', rotulo: 'GR', ponto: P.GR, de: ['GR'] },
+    { id: 'DD', rotulo: 'DD', ponto: P.DD, de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.62], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.19, 0.38], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: P.DE, de: ['DE'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.38, 0.62], de: ['MC', 'MD'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.38, 0.38], de: ['MC'] },
+    { id: 'MOC1', rotulo: 'ED', ponto: P.MOC1, de: ['ED'] },
+    { id: 'MOC2', rotulo: 'MOC', ponto: P.MOC2, de: ['MOC'] },
+    { id: 'MOC3', rotulo: 'EE', ponto: P.MOC3, de: ['EE'] },
+    { id: 'PL', rotulo: 'PL', ponto: P.PL, de: ['PL'] },
+  ],
+  '3-5-2': [
+    { id: 'GR', rotulo: 'GR', ponto: P.GR, de: ['GR'] },
+    { id: 'DC1', rotulo: 'DC', ponto: P.DC1, de: ['DC', 'DD'] },
+    { id: 'DC2', rotulo: 'DC', ponto: P.DC2, de: ['DC'] },
+    { id: 'DC3', rotulo: 'DC', ponto: P.DC3, de: ['DC', 'DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: P.MD, de: ['DD', 'ED', 'MD'] },
+    { id: 'MC1', rotulo: 'MC', ponto: P.MC1, de: ['MC', 'MD'] },
+    { id: 'MC2', rotulo: 'MC', ponto: P.MC2, de: ['MC'] },
+    { id: 'MC3', rotulo: 'MC', ponto: P.MC3, de: ['MC', 'MOC'] },
+    { id: 'ME', rotulo: 'ME', ponto: P.ME, de: ['DE', 'EE'] },
+    { id: 'PL1', rotulo: 'PL', ponto: P.PL1, de: ['PL'] },
+    { id: 'PL2', rotulo: 'PL', ponto: P.PL2, de: ['PL', 'MOC'] },
+  ],
+};
+const TATICA_OMISSAO = '4-3-3';
+const LUGAR_FORA = { id: 'fora', rotulo: 'Sem lugar', ponto: P.fora, de: [] };
 
 /* Apelido ou nome próprio — o que couber melhor num lugar pequeno.
    Com nome e apelido a lista fica com o dobro da largura e os lugares
@@ -4145,8 +4190,10 @@ function nomeCurtoNaPrancheta(nome) {
    presenças e das posições reais, por isso quem faltar desaparece
    sozinho e quem chegar aparece no sítio certo sem ninguém arrumar nada.
    Guardar o quadro inteiro faria a folha mentir na primeira falta. */
-function distribuirPlantel({ players, attendance, convidados, overrides }) {
+function distribuirPlantel({ players, attendance, convidados, overrides, tatica }) {
   const ov = overrides || {};
+  const lugares = [...(TATICAS[tatica] || TATICAS[TATICA_OMISSAO]), LUGAR_FORA];
+
   const gente = [
     ...(players || [])
       .filter(p => (attendance || []).includes(p.id))
@@ -4156,26 +4203,26 @@ function distribuirPlantel({ players, attendance, convidados, overrides }) {
     })),
   ];
 
-  const porLugar = new Map(LUGARES_PLANTEL.map(l => [l.id, []]));
+  const porLugar = new Map(lugares.map(l => [l.id, []]));
   const contador = {};
 
   gente.forEach(j => {
     let lugar = ov[j.chave];
     if (!lugar || !porLugar.has(lugar)) {
-      const opcoes = LUGARES_DA_POSICAO[j.pos];
-      if (!opcoes) lugar = 'fora';
+      /* Os lugares que aceitam esta posição, por ordem de preferência do
+         lugar. Reparte-se entre eles em vez de os empilhar no primeiro. */
+      const opcoes = lugares.filter(l => l.de.includes(j.pos));
+      if (!opcoes.length) lugar = 'fora';
       else {
-        // Reparte pelos lugares da zona por ordem, em vez de os empilhar
-        // todos no primeiro.
         const n = contador[j.pos] || 0;
         contador[j.pos] = n + 1;
-        lugar = opcoes[n % opcoes.length];
+        lugar = opcoes[n % opcoes.length].id;
       }
     }
     porLugar.get(lugar).push(j);
   });
 
-  return LUGARES_PLANTEL
+  return lugares
     .map(l => ({ ...l, lista: porLugar.get(l.id) }))
     .filter(l => l.lista.length || l.id !== 'fora');
 }
@@ -4203,7 +4250,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
             onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
             style={{
               position: 'absolute', ...posCampoPrint(fx, fy),
-              transform: 'translate(-50%, -50%)', textAlign: 'center', width: '16%',
+              transform: 'translate(-50%, -50%)', textAlign: 'center', width: '19%',
               cursor: editavel && selecionado ? 'pointer' : 'default',
               // Enquanto há alguém escolhido, os lugares acendem-se: sem
               // isso não se percebe que se pode tocar neles.
@@ -4212,9 +4259,9 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
             }}
           >
             <div style={{
-              display: 'inline-block', padding: '2px 7px', borderRadius: 5,
+              display: 'inline-block', padding: '3px 8px', borderRadius: 5,
               background: editavel ? '#B5393F' : '#A6192E', color: '#fff',
-              fontSize: 9.5 * escala, fontWeight: 700, letterSpacing: '.03em',
+              fontSize: 13 * escala, fontWeight: 700, letterSpacing: '.03em',
             }}>{l.rotulo}</div>
             <div style={{ marginTop: 2 }}>
               {l.lista.map(j => {
@@ -4224,7 +4271,9 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
                     key={j.chave}
                     onClick={editavel ? (e) => { e.stopPropagation(); aoTocar({ tipo: 'jogador', chave: j.chave }); } : undefined}
                     style={{
-                      fontSize: 8.5 * escala, lineHeight: 1.5,
+                      // 12 px em vez de 8,5: a folha era para se ler de pé,
+                      // no campo, e a 8,5 não se lia sentado.
+                      fontSize: 12 * escala, lineHeight: 1.45, fontWeight: 500,
                       color: editavel ? (on ? '#0d140e' : T.cream) : '#111',
                       background: on ? T.gold : 'transparent',
                       borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
@@ -4249,9 +4298,9 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
    nomes de 8 px o alvo é pequeno de mais para o dedo.
 
    Só o que se move fica guardado. */
-function EditorPrancheta({ players, attendance, convidados, overrides, onChange }) {
+function EditorPrancheta({ players, attendance, convidados, overrides, tatica, onChange, onTatica }) {
   const [escolhido, setEscolhido] = useState(null);
-  const lugares = distribuirPlantel({ players, attendance, convidados, overrides });
+  const lugares = distribuirPlantel({ players, attendance, convidados, overrides, tatica });
 
   const tocar = (alvo) => {
     if (alvo.tipo === 'jogador') {
@@ -4267,8 +4316,18 @@ function EditorPrancheta({ players, attendance, convidados, overrides, onChange 
 
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-        Quadro de posições
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+          Quadro de posições
+        </span>
+        {/* Trocar de táctica muda os lugares, não quem está presente. O
+            que arrumaste à mão mantém-se sempre que o lugar continuar a
+            existir na táctica nova. */}
+        <div style={{ width: 130, marginLeft: 'auto' }}>
+          <Select value={tatica || TATICA_OMISSAO} onChange={e => onTatica(e.target.value)}>
+            {Object.keys(TATICAS).map(t => <option key={t} value={t}>{t}</option>)}
+          </Select>
+        </div>
       </div>
       <PrancheteDoPlantel lugares={lugares} aoTocar={tocar} selecionado={escolhido} escala={1.25} />
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
@@ -13256,6 +13315,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               convidados,
               // As alterações são da sessão que as guardou.
               overrides: (doDia.find(x => x.prancheta) || {}).prancheta,
+              tatica: (doDia.find(x => x.pranchetaTatica) || {}).pranchetaTatica,
             });
             return (
               <div className="print-sheet">
@@ -14507,7 +14567,9 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
               attendance={f.attendance}
               convidados={f.convidados}
               overrides={f.prancheta}
+              tatica={f.pranchetaTatica}
               onChange={(ov) => setF({ ...f, prancheta: ov })}
+              onTatica={(t) => setF({ ...f, pranchetaTatica: t })}
             />
           )}
         </>
