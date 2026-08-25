@@ -4083,23 +4083,54 @@ function integrarConvidado({ convidado, players, setPlayers, aoRetirar }) {
    do que não existir.
 
    O campo em coordenadas reais (105×68), como o resto da app. */
-const POSICAO_NO_CAMPO = {
-  GR: [0.07, 0.50],
-  DD: [0.20, 0.82],
-  DC: [0.20, 0.50],
-  DE: [0.20, 0.18],
-  MD: [0.40, 0.70],
-  MC: [0.42, 0.50],
-  MOC: [0.56, 0.50],
-  ED: [0.68, 0.84],
-  EE: [0.68, 0.16],
-  PL: [0.83, 0.50],
-};
-// Quem não tiver posição definida fica ao centro, fora do miolo.
-const POSICAO_SEM = [0.50, 0.95];
+/* ================================================================
+   QUADRO DE POSIÇÕES DO PLANTEL
+   ================================================================
 
-/* Apelido ou nome próprio — o que couber melhor numa caixa pequena.
-   Com nome e apelido a caixa fica com o dobro da largura e as posições
+   Um campo com um lugar por posição e os nomes de quem a ocupa. Não é
+   uma prancheta de exercícios — não há setas, cones nem animação. É só
+   onde está cada um, que é a pergunta que se faz ao chegar ao treino.
+
+   LUGARES E NÃO POSIÇÕES. Há dois centrais e três médios num campo, e
+   uma lista de quatro centrais numa coluna só não diz quem joga com
+   quem. Cada lugar é um ponto no campo; a distribuição automática
+   reparte quem partilha posição pelos lugares dessa zona.
+
+   O MD ENTRA NO MEIO. Um médio direito num plantel de formação é um
+   médio; ter-lhe um lugar próprio deixava-o sozinho num canto do campo
+   enquanto o miolo ficava vazio. */
+const LUGARES_PLANTEL = [
+  { id: 'GR', rotulo: 'GR', ponto: [0.07, 0.50] },
+  { id: 'DD', rotulo: 'DD', ponto: [0.20, 0.84] },
+  { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.62] },
+  { id: 'DC2', rotulo: 'DC', ponto: [0.19, 0.38] },
+  { id: 'DE', rotulo: 'DE', ponto: [0.20, 0.16] },
+  { id: 'MC1', rotulo: 'MC', ponto: [0.42, 0.72] },
+  { id: 'MC2', rotulo: 'MC', ponto: [0.42, 0.50] },
+  { id: 'MC3', rotulo: 'MC', ponto: [0.42, 0.28] },
+  { id: 'MOC', rotulo: 'MOC', ponto: [0.57, 0.50] },
+  { id: 'ED', rotulo: 'ED', ponto: [0.70, 0.84] },
+  { id: 'EE', rotulo: 'EE', ponto: [0.70, 0.16] },
+  { id: 'PL', rotulo: 'PL', ponto: [0.84, 0.50] },
+  { id: 'fora', rotulo: 'Sem lugar', ponto: [0.50, 0.965] },
+];
+
+/* Para onde vai cada posição quando ninguém arrastou nada. */
+const LUGARES_DA_POSICAO = {
+  GR: ['GR'],
+  DD: ['DD'],
+  DE: ['DE'],
+  DC: ['DC1', 'DC2'],
+  MD: ['MC1', 'MC2', 'MC3'],
+  MC: ['MC2', 'MC1', 'MC3'],
+  MOC: ['MOC'],
+  ED: ['ED'],
+  EE: ['EE'],
+  PL: ['PL'],
+};
+
+/* Apelido ou nome próprio — o que couber melhor num lugar pequeno.
+   Com nome e apelido a lista fica com o dobro da largura e os lugares
    sobrepõem-se. */
 function nomeCurtoNaPrancheta(nome) {
   const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
@@ -4107,72 +4138,151 @@ function nomeCurtoNaPrancheta(nome) {
   return partes.length === 1 ? partes[0] : partes[partes.length - 1];
 }
 
-function gruposDoPlantel({ players, attendance, convidados }) {
-  const presentes = (players || [])
-    .filter(p => (attendance || []).includes(p.id))
-    .map(p => ({ nome: nomeCurtoNaPrancheta(p.name), pos: p.position || '', exp: false }));
+/* Quem está presente, já distribuído pelos lugares.
 
-  const extra = (convidados || []).map(c => ({
-    nome: nomeCurtoNaPrancheta(c.nome),
-    pos: c.position || '',
-    exp: true,
-  }));
+   `overrides` guarda SÓ o que o treinador mudou — um mapa de
+   jogador para lugar. Todo o resto continua a ser calculado a partir das
+   presenças e das posições reais, por isso quem faltar desaparece
+   sozinho e quem chegar aparece no sítio certo sem ninguém arrumar nada.
+   Guardar o quadro inteiro faria a folha mentir na primeira falta. */
+function distribuirPlantel({ players, attendance, convidados, overrides }) {
+  const ov = overrides || {};
+  const gente = [
+    ...(players || [])
+      .filter(p => (attendance || []).includes(p.id))
+      .map(p => ({ chave: p.id, nome: nomeCurtoNaPrancheta(p.name), pos: p.position || '', exp: false })),
+    ...(convidados || []).map(c => ({
+      chave: `c:${c.id}`, nome: nomeCurtoNaPrancheta(c.nome), pos: c.position || '', exp: true,
+    })),
+  ];
 
-  const todos = [...presentes, ...extra];
-  if (!todos.length) return null;
+  const porLugar = new Map(LUGARES_PLANTEL.map(l => [l.id, []]));
+  const contador = {};
 
-  /* UM DISTINTIVO POR POSIÇÃO, OS NOMES POR BAIXO.
-
-     A primeira versão punha uma caixa por jogador espalhada pelo campo:
-     com 26 presentes ficava um campo cheio de retângulos a disputar
-     espaço, e a posição de cada um só se percebia pelo sítio.
-
-     Assim há um só distintivo por posição — DC, MC, PL — e a lista de
-     quem a ocupa por baixo. Lê-se o campo pelas posições, que é como se
-     pensa um plantel, e a lista cresce sem estragar nada. */
-  const grupos = [];
-  POSITIONS.forEach(pos => {
-    const lista = todos.filter(j => j.pos === pos);
-    if (lista.length && POSICAO_NO_CAMPO[pos]) grupos.push({ pos, lista, ponto: POSICAO_NO_CAMPO[pos] });
+  gente.forEach(j => {
+    let lugar = ov[j.chave];
+    if (!lugar || !porLugar.has(lugar)) {
+      const opcoes = LUGARES_DA_POSICAO[j.pos];
+      if (!opcoes) lugar = 'fora';
+      else {
+        // Reparte pelos lugares da zona por ordem, em vez de os empilhar
+        // todos no primeiro.
+        const n = contador[j.pos] || 0;
+        contador[j.pos] = n + 1;
+        lugar = opcoes[n % opcoes.length];
+      }
+    }
+    porLugar.get(lugar).push(j);
   });
-  const semPosicao = todos.filter(j => !POSITIONS.includes(j.pos) || !POSICAO_NO_CAMPO[j.pos]);
-  if (semPosicao.length) grupos.push({ pos: '—', lista: semPosicao, ponto: POSICAO_SEM });
-  return grupos;
+
+  return LUGARES_PLANTEL
+    .map(l => ({ ...l, lista: porLugar.get(l.id) }))
+    .filter(l => l.lista.length || l.id !== 'fora');
 }
 
-/* O campo desenhado, para a folha impressa. */
-function PrancheteDoPlantel({ grupos }) {
-  if (!grupos || !grupos.length) return null;
+/* O quadro desenhado. `aoTocar` transforma-o em editável: sem ele é só
+   para ler, que é o que a folha impressa precisa. */
+function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
+  if (!lugares || !lugares.length) return null;
+  const editavel = typeof aoTocar === 'function';
   return (
     <div style={{
       position: 'relative', width: '100%', maxWidth: 640, aspectRatio: ASPECT_CAMPO_PRINT,
-      background: '#fff', margin: '0 auto',
+      background: editavel ? '#1E3A24' : '#fff', margin: '0 auto',
+      borderRadius: editavel ? 10 : 0, border: editavel ? `1px solid ${T.line}` : 'none',
     }}>
-      <MarcacoesCampoPrint />
-      {grupos.map(g => {
-        const [fx, fy] = g.ponto;
+      <MarcacoesCampoPrint
+        traco={editavel ? '#ffffff40' : '#999'}
+        baliza={editavel ? '#ffffff66' : '#666'}
+      />
+      {lugares.map(l => {
+        const [fx, fy] = l.ponto;
         return (
-          <div key={g.pos} style={{
-            position: 'absolute', ...posCampoPrint(fx, fy),
-            transform: 'translate(-50%, -50%)', textAlign: 'center', width: '17%',
-          }}>
+          <div
+            key={l.id}
+            onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
+            style={{
+              position: 'absolute', ...posCampoPrint(fx, fy),
+              transform: 'translate(-50%, -50%)', textAlign: 'center', width: '16%',
+              cursor: editavel && selecionado ? 'pointer' : 'default',
+              // Enquanto há alguém escolhido, os lugares acendem-se: sem
+              // isso não se percebe que se pode tocar neles.
+              outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none',
+              outlineOffset: 4, borderRadius: 6, padding: '2px 0',
+            }}
+          >
             <div style={{
               display: 'inline-block', padding: '2px 7px', borderRadius: 5,
-              background: '#A6192E', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '.03em',
-            }}>{g.pos}</div>
+              background: editavel ? '#B5393F' : '#A6192E', color: '#fff',
+              fontSize: 9.5 * escala, fontWeight: 700, letterSpacing: '.03em',
+            }}>{l.rotulo}</div>
             <div style={{ marginTop: 2 }}>
-              {g.lista.map((j, i) => (
-                <div key={i} style={{
-                  fontSize: 8.5, lineHeight: 1.4, color: '#111',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
-                  {j.nome}{j.exp ? <span style={{ color: '#888' }}> exp</span> : null}
-                </div>
-              ))}
+              {l.lista.map(j => {
+                const on = selecionado === j.chave;
+                return (
+                  <div
+                    key={j.chave}
+                    onClick={editavel ? (e) => { e.stopPropagation(); aoTocar({ tipo: 'jogador', chave: j.chave }); } : undefined}
+                    style={{
+                      fontSize: 8.5 * escala, lineHeight: 1.5,
+                      color: editavel ? (on ? '#0d140e' : T.cream) : '#111',
+                      background: on ? T.gold : 'transparent',
+                      borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {j.nome}{j.exp ? <span style={{ opacity: 0.6 }}> exp</span> : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* O editor: toca-se num nome para o escolher, toca-se num lugar para o
+   mover. Escolhi tocar e não arrastar de propósito — arrastar num
+   telemóvel, dentro de uma janela que já faz scroll, é uma luta; e com
+   nomes de 8 px o alvo é pequeno de mais para o dedo.
+
+   Só o que se move fica guardado. */
+function EditorPrancheta({ players, attendance, convidados, overrides, onChange }) {
+  const [escolhido, setEscolhido] = useState(null);
+  const lugares = distribuirPlantel({ players, attendance, convidados, overrides });
+
+  const tocar = (alvo) => {
+    if (alvo.tipo === 'jogador') {
+      setEscolhido(prev => (prev === alvo.chave ? null : alvo.chave));
+      return;
+    }
+    if (!escolhido) return;
+    onChange({ ...(overrides || {}), [escolhido]: alvo.id });
+    setEscolhido(null);
+  };
+
+  const mexidos = Object.keys(overrides || {}).length;
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+        Quadro de posições
+      </div>
+      <PrancheteDoPlantel lugares={lugares} aoTocar={tocar} selecionado={escolhido} escala={1.25} />
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+        <span style={{ fontSize: 11.5, color: T.mutedDim, flex: 1, minWidth: 180, lineHeight: 1.6 }}>
+          {escolhido
+            ? 'Agora toca no lugar para onde o queres mover.'
+            : 'Toca num nome para o escolher e depois no lugar onde o queres. Só o que moveres fica guardado — o resto acompanha as presenças.'}
+        </span>
+        {mexidos > 0 && (
+          <Btn variant="ghost" onClick={() => { onChange({}); setEscolhido(null); }}>
+            <RefreshCw size={14} /> Repor ({mexidos})
+          </Btn>
+        )}
+      </div>
     </div>
   );
 }
@@ -13140,16 +13250,18 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           const convidados = doDia.flatMap(x => convidadosDe(x));
 
           if (printFolha.tipo === 'prancheta') {
-            const grupos = gruposDoPlantel({
+            const lugares = distribuirPlantel({
               players,
               attendance: doDia.flatMap(x => x.attendance || []),
               convidados,
+              // As alterações são da sessão que as guardou.
+              overrides: (doDia.find(x => x.prancheta) || {}).prancheta,
             });
             return (
               <div className="print-sheet">
                 <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Plantel presente</h2>
                 <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>{fmtDate(printFolha.date)}</p>
-                {grupos ? <PrancheteDoPlantel grupos={grupos} /> : <p style={{ fontSize: 13 }}>Sem presenças registadas.</p>}
+                <PrancheteDoPlantel lugares={lugares} />
               </div>
             );
           }
@@ -13251,23 +13363,12 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           {/* Num amigável esta lista era repetição pura: os mesmos nomes
               já saem em Titulares e Suplentes, logo acima. Num treino
               continua a ser a única lista de presenças que há, e fica. */}
-          {/* A prancheta do plantel, quando a sessão a pediu. Desenhada
-              agora a partir das presenças de agora — nunca guardada, para
-              não poder estar desatualizada. */}
-          {printSession.imprimirPlantel && (() => {
-            const grupos = gruposDoPlantel({
-              players,
-              attendance: printSession.attendance || [],
-              convidados: convidadosDe(printSession),
-            });
-            if (!grupos) return null;
-            return (
-              <div style={{ marginBottom: 18, breakInside: 'avoid' }}>
-                <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Plantel presente</h3>
-                <PrancheteDoPlantel grupos={grupos} />
-              </div>
-            );
-          })()}
+          {/* A PRANCHETA NÃO SAI AQUI.
+
+              A folha da sessão é o plano de treino. O quadro de posições
+              é outra coisa e imprime-se à parte, pelo botão "Prancheta"
+              no dia — quem leva o plano para o campo não quer um campo de
+              nomes atrás, e quem quer o campo de nomes não quer o plano. */}
 
           {printSession.phase !== 'Jogo' && (
             <>
@@ -14374,7 +14475,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
 
           {/* A prancheta do plantel na folha impressa.
 
-              Guardado como `imprimirPlantel` na sessão, e não como
+              Guardado como imprimirPlantel na sessão, e não como
               preferência global: há treinos em que interessa (o primeiro
               da semana, com o plantel todo) e outros em que é uma folha a
               mais. Fica desligado por omissão — quem quiser liga. */}
@@ -14391,14 +14492,24 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
             />
             <span style={{ minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13, color: T.cream }}>
-                Incluir a prancheta do plantel na impressão
+                Quadro de posições para este treino
               </span>
               <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, marginTop: 3, lineHeight: 1.6 }}>
-                Um campo com quem está presente colocado na sua posição, incluindo os convidados.
-                É desenhado no momento de imprimir, por isso acompanha sempre as presenças.
+                Um campo com os presentes distribuídos pelos lugares, para arrumares quem quiseres.
+                Imprime-se à parte, pelo botão "Prancheta" no dia.
               </span>
             </span>
           </label>
+
+          {f.imprimirPlantel && (
+            <EditorPrancheta
+              players={players}
+              attendance={f.attendance}
+              convidados={f.convidados}
+              overrides={f.prancheta}
+              onChange={(ov) => setF({ ...f, prancheta: ov })}
+            />
+          )}
         </>
       )}
 
