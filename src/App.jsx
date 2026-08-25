@@ -4107,13 +4107,13 @@ function nomeCurtoNaPrancheta(nome) {
   return partes.length === 1 ? partes[0] : partes[partes.length - 1];
 }
 
-function prancheteDoPlantel({ players, attendance, convidados }) {
+function gruposDoPlantel({ players, attendance, convidados }) {
   const presentes = (players || [])
     .filter(p => (attendance || []).includes(p.id))
     .map(p => ({ nome: nomeCurtoNaPrancheta(p.name), pos: p.position || '', exp: false }));
 
   const extra = (convidados || []).map(c => ({
-    nome: `${nomeCurtoNaPrancheta(c.nome)} exp`,
+    nome: nomeCurtoNaPrancheta(c.nome),
     pos: c.position || '',
     exp: true,
   }));
@@ -4121,37 +4121,60 @@ function prancheteDoPlantel({ players, attendance, convidados }) {
   const todos = [...presentes, ...extra];
   if (!todos.length) return null;
 
-  /* Agrupa por posição e empilha. Quatro guarda-redes no mesmo ponto
-     seriam quatro caixas uma por cima da outra; espaçados na vertical,
-     lêem-se todos. O grupo fica centrado no ponto da posição, para não
-     escorregar todo para baixo quando são muitos. */
-  const porPosicao = new Map();
-  todos.forEach(j => {
-    const chave = POSICAO_NO_CAMPO[j.pos] ? j.pos : '_sem';
-    if (!porPosicao.has(chave)) porPosicao.set(chave, []);
-    porPosicao.get(chave).push(j);
-  });
+  /* UM DISTINTIVO POR POSIÇÃO, OS NOMES POR BAIXO.
 
-  const elements = [];
-  const ESPACO = 4.6; // metros entre caixas empilhadas
-  porPosicao.forEach((lista, chave) => {
-    const [fx, fy] = POSICAO_NO_CAMPO[chave] || POSICAO_SEM;
-    const x = fx * 105;
-    const yBase = fy * 68;
-    const alturaTotal = (lista.length - 1) * ESPACO;
-    lista.forEach((j, i) => {
-      elements.push({
-        id: uid(),
-        kind: 'text',
-        x,
-        y: yBase - alturaTotal / 2 + i * ESPACO,
-        text: j.nome,
-        size: 3,
-      });
-    });
-  });
+     A primeira versão punha uma caixa por jogador espalhada pelo campo:
+     com 26 presentes ficava um campo cheio de retângulos a disputar
+     espaço, e a posição de cada um só se percebia pelo sítio.
 
-  return { elements, arrows: [] };
+     Assim há um só distintivo por posição — DC, MC, PL — e a lista de
+     quem a ocupa por baixo. Lê-se o campo pelas posições, que é como se
+     pensa um plantel, e a lista cresce sem estragar nada. */
+  const grupos = [];
+  POSITIONS.forEach(pos => {
+    const lista = todos.filter(j => j.pos === pos);
+    if (lista.length && POSICAO_NO_CAMPO[pos]) grupos.push({ pos, lista, ponto: POSICAO_NO_CAMPO[pos] });
+  });
+  const semPosicao = todos.filter(j => !POSITIONS.includes(j.pos) || !POSICAO_NO_CAMPO[j.pos]);
+  if (semPosicao.length) grupos.push({ pos: '—', lista: semPosicao, ponto: POSICAO_SEM });
+  return grupos;
+}
+
+/* O campo desenhado, para a folha impressa. */
+function PrancheteDoPlantel({ grupos }) {
+  if (!grupos || !grupos.length) return null;
+  return (
+    <div style={{
+      position: 'relative', width: '100%', maxWidth: 640, aspectRatio: ASPECT_CAMPO_PRINT,
+      background: '#fff', margin: '0 auto',
+    }}>
+      <MarcacoesCampoPrint />
+      {grupos.map(g => {
+        const [fx, fy] = g.ponto;
+        return (
+          <div key={g.pos} style={{
+            position: 'absolute', ...posCampoPrint(fx, fy),
+            transform: 'translate(-50%, -50%)', textAlign: 'center', width: '17%',
+          }}>
+            <div style={{
+              display: 'inline-block', padding: '2px 7px', borderRadius: 5,
+              background: '#A6192E', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '.03em',
+            }}>{g.pos}</div>
+            <div style={{ marginTop: 2 }}>
+              {g.lista.map((j, i) => (
+                <div key={i} style={{
+                  fontSize: 8.5, lineHeight: 1.4, color: '#111',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {j.nome}{j.exp ? <span style={{ color: '#888' }}> exp</span> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function ConvidadosEditor({ convidados, onChange, onIntegrar, label = 'Convidados à experiência' }) {
@@ -12678,7 +12701,24 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
      esta é a ficha do encontro. */
   const [printMatch, setPrintMatch] = useState(null);
   const [dayModalDate, setDayModalDate] = useState(null); // data (YYYY-MM-DD) do dia a ver em detalhe
-  const [printDayDate, setPrintDayDate] = useState(null); // data a imprimir com todas as sessões desse dia
+  const [printDayDate, setPrintDayDate] = useState(null);
+  /* Folhas soltas de um dia: só as presenças, ou só a prancheta. São
+     impressões diferentes e não recortes da folha do dia — quem leva as
+     presenças para o campo não quer o plano de treino atrás. */
+  const [printFolha, setPrintFolha] = useState(null); // { date, tipo }
+
+  const doPrintFolha = (date, tipo) => {
+    setPrintSession(null);
+    setPrintDayDate(null);
+    setPrintFolha({ date, tipo });
+    setTimeout(() => window.print(), 90);
+  };
+  useEffect(() => {
+    if (!printFolha) return undefined;
+    const limpar = () => setPrintFolha(null);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [printFolha]); // data a imprimir com todas as sessões desse dia
   const [view, setView] = useState('lista'); // 'lista' | 'agenda'
   const [weekStart, setWeekStart] = useState(getMonday(todayStr()));
   // No telemóvel os cartões da lista partem-se em dois andares (ver abaixo).
@@ -13093,6 +13133,74 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
         />
       )}
 
+      {printFolha && createPortal(
+        (() => {
+          const doDia = sessions.filter(x => x.date === printFolha.date);
+          const presentes = players.filter(p => doDia.some(x => (x.attendance || []).includes(p.id)));
+          const convidados = doDia.flatMap(x => convidadosDe(x));
+
+          if (printFolha.tipo === 'prancheta') {
+            const grupos = gruposDoPlantel({
+              players,
+              attendance: doDia.flatMap(x => x.attendance || []),
+              convidados,
+            });
+            return (
+              <div className="print-sheet">
+                <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Plantel presente</h2>
+                <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>{fmtDate(printFolha.date)}</p>
+                {grupos ? <PrancheteDoPlantel grupos={grupos} /> : <p style={{ fontSize: 13 }}>Sem presenças registadas.</p>}
+              </div>
+            );
+          }
+
+          /* FOLHA DE PRESENÇAS PARA ASSINALAR À MÃO.
+
+             Não é a lista de quem está — é a lista de TODO o plantel com
+             uma caixa ao lado. Quem a leva para o campo ainda não sabe
+             quem apareceu; é isso que vai marcar. Uma folha só com os
+             presentes não serviria para nada. */
+          return (
+            <div className="print-sheet">
+              <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Presenças</h2>
+              <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>
+                {fmtDate(printFolha.date)}{presentes.length ? ` · ${presentes.length} marcados na app` : ''}
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 26px' }}>
+                {sortByPosition(players).map(p => (
+                  <div key={p.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 9,
+                    padding: '5px 0', borderBottom: '1px solid #e6e6e6', fontSize: 12,
+                  }}>
+                    <span style={{ width: 13, height: 13, border: '1px solid #555', borderRadius: 3, flexShrink: 0 }} />
+                    <span style={{ width: 22, color: '#888', textAlign: 'right', flexShrink: 0 }}>{p.number || ''}</span>
+                    <span style={{ width: 26, color: '#888', flexShrink: 0 }}>{p.position || ''}</span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  </div>
+                ))}
+              </div>
+              {convidados.length > 0 && (
+                <>
+                  <h3 style={{ fontSize: 14, margin: '18px 0 6px' }}>À experiência</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 26px' }}>
+                    {convidados.map(c => (
+                      <div key={c.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 9,
+                        padding: '5px 0', borderBottom: '1px solid #e6e6e6', fontSize: 12,
+                      }}>
+                        <span style={{ width: 13, height: 13, border: '1px solid #555', borderRadius: 3, flexShrink: 0 }} />
+                        <span style={{ width: 26, color: '#888', flexShrink: 0 }}>{c.position || ''}</span>
+                        <span style={{ flex: 1, minWidth: 0 }}>{c.nome}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })(),
+        document.body,
+      )}
       {printMatch && createPortal(
         <PrintFichaJogo match={printMatch} players={players} season={season} />,
         document.body,
@@ -13147,25 +13255,16 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               agora a partir das presenças de agora — nunca guardada, para
               não poder estar desatualizada. */}
           {printSession.imprimirPlantel && (() => {
-            const d = prancheteDoPlantel({
+            const grupos = gruposDoPlantel({
               players,
               attendance: printSession.attendance || [],
               convidados: convidadosDe(printSession),
             });
-            if (!d) return null;
+            if (!grupos) return null;
             return (
               <div style={{ marginBottom: 18, breakInside: 'avoid' }}>
                 <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Plantel presente</h3>
-                <svg
-                  viewBox={PITCH_VIEWBOX}
-                  style={{
-                    width: '100%', maxWidth: 620, aspectRatio: PITCH_ASPECT, display: 'block',
-                    background: '#fff', border: '1px solid #ccc', borderRadius: 8,
-                  }}
-                >
-                  <PitchMarkings printMode />
-                  <DiagramElements elements={d.elements} arrows={[]} interactive={false} printMode />
-                </svg>
+                <PrancheteDoPlantel grupos={grupos} />
               </div>
             );
           })()}
@@ -13200,6 +13299,8 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           players={players}
           onClose={() => setDayModalDate(null)}
           onPrint={() => doPrintDay(dayModalDate)}
+          onPrintPresencas={() => { setDayModalDate(null); doPrintFolha(dayModalDate, 'presencas'); }}
+          onPrintPrancheta={() => { setDayModalDate(null); doPrintFolha(dayModalDate, 'prancheta'); }}
           onEditSession={(s) => { setDayModalDate(null); setModal(s); }}
         />
       )}
@@ -14315,7 +14416,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
    data), com a informação de cada um e o esquema tático de cada
    exercício, incluindo imagens/PDFs anexados.
 ---------------------------------------------------------------- */
-function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onEditSession }) {
+function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onPrintPresencas, onPrintPrancheta, onEditSession }) {
   const totalMin = daySessions.reduce((sum, s) => sum + (s.exerciseIds || []).reduce((a, e) => a + (Number(e.duration) || 0), 0), 0);
   const presentPlayers = players.filter(p => daySessions.some(s => (s.attendance || []).includes(p.id)));
 
@@ -14325,7 +14426,23 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
         <span style={{ fontSize: 12.5, color: T.mutedDim }}>
           {daySessions.length} {daySessions.length === 1 ? 'sessão' : 'sessões'} · {totalMin} min total
         </span>
-        <Btn onClick={onPrint}><Printer size={14} /> Imprimir dia</Btn>
+        {/* Três impressões diferentes, e cada uma serve um momento: o dia
+            inteiro para preparar, as presenças para levar na prancheta, e
+            o campo com o plantel para ver quem se tem em cada zona.
+            Estavam todas escondidas dentro de uma só. */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {onPrintPresencas && (
+            <Btn variant="ghost" onClick={onPrintPresencas} title="Folha de presenças para assinalar no campo">
+              <Printer size={14} /> Presenças
+            </Btn>
+          )}
+          {onPrintPrancheta && daySessions.some(s => s.imprimirPlantel) && (
+            <Btn variant="ghost" onClick={onPrintPrancheta} title="Campo com o plantel presente por posição">
+              <Printer size={14} /> Prancheta
+            </Btn>
+          )}
+          <Btn onClick={onPrint}><Printer size={14} /> Imprimir</Btn>
+        </div>
       </div>
 
       {daySessions.map((s, si) => (
