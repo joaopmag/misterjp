@@ -4062,22 +4062,113 @@ function integrarConvidado({ convidado, players, setPlayers, aoRetirar }) {
     destructive: false,
     onConfirm: () => {
       const usados = new Set((players || []).map(p => p.code).filter(Boolean));
-      setPlayers([...(players || []), { id: uid(), name: nome, position: '', number: '', code: genPlayerCode(usados) }]);
+      setPlayers([...(players || []), { id: uid(), name: nome, position: (convidado && convidado.position) || '', number: '', code: genPlayerCode(usados) }]);
       if (aoRetirar) aoRetirar();
     },
   });
 }
 
 
+/* ================================================================
+   PRANCHETA DO PLANTEL PRESENTE
+   ================================================================
+
+   Ao imprimir um treino, sai também um campo com quem está presente
+   colocado na sua posição. Serve para o treinador chegar ao campo e ver
+   de relance quem tem em cada zona — sem contar cabeças numa lista.
+
+   NÃO É GUARDADA. Gera-se no momento a partir das presenças e das
+   posições do plantel. Se fosse guardada, ficava desatualizada assim que
+   alguém faltasse ou mudasse de posição, e passava a mentir — que é pior
+   do que não existir.
+
+   O campo em coordenadas reais (105×68), como o resto da app. */
+const POSICAO_NO_CAMPO = {
+  GR: [0.07, 0.50],
+  DD: [0.20, 0.82],
+  DC: [0.20, 0.50],
+  DE: [0.20, 0.18],
+  MD: [0.40, 0.70],
+  MC: [0.42, 0.50],
+  MOC: [0.56, 0.50],
+  ED: [0.68, 0.84],
+  EE: [0.68, 0.16],
+  PL: [0.83, 0.50],
+};
+// Quem não tiver posição definida fica ao centro, fora do miolo.
+const POSICAO_SEM = [0.50, 0.95];
+
+/* Apelido ou nome próprio — o que couber melhor numa caixa pequena.
+   Com nome e apelido a caixa fica com o dobro da largura e as posições
+   sobrepõem-se. */
+function nomeCurtoNaPrancheta(nome) {
+  const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return '';
+  return partes.length === 1 ? partes[0] : partes[partes.length - 1];
+}
+
+function prancheteDoPlantel({ players, attendance, convidados }) {
+  const presentes = (players || [])
+    .filter(p => (attendance || []).includes(p.id))
+    .map(p => ({ nome: nomeCurtoNaPrancheta(p.name), pos: p.position || '', exp: false }));
+
+  const extra = (convidados || []).map(c => ({
+    nome: `${nomeCurtoNaPrancheta(c.nome)} exp`,
+    pos: c.position || '',
+    exp: true,
+  }));
+
+  const todos = [...presentes, ...extra];
+  if (!todos.length) return null;
+
+  /* Agrupa por posição e empilha. Quatro guarda-redes no mesmo ponto
+     seriam quatro caixas uma por cima da outra; espaçados na vertical,
+     lêem-se todos. O grupo fica centrado no ponto da posição, para não
+     escorregar todo para baixo quando são muitos. */
+  const porPosicao = new Map();
+  todos.forEach(j => {
+    const chave = POSICAO_NO_CAMPO[j.pos] ? j.pos : '_sem';
+    if (!porPosicao.has(chave)) porPosicao.set(chave, []);
+    porPosicao.get(chave).push(j);
+  });
+
+  const elements = [];
+  const ESPACO = 4.6; // metros entre caixas empilhadas
+  porPosicao.forEach((lista, chave) => {
+    const [fx, fy] = POSICAO_NO_CAMPO[chave] || POSICAO_SEM;
+    const x = fx * 105;
+    const yBase = fy * 68;
+    const alturaTotal = (lista.length - 1) * ESPACO;
+    lista.forEach((j, i) => {
+      elements.push({
+        id: uid(),
+        kind: 'text',
+        x,
+        y: yBase - alturaTotal / 2 + i * ESPACO,
+        text: j.nome,
+        size: 3,
+      });
+    });
+  });
+
+  return { elements, arrows: [] };
+}
+
 function ConvidadosEditor({ convidados, onChange, onIntegrar, label = 'Convidados à experiência' }) {
   const [nome, setNome] = useState('');
+  /* A posição é precisa para o convidado aparecer no sítio certo na
+     prancheta do plantel. Fica ao lado do nome porque é aí que se sabe:
+     quem escreve "George" sabe nesse momento que é extremo. Perguntar
+     depois, noutro ecrã, é garantir que ninguém preenche. */
+  const [pos, setPos] = useState('');
   const lista = Array.isArray(convidados) ? convidados : [];
 
   const juntar = () => {
     const limpo = nome.trim();
     if (!limpo) return;
-    onChange([...lista, { id: uid(), nome: limpo }]);
+    onChange([...lista, { id: uid(), nome: limpo, position: pos }]);
     setNome('');
+    setPos('');
   };
 
   return (
@@ -4097,6 +4188,12 @@ function ConvidadosEditor({ convidados, onChange, onIntegrar, label = 'Convidado
             placeholder="Nome de quem veio à experiência"
           />
         </div>
+        <div style={{ width: 96, flexShrink: 0 }}>
+          <Select value={pos} onChange={e => setPos(e.target.value)}>
+            <option value="">Posição</option>
+            {POSITIONS.map(x => <option key={x} value={x}>{x}</option>)}
+          </Select>
+        </div>
         <Btn variant="ghost" onClick={juntar} disabled={!nome.trim()}><Plus size={15} /> Juntar</Btn>
       </div>
 
@@ -4109,6 +4206,7 @@ function ConvidadosEditor({ convidados, onChange, onIntegrar, label = 'Convidado
               border: `1px dashed ${T.line}`,
             }}>
               <span style={{ fontSize: 13, color: T.cream, flex: 1, minWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {c.position ? <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{c.position} · </span> : null}
                 {c.nome}
               </span>
               {/* A marca é discreta mas está sempre: é o que impede alguém
@@ -13045,6 +13143,33 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           {/* Num amigável esta lista era repetição pura: os mesmos nomes
               já saem em Titulares e Suplentes, logo acima. Num treino
               continua a ser a única lista de presenças que há, e fica. */}
+          {/* A prancheta do plantel, quando a sessão a pediu. Desenhada
+              agora a partir das presenças de agora — nunca guardada, para
+              não poder estar desatualizada. */}
+          {printSession.imprimirPlantel && (() => {
+            const d = prancheteDoPlantel({
+              players,
+              attendance: printSession.attendance || [],
+              convidados: convidadosDe(printSession),
+            });
+            if (!d) return null;
+            return (
+              <div style={{ marginBottom: 18, breakInside: 'avoid' }}>
+                <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Plantel presente</h3>
+                <svg
+                  viewBox={PITCH_VIEWBOX}
+                  style={{
+                    width: '100%', maxWidth: 620, aspectRatio: PITCH_ASPECT, display: 'block',
+                    background: '#fff', border: '1px solid #ccc', borderRadius: 8,
+                  }}
+                >
+                  <PitchMarkings printMode />
+                  <DiagramElements elements={d.elements} arrows={[]} interactive={false} printMode />
+                </svg>
+              </div>
+            );
+          })()}
+
           {printSession.phase !== 'Jogo' && (
             <>
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
@@ -14145,6 +14270,34 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
             onChange={(lista) => setF({ ...f, convidados: lista })}
             onIntegrar={onIntegrarConvidado ? (c) => onIntegrarConvidado(c, (lista) => setF(prev => ({ ...prev, convidados: lista })), f.convidados) : null}
           />
+
+          {/* A prancheta do plantel na folha impressa.
+
+              Guardado como `imprimirPlantel` na sessão, e não como
+              preferência global: há treinos em que interessa (o primeiro
+              da semana, com o plantel todo) e outros em que é uma folha a
+              mais. Fica desligado por omissão — quem quiser liga. */}
+          <label style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer',
+            padding: '11px 13px', background: T.bg, borderRadius: 8,
+            border: `1px solid ${T.line}`, marginBottom: 18,
+          }}>
+            <input
+              type="checkbox"
+              checked={!!f.imprimirPlantel}
+              onChange={e => setF({ ...f, imprimirPlantel: e.target.checked })}
+              style={{ width: 16, height: 16, marginTop: 1, flexShrink: 0, accentColor: '#B5393F' }}
+            />
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, color: T.cream }}>
+                Incluir a prancheta do plantel na impressão
+              </span>
+              <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, marginTop: 3, lineHeight: 1.6 }}>
+                Um campo com quem está presente colocado na sua posição, incluindo os convidados.
+                É desenhado no momento de imprimir, por isso acompanha sempre as presenças.
+              </span>
+            </span>
+          </label>
         </>
       )}
 
