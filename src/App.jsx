@@ -1934,9 +1934,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
            mesmo com a altura mínima já reservada. Esconder a barra (o painel
            continua a arrastar-se na horizontal com o dedo) tira essa
            variável da equação. */
-        /* Roda enquanto o GIF é codificado. */
-        @keyframes mjp-girar { to { transform: rotate(360deg); } }
-        .mjp-rodar { animation: mjp-girar 0.9s linear infinite; }
         .mjp-painel-selecao { scrollbar-width: none; -ms-overflow-style: none; }
         .mjp-painel-selecao::-webkit-scrollbar { display: none; height: 0; }
         .navbtn.active { background: ${T.surfaceRaise}; border-left: 3px solid ${T.gold}; }
@@ -4894,9 +4891,6 @@ function PlayerModal({ player, onClose, onSave }) {
    EXERCÍCIOS
 ---------------------------------------------------------------- */
 function Exercicios({ exercises, setExercises, meta }) {
-  /* Qual está a ser convertido. Um GIF demora segundos; sem sinal, quem
-     carrega uma vez carrega três e ficam três conversões ao mesmo tempo. */
-  const [aPartilhar, setAPartilhar] = useState(null);
   const [modal, setModal] = useState(null);
   const [viewing, setViewing] = useState(null);
   const [filter, setFilter] = useState('Todas');
@@ -4961,22 +4955,7 @@ function Exercicios({ exercises, setExercises, meta }) {
               </div>
               <div style={{ marginBottom: 10 }}>
                 <div style={{ display: 'flex', gap: 16 }}>
-                  <button onClick={async (e) => {
-                    e.stopPropagation();
-                    setAPartilhar(x.id);
-                    try {
-                      const gif = await gifDaAnimacao(x);
-                      // Sem animação gravada não há nada para animar: fica
-                      // o ficheiro de sempre, com a informação toda.
-                      if (!gif) { doShare(x); return; }
-                      const r = await entregarFicheiro(gif, `${String(x.name || 'exercicio').replace(/[^\w-]+/g, '_')}.gif`);
-                      if (r === 'descarregado') offerUndo('GIF guardado nas transferências.', () => {});
-                    } catch (err) {
-                      askConfirm({ title: 'Não foi possível criar o GIF', label: err.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
-                    } finally {
-                      setAPartilhar(null);
-                    }
-                  }} title="Partilhar — GIF quando há animação gravada" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}>{aPartilhar === x.id ? <Loader2 size={14} className="mjp-rodar" /> : <Share2 size={14} />}</button>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
@@ -5073,9 +5052,6 @@ function Exercicios({ exercises, setExercises, meta }) {
    não é um exercício de treino, é um princípio desenhado no campo.
 ---------------------------------------------------------------- */
 function IdeiaJogo({ ideias, setIdeias, meta }) {
-  /* Qual está a ser convertido. Um GIF demora segundos; sem sinal, quem
-     carrega uma vez carrega três e ficam três conversões ao mesmo tempo. */
-  const [aPartilhar, setAPartilhar] = useState(null);
   const [modal, setModal] = useState(null); // null | 'new' | ideia (edição)
   const [viewing, setViewing] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
@@ -5144,22 +5120,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                 {/* Ícones por baixo da imagem, encostados à margem direita
                     do cartão. */}
                 <div style={{ display: 'flex', gap: 16, marginTop: 8, justifyContent: 'flex-end' }}>
-                  <button onClick={async (e) => {
-                    e.stopPropagation();
-                    setAPartilhar(x.id);
-                    try {
-                      const gif = await gifDaAnimacao(x);
-                      // Sem animação gravada não há nada para animar: fica
-                      // o ficheiro de sempre, com a informação toda.
-                      if (!gif) { doShare(x); return; }
-                      const r = await entregarFicheiro(gif, `${String(x.name || 'exercicio').replace(/[^\w-]+/g, '_')}.gif`);
-                      if (r === 'descarregado') offerUndo('GIF guardado nas transferências.', () => {});
-                    } catch (err) {
-                      askConfirm({ title: 'Não foi possível criar o GIF', label: err.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
-                    } finally {
-                      setAPartilhar(null);
-                    }
-                  }} title="Partilhar — GIF quando há animação gravada" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}>{aPartilhar === x.id ? <Loader2 size={14} className="mjp-rodar" /> : <Share2 size={14} />}</button>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={14} /></button>
@@ -6496,137 +6457,6 @@ function diagramaParaImpressao(diagram) {
 }
 
 
-
-/* ================================================================
-   GIF DA ANIMAÇÃO — segunda tentativa, com três correções
-   ================================================================
-
-   A primeira versão falhou por três razões, e vale a pena ficarem
-   escritas para não se repetirem:
-
-   1. O FICHEIRO IA DECLARADO COMO PNG. A função de partilha tinha
-      `type: 'image/png'` fixo — foi escrita para imagens e reutilizada
-      para o GIF sem se trocar isso. O WhatsApp recebia um ficheiro que
-      dizia ser PNG com bytes de GIF lá dentro: não pré-visualiza, não
-      reproduz, trata como anexo estranho. Era o "não abriu".
-
-   2. RESOLUÇÃO DEMASIADO BAIXA. 480 px de largura para um campo inteiro
-      deixa cada jogador com uns 12 px — ilegível. Medi depois: a 960 px
-      um GIF de 70 fotogramas fica em 306 KB, perfeitamente leve. A
-      poupança não valia a ilegibilidade.
-
-   3. PALETA POR FOTOGRAMA. Cada fotograma calculava as suas 128 cores, e
-      pequenas diferenças entre eles faziam as cores tremer ao longo da
-      animação. Uma paleta única, calculada uma vez, resolve — e ainda
-      comprime melhor, porque os fotogramas passam a partilhar índices.
-
-   Porquê GIF e não o HTML: o HTML é autónomo e correto, mas quem o
-   recebe abre-o dentro do WhatsApp ou dos Ficheiros, e esses não
-   executam JavaScript. O campo aparece e o botão não faz nada. */
-const GIF_LARGURA = 960;
-const GIF_MAX_FOTOGRAMAS = 90;
-
-/* A ANIMAÇÃO NO GIF É MAIS LENTA DO QUE NO ECRÃ, DE PROPÓSITO.
-
-   No ecrã o treinador controla: pára, recua, repete o passo enquanto
-   explica. Um GIF não tem nada disso — corre sozinho, em ciclo, e quem o
-   vê tem de apanhar o movimento à primeira. Ao ritmo do ecrã fica um
-   borrão.
-
-   1.8× é o suficiente para se seguir a bola sem tornar a coisa arrastada.
-   E a pausa no fim de cada passo sobe para um segundo: é aí que o olho
-   percebe onde a jogada chegou antes de recomeçar. */
-const GIF_ABRANDAR = 1.8;
-const GIF_PAUSA_PASSO_MS = 1000;
-
-async function fotogramaParaPixeis(markup, larg, alt, fundo) {
-  const doc = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${PITCH_VIEWBOX}" width="${larg}" height="${alt}">`
-    + `<style>text,tspan{font-family:'Inter',system-ui,Arial,sans-serif}</style>${markup}</svg>`;
-  const url = URL.createObjectURL(new Blob([doc], { type: 'image/svg+xml;charset=utf-8' }));
-  try {
-    const img = await new Promise((ok, falha) => {
-      const i = new Image();
-      i.onload = () => ok(i);
-      i.onerror = () => falha(new Error('O browser não conseguiu desenhar um dos fotogramas.'));
-      i.src = url;
-    });
-    const canvas = document.createElement('canvas');
-    canvas.width = larg; canvas.height = alt;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.fillStyle = fundo;
-    ctx.fillRect(0, 0, larg, alt);
-    ctx.drawImage(img, 0, 0, larg, alt);
-    return ctx.getImageData(0, 0, larg, alt).data;
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
-}
-
-async function gifDaAnimacao(ex) {
-  const { GIFEncoder, quantize, applyPalette } = await import('gifenc');
-  const zonas = getSpaceZones(ex.diagram, ex.space);
-  const { frames, hasAnimation } = computeDiagramAnimationFrames(ex.diagram, zonas, ex.phase);
-  if (!hasAnimation || frames.length < 2) return null;
-
-  const salto = frames.length > GIF_MAX_FOTOGRAMAS ? Math.ceil(frames.length / GIF_MAX_FOTOGRAMAS) : 1;
-  const vb = PITCH_VIEWBOX.split(/[\s,]+/).map(Number);
-  const larg = GIF_LARGURA;
-  const alt = Math.round((vb[3] / vb[2]) * larg);
-
-  const escolhidos = [];
-  for (let i = 0; i < frames.length; i += salto) escolhidos.push(frames[i]);
-  // Garante que o último fotograma entra sempre: é a posição final da
-  // jogada, e sem ele o GIF acaba a meio do movimento.
-  if (escolhidos[escolhidos.length - 1] !== frames[frames.length - 1]) escolhidos.push(frames[frames.length - 1]);
-
-  /* A paleta sai do fotograma do MEIO, não do primeiro: é onde a jogada
-     tem mais elementos em campo, e portanto onde estão mais cores. */
-  const meio = await fotogramaParaPixeis(escolhidos[Math.floor(escolhidos.length / 2)].svg, larg, alt, '#1E3A24');
-  const paleta = quantize(meio, 128);
-
-  const enc = GIFEncoder();
-  for (let idx = 0; idx < escolhidos.length; idx++) {
-    const f = escolhidos[idx];
-    const ultimo = idx === escolhidos.length - 1;
-    const pixeis = await fotogramaParaPixeis(f.svg, larg, alt, '#1E3A24');
-    /* O GIF conta a espera em centésimos de segundo, e muitos leitores
-       tratam 0 e 1 como "o mais rápido possível" — sai um borrão.
-       Mínimo de 2. */
-    /* A pausa entre passos vem gravada como 450 ms; qualquer valor
-       claramente acima do ritmo normal é uma pausa e não movimento. */
-    const base = f.holdMs || 55;
-    const ms = base > 200 ? GIF_PAUSA_PASSO_MS : base * salto * GIF_ABRANDAR;
-    // O último fica parado dois segundos antes de o ciclo recomeçar:
-    // sem isso a posição final passa num piscar de olhos.
-    const espera = ultimo ? 200 : Math.max(2, Math.round(ms / 10));
-    enc.writeFrame(applyPalette(pixeis, paleta), larg, alt, { palette: paleta, delay: espera });
-    // Devolve o controlo ao browser entre fotogramas: sem isto o ecrã
-    // fica preso durante a codificação toda e o telemóvel parece morto.
-    await new Promise(r => setTimeout(r, 0));
-  }
-  enc.finish();
-  return new Blob([enc.bytes()], { type: 'image/gif' });
-}
-
-/* Entrega o ficheiro. O `type` vem do próprio blob e não fixo — foi
-   exatamente isso que partiu a primeira tentativa. */
-async function entregarFicheiro(blob, nome) {
-  const ficheiro = new File([blob], nome, { type: blob.type });
-  try {
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [ficheiro] })) {
-      await navigator.share({ files: [ficheiro], title: nome });
-      return 'partilhado';
-    }
-  } catch (e) {
-    if (e && e.name === 'AbortError') return 'cancelado';
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = nome;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-  return 'descarregado';
-}
 
 function stepElements(step, diagram) {
   const doPasso = (step && step.elements) || [];
