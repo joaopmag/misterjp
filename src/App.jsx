@@ -6526,6 +6526,19 @@ function diagramaParaImpressao(diagram) {
 const GIF_LARGURA = 960;
 const GIF_MAX_FOTOGRAMAS = 90;
 
+/* A ANIMAÇÃO NO GIF É MAIS LENTA DO QUE NO ECRÃ, DE PROPÓSITO.
+
+   No ecrã o treinador controla: pára, recua, repete o passo enquanto
+   explica. Um GIF não tem nada disso — corre sozinho, em ciclo, e quem o
+   vê tem de apanhar o movimento à primeira. Ao ritmo do ecrã fica um
+   borrão.
+
+   1.8× é o suficiente para se seguir a bola sem tornar a coisa arrastada.
+   E a pausa no fim de cada passo sobe para um segundo: é aí que o olho
+   percebe onde a jogada chegou antes de recomeçar. */
+const GIF_ABRANDAR = 1.8;
+const GIF_PAUSA_PASSO_MS = 1000;
+
 async function fotogramaParaPixeis(markup, larg, alt, fundo) {
   const doc = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${PITCH_VIEWBOX}" width="${larg}" height="${alt}">`
     + `<style>text,tspan{font-family:'Inter',system-ui,Arial,sans-serif}</style>${markup}</svg>`;
@@ -6572,12 +6585,20 @@ async function gifDaAnimacao(ex) {
   const paleta = quantize(meio, 128);
 
   const enc = GIFEncoder();
-  for (const f of escolhidos) {
+  for (let idx = 0; idx < escolhidos.length; idx++) {
+    const f = escolhidos[idx];
+    const ultimo = idx === escolhidos.length - 1;
     const pixeis = await fotogramaParaPixeis(f.svg, larg, alt, '#1E3A24');
     /* O GIF conta a espera em centésimos de segundo, e muitos leitores
        tratam 0 e 1 como "o mais rápido possível" — sai um borrão.
        Mínimo de 2. */
-    const espera = Math.max(2, Math.round(((f.holdMs || 55) * salto) / 10));
+    /* A pausa entre passos vem gravada como 450 ms; qualquer valor
+       claramente acima do ritmo normal é uma pausa e não movimento. */
+    const base = f.holdMs || 55;
+    const ms = base > 200 ? GIF_PAUSA_PASSO_MS : base * salto * GIF_ABRANDAR;
+    // O último fica parado dois segundos antes de o ciclo recomeçar:
+    // sem isso a posição final passa num piscar de olhos.
+    const espera = ultimo ? 200 : Math.max(2, Math.round(ms / 10));
     enc.writeFrame(applyPalette(pixeis, paleta), larg, alt, { palette: paleta, delay: espera });
     // Devolve o controlo ao browser entre fotogramas: sem isto o ecrã
     // fica preso durante a codificação toda e o telemóvel parece morto.
