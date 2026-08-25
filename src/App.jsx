@@ -4100,21 +4100,41 @@ async function prancheteParaPng(svgEl, { escala = 2, fundo = '#23401F' } = {}) {
   estilo.textContent = "text, tspan { font-family: 'Inter', system-ui, -apple-system, Arial, sans-serif; }";
   clone.insertBefore(estilo, clone.firstChild);
 
+  /* Se o elemento estiver escondido (numa aba fechada, por exemplo) o
+     rectângulo vem a zero e a imagem sairia 1×1. Nesse caso usa-se o
+     viewBox, que é a medida verdadeira do desenho. */
   const caixa = svgEl.getBoundingClientRect();
-  const larg = Math.max(1, Math.round(caixa.width));
-  const alt = Math.max(1, Math.round(caixa.height));
+  const vb = (svgEl.getAttribute('viewBox') || '0 0 105 68').split(/[\s,]+/).map(Number);
+  const larg = Math.max(1, Math.round(caixa.width || (vb[2] * 8)));
+  const alt = Math.max(1, Math.round(caixa.height || (vb[3] * 8)));
   clone.setAttribute('width', String(larg));
   clone.setAttribute('height', String(alt));
 
-  const texto = new XMLSerializer().serializeToString(clone);
-  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(texto)}`;
+  /* Blob e não `data:` URL.
 
-  const img = await new Promise((resolve, reject) => {
-    const i = new Image();
-    i.onload = () => resolve(i);
-    i.onerror = () => reject(new Error('Não foi possível desenhar a prancheta.'));
-    i.src = url;
-  });
+     A versão anterior usava `data:image/svg+xml,` + encodeURIComponent.
+     Falhava em silêncio por duas vias: o SVG serializado leva texto do
+     treinador, e um `&` ou um caracter acentuado mal escapado torna o XML
+     inválido — o `Image` recusa-o sem dizer porquê; e nos desenhos
+     grandes o URL passava o limite que alguns browsers aceitam.
+
+     Um Blob não tem limite prático nem problema de escape. */
+  const texto = new XMLSerializer().serializeToString(clone);
+  const blobSvg = new Blob([texto], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blobSvg);
+
+  let img;
+  try {
+    img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('O browser não conseguiu desenhar a prancheta.'));
+      i.src = url;
+    });
+  } finally {
+    // Liberta-se sempre, mesmo em erro, para não deixar memória presa.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 
   const canvas = document.createElement('canvas');
   canvas.width = larg * escala;
@@ -6517,6 +6537,24 @@ function clampTextElement(el) {
    elemento tal como ele é agora. */
 const CAMPOS_DE_POSE = ['x', 'y', 'rotation', 'w', 'h'];
 
+/* O DESENHO A IMPRIMIR: O PRIMEIRO PASSO, NÃO O ÚLTIMO.
+
+   O `diagram.elements` guarda as posições ATUAIS — ou seja, onde tudo
+   ficou depois de o treinador desenhar a última seta. Numa prancheta com
+   animação, isso é o fim da jogada: na folha saía o resultado, não o
+   ponto de partida, e quem a lê não percebe de onde se partiu.
+
+   Com sequência gravada, imprime-se o primeiro passo. Sem sequência, o
+   desenho é o que é. */
+function diagramaParaImpressao(diagram) {
+  const seq = (diagram && diagram.sequence) || [];
+  if (!seq.length) return { elements: (diagram && diagram.elements) || [], arrows: (diagram && diagram.arrows) || [] };
+  return {
+    elements: stepElements(seq[0], diagram),
+    arrows: seq[0].arrows || [],
+  };
+}
+
 function stepElements(step, diagram) {
   const doPasso = (step && step.elements) || [];
   const atuais = new Map(((diagram && diagram.elements) || []).map(el => [el.id, el]));
@@ -7970,7 +8008,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 const r = await partilharPng(blob, `prancheta_${todayStr()}.png`);
                 if (r === 'descarregado') offerUndo('Imagem guardada nas transferências.', null);
               } catch (e) {
-                offerUndo(e.message || 'Não foi possível criar a imagem.', null);
+                askConfirm({ title: 'Não foi possível criar a imagem', label: e.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
               }
             }}
             title="Partilhar como imagem PNG — abre em qualquer telemóvel"
@@ -9035,7 +9073,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       }
       irParaPasso(paragem);
     } catch (e) {
-      offerUndo(e.message || 'Não foi possível criar as imagens.', null);
+      askConfirm({ title: 'Não foi possível criar as imagens', label: e.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
     } finally {
       setAExportar(false);
     }
@@ -9227,7 +9265,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
                 const r = await partilharPng(blob, `${(exercise.name || 'prancheta').replace(/[^\w-]+/g, '_')}.png`);
                 if (r === 'descarregado') offerUndo('Imagem guardada nas transferências.', null);
               } catch (e) {
-                offerUndo(e.message || 'Não foi possível criar a imagem.', null);
+                askConfirm({ title: 'Não foi possível criar a imagem', label: e.message || 'Erro desconhecido.', note: '', confirmLabel: 'Fechar', destructive: false, onConfirm: () => {} });
               }
             }}
             disabled={aExportar}
@@ -13182,13 +13220,18 @@ function PrintExerciseBlock({ e, ex, index }) {
         <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 540, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
           <PitchMarkings printMode />
           <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
-          <DiagramElements
-            elements={ex.diagram?.elements || []}
-            arrows={ex.diagram?.arrows || []}
-            interactive={false}
-            iconScale={iconScaleForPhase(ex.phase)}
-            printMode
-          />
+          {(() => {
+            const d = diagramaParaImpressao(ex.diagram);
+            return (
+              <DiagramElements
+                elements={d.elements}
+                arrows={d.arrows}
+                interactive={false}
+                iconScale={iconScaleForPhase(ex.phase)}
+                printMode
+              />
+            );
+          })()}
         </svg>
       )}
       {!ex.attachment && (
@@ -13991,7 +14034,10 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
                       }}>
                         <PitchMarkings />
                         <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
-                        <DiagramElements elements={ex.diagram?.elements || []} arrows={ex.diagram?.arrows || []} interactive={false} iconScale={iconScaleForPhase(ex.phase)} />
+                        {(() => {
+                          const d = diagramaParaImpressao(ex.diagram);
+                          return <DiagramElements elements={d.elements} arrows={d.arrows} interactive={false} iconScale={iconScaleForPhase(ex.phase)} />;
+                        })()}
                       </svg>
                     </div>
                     <div style={{ textAlign: 'right', marginTop: 4 }}>
