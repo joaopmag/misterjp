@@ -8792,6 +8792,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const [paused, setPaused] = useState(false);
   const passoAtualRef = useRef(0);
   const decorridoRef = useRef(0);
+  const svgPreviewRef = useRef(null);
+  const [aExportar, setAExportar] = useState(false);
   const attachmentBlobUrl = useBlobUrl(exercise.attachment && exercise.attachment.type !== 'image' ? exercise.attachment.dataUrl : null);
   const animRef = React.useRef(null);
   const timeoutRef = React.useRef(null);
@@ -9006,6 +9008,39 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setFrameArrows([...stepStaticArrows(step, diagram), ...(step.arrows || [])]);
   };
 
+  /* UM PNG POR PASSO.
+
+     Um GIF parecia a resposta óbvia e não é: precisa de uma biblioteca de
+     codificação no browser, sai pesado e granulado, e o WhatsApp
+     converte-o em vídeo — muitas vezes mal. Uma sequência de imagens
+     comunica melhor, porque é o treinador a controlar o ritmo enquanto
+     explica, em vez de um ciclo a repetir-se.
+
+     A mecânica: percorre-se a sequência, deixa-se o React desenhar cada
+     passo, e captura-se. O `await` de um frame é o que garante que se
+     fotografa o passo certo — sem ele saíam N cópias do último. */
+  const exportarPassosPng = async () => {
+    if (!sequence.length || aExportar) return;
+    setAExportar(true);
+    try {
+      const paragem = passoAtualRef.current;
+      for (let i = 0; i < sequence.length; i++) {
+        irParaPasso(i);
+        // Dois frames: um para o React aplicar o estado, outro para o
+        // browser pintar. Com um só, a imagem saía do passo anterior.
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const blob = await prancheteParaPng(svgPreviewRef.current, { fundo: '#1E3A24' });
+        const nome = `${(exercise.name || 'prancheta').replace(/[^\w-]+/g, '_')}_${i + 1}de${sequence.length}.png`;
+        await partilharPng(blob, nome);
+      }
+      irParaPasso(paragem);
+    } catch (e) {
+      offerUndo(e.message || 'Não foi possível criar as imagens.', null);
+    } finally {
+      setAExportar(false);
+    }
+  };
+
   const passoSeguinte = () => {
     const proximo = passoAtualRef.current + 1;
     if (proximo >= sequence.length) {
@@ -9073,7 +9108,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           ? { position: 'fixed', inset: 0, zIndex: 100, background: '#0e1a12', display: 'flex', flexDirection: 'column', padding: 12 }
           : { position: 'relative', ...PITCH_FIT }
       }>
-        <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio="xMidYMid meet" style={
+        <svg ref={svgPreviewRef} viewBox={PITCH_VIEWBOX} preserveAspectRatio="xMidYMid meet" style={
           isFull
             ? { flex: 1, width: '100%', minHeight: 0, background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
             : { position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
@@ -9183,6 +9218,25 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         ) : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}>
           {onEdit && <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>}
+          <Btn
+            variant="ghost"
+            onClick={async () => {
+              if (sequence.length > 0) { exportarPassosPng(); return; }
+              try {
+                const blob = await prancheteParaPng(svgPreviewRef.current, { fundo: '#1E3A24' });
+                const r = await partilharPng(blob, `${(exercise.name || 'prancheta').replace(/[^\w-]+/g, '_')}.png`);
+                if (r === 'descarregado') offerUndo('Imagem guardada nas transferências.', null);
+              } catch (e) {
+                offerUndo(e.message || 'Não foi possível criar a imagem.', null);
+              }
+            }}
+            disabled={aExportar}
+            title={sequence.length > 0
+              ? 'Uma imagem por passo — abre em qualquer telemóvel'
+              : 'Imagem PNG — abre em qualquer telemóvel'}
+          >
+            <ImageIcon size={14} /> {aExportar ? 'A criar…' : (sequence.length > 0 ? `PNG (${sequence.length})` : 'PNG')}
+          </Btn>
           {sequence.length > 0 && (
             <>
               {/* Pausa só faz sentido a meio; Parar só faz sentido se
@@ -13109,13 +13163,22 @@ function PrintExerciseBlock({ e, ex, index }) {
           📄 PDF anexado ({ex.attachment.name}) — impresso à parte, numa aba própria.
         </p>
       )}
+      {/* COM PDF ANEXADO, A PRANCHETA NÃO SAI.
+
+          O PDF é o documento que interessa e é impresso à parte. Manter a
+          prancheta aqui punha dois desenhos a competir pela mesma
+          explicação — e, quase sempre, uma prancheta vazia ou por acabar,
+          porque quem anexa um PDF já lá tem o exercício desenhado.
+
+          Fica só a informação do exercício e a nota a dizer onde está o
+          documento. */}
       {ex.attachment && ex.attachment.type === 'image' ? (
         <img
           src={ex.attachment.dataUrl}
           alt={ex.attachment.name}
           style={{ width: '100%', maxWidth: 540, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
         />
-      ) : (
+      ) : (ex.attachment && ex.attachment.type === 'pdf') ? null : (
         <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 540, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
           <PitchMarkings printMode />
           <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
@@ -13128,7 +13191,7 @@ function PrintExerciseBlock({ e, ex, index }) {
           />
         </svg>
       )}
-      {!(ex.attachment && ex.attachment.type === 'image') && (
+      {!ex.attachment && (
         <div style={{ textAlign: 'right', maxWidth: 540, margin: '2px 0 0' }}>
           <span style={{ fontSize: 9.5, color: '#888', letterSpacing: '.04em' }}>™ Mister JP</span>
         </div>
