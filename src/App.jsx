@@ -8,7 +8,7 @@ import {
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
-  Image as ImageIcon, Stethoscope, AlertTriangle
+  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -4068,6 +4068,91 @@ function integrarConvidado({ convidado, players, setPlayers, aoRetirar }) {
   });
 }
 
+/* PRANCHETA COMO IMAGEM PNG.
+
+   O que se partilhava era um ficheiro HTML. Abre bem num browser, mas
+   quem o recebe no WhatsApp ou no email vê um anexo que o telemóvel não
+   sabe abrir — daí as queixas de "não abre" e "não reproduz". Uma imagem
+   PNG abre em tudo, sem exceção: aparece logo na conversa, guarda-se na
+   galeria, imprime-se.
+
+   O caminho é SVG → canvas → PNG. Duas armadilhas, e as duas estão
+   tratadas aqui:
+
+   1. O canvas recusa-se a exportar se o SVG trouxer conteúdo de outro
+      domínio ("tainted canvas"). Por isso a prancheta não pode ter
+      imagens externas — e não tem: é tudo formas e texto.
+
+   2. O SVG desenhado no canvas não herda os tipos de letra da página.
+      Sem uma família declarada dentro do próprio SVG, os números dos
+      jogadores saíam na fonte que o sistema quisesse. Injeta-se uma
+      declaração antes de converter.
+
+   Escala 2× para a imagem aguentar zoom e impressão sem ficar
+   pixelizada. */
+async function prancheteParaPng(svgEl, { escala = 2, fundo = '#23401F' } = {}) {
+  if (!svgEl) throw new Error('Sem prancheta para exportar.');
+
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+  const estilo = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+  estilo.textContent = "text, tspan { font-family: 'Inter', system-ui, -apple-system, Arial, sans-serif; }";
+  clone.insertBefore(estilo, clone.firstChild);
+
+  const caixa = svgEl.getBoundingClientRect();
+  const larg = Math.max(1, Math.round(caixa.width));
+  const alt = Math.max(1, Math.round(caixa.height));
+  clone.setAttribute('width', String(larg));
+  clone.setAttribute('height', String(alt));
+
+  const texto = new XMLSerializer().serializeToString(clone);
+  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(texto)}`;
+
+  const img = await new Promise((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => reject(new Error('Não foi possível desenhar a prancheta.'));
+    i.src = url;
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = larg * escala;
+  canvas.height = alt * escala;
+  const ctx = canvas.getContext('2d');
+  // Fundo opaco: um PNG transparente fica ilegível sobre o fundo branco
+  // do WhatsApp, com as linhas do campo a desaparecer.
+  ctx.fillStyle = fundo;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Não foi possível gerar a imagem.'))), 'image/png');
+  });
+}
+
+/* Partilha nativa quando existe (telemóvel), descarga quando não existe
+   (computador). O `canShare` com o ficheiro à frente é obrigatório: há
+   browsers com `share` mas sem partilha de ficheiros, e aí a chamada
+   falha em silêncio. */
+async function partilharPng(blob, nome) {
+  const ficheiro = new File([blob], nome, { type: 'image/png' });
+  try {
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [ficheiro] })) {
+      await navigator.share({ files: [ficheiro], title: nome });
+      return 'partilhado';
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return 'cancelado';
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nome;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return 'descarregado';
+}
+
 function ConvidadosEditor({ convidados, onChange, onIntegrar, label = 'Convidados à experiência' }) {
   const [nome, setNome] = useState('');
   const lista = Array.isArray(convidados) ? convidados : [];
@@ -7876,6 +7961,25 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             }}
           >
             <Printer size={14} color={TEXT_ON_ACCENT} />
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const blob = await prancheteParaPng(svgRef.current);
+                const r = await partilharPng(blob, `prancheta_${todayStr()}.png`);
+                if (r === 'descarregado') offerUndo('Imagem guardada nas transferências.', null);
+              } catch (e) {
+                offerUndo(e.message || 'Não foi possível criar a imagem.', null);
+              }
+            }}
+            title="Partilhar como imagem PNG — abre em qualquer telemóvel"
+            style={{
+              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: `1px solid ${T.line}`, color: T.muted, cursor: 'pointer',
+            }}
+          >
+            <ImageIcon size={14} />
           </button>
         </div>
         {/* "Limpar tudo" volta para junto do imprimir: é uma ação sobre o
@@ -12458,7 +12562,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                     ...(isNarrow ? { justifyContent: 'space-between', paddingLeft: 60 } : { gap: 8 }),
                   }}>
                     <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {(s.convocados || []).length} {isFriendlyMatch(s) ? 'presentes' : 'convocados'}
+                      {(s.convocados || []).length + convidadosDe(s).length} {isFriendlyMatch(s) ? 'presentes' : 'convocados'}
                     </span>
                     {/* OS ÍCONES VIVEM NUM BLOCO PRÓPRIO.
 
@@ -12481,7 +12585,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                       )}
                       {sessaoJogo && (
                         <>
-                          <button onClick={e => { e.stopPropagation(); setSimuladorDia(sessaoJogo.date); }} title="Distribuir equipas para este jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><RotateCw size={14} /></button>
+                          <button onClick={e => { e.stopPropagation(); setSimuladorDia(sessaoJogo.date); }} title="Distribuir equipas para este jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Shuffle size={14} /></button>
                           <button onClick={e => { e.stopPropagation(); doShare(sessaoJogo); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
                           <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
                         </>
@@ -12523,7 +12627,12 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                     ...(isNarrow ? { justifyContent: 'space-between', paddingLeft: 60 } : { gap: 8 }),
                   }}>
                     <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {s.phase === 'Descanso' ? 'Dia de folga' : `${(s.exerciseIds || []).length} exercícios · ${(s.attendance || []).length} presentes`}
+                      {/* O total inclui os convidados: quem lê "23 presentes"
+                          quer saber quantas pessoas vão estar no campo, não
+                          quantas pertencem ao plantel. A distinção continua
+                          a fazer-se onde importa — nas médias, de onde eles
+                          nunca entram. */}
+                      {s.phase === 'Descanso' ? 'Dia de folga' : `${(s.exerciseIds || []).length} exercícios · ${(s.attendance || []).length + convidadosDe(s).length} presentes`}
                       {/* Sinal de que o Simulador já deixou aqui as equipas.
                           Sem isto, o "Guardar equipas no treino" parecia não
                           fazer nada: a informação existia mas só aparecia na
@@ -12544,7 +12653,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                           esquecer de o mudar para o "Guardar equipas" não
                           encontrar sessão nenhuma e não fazer nada. Vindo
                           daqui, esse engano deixa de ser possível. */}
-                      <button onClick={() => setSimuladorDia(s.date)} title="Distribuir equipas para este treino" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><RotateCw size={14} /></button>
+                      <button onClick={() => setSimuladorDia(s.date)} title="Distribuir equipas para este treino" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Shuffle size={14} /></button>
                       <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
                       <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Imprimir ficha"><Printer size={14} /></button>
                       <button onClick={() => setModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Editar sessão"><Pencil size={14} /></button>
@@ -13706,7 +13815,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
 
           <div style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-              Presenças {f.attendance.length ? `· ${f.attendance.length}/${players.length}` : ''}
+              Presenças {f.attendance.length ? `· ${f.attendance.length}/${players.length}${convidadosDe(f).length ? ` +${convidadosDe(f).length}` : ''}` : ''}
             </div>
             {players.length === 0 ? (
               <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores primeiro no separador Plantel.</div>
@@ -16838,7 +16947,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
                       )}
                     </div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                      {fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length} {isFriendlyMatch(m) ? 'presentes' : 'convocados'}
+                      {fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length + convidadosDe(m).length} {isFriendlyMatch(m) ? 'presentes' : 'convocados'}
                     </div>
                   </div>
                   {/* `stopPropagation`: sem isto, carregar no lápis abria
