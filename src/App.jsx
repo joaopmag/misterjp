@@ -2162,7 +2162,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           )}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
           {tab === 'equipa' && (
             <GestaoEquipa
@@ -2176,7 +2176,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
@@ -4011,6 +4011,135 @@ function SheetActions({ onShare, onPrint, onEdit }) {
    'treino' no simulador e no resto. É o que faz o "treino condicionado"
    entrar na distribuição de equipas sem chatear, mas continuar a avisar
    quando é para jogar a sério. */
+/* ================================================================
+   CONVIDADOS À EXPERIÊNCIA
+   ================================================================
+
+   Miúdos que aparecem a um treino ou a um amigável sem pertencerem ao
+   plantel. Escrevem-se à mão, vivem só naquele dia, e não existem em
+   lado nenhum a não ser ali.
+
+   A decisão que faz isto funcionar: NÃO são jogadores. Não entram na
+   tabela `players`, não têm id de plantel, não aparecem em listas de
+   seleção. Por isso não é preciso excluí-los das médias, das
+   estatísticas, da assiduidade ou do desenvolvimento — nunca lá
+   estiveram. A alternativa (criar o jogador com um sinalizador
+   "experiência") obrigava a lembrar-me dele em cada conta da app, e
+   bastava esquecer uma para os números ficarem errados em silêncio.
+
+   Saem nas folhas impressas e no ficheiro partilhado, porque quem leva o
+   papel para o campo precisa de os ter na lista.
+
+   Quando um é aceite, o botão Integrar cria o jogador no Plantel a
+   partir do nome — e o convidado desaparece dali. O histórico começa
+   nesse dia: as presenças anteriores eram de alguém que não existia. */
+
+const convidadosDe = (registo) => (registo && Array.isArray(registo.convidados) ? registo.convidados : []);
+
+/* Nomes prontos a escrever numa folha ou num ficheiro. */
+const nomesDosConvidados = (registo) => convidadosDe(registo).map(c => c.nome).filter(Boolean);
+
+/* Integrar um convidado: passa a jogador do plantel.
+
+   O jogador nasce com o nome e mais nada — posição, número e código
+   preenchem-se depois na ficha, que é onde se faz esse trabalho. E o
+   convidado sai da lista do dia: se ficasse, aparecia duas vezes na
+   folha, uma como jogador e outra como experiência.
+
+   A presença desse dia NÃO é transferida. Era de alguém que ainda não
+   pertencia ao plantel, e o histórico começa quando a pertença começa. */
+function integrarConvidado({ convidado, players, setPlayers, aoRetirar }) {
+  const nome = String((convidado && convidado.nome) || '').trim();
+  if (!nome) return;
+  const repetido = (players || []).some(p => String(p.name || '').trim().toLowerCase() === nome.toLowerCase());
+  askConfirm({
+    title: 'Integrar no plantel?',
+    label: nome,
+    note: repetido
+      ? 'Já existe um jogador com este nome no plantel. Confirma que não é o mesmo.'
+      : 'Fica no plantel a partir de hoje, sem posição nem número — preenche na ficha dele. A presença de hoje não é transferida.',
+    confirmLabel: 'Criar jogador',
+    destructive: false,
+    onConfirm: () => {
+      const usados = new Set((players || []).map(p => p.code).filter(Boolean));
+      setPlayers([...(players || []), { id: uid(), name: nome, position: '', number: '', code: genPlayerCode(usados) }]);
+      if (aoRetirar) aoRetirar();
+    },
+  });
+}
+
+function ConvidadosEditor({ convidados, onChange, onIntegrar, label = 'Convidados à experiência' }) {
+  const [nome, setNome] = useState('');
+  const lista = Array.isArray(convidados) ? convidados : [];
+
+  const juntar = () => {
+    const limpo = nome.trim();
+    if (!limpo) return;
+    onChange([...lista, { id: uid(), nome: limpo }]);
+    setNome('');
+  };
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+        {label} {lista.length ? `· ${lista.length}` : ''}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: lista.length ? 10 : 0, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <Input
+            value={nome}
+            onChange={e => setNome(e.target.value)}
+            // Enter junta, que é o que se espera de um campo destes: numa
+            // manhã chegam três miúdos seguidos e ninguém quer o rato.
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); juntar(); } }}
+            placeholder="Nome de quem veio à experiência"
+          />
+        </div>
+        <Btn variant="ghost" onClick={juntar} disabled={!nome.trim()}><Plus size={15} /> Juntar</Btn>
+      </div>
+
+      {lista.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {lista.map(c => (
+            <div key={c.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              padding: '9px 12px', background: T.bg, borderRadius: 8,
+              border: `1px dashed ${T.line}`,
+            }}>
+              <span style={{ fontSize: 13, color: T.cream, flex: 1, minWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {c.nome}
+              </span>
+              {/* A marca é discreta mas está sempre: é o que impede alguém
+                  de olhar para a folha e contar 24 quando tem 21. */}
+              <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>experiência</span>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+                {onIntegrar && (
+                  <button
+                    onClick={() => onIntegrar(c)}
+                    title="Criar jogador no plantel a partir deste nome"
+                    style={{ background: 'none', border: 'none', color: T.good, cursor: 'pointer', padding: 0, display: 'flex' }}
+                  ><UserCheck size={15} /></button>
+                )}
+                <button
+                  onClick={() => onChange(lista.filter(x => x.id !== c.id))}
+                  title="Retirar"
+                  style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}
+                ><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.6 }}>
+        Não entram no plantel nem em estatística nenhuma. Saem nas folhas impressas e no ficheiro
+        partilhado, para quem leva o papel para o campo os ter na lista.
+      </div>
+    </div>
+  );
+}
+
 function PlayerChipList({ players, isOn, onToggle, estadoClinico, avisaEm = 'treino' }) {
   const isMobile = useIsMobile(560);
   /* Ordenação POR COLUNA: com gridAutoFlow "column" e um número de linhas
@@ -12079,7 +12208,7 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
   );
 }
 
-function Planeamento({ sessions, setSessions, exercises, players, matches, setMatches, standings, season, clinico }) {
+function Planeamento({ sessions, setSessions, exercises, players, setPlayers, matches, setMatches, standings, season, clinico }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
   // Ficha de leitura do jogo — o mesmo conceito usado em Jogos: o cartão
@@ -12192,7 +12321,11 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
     const presencasHtml = s.phase === 'Jogo'
       ? ''
       : `<h2>Presenças</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
-    const extraHtml = `${jogoHtml}${equipasHtml}${presencasHtml}`;
+    const convidadosSessao = [...nomesDosConvidados(s), ...nomesDosConvidados(jogoDaSessao(s))];
+    const convidadosHtml = convidadosSessao.length
+      ? `<p class="desc"><strong>À experiência:</strong> ${escapeHtmlText(convidadosSessao.join(', '))}</p>`
+      : '';
+    const extraHtml = `${jogoHtml}${equipasHtml}${presencasHtml}${convidadosHtml}`;
     const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (s.phase === 'Jogo' ? 'Amigável' : (s.focus || 'Sessão de treino'));
     const html = buildShareableHtmlDoc({ title: sessionTitle, metaLines: meta, blocks: exBlocks, extraHtml });
     shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, sessionTitle);
@@ -12462,6 +12595,10 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
           exercises={exercises}
           players={players}
           clinico={clinico}
+          onIntegrarConvidado={(c, setLista, lista) => integrarConvidado({
+            convidado: c, players, setPlayers,
+            aoRetirar: () => setLista && setLista((lista || []).filter(x => x.id !== c.id)),
+          })}
           onClose={() => setModal(null)}
           onSave={save}
         />
@@ -12559,6 +12696,14 @@ function Planeamento({ sessions, setSessions, exercises, players, matches, setMa
                   .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
                   .filter(Boolean).join(', ') || 'Sem registo'}
               </p>
+              {/* Numa lista à parte e identificados: quem leva o papel para
+                  o campo precisa deles, mas não pode confundi-los com o
+                  plantel ao contar. */}
+              {nomesDosConvidados(printSession).length > 0 && (
+                <p style={{ fontSize: 13, margin: '6px 0 0' }}>
+                  <strong>À experiência:</strong> {nomesDosConvidados(printSession).join(', ')}
+                </p>
+              )}
             </>
           )}
         </div>,
@@ -13011,6 +13156,8 @@ function equipaDoAmigavel({ session, jogo, players }) {
 
 function PrintOnzeAmigavel({ session, jogo, players, ideias }) {
   const { formacao, lugares, titulares, suplentes } = equipaDoAmigavel({ session, jogo, players });
+  // Os convidados podem estar no jogo (amigável) ou na sessão do dia.
+  const convidados = [...nomesDosConvidados(jogo), ...nomesDosConvidados(session)];
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
 
   return (
@@ -13040,6 +13187,12 @@ function PrintOnzeAmigavel({ session, jogo, players, ideias }) {
         })}
       </div>
       <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} />
+
+      {convidados.length > 0 && (
+        <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>
+          <strong>À experiência:</strong> {convidados.join(', ')}
+        </p>
+      )}
 
       {/* O título aparece mesmo sem nada escrito: numa folha impressa, um
           espaço em branco por baixo de "Ideias para o jogo" é útil — é
@@ -13458,7 +13611,7 @@ function fmtShort(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' });
 }
 
-function SessionModal({ session, presetDate, exercises, players, onClose, onSave, clinico }) {
+function SessionModal({ session, presetDate, exercises, players, onClose, onSave, clinico, onIntegrarConvidado }) {
   const [f, setF] = useState(session || {
     date: presetDate || todayStr(), focus: '', phase: PHASES[0],
     intensity: 'media', opponent: '', exerciseIds: [], attendance: [], ratings: {},
@@ -13566,6 +13719,12 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
               />
             )}
           </div>
+
+          <ConvidadosEditor
+            convidados={f.convidados}
+            onChange={(lista) => setF({ ...f, convidados: lista })}
+            onIntegrar={onIntegrarConvidado ? (c) => onIntegrarConvidado(c, (lista) => setF(prev => ({ ...prev, convidados: lista })), f.convidados) : null}
+          />
         </>
       )}
 
@@ -14785,6 +14944,12 @@ function PrintFichaJogo({ match, players, season }) {
       </div>
 
       <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} />
+
+      {nomesDosConvidados(match).length > 0 && (
+        <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>
+          <strong>À experiência:</strong> {nomesDosConvidados(match).join(', ')}
+        </p>
+      )}
 
       <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Ideias para o jogo</h3>
       <p style={{ fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0, minHeight: 40 }}>
@@ -16509,7 +16674,7 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, clinico, abaInicial }) {
+function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, clinico, abaInicial }) {
   /* Convocatórias deixaram de ter separador próprio e vivem aqui: nascem
      com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
      jornada sincronizados), por isso eram já a outra vista da mesma
@@ -16722,7 +16887,7 @@ function Jogos({ matches, setMatches, players, standings, setStandings, standing
         );
       })()}
 
-      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} clinico={clinico} onClose={() => setModal(null)} onSave={save} />}
+      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} clinico={clinico} onIntegrarConvidado={setPlayers ? (c) => integrarConvidado({ convidado: c, players, setPlayers }) : null} onClose={() => setModal(null)} onSave={save} />}
 
       {printMatch && createPortal(
         <PrintFichaJogo match={printMatch} players={players} season={season} />,
@@ -16744,7 +16909,7 @@ function withConvocadosInAttendance(f) {
   return { ...f, attendance: [...convocados], ratings };
 }
 
-function MatchModal({ match, players, standings, season, onClose, onSave, clinico }) {
+function MatchModal({ match, players, standings, season, onClose, onSave, clinico, onIntegrarConvidado }) {
   /* Os campos de lista têm de existir SEMPRE, mesmo ao abrir um jogo
      gravado antes de eles existirem. Sem isto, `f.report[p.id]` e
      `f.starters.includes(...)` rebentam ao editar um jogo antigo — e o
@@ -16907,6 +17072,12 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
           avisaEm="jogo"
         />
       </div>
+
+      <ConvidadosEditor
+        convidados={f.convidados}
+        onChange={(lista) => setF({ ...f, convidados: lista })}
+        onIntegrar={onIntegrarConvidado ? (c) => onIntegrarConvidado(c, null, f.convidados) : null}
+      />
 
       {convocadoPlayers.length > 0 && (
         <div style={{ marginBottom: 18 }}>
