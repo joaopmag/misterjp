@@ -6625,8 +6625,21 @@ function buildShareableHtmlDoc({ title, metaLines, description, blocks, extraHtm
   table { border-collapse:collapse; margin-top:8px; font-size:13px; }
   td, th { padding:4px 10px 4px 0; text-align:left; }
   footer { margin-top:30px; font-size:11px; color:#6d6553; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-  footer .brand { display:inline-flex; align-items:baseline; gap:3px; font-weight:600; letter-spacing:.02em; color:#B9AF9C; padding:4px 10px; border:1px solid #3d4f42; border-radius:999px; background:rgba(255,255,255,0.03); }
-  footer .brand sup { font-size:7px; font-weight:600; color:#8f8570; letter-spacing:.06em; }
+  /* O "TM" ENCOSTA AO TOPO, COMO NUMA MARCA REGISTADA.
+
+     Com align-items:baseline, o sup assentava na mesma linha de base do
+     texto e o browser empurrava-o só um pouco acima — ficava a meio da
+     altura de "Mister JP", que e o sitio onde um simbolo de marca nunca
+     esta.
+
+     flex-start alinha os dois pelo topo, e line-height:1 no sup impede
+     que o espaco da propria linha o volte a baixar.
+
+     NOTA: este bloco vive dentro de um template literal de JavaScript —
+     crases aqui fecham a string a meio e partem o ficheiro. Foi o que
+     aconteceu da primeira vez que escrevi este comentario. */
+  footer .brand { display:inline-flex; align-items:flex-start; gap:3px; font-weight:600; letter-spacing:.02em; color:#B9AF9C; padding:4px 10px; border:1px solid #3d4f42; border-radius:999px; background:rgba(255,255,255,0.03); }
+  footer .brand sup { font-size:7px; font-weight:600; color:#8f8570; letter-spacing:.06em; line-height:1; vertical-align:top; position:relative; top:1px; }
   @media (min-width:700px) {
     body { padding:40px; }
     h1 { font-size:26px; }
