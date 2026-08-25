@@ -12395,7 +12395,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       };
     }).filter(Boolean);
     const attendanceNames = (s.attendance || [])
-      .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
+      .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `${p.number} ` : '') + p.name : null; })
       .filter(Boolean);
     /* As equipas guardadas pelo Simulador entram também no ficheiro
        partilhável, e não só na impressão: é o mesmo conteúdo e quem
@@ -12802,7 +12802,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
               <p style={{ fontSize: 13 }}>
                 {(printSession.attendance || [])
-                  .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `#${p.number} ` : '') + p.name : null; })
+                  .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `${p.number} ` : '') + p.name : null; })
                   .filter(Boolean).join(', ') || 'Sem registo'}
               </p>
               {/* Numa lista à parte e identificados: quem leva o papel para
@@ -12859,7 +12859,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               <p style={{ fontSize: 13 }}>
                 {players
                   .filter(p => sessions.some(s => s.date === printDayDate && (s.attendance || []).includes(p.id)))
-                  .map(p => (p.number ? `#${p.number} ` : '') + p.name)
+                  .map(p => (p.number ? `${p.number} ` : '') + p.name)
                   .join(', ') || 'Sem registo'}
               </p>
             </>
@@ -13158,6 +13158,10 @@ const posCampoPrint = (fx, fy) => ({
 });
 
 function MarcacoesCampoPrint({ traco = '#999', baliza = '#666' }) {
+  /* Serve o papel E o ecrã: em papel os traços são cinzentos, na ficha do
+     jogo passam-se cores claras e transparentes. Ter as medidas num sítio
+     só é o que impede o campo do ecrã e o do papel de divergirem — já
+     tinham divergido antes, com o do ecrã sem balizas nem cantos. */
   const linha = { fill: 'none', stroke: traco, strokeWidth: 0.4 };
   return (
     <svg
@@ -13220,7 +13224,7 @@ function MarcacoesCampoPrint({ traco = '#999', baliza = '#666' }) {
 function equipaDoAmigavel({ session, jogo, players }) {
   const dados = session && session.equipasSimulador && session.equipasSimulador.onzeAmigavel;
   const doSimulador = !!(dados && dados.onze && dados.onze.some(l => l.jogador));
-  const comNumero = (p) => `${p.number ? `#${p.number} ` : ''}${p.name}`;
+  const comNumero = (p) => `${p.number ? `${p.number} ` : ''}${p.name}`;
 
   /* As listas saem sempre como [{ nome, x }]: `nome` para escrever, `x`
      com os acontecimentos do jogo quando eles existem. O Simulador só
@@ -13460,7 +13464,7 @@ function LinhaOcorrencia({ o, jogador, onEdit, mostrarJogador = true }) {
     >
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ color: T.cream, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {mostrarJogador && jogador ? `${jogador.number ? `#${jogador.number} ` : ''}${jogador.name} — ` : ''}
+          {mostrarJogador && jogador ? `${jogador.number ? `${jogador.number} ` : ''}${jogador.name} — ` : ''}
           {[o.tipo, o.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
         </div>
         <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>
@@ -13940,7 +13944,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onE
 
       <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Presenças</div>
       <p style={{ fontSize: 13, color: T.mutedDim, margin: 0 }}>
-        {presentPlayers.length ? presentPlayers.map(p => (p.number ? `#${p.number} ` : '') + p.name).join(', ') : 'Sem registo'}
+        {presentPlayers.length ? presentPlayers.map(p => (p.number ? `${p.number} ` : '') + p.name).join(', ') : 'Sem registo'}
       </p>
     </Modal>
   );
@@ -15047,6 +15051,14 @@ function PrintFichaJogo({ match, players, season }) {
               }}>
                 {l.nome || '—'}
               </div>
+              {/* Os minutos por baixo do nome, como no ecrã: a folha passa a
+                  dizer quem jogou E quanto, que é a pergunta seguinte de
+                  quem olha para um onze. */}
+              {(() => {
+                const x = titulares.find(t => t.x && shortPlayerName(t.x.player, players) === l.nome);
+                if (!x || !x.x || !x.x.jogou) return null;
+                return <div style={{ fontSize: 8, color: '#777', lineHeight: 1.1 }}>{x.x.minutos}'</div>;
+              })()}
             </div>
           );
         })}
@@ -15076,7 +15088,7 @@ function buildMatchShareHtml({ match, players, season }) {
   const eventos = eventosDoJogo(match, players);
   const resumo = resumoDoJogo(eventos);
   const destaques = linhasDestaquesJogo(eventos, resumo, players);
-  const nomeNum = (x) => `${x.player.number ? `#${x.player.number} ` : ''}${x.player.name}`;
+  const nomeNum = (x) => `${x.player.number ? `${x.player.number} ` : ''}${x.player.name}`;
   const lista = (arr) => (arr.length ? escapeHtmlText(arr.map(nomeNum).join(', ')) : '—');
 
   const extraHtml = [
@@ -15177,17 +15189,16 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
         <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : 'minmax(0, 1.35fr) minmax(0, 1fr)', gap: 14 }}>
           {/* ---------- O CAMPO (e, por baixo, as ideias para o jogo) ---------- */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+          {/* O campo do ecrã tinha só quatro linhas: rectângulo, meio-campo,
+              círculo e as duas grandes áreas. Sem balizas, sem pequenas
+              áreas, sem marcas de penálti nem cantos — parecia um esquema,
+              não um campo. Passa a usar o MESMO desenho da folha impressa,
+              com cores claras em vez de cinzentas. */}
           <div style={{
-            position: 'relative', width: '100%', aspectRatio: '105 / 68',
+            position: 'relative', width: '100%', aspectRatio: ASPECT_CAMPO_PRINT,
             background: '#1E3A24', border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden',
           }}>
-            <svg viewBox="0 0 105 68" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
-              <rect x="0.5" y="0.5" width="104" height="67" fill="none" stroke="#ffffff33" strokeWidth="0.4" />
-              <line x1="52.5" y1="0.5" x2="52.5" y2="67.5" stroke="#ffffff33" strokeWidth="0.4" />
-              <circle cx="52.5" cy="34" r="9.15" fill="none" stroke="#ffffff33" strokeWidth="0.4" />
-              <rect x="0.5" y="13.84" width="16.5" height="40.32" fill="none" stroke="#ffffff33" strokeWidth="0.4" />
-              <rect x="88" y="13.84" width="16.5" height="40.32" fill="none" stroke="#ffffff33" strokeWidth="0.4" />
-            </svg>
+            <MarcacoesCampoPrint traco="#ffffff40" baliza="#ffffff66" />
 
             {colocados.map((p, i) => {
               if (!p) return null;
@@ -15200,8 +15211,10 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                   onClick={() => setTrocar(i)}
                   title={`${lugares[i]} · ${p.name} — tocar para trocar de jogador`}
                   style={{
-                    position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
-                    transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '24%',
+                    // Com balizas fora da linha de fundo, o desenho é mais
+                    // largo do que o campo — `posCampoPrint` converte.
+                    position: 'absolute', ...posCampoPrint(fx, fy),
+                    transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '22%',
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...body,
                   }}
                 >
@@ -15241,7 +15254,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                   onClick={() => setTrocar(i)}
                   title={`${lugares[i]} — por preencher`}
                   style={{
-                    position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
+                    position: 'absolute', ...posCampoPrint(fx, fy),
                     transform: 'translate(-50%, -50%)', cursor: 'pointer', ...body,
                     background: '#00000055', border: `1px dashed ${T.line}`, borderRadius: 6,
                     padding: '4px 7px', color: T.mutedDim, fontSize: 10.5,
@@ -15487,7 +15500,7 @@ function MatchDashboard({ players, matches }) {
     { h: 'V', t: 'Cartões vermelhos', v: s => s.red },
     { h: 'Nota', t: 'Nota média', v: s => s.avgMatchRating ?? '—', destaque: true },
   ];
-  const nomeJogador = (p) => `${p.number ? `#${p.number} ` : ''}${p.name}`;
+  const nomeJogador = (p) => `${p.number ? `${p.number} ` : ''}${p.name}`;
   const tituloTabela = `Estatísticas — ${vistaAtual.label}`;
 
   const doPrint = () => {
@@ -17203,7 +17216,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
                   padding: '7px 8px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7, minWidth: 560,
                 }}>
                   <span style={{ fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.number ? `#${p.number} ` : ''}{p.name}
+                    {p.number ? `${p.number} ` : ''}{p.name}
                   </span>
                   <button type="button" onClick={() => toggleStarter(p.id)} title="Titular" style={{
                     fontSize: 10, padding: '4px 7px', borderRadius: 5, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
