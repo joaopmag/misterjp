@@ -5051,11 +5051,215 @@ function Exercicios({ exercises, setExercises, meta }) {
    espaço, descrição, nº de jogadores nem material — uma ideia de jogo
    não é um exercício de treino, é um princípio desenhado no campo.
 ---------------------------------------------------------------- */
+/* ================================================================
+   DOSSIER DE IDEIAS DE JOGO
+   ================================================================
+
+   Uma ideia de jogo isolada explica um momento. O dossier explica o
+   modelo: todas as ideias juntas, pela ordem dos momentos de jogo, num
+   documento que se imprime e se entrega.
+
+   Duas decisões que valem a pena:
+
+   ORDEM PELOS MOMENTOS, NÃO PELA DATA. As ideias aparecem agrupadas por
+   fase e na ordem em que `PHASES` as declara — Organização Defensiva,
+   Transição Ofensiva, Organização Ofensiva, Transição Defensiva, Bola
+   Parada. É a ordem por que se pensa o jogo, e não a ordem por que
+   calhou desenhá-las.
+
+   SEQUÊNCIAS COMO TIRA DE IMAGENS. Uma animação em papel não existe. O
+   que existe é a jogada partida em momentos: cada passo dá uma imagem,
+   com as posições no início e as setas do que vai acontecer, e uma
+   última com o resultado. Lê-se como uma banda desenhada, que é como um
+   treinador explica no quadro. */
+
+/* Os momentos de uma ideia, prontos a desenhar. Sem sequência gravada
+   devolve uma imagem só. */
+function passosDaIdeia(diagram) {
+  const seq = (diagram && diagram.sequence) || [];
+  if (!seq.length) {
+    return [{ elements: (diagram && diagram.elements) || [], arrows: (diagram && diagram.arrows) || [], rotulo: null }];
+  }
+  const passos = seq.map((step, i) => ({
+    elements: stepElements(step, diagram),
+    arrows: stepStaticArrows(step, diagram),
+    rotulo: `${i + 1}`,
+  }));
+  // O estado final não é um passo: é onde a jogada acaba. Sem ele, a
+  // última imagem mostra setas que nunca se vê chegar a lado nenhum.
+  passos.push({ elements: (diagram && diagram.elements) || [], arrows: [], rotulo: 'fim' });
+  return passos;
+}
+
+/* Uma ideia dentro do dossier: cabeçalho, descrição e a tira de imagens.
+   `breakInside: avoid` para uma ideia não ficar cortada entre páginas —
+   metade da jogada numa folha e metade noutra não se lê. */
+function IdeiaNoDossier({ ideia, numero }) {
+  const passos = passosDaIdeia(ideia.diagram);
+  const emTira = passos.length > 1;
+
+  return (
+    <div style={{ marginBottom: 26, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+      <h3 style={{ fontSize: 15, margin: '0 0 4px' }}>
+        {numero}. {(ideia.name && ideia.name.trim()) || ideia.phase || 'Ideia de jogo'}
+      </h3>
+      {ideia.description ? (
+        <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: '0 0 10px' }}>{ideia.description}</p>
+      ) : null}
+
+      <div style={{
+        display: 'grid', gap: 10,
+        // Em tira, duas por linha: quatro passos cabem numa página e cada
+        // imagem continua grande o suficiente para se distinguirem os
+        // jogadores. Uma imagem só ocupa a largura toda.
+        gridTemplateColumns: emTira ? '1fr 1fr' : '1fr',
+      }}>
+        {passos.map((p, i) => (
+          <div key={i} style={{ breakInside: 'avoid' }}>
+            <svg
+              viewBox={PITCH_VIEWBOX}
+              style={{
+                width: '100%', aspectRatio: PITCH_ASPECT, display: 'block',
+                background: '#fff', border: '1px solid #ccc', borderRadius: 6,
+              }}
+            >
+              <PitchMarkings printMode />
+              <SpaceZonesReadOnly diagram={ideia.diagram} printMode />
+              <DiagramElements elements={p.elements} arrows={p.arrows} interactive={false} printMode />
+            </svg>
+            {p.rotulo ? (
+              <div style={{ fontSize: 10.5, color: '#777', marginTop: 3 }}>
+                {p.rotulo === 'fim' ? 'Resultado' : `Momento ${p.rotulo}`}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Escolher o que entra. Por omissão entra tudo — é o caso comum, e quem
+   quiser um dossier parcial desmarca o que não quer em vez de marcar
+   dezenas. */
+function DossierModal({ ideias, onClose, onImprimir }) {
+  const [escolhidas, setEscolhidas] = useState(() => new Set(ideias.map(i => i.id)));
+
+  const porFase = PHASES
+    .map(fase => ({ fase, lista: ideias.filter(i => i.phase === fase) }))
+    .filter(g => g.lista.length);
+  const semFase = ideias.filter(i => !PHASES.includes(i.phase));
+  if (semFase.length) porFase.push({ fase: 'Sem fase', lista: semFase });
+
+  const alternar = (id) => setEscolhidas(prev => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+  const alternarFase = (lista) => setEscolhidas(prev => {
+    const n = new Set(prev);
+    const todas = lista.every(i => n.has(i.id));
+    lista.forEach(i => (todas ? n.delete(i.id) : n.add(i.id)));
+    return n;
+  });
+
+  const total = escolhidas.size;
+
+  return (
+    <Modal title="Dossier de ideias de jogo" subtitle="O modelo de jogo num documento só." onClose={onClose} wide>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <Btn variant="ghost" onClick={() => setEscolhidas(new Set(ideias.map(i => i.id)))}>Todas</Btn>
+        <Btn variant="ghost" onClick={() => setEscolhidas(new Set())}>Nenhuma</Btn>
+        <span style={{ ...mono, fontSize: 12, color: T.mutedDim, alignSelf: 'center', marginLeft: 'auto' }}>
+          {total} de {ideias.length}
+        </span>
+      </div>
+
+      <div style={{ maxHeight: '52vh', overflowY: 'auto', overscrollBehavior: 'contain', paddingRight: 4 }}>
+        {porFase.map(({ fase, lista }) => (
+          <div key={fase} style={{ marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => alternarFase(lista)}
+              title="Marcar ou desmarcar esta fase toda"
+              style={{
+                display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', textAlign: 'left',
+                background: 'none', border: 'none', padding: 0, marginBottom: 8, cursor: 'pointer',
+              }}
+            >
+              <span style={{ ...display, fontSize: 14, fontWeight: 600, color: T.cream }}>{fase}</span>
+              <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{lista.filter(i => escolhidas.has(i.id)).length}/{lista.length}</span>
+              <span style={{ flex: 1, height: 1, background: T.line }} />
+            </button>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {lista.map(i => {
+                const on = escolhidas.has(i.id);
+                const passos = ((i.diagram && i.diagram.sequence) || []).length;
+                return (
+                  <button
+                    key={i.id}
+                    type="button"
+                    onClick={() => alternar(i.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 11, textAlign: 'left',
+                      padding: '10px 12px', borderRadius: 8, cursor: 'pointer', ...body,
+                      background: T.bg, border: `1px solid ${on ? '#B5393F' : T.line}`,
+                    }}
+                  >
+                    <span style={{
+                      width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                      background: on ? T.good : 'transparent',
+                      border: `1.5px solid ${on ? T.good : T.line}`,
+                      display: 'grid', placeItems: 'center',
+                    }}>{on && <Check size={11} style={{ color: '#0d140e' }} />}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {(i.name && i.name.trim()) || i.phase || 'Ideia de jogo'}
+                    </span>
+                    {passos > 0 && (
+                      <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>
+                        {passos + 1} imagens
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={() => onImprimir(ideias.filter(i => escolhidas.has(i.id)))} disabled={!total}>
+          <Printer size={15} /> Imprimir dossier
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function IdeiaJogo({ ideias, setIdeias, meta }) {
   const [modal, setModal] = useState(null); // null | 'new' | ideia (edição)
   const [viewing, setViewing] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
   const [printIdeia, setPrintIdeia] = useState(null);
+  const [dossier, setDossier] = useState(false);
+  const [printDossier, setPrintDossier] = useState(null);
+
+  const imprimirDossier = (lista) => {
+    setDossier(false);
+    setPrintDossier(lista);
+    setTimeout(() => window.print(), 120);
+  };
+  /* A folha sai do body quando o diálogo fecha — senão colava-se à
+     impressão seguinte. Mesmo padrão das outras impressões. */
+  useEffect(() => {
+    if (!printDossier) return undefined;
+    const limpar = () => setPrintDossier(null);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [printDossier]);
   const [filter, setFilter] = useState('Todas');
 
   const save = (data) => {
@@ -5100,7 +5304,15 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   return (
     <div>
       <SectionHeader title="Ideia de Jogo" subtitle="A tua ideia de jogo."
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ideia</Btn>} />
+        action={(
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {/* Só faz sentido com alguma coisa para compilar. */}
+            {ideias.length > 0 && (
+              <Btn variant="ghost" onClick={() => setDossier(true)}><BookOpen size={15} /> Dossier</Btn>
+            )}
+            <Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ideia</Btn>
+          </div>
+        )} />
 
       <MomentoFilter value={filter} onChange={setFilter} options={EXERCISE_PHASES} />
 
@@ -5147,6 +5359,92 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
           onClose={() => setViewing(null)}
           onEdit={() => { setModal(viewing); setViewing(null); }}
         />
+      )}
+
+      {dossier && (
+        <DossierModal ideias={ideias} onClose={() => setDossier(false)} onImprimir={imprimirDossier} />
+      )}
+
+      {printDossier && createPortal(
+        (() => {
+          /* A ORDEM E A NUMERAÇÃO CALCULAM-SE UMA VEZ SÓ.
+
+             O índice e as secções têm de dizer o mesmo número para a
+             mesma ideia — se cada um contasse por sua conta, bastava uma
+             ideia sem fase para os dois deixarem de bater certo. Aqui a
+             lista sai ordenada e numerada de 1 a N, e tanto o índice como
+             o corpo leem dela.
+
+             A numeração é contínua e não reinicia em cada fase: um índice
+             com três "1" não serve para encontrar nada. */
+          const grupos = [];
+          PHASES.forEach(fase => {
+            const lista = printDossier.filter(i => i.phase === fase);
+            if (lista.length) grupos.push({ fase, lista });
+          });
+          const semFase = printDossier.filter(i => !PHASES.includes(i.phase));
+          if (semFase.length) grupos.push({ fase: 'Outras', lista: semFase });
+
+          let n = 0;
+          const numerados = grupos.map(g => ({
+            fase: g.fase,
+            lista: g.lista.map(i => ({ ideia: i, numero: ++n })),
+          }));
+
+          return (
+            <div className="print-sheet">
+              <h2 style={{ margin: '0 0 4px', fontSize: 26 }}>Ideias de Jogo</h2>
+              <p style={{ margin: '0 0 22px', fontSize: 12.5 }}>
+                {printDossier.length} {printDossier.length === 1 ? 'ideia' : 'ideias'} · {new Date().toLocaleDateString('pt-PT')}
+              </p>
+
+              <h3 style={{ fontSize: 15, margin: '0 0 10px', paddingBottom: 5, borderBottom: '1px solid #111' }}>
+                Índice
+              </h3>
+              {numerados.map(g => (
+                <div key={g.fase} style={{ marginBottom: 14, breakInside: 'avoid' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{g.fase}</div>
+                  {g.lista.map(({ ideia, numero }) => (
+                    <div key={ideia.id} style={{ display: 'flex', gap: 9, alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #eee' }}>
+                      <span style={{ width: 22, textAlign: 'right', flexShrink: 0, color: '#777', fontSize: 11.5 }}>{numero}</span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+                          {(ideia.name && ideia.name.trim()) || ideia.phase || 'Ideia de jogo'}
+                        </span>
+                        {ideia.description ? (
+                          /* Duas linhas no máximo: um índice que traz a
+                             descrição inteira deixa de caber numa página e
+                             de servir para folhear. */
+                          <span style={{
+                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden', fontSize: 11.5, color: '#666', lineHeight: 1.45,
+                          }}>{ideia.description}</span>
+                        ) : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {/* O corpo começa em página nova: o índice é para se ver
+                  inteiro, não misturado com a primeira jogada. */}
+              <div style={{ breakBefore: 'page', pageBreakBefore: 'always' }} />
+
+              {numerados.map(g => (
+                <div key={g.fase} style={{ marginBottom: 8 }}>
+                  <h3 style={{
+                    fontSize: 17, margin: '0 0 12px', paddingBottom: 5,
+                    borderBottom: '2px solid #111', breakAfter: 'avoid', pageBreakAfter: 'avoid',
+                  }}>{g.fase}</h3>
+                  {g.lista.map(({ ideia, numero }) => (
+                    <IdeiaNoDossier key={ideia.id} ideia={ideia} numero={numero} />
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })(),
+        document.body,
       )}
 
       {printIdeia && createPortal(
