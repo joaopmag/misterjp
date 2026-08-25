@@ -4250,7 +4250,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
             onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
             style={{
               position: 'absolute', ...posCampoPrint(fx, fy),
-              transform: 'translate(-50%, -50%)', textAlign: 'center', width: '19%',
+              transform: 'translate(-50%, -50%)', textAlign: 'center', width: '17%',
               cursor: editavel && selecionado ? 'pointer' : 'default',
               // Enquanto há alguém escolhido, os lugares acendem-se: sem
               // isso não se percebe que se pode tocar neles.
@@ -4259,9 +4259,9 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
             }}
           >
             <div style={{
-              display: 'inline-block', padding: '3px 8px', borderRadius: 5,
+              display: 'inline-block', padding: '2px 7px', borderRadius: 5,
               background: editavel ? '#B5393F' : '#A6192E', color: '#fff',
-              fontSize: 13 * escala, fontWeight: 700, letterSpacing: '.03em',
+              fontSize: 9.5 * escala, fontWeight: 700, letterSpacing: '.03em',
             }}>{l.rotulo}</div>
             <div style={{ marginTop: 2 }}>
               {l.lista.map(j => {
@@ -4271,9 +4271,11 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
                     key={j.chave}
                     onClick={editavel ? (e) => { e.stopPropagation(); aoTocar({ tipo: 'jogador', chave: j.chave }); } : undefined}
                     style={{
-                      // 12 px em vez de 8,5: a folha era para se ler de pé,
-                      // no campo, e a 8,5 não se lia sentado.
-                      fontSize: 12 * escala, lineHeight: 1.45, fontWeight: 500,
+                      /* O tamanho base é o do ECRÃ. A folha impressa passa
+                         uma `escala` maior — é lá que se lê de pé, no
+                         campo, e 8,5 px em papel não se lê sentado. Ter um
+                         tamanho só para os dois era o erro. */
+                      fontSize: 8.5 * escala, lineHeight: 1.5, fontWeight: 500,
                       color: editavel ? (on ? '#0d140e' : T.cream) : '#111',
                       background: on ? T.gold : 'transparent',
                       borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
@@ -6076,9 +6078,27 @@ function parsePlayersCount(str) {
     return { groups: Array.from({ length: n }, (_, i) => ({ count: 1, isKeeper: true, team: TEAMS[i % TEAMS.length].id })) };
   }
 
+  /* JOKERS ENTRE PARÊNTESES: (3)6x6(3).
+
+     São jogadores que jogam pelas DUAS equipas — três jokers, não seis.
+     A leitura anterior não conhecia parênteses: em "(3)6" apanhava o
+     primeiro número que encontrava e ficava com 3 em vez de 6. Uma equipa
+     de seis virava de três, e o exercício saía sempre com gente a menos.
+
+     Escrito nos dois lados com o mesmo número, é o MESMO grupo — é o que
+     a notação quer dizer e é como se escreve no quadro. Com números
+     diferentes, (2)6x6(3), são dois grupos distintos, porque aí já não
+     pode ser o mesmo conjunto de pessoas. */
+  const jokers = [];
+  const semParenteses = raw.replace(/\((\d+)\)/g, (_, n) => {
+    const c = parseInt(n, 10) || 0;
+    if (c > 0) jokers.push(c);
+    return '';
+  });
+
   // Divide primeiro por 'x'/'×' — cada parte é um lado/equipa distinta.
-  const sides = raw.split(/[x×]/).map(s => s.trim()).filter(Boolean);
-  if (sides.length === 0) return null;
+  const sides = semParenteses.split(/[x×]/).map(s => s.trim()).filter(Boolean);
+  if (sides.length === 0 && !jokers.length) return null;
 
   let colorIdx = 0;
   const groups = [];
@@ -6110,6 +6130,17 @@ function parsePlayersCount(str) {
       groups.push({ count, isKeeper: false, team });
     });
   });
+
+  /* Os jokers entram como um grupo próprio, com cor própria — para se
+     ver de relance quem joga pelos dois lados. */
+  if (jokers.length) {
+    const iguais = jokers.length > 1 && jokers.every(n => n === jokers[0]);
+    const conjuntos = iguais ? [jokers[0]] : jokers;
+    conjuntos.forEach(count => {
+      groups.push({ count, isKeeper: false, team: TEAMS[colorIdx % TEAMS.length].id, joker: true });
+      colorIdx++;
+    });
+  }
 
   if (groups.length === 0) return null;
   return { groups };
@@ -13321,7 +13352,56 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               <div className="print-sheet">
                 <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Plantel presente</h2>
                 <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>{fmtDate(printFolha.date)}</p>
-                <PrancheteDoPlantel lugares={lugares} />
+                <PrancheteDoPlantel lugares={lugares} escala={1.7} />
+
+                {/* OS DESENHOS TÁCTICOS DO DIA, A SEGUIR AO QUADRO.
+
+                    Quem leva esta folha para o campo tem ali quem está e
+                    onde — falta o que se vai fazer. Sai o primeiro
+                    momento de cada exercício do dia, pela ordem do plano,
+                    que é o suficiente para reconhecer o exercício sem
+                    trazer o plano todo atrás. */}
+                {(() => {
+                  const desenhos = [];
+                  doDia.forEach(sessao => {
+                    (sessao.exerciseIds || []).forEach(ref => {
+                      const ex = exercises.find(e => e.id === (ref && ref.id ? ref.id : ref));
+                      if (ex && ex.diagram) desenhos.push(ex);
+                    });
+                  });
+                  if (!desenhos.length) return null;
+                  return (
+                    <div style={{ marginTop: 22 }}>
+                      <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>Exercícios do dia</h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        {desenhos.map((ex, i) => {
+                          const d = diagramaParaImpressao(ex.diagram);
+                          return (
+                            <div key={`${ex.id}-${i}`} style={{ breakInside: 'avoid' }}>
+                              <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 4 }}>
+                                {i + 1}. {ex.name}
+                              </div>
+                              <svg
+                                viewBox={PITCH_VIEWBOX}
+                                style={{
+                                  width: '100%', aspectRatio: PITCH_ASPECT, display: 'block',
+                                  background: '#fff', border: '1px solid #ccc', borderRadius: 6,
+                                }}
+                              >
+                                <PitchMarkings printMode />
+                                <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
+                                <DiagramElements
+                                  elements={d.elements} arrows={d.arrows}
+                                  interactive={false} iconScale={iconScaleForPhase(ex.phase)} printMode
+                                />
+                              </svg>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           }
