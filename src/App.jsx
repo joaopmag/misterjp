@@ -136,6 +136,25 @@ const nivelClinico = (id) => NIVEIS_CLINICOS.find(n => n.id === id) || NIVEIS_CL
 
    Devolve a ocorrência mais recente que cobre esse dia (`null` = sem
    nada). `fim` vazio significa aberta — ainda a decorrer. */
+/* Além da ocorrência clínica em si (`estadoClinicoEm`, que trata uma
+   ocorrência sem `fim` como aberta indefinidamente — útil para avisos),
+   esta função resolve especificamente a pergunta da tabela de
+   Presenças: "este jogador estava indisponível, com regresso PREVISTO,
+   naquele dia?" Só conta como automaticamente lesionado enquanto
+   houver uma data de regresso prevista — sem ela não há até quando
+   preencher, e a marcação continua ao critério de quem regista dia a
+   dia. Se entretanto foi dada alta mais cedo (`fim` antes da previsão),
+   essa alta manda: o preenchimento automático para nesse dia. */
+function diaAutoLesionado(jogadorId, data, clinico) {
+  if (!jogadorId || !data) return false;
+  return (clinico || []).some(o => (
+    o.playerId === jogadorId && o.nivel === 'indisponivel'
+    && o.inicio && o.previsaoRetorno
+    && o.inicio <= data && data <= o.previsaoRetorno
+    && (!o.fim || data <= o.fim)
+  ));
+}
+
 function estadoClinicoEm(jogadorId, data, clinico) {
   if (!jogadorId || !data) return null;
   const abertas = (clinico || []).filter(o =>
@@ -1919,6 +1938,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           ::selection { background: ${T.gold}55; }
           input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+          /* Barra de deslocamento fina e discreta para as tabelas largas
+             (Presenças, Classificação) que precisam mesmo de rolar na
+             horizontal — a barra cinzenta grossa do sistema, dentro de
+             uma caixa com moldura, destoava do resto da app. */
+          .mjp-scroll-fino::-webkit-scrollbar { height: 8px; width: 8px; }
+          .mjp-scroll-fino::-webkit-scrollbar-track { background: transparent; }
+          .mjp-scroll-fino::-webkit-scrollbar-thumb { background: ${T.line}; border-radius: 8px; }
+          .mjp-scroll-fino::-webkit-scrollbar-thumb:hover { background: ${T.mutedDim}; }
+          .mjp-scroll-fino { scrollbar-width: thin; scrollbar-color: ${T.line} transparent; }
         `}</style>
         {previewKiosk && (
           <button onClick={() => setPreviewKiosk(false)} style={{
@@ -15459,8 +15487,15 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
         </div>
         {monthControl}
       </div>
-      <div style={{
-        overflow: 'auto', maxHeight: 'min(72vh, 640px)',
+      {/* A caixa cresce até quase preencher o que resta da janela — só
+          entra a rolar (na vertical) quando mesmo não há mais espaço,
+          não logo aos 640px como antes, que cortava a tabela a meio do
+          ecrã mesmo havendo página livre por baixo. Na horizontal, com
+          muitos dias, continua a precisar de rolar — a barra fina do
+          estilo `.mjp-scroll-fino` acima é o que evita o "azul e cinzento
+          do sistema operativo" a destoar do resto. */}
+      <div className="mjp-scroll-fino" style={{
+        overflow: 'auto', maxHeight: 'calc(100vh - 220px)',
         border: `1px solid ${T.line}`, borderRadius: 10,
       }}>
         <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
@@ -15746,7 +15781,14 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
     const lesionados = d.match ? (d.match.lesionados || []) : (d.list || []).flatMap(x => x.lesionados || []);
     if (lesionados.includes(pid)) return 'lesionado';
     const escalao = d.match ? (d.match.escalao || []) : (d.list || []).flatMap(x => x.escalao || []);
-    return escalao.includes(pid) ? 'escalao' : 'ausente';
+    if (escalao.includes(pid)) return 'escalao';
+    // Preenche-se sozinho a partir do boletim clínico: um jogador
+    // indisponível com regresso previsto aparece como lesionado em
+    // cada dia dentro desse período, sem ser preciso marcar sessão a
+    // sessão. Um toque manual na célula (falta/lesionado/escalão,
+    // verificados acima) continua a ganhar a este preenchimento.
+    if (diaAutoLesionado(pid, d.date, clinico)) return 'lesionado';
+    return 'ausente';
   };
   const ratingOf = (d, pid) => (d.match ? ((d.match.ratings || {})[pid] ?? null) : dayRating(d.list, pid));
   const dayClosed = (d) => (d.match ? !!d.match.attendanceClosed : dayIsClosed(d.list));
@@ -17307,7 +17349,7 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
               sempre numa linha, com reticências se não couber, e a tabela
               desliza na horizontal no telemóvel. */}
           {teams.length > 0 && (
-            <div style={{ overflowX: 'auto' }}>
+            <div className="mjp-scroll-fino" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, tableLayout: 'fixed', minWidth: 460 }}>
                 <thead>
                   <tr style={{ color: T.mutedDim, ...mono, fontSize: 11 }}>
