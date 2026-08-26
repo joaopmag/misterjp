@@ -4178,53 +4178,53 @@ const TATICAS = {
      lateral, que é onde jogam. */
   '4-3-3': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.965], de: ['DD'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.90], de: ['DD'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.035], de: ['DE'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.10], de: ['DE'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC', 'MD'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC', 'MD'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.50, 0.32], de: ['MC', 'MOC'] },
-    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.965], de: ['ED'] },
-    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.035], de: ['EE'] },
-    { id: 'PL', rotulo: 'PL', ponto: [0.86, 0.50], de: ['PL'] },
+    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.90], de: ['ED'] },
+    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.10], de: ['EE'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.86, 0.38], de: ['PL'] },
   ],
   '4-4-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.965], de: ['DD'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.90], de: ['DD'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.035], de: ['DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.965], de: ['MD', 'ED'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.10], de: ['DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.90], de: ['MD', 'ED'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.44, 0.62], de: ['MC', 'MOC'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.44, 0.38], de: ['MC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.035], de: ['EE'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.10], de: ['EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
   '4-2-3-1': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.965], de: ['DD'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.90], de: ['DD'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.035], de: ['DE'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.10], de: ['DE'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC', 'MD'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC'] },
-    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.965], de: ['ED'] },
+    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.90], de: ['ED'] },
     { id: 'MOC2', rotulo: 'MOC', ponto: [0.60, 0.50], de: ['MOC'] },
-    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.035], de: ['EE'] },
-    { id: 'PL', rotulo: 'PL', ponto: [0.85, 0.50], de: ['PL'] },
+    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.10], de: ['EE'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.85, 0.38], de: ['PL'] },
   ],
   '3-5-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.74], de: ['DC', 'DD'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.50], de: ['DC'] },
     { id: 'DC3', rotulo: 'DC', ponto: [0.19, 0.26], de: ['DC', 'DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.48, 0.965], de: ['DD', 'ED', 'MD'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.48, 0.90], de: ['DD', 'ED', 'MD'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.46, 0.64], de: ['MC', 'MD'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.46, 0.36], de: ['MC', 'MOC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.48, 0.035], de: ['DE', 'EE'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.48, 0.10], de: ['DE', 'EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
@@ -17235,16 +17235,40 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                      NO TELEMÓVEL a coluna sai da linha e sobe para cima do
                      jogo (ainda só quando muda): a largura já é pouca para
                      duas equipas, e tirar-lhe mais uns pixels para a data
-                     era o que forçava os nomes a cortar cedo demais. */
+                     era o que forçava os nomes a cortar cedo demais.
+
+                     O "vs" ALINHADO COM O CENTRO DA JORNADA, a sério.
+
+                     Com `flex:1` nos dois nomes, um nome curto de um lado e
+                     comprido do outro (frequente — nem todas as equipas têm
+                     nomes do mesmo tamanho) fazia o dois lados crescerem de
+                     forma desigual assim que um deles batia no limite de
+                     largura, empurrando o "vs" para um dos lados. Uma grelha
+                     com as duas colunas dos nomes em `1fr` cada garante que
+                     ficam SEMPRE com a mesma largura, o que quer que lá
+                     esteja escrito — por isso o "vs" cai sempre exatamente a
+                     meio, alinhado com o título da jornada por cima (que
+                     também está centrado na largura toda). No desktop, a
+                     coluna da data (só à esquerda) ganha uma gémea invisível
+                     à direita, do mesmo tamanho — sem isso, tirar espaço só
+                     de um lado deslocava o centro do resto da linha. */
                   return jogos.map((g, i) => {
                     const mostraData = i === 0 || g.date !== jogos[i - 1].date;
                     const nomeEquipa = (nome, lado) => (
                       <span style={{
-                        width: isNarrow ? undefined : 150, maxWidth: isNarrow ? '38vw' : undefined,
-                        flex: isNarrow ? 1 : undefined, minWidth: 0,
-                        textAlign: lado, color: T.cream,
+                        minWidth: 0, textAlign: lado, color: T.cream,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       }} title={nome}>{nome}</span>
+                    );
+                    const confronto = (
+                      <div style={{
+                        display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
+                        columnGap: 8, width: '100%', maxWidth: 420, margin: '0 auto',
+                      }}>
+                        {nomeEquipa(g.home, 'right')}
+                        <span style={{ ...mono, color: T.gold, flexShrink: 0 }}>{g.score || 'vs'}</span>
+                        {nomeEquipa(g.away, 'left')}
+                      </div>
                     );
                     return (
                       <div key={g.id || i}>
@@ -17253,24 +17277,22 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                             {dataCurta(g.date)}
                           </div>
                         )}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
-                          {!isNarrow && (
-                            <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 40, flexShrink: 0 }}>
+                        {isNarrow ? (
+                          <div style={{ padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
+                            {confronto}
+                          </div>
+                        ) : (
+                          <div style={{
+                            display: 'grid', gridTemplateColumns: '40px 1fr 40px', alignItems: 'center',
+                            gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}`,
+                          }}>
+                            <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>
                               {mostraData ? dataCurta(g.date) : ''}
                             </span>
-                          )}
-                          {/* "vs" centrado na LINHA (não só na coluna do meio):
-                              os nomes ficam encostados a ele — direita/esquerda
-                              — dentro de um grupo mais estreito, em vez de
-                              espalhados pela largura toda com um vazio no
-                              meio. Sempre numa linha só (reticências se não
-                              couber), nunca a quebrar em várias. */}
-                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minWidth: 0 }}>
-                            {nomeEquipa(g.home, 'right')}
-                            <span style={{ ...mono, color: T.gold, flexShrink: 0 }}>{g.score || 'vs'}</span>
-                            {nomeEquipa(g.away, 'left')}
+                            {confronto}
+                            <span aria-hidden="true" />
                           </div>
-                        </div>
+                        )}
                       </div>
                     );
                   });
