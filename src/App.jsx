@@ -4118,57 +4118,69 @@ const P = {
    preferência — é o que faz um MD ir para o meio num 4-3-3 (que não tem
    corredor de médio) e ter lugar próprio num 4-4-2. */
 const TATICAS = {
+  /* AS COORDENADAS SÃO AS DO DESENHO DA FORMAÇÃO, NÃO UMA GRELHA.
+
+     A primeira versão punha os lugares em colunas certinhas e ficava
+     tudo errado: num 4-3-3 os três médios alinhados na mesma linha, num
+     4-2-3-1 os extremos no meio do campo, e os corredores do 4-4-2
+     colados aos defesas. Um treinador olha para isto e vê logo que não é
+     a formação que escreveu.
+
+     Agora cada táctica tem o seu desenho: o triângulo do meio-campo do
+     4-3-3 com o 6 mais recuado, os extremos do 4-2-3-1 abertos na linha
+     dos três, e os corredores do 4-4-2 e do 3-5-2 subidos e encostados à
+     lateral, que é onde jogam. */
   '4-3-3': [
-    { id: 'GR', rotulo: 'GR', ponto: P.GR, de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: P.DD, de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.62], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.19, 0.38], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: P.DE, de: ['DE'] },
-    { id: 'MC1', rotulo: 'MC', ponto: P.MC1, de: ['MC', 'MD'] },
-    { id: 'MC2', rotulo: 'MC', ponto: P.MC2, de: ['MC', 'MD'] },
-    { id: 'MC3', rotulo: 'MC', ponto: P.MC3, de: ['MC', 'MOC'] },
-    { id: 'ED', rotulo: 'ED', ponto: P.ED, de: ['ED'] },
-    { id: 'EE', rotulo: 'EE', ponto: P.EE, de: ['EE'] },
-    { id: 'PL', rotulo: 'PL', ponto: P.PL, de: ['PL'] },
+    { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.86], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.14], de: ['DE'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC', 'MD'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC', 'MD'] },
+    { id: 'MC3', rotulo: 'MC', ponto: [0.50, 0.32], de: ['MC', 'MOC'] },
+    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.86], de: ['ED'] },
+    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.14], de: ['EE'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.86, 0.50], de: ['PL'] },
   ],
   '4-4-2': [
-    { id: 'GR', rotulo: 'GR', ponto: P.GR, de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: P.DD, de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.62], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.19, 0.38], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: P.DE, de: ['DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: P.MD, de: ['MD', 'ED'] },
-    { id: 'MC1', rotulo: 'MC', ponto: [0.42, 0.62], de: ['MC', 'MOC'] },
-    { id: 'MC2', rotulo: 'MC', ponto: [0.42, 0.38], de: ['MC'] },
-    { id: 'ME', rotulo: 'ME', ponto: P.ME, de: ['EE'] },
-    { id: 'PL1', rotulo: 'PL', ponto: P.PL1, de: ['PL'] },
-    { id: 'PL2', rotulo: 'PL', ponto: P.PL2, de: ['PL', 'MOC'] },
+    { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.86], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.14], de: ['DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.87], de: ['MD', 'ED'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.44, 0.62], de: ['MC', 'MOC'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.44, 0.38], de: ['MC'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.13], de: ['EE'] },
+    { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
+    { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
   '4-2-3-1': [
-    { id: 'GR', rotulo: 'GR', ponto: P.GR, de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: P.DD, de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.62], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.19, 0.38], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: P.DE, de: ['DE'] },
-    { id: 'MC1', rotulo: 'MC', ponto: [0.38, 0.62], de: ['MC', 'MD'] },
-    { id: 'MC2', rotulo: 'MC', ponto: [0.38, 0.38], de: ['MC'] },
-    { id: 'MOC1', rotulo: 'ED', ponto: P.MOC1, de: ['ED'] },
-    { id: 'MOC2', rotulo: 'MOC', ponto: P.MOC2, de: ['MOC'] },
-    { id: 'MOC3', rotulo: 'EE', ponto: P.MOC3, de: ['EE'] },
-    { id: 'PL', rotulo: 'PL', ponto: P.PL, de: ['PL'] },
+    { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.86], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.14], de: ['DE'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC', 'MD'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC'] },
+    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.86], de: ['ED'] },
+    { id: 'MOC2', rotulo: 'MOC', ponto: [0.60, 0.50], de: ['MOC'] },
+    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.14], de: ['EE'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.85, 0.50], de: ['PL'] },
   ],
   '3-5-2': [
-    { id: 'GR', rotulo: 'GR', ponto: P.GR, de: ['GR'] },
-    { id: 'DC1', rotulo: 'DC', ponto: P.DC1, de: ['DC', 'DD'] },
-    { id: 'DC2', rotulo: 'DC', ponto: P.DC2, de: ['DC'] },
-    { id: 'DC3', rotulo: 'DC', ponto: P.DC3, de: ['DC', 'DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: P.MD, de: ['DD', 'ED', 'MD'] },
-    { id: 'MC1', rotulo: 'MC', ponto: P.MC1, de: ['MC', 'MD'] },
-    { id: 'MC2', rotulo: 'MC', ponto: P.MC2, de: ['MC'] },
-    { id: 'MC3', rotulo: 'MC', ponto: P.MC3, de: ['MC', 'MOC'] },
-    { id: 'ME', rotulo: 'ME', ponto: P.ME, de: ['DE', 'EE'] },
-    { id: 'PL1', rotulo: 'PL', ponto: P.PL1, de: ['PL'] },
-    { id: 'PL2', rotulo: 'PL', ponto: P.PL2, de: ['PL', 'MOC'] },
+    { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.74], de: ['DC', 'DD'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.17, 0.50], de: ['DC'] },
+    { id: 'DC3', rotulo: 'DC', ponto: [0.19, 0.26], de: ['DC', 'DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.48, 0.88], de: ['DD', 'ED', 'MD'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.46, 0.64], de: ['MC', 'MD'] },
+    { id: 'MC3', rotulo: 'MC', ponto: [0.46, 0.36], de: ['MC', 'MOC'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.48, 0.12], de: ['DE', 'EE'] },
+    { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
+    { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
 };
 const TATICA_OMISSAO = '4-3-3';
@@ -13340,13 +13352,23 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           const convidados = doDia.flatMap(x => convidadosDe(x));
 
           if (printFolha.tipo === 'prancheta') {
+            /* A TÁCTICA E AS ARRUMAÇÕES VÊM DA MESMA SESSÃO.
+
+               Antes procurava-se cada uma por sua conta: a táctica na
+               primeira sessão que tivesse táctica, as arrumações na
+               primeira que tivesse arrumações. Num dia com dois treinos,
+               podiam vir de sessões diferentes — e uma arrumação feita
+               num 4-4-2 aplicada a um 4-3-3 manda gente para lugares que
+               nessa formação não existem, e daí para "Sem lugar".
+
+               É a sessão que pediu o quadro que manda nos dois. */
+            const dona = doDia.find(x => x.imprimirPlantel) || doDia[0] || {};
             const lugares = distribuirPlantel({
               players,
               attendance: doDia.flatMap(x => x.attendance || []),
               convidados,
-              // As alterações são da sessão que as guardou.
-              overrides: (doDia.find(x => x.prancheta) || {}).prancheta,
-              tatica: (doDia.find(x => x.pranchetaTatica) || {}).pranchetaTatica,
+              overrides: dona.prancheta,
+              tatica: dona.pranchetaTatica,
             });
             return (
               <div className="print-sheet">
