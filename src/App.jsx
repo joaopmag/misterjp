@@ -11551,7 +11551,7 @@ function blocosDeTreino(exerciciosEscolhidos) {
 }
 
 /* Preenche um conjunto de vagas a partir da fila, respeitando o lugar. */
-function preencher(grupos, fila, usados, minutos) {
+function preencher(grupos, fila, usados, minutos, jaJogaram) {
   const gr = fila.filter(ehGuardaRedes);
   const linha = fila.filter(p => !ehGuardaRedes(p));
 
@@ -11568,10 +11568,27 @@ function preencher(grupos, fila, usados, minutos) {
   const escolherPara = (lista, posicaoPedida) => {
     const livres = lista.filter(p => !usados.has(p.id));
     if (!livres.length) return null;
-    if (!posicaoPedida) return livres[0];
+    if (!posicaoPedida) {
+      // Sem posição pedida, a fila já vem ordenada por minutos — mas quem
+      // já jogou neste exercício vai para o fim na mesma.
+      const frescos = jaJogaram ? livres.filter(p => !jaJogaram.has(p.id)) : livres;
+      return (frescos.length ? frescos : livres)[0];
+    }
     const familiaPedida = FAMILIA[posicaoPedida] || 'MEIO';
+    /* QUEM JÁ FEZ ESTE EXERCÍCIO SÓ VOLTA SE NÃO HOUVER MAIS NINGUÉM.
+
+       A penalização de posição chega a 20, e um turno inteiro vale 20
+       minutos: um jogador que descansou mas está fora da posição empatava
+       com um que acabou de jogar na posição certa. Nos empates ganhava o
+       primeiro da lista, e havia gente a fazer os dois turnos seguidos
+       enquanto outros ficavam de fora nos dois.
+
+       Com 500, nenhuma preferência de posição chega perto — quem
+       descansou entra sempre primeiro, e a posição só decide DENTRO de
+       cada grupo. É o "entram dez e saem dez" a ficar garantido em vez de
+       depender dos números. */
     const nota = (p) => {
-      const base = minutos.get(p.id) || 0;
+      const base = (minutos.get(p.id) || 0) + (jaJogaram && jaJogaram.has(p.id) ? 500 : 0);
       if (posicaoServe(posicaoPedida, p)) return base;
       if (familiaDe(p) === familiaPedida) return base + 4;
       return base + 20;
@@ -11620,6 +11637,10 @@ function distribuirTreino(exerciciosEscolhidos, presentes, opcoes = {}) {
     const metades = substituirAMeio && presentes.length > vagasBloco ? 2 : 1;
 
     const partes = [];
+    /* Por exercício e não por bloco: em turnos com dois exercícios em
+       simultâneo, quem fez o A no turno 1 pode e deve fazer o B no turno
+       2 — o que não pode é repetir o mesmo. */
+    const jaJogaramPorExercicio = new Map();
     for (let m = 0; m < metades; m++) {
       const usados = new Set();
       const fila = filaPorMinutos(presentes, minutos);
@@ -11628,7 +11649,10 @@ function distribuirTreino(exerciciosEscolhidos, presentes, opcoes = {}) {
       const exerciciosDaParte = [];
       itens.forEach((it, i) => {
         for (let c = 0; c < copias[i]; c++) {
-          const equipas = preencher(it.grupos, fila, usados, minutos);
+          if (!jaJogaramPorExercicio.has(it.exercise.id)) jaJogaramPorExercicio.set(it.exercise.id, new Set());
+          const jaJogaram = jaJogaramPorExercicio.get(it.exercise.id);
+          const equipas = preencher(it.grupos, fila, usados, minutos, jaJogaram);
+          equipas.forEach(eq => eq.jogadores.forEach(p => jaJogaram.add(p.id)));
           equipas.forEach(eq => eq.jogadores.forEach(p => minutos.set(p.id, (minutos.get(p.id) || 0) + duracaoParte)));
           exerciciosDaParte.push({
             exercise: it.exercise,
@@ -13384,11 +13408,22 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                     que é o suficiente para reconhecer o exercício sem
                     trazer o plano todo atrás. */}
                 {(() => {
+                  /* `exerciseIds` guarda `{ exId, duration }` e não ids,
+                     apesar do nome — está documentado mais abaixo e eu
+                     voltei a cair nele: procurava `ref.id`, que não
+                     existe, e a lista saía sempre vazia. Daí os desenhos
+                     nunca aparecerem na folha.
+
+                     Sem repetidos: o mesmo exercício em duas sessões do
+                     mesmo dia é o mesmo desenho. */
+                  const vistos = new Set();
                   const desenhos = [];
                   doDia.forEach(sessao => {
-                    (sessao.exerciseIds || []).forEach(ref => {
-                      const ex = exercises.find(e => e.id === (ref && ref.id ? ref.id : ref));
-                      if (ex && ex.diagram) desenhos.push(ex);
+                    (sessao.exerciseIds || []).forEach(item => {
+                      const exId = item && (item.exId || item.id);
+                      if (!exId || vistos.has(exId)) return;
+                      const ex = exercises.find(e => e.id === exId);
+                      if (ex && ex.diagram) { vistos.add(exId); desenhos.push(ex); }
                     });
                   });
                   if (!desenhos.length) return null;
