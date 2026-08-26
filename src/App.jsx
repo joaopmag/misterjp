@@ -62,6 +62,16 @@ const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
 const POSITIONS = ['GR', 'DC', 'DE', 'DD', 'MD', 'MC', 'MOC', 'EE', 'ED', 'PL'];
 
+// Os mesmos 4 grupos de posição da folha impressa: GR, Defesas, Médios,
+// Avançados. Usado só para arrumar a lista de presenças em colunas —
+// não mexe em nada da lógica tática (formações, distribuição, etc.).
+const GRUPOS_POSICAO_PRINT = [
+  { grupo: 'GR', label: 'GR', posicoes: ['GR'] },
+  { grupo: 'DEF', label: 'Defesas', posicoes: ['DD', 'DC', 'DE'] },
+  { grupo: 'MEIO', label: 'Médios', posicoes: ['MD', 'MC', 'MOC'] },
+  { grupo: 'AVANCADO', label: 'Avançados', posicoes: ['ED', 'EE', 'PL'] },
+];
+
 // Ordenação-padrão do plantel: por posição (ordem tática de POSITIONS) e,
 // dentro da mesma posição, por número de camisola. Mantida tal como estava
 // mesmo depois de o crachá passar a mostrar a posição em vez do número.
@@ -3201,8 +3211,8 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
 
      Não vem do email — a `auth.users` não é legível pelo cliente, e
      torná-la legível daria a lista de contas da plataforma a qualquer
-     membro. Também não o escreve o dono pelos outros: quem sabe como se
-     quer ser chamado é a própria pessoa.
+     membro. Também não o escreve o administrador pelos outros: quem
+     sabe como se quer ser chamado é a própria pessoa.
 
      Enquanto ninguém escrever, as Tarefas mostram "Membro 3f2a…", que é
      feio o suficiente para se resolver depressa. */
@@ -3248,10 +3258,10 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
   });
 
   const passarPosse = (m) => askConfirm({
-    title: 'Passar a posse da equipa?',
+    title: 'Passar a administração da equipa?',
     label: rotulo(m),
-    note: 'Passa a ser esta pessoa a poder remover membros. Tu ficas membro e não podes desfazer isto sozinha.',
-    confirmLabel: 'Passar a posse',
+    note: 'Passa a ser esta pessoa a administrar a equipa e a poder remover membros. Tu ficas membro e não podes desfazer isto sozinho.',
+    confirmLabel: 'Passar administração',
     onConfirm: async () => {
       const a = await supabase.from('team_members').update({ papel: 'owner' })
         .eq('team_id', equipa.id).eq('user_id', m.user_id);
@@ -3279,7 +3289,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
      obrigação de eliminação exige, e é o que o clube tem direito a pedir.
 
      Três travões, porque isto não tem anular nenhum:
-     · só o dono;
+     · só o administrador;
      · só quando não há mais ninguém na equipa, senão apagava-se o
        trabalho de outra pessoa sem ela saber;
      · e obriga a escrever o nome do clube à mão. Um clique dado por
@@ -3312,7 +3322,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
     title: 'Sair desta equipa?',
     label: [equipa.clube, equipa.escalao || equipa.nome].filter(Boolean).join(' · '),
     note: souDono
-      ? 'És a dona desta equipa. Passa a posse a outra pessoa antes de saíres, ou ninguém poderá gerir membros.'
+      ? 'És a administradora desta equipa. Passa a administração a outra pessoa antes de saíres, ou ninguém poderá gerir membros.'
       : 'Deixas de ver os dados desta equipa. Podes voltar a entrar com o código.',
     confirmLabel: 'Sair',
     onConfirm: async () => {
@@ -3401,13 +3411,13 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
                     {rotulo(m)}
                   </div>
                   <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>
-                    {m.papel === 'owner' ? 'Dono' : 'Membro'}
+                    {m.papel === 'owner' ? 'Administrador' : 'Membro'}
                     {m.created_at ? ` · desde ${fmtDate(String(m.created_at).slice(0, 10))}` : ''}
                   </div>
                 </div>
                 {souDono && m.user_id !== euId && (
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
-                    <button onClick={() => passarPosse(m)} title="Passar a posse da equipa" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Star size={14} /></button>
+                    <button onClick={() => passarPosse(m)} title="Passar a administração da equipa" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Star size={14} /></button>
                     <button onClick={() => remover(m)} title="Remover da equipa" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                   </div>
                 )}
@@ -4256,13 +4266,24 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
       />
       {lugares.map(l => {
         const [fx, fy] = l.ponto;
+        /* ÂNCORA QUE MUDA PERTO DAS EXTREMIDADES.
+           Um lugar como "DE" ou "EE" fica perto do topo/fundo do campo;
+           quando lá caem vários jogadores (titular + convidados à
+           experiência, por exemplo), o bloco de nomes cresce e, se
+           ficar sempre centrado no ponto, metade dele empurra para FORA
+           do campo — foi o que aconteceu na folha impressa. Perto de
+           uma margem, ancora-se pelo lado de DENTRO (o bloco cresce
+           para o centro do campo, nunca para fora); no resto do campo
+           mantém-se centrado, como sempre foi. */
+        const ancoraX = fx < 0.15 ? 0 : fx > 0.85 ? 100 : 50;
+        const ancoraY = fy < 0.2 ? 0 : fy > 0.8 ? 100 : 50;
         return (
           <div
             key={l.id}
             onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
             style={{
               position: 'absolute', ...posCampoPrint(fx, fy),
-              transform: 'translate(-50%, -50%)', textAlign: 'center', width: '17%',
+              transform: `translate(-${ancoraX}%, -${ancoraY}%)`, textAlign: 'center', width: '17%',
               cursor: editavel && selecionado ? 'pointer' : 'default',
               // Enquanto há alguém escolhido, os lugares acendem-se: sem
               // isso não se percebe que se pode tocar neles.
@@ -4272,7 +4293,15 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
           >
             <div style={{
               display: 'inline-block', padding: '2px 7px', borderRadius: 5,
-              background: editavel ? '#B5393F' : '#A6192E', color: '#fff',
+              // No ecrã fica preenchido, como sempre. Na folha impressa a
+              // maior parte dos telemóveis/impressoras não imprime cor de
+              // fundo por omissão ("imprimir gráficos de fundo" desligado)
+              // — e um rótulo branco sobre fundo branco desaparece por
+              // completo. Por isso, impresso, é uma cor de tinta a sério
+              // (contorno + texto), que se vê com ou sem cor de fundo.
+              background: editavel ? '#B5393F' : 'transparent',
+              border: editavel ? 'none' : '1px solid #A6192E',
+              color: editavel ? '#fff' : '#A6192E',
               fontSize: 9.5 * escala, fontWeight: 700, letterSpacing: '.03em',
             }}>{l.rotulo}</div>
             <div style={{ marginTop: 2 }}>
@@ -4445,8 +4474,16 @@ function ConvidadosEditor({ convidados, onChange, onIntegrar, label = 'Convidado
   );
 }
 
-function PlayerChipList({ players, isOn, onToggle, estadoClinico, avisaEm = 'treino' }) {
+/* O nome mostrado segue sempre o mesmo padrão da Monitorização — nome
+   curto (shortPlayerName), não o nome completo do registo. `allPlayers`
+   é o universo usado para desambiguar (dois "Pedro" no plantel, por
+   exemplo); por omissão é a própria lista mostrada, mas quando essa
+   lista já vem filtrada (ex: só os "fora do momento", ou só os
+   guarda-redes) quem chama pode passar o plantel completo para a
+   desambiguação continuar a funcionar como esperado. */
+function PlayerChipList({ players, allPlayers, isOn, onToggle, estadoClinico, avisaEm = 'treino' }) {
   const isMobile = useIsMobile(560);
+  const universo = allPlayers || players;
   /* Ordenação POR COLUNA: com gridAutoFlow "column" e um número de linhas
      fixo, a lista lê-se de cima para baixo em cada coluna (GR, GR, GR, GR,
      DC…) em vez de saltar de coluna em coluna. Para isso é preciso saber
@@ -4497,12 +4534,33 @@ function PlayerChipList({ players, isOn, onToggle, estadoClinico, avisaEm = 'tre
               }} />
             )}
             <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {p.position ? `${p.position} · ` : ''}{p.name}
+              {p.position ? `${p.position} · ` : ''}{shortPlayerName(p, universo)}
             </span>
           </button>
         );
       })}
     </div>
+  );
+}
+
+/* Cabeçalho reutilizável para qualquer PlayerChipList onde faça sentido
+   marcar/desmarcar tudo de uma vez — presenças, convocatórias, momentos
+   de avaliação. Não faz sentido em TODOS os sítios que usam
+   PlayerChipList (ex: escolher os 2 jogadores de um lugar fixo no
+   Simulador), por isso é opt-in em cada chamada, não embutido no chip
+   list em si. */
+function SelectAllBar({ onSelectAll, onClear }) {
+  return (
+    <span style={{ display: 'flex', gap: 6 }}>
+      <button type="button" onClick={onSelectAll} style={{
+        padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
+        background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
+      }}>Selecionar todos</button>
+      <button type="button" onClick={onClear} style={{
+        padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
+        background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
+      }}>Limpar seleção</button>
+    </span>
   );
 }
 
@@ -6117,16 +6175,21 @@ function parsePlayersCount(str) {
   sides.forEach(side => {
     // Dentro de cada lado, divide por '+' — subgrupos desse mesmo lado.
     const tokens = side.split('+').map(t => t.trim()).filter(Boolean);
-    let sideTeam = null; // cor principal deste lado (a do 1º subgrupo de linha)
+    /* Jogadores de linha e guarda-redes processam-se em duas passagens,
+       não pela ordem em que foram escritos: assim "1gr+10" e "10+1gr"
+       dão exatamente o mesmo resultado — 10 de linha e 1 Gr, todos na
+       MESMA cor. Antes, escrever o Gr primeiro ("1gr+10") fazia o Gr
+       "roubar" a cor principal do lado e os 10 de linha saíam numa cor
+       diferente, dividindo o que devia ser uma equipa só em duas cores. */
+    const grTokens = [];
+    const lineTokens = [];
     tokens.forEach(tok => {
-      const grTok = tok.match(/^(\d*)\s*gr\.?$/);
-      if (grTok) {
-        const count = Math.max(1, parseInt(grTok[1], 10) || 1);
-        const team = sideTeam || TEAMS[colorIdx % TEAMS.length].id;
-        if (!sideTeam) { sideTeam = team; colorIdx++; }
-        groups.push({ count, isKeeper: true, team });
-        return;
-      }
+      if (/^\d*\s*gr\.?$/.test(tok)) grTokens.push(tok);
+      else lineTokens.push(tok);
+    });
+
+    let sideTeam = null; // cor principal deste lado (a do 1º subgrupo de linha)
+    lineTokens.forEach(tok => {
       const num = tok.match(/\d+/);
       if (!num) return;
       /* Antes o limite era 11 — pensado para uma equipa de onze. Mas o
@@ -6140,6 +6203,17 @@ function parsePlayersCount(str) {
       if (!sideTeam) sideTeam = team;
       colorIdx++;
       groups.push({ count, isKeeper: false, team });
+    });
+
+    // Guarda-redes deste lado: herdam sempre a cor principal já
+    // definida pela linha; só ganham cor própria se o lado não tiver
+    // nenhum jogador de linha (ex.: um lado feito só de guarda-redes).
+    grTokens.forEach(tok => {
+      const grTok = tok.match(/^(\d*)\s*gr\.?$/);
+      const count = Math.max(1, parseInt(grTok[1], 10) || 1);
+      const team = sideTeam || TEAMS[colorIdx % TEAMS.length].id;
+      if (!sideTeam) { sideTeam = team; colorIdx++; }
+      groups.push({ count, isKeeper: true, team });
     });
   });
 
@@ -11057,16 +11131,10 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
             <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
               Jogadores · {(novoMomento.jogadores || []).length}/{players.length}
             </span>
-            <span style={{ display: 'flex', gap: 6 }}>
-              <button type="button" onClick={() => setNovoMomento(prev => ({ ...prev, jogadores: players.map(p => p.id) }))} style={{
-                padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
-                background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
-              }}>Selecionar todos</button>
-              <button type="button" onClick={() => setNovoMomento(prev => ({ ...prev, jogadores: [] }))} style={{
-                padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
-                background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
-              }}>Limpar seleção</button>
-            </span>
+            <SelectAllBar
+              onSelectAll={() => setNovoMomento(prev => ({ ...prev, jogadores: players.map(p => p.id) }))}
+              onClear={() => setNovoMomento(prev => ({ ...prev, jogadores: [] }))}
+            />
           </div>
           <PlayerChipList
             players={players}
@@ -11094,19 +11162,14 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                 <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
                   Jogadores · {adicionarJogadores.length}/{jogadoresForaDoMomento.length}
                 </span>
-                <span style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" onClick={() => setAdicionarJogadores(jogadoresForaDoMomento.map(p => p.id))} style={{
-                    padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
-                    background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
-                  }}>Selecionar todos</button>
-                  <button type="button" onClick={() => setAdicionarJogadores([])} style={{
-                    padding: '3px 9px', borderRadius: 20, fontSize: 11, cursor: 'pointer', ...body,
-                    background: 'transparent', color: T.mutedDim, border: `1px solid ${T.line}`,
-                  }}>Limpar seleção</button>
-                </span>
+                <SelectAllBar
+                  onSelectAll={() => setAdicionarJogadores(jogadoresForaDoMomento.map(p => p.id))}
+                  onClear={() => setAdicionarJogadores([])}
+                />
               </div>
               <PlayerChipList
                 players={jogadoresForaDoMomento}
+                allPlayers={players}
                 isOn={p => adicionarJogadores.includes(p.id)}
                 onToggle={p => setAdicionarJogadores(prev =>
                   prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
@@ -12893,6 +12956,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
           </p>
           <PlayerChipList
             players={editarEquipa.isKeeper ? presentes.filter(ehGuardaRedes) : presentes.filter(x => !ehGuardaRedes(x))}
+            allPlayers={players}
             isOn={pl => editarEquipa.atuais.includes(pl.id)}
             onToggle={pl => setEditarEquipa(prev => ({
               ...prev,
@@ -13034,6 +13098,34 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
   // No telemóvel os cartões da lista partem-se em dois andares (ver abaixo).
   const isNarrow = useIsMobile(700);
 
+  /* SEMANAS FECHADAS + ABRIR JÁ NA SEMANA ATUAL.
+
+     Antes a Lista mostrava a época toda desde o início — abrir
+     Planeamento a meio da época obrigava a rolar por semanas e semanas
+     já passadas até chegar ao dia de hoje. Agora:
+
+       1. Uma semana já terminada (o domingo dela já passou) começa
+          FECHADA — só o cabeçalho, sem os cartões. Toca no cabeçalho
+          para abrir e consultar; toca outra vez para voltar a fechar.
+          A semana atual e as futuras começam sempre abertas.
+       2. Ao entrar no ecrã, salta-se automaticamente para a semana
+          atual (ou a próxima semana com sessões, se não houver nada
+          marcado exatamente para esta) — sem precisar de rolar até lá.
+
+     `toggledWeeks` guarda só as semanas em que o treinador MEXEU no
+     estado por omissão (abriu uma fechada, ou fechou a atual) — assim
+     o comportamento por omissão continua a reagir ao calendário indo
+     avançando, em vez de ficar preso ao que era true/false no dia em
+     que se tocou. */
+  const [toggledWeeks, setToggledWeeks] = useState(() => new Set());
+  const toggleWeek = (weekKey) => setToggledWeeks(prev => {
+    const next = new Set(prev);
+    if (next.has(weekKey)) next.delete(weekKey); else next.add(weekKey);
+    return next;
+  });
+  const weekRefs = useRef({});
+  const scrolledRef = useRef(false);
+
   const doPrint = (s) => {
     setPrintDayDate(null);
     setPrintSession(s);
@@ -13163,6 +13255,32 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
      nem no resumo semanal. */
   const idsDeJogos = new Set((matches || []).map(m => m.id));
 
+  // Segunda-feira de cada semana já agrupada, para decidir por omissão
+  // se está terminada (fechada) e para encontrar a semana atual.
+  const weekMondays = Object.fromEntries(
+    Object.entries(grouped).map(([week, items]) => [week, getMonday(items[0].date)])
+  );
+  const currentMonday = getMonday(todayStr());
+  const isWeekPast = (week) => addDays(weekMondays[week], 6) < todayStr();
+  const isWeekCollapsed = (week) => toggledWeeks.has(week) ? !isWeekPast(week) : isWeekPast(week);
+
+  // Semana para onde saltar ao abrir o ecrã: a de hoje, senão a próxima
+  // com algo marcado, senão a mais recente (para quem só tem passado).
+  const orderedWeekKeys = Object.keys(grouped);
+  const targetWeekKey = orderedWeekKeys.find(w => weekMondays[w] === currentMonday)
+    || orderedWeekKeys.find(w => weekMondays[w] > currentMonday)
+    || orderedWeekKeys[orderedWeekKeys.length - 1]
+    || null;
+
+  useEffect(() => {
+    if (view !== 'lista' || scrolledRef.current || !targetWeekKey) return;
+    const el = weekRefs.current[targetWeekKey];
+    if (el) {
+      el.scrollIntoView({ behavior: 'auto', block: 'start' });
+      scrolledRef.current = true;
+    }
+  }, [view, targetWeekKey]);
+
   /* O caminho inverso de `sessaoDoJogo`: dada a sessão de um amigável,
      qual é o jogo que lhe deu origem. É de lá que vêm as "Ideias para o
      jogo" para a ficha impressa — a sessão não as tem. Sessões antigas,
@@ -13217,9 +13335,27 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       ) : sessions.length === 0 && matchItems.length === 0 ? (
         <EmptyState text="Ainda não há sessões planeadas." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar a primeira sessão</Btn>} />
       ) : (
-        Object.entries(grouped).map(([week, items]) => (
-          <div key={week} style={{ marginBottom: 22 }}>
-            <div style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{week}</div>
+        Object.entries(grouped).map(([week, items]) => {
+          const collapsed = isWeekCollapsed(week);
+          return (
+          <div key={week} ref={el => { weekRefs.current[week] = el; }} style={{ marginBottom: 22 }}>
+            <button
+              type="button" onClick={() => toggleWeek(week)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, width: '100%',
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', marginBottom: 8,
+              }}
+            >
+              <ChevronRight size={13} color={T.mutedDim} style={{ flexShrink: 0, transform: collapsed ? 'none' : 'rotate(90deg)', transition: 'transform .15s' }} />
+              <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>{week}</span>
+              {collapsed && (
+                <span style={{ fontSize: 11, color: T.mutedDim }}>
+                  · {items.length} {items.length === 1 ? 'registo' : 'registos'} — toca para ver
+                </span>
+              )}
+            </button>
+            {!collapsed && (
+              <>
             <WeekSummary items={items} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {items.filter(s => s.__match || !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId))).map(s => s.__match ? (() => {
@@ -13359,8 +13495,11 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                 </div>
               ))}
             </div>
+              </>
+            )}
           </div>
-        ))
+          );
+        })
       )}
 
       {/* O SIMULADOR EM ECRÃ INTEIRO, POR CIMA DO PLANEAMENTO.
@@ -13470,7 +13609,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             });
             return (
               <div className="print-sheet">
-                <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Plantel presente</h2>
+                <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Plantel</h2>
                 <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>{fmtDate(printFolha.date)}</p>
                 <PrancheteDoPlantel lugares={lugares} escala={1.35} maxLargura={400} />
 
@@ -13538,6 +13677,41 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                           );
                         })}
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* AS EQUIPAS GUARDADAS PELO SIMULADOR SAEM TAMBÉM AQUI.
+
+                    Já saem na folha do plano do dia, junto a cada
+                    exercício — e saem aqui também, porque a prancheta é
+                    outra folha (para outro momento: o campo com o
+                    plantel distribuído por lugares) e fica incompleta
+                    sem dizer quem joga em cada equipa de cada exercício.
+                    Um treinador que leve só a prancheta para o campo não
+                    devia ficar sem essa informação. */}
+                {(() => {
+                  const blocos = [];
+                  doDia.forEach(sessao => {
+                    (sessao.exerciseIds || []).forEach(item => {
+                      const exId = item && (item.exId || item.id);
+                      if (!exId) return;
+                      const ex = exercises.find(e => e.id === exId);
+                      if (!ex) return;
+                      const equipas = equipasDoExercicio((sessao.equipasSimulador || {}).equipas, ex);
+                      if (equipas.length) blocos.push({ key: `${sessao.id}-${exId}`, nome: ex.name, equipas });
+                    });
+                  });
+                  if (!blocos.length) return null;
+                  return (
+                    <div style={{ marginTop: 22 }}>
+                      <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>Equipas</h3>
+                      {blocos.map(b => (
+                        <div key={b.key} style={{ marginBottom: 14, breakInside: 'avoid' }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>{b.nome}</div>
+                          <PrintEquipasBlock equipas={b.equipas} />
+                        </div>
+                      ))}
                     </div>
                   );
                 })()}
@@ -13623,8 +13797,10 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                   )}
                 />
               ))}
-              {/* A lista corrida de equipas que estava aqui saiu: cada uma
-                  passou para junto do exercício a que pertence. */}
+              {/* As equipas do Simulador saem aqui E também na Prancheta
+                  (ver mais abaixo, `printFolha.tipo === 'prancheta'`) — o
+                  plano de treino continua a mostrá-las junto do exercício
+                  a que pertencem, tal como sempre foi. */}
             </>
           )}
 
@@ -13641,16 +13817,15 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           {printSession.phase !== 'Jogo' && (
             <>
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
-              <p style={{ fontSize: 13 }}>
-                {(printSession.attendance || [])
-                  .map(pid => { const p = players.find(pl => pl.id === pid); return p ? (p.number ? `${p.number} ` : '') + p.name : null; })
-                  .filter(Boolean).join(', ') || 'Sem registo'}
-              </p>
+              <PrintPresencasPorPosicao
+                presentPlayers={(printSession.attendance || []).map(pid => players.find(pl => pl.id === pid)).filter(Boolean)}
+                allPlayers={players}
+              />
               {/* Numa lista à parte e identificados: quem leva o papel para
                   o campo precisa deles, mas não pode confundi-los com o
                   plantel ao contar. */}
               {nomesDosConvidados(printSession).length > 0 && (
-                <p style={{ fontSize: 13, margin: '6px 0 0' }}>
+                <p style={{ fontSize: 13, margin: '10px 0 0' }}>
                   <strong>À experiência:</strong> {nomesDosConvidados(printSession).join(', ')}
                 </p>
               )}
@@ -13699,12 +13874,10 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           {sessions.some(s => s.date === printDayDate && s.phase !== 'Jogo') && (
             <>
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
-              <p style={{ fontSize: 13 }}>
-                {players
-                  .filter(p => sessions.some(s => s.date === printDayDate && (s.attendance || []).includes(p.id)))
-                  .map(p => (p.number ? `${p.number} ` : '') + p.name)
-                  .join(', ') || 'Sem registo'}
-              </p>
+              <PrintPresencasPorPosicao
+                presentPlayers={players.filter(p => sessions.some(s => s.date === printDayDate && (s.attendance || []).includes(p.id)))}
+                allPlayers={players}
+              />
             </>
           )}
         </div>,
@@ -13932,6 +14105,39 @@ function openAndPrintPdfSequential(attachments) {
 /* As equipas guardadas no Simulador para ESTE exercício, agrupadas por
    turno. Vêm com o nome do exercício lá dentro, por isso filtra-se por
    ele — o Simulador não guarda o id. */
+/* Presenças em 4 colunas — GR, Defesas, Médios, Avançados — cada
+   jogador na coluna da sua posição, sem número de camisola (o nome já
+   identifica; o número só ajudava a ler devagar uma lista corrida).
+   Usado na folha impressa do treino. */
+function PrintPresencasPorPosicao({ presentPlayers, allPlayers }) {
+  if (!presentPlayers || !presentPlayers.length) {
+    return <p style={{ fontSize: 13 }}>Sem registo</p>;
+  }
+  const universo = allPlayers || presentPlayers;
+  const grupos = GRUPOS_POSICAO_PRINT.map(g => ({
+    ...g,
+    jogadores: sortByPosition(presentPlayers.filter(p => g.posicoes.includes(p.position))),
+  }));
+  const semGrupo = sortByPosition(presentPlayers.filter(p => !GRUPOS_POSICAO_PRINT.some(g => g.posicoes.includes(p.position))));
+  const colunas = semGrupo.length ? [...grupos, { grupo: 'SEM', label: 'Sem posição', jogadores: semGrupo }] : grupos;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colunas.length}, 1fr)`, gap: '0 16px' }}>
+      {colunas.map(c => (
+        <div key={c.grupo}>
+          <div style={{ fontSize: 11, fontWeight: 700, borderBottom: '1px solid #999', paddingBottom: 2, marginBottom: 4 }}>
+            {c.label}
+          </div>
+          {c.jogadores.length === 0
+            ? <div style={{ fontSize: 11, color: '#999' }}>—</div>
+            : c.jogadores.map(p => (
+              <div key={p.id} style={{ fontSize: 12, lineHeight: 1.65 }}>{shortPlayerName(p, universo)}</div>
+            ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function equipasDoExercicio(equipas, ex) {
   const nome = String((ex && ex.name) || '').trim().toLowerCase();
   if (!nome) return [];
@@ -13943,6 +14149,44 @@ function equipasDoExercicio(equipas, ex) {
     porTurno.get(chave).grupos.push(g);
   });
   return [...porTurno.values()];
+}
+
+/* Bloco de equipas em colunas A/B/C/D — usado tanto a seguir a um
+   exercício (ficha do treino) como na prancheta (ver mais abaixo, onde
+   as equipas guardadas pelo Simulador passaram a sair). */
+function PrintEquipasBlock({ equipas }) {
+  if (!equipas || !equipas.length) return null;
+  return (
+    <>
+      {equipas.map((t, i) => (
+        <div key={i} style={{ marginTop: 10, breakInside: 'avoid' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 5 }}>
+            {t.turno ? `Turno ${t.turno}` : 'Equipas'}
+            {t.zona ? ` · zona ${t.zona}` : ''}
+            {t.minutos ? ` · ${t.minutos} min` : ''}
+          </div>
+          <div style={{
+            display: 'grid', gap: '0 16px',
+            gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, t.grupos.length))}, minmax(0, 1fr))`,
+          }}>
+            {t.grupos.map((g, k) => (
+              <div key={k}>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, borderBottom: '1px solid #999',
+                  paddingBottom: 2, marginBottom: 3,
+                }}>
+                  {g.equipa}{g.guardaRedes ? ' (GR)' : ''}
+                </div>
+                {g.jogadores.map((n, z) => (
+                  <div key={z} style={{ fontSize: 10.5, lineHeight: 1.55 }}>{n}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
 }
 
 function PrintExerciseBlock({ e, ex, index, equipas }) {
@@ -14009,40 +14253,17 @@ function PrintExerciseBlock({ e, ex, index, equipas }) {
 
       {/* AS EQUIPAS FICAM COM O EXERCÍCIO A QUE PERTENCEM.
 
-          Estavam todas juntas no fim da folha, numa lista corrida de
-          frases — para saber quem fazia o quê era preciso ler o nome do
-          exercício em cada linha e voltar atrás. Ao lado do desenho, em
-          colunas A B C D, lê-se de relance.
+          Saem aqui, no plano do dia — e saem também, à parte, na
+          Prancheta (`printFolha.tipo === 'prancheta'`, mais abaixo),
+          porque um treinador leva às vezes só o plano e às vezes só a
+          prancheta, e cada folha continua completa sozinha.
 
-          Cada turno é um bloco, porque as equipas mudam entre turnos e
-          misturá-las era o mesmo problema outra vez. */}
-      {(equipas || []).map((t, i) => (
-        <div key={i} style={{ marginTop: 10, breakInside: 'avoid' }}>
-          <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 5 }}>
-            {t.turno ? `Turno ${t.turno}` : 'Equipas'}
-            {t.zona ? ` · zona ${t.zona}` : ''}
-            {t.minutos ? ` · ${t.minutos} min` : ''}
-          </div>
-          <div style={{
-            display: 'grid', gap: '0 16px',
-            gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, t.grupos.length))}, minmax(0, 1fr))`,
-          }}>
-            {t.grupos.map((g, k) => (
-              <div key={k}>
-                <div style={{
-                  fontSize: 11, fontWeight: 700, borderBottom: '1px solid #999',
-                  paddingBottom: 2, marginBottom: 3,
-                }}>
-                  {g.equipa}{g.guardaRedes ? ' (GR)' : ''}
-                </div>
-                {g.jogadores.map((n, z) => (
-                  <div key={z} style={{ fontSize: 10.5, lineHeight: 1.55 }}>{n}</div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+          Ao lado do desenho do exercício, em colunas A B C D, lê-se de
+          relance quem joga em cada grupo; cada turno é um bloco, porque
+          as equipas mudam entre turnos e misturá-las era voltar ao
+          problema de antes (uma lista corrida onde era preciso ler o
+          nome do exercício em cada linha para saber quem fazia o quê). */}
+      <PrintEquipasBlock equipas={equipas} />
     </div>
   );
 }
@@ -14773,8 +14994,16 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
           </div>
 
           <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-              Presenças {f.attendance.length ? `· ${f.attendance.length}/${players.length}${convidadosDe(f).length ? ` +${convidadosDe(f).length}` : ''}` : ''}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                Presenças {f.attendance.length ? `· ${f.attendance.length}/${players.length}${convidadosDe(f).length ? ` +${convidadosDe(f).length}` : ''}` : ''}
+              </span>
+              {players.length > 0 && (
+                <SelectAllBar
+                  onSelectAll={() => setF({ ...f, attendance: players.map(p => p.id) })}
+                  onClear={() => setF({ ...f, attendance: [] })}
+                />
+              )}
             </div>
             {players.length === 0 ? (
               <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores primeiro no separador Plantel.</div>
@@ -14957,9 +15186,20 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
       ))}
 
       <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Presenças</div>
-      <p style={{ fontSize: 13, color: T.mutedDim, margin: 0 }}>
-        {presentPlayers.length ? presentPlayers.map(p => (p.number ? `${p.number} ` : '') + p.name).join(', ') : 'Sem registo'}
-      </p>
+      {presentPlayers.length === 0 ? (
+        <p style={{ fontSize: 13, color: T.mutedDim, margin: 0 }}>Sem registo</p>
+      ) : (
+        /* Em coluna e por posição — não em lista corrida por número, que
+           obrigava a ler nome a nome à procura de alguém em concreto.
+           Mesmo padrão de nome (curto) e de posição da Monitorização. */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {sortByPosition(presentPlayers).map(p => (
+            <div key={p.id} style={{ fontSize: 13, color: T.mutedDim }}>
+              {p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}
+            </div>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 }
@@ -18190,8 +18430,19 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
           mesma, mas chama-se pelo que é — presenças — e a matriz de
           presenças mostra P/NP em vez de C/NC (ver isFriendlyMatch). */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-          {eAmigavel ? 'Presenças' : 'Convocados'} {f.convocados.length ? `· ${f.convocados.length}/${players.length}` : ''}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+          <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+            {eAmigavel ? 'Presenças' : 'Convocados'} {f.convocados.length ? `· ${f.convocados.length}/${players.length}` : ''}
+          </span>
+          {players.length > 0 && (
+            <SelectAllBar
+              onSelectAll={() => {
+                const ids = sortByPosition(players).map(p => p.id);
+                setF({ ...f, convocados: ids, starters: eAmigavel ? ids.slice(0, 11) : f.starters });
+              }}
+              onClear={() => setF({ ...f, convocados: [], starters: [], report: {} })}
+            />
+          )}
         </div>
         {/* A regra é invisível se não for dita: quem escolhe o décimo
             segundo jogador tem de perceber porque é que ele não ficou
@@ -18267,8 +18518,14 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
   // Contexto de cada PSE (treino ou jogo) — ver rpeContexto.
   const ctx = { matches, sessions };
   const [modal, setModal] = useState(false);
+  const [modalType, setModalType] = useState('wellness');
   const [showCodes, setShowCodes] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  // Duas vistas sobre a MESMA coleção `monitoring`: Wellness/PSE (dos
+  // questionários) e Composição Corporal (pesagens). Um separador simples
+  // em vez de duas rotas — é a mesma área, só muda o que se está a olhar.
+  const [subTab, setSubTab] = useState('wellness');
+  const openBoard = (type) => { setModalType(type); setModal(true); };
 
   /* O link leva a equipa. Sem ela, o servidor tem de adivinhar de quem é
      o código — e com vários clubes na mesma base, adivinhar mal significa
@@ -18385,9 +18642,23 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 
   return (
     <div>
-      <SectionHeader title="Monitorização" subtitle="Wellness e RPE"
-        action={<Btn onClick={() => setModal(true)} disabled={players.length === 0}><Plus size={15} /> Novo registo</Btn>} />
+      <SectionHeader title="Monitorização" subtitle={subTab === 'wellness' ? 'Wellness e RPE' : 'Composição corporal'}
+        action={subTab === 'wellness'
+          ? <Btn onClick={() => openBoard('wellness')} disabled={players.length === 0}><Plus size={15} /> Novo registo</Btn>
+          : <Btn onClick={() => openBoard('composicao')} disabled={players.length === 0}><Plus size={15} /> Nova pesagem</Btn>} />
 
+      {/* Separador simples: as duas vistas partilham o resto do ecrã
+          (o modal de registo manual, o botão de ação) e só diferem no
+          conteúdo abaixo. */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <ToggleBtn active={subTab === 'wellness'} onClick={() => setSubTab('wellness')}>Wellness / PSE</ToggleBtn>
+        <ToggleBtn active={subTab === 'composicao'} onClick={() => setSubTab('composicao')}>Composição Corporal</ToggleBtn>
+      </div>
+
+      {subTab === 'composicao' ? (
+        <ComposicaoCorporal players={players} monitoring={monitoring} setMonitoring={setMonitoring} onNovaPesagem={() => openBoard('composicao')} />
+      ) : (
+      <>
       <Panel title="Questionário para os atletas">
         <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
           Envia este link aos atletas — abre diretamente o ecrã de código pessoal, sem mostrar o resto da plataforma. Cada um entra com o seu código individual (ver "Códigos de acesso individuais" abaixo).
@@ -18619,9 +18890,12 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
       {players.length > 0 && (
         <PlantelHistorico players={players} monitoring={monitoring} matches={matches} sessions={sessions} />
       )}
+      </>
+      )}
 
       {modal && (
         <ManualCheckinBoard
+          initialType={modalType}
           players={players} monitoring={monitoring} sessions={sessions} matches={matches}
           onClose={() => setModal(false)} onSave={save}
         />
@@ -18631,6 +18905,255 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 }
 
 const tdStyle = { padding: '9px 12px', fontSize: 13, color: T.mutedDim };
+
+/* ---------------------------------------------------------------
+   COMPOSIÇÃO CORPORAL — bioimpedância
+
+   Vive dentro de Monitorização, ao lado do Wellness/PSE, porque é a
+   mesma ideia: uma métrica física que se repete ao longo do tempo,
+   não um valor único de ficha (esse continua no Plantel — Peso/Altura
+   — como referência pontual).
+
+   Guarda-se na MESMA coleção `monitoring`, só que com `type:
+   'composicao'` em vez de 'wellness' ou 'rpe' — mesmo mecanismo de
+   gravação, mesmo "Registo manual" (ManualCheckinBoard), sem tabela
+   nova nem sincronização nova.
+
+   SEM CALENDÁRIO RÍGIDO: cada pesagem é um registo datado como outro
+   qualquer — "+ Nova pesagem" abre o quadro do plantel e pesa-se quem
+   se quiser nesse dia. Um atleta pode ter pesagens de 2 em 2 semanas,
+   outro uma vez por mês; a cadência não está em lado nenhum da
+   estrutura de dados, só nas datas que cada registo tiver.
+
+   O que SÓ esta vista acrescenta é o indicador de atraso por jogador
+   (abaixo, `ccEstado`): como a cadência é ao critério do treinador e
+   não uma regra da app, o que interessa mostrar não é "está em falta
+   segundo o calendário" mas sim "há quanto tempo não é pesado" — para
+   não se perder o fio à meada de quem está a ficar para trás.
+---------------------------------------------------------------- */
+// Limiares só para colorir o indicador — não impõem periodicidade
+// nenhuma aos registos, servem apenas para chamar a atenção quando uma
+// pesagem começa a ficar velha.
+const CC_DIAS_ATENCAO = 21;
+const CC_DIAS_ATRASO = 35;
+
+function ccEstado(dias) {
+  if (dias === null) return { label: 'Sem registo', color: T.mutedDim };
+  if (dias <= CC_DIAS_ATENCAO) return { label: 'Em dia', color: T.good };
+  if (dias <= CC_DIAS_ATRASO) return { label: 'A repetir em breve', color: T.warn };
+  return { label: 'Em atraso', color: T.bad };
+}
+
+function ComposicaoCorporal({ players, monitoring, setMonitoring, onNovaPesagem }) {
+  const todayDateStr = todayStr();
+  const pesagens = monitoring.filter(m => typeof m.peso === 'number');
+  const remove = (id) => removeWithUndo(monitoring, setMonitoring, id, 'Registo de composição corporal');
+
+  const registosDe = (playerId) => pesagens
+    .filter(m => m.playerId === playerId)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const [deData, setDeData] = useState(addDays(todayDateStr, -89));
+  const [ateData, setAteData] = useState(todayDateStr);
+  const dentroDoIntervalo = (d) => !!d && (!deData || d >= deData) && (!ateData || d <= ateData);
+
+  const sorted = [...pesagens]
+    .filter(m => dentroDoIntervalo(m.date))
+    .sort((a, b) => new Date(b.date) - new Date(a.date) || String(a.playerId).localeCompare(String(b.playerId)));
+
+  return (
+    <>
+      {players.length > 0 && (
+        <Panel title="Plantel — estado atual">
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th style={th2Style}>Estado</th>
+                  <th style={th2Style}>Jogador</th>
+                  <th style={th2Style}>Última pesagem</th>
+                  <th style={th2Style}>Peso</th>
+                  <th style={th2Style}>Massa gorda</th>
+                  <th style={th2Style}>Massa muscular</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortByPosition(players).map(p => {
+                  const regs = registosDe(p.id);
+                  const ultimo = regs[0] || null;
+                  const dias = ultimo ? Math.round((new Date(todayDateStr) - new Date(ultimo.date)) / 86400000) : null;
+                  const estado = ccEstado(dias);
+                  return (
+                    <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+                      <td style={td2Style}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: estado.color, display: 'inline-block' }} />
+                          {estado.label}
+                        </span>
+                      </td>
+                      <td style={{ ...td2Style, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
+                      <td style={{ ...td2Style, ...mono }}>{ultimo ? `${fmtDate(ultimo.date)} · há ${dias} ${dias === 1 ? 'dia' : 'dias'}` : '—'}</td>
+                      <td style={{ ...td2Style, ...mono }}>{ultimo ? `${ultimo.peso} kg` : '—'}</td>
+                      <td style={{ ...td2Style, ...mono }}>{ultimo && typeof ultimo.massaGorda === 'number' ? `${ultimo.massaGorda}%` : '—'}</td>
+                      <td style={{ ...td2Style, ...mono }}>{ultimo && typeof ultimo.massaMuscular === 'number' ? `${ultimo.massaMuscular}%` : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
+      {players.length === 0 ? (
+        <EmptyState text="Adiciona jogadores no Plantel antes de registar pesagens." />
+      ) : (
+        <>
+          <div style={{ ...FIELD_GRID, marginTop: 28, marginBottom: 14 }}>
+            <Field label="Data de início">
+              <Input type="date" value={deData} max={ateData || undefined} onChange={e => setDeData(e.target.value)} />
+            </Field>
+            <Field label="Data de fim">
+              <Input type="date" value={ateData} min={deData || undefined} onChange={e => setAteData(e.target.value)} />
+            </Field>
+            <div style={{ ...FIELD_FULL, display: 'flex', gap: 6 }}>
+              {[['30 dias', 29], ['90 dias', 89], ['6 meses', 181], ['1 ano', 365]].map(([label, back]) => {
+                const ativo = deData === addDays(todayDateStr, -back) && ateData === todayDateStr;
+                return (
+                  <button
+                    key={label}
+                    onClick={() => { setDeData(addDays(todayDateStr, -back)); setAteData(todayDateStr); }}
+                    style={{
+                      flex: 1, height: 38, padding: '0 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
+                      background: ativo ? '#B5393F' : 'transparent',
+                      color: ativo ? TEXT_ON_ACCENT : T.muted,
+                      border: `1px solid ${ativo ? '#B5393F' : T.line}`,
+                    }}
+                  >{label}</button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: T.mutedDim, margin: '0 0 10px' }}>
+            {formatShortDatePt(deData)} a {formatShortDatePt(ateData)} · {sorted.length} {sorted.length === 1 ? 'pesagem' : 'pesagens'}
+          </div>
+
+          {sorted.length === 0 ? (
+            <EmptyState
+              text={`Sem pesagens entre ${formatShortDatePt(deData)} e ${formatShortDatePt(ateData)}.`}
+              action={<Btn onClick={onNovaPesagem}><Plus size={15} /> Nova pesagem</Btn>}
+            />
+          ) : (
+            <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
+              <table>
+                <thead>
+                  <tr style={{ background: T.surface }}>
+                    {['Data', 'Jogador', 'Peso', 'Massa gorda', 'Massa muscular', 'Água', 'Notas', ''].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}` }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted.map(m => {
+                    const p = players.find(pl => pl.id === m.playerId);
+                    return (
+                      <tr key={m.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+                        <td style={tdStyle}>{fmtDate(m.date)}</td>
+                        <td style={{ ...tdStyle, color: T.cream }} title={p ? p.name : undefined}>{p ? `${p.position ? `${p.position} · ` : ''}${shortPlayerName(p, players)}` : '—'}</td>
+                        <td style={{ ...tdStyle, ...mono }}>{m.peso} kg</td>
+                        <td style={{ ...tdStyle, ...mono }}>{typeof m.massaGorda === 'number' ? `${m.massaGorda}%` : '—'}</td>
+                        <td style={{ ...tdStyle, ...mono }}>{typeof m.massaMuscular === 'number' ? `${m.massaMuscular}%` : '—'}</td>
+                        <td style={{ ...tdStyle, ...mono }}>{typeof m.agua === 'number' ? `${m.agua}%` : '—'}</td>
+                        <td style={tdStyle}>{m.notasComposicao || '—'}</td>
+                        <td style={tdStyle}>
+                          <button onClick={() => remove(m.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {players.length > 0 && <ComposicaoHistorico players={players} monitoring={pesagens} />}
+    </>
+  );
+}
+
+const th2Style = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}` };
+const td2Style = { padding: '9px 12px', fontSize: 13, color: T.mutedDim };
+
+/* Evolução por jogador ao longo das pesagens reais (não um calendário
+   diário como o Wellness/PSE — aqui os intervalos são irregulares por
+   natureza, por isso o eixo é feito só das datas em que HOUVE pesagem). */
+function ComposicaoHistorico({ players, monitoring }) {
+  const datas = [...new Set(monitoring.map(m => m.date))].sort((a, b) => new Date(a) - new Date(b));
+  if (!datas.length) return null;
+
+  const rows = sortByPosition(players).map(p => {
+    const porData = new Map(monitoring.filter(m => m.playerId === p.id).map(m => [m.date, m]));
+    const pesoSeries = datas.map(d => (porData.has(d) ? porData.get(d).peso : null));
+    const gorduraSeries = datas.map(d => (porData.has(d) && typeof porData.get(d).massaGorda === 'number' ? porData.get(d).massaGorda : null));
+    const count = pesoSeries.filter(v => typeof v === 'number').length;
+    return { player: p, pesoSeries, gorduraSeries, count };
+  }).filter(r => r.count > 0);
+
+  if (!rows.length) return null;
+
+  const numeros = (arr) => arr.filter(v => typeof v === 'number');
+
+  return (
+    <Panel title="Evolução — peso e massa gorda">
+      <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 10 }}>
+        {datas.length} {datas.length === 1 ? 'data' : 'datas'} com pesagens, de {formatShortDatePt(datas[0])} a {formatShortDatePt(datas[datas.length - 1])}.
+        Só entram jogadores com pelo menos uma pesagem no período selecionado acima.
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ minWidth: 560 }}>
+          <thead>
+            <tr>
+              <th style={{ ...th2Style, whiteSpace: 'nowrap' }}>Jogador</th>
+              <th style={{ ...th2Style, whiteSpace: 'nowrap' }}>Peso (evolução)</th>
+              <th style={{ ...th2Style, whiteSpace: 'nowrap' }}>Massa gorda (evolução)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const pesosValidos = numeros(r.pesoSeries);
+              const gorduraValida = numeros(r.gorduraSeries);
+              return (
+                <tr key={r.player.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+                  <td style={{ ...td2Style, color: T.cream, whiteSpace: 'nowrap' }}>
+                    {r.player.position ? `${r.player.position} · ` : ''}{shortPlayerName(r.player, players)}
+                  </td>
+                  <td style={td2Style}>
+                    <Sparkline
+                      points={r.pesoSeries} labels={datas}
+                      min={Math.floor(Math.min(...pesosValidos) - 1)} max={Math.ceil(Math.max(...pesosValidos) + 1)}
+                      color={T.good} unit=" kg" mainLabel="peso"
+                    />
+                  </td>
+                  <td style={td2Style}>
+                    {gorduraValida.length > 0 ? (
+                      <Sparkline
+                        points={r.gorduraSeries} labels={datas}
+                        min={Math.floor(Math.min(...gorduraValida) - 1)} max={Math.ceil(Math.max(...gorduraValida) + 1)}
+                        color={T.warn} unit="%" mainLabel="massa gorda"
+                      />
+                    ) : <span style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>sem dados</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
 
 /* ---------------------------------------------------------------
    PLANTEL — HISTÓRICO
@@ -18902,8 +19425,8 @@ function PlantelHistorico({ players, monitoring, matches = [], sessions = [] }) 
    Ao contrário do questionário dos atletas, aqui NÃO há janelas
    horárias nem limite de dia: é sempre possível preencher.
 ---------------------------------------------------------------- */
-function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClose, onSave }) {
-  const [type, setType] = useState('wellness');
+function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClose, onSave, initialType }) {
+  const [type, setType] = useState(initialType || 'wellness');
   const [date, setDate] = useState(todayStr());
   const [activeId, setActiveId] = useState(null);
 
@@ -18914,7 +19437,7 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
 
   // Registo já existente para aquele jogador, naquele dia, daquele tipo.
   const recordFor = (playerId, t) => monitoring.find(m => m.playerId === playerId && m.date === date &&
-    (t === 'wellness' ? typeof m.sono === 'number' : typeof m.pse === 'number'));
+    (t === 'wellness' ? typeof m.sono === 'number' : t === 'composicao' ? typeof m.peso === 'number' : typeof m.pse === 'number'));
 
   const doneCount = players.filter(p => recordFor(p.id, type)).length;
 
@@ -18950,6 +19473,14 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
         />
       );
     }
+    if (type === 'composicao') {
+      return shell(
+        <ComposicaoWizard
+          player={activePlayer} initial={existing} date={date} notice={notice}
+          onBack={back} onSubmit={fields => submit(fields)}
+        />
+      );
+    }
     return shell(
       <RpeWizard
         player={activePlayer} session={session} date={date}
@@ -18966,7 +19497,9 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, marginBottom: 18 }}>
         <div>
           <div style={{ ...display, fontSize: 23, fontWeight: 700, color: T.cream }}>Registo manual</div>
-          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>Toca no jogador — {type === 'wellness' ? 'wellness do dia' : 'intensidade do treino'}</div>
+          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>
+            Toca no jogador — {type === 'wellness' ? 'wellness do dia' : type === 'composicao' ? 'pesagem (composição corporal)' : 'intensidade do treino'}
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
           <div style={{ ...display, fontSize: 22, fontWeight: 700, color: doneCount === players.length ? T.good : T.teamB }}>
@@ -18982,9 +19515,10 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
       </div>
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 8, minWidth: 260, flex: 1 }}>
+        <div style={{ display: 'flex', gap: 8, minWidth: 260, flex: 1, flexWrap: 'wrap' }}>
           <ToggleBtn active={type === 'wellness'} onClick={() => setType('wellness')}>💪 Wellness</ToggleBtn>
           <ToggleBtn active={type === 'rpe'} onClick={() => setType('rpe')} accent>🏋 PSE</ToggleBtn>
+          <ToggleBtn active={type === 'composicao'} onClick={() => setType('composicao')}>⚖️ Composição corporal</ToggleBtn>
         </div>
         <div style={{ minWidth: 170 }}>
           <Field label="Data do registo">
@@ -19023,7 +19557,8 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
         {[...players].sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999)).map(p => {
           const wDone = !!recordFor(p.id, 'wellness');
           const rDone = !!recordFor(p.id, 'rpe');
-          const done = type === 'wellness' ? wDone : rDone;
+          const cDone = !!recordFor(p.id, 'composicao');
+          const done = type === 'wellness' ? wDone : type === 'composicao' ? cDone : rDone;
           return (
             <button key={p.id} onClick={() => setActiveId(p.id)} style={{
               position: 'relative', textAlign: 'left', padding: '16px 16px 18px', borderRadius: 12,
@@ -19034,6 +19569,7 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
               <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6 }}>
                 <StatusPip emoji="💪" on={wDone} />
                 <StatusPip emoji="🏋" on={rDone} />
+                <StatusPip emoji="⚖️" on={cDone} />
               </div>
               <div style={{ ...display, fontSize: 30, fontWeight: 700, color: done ? T.good : T.mutedDim, lineHeight: 1 }}>
                 {p.number ? `${p.number}` : '–'}
@@ -19693,6 +20229,97 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
           </BigButton>
         </>
       )}
+    </div>
+  );
+}
+
+/* Pesagem de bioimpedância. Ao contrário do Wellness/PSE (escalas
+   subjetivas 1-5), aqui os valores vêm de uma balança — por isso é um
+   formulário numérico simples, sem passos nem escalas de botões. Só o
+   peso é obrigatório: uma balança doméstica só pesa, uma de
+   bioimpedância dá mais — o formulário aceita as duas. */
+function ComposicaoWizard({ player, initial, date, onBack, onSubmit, notice }) {
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  const [f, setF] = useState({
+    peso: initial?.peso ?? '',
+    massaGorda: initial?.massaGorda ?? '',
+    massaMuscular: initial?.massaMuscular ?? '',
+    agua: initial?.agua ?? '',
+    notasComposicao: initial?.notasComposicao ?? '',
+  });
+
+  const num = (v) => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Number(String(v).replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  };
+  const pesoNum = num(f.peso);
+  const alturaM = player.height ? Number(player.height) / 100 : null;
+  const imc = alturaM && pesoNum ? pesoNum / (alturaM * alturaM) : null;
+  const podeGuardar = pesoNum !== null;
+
+  const confirm = () => {
+    if (!podeGuardar) return;
+    setSaving(true);
+    setTimeout(() => {
+      onSubmit({
+        peso: pesoNum,
+        massaGorda: num(f.massaGorda),
+        massaMuscular: num(f.massaMuscular),
+        agua: num(f.agua),
+        notasComposicao: f.notasComposicao.trim() || undefined,
+      });
+      setSaving(false);
+      setDone(true);
+      setTimeout(() => onBack(), 1100);
+    }, 350);
+  };
+
+  if (done) return <DoneScreen name={player.name} message="Pesagem registada" />;
+
+  return (
+    <div style={{ maxWidth: 480, margin: '0 auto', padding: '20px 18px 60px' }}>
+      <KioskHeader player={player} typeLabel="Composição corporal" subLabel="Pesagem" date={date} onBack={onBack} />
+      {notice && <KioskNotice>{notice}</KioskNotice>}
+
+      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        <Field label="Peso (kg)" solto>
+          <Input type="number" step="0.1" inputMode="decimal" value={f.peso}
+            onChange={e => setF({ ...f, peso: e.target.value })} placeholder="Ex: 74.5" />
+        </Field>
+        <Field label="Massa gorda (%)" solto>
+          <Input type="number" step="0.1" inputMode="decimal" value={f.massaGorda}
+            onChange={e => setF({ ...f, massaGorda: e.target.value })} placeholder="opcional" />
+        </Field>
+        <Field label="Massa muscular (%)" solto>
+          <Input type="number" step="0.1" inputMode="decimal" value={f.massaMuscular}
+            onChange={e => setF({ ...f, massaMuscular: e.target.value })} placeholder="opcional" />
+        </Field>
+        <Field label="Água corporal (%)" solto>
+          <Input type="number" step="0.1" inputMode="decimal" value={f.agua}
+            onChange={e => setF({ ...f, agua: e.target.value })} placeholder="opcional" />
+        </Field>
+        <Field label="Notas" solto>
+          <Input value={f.notasComposicao} onChange={e => setF({ ...f, notasComposicao: e.target.value })} placeholder="opcional" />
+        </Field>
+      </div>
+
+      {imc !== null && (
+        <div style={{ fontSize: 12, color: T.mutedDim, margin: '4px 0 18px' }}>
+          IMC estimado: <span style={{ color: T.cream, ...mono }}>{imc.toFixed(1)}</span>
+          {' '}(com base na altura do Plantel — {player.height} cm)
+        </div>
+      )}
+
+      {!podeGuardar && (
+        <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 4, marginBottom: 10, textAlign: 'center' }}>
+          Introduz pelo menos o peso para guardar.
+        </div>
+      )}
+      <BigButton onClick={confirm} disabled={saving || !podeGuardar} accent style={{ marginTop: podeGuardar ? 12 : 0 }}>
+        {saving ? 'A guardar…' : <>Confirmar <Check size={17} /></>}
+      </BigButton>
     </div>
   );
 }
@@ -22708,8 +23335,16 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
       </div>
 
       <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>
-          Lista de convocados {f.convocados.length ? `· ${f.convocados.length}` : ''}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+            Lista de convocados {f.convocados.length ? `· ${f.convocados.length}` : ''}
+          </span>
+          {players.length > 0 && (
+            <SelectAllBar
+              onSelectAll={() => setF({ ...f, convocados: sortByPosition(players).map(p => p.id) })}
+              onClear={() => setF({ ...f, convocados: [], capitao: undefined, subcapitao: undefined })}
+            />
+          )}
         </div>
         <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10 }}>
           Os 11 primeiros que escolheres são o onze inicial; os seguintes, até 9, ficam no banco.
