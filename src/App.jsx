@@ -9838,7 +9838,7 @@ const DI_GRUPO_POSICAO = {
 };
 const diGrupoPosicao = (posicao) => DI_GRUPO_POSICAO[posicao] || null;
 
-/* OS 40 INDICADORES.
+/* NOTA SOBRE OS IDs.
 
    `id` é curto e estável: é ele que fica gravado em cada resposta. Se um
    dia o texto da pergunta mudar, as respostas antigas continuam a fazer
@@ -9849,83 +9849,157 @@ const diGrupoPosicao = (posicao) => DI_GRUPO_POSICAO[posicao] || null;
    `variantes` (opcional) reescreve `curto`/`texto` para um grupo de
    posição, quando a frase original não faz sentido para essa posição
    (ex: "finalização" para um GR). Sem variante, usa-se o texto normal. */
+/* OS 30 INDICADORES.
+
+   Eram 40 e passaram a 30 por corte deliberado, não por poupança de
+   ecrã: dez diziam o que outras já diziam. "Cumpro as regras mesmo
+   quando ninguém está a controlar" e "comportamentos compatíveis com um
+   jogador de formação" são a pergunta do respeito por outras palavras;
+   "repetir esforços" e "recuperar entre esforços" são a intensidade
+   vista de outro ângulo; "velocidade de execução" é a técnica sob
+   pressão. Perguntas a mais não medem mais — cansam quem responde e
+   diluem o que interessa.
+
+   Saiu também "Demonstro evolução ao longo do tempo", que era a única
+   que pedia um RESULTADO em vez de um comportamento, e a única que um
+   jogador não consegue autoavaliar com honestidade: não se vê de fora.
+
+   TÉCNICA E TÁCTICA ADAPTAM-SE À POSIÇÃO. Perguntar a um guarda-redes se
+   supera o adversário no 1x1 ofensivo, ou a um central se dá o último
+   passe, é pedir-lhe que responda a um jogo que não é o dele. O `id`, a
+   dimensão e o peso são sempre os mesmos — só muda a FRASE — por isso o
+   score, o GAP e o histórico continuam a comparar-se entre posições. */
 const DI_INDICADORES = [
-  // VALORES & COMPORTAMENTO (7)
+  // VALORES & COMPORTAMENTO (5)
   { id: 'v1', dim: 'valores', curto: 'Pontualidade', texto: 'Cumpro os horários definidos pela equipa sem precisar que me lembrem.' },
   { id: 'v2', dim: 'valores', curto: 'Compromisso no treino', texto: 'Demonstro compromisso e intensidade em todos os treinos.' },
-  { id: 'v3', dim: 'valores', curto: 'Respeito', texto: 'Respeito colegas, treinadores, adversários e árbitros.' },
-  { id: 'v4', dim: 'valores', curto: 'Regras da equipa', texto: 'Cumpro as regras e normas da equipa mesmo quando ninguém está a controlar.' },
+  { id: 'v3', dim: 'valores', curto: 'Respeito e conduta', texto: 'Respeito colegas, treinadores, adversários e árbitros, dentro e fora do campo.' },
   { id: 'v5', dim: 'valores', curto: 'Equipa acima do individual', texto: 'Coloco os objetivos da equipa acima dos meus interesses individuais.' },
   { id: 'v6', dim: 'valores', curto: 'Atitude na dificuldade', texto: 'Mantenho uma atitude positiva perante dificuldades, erros ou decisões com que não concordo.' },
-  { id: 'v7', dim: 'valores', curto: 'Conduta dentro e fora', texto: 'Tenho comportamentos dentro e fora do campo compatíveis com um jogador de formação.' },
 
-  // TÉCNICA (8)
-  { id: 't1', dim: 'tecnica', curto: 'Receção e preparação', texto: 'Consigo receber a bola e preparar o próximo gesto técnico com qualidade.' },
-  { id: 't2', dim: 'tecnica', curto: 'Passe curto', texto: 'Consigo executar passes curtos com precisão e velocidade.' },
-  { id: 't3', dim: 'tecnica', curto: 'Passe médio e longo', texto: 'Consigo executar passes médios e longos com qualidade quando necessário.' },
-  { id: 't4', dim: 'tecnica', curto: 'Condução', texto: 'Consigo conduzir e transportar a bola mantendo controlo e velocidade.' },
+  // TÉCNICA (6)
+  {
+    id: 't1', dim: 'tecnica', curto: 'Receção e preparação',
+    texto: 'Consigo receber a bola e preparar o próximo gesto técnico com qualidade.',
+    variantes: {
+      GR: { curto: 'Receção com os pés', texto: 'Consigo receber e controlar a bola com os pés sob pressão, para sair a jogar.' },
+      DEF: { curto: 'Receção orientada', texto: 'Consigo receber a bola já orientado para o lado onde vou jogar.' },
+      MEIO: { curto: 'Receção entre linhas', texto: 'Consigo receber entre linhas já orientado para a frente.' },
+      AVANCADO: { curto: 'Receção de costas', texto: 'Consigo receber de costas para a baliza e segurar a bola com o defesa em cima.' },
+    },
+  },
+  {
+    id: 't2', dim: 'tecnica', curto: 'Passe',
+    texto: 'Consigo executar passes com precisão e no momento certo.',
+    variantes: {
+      GR: { curto: 'Distribuição', texto: 'Consigo distribuir curto e longo com critério, escolhendo o lado que está livre.' },
+      DEF: { curto: 'Passe e mudança de corredor', texto: 'Consigo passar com precisão e mudar o corredor quando é preciso.' },
+      MEIO: { curto: 'Passe entre linhas', texto: 'Consigo passar entre linhas e quebrar a linha de pressão adversária.' },
+      AVANCADO: { curto: 'Último passe', texto: 'Consigo dar o último passe e assistir quem entra em profundidade.' },
+    },
+  },
+  {
+    id: 't4', dim: 'tecnica', curto: 'Condução',
+    texto: 'Consigo conduzir e transportar a bola mantendo controlo e velocidade.',
+    variantes: {
+      GR: { curto: 'Jogo de pés', texto: 'Consigo jogar de pés na zona de pressão sem perder a bola.' },
+      DEF: { curto: 'Condução para atrair', texto: 'Consigo conduzir para atrair o adversário e abrir linha de passe.' },
+      MEIO: { curto: 'Condução a progredir', texto: 'Consigo conduzir a progredir no campo, saindo da pressão.' },
+      AVANCADO: { curto: 'Condução em velocidade', texto: 'Consigo conduzir em velocidade a atacar o defesa.' },
+    },
+  },
   {
     id: 't5', dim: 'tecnica', curto: '1x1 ofensivo',
     texto: 'Consigo superar um adversário no 1x1 ofensivo quando a situação o exige.',
     variantes: {
       GR: { curto: '1x1 defensivo', texto: 'Consigo resolver com segurança situações de 1x1 fora da área (saídas e coberturas).' },
       DEF: { curto: '1x1 defensivo', texto: 'Consigo ganhar o duelo individual (1x1) quando um adversário vem em condução na minha direção.' },
+      MEIO: { curto: 'Duelo e proteção', texto: 'Consigo recuperar no duelo individual e proteger a bola quando sou pressionado.' },
+      AVANCADO: { curto: '1x1 ofensivo', texto: 'Consigo superar o defesa no 1x1 quando a situação o exige.' },
     },
   },
   {
     id: 't6', dim: 'tecnica', curto: 'Finalização',
     texto: 'Consigo executar a finalização com qualidade e eficácia.',
     variantes: {
-      GR: { curto: 'Pontapés de baliza', texto: 'Consigo executar pontapés de baliza e reposições com distância e precisão adequadas.' },
-      DEF: { curto: 'Finalização em bola parada', texto: 'Consigo finalizar com eficácia as oportunidades que surgem em bola parada (cabeceamento, remate de segunda bola).' },
+      GR: { curto: 'Defesa e blocagem', texto: 'Consigo defender e blocar com segurança, incluindo remates de fora da área.' },
+      DEF: { curto: 'Finalização em bola parada', texto: 'Consigo finalizar com eficácia as oportunidades de bola parada (cabeceamento, segunda bola).' },
+      MEIO: { curto: 'Remate de fora', texto: 'Consigo rematar de fora da área e aparecer na segunda bola.' },
+      AVANCADO: { curto: 'Finalização', texto: 'Consigo finalizar com qualidade e eficácia as oportunidades que tenho.' },
     },
   },
   { id: 't7', dim: 'tecnica', curto: 'Técnica sob pressão', texto: 'Consigo executar ações técnicas com qualidade mesmo sob pressão do adversário.' },
-  { id: 't8', dim: 'tecnica', curto: 'Velocidade de execução', texto: 'Consigo executar os gestos técnicos à velocidade exigida pelo jogo.' },
 
-  // TÁTICA & INTELIGÊNCIA DE JOGO (9)
+  // TÁTICA & INTELIGÊNCIA DE JOGO (7)
   { id: 'x1', dim: 'tatica', curto: 'Função no modelo', texto: 'Compreendo claramente a minha função dentro do modelo de jogo.' },
-  { id: 'x2', dim: 'tatica', curto: 'Ocupação de espaços', texto: 'Ocupo corretamente os espaços em função da posição da bola e dos meus colegas.' },
-  { id: 'x3', dim: 'tatica', curto: 'Linhas de passe', texto: 'Consigo identificar e criar linhas de passe para ajudar a equipa.' },
+  {
+    id: 'x2', dim: 'tatica', curto: 'Ocupação de espaços',
+    texto: 'Ocupo corretamente os espaços em função da posição da bola e dos meus colegas.',
+    variantes: {
+      GR: { curto: 'Posição e profundidade', texto: 'Ajusto a minha posição à bola, dando profundidade à linha defensiva.' },
+      DEF: { curto: 'Linha e distâncias', texto: 'Mantenho a linha e a distância certa aos meus colegas de setor.' },
+      MEIO: { curto: 'Espaço entre linhas', texto: 'Ocupo o espaço entre linhas e dou apoio aos lados.' },
+      AVANCADO: { curto: 'Largura e profundidade', texto: 'Ocupo a largura e a profundidade para esticar o bloco adversário.' },
+    },
+  },
+  {
+    id: 'x3', dim: 'tatica', curto: 'Linhas de passe',
+    texto: 'Consigo identificar e criar linhas de passe para ajudar a equipa.',
+    variantes: {
+      GR: { curto: 'Apoio para trás', texto: 'Ofereço-me como apoio para trás sempre que a equipa precisa de sair a jogar.' },
+      DEF: { curto: 'Abrir na saída', texto: 'Abro para dar linha de passe na saída de bola.' },
+      MEIO: { curto: 'Linhas entre linhas', texto: 'Crio linhas de passe entre linhas para receber e progredir.' },
+      AVANCADO: { curto: 'Desmarcações', texto: 'Faço desmarcações de rutura e de apoio no momento certo.' },
+    },
+  },
   { id: 'x4', dim: 'tatica', curto: 'Tomada de decisão', texto: 'Tomo boas decisões sobre quando passar, conduzir, jogar para a frente ou conservar a bola.' },
-  { id: 'x5', dim: 'tatica', curto: 'Gestão do ritmo', texto: 'Compreendo quando devo acelerar ou controlar o ritmo do jogo.' },
-  { id: 'x6', dim: 'tatica', curto: 'Reação à perda', texto: 'Reajo rapidamente à perda da bola e cumpro os princípios de pressão definidos pela equipa.' },
   {
-    id: 'x7', dim: 'tatica', curto: 'Transição ofensiva',
-    texto: 'Quando recuperamos a bola, identifico rapidamente oportunidades para progredir.',
+    id: 'x6', dim: 'tatica', curto: 'Reação à perda',
+    texto: 'Reajo rapidamente à perda da bola e cumpro os princípios de pressão definidos pela equipa.',
     variantes: {
-      GR: { curto: 'Início da transição', texto: 'Quando recupero a posse, decido rapidamente entre jogar curto ou longo para iniciar a transição ofensiva da equipa.' },
+      GR: { curto: 'Ler as costas da defesa', texto: 'Antecipo a saída e leio as costas da linha defensiva quando perdemos a bola.' },
+      DEF: { curto: 'Cobertura e atraso', texto: 'Faço cobertura e atraso o adversário quando perdemos a bola.' },
+      MEIO: { curto: 'Pressão imediata', texto: 'Pressiono de imediato o portador da bola quando a perdemos.' },
+      AVANCADO: { curto: 'Primeira pressão', texto: 'Faço a primeira pressão e oriento o adversário para o lado que a equipa quer.' },
     },
   },
   {
-    id: 'x8', dim: 'tatica', curto: 'Organização defensiva',
-    texto: 'Compreendo os comportamentos coletivos defensivos e cumpro a minha função.',
+    id: 'x7', dim: 'tatica', curto: 'Início da transição',
+    texto: 'Quando recupero a posse, decido rapidamente entre jogar curto ou longo para iniciar a transição ofensiva.',
     variantes: {
-      GR: { curto: 'Organizar a defesa', texto: 'Compreendo os comportamentos coletivos defensivos e dou as indicações certas para organizar a linha defensiva.' },
+      GR: { curto: 'Lançar a transição', texto: 'Quando fico com a bola, decido rápido entre lançar curto ou longo para atacar o desequilíbrio.' },
+      DEF: { curto: 'Sair a jogar ou ganhar campo', texto: 'Quando recupero a bola, decido entre sair a jogar ou ganhar campo conforme a pressão.' },
+      MEIO: { curto: 'Decidir na recuperação', texto: 'Quando recupero a bola, recebo e decido rapidamente entre curto e longo.' },
+      AVANCADO: { curto: 'Segurar ou atacar', texto: 'Na transição, decido entre segurar a bola para a equipa subir ou atacar a profundidade.' },
     },
   },
-  { id: 'x9', dim: 'tatica', curto: 'Adaptação', texto: 'Consigo adaptar o meu comportamento às diferentes situações que o jogo apresenta.' },
+  {
+    id: 'x8', dim: 'tatica', curto: 'Organizar a defesa',
+    texto: 'Compreendo os comportamentos coletivos defensivos e dou as indicações certas para organizar a equipa.',
+    variantes: {
+      GR: { curto: 'Organizar a linha', texto: 'Dou indicações e organizo a linha defensiva a partir de trás.' },
+      DEF: { curto: 'Organizar e comunicar', texto: 'Organizo a linha defensiva e comunico o momento de subir ou baixar.' },
+      MEIO: { curto: 'Equilíbrio e cobertura', texto: 'Faço o equilíbrio e a cobertura ao meio-campo quando a equipa ataca.' },
+      AVANCADO: { curto: 'Orientar a pressão', texto: 'Oriento a pressão da equipa e fecho o lado que queremos condicionar.' },
+    },
+  },
 
-  // CAPACIDADE FÍSICA (6)
-  { id: 'f1', dim: 'fisica', curto: 'Intensidade mantida', texto: 'Consigo manter uma intensidade elevada durante o treino e o jogo.' },
-  { id: 'f2', dim: 'fisica', curto: 'Repetir esforços', texto: 'Tenho capacidade para repetir esforços de alta intensidade.' },
+  // CAPACIDADE FÍSICA (4)
+  { id: 'f1', dim: 'fisica', curto: 'Intensidade', texto: 'Mantenho intensidade elevada e consigo repeti-la ao longo do treino e do jogo.' },
   { id: 'f3', dim: 'fisica', curto: 'Velocidade', texto: 'Tenho velocidade e aceleração adequadas às exigências da minha posição.' },
   { id: 'f4', dim: 'fisica', curto: 'Força e contacto', texto: 'Tenho força e capacidade de contacto adequadas às exigências da minha posição.' },
   { id: 'f5', dim: 'fisica', curto: 'Agilidade', texto: 'Tenho agilidade e capacidade para mudar de direção rapidamente.' },
-  { id: 'f6', dim: 'fisica', curto: 'Recuperação', texto: 'Consigo recuperar adequadamente entre esforços e manter o meu rendimento.' },
 
-  // MENTAL & COMPETITIVO (5)
+  // MENTAL & COMPETITIVO (4)
   { id: 'm1', dim: 'mental', curto: 'Concentração', texto: 'Mantenho a concentração durante todo o treino e jogo.' },
   { id: 'm2', dim: 'mental', curto: 'Reação ao erro', texto: 'Reajo positivamente aos meus erros e tento corrigi-los imediatamente.' },
-  { id: 'm3', dim: 'mental', curto: 'Rendimento sob pressão', texto: 'Consigo manter o meu rendimento quando estou sob pressão.' },
   { id: 'm4', dim: 'mental', curto: 'Assumir responsabilidade', texto: 'Demonstro confiança para assumir responsabilidades dentro do jogo.' },
   { id: 'm5', dim: 'mental', curto: 'Competir até ao fim', texto: 'Continuo a competir e a dar o máximo mesmo quando as coisas não estão a correr bem.' },
 
-  // APRENDIZAGEM & DESENVOLVIMENTO (5)
+  // APRENDIZAGEM & DESENVOLVIMENTO (4)
   { id: 'a1', dim: 'aprendizagem', curto: 'Compreender a instrução', texto: 'Procuro perceber o motivo pelo qual o treinador me dá determinada instrução.' },
   { id: 'a2', dim: 'aprendizagem', curto: 'Aceitar feedback', texto: 'Aceito o feedback dos treinadores e tento aplicá-lo.' },
   { id: 'a3', dim: 'aprendizagem', curto: 'Autoconhecimento', texto: 'Consigo identificar os meus principais pontos fortes e os aspetos em que preciso de melhorar.' },
-  { id: 'a4', dim: 'aprendizagem', curto: 'Evolução', texto: 'Demonstro evolução ao longo do tempo.' },
   { id: 'a5', dim: 'aprendizagem', curto: 'Procura de melhoria', texto: 'Procuro ativamente formas de melhorar como jogador.' },
 ];
 
