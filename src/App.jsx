@@ -4178,53 +4178,53 @@ const TATICAS = {
      lateral, que é onde jogam. */
   '4-3-3': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.94], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.06], de: ['DE'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.965], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.035], de: ['DE'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC', 'MD'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC', 'MD'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.50, 0.32], de: ['MC', 'MOC'] },
-    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.94], de: ['ED'] },
-    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.06], de: ['EE'] },
+    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.965], de: ['ED'] },
+    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.035], de: ['EE'] },
     { id: 'PL', rotulo: 'PL', ponto: [0.86, 0.50], de: ['PL'] },
   ],
   '4-4-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.94], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.06], de: ['DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.94], de: ['MD', 'ED'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.965], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.035], de: ['DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.965], de: ['MD', 'ED'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.44, 0.62], de: ['MC', 'MOC'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.44, 0.38], de: ['MC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.06], de: ['EE'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.035], de: ['EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
   '4-2-3-1': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.94], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.06], de: ['DE'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.965], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.035], de: ['DE'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC', 'MD'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC'] },
-    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.94], de: ['ED'] },
+    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.965], de: ['ED'] },
     { id: 'MOC2', rotulo: 'MOC', ponto: [0.60, 0.50], de: ['MOC'] },
-    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.06], de: ['EE'] },
+    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.035], de: ['EE'] },
     { id: 'PL', rotulo: 'PL', ponto: [0.85, 0.50], de: ['PL'] },
   ],
   '3-5-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.74], de: ['DC', 'DD'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.17, 0.50], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.50], de: ['DC'] },
     { id: 'DC3', rotulo: 'DC', ponto: [0.19, 0.26], de: ['DC', 'DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.48, 0.94], de: ['DD', 'ED', 'MD'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.48, 0.965], de: ['DD', 'ED', 'MD'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.46, 0.64], de: ['MC', 'MD'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.46, 0.36], de: ['MC', 'MOC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.48, 0.06], de: ['DE', 'EE'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.48, 0.035], de: ['DE', 'EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
@@ -4307,25 +4307,24 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
   const fatorNomes = maisCheio <= 2 ? 1 : maisCheio === 3 ? 0.82 : maisCheio === 4 ? 0.68 : maisCheio === 5 ? 0.58 : 0.5;
   const alturaLinha = 1.5 - (1 - fatorNomes) * 0.55;
 
-  /* O GR SAI DO CAMPO — É O ÚNICO QUE PRECISA MESMO DE SAIR.
+  /* O GR VOLTA PARA DENTRO DO CAMPO.
 
-     Em TODAS as formações o GR fica a meio da altura (fy≈0,50), a uns
-     escassos 10-13% de largura do campo do central mais próximo (que,
-     em qualquer formação, também tem um lugar por perto dessa mesma
-     altura — é o centro da defesa). Com uma caixa de nome de 17% de
-     largura, dois pontos a 10-13% um do outro NUNCA cabem lado a lado
-     sem se tocar — não interessa quanto se encolha a letra, ela vai
-     sempre escrever-se por cima do central. Foi isto, e não só o
-     transbordo vertical, que fazia o "GR" e o "DC" ficarem ilegíveis
-     um em cima do outro.
+     Em TODAS as formações o GR fica a meio da altura (fy≈0,50), perto do
+     central mais próximo (que também tem sempre um lugar a essa mesma
+     altura). Tirar o GR para uma faixa à parte, fora do retângulo verde,
+     resolvia a sobreposição mas deixava-o com ar de "esqueceram-se dele
+     ali fora" — um guarda-redes não é uma legenda à parte, é alguém que
+     joga dentro do campo, colado à própria baliza.
 
-     A única maneira de os separar de vez é tirar um dos dois do
-     caminho do outro. O GR sai para uma faixa própria à esquerda do
-     campo (fora do retângulo verde); os restantes lugares mantêm as
-     posições e o espaçamento de sempre, que só colidiam por causa do
-     GR ali no meio. */
-  const lugarGR = lugares.find(l => l.id === 'GR');
-  const outrosLugares = lugares.filter(l => l.id !== 'GR');
+     Fica então dentro, mas ajustado para colidir o menos possível com o
+     central: mais junto à linha de fundo (`GR_FX`, mais perto de 0 do
+     que o resto) e com uma caixa mais ESTREITA do que os outros lugares
+     (raramente tem mais do que um ou dois guarda-redes, não precisa dos
+     mesmos 17%). Os centrais também abrem um pouco mais para a lateral
+     (ver TATICAS) — os dois ajustes juntos dão a maior folga possível
+     sem inventar posições que não existem numa formação a sério. */
+  const GR_FX = 0.035;
+  const GR_LARGURA = '12%';
 
   const corDoTexto = editavel ? '#fff' : '#A6192E';
   const tagStyle = {
@@ -4371,64 +4370,52 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
   );
 
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', gap: 6, width: '100%', maxWidth: maxLargura, margin: '0 auto' }}>
-      {lugarGR && (
-        <div
-          onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: lugarGR.id }) : undefined}
-          style={{
-            flex: '0 0 15%', display: 'flex', flexDirection: 'column', justifyContent: 'center',
-            textAlign: 'center', borderRadius: 6, padding: '2px 0',
-            cursor: editavel && selecionado ? 'pointer' : 'default',
-            outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none', outlineOffset: 4,
-          }}
-        >
-          {conteudoDoLugar(lugarGR)}
-        </div>
-      )}
-      <div style={{
-        position: 'relative', flex: 1, minWidth: 0, aspectRatio: ASPECT_CAMPO_PRINT,
-        background: editavel ? '#1E3A24' : '#fff',
-        borderRadius: editavel ? 10 : 0, border: editavel ? `1px solid ${T.line}` : 'none',
-      }}>
-        <MarcacoesCampoPrint
-          traco={editavel ? '#ffffff40' : '#999'}
-          baliza={editavel ? '#ffffff66' : '#666'}
-        />
-        {outrosLugares.map(l => {
-          const [fx, fy] = l.ponto;
-          /* ÂNCORA QUE MUDA PERTO DAS EXTREMIDADES.
-             Um lugar como "DE" ou "EE" fica perto do topo/fundo do campo;
-             quando lá caem vários jogadores (titular + convidados à
-             experiência, por exemplo), o bloco de nomes cresce e, se
-             ficar sempre centrado no ponto, metade dele empurra para FORA
-             do campo. Perto de uma margem, ancora-se pelo lado de DENTRO
-             (o bloco cresce para o centro do campo, nunca para fora); no
-             resto do campo mantém-se centrado, como sempre foi. */
-          const ancoraX = fx < 0.15 ? 0 : fx > 0.85 ? 100 : 50;
-          const ancoraY = fy < 0.2 ? 0 : fy > 0.8 ? 100 : 50;
-          return (
-            <div
-              key={l.id}
-              onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
-              style={{
-                position: 'absolute', ...posCampoPrint(fx, fy), zIndex: l.lista.length,
-                transform: `translate(-${ancoraX}%, -${ancoraY}%)`, textAlign: 'center', width: '17%',
-                cursor: editavel && selecionado ? 'pointer' : 'default',
-                // Enquanto há alguém escolhido, os lugares acendem-se: sem
-                // isso não se percebe que se pode tocar neles.
-                outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none',
-                outlineOffset: 4, borderRadius: 6, padding: '2px 0',
-                /* Um fundo (quase) sólido só no lugar mais cheio evita que,
-                   mesmo depois de tudo isto, um resto de transbordo de um
-                   lugar vizinho se leia por cima deste. */
-                background: l.lista.length >= 4 ? (editavel ? '#1E3A24' : '#fff') : 'transparent',
-              }}
-            >
-              {conteudoDoLugar(l)}
-            </div>
-          );
-        })}
-      </div>
+    <div style={{
+      position: 'relative', width: '100%', maxWidth: maxLargura, aspectRatio: ASPECT_CAMPO_PRINT,
+      background: editavel ? '#1E3A24' : '#fff', margin: '0 auto',
+      borderRadius: editavel ? 10 : 0, border: editavel ? `1px solid ${T.line}` : 'none',
+    }}>
+      <MarcacoesCampoPrint
+        traco={editavel ? '#ffffff40' : '#999'}
+        baliza={editavel ? '#ffffff66' : '#666'}
+      />
+      {lugares.map(l => {
+        const eGR = l.id === 'GR';
+        const [fxOriginal, fy] = l.ponto;
+        const fx = eGR ? GR_FX : fxOriginal;
+        /* ÂNCORA QUE MUDA PERTO DAS EXTREMIDADES.
+           Um lugar como "DE" ou "EE" fica perto do topo/fundo do campo;
+           quando lá caem vários jogadores (titular + convidados à
+           experiência, por exemplo), o bloco de nomes cresce e, se
+           ficar sempre centrado no ponto, metade dele empurra para FORA
+           do campo. Perto de uma margem, ancora-se pelo lado de DENTRO
+           (o bloco cresce para o centro do campo, nunca para fora); no
+           resto do campo mantém-se centrado, como sempre foi. */
+        const ancoraX = fx < 0.15 ? 0 : fx > 0.85 ? 100 : 50;
+        const ancoraY = fy < 0.2 ? 0 : fy > 0.8 ? 100 : 50;
+        return (
+          <div
+            key={l.id}
+            onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
+            style={{
+              position: 'absolute', ...posCampoPrint(fx, fy), zIndex: eGR ? 1 : l.lista.length,
+              transform: `translate(-${ancoraX}%, -${ancoraY}%)`, textAlign: 'center',
+              width: eGR ? GR_LARGURA : '17%',
+              cursor: editavel && selecionado ? 'pointer' : 'default',
+              // Enquanto há alguém escolhido, os lugares acendem-se: sem
+              // isso não se percebe que se pode tocar neles.
+              outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none',
+              outlineOffset: 4, borderRadius: 6, padding: '2px 0',
+              /* Um fundo (quase) sólido só no lugar mais cheio evita que,
+                 mesmo depois de tudo isto, um resto de transbordo de um
+                 lugar vizinho se leia por cima deste. */
+              background: l.lista.length >= 4 ? (editavel ? '#1E3A24' : '#fff') : 'transparent',
+            }}
+          >
+            {conteudoDoLugar(l)}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -17155,6 +17142,7 @@ function sortStandings(teams) {
 function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches, season, convocatorias, setConvocatorias }) {
   const [editing, setEditing] = useState(false);
   const [roundIdx, setRoundIdx] = useState(0);
+  const isNarrow = useIsMobile(560);
   // Repara a equipa duplicada, se existir (ver limparEquipaDuplicada).
   const { competitions } = limparEquipaDuplicada(standings, season);
 
@@ -17243,30 +17231,46 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                      outra — só que fica em branco enquanto o jogo seguinte
                      for do mesmo dia. A data volta a escrever-se assim que
                      mudar, ou se a jornada tiver jogos em dias diferentes.
-                     Sem repetir a mesma data em todas as linhas, mas sem
-                     inventar "uma data só para a jornada" — cada jogo
-                     mantém a sua data, mesmo que a maioria coincida. */
+
+                     NO TELEMÓVEL a coluna sai da linha e sobe para cima do
+                     jogo (ainda só quando muda): a largura já é pouca para
+                     duas equipas, e tirar-lhe mais uns pixels para a data
+                     era o que forçava os nomes a cortar cedo demais. */
                   return jogos.map((g, i) => {
                     const mostraData = i === 0 || g.date !== jogos[i - 1].date;
+                    const nomeEquipa = (nome, lado) => (
+                      <span style={{
+                        width: isNarrow ? undefined : 150, maxWidth: isNarrow ? '38vw' : undefined,
+                        flex: isNarrow ? 1 : undefined, minWidth: 0,
+                        textAlign: lado, color: T.cream,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }} title={nome}>{nome}</span>
+                    );
                     return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
-                        <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 40, flexShrink: 0 }}>
-                          {mostraData ? dataCurta(g.date) : ''}
-                        </span>
-                        {/* Nome sempre numa linha só, mesmo os compridos
-                            ("U. Nogueirense FC (B)") — em vez de quebrar
-                            para 2-3 linhas (o que descentrava tudo), corta
-                            com reticências. Centrado na coluna, não
-                            encostado ao "vs". */}
-                        <span style={{
-                          flex: 1, minWidth: 0, textAlign: 'center', color: T.cream,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }} title={g.home}>{g.home}</span>
-                        <span style={{ ...mono, color: T.gold, width: 40, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
-                        <span style={{
-                          flex: 1, minWidth: 0, textAlign: 'center', color: T.cream,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }} title={g.away}>{g.away}</span>
+                      <div key={g.id || i}>
+                        {isNarrow && mostraData && dataCurta(g.date) && (
+                          <div style={{ ...mono, fontSize: 11, color: T.mutedDim, textAlign: 'center', margin: '8px 0 2px' }}>
+                            {dataCurta(g.date)}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
+                          {!isNarrow && (
+                            <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 40, flexShrink: 0 }}>
+                              {mostraData ? dataCurta(g.date) : ''}
+                            </span>
+                          )}
+                          {/* "vs" centrado na LINHA (não só na coluna do meio):
+                              os nomes ficam encostados a ele — direita/esquerda
+                              — dentro de um grupo mais estreito, em vez de
+                              espalhados pela largura toda com um vazio no
+                              meio. Sempre numa linha só (reticências se não
+                              couber), nunca a quebrar em várias. */}
+                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minWidth: 0 }}>
+                            {nomeEquipa(g.home, 'right')}
+                            <span style={{ ...mono, color: T.gold, flexShrink: 0 }}>{g.score || 'vs'}</span>
+                            {nomeEquipa(g.away, 'left')}
+                          </div>
+                        </div>
                       </div>
                     );
                   });
@@ -17994,11 +17998,27 @@ function StandingsModal({ standings, onClose, onSave }) {
         : r)),
     });
   };
+  /* Sem data, um jogo fica sempre no fim (pela ordem em que foi criado);
+     com data, ordena cronologicamente. */
+  const compararJogosPorData = (a, b) => {
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+  };
   const updateGame = (gi, patch) => {
     patchComp({
-      rounds: rounds.map((r, i) => (i === roundIdx
-        ? { ...r, games: r.games.map((g, j) => (j === gi ? { ...g, id: g.id || uid(), ...patch } : g)) }
-        : r)),
+      rounds: rounds.map((r, i) => {
+        if (i !== roundIdx) return r;
+        const jogos = r.games.map((g, j) => (j === gi ? { ...g, id: g.id || uid(), ...patch } : g));
+        /* A lista ordena-se sozinha pela data, sempre que ela muda: pôr
+           uma data mais à frente empurra o jogo para o fim; pôr uma mais
+           cedo do que as outras traz para o início — sem ser preciso
+           arrastar linhas à mão. Como a chave de cada linha é o `id` do
+           jogo (não a posição), reordenar não faz o foco saltar de
+           campo enquanto se escreve. */
+        return { ...r, games: [...jogos].sort(compararJogosPorData) };
+      }),
     });
   };
   // Os golos são introduzidos em dois seletores numéricos; o campo `score`
