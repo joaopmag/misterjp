@@ -4178,41 +4178,41 @@ const TATICAS = {
      lateral, que é onde jogam. */
   '4-3-3': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.86], de: ['DD'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.94], de: ['DD'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.14], de: ['DE'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.06], de: ['DE'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC', 'MD'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC', 'MD'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.50, 0.32], de: ['MC', 'MOC'] },
-    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.86], de: ['ED'] },
-    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.14], de: ['EE'] },
+    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.94], de: ['ED'] },
+    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.06], de: ['EE'] },
     { id: 'PL', rotulo: 'PL', ponto: [0.86, 0.50], de: ['PL'] },
   ],
   '4-4-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.86], de: ['DD'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.94], de: ['DD'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.14], de: ['DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.87], de: ['MD', 'ED'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.06], de: ['DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.94], de: ['MD', 'ED'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.44, 0.62], de: ['MC', 'MOC'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.44, 0.38], de: ['MC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.13], de: ['EE'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.06], de: ['EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
   '4-2-3-1': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.86], de: ['DD'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.94], de: ['DD'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.16, 0.63], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.16, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.14], de: ['DE'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.06], de: ['DE'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC', 'MD'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC'] },
-    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.86], de: ['ED'] },
+    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.94], de: ['ED'] },
     { id: 'MOC2', rotulo: 'MOC', ponto: [0.60, 0.50], de: ['MOC'] },
-    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.14], de: ['EE'] },
+    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.06], de: ['EE'] },
     { id: 'PL', rotulo: 'PL', ponto: [0.85, 0.50], de: ['PL'] },
   ],
   '3-5-2': [
@@ -4220,11 +4220,11 @@ const TATICAS = {
     { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.74], de: ['DC', 'DD'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.17, 0.50], de: ['DC'] },
     { id: 'DC3', rotulo: 'DC', ponto: [0.19, 0.26], de: ['DC', 'DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.48, 0.88], de: ['DD', 'ED', 'MD'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.48, 0.94], de: ['DD', 'ED', 'MD'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.46, 0.64], de: ['MC', 'MD'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.46, 0.36], de: ['MC', 'MOC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.48, 0.12], de: ['DE', 'EE'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.48, 0.06], de: ['DE', 'EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
@@ -14307,9 +14307,16 @@ function PrintPresencasPorPosicao({ presentPlayers, allPlayers }) {
            mais do que uns 4 ou 5 defesas — desequilibrava a folha toda
            por causa de UM grupo. Passados 4 nomes, os seguintes passam
            para uma segunda coluna ao lado, dentro do mesmo grupo — até
-           8 nomes por posição em vez de uma lista comprida. */
-        const col1 = c.jogadores.slice(0, 4);
-        const col2 = c.jogadores.slice(4);
+           8 nomes por posição em vez de uma lista comprida.
+
+           Quando o total é ímpar, é a coluna da ESQUERDA que fica com o
+           nome a mais (5+4, não 4+5) — para ler de cima para baixo,
+           esquerda primeiro, sem "saltar" para a direita a meio de uma
+           contagem desigual. */
+        const dividir = c.jogadores.length > 4;
+        const metade = dividir ? Math.ceil(c.jogadores.length / 2) : c.jogadores.length;
+        const col1 = c.jogadores.slice(0, metade);
+        const col2 = dividir ? c.jogadores.slice(metade) : [];
         return (
           <div key={c.grupo}>
             <div style={{ fontSize: 11, fontWeight: 700, borderBottom: '1px solid #999', paddingBottom: 2, marginBottom: 4 }}>
@@ -17229,50 +17236,40 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                   const dataCurta = (d) => (d
                     ? (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d)
                     : '');
-                  /* A DATA SÓ SE REPETE QUANDO É PRECISO.
+                  /* A DATA VOLTA À COLUNA PRÓPRIA, MAS SÓ ESCREVE QUANDO MUDA.
 
-                     Uma jornada é quase sempre toda no mesmo dia — repetir
-                     essa data em cada linha só ocupava espaço (e empurrava
-                     os nomes das equipas, que já lutam por espaço nos mais
-                     compridos) sem dizer nada de novo. Mas uma jornada
-                     também pode ter jogos em dias diferentes (adiados,
-                     divisão em dois dias, etc.) — por isso não se assume
-                     sempre "uma data só": agrupa-se pelas datas que
-                     existirem a sério, e cada grupo mostra a sua data uma
-                     vez só, por cima dos jogos desse dia. */
-                  const datas = [...new Set(jogos.map(g => g.date).filter(Boolean))];
-                  const feitoPorGrupos = datas.length > 1;
-                  const grupos = feitoPorGrupos
-                    ? [
-                        ...datas.map(d => ({ data: d, jogos: jogos.filter(g => g.date === d) })),
-                        ...(jogos.some(g => !g.date) ? [{ data: null, jogos: jogos.filter(g => !g.date) }] : []),
-                      ]
-                    : [{ data: datas[0] || null, jogos }];
-                  return grupos.map((grp, gi) => (
-                    <div key={gi}>
-                      {grp.data && (
-                        <div style={{
-                          ...mono, fontSize: 11, color: T.mutedDim, textAlign: 'center',
-                          margin: feitoPorGrupos ? '10px 0 6px' : '0 0 8px',
-                        }}>
-                          {dataCurta(grp.data)}
-                        </div>
-                      )}
-                      {grp.jogos.map((g, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
-                          {/* Nomes centrados, não encostados ao "vs": com um
-                              nome comprido a quebrar em várias linhas ("U.
-                              Nogueirense FC (B)"), encostar à direita/esquerda
-                              deixava o bloco todo com ar torto. Centrado, cada
-                              linha fica equilibrada em torno do meio da coluna,
-                              qualquer que seja o número de linhas. */}
-                          <span style={{ flex: 1, textAlign: 'center', color: T.cream }}>{g.home}</span>
-                          <span style={{ ...mono, color: T.gold, width: 52, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
-                          <span style={{ flex: 1, textAlign: 'center', color: T.cream }}>{g.away}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ));
+                     Como nas listas de resultados (zerozero e semelhantes):
+                     uma coluna de data à esquerda, alinhada como qualquer
+                     outra — só que fica em branco enquanto o jogo seguinte
+                     for do mesmo dia. A data volta a escrever-se assim que
+                     mudar, ou se a jornada tiver jogos em dias diferentes.
+                     Sem repetir a mesma data em todas as linhas, mas sem
+                     inventar "uma data só para a jornada" — cada jogo
+                     mantém a sua data, mesmo que a maioria coincida. */
+                  return jogos.map((g, i) => {
+                    const mostraData = i === 0 || g.date !== jogos[i - 1].date;
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
+                        <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 40, flexShrink: 0 }}>
+                          {mostraData ? dataCurta(g.date) : ''}
+                        </span>
+                        {/* Nome sempre numa linha só, mesmo os compridos
+                            ("U. Nogueirense FC (B)") — em vez de quebrar
+                            para 2-3 linhas (o que descentrava tudo), corta
+                            com reticências. Centrado na coluna, não
+                            encostado ao "vs". */}
+                        <span style={{
+                          flex: 1, minWidth: 0, textAlign: 'center', color: T.cream,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }} title={g.home}>{g.home}</span>
+                        <span style={{ ...mono, color: T.gold, width: 40, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
+                        <span style={{
+                          flex: 1, minWidth: 0, textAlign: 'center', color: T.cream,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }} title={g.away}>{g.away}</span>
+                      </div>
+                    );
+                  });
                 })()}
               </div>
             </div>
