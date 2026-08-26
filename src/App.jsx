@@ -1299,7 +1299,7 @@ const TextArea = React.forwardRef(function TextArea(props, ref) {
    campo tático, onde a precisão do desenho depende de o campo ser grande
    no ecrã. Nos ecrãs pequenos os três tamanhos dão no mesmo, porque o
    limite passa a ser a largura da janela. */
-function Modal({ title, subtitle, onClose, children, wide, xwide }) {
+function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage }) {
   const estreito = useIsMobile(620);
   // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
   // são quase todas de edição (exercício, sessão, jogo, jogador...) e um
@@ -1307,6 +1307,42 @@ function Modal({ title, subtitle, onClose, children, wide, xwide }) {
   // tático — deitava fora tudo o que estava a ser preenchido. Fecha-se só
   // pelo X ou pelo botão Cancelar (o Esc também não fecha, pelo mesmo
   // motivo: seria outra forma acidental de perder o que está preenchido).
+
+  /* PÁGINA INTEIRA, EM VEZ DE JANELA FLUTUANTE.
+
+     O editor de exercício e o de ideia de jogo são os formulários mais
+     compridos da app (texto, metadados, o editor tático completo por
+     baixo) — dentro de uma janela pequena a meio do ecrã, com uma faixa
+     escura à volta, ficavam apertados e obrigavam a rolar dentro de uma
+     caixa dentro da página. Aqui ocupam o ecrã todo, como se fossem uma
+     página própria: mesmo fundo da app, mesmo scroll da página, sem
+     caixa nem fundo escurecido — só o cabeçalho com o título e o X a
+     fechar, tal como qualquer outra janela. */
+  if (fullPage) {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, background: T.bg, zIndex: 50,
+        overflowY: 'auto', overflowX: 'hidden',
+      }}>
+        <div style={{
+          maxWidth: xwide ? 1100 : (wide ? 640 : 460), margin: '0 auto',
+          padding: estreito ? 14 : 22, paddingBottom: 60,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
+            <div style={{ minWidth: 0 }}>
+              <h3 style={{ ...display, color: T.warn, fontSize: 19, fontWeight: 600, margin: 0 }}>{title}</h3>
+              {subtitle && <div style={{ color: T.muted, fontSize: 12.5, marginTop: 3 }}>{subtitle}</div>}
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
+              <X size={20} />
+            </button>
+          </div>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{
       position: 'fixed', inset: 0, background: '#000000aa', zIndex: 50,
@@ -5876,7 +5912,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
   };
 
   return (
-    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide>
+    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide fullPage>
       <div style={{ marginBottom: 12 }}>
         <Field label="Nome"><Input value={f.name || ''} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Construção a 3 com médio a cair" /></Field>
       </div>
@@ -9262,7 +9298,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
   };
 
   return (
-    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide>
+    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide fullPage>
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <div style={FIELD_FULL}>
           <Field label="Nome"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Jogo posicional 5v5+3" /></Field>
