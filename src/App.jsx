@@ -4241,12 +4241,12 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
 
 /* O quadro desenhado. `aoTocar` transforma-o em editável: sem ele é só
    para ler, que é o que a folha impressa precisa. */
-function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1 }) {
+function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLargura = 640 }) {
   if (!lugares || !lugares.length) return null;
   const editavel = typeof aoTocar === 'function';
   return (
     <div style={{
-      position: 'relative', width: '100%', maxWidth: 640, aspectRatio: ASPECT_CAMPO_PRINT,
+      position: 'relative', width: '100%', maxWidth: maxLargura, aspectRatio: ASPECT_CAMPO_PRINT,
       background: editavel ? '#1E3A24' : '#fff', margin: '0 auto',
       borderRadius: editavel ? 10 : 0, border: editavel ? `1px solid ${T.line}` : 'none',
     }}>
@@ -13398,7 +13398,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               <div className="print-sheet">
                 <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Plantel presente</h2>
                 <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>{fmtDate(printFolha.date)}</p>
-                <PrancheteDoPlantel lugares={lugares} escala={1.7} />
+                <PrancheteDoPlantel lugares={lugares} escala={1.45} maxLargura={470} />
 
                 {/* OS DESENHOS TÁCTICOS DO DIA, A SEGUIR AO QUADRO.
 
@@ -13429,8 +13429,11 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                   if (!desenhos.length) return null;
                   return (
                     <div style={{ marginTop: 22 }}>
+                      {/* Três por linha e o campo de cima mais pequeno: com
+                          duas colunas, cinco exercícios pediam três filas e
+                          a folha passava a duas páginas. */}
                       <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>Exercícios do dia</h3>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                         {desenhos.map((ex, i) => {
                           const d = diagramaParaImpressao(ex.diagram);
                           return (
@@ -13530,30 +13533,19 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             <>
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
               {(printSession.exerciseIds || []).map((e, i) => (
-                <PrintExerciseBlock key={e.exId} e={e} ex={exercises.find(x => x.id === e.exId)} index={i} />
+                <PrintExerciseBlock
+                  key={e.exId}
+                  e={e}
+                  ex={exercises.find(x => x.id === e.exId)}
+                  index={i}
+                  equipas={equipasDoExercicio(
+                    (printSession.equipasSimulador || {}).equipas,
+                    exercises.find(x => x.id === e.exId),
+                  )}
+                />
               ))}
-              {/* Equipas vindas do Simulador, se lá tiverem sido guardadas.
-                  É o que o treinador leva para o campo: quem joga com quem, em
-                  que exercício e por quanto tempo. */}
-              {printSession.equipasSimulador && (printSession.equipasSimulador.equipas || []).length > 0 && (
-                <>
-                  <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Equipas</h3>
-                  <div style={{ fontSize: 12.5, marginBottom: 16, lineHeight: 1.6 }}>
-                    {printSession.equipasSimulador.equipas.map((g, i) => (
-                      <div key={i} style={{ marginBottom: 5 }}>
-                        <strong>
-                          {g.exercicio}
-                          {g.zona ? ` · zona ${g.zona}` : ''}
-                          {g.turno ? ` · turno ${g.turno}` : ''}
-                          {' · '}{g.equipa}{g.guardaRedes ? ' (GR)' : ''}
-                          {g.minutos ? ` · ${g.minutos} min` : ''}:
-                        </strong>{' '}
-                        {g.jogadores.join(', ')}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
+              {/* A lista corrida de equipas que estava aqui saiu: cada uma
+                  passou para junto do exercício a que pertence. */}
             </>
           )}
 
@@ -13858,7 +13850,23 @@ function openAndPrintPdfSequential(attachments) {
 // Se houver imagem anexada, mostra-a em vez do esquema tático (tal como
 // na impressão do exercício isolado); se for PDF, fica uma nota — o
 // ficheiro em si é impresso à parte (ver openAndPrintPdfSequential).
-function PrintExerciseBlock({ e, ex, index }) {
+/* As equipas guardadas no Simulador para ESTE exercício, agrupadas por
+   turno. Vêm com o nome do exercício lá dentro, por isso filtra-se por
+   ele — o Simulador não guarda o id. */
+function equipasDoExercicio(equipas, ex) {
+  const nome = String((ex && ex.name) || '').trim().toLowerCase();
+  if (!nome) return [];
+  const minhas = (equipas || []).filter(g => String(g.exercicio || '').trim().toLowerCase() === nome);
+  const porTurno = new Map();
+  minhas.forEach(g => {
+    const chave = `${g.turno || 1}|${g.zona || ''}`;
+    if (!porTurno.has(chave)) porTurno.set(chave, { turno: g.turno, zona: g.zona, minutos: g.minutos, grupos: [] });
+    porTurno.get(chave).grupos.push(g);
+  });
+  return [...porTurno.values()];
+}
+
+function PrintExerciseBlock({ e, ex, index, equipas }) {
   if (!ex) return <p style={{ fontSize: 13, margin: '0 0 14px' }}>{index + 1}. —</p>;
   return (
     <div style={{ margin: '0 0 20px', pageBreakInside: 'avoid' }}>
@@ -13919,6 +13927,43 @@ function PrintExerciseBlock({ e, ex, index }) {
           <span style={{ fontSize: 9.5, color: '#888', letterSpacing: '.04em' }}>™ Mister JP</span>
         </div>
       )}
+
+      {/* AS EQUIPAS FICAM COM O EXERCÍCIO A QUE PERTENCEM.
+
+          Estavam todas juntas no fim da folha, numa lista corrida de
+          frases — para saber quem fazia o quê era preciso ler o nome do
+          exercício em cada linha e voltar atrás. Ao lado do desenho, em
+          colunas A B C D, lê-se de relance.
+
+          Cada turno é um bloco, porque as equipas mudam entre turnos e
+          misturá-las era o mesmo problema outra vez. */}
+      {(equipas || []).map((t, i) => (
+        <div key={i} style={{ marginTop: 10, breakInside: 'avoid' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, marginBottom: 5 }}>
+            {t.turno ? `Turno ${t.turno}` : 'Equipas'}
+            {t.zona ? ` · zona ${t.zona}` : ''}
+            {t.minutos ? ` · ${t.minutos} min` : ''}
+          </div>
+          <div style={{
+            display: 'grid', gap: '0 16px',
+            gridTemplateColumns: `repeat(${Math.min(4, Math.max(1, t.grupos.length))}, minmax(0, 1fr))`,
+          }}>
+            {t.grupos.map((g, k) => (
+              <div key={k}>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, borderBottom: '1px solid #999',
+                  paddingBottom: 2, marginBottom: 3,
+                }}>
+                  {g.equipa}{g.guardaRedes ? ' (GR)' : ''}
+                </div>
+                {g.jogadores.map((n, z) => (
+                  <div key={z} style={{ fontSize: 10.5, lineHeight: 1.55 }}>{n}</div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
