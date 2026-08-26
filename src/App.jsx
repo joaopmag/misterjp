@@ -8916,15 +8916,39 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
                 }}
                 onFocus={(e) => {
                   /* O teclado do telemóvel ocupa metade do ecrã e tapa
-                     esta caixa, que vive por baixo do campo. Trazê-la para
-                     o meio do que sobra do ecrã é o que permite ver o que
-                     se está a escrever. O atraso deixa o teclado abrir
-                     primeiro — sem ele, mede-se o ecrã inteiro e a caixa
-                     volta a ficar por baixo. */
+                     esta caixa. Agora que o editor abre a página inteira
+                     (não uma janela pequena), a página à volta é bem mais
+                     comprida — usar sempre `block:'center'` recentrava a
+                     caixa a meio da página TODA, um salto grande e visível
+                     mesmo quando a caixa já estava perto de estar visível.
+                     `block:'nearest'` só mexe o mínimo preciso para tirá-la
+                     de baixo do teclado.
+
+                     Em vez de um tempo fixo a adivinhar quando o teclado
+                     abriu, ouve-se o `visualViewport` (dispara quando o
+                     teclado encolhe mesmo o ecrã) — mais fiável entre
+                     telemóveis. Um temporizador fica de rede de segurança
+                     para quem não suporta essa API (e no desktop, onde
+                     nunca há teclado a abrir, só confirma que já está à
+                     vista, sem mexer em nada). */
                   const alvo = e.currentTarget;
-                  setTimeout(() => {
-                    try { alvo.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { /* browsers antigos */ }
-                  }, 320);
+                  const scrollParaVista = () => {
+                    try { alvo.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (err) { /* browsers antigos */ }
+                  };
+                  const vv = window.visualViewport;
+                  if (vv) {
+                    let feito = false;
+                    const aoRedimensionar = () => { if (feito) return; feito = true; scrollParaVista(); };
+                    vv.addEventListener('resize', aoRedimensionar, { once: true });
+                    setTimeout(() => {
+                      if (feito) return;
+                      feito = true;
+                      vv.removeEventListener('resize', aoRedimensionar);
+                      scrollParaVista();
+                    }, 500);
+                  } else {
+                    setTimeout(scrollParaVista, 320);
+                  }
                 }}
               />
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap' }}>
