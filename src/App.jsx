@@ -2405,7 +2405,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
                     <div style={{ color: T.cream, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {s.phase === 'Descanso'
                         ? 'Folga'
-                        : s.phase === 'Jogo'
+                        : jogoRealDaSessao(s, matches)
                           ? (s.opponent ? `vs ${s.opponent}` : 'Jogo')
                           : (s.focus || 'Sessão de treino')}
                     </div>
@@ -4298,9 +4298,6 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
      convidados à experiência empilhados, a lista cresce mais depressa
      do que a distância até ao lugar vizinho e passa a ESCREVER-SE POR
      CIMA dele — foi o que aconteceu com muitos "exp" na mesma zona.
-     Ancorar para dentro do campo (mais abaixo) resolveu sair do campo,
-     mas não resolvia isto: o transbordo ficava lá dentro, só que agora
-     por cima de outro lugar.
 
      Reduzir SÓ QUANDO É PRECISO — pelo lugar mais cheio do quadro
      inteiro — mantém a letra normal (a mais legível) num quadro comum,
@@ -4310,90 +4307,128 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
   const fatorNomes = maisCheio <= 2 ? 1 : maisCheio === 3 ? 0.82 : maisCheio === 4 ? 0.68 : maisCheio === 5 ? 0.58 : 0.5;
   const alturaLinha = 1.5 - (1 - fatorNomes) * 0.55;
 
-  return (
-    <div style={{
-      position: 'relative', width: '100%', maxWidth: maxLargura, aspectRatio: ASPECT_CAMPO_PRINT,
-      background: editavel ? '#1E3A24' : '#fff', margin: '0 auto',
-      borderRadius: editavel ? 10 : 0, border: editavel ? `1px solid ${T.line}` : 'none',
-    }}>
-      <MarcacoesCampoPrint
-        traco={editavel ? '#ffffff40' : '#999'}
-        baliza={editavel ? '#ffffff66' : '#666'}
-      />
-      {lugares.map(l => {
-        const [fx, fy] = l.ponto;
-        /* ÂNCORA QUE MUDA PERTO DAS EXTREMIDADES.
-           Um lugar como "DE" ou "EE" fica perto do topo/fundo do campo;
-           quando lá caem vários jogadores (titular + convidados à
-           experiência, por exemplo), o bloco de nomes cresce e, se
-           ficar sempre centrado no ponto, metade dele empurra para FORA
-           do campo — foi o que aconteceu na folha impressa. Perto de
-           uma margem, ancora-se pelo lado de DENTRO (o bloco cresce
-           para o centro do campo, nunca para fora); no resto do campo
-           mantém-se centrado, como sempre foi. */
-        const ancoraX = fx < 0.15 ? 0 : fx > 0.85 ? 100 : 50;
-        const ancoraY = fy < 0.2 ? 0 : fy > 0.8 ? 100 : 50;
-        return (
+  /* O GR SAI DO CAMPO — É O ÚNICO QUE PRECISA MESMO DE SAIR.
+
+     Em TODAS as formações o GR fica a meio da altura (fy≈0,50), a uns
+     escassos 10-13% de largura do campo do central mais próximo (que,
+     em qualquer formação, também tem um lugar por perto dessa mesma
+     altura — é o centro da defesa). Com uma caixa de nome de 17% de
+     largura, dois pontos a 10-13% um do outro NUNCA cabem lado a lado
+     sem se tocar — não interessa quanto se encolha a letra, ela vai
+     sempre escrever-se por cima do central. Foi isto, e não só o
+     transbordo vertical, que fazia o "GR" e o "DC" ficarem ilegíveis
+     um em cima do outro.
+
+     A única maneira de os separar de vez é tirar um dos dois do
+     caminho do outro. O GR sai para uma faixa própria à esquerda do
+     campo (fora do retângulo verde); os restantes lugares mantêm as
+     posições e o espaçamento de sempre, que só colidiam por causa do
+     GR ali no meio. */
+  const lugarGR = lugares.find(l => l.id === 'GR');
+  const outrosLugares = lugares.filter(l => l.id !== 'GR');
+
+  const corDoTexto = editavel ? '#fff' : '#A6192E';
+  const tagStyle = {
+    display: 'inline-block', padding: '2px 7px', borderRadius: 5,
+    // No ecrã fica preenchido, como sempre. Na folha impressa a maior
+    // parte dos telemóveis/impressoras não imprime cor de fundo por
+    // omissão ("imprimir gráficos de fundo" desligado) — e um rótulo
+    // branco sobre fundo branco desaparece por completo. Por isso,
+    // impresso, é uma cor de tinta a sério (contorno + texto), que se
+    // vê com ou sem cor de fundo.
+    background: editavel ? '#B5393F' : 'transparent',
+    border: editavel ? 'none' : '1px solid #A6192E',
+    color: corDoTexto, fontSize: 9.5 * escala, fontWeight: 700, letterSpacing: '.03em',
+  };
+  const nomeStyle = (on) => ({
+    /* O tamanho base é o do ECRÃ. A folha impressa passa uma `escala`
+       maior — é lá que se lê de pé, no campo, e 8,5 px em papel não se
+       lê sentado. Ter um tamanho só para os dois era o erro.
+       `fatorNomes` encolhe os DOIS por igual quando o quadro fica
+       cheio — ver comentário no topo da função. */
+    fontSize: 8.5 * escala * fatorNomes, lineHeight: alturaLinha, fontWeight: 500,
+    color: editavel ? (on ? '#0d140e' : T.cream) : '#111',
+    background: on ? T.gold : 'transparent',
+    borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  });
+
+  const conteudoDoLugar = (l) => (
+    <>
+      <div style={tagStyle}>{l.rotulo}</div>
+      <div style={{ marginTop: 2 }}>
+        {l.lista.map(j => (
           <div
-            key={l.id}
-            onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
-            style={{
-              position: 'absolute', ...posCampoPrint(fx, fy), zIndex: l.lista.length,
-              transform: `translate(-${ancoraX}%, -${ancoraY}%)`, textAlign: 'center', width: '17%',
-              cursor: editavel && selecionado ? 'pointer' : 'default',
-              // Enquanto há alguém escolhido, os lugares acendem-se: sem
-              // isso não se percebe que se pode tocar neles.
-              outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none',
-              outlineOffset: 4, borderRadius: 6, padding: '2px 0',
-              /* Um fundo (quase) sólido só no lugar mais cheio evita que,
-                 mesmo depois de tudo isto, um resto de transbordo de um
-                 lugar vizinho se leia por cima deste — fica ilegível na
-                 mesma, mas pelo menos não se confunde com o de baixo. */
-              background: l.lista.length >= 4 ? (editavel ? '#1E3A24' : '#fff') : 'transparent',
-            }}
+            key={j.chave}
+            onClick={editavel ? (e) => { e.stopPropagation(); aoTocar({ tipo: 'jogador', chave: j.chave }); } : undefined}
+            style={nomeStyle(selecionado === j.chave)}
           >
-            <div style={{
-              display: 'inline-block', padding: '2px 7px', borderRadius: 5,
-              // No ecrã fica preenchido, como sempre. Na folha impressa a
-              // maior parte dos telemóveis/impressoras não imprime cor de
-              // fundo por omissão ("imprimir gráficos de fundo" desligado)
-              // — e um rótulo branco sobre fundo branco desaparece por
-              // completo. Por isso, impresso, é uma cor de tinta a sério
-              // (contorno + texto), que se vê com ou sem cor de fundo.
-              background: editavel ? '#B5393F' : 'transparent',
-              border: editavel ? 'none' : '1px solid #A6192E',
-              color: editavel ? '#fff' : '#A6192E',
-              fontSize: 9.5 * escala, fontWeight: 700, letterSpacing: '.03em',
-            }}>{l.rotulo}</div>
-            <div style={{ marginTop: 2 }}>
-              {l.lista.map(j => {
-                const on = selecionado === j.chave;
-                return (
-                  <div
-                    key={j.chave}
-                    onClick={editavel ? (e) => { e.stopPropagation(); aoTocar({ tipo: 'jogador', chave: j.chave }); } : undefined}
-                    style={{
-                      /* O tamanho base é o do ECRÃ. A folha impressa passa
-                         uma `escala` maior — é lá que se lê de pé, no
-                         campo, e 8,5 px em papel não se lê sentado. Ter um
-                         tamanho só para os dois era o erro. `fatorNomes`
-                         encolhe os DOIS por igual quando o quadro fica
-                         cheio — ver comentário no topo da função. */
-                      fontSize: 8.5 * escala * fatorNomes, lineHeight: alturaLinha, fontWeight: 500,
-                      color: editavel ? (on ? '#0d140e' : T.cream) : '#111',
-                      background: on ? T.gold : 'transparent',
-                      borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {j.nome}{j.exp ? <span style={{ opacity: 0.6 }}> exp</span> : null}
-                  </div>
-                );
-              })}
-            </div>
+            {j.nome}{j.exp ? <span style={{ opacity: 0.6 }}> exp</span> : null}
           </div>
-        );
-      })}
+        ))}
+      </div>
+    </>
+  );
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: 6, width: '100%', maxWidth: maxLargura, margin: '0 auto' }}>
+      {lugarGR && (
+        <div
+          onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: lugarGR.id }) : undefined}
+          style={{
+            flex: '0 0 15%', display: 'flex', flexDirection: 'column', justifyContent: 'center',
+            textAlign: 'center', borderRadius: 6, padding: '2px 0',
+            cursor: editavel && selecionado ? 'pointer' : 'default',
+            outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none', outlineOffset: 4,
+          }}
+        >
+          {conteudoDoLugar(lugarGR)}
+        </div>
+      )}
+      <div style={{
+        position: 'relative', flex: 1, minWidth: 0, aspectRatio: ASPECT_CAMPO_PRINT,
+        background: editavel ? '#1E3A24' : '#fff',
+        borderRadius: editavel ? 10 : 0, border: editavel ? `1px solid ${T.line}` : 'none',
+      }}>
+        <MarcacoesCampoPrint
+          traco={editavel ? '#ffffff40' : '#999'}
+          baliza={editavel ? '#ffffff66' : '#666'}
+        />
+        {outrosLugares.map(l => {
+          const [fx, fy] = l.ponto;
+          /* ÂNCORA QUE MUDA PERTO DAS EXTREMIDADES.
+             Um lugar como "DE" ou "EE" fica perto do topo/fundo do campo;
+             quando lá caem vários jogadores (titular + convidados à
+             experiência, por exemplo), o bloco de nomes cresce e, se
+             ficar sempre centrado no ponto, metade dele empurra para FORA
+             do campo. Perto de uma margem, ancora-se pelo lado de DENTRO
+             (o bloco cresce para o centro do campo, nunca para fora); no
+             resto do campo mantém-se centrado, como sempre foi. */
+          const ancoraX = fx < 0.15 ? 0 : fx > 0.85 ? 100 : 50;
+          const ancoraY = fy < 0.2 ? 0 : fy > 0.8 ? 100 : 50;
+          return (
+            <div
+              key={l.id}
+              onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
+              style={{
+                position: 'absolute', ...posCampoPrint(fx, fy), zIndex: l.lista.length,
+                transform: `translate(-${ancoraX}%, -${ancoraY}%)`, textAlign: 'center', width: '17%',
+                cursor: editavel && selecionado ? 'pointer' : 'default',
+                // Enquanto há alguém escolhido, os lugares acendem-se: sem
+                // isso não se percebe que se pode tocar neles.
+                outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none',
+                outlineOffset: 4, borderRadius: 6, padding: '2px 0',
+                /* Um fundo (quase) sólido só no lugar mais cheio evita que,
+                   mesmo depois de tudo isto, um resto de transbordo de um
+                   lugar vizinho se leia por cima deste. */
+                background: l.lista.length >= 4 ? (editavel ? '#1E3A24' : '#fff') : 'transparent',
+              }}
+            >
+              {conteudoDoLugar(l)}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -7536,6 +7571,20 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const dragStartRef = React.useRef(null);
   const dragArrowRef = React.useRef(null);
   const dragZoneRef = React.useRef(null);
+  const painelSelecaoRef = React.useRef(null);
+
+  /* O painel de seleção (onde aparece a caixa de texto, as cores, o
+     tamanho…) vive por baixo do campo. Agora que o editor de exercício
+     abre a página inteira, há muito conteúdo por cima dele — ao tocar
+     num elemento no campo (ou ao acabar de o colocar), o painel podia
+     ficar fora do ecrã visível, obrigando a procurá-lo a rolar às
+     cegas. `block:'nearest'` só desloca o preciso para o mostrar, sem
+     saltar quando já está à vista — o mesmo cuidado da caixa de texto,
+     aplicado aqui ao painel inteiro. */
+  useEffect(() => {
+    if (!selectedId || !painelSelecaoRef.current) return;
+    try { painelSelecaoRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (err) { /* browsers antigos */ }
+  }, [selectedId]);
 
   const elements = value?.elements || [];
   const arrows = value?.arrows || [];
@@ -8869,7 +8918,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             por isso o que muda não é deixar o conteúdo mandar na altura,
             é reservar mais espaço no telemóvel e deixá-lo quebrar dentro
             desse espaço. */}
-        <div className="mjp-painel-selecao" style={{
+        <div className="mjp-painel-selecao" ref={painelSelecaoRef} style={{
           display: 'flex', alignItems: 'center', gap: isNarrowEditor ? 8 : 10,
           padding: isNarrowEditor ? '7px 8px' : '0 10px', background: T.bg,
           border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0',
@@ -13407,13 +13456,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
      qual é o jogo que lhe deu origem. É de lá que vêm as "Ideias para o
      jogo" para a ficha impressa — a sessão não as tem. Sessões antigas,
      criadas antes de existir `sourceMatchId`, ainda se apanham pela data. */
-  const jogoDaSessao = (s) => {
-    if (!s || s.phase !== 'Jogo') return null;
-    const lista = matches || [];
-    return lista.find(m => m.id === s.sourceMatchId)
-      || lista.find(m => m.date === s.date && isFriendlyMatch(m))
-      || null;
-  };
+  const jogoDaSessao = (s) => jogoRealDaSessao(s, matches);
   const ideiasDaSessao = (s) => { const m = jogoDaSessao(s); return m ? m.ideias : ''; };
 
   /* "Jogo" é UMA DAS OPÇÕES de "Fase de jogo (foco)" ao criar uma sessão
@@ -14256,18 +14299,47 @@ function PrintPresencasPorPosicao({ presentPlayers, allPlayers }) {
   const colunas = semGrupo.length ? [...grupos, { grupo: 'SEM', label: 'Sem posição', jogadores: semGrupo }] : grupos;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: `repeat(${colunas.length}, 1fr)`, gap: '0 16px' }}>
-      {colunas.map(c => (
-        <div key={c.grupo}>
-          <div style={{ fontSize: 11, fontWeight: 700, borderBottom: '1px solid #999', paddingBottom: 2, marginBottom: 4 }}>
-            {c.label}
+      {colunas.map(c => {
+        /* DUAS COLUNAS DENTRO DE CADA GRUPO DE POSIÇÃO.
+
+           Uma coluna só, uma embaixo da outra, ficava com uma "Defesas"
+           bem mais alta do que as outras assim que o plantel tivesse
+           mais do que uns 4 ou 5 defesas — desequilibrava a folha toda
+           por causa de UM grupo. Passados 4 nomes, os seguintes passam
+           para uma segunda coluna ao lado, dentro do mesmo grupo — até
+           8 nomes por posição em vez de uma lista comprida. */
+        const col1 = c.jogadores.slice(0, 4);
+        const col2 = c.jogadores.slice(4);
+        return (
+          <div key={c.grupo}>
+            <div style={{ fontSize: 11, fontWeight: 700, borderBottom: '1px solid #999', paddingBottom: 2, marginBottom: 4 }}>
+              {c.label}
+            </div>
+            {c.jogadores.length === 0 ? (
+              <div style={{ fontSize: 11, color: '#999' }}>—</div>
+            ) : (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {col1.map(p => (
+                    <div key={p.id} style={{ fontSize: 12, lineHeight: 1.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {shortPlayerName(p, universo)}
+                    </div>
+                  ))}
+                </div>
+                {col2.length > 0 && (
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {col2.map(p => (
+                      <div key={p.id} style={{ fontSize: 12, lineHeight: 1.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {shortPlayerName(p, universo)}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          {c.jogadores.length === 0
-            ? <div style={{ fontSize: 11, color: '#999' }}>—</div>
-            : c.jogadores.map(p => (
-              <div key={p.id} style={{ fontSize: 12, lineHeight: 1.65 }}>{shortPlayerName(p, universo)}</div>
-            ))}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -17152,21 +17224,56 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                 </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {(round?.games || []).map((g, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
-                    {/* A coluna da data ocupa sempre o mesmo espaço, mesmo
-                        vazia — senão os jogos sem data ficam desalinhados
-                        em relação aos restantes. */}
-                    <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 48, flexShrink: 0 }}>
-                      {g.date
-                        ? (/^\d{4}-\d{2}-\d{2}$/.test(g.date) ? `${g.date.slice(8, 10)}/${g.date.slice(5, 7)}` : g.date)
-                        : ''}
-                    </span>
-                    <span style={{ flex: 1, textAlign: 'right', color: T.cream }}>{g.home}</span>
-                    <span style={{ ...mono, color: T.gold, width: 52, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
-                    <span style={{ flex: 1, color: T.cream }}>{g.away}</span>
-                  </div>
-                ))}
+                {(() => {
+                  const jogos = round?.games || [];
+                  const dataCurta = (d) => (d
+                    ? (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d)
+                    : '');
+                  /* A DATA SÓ SE REPETE QUANDO É PRECISO.
+
+                     Uma jornada é quase sempre toda no mesmo dia — repetir
+                     essa data em cada linha só ocupava espaço (e empurrava
+                     os nomes das equipas, que já lutam por espaço nos mais
+                     compridos) sem dizer nada de novo. Mas uma jornada
+                     também pode ter jogos em dias diferentes (adiados,
+                     divisão em dois dias, etc.) — por isso não se assume
+                     sempre "uma data só": agrupa-se pelas datas que
+                     existirem a sério, e cada grupo mostra a sua data uma
+                     vez só, por cima dos jogos desse dia. */
+                  const datas = [...new Set(jogos.map(g => g.date).filter(Boolean))];
+                  const feitoPorGrupos = datas.length > 1;
+                  const grupos = feitoPorGrupos
+                    ? [
+                        ...datas.map(d => ({ data: d, jogos: jogos.filter(g => g.date === d) })),
+                        ...(jogos.some(g => !g.date) ? [{ data: null, jogos: jogos.filter(g => !g.date) }] : []),
+                      ]
+                    : [{ data: datas[0] || null, jogos }];
+                  return grupos.map((grp, gi) => (
+                    <div key={gi}>
+                      {grp.data && (
+                        <div style={{
+                          ...mono, fontSize: 11, color: T.mutedDim, textAlign: 'center',
+                          margin: feitoPorGrupos ? '10px 0 6px' : '0 0 8px',
+                        }}>
+                          {dataCurta(grp.data)}
+                        </div>
+                      )}
+                      {grp.jogos.map((g, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
+                          {/* Nomes centrados, não encostados ao "vs": com um
+                              nome comprido a quebrar em várias linhas ("U.
+                              Nogueirense FC (B)"), encostar à direita/esquerda
+                              deixava o bloco todo com ar torto. Centrado, cada
+                              linha fica equilibrada em torno do meio da coluna,
+                              qualquer que seja o número de linhas. */}
+                          <span style={{ flex: 1, textAlign: 'center', color: T.cream }}>{g.home}</span>
+                          <span style={{ ...mono, color: T.gold, width: 52, textAlign: 'center', flexShrink: 0 }}>{g.score || 'vs'}</span>
+                          <span style={{ flex: 1, textAlign: 'center', color: T.cream }}>{g.away}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           )}
@@ -17733,6 +17840,21 @@ function ensureFriendlySession(match, sessions) {
 function competitionLabel(name) {
   const txt = String(name || '').trim();
   return /^jogo\s+amig/i.test(txt) ? FRIENDLY : txt;
+}
+
+/* Uma sessão só é "dia de jogo a sério" quando há um jogo verdadeiro
+   (amigável ou oficial) por trás — não sempre que "Jogo" for escolhido
+   como Fase de jogo (foco) de um treino normal (jogos condicionados,
+   torneio, etc.). Standalone e não só dentro de Planeamento porque o
+   painel "Próximas sessões" da página principal precisa da mesma
+   distinção: sem ela, mostrava "vs [seja lá o que o treinador tivesse
+   escrito]" para um treino qualquer só por ter essa fase escolhida. */
+function jogoRealDaSessao(s, matches) {
+  if (!s || s.phase !== 'Jogo') return null;
+  const lista = matches || [];
+  return lista.find(m => m.id === s.sourceMatchId)
+    || lista.find(m => m.date === s.date && isFriendlyMatch(m))
+    || null;
 }
 
 // Nomes das competições configuradas em Jogos, para as listas de escolha
