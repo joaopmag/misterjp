@@ -13398,7 +13398,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               <div className="print-sheet">
                 <h2 style={{ margin: '0 0 4px', fontSize: 22 }}>Plantel presente</h2>
                 <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>{fmtDate(printFolha.date)}</p>
-                <PrancheteDoPlantel lugares={lugares} escala={1.45} maxLargura={470} />
+                <PrancheteDoPlantel lugares={lugares} escala={1.35} maxLargura={400} />
 
                 {/* OS DESENHOS TÁCTICOS DO DIA, A SEGUIR AO QUADRO.
 
@@ -13429,11 +13429,16 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                   if (!desenhos.length) return null;
                   return (
                     <div style={{ marginTop: 22 }}>
-                      {/* Três por linha e o campo de cima mais pequeno: com
-                          duas colunas, cinco exercícios pediam três filas e
-                          a folha passava a duas páginas. */}
+                      {/* Dois em cima e dois em baixo.
+
+                          Com três por linha cabia mais, mas cada desenho
+                          ficava pequeno de mais para se distinguirem os
+                          jogadores — e uma folha que não se lê não serve de
+                          nada, por mais que caiba. A dois por linha o campo
+                          de cima tem de encolher, e é o que faz o conjunto
+                          caber numa página. */}
                       <h3 style={{ fontSize: 15, margin: '0 0 10px' }}>Exercícios do dia</h3>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                         {desenhos.map((ex, i) => {
                           const d = diagramaParaImpressao(ex.diagram);
                           return (
