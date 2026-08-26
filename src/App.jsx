@@ -4290,6 +4290,26 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
 function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLargura = 640 }) {
   if (!lugares || !lugares.length) return null;
   const editavel = typeof aoTocar === 'function';
+
+  /* QUANTO MAIS GENTE NUM LUGAR SÓ, MAIS PEQUENA A LETRA DE TODOS.
+
+     Um lugar como o DC ou o GR fica perto de outro (o campo tem pouco
+     espaço vertical entre eles); com o titular e mais dois ou três
+     convidados à experiência empilhados, a lista cresce mais depressa
+     do que a distância até ao lugar vizinho e passa a ESCREVER-SE POR
+     CIMA dele — foi o que aconteceu com muitos "exp" na mesma zona.
+     Ancorar para dentro do campo (mais abaixo) resolveu sair do campo,
+     mas não resolvia isto: o transbordo ficava lá dentro, só que agora
+     por cima de outro lugar.
+
+     Reduzir SÓ QUANDO É PRECISO — pelo lugar mais cheio do quadro
+     inteiro — mantém a letra normal (a mais legível) num quadro comum,
+     e só encolhe quando mesmo é preciso caber mais nomes na mesma
+     zona. */
+  const maisCheio = Math.max(1, ...lugares.map(l => (l.lista || []).length));
+  const fatorNomes = maisCheio <= 2 ? 1 : maisCheio === 3 ? 0.82 : maisCheio === 4 ? 0.68 : maisCheio === 5 ? 0.58 : 0.5;
+  const alturaLinha = 1.5 - (1 - fatorNomes) * 0.55;
+
   return (
     <div style={{
       position: 'relative', width: '100%', maxWidth: maxLargura, aspectRatio: ASPECT_CAMPO_PRINT,
@@ -4318,13 +4338,18 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
             key={l.id}
             onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
             style={{
-              position: 'absolute', ...posCampoPrint(fx, fy),
+              position: 'absolute', ...posCampoPrint(fx, fy), zIndex: l.lista.length,
               transform: `translate(-${ancoraX}%, -${ancoraY}%)`, textAlign: 'center', width: '17%',
               cursor: editavel && selecionado ? 'pointer' : 'default',
               // Enquanto há alguém escolhido, os lugares acendem-se: sem
               // isso não se percebe que se pode tocar neles.
               outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none',
               outlineOffset: 4, borderRadius: 6, padding: '2px 0',
+              /* Um fundo (quase) sólido só no lugar mais cheio evita que,
+                 mesmo depois de tudo isto, um resto de transbordo de um
+                 lugar vizinho se leia por cima deste — fica ilegível na
+                 mesma, mas pelo menos não se confunde com o de baixo. */
+              background: l.lista.length >= 4 ? (editavel ? '#1E3A24' : '#fff') : 'transparent',
             }}
           >
             <div style={{
@@ -4351,8 +4376,10 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
                       /* O tamanho base é o do ECRÃ. A folha impressa passa
                          uma `escala` maior — é lá que se lê de pé, no
                          campo, e 8,5 px em papel não se lê sentado. Ter um
-                         tamanho só para os dois era o erro. */
-                      fontSize: 8.5 * escala, lineHeight: 1.5, fontWeight: 500,
+                         tamanho só para os dois era o erro. `fatorNomes`
+                         encolhe os DOIS por igual quando o quadro fica
+                         cheio — ver comentário no topo da função. */
+                      fontSize: 8.5 * escala * fatorNomes, lineHeight: alturaLinha, fontWeight: 500,
                       color: editavel ? (on ? '#0d140e' : T.cream) : '#111',
                       background: on ? T.gold : 'transparent',
                       borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
@@ -10763,6 +10790,30 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
 
   const patchMomento = (mId, patch) => setDesenvolvimento(prev => (prev || []).map(m => (m.id === mId ? { ...m, ...patch } : m)));
 
+  /* Tirar UM jogador de um momento — ao contrário de apagar o momento
+     inteiro, só a linha de registo daquele jogador desaparece. Só faz
+     sentido enquanto o momento está aberto: um momento fechado é
+     histórico, e mudar quem lá está depois de fechado reescrevia esse
+     histórico. */
+  const removerJogadorDoMomento = (p) => {
+    const reg = (desenvolvimento || []).find(x => x && x.tipo === 'registo' && x.momentoId === momento.id && x.playerId === p.id);
+    if (!reg) return;
+    askConfirm({
+      title: 'Remover do momento?',
+      label: `${shortPlayerName(p, players)} · ${momento.nome}`,
+      note: 'As avaliações já dadas (auto e da equipa técnica) para este jogador, neste momento, perdem-se.',
+      confirmLabel: 'Remover',
+      destructive: true,
+      onConfirm: () => {
+        setDesenvolvimento(prev => (prev || []).filter(x => x.id !== reg.id));
+        if (jogadorId === p.id) setJogadorId(null);
+        offerUndo(`${shortPlayerName(p, players)} removido do momento.`, () => {
+          setDesenvolvimento(prev => (prev.some(x => x.id === reg.id) ? prev : [...prev, reg]));
+        });
+      },
+    });
+  };
+
   /* Apagar um momento tem de levar consigo todos os registos que lhe
      pertencem — senão ficavam linhas órfãs, sem momento a que se ligar.
      Segue a mesma rede de segurança do resto da app: pergunta primeiro
@@ -10925,7 +10976,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 620 }}>
                 <thead>
                   <tr>
-                    {['Jogador', 'Auto', 'Staff', 'GAP', 'Prioridade', 'Estado'].map(h => (
+                    {['Jogador', 'Auto', 'Staff', 'GAP', 'Prioridade', 'Estado', ''].map(h => (
                       <th key={h} style={{ textAlign: h === 'Jogador' ? 'left' : 'center', fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', padding: '0 8px 8px', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -10954,6 +11005,17 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                         </td>
                         <td style={{ padding: '8px', textAlign: 'center', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap' }}>
                           {DI_ESTADO_LABEL(diEstado(reg))}
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>
+                          {!momento.fechado && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); removerJogadorDoMomento(p); }}
+                              title="Remover do momento"
+                              style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 2, display: 'inline-flex' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -13259,7 +13321,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
        onze que jogou (titulares) e quem ficou no banco (suplentes). Vai
        buscá-los por `equipaDoAmigavel`, a mesma função da ficha impressa,
        para as duas nunca dizerem coisas diferentes. */
-    const equipa = s.phase === 'Jogo'
+    const equipa = ehDiaDeJogo(s)
       ? equipaDoAmigavel({ session: s, jogo: jogoDaSessao(s), players })
       : null;
     const jogoHtml = equipa
@@ -13270,7 +13332,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
     /* Num amigável a lista com toda a gente não entra: são os mesmos nomes
        que já saem em Titulares e Suplentes. Num treino é a única lista de
        presenças que existe, e mantém-se. */
-    const presencasHtml = s.phase === 'Jogo'
+    const presencasHtml = ehDiaDeJogo(s)
       ? ''
       : `<h2>Presenças</h2><p class="desc">${attendanceNames.length ? escapeHtmlText(attendanceNames.join(', ')) : 'Sem registo'}</p>`;
     const convidadosSessao = [...nomesDosConvidados(s), ...nomesDosConvidados(jogoDaSessao(s))];
@@ -13278,7 +13340,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       ? `<p class="desc"><strong>À experiência:</strong> ${escapeHtmlText(convidadosSessao.join(', '))}</p>`
       : '';
     const extraHtml = `${jogoHtml}${equipasHtml}${presencasHtml}${convidadosHtml}`;
-    const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (s.phase === 'Jogo' ? 'Amigável' : (s.focus || 'Sessão de treino'));
+    const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(s) ? 'Amigável' : (s.focus || 'Sessão de treino'));
     const html = buildShareableHtmlDoc({ title: sessionTitle, metaLines: meta, blocks: exBlocks, extraHtml });
     shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, sessionTitle);
   };
@@ -13353,6 +13415,17 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       || null;
   };
   const ideiasDaSessao = (s) => { const m = jogoDaSessao(s); return m ? m.ideias : ''; };
+
+  /* "Jogo" é UMA DAS OPÇÕES de "Fase de jogo (foco)" ao criar uma sessão
+     normal — serve para marcar um treino de jogos condicionados, torneio,
+     etc. Isso é diferente de a sessão SER um jogo a sério (amigável ou
+     oficial), que é o que `jogoDaSessao` confirma (encontra o jogo que
+     lhe deu origem). Confundir as duas coisas foi o que fazia uma sessão
+     de treino normal, só porque tinha essa fase escolhida, imprimir a
+     folha vazia de "Formação/Titulares/Suplentes" em vez dos exercícios
+     e presenças que tinha a sério. Só quando HÁ um jogo por trás é que
+     faz sentido mostrar a folha do jogo em vez da folha de treino. */
+  const ehDiaDeJogo = (s) => !!jogoDaSessao(s);
 
   const isEditing = modal && modal !== 'new' && modal.id;
   const presetDate = modal && modal !== 'new' && !modal.id ? modal.presetDate : undefined;
@@ -13834,13 +13907,13 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       {printSession && createPortal(
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
-            {printSession.phase === 'Descanso' ? 'Folga' : (printSession.phase === 'Jogo' ? 'Amigável' : (printSession.focus || 'Sessão de treino'))}
+            {printSession.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(printSession) ? 'Amigável' : (printSession.focus || 'Sessão de treino'))}
           </h2>
           <p style={{ margin: '0 0 18px', fontSize: 13 }}>
             {[fmtDate(printSession.date), printSession.phase, tempoJogoText(printSession), intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
           </p>
 
-          {printSession.phase === 'Jogo' ? (
+          {ehDiaDeJogo(printSession) ? (
             <PrintOnzeAmigavel session={printSession} jogo={jogoDaSessao(printSession)} players={players} ideias={ideiasDaSessao(printSession)} />
           ) : (
             <>
@@ -13874,7 +13947,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               no dia — quem leva o plano para o campo não quer um campo de
               nomes atrás, e quem quer o campo de nomes não quer o plano. */}
 
-          {printSession.phase !== 'Jogo' && (
+          {!ehDiaDeJogo(printSession) && (
             <>
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
               <PrintPresencasPorPosicao
@@ -13914,11 +13987,11 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{fmtDate(printDayDate)}</h2>
           {sessions.filter(s => s.date === printDayDate).map(s => (
             <div key={s.id} style={{ marginBottom: 24 }}>
-              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.phase === 'Descanso' ? 'Folga' : (s.phase === 'Jogo' ? 'Amigável' : (s.focus || 'Sessão de treino'))}</h3>
+              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(s) ? 'Amigável' : (s.focus || 'Sessão de treino'))}</h3>
               <p style={{ margin: '0 0 12px', fontSize: 13 }}>
                 {[s.phase, tempoJogoText(s), intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
-              {s.phase === 'Jogo' ? (
+              {ehDiaDeJogo(s) ? (
                 <PrintOnzeAmigavel session={s} jogo={jogoDaSessao(s)} players={players} ideias={ideiasDaSessao(s)} />
               ) : (
                 (s.exerciseIds || []).map((e, i) => (
@@ -13929,13 +14002,14 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           ))}
           {/* Num dia só de amigável os nomes já saíram em Titulares e
               Suplentes — repeti-los aqui em baixo não acrescenta nada. Se
-              o dia também tiver treino, a lista mantém-se: aí é mesmo a
-              única folha de presenças. */}
-          {sessions.some(s => s.date === printDayDate && s.phase !== 'Jogo') && (
+              o dia também tiver treino (ou uma sessão só com a fase de
+              jogo escolhida como foco, mas sem jogo a sério por trás), a
+              lista mantém-se: aí é mesmo a única folha de presenças. */}
+          {sessions.some(s => s.date === printDayDate && !ehDiaDeJogo(s)) && (
             <>
               <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Presenças</h3>
               <PrintPresencasPorPosicao
-                presentPlayers={players.filter(p => sessions.some(s => s.date === printDayDate && (s.attendance || []).includes(p.id)))}
+                presentPlayers={players.filter(p => sessions.some(s => s.date === printDayDate && !ehDiaDeJogo(s) && (s.attendance || []).includes(p.id)))}
                 allPlayers={players}
               />
             </>
