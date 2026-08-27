@@ -6111,8 +6111,6 @@ const BASE_TOOLS = [
   { id: 'stake', label: 'Estaca' },
   { id: 'ball', label: 'Bola' },
   { id: 'arrow-pass', label: 'Passe' },
-  { id: 'arrow-pass-long', label: 'Passe longo', curto: 'P. longo', title: 'Passe longo — linha tracejada larga, para distinguir de um passe curto' },
-  { id: 'arrow-pass-curve', label: 'Passe curvado', curto: 'P. curvo', title: 'Passe curvado — arqueia sozinho entre o início e o fim; para curvar para o outro lado, desenha-o na direção oposta' },
   { id: 'arrow-run', label: 'Corrida' },
   { id: 'line-solid', symbol: 'solid', title: 'Linha contínua' },
   { id: 'line-dashed', symbol: 'dashed', title: 'Linha tracejada' },
@@ -6120,71 +6118,9 @@ const BASE_TOOLS = [
   { id: 'space-square', symbol: 'square', title: 'Zona / quadrado reduzido (igual ao campo Espaço)' },
   { id: 'eraser', label: 'Apagar' },
 ];
-const LINE_TOOLS = ['arrow-pass', 'arrow-pass-long', 'arrow-pass-curve', 'arrow-run', 'line-solid', 'line-dashed'];
+const LINE_TOOLS = ['arrow-pass', 'arrow-run', 'line-solid', 'line-dashed'];
 const MARKER_TOOLS = ['cone', 'ball', 'goalmarker', 'stake', 'coach'];
 const KEEPER_NUMBERS = [1, 12, 24];
-
-/* PASSE, PASSE LONGO E PASSE CURVADO — a mesma família.
-
-   As duas variantes novas guardam-se exatamente como um "Passe" comum
-   (x1,y1,x2,y2 — nada de campos novos na seta), só o `type` muda. É
-   isto que as deixa entrar de graça em tudo o que já existia para o
-   passe: arrastar os extremos, apagar, selecionar, animar a bola. Só
-   o DESENHO (traço mais largo no passe longo; arco em vez de reta no
-   curvado) e as poucas verificações que decidem "isto é um passe" é
-   que precisam de saber da novidade — ver `ehSetaDePasse` abaixo, e
-   `pontoNaSeta`, que é por onde passa toda a gente que precisa de um
-   ponto AO LONGO da seta (a animação da bola), reto ou curvo.
-
-   O curvado não tem um terceiro ponto para arrastar: o arco calcula-se
-   sozinho a partir dos dois extremos (desvia o meio da reta, na
-   perpendicular, sempre para o mesmo lado). Menos flexível do que um
-   ponto de controlo à parte, mas não obriga a mexer no arrastar de
-   extremos, na deteção de toque nem na seleção — que continuam todas
-   pensadas para duas pontas só. Para curvar para o outro lado, desenha-se
-   a seta ao contrário (troca-se onde se começa e onde se acaba). */
-const ehSetaDePasse = (type) => type === 'arrow-pass' || type === 'arrow-pass-long' || type === 'arrow-pass-curve';
-// Duas setas encadeiam-se se forem exatamente do mesmo tipo, ou se
-// forem ambas da família dos passes (passe, passe longo, passe
-// curvado) — a bola pode continuar de um passe curto para um passe
-// longo sem "quebrar" a cadeia de animação. A corrida fica de fora
-// desta segunda regra: só encadeia com outra corrida.
-const mesmaFamiliaDeSeta = (t1, t2) => t1 === t2 || (ehSetaDePasse(t1) && ehSetaDePasse(t2));
-
-// Ponto de controlo do arco de um "Passe curvado", derivado só dos dois
-// extremos — não há nada mais a guardar nem a migrar em setas antigas.
-function pontoDeControloDaCurva(a) {
-  const mx = (a.x1 + a.x2) / 2;
-  const my = (a.y1 + a.y2) / 2;
-  const dx = a.x2 - a.x1;
-  const dy = a.y2 - a.y1;
-  const len = Math.hypot(dx, dy) || 1;
-  const px = -dy / len;
-  const py = dx / len;
-  const desvio = len * 0.22;
-  return { cx: mx + px * desvio, cy: my + py * desvio };
-}
-
-/* Ponto ao longo de uma seta, no parâmetro t (0 = início, 1 = fim).
-
-   Usado em todos os sítios que movem a bola/jogador ao longo de uma
-   seta durante uma animação (editor, apresentação, ficheiro
-   partilhado, quiosque) — antes calculavam sempre a reta entre x1,y1 e
-   x2,y2 diretamente; agora passam por aqui, que sabe também seguir o
-   arco de um "Passe curvado" (uma curva quadrática, com o mesmo ponto
-   de controlo usado para a desenhar). Uma seta reta continua exatamente
-   como sempre foi — só ganha uma paragem a perguntar o tipo. */
-function pontoNaSeta(a, t) {
-  if (a.type === 'arrow-pass-curve') {
-    const { cx, cy } = pontoDeControloDaCurva(a);
-    const mt = 1 - t;
-    return {
-      x: mt * mt * a.x1 + 2 * mt * t * cx + t * t * a.x2,
-      y: mt * mt * a.y1 + 2 * mt * t * cy + t * t * a.y2,
-    };
-  }
-  return { x: a.x1 + (a.x2 - a.x1) * t, y: a.y1 + (a.y2 - a.y1) * t };
-}
 
 
 /* Espaços com nome, escritos por extenso no campo "Espaço" em vez de um
@@ -6939,63 +6875,34 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
         </marker>
       </defs>
       {arrows.map(a => {
-        const isArrow = ehSetaDePasse(a.type) || a.type === 'arrow-run';
+        const isArrow = a.type === 'arrow-pass' || a.type === 'arrow-run';
         /* "Linha tracejada" (ferramenta livre, sem seta) passa a ser
            pontinhos, não traços — mais discreta e mais fácil de distinguir
            de uma seta de corrida (essa mantém o tracejado clássico, por
-           ser uma indicação de movimento, não uma linha de referência).
-           O passe longo usa outro tracejado — largo — só para não se
-           confundir com nenhum dos dois. */
+           ser uma indicação de movimento, não uma linha de referência). */
         const isDotted = a.type === 'line-dashed';
         const isRunDashed = a.type === 'arrow-run';
-        const isLongDashed = a.type === 'arrow-pass-long';
-        const isCurva = a.type === 'arrow-pass-curve';
-        const dashed = isDotted || isRunDashed || isLongDashed;
+        const dashed = isDotted || isRunDashed;
         const isSelected = interactive && selectedArrowId === a.id;
-        // Uma seta reta usa x1,y1→x2,y2 como sempre; a curvada desenha-se
-        // como um arco quadrático até ao mesmo ponto de controlo que
-        // `pontoNaSeta` usa para lá mover a bola — o traço e o movimento
-        // seguem sempre o mesmo caminho, nunca um atalho por cima do outro.
-        const curvaCtrl = isCurva ? pontoDeControloDaCurva(a) : null;
-        const dAtributo = isCurva ? `M ${a.x1} ${a.y1} Q ${curvaCtrl.cx} ${curvaCtrl.cy} ${a.x2} ${a.y2}` : null;
         return (
           <g key={a.id}>
             {hitsEnabled && (
-              isCurva ? (
-                <path
-                  d={dAtributo} fill="none"
-                  stroke="transparent" strokeWidth="2.2" strokeLinecap="round"
-                  onPointerDown={(e) => onArrowDown(e, a.id)}
-                  style={{ cursor: 'grab', touchAction: 'none' }}
-                />
-              ) : (
-                <line
-                  x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                  stroke="transparent" strokeWidth="2.2" strokeLinecap="round"
-                  onPointerDown={(e) => onArrowDown(e, a.id)}
-                  style={{ cursor: 'grab', touchAction: 'none' }}
-                />
-              )
-            )}
-            {isCurva ? (
-              <path
-                d={dAtributo} fill="none"
-                stroke={arrowColor}
-                strokeWidth={isSelected ? '0.55' : '0.35'}
-                markerEnd="url(#dg-arrow)"
-                style={{ pointerEvents: 'none' }}
-              />
-            ) : (
               <line
                 x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                stroke={dashed ? dashedColor : arrowColor}
-                strokeWidth={isDotted ? (isSelected ? '0.55' : '0.42') : (isSelected ? '0.55' : '0.35')}
-                strokeDasharray={isDotted ? '0.1,2.1' : (isRunDashed ? '2.4,1.8' : (isLongDashed ? '3.6,1.4' : undefined))}
-                strokeLinecap={isDotted ? 'round' : ((isRunDashed || isLongDashed) ? 'butt' : 'round')}
-                markerEnd={isArrow ? 'url(#dg-arrow)' : undefined}
-                style={{ pointerEvents: 'none' }}
+                stroke="transparent" strokeWidth="2.2" strokeLinecap="round"
+                onPointerDown={(e) => onArrowDown(e, a.id)}
+                style={{ cursor: 'grab', touchAction: 'none' }}
               />
             )}
+            <line
+              x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+              stroke={dashed ? dashedColor : arrowColor}
+              strokeWidth={isDotted ? (isSelected ? '0.55' : '0.42') : (isSelected ? '0.55' : '0.35')}
+              strokeDasharray={isDotted ? '0.1,2.1' : (isRunDashed ? '2.4,1.8' : undefined)}
+              strokeLinecap={isDotted ? 'round' : (isRunDashed ? 'butt' : 'round')}
+              markerEnd={isArrow ? 'url(#dg-arrow)' : undefined}
+              style={{ pointerEvents: 'none' }}
+            />
             {isSelected && (
               <>
                 <circle cx={a.x1} cy={a.y1} r="1.3" fill="#C9A227" stroke={TEXT_ON_ACCENT} strokeWidth="0.3"
@@ -7226,7 +7133,7 @@ function buildAnimationChainsPure(arrowList) {
   // Uma seta só é "continuação" de outra se, além de encostar geometricamente,
   // não tiver um dono diferente — caso contrário é cabeça da sua própria cadeia.
   const isContinuationOfSome = (arrow) => arrowList.some(other => (
-    other.id !== arrow.id && mesmaFamiliaDeSeta(other.type, arrow.type)
+    other.id !== arrow.id && other.type === arrow.type
     && closeEnough(other.x2, other.y2, arrow.x1, arrow.y1)
     && chainOwnerCompatible(other.ownerId || null, arrow.ownerId || null)
   ));
@@ -7243,7 +7150,7 @@ function buildAnimationChainsPure(arrowList) {
     let chainOwnerId = head.ownerId || null;
     while (true) {
       const candidates = arrowList.filter(a => (
-        !used.has(a.id) && mesmaFamiliaDeSeta(a.type, current.type)
+        !used.has(a.id) && a.type === current.type
         && chainOwnerCompatible(chainOwnerId, a.ownerId || null)
       ));
       const next = closest(candidates, current.x2, current.y2);
@@ -7447,7 +7354,7 @@ function computeDiagramAnimationFrames(diagram, zones, phase) {
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
       let isNewBall = false;
-      if (!mover && ehSetaDePasse(first.type)) {
+      if (!mover && first.type === 'arrow-pass') {
         mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
         isNewBall = true;
       }
@@ -7466,7 +7373,10 @@ function computeDiagramAnimationFrames(diagram, zones, phase) {
         const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
         const t = easeInOutQuadPure(active.duration ? localElapsed / active.duration : 1);
         const { arrow } = active;
-        movedPositions.set(mover.id, pontoNaSeta(arrow, t));
+        movedPositions.set(mover.id, {
+          x: arrow.x1 + (arrow.x2 - arrow.x1) * t,
+          y: arrow.y1 + (arrow.y2 - arrow.y1) * t,
+        });
       });
       const frameElements = baseElements.map(el => (movedPositions.has(el.id) ? { ...el, x: movedPositions.get(el.id).x, y: movedPositions.get(el.id).y } : el));
       pushFrame(frameElements, FRAME_MS, stepArrows);
@@ -7623,8 +7533,6 @@ async function shareOrDownloadHtml(filename, htmlString, title) {
 
 const LINE_LABELS = {
   'arrow-pass': 'Seta de passe',
-  'arrow-pass-long': 'Seta de passe longo',
-  'arrow-pass-curve': 'Seta de passe curvado',
   'arrow-run': 'Seta de corrida',
   'line-solid': 'Linha contínua',
   'line-dashed': 'Linha tracejada',
@@ -7729,36 +7637,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     const cx = x1 + t * dx, cy = y1 + t * dy;
     return Math.hypot(px - cx, py - cy);
   };
-  /* Distância mínima de um ponto a uma SETA — reta ou curva.
-
-     Um "Passe curvado" não é um segmento de reta, e medir a distância à
-     reta imaginária entre os dois extremos (como `distToSegment` faz)
-     dava uma borracha menos precisa mesmo no meio do arco, onde ele mais
-     se afasta dessa reta. Aqui amostra-se o arco em vários pontos (com
-     `pontoNaSeta`, a mesma função que também move a bola na animação —
-     usar sempre a mesma fonte evita que a borracha "veja" uma curva
-     diferente da que está desenhada) e fica-se com a distância ao ponto
-     mais próximo dessa amostra. Para uma seta reta, cai exatamente na
-     mesma conta de sempre. */
-  const distToArrow = (px, py, a) => {
-    if (a.type !== 'arrow-pass-curve') return distToSegment(px, py, a.x1, a.y1, a.x2, a.y2);
-    let melhor = Infinity;
-    for (let i = 0; i <= 16; i++) {
-      const p2 = pontoNaSeta(a, i / 16);
-      const d = Math.hypot(px - p2.x, py - p2.y);
-      if (d < melhor) melhor = d;
-    }
-    return melhor;
-  };
   // Apaga tudo o que a borracha "tocar" num dado ponto — usado tanto no
   // toque inicial como continuamente enquanto se arrasta, para que os
   // itens desapareçam logo ao serem roçados em vez de só no final do gesto.
   const eraseAt = (p) => {
     const hitEl = elements.some(el => Math.hypot(el.x - p.x, el.y - p.y) < 2.6);
-    const hitArrow = arrows.some(a => distToArrow(p.x, p.y, a) < 1.6);
+    const hitArrow = arrows.some(a => distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) < 1.6);
     if (!hitEl && !hitArrow) return;
     const remainingIds = new Set(elements.filter(el => Math.hypot(el.x - p.x, el.y - p.y) >= 2.6).map(el => el.id));
-    const remainingArrowIds = new Set(arrows.filter(a => distToArrow(p.x, p.y, a) >= 1.6).map(a => a.id));
+    const remainingArrowIds = new Set(arrows.filter(a => distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) >= 1.6).map(a => a.id));
     if (selectedId && !remainingIds.has(selectedId)) setSelectedId(null);
     if (selectedArrowId && !remainingArrowIds.has(selectedArrowId)) setSelectedArrowId(null);
     const apagados = new Set(elements.filter(el => !remainingIds.has(el.id)).map(el => el.id));
@@ -7930,12 +7817,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     const rawOwner = type === 'arrow-run'
       ? nearestElementOfKind(['player', 'keeper', 'text'], x, y, SNAP_DIST)
       : nearestElementOfKind(['ball'], x, y, SNAP_DIST);
-    // Passe, passe longo e passe curvado encadeiam-se ENTRE SI — é sempre
-    // a mesma bola a viajar, só muda o traço de cada troço. A corrida
-    // continua exclusiva: só encadeia com outra corrida.
     let best = null, bestD = SNAP_DIST;
     for (const a of arrows) {
-      if (!mesmaFamiliaDeSeta(a.type, type)) continue;
+      if (a.type !== type) continue;
       // Nunca cola o início da seta ao fim da seta de OUTRO elemento: se o
       // DD começa a correr onde a corrida do EX acabou, a seta do DD tem de
       // ficar no sítio onde o DD está, e não agarrada à do EX.
@@ -7995,7 +7879,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // às outras — a regra do dono de cada seta ficava por aplicar.
   const buildAnimationChains = (arrowList) => buildAnimationChainsPure(arrowList);
   const playAnimation = () => {
-    const animArrows = arrows.filter(a => ehSetaDePasse(a.type) || a.type === 'arrow-run');
+    const animArrows = arrows.filter(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
     if (animArrows.length === 0) return;
     // Mesma velocidade para o passe e para a corrida do jogador.
     const PASS_SPEED = 26, RUN_SPEED = 26;
@@ -8003,7 +7887,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       let cursor = 0;
       const segments = chainArrows.map(a => {
         const dist = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
-        const speed = ehSetaDePasse(a.type) ? PASS_SPEED : RUN_SPEED;
+        const speed = a.type === 'arrow-pass' ? PASS_SPEED : RUN_SPEED;
         const duration = Math.max(280, (dist / speed) * 1000);
         const segment = { arrow: a, duration, start: cursor };
         cursor += duration;
@@ -8028,7 +7912,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       // essa bola, já no início da seta, para que o passe deixe sempre uma
       // bola a sério no destino final.
       let isNewBall = false;
-      if (!mover && ehSetaDePasse(first.type)) {
+      if (!mover && first.type === 'arrow-pass') {
         mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
         isNewBall = true;
       }
@@ -8070,7 +7954,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
         const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
         const { arrow } = active;
-        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
+        return { id, type: arrow.type, mover, x: arrow.x1 + (arrow.x2 - arrow.x1) * t, y: arrow.y1 + (arrow.y2 - arrow.y1) * t };
       }));
       if (elapsed < maxDuration) {
         animRef.current = requestAnimationFrame(tick);
@@ -8145,7 +8029,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
       );
       let isNewBall = false;
-      if (!mover && ehSetaDePasse(first.type)) {
+      if (!mover && first.type === 'arrow-pass') {
         mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
         isNewBall = true;
       }
@@ -8169,7 +8053,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
         const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
         const { arrow } = active;
-        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
+        return { id, type: arrow.type, mover, x: arrow.x1 + (arrow.x2 - arrow.x1) * t, y: arrow.y1 + (arrow.y2 - arrow.y1) * t };
       }));
       if (elapsed < maxDuration) {
         presentAnimRef.current = requestAnimationFrame(tick);
@@ -8323,7 +8207,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       // Só faz sentido "colar" ao fim de uma seta anterior para os tipos
       // que entram em cadeias de animação (passe/corrida); linhas simples
       // são só desenho estático e não precisam disto.
-      const start = (ehSetaDePasse(tool) || tool === 'arrow-run')
+      const start = (tool === 'arrow-pass' || tool === 'arrow-run')
         ? snapChainStart(tool, p.x, p.y)
         : p;
       // Regista já aqui, no início do traço, qual jogador/guarda-redes
@@ -8338,7 +8222,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       if (tool === 'arrow-run') {
         const owner = nearestElementOfKind(['player', 'keeper', 'text'], start.x, start.y, 3.2);
         ownerId = owner ? owner.id : null;
-      } else if (ehSetaDePasse(tool)) {
+      } else if (tool === 'arrow-pass') {
         const owner = nearestElementOfKind(['ball'], start.x, start.y, 3.2);
         ownerId = owner ? owner.id : null;
       }
@@ -8823,7 +8707,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           SEMPRE reservado (`minHeight`): mesmo sem setas nenhumas, nada se
           mexe quando ele nasce. */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, minHeight: 34, alignItems: 'center' }}>
-        {arrows.some(a => ehSetaDePasse(a.type) || a.type === 'arrow-run') && (
+        {arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') && (
           <button
             type="button"
             onClick={isPlaying ? stopAnimation : playAnimation}
@@ -9297,7 +9181,7 @@ function AnimOverlay({ items, iconScale = 1 }) {
   return (
     <>
       {items.map(it => {
-        if (ehSetaDePasse(it.type)) {
+        if (it.type === 'arrow-pass') {
           return (
             <g key={it.id} style={{ pointerEvents: 'none' }}>
               <TriondaBall cx={it.x} cy={it.y} r={1.6 * k} />
@@ -9794,7 +9678,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       // guardada (ver playAnimation, em DiagramEditor); criamos uma aqui
       // também, para a apresentação não "perder" o passe no final.
       let isNewBall = false;
-      if (!mover && ehSetaDePasse(first.type)) {
+      if (!mover && first.type === 'arrow-pass') {
         mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
         isNewBall = true;
       }
@@ -9821,7 +9705,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
         const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
         const { arrow } = active;
-        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
+        return { id, type: arrow.type, mover, x: arrow.x1 + (arrow.x2 - arrow.x1) * t, y: arrow.y1 + (arrow.y2 - arrow.y1) * t };
       }));
       if (elapsed < maxDuration) {
         animRef.current = requestAnimationFrame(tick);
