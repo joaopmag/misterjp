@@ -188,7 +188,7 @@ function resumoClinico(estado, { comNivel = true } = {}) {
    continuam a abrir alguma coisa em vez de darem página em branco — um
    atalho guardado ou um separador aberto no telemóvel não têm de morrer
    por causa de uma reorganização da navegação. */
-const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca' };
+const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', documentos: 'biblioteca' };
 const tabValida = (id) => TABS_ANTIGAS[id] || id;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -1907,7 +1907,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     { id: 'biblioteca', label: 'Biblioteca', icon: Presentation },
     { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, badge: tarefasAMinhaPorta(tarefas, euId) },
     { id: 'diario', label: 'Diário', icon: BookOpen },
-    { id: 'documentos', label: 'Documentos', icon: FileSpreadsheet },
   ];
 
 
@@ -1916,7 +1915,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      antigo não só abre a Biblioteca como escolhe a sub-aba certa. */
   const [biblioteca, setBiblioteca] = useState(() => {
     if (typeof window === 'undefined') return 'videos';
-    return window.location.hash.replace('#', '').trim() === 'apresentacoes' ? 'apresentacoes' : 'videos';
+    const h = window.location.hash.replace('#', '').trim();
+    if (h === 'apresentacoes') return 'apresentacoes';
+    if (h === 'documentos') return 'documentos';
+    return 'videos';
   });
   /* O id pedido ANTES de ser redirecionado. É o que permite a um
      #convocatorias antigo abrir Jogos já na sub-aba certa. */
@@ -1926,7 +1928,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   });
   const goTab = (id) => {
     setTabPedida(id);
-    if (id === 'videos' || id === 'apresentacoes') setBiblioteca(id);
+    if (id === 'videos' || id === 'apresentacoes' || id === 'documentos') setBiblioteca(id);
     setTab(tabValida(id));
     setNavOpen(false);
   };
@@ -2287,6 +2289,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               tabs={[
                 { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).length },
                 { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
+                { id: 'documentos', label: 'Documentos', icon: FileSpreadsheet, count: (documentos || []).length },
               ]}
             />
             <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
@@ -2307,6 +2310,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 emptyFirstLabel="Adicionar o primeiro ficheiro"
               />
             </div>
+            {/* DOCUMENTOS — antes era um separador de topo próprio; passou
+                para aqui, como terceira sub-aba da Biblioteca, mesmo ao
+                lado de "Apresentações" (que já tem o botão "Adicionar
+                ficheiro"). Mantido SEMPRE MONTADO, tal como as outras duas
+                sub-abas, pela mesma razão: trocar de sub-aba não deve
+                perder o estado do que estava aberto. */}
+            <div style={{ display: biblioteca === 'documentos' ? 'block' : 'none' }}>
+              <DocumentosApp documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions} matches={matches} clinico={clinico} teamId={teamId} />
+            </div>
           </div>
           {tab === 'desenvolvimento' && (
             <DesenvolvimentoIndividual
@@ -2321,7 +2333,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} />
           )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
-          {tab === 'documentos' && <DocumentosApp documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions} matches={matches} clinico={clinico} teamId={teamId} />}
         </div>
         </main>
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
@@ -3990,6 +4001,47 @@ function estadoNoDia(playerId, dateStr, sessions, matches, clinico) {
    (escalão) e a ausência não marcada valem 0. */
 const VALOR_ASSIDUIDADE = { presente: 1, lesionado: 1, falta: 0, escalao: 0, ausente: 0 };
 
+/* A COLUNA DO TOTAL (AH) FICAVA COM O VALOR ANTIGO AO ABRIR O FICHEIRO.
+
+   As colunas C..AG são os dias do mês — só essas são reescritas, célula
+   a célula, por `definirNumeroNaCelula`. A coluna AH é a soma dessas
+   colunas, calculada por uma FÓRMULA do próprio modelo, não por nós; e
+   uma fórmula, dentro do .xlsx, guarda dois valores separados: a
+   fórmula em si e o ÚLTIMO RESULTADO CALCULADO (`<v>`), que é o que
+   fica gravado no ficheiro e o que alguns leitores mostram sem
+   recalcular nada. Como só se mexe nas células dos dias, esse `<v>` da
+   soma fica parado no valor de quando o modelo estava em branco (0) —
+   o ficheiro está correto, mas mostra o total antigo até alguém forçar
+   o Excel a recalcular (F9, ou abrir e fechar a célula).
+
+   A correção não é ir calcular a soma nós próprios e escrevê-la à mão
+   (isso duplicava a lógica da fórmula do modelo, e desalinhava se um
+   dia o clube mudar a fórmula) — é dizer ao workbook para recalcular
+   TUDO sozinho assim que o ficheiro abre, pondo `fullCalcOnLoad="1"`
+   no `<calcPr>` do workbook.xml. Isto é um sinalizador oficial do
+   formato .xlsx, respeitado pelo Excel, Google Sheets e LibreOffice —
+   não uma gambiarra. */
+async function forcarRecalculoAoAbrir(zip) {
+  const wbFile = zip.file('xl/workbook.xml');
+  if (!wbFile) return;
+  let wbXml = await wbFile.async('string');
+
+  if (/<calcPr\b/.test(wbXml)) {
+    if (/fullCalcOnLoad="/.test(wbXml)) {
+      wbXml = wbXml.replace(/fullCalcOnLoad="[^"]*"/, 'fullCalcOnLoad="1"');
+    } else {
+      wbXml = wbXml.replace(/<calcPr\b/, '<calcPr fullCalcOnLoad="1"');
+    }
+  } else {
+    // Modelo sem <calcPr> nenhum (raro, mas acontece): cria-se um,
+    // logo a seguir a </sheets> — é a posição que o esquema do Office
+    // Open XML exige para este elemento dentro de <workbook>.
+    wbXml = wbXml.replace('</sheets>', '</sheets><calcPr fullCalcOnLoad="1"/>');
+  }
+
+  zip.file('xl/workbook.xml', wbXml);
+}
+
 /* Resolve o caminho real dentro do .zip para uma folha, a partir do
    NOME dela — precisa de workbook.xml (nome → r:id) e de
    workbook.xml.rels (r:id → ficheiro). Sem isto teria de se adivinhar
@@ -4066,6 +4118,11 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
 
   zip.file(estatPath, estatXml);
   zip.file(assidPath, assidXml);
+
+  // Sem isto, a coluna do total (AH) abre com o valor antigo (0) até
+  // alguém forçar o Excel a recalcular — ver o comentário grande em
+  // `forcarRecalculoAoAbrir`.
+  await forcarRecalculoAoAbrir(zip);
 
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
