@@ -3308,6 +3308,42 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
     } catch (e) { /* sem permissão para a área de transferência */ }
   };
 
+  /* PORQUE É QUE ISTO PRECISA DE EXISTIR.
+
+     O código de convite não expira nem fica associado a quem o usou —
+     é só uma palavra-passe da equipa. Isso quer dizer que alguém que
+     saia (ou seja removido) e que tenha guardado o código continua, tecnicamente,
+     capaz de voltar a entrar sozinho mais tarde: sair da equipa tira o
+     acesso a quem já lá estava, mas não invalida o código em si.
+
+     Gerar um código novo é a forma de cortar isso: quem já é membro
+     não é afetado (a ligação já está feita, não depende do código
+     continuar válido), mas o código antigo deixa de servir para
+     ENTRAR — nem para quem nunca esteve na equipa, nem para quem já
+     saiu e ainda o tinha guardado. */
+  const gerarCodigoEquipa = () => {
+    // Sem I nem O, para não se confundirem com 1 e 0 ao ditar o código
+    // em voz alta ou ao escrevê-lo à mão.
+    const letras = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    let s = '';
+    for (let i = 0; i < 6; i++) s += letras[Math.floor(Math.random() * letras.length)];
+    return s;
+  };
+
+  const regenerarCodigo = () => askConfirm({
+    title: 'Gerar um novo código de convite?',
+    label: `${[equipa.clube, equipa.escalao || equipa.nome].filter(Boolean).join(' · ')} · código atual ${equipa.codigo}`,
+    note: 'O código atual deixa de servir para entrar na equipa — quem já é membro continua a sê-lo, mas quem só tinha o código (incluindo alguém que já tenha saído) já não consegue entrar com ele. Terás de enviar o novo código a quem precisar de entrar a partir de agora.',
+    confirmLabel: 'Gerar novo código',
+    destructive: true,
+    onConfirm: async () => {
+      const novo = gerarCodigoEquipa();
+      const { error } = await supabase.from('teams').update({ codigo: novo }).eq('id', equipa.id);
+      if (error) { setErro(error.message); return; }
+      if (onEquipasMudaram) onEquipasMudaram();
+    },
+  });
+
   const remover = (m) => askConfirm({
     title: 'Remover da equipa?',
     label: rotulo(m),
@@ -3410,11 +3446,21 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
           <Btn variant="ghost" onClick={copiarCodigo}>
             {copiado ? <><Check size={15} /> Copiado</> : <><Copy size={15} /> Copiar</>}
           </Btn>
+          {/* Só quem administra: gerar um código novo corta o acesso de
+              quem só tinha o código (ex.: alguém que já saiu e o
+              guardou) — é uma ação com peso a mais para deixar a
+              qualquer membro. */}
+          {souDono && (
+            <Btn variant="ghost" onClick={regenerarCodigo}>
+              <RefreshCw size={15} /> Gerar novo código
+            </Btn>
+          )}
         </div>
         {/* Isto é uma consequência que não se adivinha, por isso fica. */}
         <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.6, marginBottom: 20 }}>
           Quem tiver este código entra na equipa e vê tudo — plantel, presenças, boletim clínico.
-          Trata-o como uma palavra-passe.
+          Trata-o como uma palavra-passe. Se alguém sair da equipa e ainda tiver o código guardado,
+          gera um código novo para lhe cortar essa entrada — quem já é membro não é afetado.
         </div>
 
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
