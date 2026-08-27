@@ -2162,10 +2162,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               >
                 <n.icon size={16} color={tab === n.id ? T.warn : T.mutedDim} />
                 {n.label}
-                {/* O badge conta só o que já está atrasado ou é para hoje
-                    e é meu. Um badge que conta tudo o que existe deixa de
-                    se ler ao fim de uma semana — e a partir daí não avisa
-                    de nada. */}
+                {/* O badge conta todas as tarefas atribuídas a mim (ou
+                    sem responsável) que ainda não estão concluídas —
+                    é a notificação de "tens tarefas à tua espera"; só
+                    desaparece quando a tarefa é marcada como feita,
+                    não quando o prazo passa. Ver `tarefasAMinhaPorta`. */}
                 {n.badge > 0 && (
                   <span style={{
                     marginLeft: 'auto', minWidth: 18, height: 18, borderRadius: 9, padding: '0 5px',
@@ -23872,15 +23873,18 @@ function prazoTexto(prazo, hoje) {
   return fmtShort(prazo);
 }
 
-/* O número do badge: o que já está atrasado ou é para hoje, atribuído a
-   mim. Só isso — um badge que conta tudo o que existe deixa de se ler ao
-   fim de uma semana. */
+/* O número do badge: TODAS as tarefas atribuídas a mim (ou sem
+   responsável definido) que ainda não estão concluídas — não só as
+   atrasadas ou para hoje. A ideia é simples: se alguém me atribuiu uma
+   tarefa, quero sabê-lo assim que entro na app, e essa notificação só
+   desaparece quando a marco como concluída — não quando o prazo passa
+   nem por eu simplesmente ter reparado nela. Prazos distantes ou sem
+   prazo continuam a contar, ao contrário do resumo "As minhas tarefas"
+   da página principal, que esse sim só mostra o que é urgente. */
 function tarefasAMinhaPorta(tarefas, euId) {
-  const hoje = todayStr();
   return (tarefas || []).filter(t =>
     t.estado !== 'feita'
-    && (t.responsavel === euId || !t.responsavel)
-    && t.prazo && t.prazo <= hoje).length;
+    && (t.responsavel === euId || !t.responsavel)).length;
 }
 
 function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
