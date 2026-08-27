@@ -4349,7 +4349,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
      mesmos 17%). Os centrais também abrem um pouco mais para a lateral
      (ver TATICAS) — os dois ajustes juntos dão a maior folga possível
      sem inventar posições que não existem numa formação a sério. */
-  const GR_FX = 0.02;
+  const GR_FX = 0;
   const GR_LARGURA = '10%';
 
   const corDoTexto = editavel ? '#fff' : '#A6192E';
