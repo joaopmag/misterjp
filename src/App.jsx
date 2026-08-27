@@ -6,6 +6,12 @@ import ReactDOMServer from 'react-dom/server';
 // de uma célula sem reescrever — e sem estragar — o ficheiro inteiro
 // (cores, brasões, estilos). Precisa de `npm install jszip`.
 import JSZip from 'jszip';
+// xlsx (SheetJS) — usado SÓ PARA LEITURA, exclusivamente na
+// pré-visualização do Calibrador de Modelos (grelha clicável onde se
+// aponta a célula certa num documento novo). A ESCRITA continua a ir
+// pelo JSZip + patch de XML acima — é isso que preserva cores, brasões
+// e estilos; o SheetJS só entra para MOSTRAR a folha antes de calibrar.
+import * as XLSX from 'xlsx';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, Check, Loader2, Clock,
@@ -3911,6 +3917,27 @@ function letraDaColuna(idx0) {
   return s;
 }
 
+// Inverso de `letraDaColuna`: de "C", "AH", etc. para o índice com base
+// em zero (C=2, AH=33). Precisa disto para o motor genérico, que recebe
+// a coluna de arranque calibrada (ex.: "C") como LETRA e tem de andar
+// dia a dia a partir dela — ao contrário do preenchimento fixo da Ficha
+// Assiduidade do Salgueiros, que já sabia a letra de cada dia de cor.
+function indiceDaColuna(letra) {
+  let n = 0;
+  for (const ch of String(letra || '').toUpperCase().trim()) {
+    if (ch < 'A' || ch > 'Z') continue;
+    n = n * 26 + (ch.charCodeAt(0) - 64);
+  }
+  return n - 1;
+}
+
+// Separa uma referência de célula ("C41") em coluna ("C") e linha (41).
+function partirReferencia(ref) {
+  const m = String(ref || '').match(/^([A-Za-z]+)(\d+)$/);
+  if (!m) return null;
+  return { coluna: m[1].toUpperCase(), linha: parseInt(m[2], 10) };
+}
+
 /* Todo o texto de um <si> (entrada da tabela de "shared strings") pode
    vir dividido em vários <r> (rich text — ex.: uma parte a negrito,
    outra não), cada um com o seu <t>. Para PROCURAR o texto (não para o
@@ -4004,75 +4031,546 @@ async function resolverCaminhoDaFolha(zip, nomeFolha) {
   return mRel ? `xl/${mRel[1]}` : null;
 }
 
-/* Gera o Excel preenchido para UM OU VÁRIOS meses de uma só vez, como
-   um ficheiro pronto a descarregar (Blob) — sem guardar nada na app.
-   `players` já deve vir pela ordem que se quer na folha (a app usa
-   `sortByPosition`). `mesesEAnos` é uma lista de `{ mes, ano }` (mes
-   com base em zero, Janeiro=0); o modelo já tem os 12 blocos mensais
-   estampados de fábrica, por isso preencher vários meses é só repetir
-   o mesmo procedimento bloco a bloco, sobre o MESMO .zip, e só no fim
-   gerar o ficheiro — assim os meses escolhidos saem todos juntos num
-   único Excel, tal como já vinham no modelo original. */
-async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, clinico, mesesEAnos) {
+/* ---------------------------------------------------------------
+   MOTOR GENÉRICO DE PREENCHIMENTO — a versão configurável do que
+   `localizarBlocoAssiduidade` fazia à medida do modelo do Salgueiros.
+
+   ÂMBITO: serve para qualquer documento com a MESMA FORMA da Ficha
+   Assiduidade — uma linha por jogador, uma coluna por dia, um valor
+   0/1 (presente/falta/lesionado/fora de escalão) — mas com um LAYOUT
+   diferente: outra equipa pode ter os jogadores a começar mais abaixo,
+   os dias a começar mais à direita, sem blocos mensais repetidos, etc.
+   Continua a assumir que blocos repetidos se organizam por MÊS (é o
+   padrão dos modelos de clube que já vimos); um documento com outra
+   forma de repetição (por semana, por trimestre) precisaria de mais um
+   pequeno ajuste. NÃO serve para documentos de outra natureza (um
+   relatório de lesões, um contrato) — esses continuam a precisar de um
+   "tradutor" próprio, escrito à mão.
+
+   O `config` vem do Calibrador de Modelos (`CalibradorModeloModal`) —
+   ver mais abaixo — e tem esta forma:
+
+   {
+     folhaNomes: { folha, celulaInicio } | null,  // lista mestre opcional
+     folhaPreenchimento: 'Nome da folha a escrever',
+     preservarFormulaNome: bool,   // true = o nome do jogador 1 já vem
+                                    // por fórmula; só atualizar o cache
+     bloco: { tipo: 'repetido', textoBase } | { tipo: 'unico' },
+     celulaTitulo: 'A6',    // só usada para calcular o offset (ver baixo)
+     celulaJogador1: 'B11', // jogador 1 dentro do (1º) bloco calibrado
+     celulaDia1: 'C11',
+     celulaTotal: 'AH11' | null,  // nunca se escreve aqui nem depois
+     maxJogadores: 30,
+     valores: { presente, lesionado, falta, escalao, ausente },
+   }
+
+   Para blocos repetidos, só a DIFERENÇA de linhas entre `celulaTitulo`
+   e `celulaJogador1` importa (o "offset") — a linha absoluta calibrada
+   é só a do primeiro bloco visível; os restantes períodos são
+   localizados de novo, período a período, por texto. */
+
+// Generalização de `localizarBlocoAssiduidade`: procura o título de um
+// bloco pelo texto-base calibrado (ex.: "Ficha Assiduidade") mais um
+// texto extra do período (normalmente o nome do mês), em qualquer
+// coluna — não só a A, porque outros modelos podem ter o título
+// noutro sítio.
+function localizarBlocoPorTexto(sheetXml, sharedStrings, textoBase, textoExtra) {
+  const alvoBase = semAcentos(textoBase);
+  const alvoExtra = textoExtra ? semAcentos(textoExtra) : null;
+  let indiceAlvo = null;
+  sharedStrings.forEach((texto, i) => {
+    if (indiceAlvo !== null) return;
+    const t = semAcentos(texto);
+    if (t.includes(alvoBase) && (!alvoExtra || t.includes(alvoExtra))) indiceAlvo = i;
+  });
+  if (indiceAlvo === null) return null;
+  const cellRe = new RegExp(`<c r="[A-Z]+(\\d+)"[^>]*t="s"[^>]*><v>${indiceAlvo}</v></c>`);
+  const m = sheetXml.match(cellRe);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/* Gera o Excel preenchido a partir de um `config` calibrado (ver
+   acima), para uma lista de `periodos` — cada um
+   `{ mes, ano, rotulo, textoLocalizador }` (mes com base em zero).
+   Para modelos SEM blocos repetidos (`bloco.tipo === 'unico'`), só o
+   primeiro período da lista é usado — o modelo só tem um sítio para
+   escrever. */
+async function gerarDocumentoGenerico(arrayBuffer, config, players, sessions, matches, clinico, periodos) {
   const zip = await JSZip.loadAsync(arrayBuffer);
 
-  const estatPath = await resolverCaminhoDaFolha(zip, 'ESTATÍSTICA TOTAL');
-  const assidPath = await resolverCaminhoDaFolha(zip, 'Ficha Assiduidade');
-  if (!estatPath) throw new Error('A folha "ESTATÍSTICA TOTAL" não existe neste modelo.');
-  if (!assidPath) throw new Error('A folha "Ficha Assiduidade" não existe neste modelo.');
+  let nomesPath = null;
+  if (config.folhaNomes) {
+    nomesPath = await resolverCaminhoDaFolha(zip, config.folhaNomes.folha);
+    if (!nomesPath) throw new Error(`A folha "${config.folhaNomes.folha}" não existe neste modelo.`);
+  }
+  const preenchPath = await resolverCaminhoDaFolha(zip, config.folhaPreenchimento);
+  if (!preenchPath) throw new Error(`A folha "${config.folhaPreenchimento}" não existe neste modelo.`);
 
-  let estatXml = await zip.file(estatPath).async('string');
-  let assidXml = await zip.file(assidPath).async('string');
+  let nomesXml = nomesPath ? await zip.file(nomesPath).async('string') : null;
+  let preenchXml = await zip.file(preenchPath).async('string');
 
-  // Nomes em ESTATÍSTICA TOTAL!B6:B35 — é de lá que TODOS os blocos da
-  // Ficha Assiduidade buscam o nome de cada jogador, por fórmula. Só
-  // precisa de se escrever uma vez, não por mês.
-  const jogadores = players.slice(0, 30);
-  jogadores.forEach((p, i) => {
-    estatXml = definirTextoNaCelula(estatXml, `B${6 + i}`, p.name);
-  });
+  const jogadores = players.slice(0, config.maxJogadores || 30);
 
-  // A tabela de shared strings só serve para PROCURAR o título de cada
-  // bloco; o texto que se escreve vai embutido diretamente na célula,
-  // não se toca na tabela partilhada em si.
+  if (nomesXml && config.folhaNomes) {
+    const { coluna, linha } = partirReferencia(config.folhaNomes.celulaInicio);
+    jogadores.forEach((p, i) => {
+      nomesXml = definirTextoNaCelula(nomesXml, `${coluna}${linha + i}`, p.name);
+    });
+  }
+
+  const { coluna: colunaJogador1, linha: linhaJogador1Calibrada } = partirReferencia(config.celulaJogador1);
+  const colunaTituloBloco = partirReferencia(config.celulaTitulo).coluna;
+  const colunaDiaInicioIdx = indiceDaColuna(partirReferencia(config.celulaDia1).coluna);
+  const colunaTotalIdx = config.celulaTotal ? indiceDaColuna(partirReferencia(config.celulaTotal).coluna) : null;
+  const repetido = config.bloco.tipo === 'repetido';
+  const offsetJogador = repetido ? linhaJogador1Calibrada - partirReferencia(config.celulaTitulo).linha : 0;
+
   const sharedXmlFile = zip.file('xl/sharedStrings.xml');
   const sharedXml = sharedXmlFile ? await sharedXmlFile.async('string') : '';
-  const sharedStrings = [...sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => textoCompletoDoSi(m[1]));
+  const sharedStrings = repetido
+    ? [...sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => textoCompletoDoSi(m[1])) : null;
 
-  (mesesEAnos || []).forEach(({ mes, ano }) => {
-    const bloco = localizarBlocoAssiduidade(assidXml, sharedStrings, mes);
-    if (!bloco) throw new Error(`Não encontrei o bloco de ${MESES_PT[mes]} na Ficha Assiduidade — o modelo pode ter mudado.`);
+  const listaPeriodos = repetido ? (periodos || []) : (periodos || []).slice(0, 1);
 
-    assidXml = definirTextoNaCelula(assidXml, `A${bloco.linhaTitulo}`, `Ficha Assiduidade \n${MESES_PT[mes]} ${ano}`);
+  listaPeriodos.forEach(periodo => {
+    let primeiraLinhaJogador;
+    if (repetido) {
+      const linhaTitulo = localizarBlocoPorTexto(preenchXml, sharedStrings, config.bloco.textoBase, periodo.textoLocalizador);
+      if (linhaTitulo == null) {
+        throw new Error(`Não encontrei o bloco de "${periodo.rotulo}" — o texto "${config.bloco.textoBase}" não bate certo com este modelo.`);
+      }
+      preenchXml = definirTextoNaCelula(preenchXml, `${colunaTituloBloco}${linhaTitulo}`, `${config.bloco.textoBase} \n${periodo.rotulo}`);
+      primeiraLinhaJogador = linhaTitulo + offsetJogador;
+    } else {
+      primeiraLinhaJogador = linhaJogador1Calibrada;
+    }
 
-    const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+    const diasNoMes = new Date(periodo.ano, periodo.mes + 1, 0).getDate();
     jogadores.forEach((p, i) => {
-      const linha = bloco.primeiraLinhaJogador + i;
-      // O nome nesta linha vem por FÓRMULA (referencia ESTATÍSTICA TOTAL)
-      // — só se atualiza o valor em cache, a fórmula em si fica intacta.
-      assidXml = definirValorEmCache(assidXml, `B${linha}`, p.name);
+      const linha = primeiraLinhaJogador + i;
+      const refNome = `${colunaJogador1}${linha}`;
+      preenchXml = config.preservarFormulaNome
+        ? definirValorEmCache(preenchXml, refNome, p.name)
+        : definirTextoNaCelula(preenchXml, refNome, p.name);
+
       for (let dia = 1; dia <= diasNoMes; dia++) {
-        const ref = letraDaColuna(2 + dia) + linha; // C = dia 1
-        const dataStr = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+        const colIdx = colunaDiaInicioIdx + (dia - 1);
+        // Nunca escrever na coluna de Total, nem depois dela — é a
+        // proteção que faltava e que causou o bug da coluna AH.
+        if (colunaTotalIdx != null && colIdx >= colunaTotalIdx) return;
+        const ref = letraDaColuna(colIdx) + linha;
+        const dataStr = `${periodo.ano}-${String(periodo.mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
         const estado = estadoNoDia(p.id, dataStr, sessions, matches, clinico);
-        // Sem sessão nem jogo marcado nesse dia, a célula fica
-        // exatamente como estava no modelo (em branco) — não se mexe
-        // nela de todo. Havendo sessão/jogo, escreve-se sempre um
-        // NÚMERO (1 ou 0), nunca uma letra — ver `VALOR_ASSIDUIDADE`.
-        if (estado !== null) assidXml = definirNumeroNaCelula(assidXml, ref, VALOR_ASSIDUIDADE[estado]);
+        if (estado !== null) preenchXml = definirNumeroNaCelula(preenchXml, ref, config.valores[estado]);
       }
     });
   });
 
-  zip.file(estatPath, estatXml);
-  zip.file(assidPath, assidXml);
+  zip.file(preenchPath, preenchXml);
+  if (nomesPath) zip.file(nomesPath, nomesXml);
 
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
+// Configuração de fábrica do modelo do SC Salgueiros — o mesmo
+// preenchimento que já existia, agora expresso como dados em vez de
+// código à parte. `celulaTitulo`/`celulaJogador1`/`celulaDia1` aqui só
+// servem para fixar o OFFSET entre eles (título → +5 linhas, jogador →
+// coluna B, dia 1 → coluna C) — a app localiza a linha real de cada
+// bloco de mês em tempo de execução, tal como sempre fez.
+const CONFIG_FICHA_ASSIDUIDADE_SALGUEIROS = {
+  nome: 'Ficha Assiduidade — modelo SC Salgueiros',
+  folhaNomes: { folha: 'ESTATÍSTICA TOTAL', celulaInicio: 'B6' },
+  folhaPreenchimento: 'Ficha Assiduidade',
+  preservarFormulaNome: true,
+  bloco: { tipo: 'repetido', textoBase: 'Ficha Assiduidade' },
+  celulaTitulo: 'A1',
+  celulaJogador1: 'B6',
+  celulaDia1: 'C6',
+  celulaTotal: 'AH6',
+  maxJogadores: 30,
+  valores: VALOR_ASSIDUIDADE,
+};
+
+/* Mantido pelo nome antigo por compatibilidade — quem já chamava
+   `gerarFichaAssiduidade` (o botão "Gerar Ficha de Assiduidade" do
+   modelo do Salgueiros) continua a funcionar exatamente na mesma,
+   agora por cima do motor genérico. */
+async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, clinico, mesesEAnos) {
+  const periodos = (mesesEAnos || []).map(({ mes, ano }) => ({
+    mes, ano, rotulo: `${MESES_PT[mes]} ${ano}`, textoLocalizador: semAcentos(MESES_PT[mes]),
+  }));
+  return gerarDocumentoGenerico(arrayBuffer, CONFIG_FICHA_ASSIDUIDADE_SALGUEIROS, players, sessions, matches, clinico, periodos);
+}
+
+
+/* ---------------------------------------------------------------
+   CALIBRADOR DE MODELOS — ensina à app o layout de um documento novo
+   SEM escrever código: mostra a folha como uma grelha clicável
+   (só leitura, via SheetJS — a escrita continua a ir pelo JSZip/XML
+   acima) e o utilizador aponta, célula a célula, onde está cada
+   coisa. O resultado é o `modeloConfig` que o motor genérico usa. */
+
+// Lê um .xlsx só para MOSTRAR (nunca para escrever) — capado a um
+// tamanho que ainda dá para desenhar como tabela HTML sem pesar.
+async function lerFolhasParaPreview(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const LIMITE_LINHAS = 500, LIMITE_COLUNAS = 50;
+  const folhas = {};
+  wb.SheetNames.forEach(nome => {
+    const ws = wb.Sheets[nome];
+    const range = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : { e: { r: 0, c: 0 } };
+    const totalLinhas = Math.min(range.e.r + 1, LIMITE_LINHAS);
+    const totalColunas = Math.min(range.e.c + 1, LIMITE_COLUNAS);
+    const grelha = [];
+    for (let r = 0; r < totalLinhas; r++) {
+      const linha = [];
+      for (let c = 0; c < totalColunas; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        linha.push(cell && cell.v != null ? String(cell.v) : '');
+      }
+      grelha.push(linha);
+    }
+    folhas[nome] = { grelha, totalColunas };
+  });
+  return { nomesFolhas: wb.SheetNames, folhas };
+}
+
+// Grelha clicável de uma folha, com letras de coluna e números de
+// linha fixos (sticky) como no Excel. `pesquisa` destaca a amarelo as
+// células cujo texto contém o termo procurado, para ajudar a encontrar
+// blocos longe do topo (ex.: o mês de Março, bem lá em baixo).
+function GradePreviewFolha({ dados, pesquisa, onClickCelula }) {
+  if (!dados) return <div style={{ padding: 20, color: T.mutedDim, fontSize: 12.5 }}>Sem dados para mostrar nesta folha.</div>;
+  const alvoPesquisa = pesquisa ? semAcentos(pesquisa) : '';
+  return (
+    <div style={{ overflow: 'auto', maxHeight: 420, border: `1px solid ${T.line}`, borderRadius: 8 }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 11.5, ...mono }}>
+        <thead>
+          <tr>
+            <th style={{ position: 'sticky', top: 0, left: 0, zIndex: 2, background: T.surfaceRaise, minWidth: 34 }} />
+            {Array.from({ length: dados.totalColunas }).map((_, c) => (
+              <th key={c} style={{ position: 'sticky', top: 0, zIndex: 1, background: T.surfaceRaise, color: T.mutedDim, padding: '4px 6px', borderBottom: `1px solid ${T.line}`, fontWeight: 400 }}>
+                {letraDaColuna(c)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dados.grelha.map((linha, r) => (
+            <tr key={r}>
+              <td style={{ position: 'sticky', left: 0, background: T.surfaceRaise, color: T.mutedDim, padding: '3px 6px', borderRight: `1px solid ${T.line}`, textAlign: 'right' }}>{r + 1}</td>
+              {linha.map((valor, c) => {
+                const ref = letraDaColuna(c) + (r + 1);
+                const encontrado = alvoPesquisa && valor && semAcentos(valor).includes(alvoPesquisa);
+                return (
+                  <td
+                    key={c}
+                    onClick={() => onClickCelula(ref, valor)}
+                    title={ref}
+                    style={{
+                      padding: '3px 6px', cursor: 'pointer', whiteSpace: 'nowrap', maxWidth: 140,
+                      overflow: 'hidden', textOverflow: 'ellipsis', color: T.cream,
+                      background: encontrado ? `${T.gold}33` : 'transparent',
+                      borderRight: `1px solid ${T.line}22`, borderBottom: `1px solid ${T.line}22`,
+                    }}
+                  >
+                    {valor}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Um "papel" a apontar no painel lateral do Calibrador — fica ativo
+// (destacado a dourado) enquanto se espera o próximo clique na grelha.
+function CampoCalibracao({ ativo, onClick, titulo, valor, opcional, extra }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+        border: `1px solid ${ativo ? T.gold : T.line}`,
+        background: ativo ? `${T.gold}14` : T.surface,
+      }}
+    >
+      <div style={{ fontSize: 12.5, color: T.cream, display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+        <span>{titulo}{opcional ? <span style={{ color: T.mutedDim }}> (opcional)</span> : ''}</span>
+        <span style={{ ...mono, fontSize: 12, color: valor ? T.gold : T.mutedDim }}>{valor || '—'}</span>
+      </div>
+      {extra}
+    </div>
+  );
+}
+
+const ORDEM_CAMPOS_CALIBRACAO = ['nomeInicio', 'tituloBloco', 'jogador1', 'dia1', 'total'];
+
+function CalibradorModeloModal({ doc, onClose, onSave }) {
+  const [aCarregar, setACarregar] = useState(true);
+  const [erro, setErro] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [folhaNomesAtiva, setFolhaNomesAtiva] = useState('');
+  const [folhaPreenchAtiva, setFolhaPreenchAtiva] = useState('');
+  const [temBlocoRepetido, setTemBlocoRepetido] = useState(true);
+  const [textoBase, setTextoBase] = useState('');
+  const [campoAtivo, setCampoAtivo] = useState('jogador1');
+  const [refs, setRefs] = useState({ nomeInicio: '', tituloBloco: '', jogador1: '', dia1: '', total: '' });
+  const [pesquisa, setPesquisa] = useState('');
+  const [valores, setValores] = useState({ presente: 1, lesionado: 1, falta: 0, escalao: 0 });
+  const [preservarFormulaNome, setPreservarFormulaNome] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      setACarregar(true);
+      setErro('');
+      try {
+        const { data: ficheiro, error } = await supabase.storage.from('documentos').download(doc.storagePath);
+        if (error) throw error;
+        const buffer = await ficheiro.arrayBuffer();
+        const dados = await lerFolhasParaPreview(buffer);
+        if (cancelado) return;
+        setPreview(dados);
+        setFolhaNomesAtiva(dados.nomesFolhas[0] || '');
+        setFolhaPreenchAtiva(dados.nomesFolhas[0] || '');
+      } catch (e) {
+        if (!cancelado) setErro(e.message || 'Não consegui abrir o modelo para pré-visualizar.');
+      } finally {
+        if (!cancelado) setACarregar(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [doc.id, doc.storagePath]);
+
+  const folhaAtivaParaGrelha = campoAtivo === 'nomeInicio' ? folhaNomesAtiva : folhaPreenchAtiva;
+  const dadosGrelha = preview?.folhas?.[folhaAtivaParaGrelha];
+
+  const marcar = (ref, valorTexto) => {
+    setRefs(prev => ({ ...prev, [campoAtivo]: ref }));
+    if (campoAtivo === 'tituloBloco' && !textoBase) setTextoBase(valorTexto || '');
+    const atualIdx = ORDEM_CAMPOS_CALIBRACAO.indexOf(campoAtivo);
+    const seguinte = ORDEM_CAMPOS_CALIBRACAO
+      .slice(atualIdx + 1)
+      .find(c => !refs[c] && (c !== 'tituloBloco' || temBlocoRepetido));
+    if (seguinte) setCampoAtivo(seguinte);
+  };
+
+  const podeGuardar = !!(refs.jogador1 && refs.dia1 && folhaPreenchAtiva && (!temBlocoRepetido || (refs.tituloBloco && textoBase)));
+
+  const guardar = () => {
+    const config = {
+      nome: `Modelo calibrado — ${doc.nome}`,
+      folhaNomes: refs.nomeInicio ? { folha: folhaNomesAtiva, celulaInicio: refs.nomeInicio } : null,
+      folhaPreenchimento: folhaPreenchAtiva,
+      preservarFormulaNome,
+      bloco: temBlocoRepetido ? { tipo: 'repetido', textoBase: textoBase || 'Ficha' } : { tipo: 'unico' },
+      celulaTitulo: temBlocoRepetido ? refs.tituloBloco : refs.jogador1,
+      celulaJogador1: refs.jogador1,
+      celulaDia1: refs.dia1,
+      celulaTotal: refs.total || null,
+      maxJogadores: 30,
+      valores: {
+        presente: Number(valores.presente) || 0,
+        lesionado: Number(valores.lesionado) || 0,
+        falta: Number(valores.falta) || 0,
+        escalao: Number(valores.escalao) || 0,
+        ausente: 0,
+      },
+    };
+    onSave(config);
+  };
+
+  return (
+    <Modal title={`Configurar modelo — ${doc.nome}`} subtitle="Clica num campo à direita e depois na célula certa na grelha." onClose={onClose} xwide fullPage>
+      {aCarregar ? (
+        <div style={{ padding: 40, textAlign: 'center', color: T.mutedDim }}><Loader2 size={20} className="spin" /></div>
+      ) : erro ? (
+        <div style={{ color: T.bad, fontSize: 13 }}>{erro}</div>
+      ) : (
+        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+          <div style={{ flex: '2 1 480px', minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <Field label="Folha a mostrar" solto>
+                <select
+                  value={folhaAtivaParaGrelha}
+                  onChange={e => (campoAtivo === 'nomeInicio' ? setFolhaNomesAtiva(e.target.value) : setFolhaPreenchAtiva(e.target.value))}
+                  style={{ ...inputStyle, ...inputResetStyle }}
+                >
+                  {(preview.nomesFolhas || []).map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </Field>
+              <Field label="Procurar texto na folha" solto>
+                <Input value={pesquisa} onChange={e => setPesquisa(e.target.value)} placeholder="ex.: Setembro" />
+              </Field>
+            </div>
+            <GradePreviewFolha dados={dadosGrelha} pesquisa={pesquisa} onClickCelula={marcar} />
+          </div>
+
+          <div style={{ flex: '1 1 280px', minWidth: 260, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <CampoCalibracao ativo={campoAtivo === 'nomeInicio'} onClick={() => setCampoAtivo('nomeInicio')}
+              titulo="Nome do jogador 1 (lista mestre)" valor={refs.nomeInicio} opcional
+              extra={<div style={{ fontSize: 11, color: T.mutedDim, marginTop: 4 }}>Deixa em branco se este documento não tiver uma lista de nomes à parte.</div>} />
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.cream }}>
+              <input type="checkbox" checked={temBlocoRepetido} onChange={e => setTemBlocoRepetido(e.target.checked)} />
+              Este documento tem blocos que se repetem (ex.: um por mês)
+            </label>
+
+            {temBlocoRepetido && (
+              <CampoCalibracao ativo={campoAtivo === 'tituloBloco'} onClick={() => setCampoAtivo('tituloBloco')}
+                titulo="Título do 1º bloco (ex.: cabeçalho do mês)" valor={refs.tituloBloco}
+                extra={<Input value={textoBase} onChange={e => setTextoBase(e.target.value)} placeholder="Texto para encontrar este bloco (ex.: Ficha Assiduidade)" style={{ marginTop: 6, width: '100%' }} />} />
+            )}
+
+            <CampoCalibracao ativo={campoAtivo === 'jogador1'} onClick={() => setCampoAtivo('jogador1')}
+              titulo="Nome do jogador 1 no documento a preencher" valor={refs.jogador1} />
+
+            <CampoCalibracao ativo={campoAtivo === 'dia1'} onClick={() => setCampoAtivo('dia1')}
+              titulo="Coluna do dia 1 (mesma linha do jogador 1)" valor={refs.dia1} />
+
+            <CampoCalibracao ativo={campoAtivo === 'total'} onClick={() => setCampoAtivo('total')}
+              titulo="Coluna de Total/Soma" valor={refs.total} opcional
+              extra={<div style={{ fontSize: 11, color: T.mutedDim, marginTop: 4 }}>A app nunca escreve aqui nem depois — protege a fórmula de soma.</div>} />
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.cream, marginTop: 2 }}>
+              <input type="checkbox" checked={preservarFormulaNome} onChange={e => setPreservarFormulaNome(e.target.checked)} />
+              O nome do jogador 1 já vem por fórmula (não escrever por cima, só atualizar)
+            </label>
+
+            <div style={{ fontSize: 11, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 6 }}>
+              Valores por estado
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <Field label="Presente" solto><Input type="number" value={valores.presente} onChange={e => setValores(v => ({ ...v, presente: e.target.value }))} /></Field>
+              <Field label="Falta" solto><Input type="number" value={valores.falta} onChange={e => setValores(v => ({ ...v, falta: e.target.value }))} /></Field>
+              <Field label="Lesionado" solto><Input type="number" value={valores.lesionado} onChange={e => setValores(v => ({ ...v, lesionado: e.target.value }))} /></Field>
+              <Field label="Fora de escalão" solto><Input type="number" value={valores.escalao} onChange={e => setValores(v => ({ ...v, escalao: e.target.value }))} /></Field>
+            </div>
+
+            {!podeGuardar && (
+              <div style={{ fontSize: 11.5, color: T.mutedDim }}>
+                Falta marcar: {[
+                  !refs.jogador1 && 'jogador 1',
+                  !refs.dia1 && 'dia 1',
+                  temBlocoRepetido && !refs.tituloBloco && 'título do bloco',
+                  temBlocoRepetido && !textoBase && 'texto do bloco',
+                ].filter(Boolean).join(', ')}.
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+              <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+              <Btn onClick={guardar} disabled={!podeGuardar}><Check size={15} /> Guardar calibração</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Formulário de geração para um documento já calibrado — como
+// `GerarFichaAssiduidadeForm`, mas a ler o layout do `modeloConfig` em
+// vez de o ter fixo no código. Modelos sem blocos repetidos só geram
+// um mês de cada vez (só há um sítio para escrever no ficheiro).
+function GerarDocumentoGenericoForm({ doc, players, sessions, matches, clinico, onClose }) {
+  const config = doc.modeloConfig;
+  const repetido = config.bloco.tipo === 'repetido';
+  const agora = new Date();
+  const anoEpocaDefeito = agora.getMonth() >= 7 ? agora.getFullYear() : agora.getFullYear() - 1;
+  const [anoInicioEpoca, setAnoInicioEpoca] = useState(anoEpocaDefeito);
+  const [mesesSelecionados, setMesesSelecionados] = useState(() => new Set([agora.getMonth()]));
+  const [erro, setErro] = useState('');
+  const [aProcessar, setAProcessar] = useState(false);
+
+  const alternarMes = (m) => {
+    if (!repetido) { setMesesSelecionados(new Set([m])); return; }
+    setMesesSelecionados(prev => {
+      const novo = new Set(prev);
+      if (novo.has(m)) novo.delete(m); else novo.add(m);
+      return novo;
+    });
+  };
+
+  const mesesOrdenados = [...mesesSelecionados].sort((a, b) => ORDEM_EPOCA.indexOf(a) - ORDEM_EPOCA.indexOf(b));
+
+  const gerar = async () => {
+    setErro('');
+    if (mesesOrdenados.length === 0) { setErro('Escolhe pelo menos um mês.'); return; }
+    setAProcessar(true);
+    try {
+      const { data: ficheiro, error } = await supabase.storage.from('documentos').download(doc.storagePath);
+      if (error) throw error;
+      const buffer = await ficheiro.arrayBuffer();
+      const ordenados = sortByPosition(players);
+      const periodos = mesesOrdenados.map(mes => {
+        const ano = anoDoMesNaEpoca(mes, anoInicioEpoca);
+        return { mes, ano, rotulo: `${MESES_PT[mes]} ${ano}`, textoLocalizador: semAcentos(MESES_PT[mes]) };
+      });
+      const blob = await gerarDocumentoGenerico(buffer, config, ordenados, sessions, matches, clinico, periodos);
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const rotulo = periodos.length === 1 ? periodos[0].rotulo : periodos.map(p => p.rotulo).join(', ');
+      a.download = `${doc.nome} - ${rotulo}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onClose();
+    } catch (e) {
+      setErro(e.message || 'Não consegui gerar o ficheiro.');
+    } finally {
+      setAProcessar(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
+      {repetido && (
+        <div style={{ ...FIELD_GRID }}>
+          <Field label="Ano de início da época (Agosto)">
+            <Input type="number" value={anoInicioEpoca} onChange={e => setAnoInicioEpoca(Number(e.target.value))} />
+          </Field>
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 12, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+        {repetido ? 'Meses a gerar (podes escolher mais do que um)' : 'Mês a gerar'}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {ORDEM_EPOCA.map(m => {
+          const ativo = mesesSelecionados.has(m);
+          const ano = anoDoMesNaEpoca(m, anoInicioEpoca);
+          return (
+            <button key={m} type="button" onClick={() => alternarMes(m)}
+              style={{
+                padding: '6px 10px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                background: ativo ? `${T.gold}22` : 'transparent', color: ativo ? T.gold : T.mutedDim,
+                border: `1px solid ${ativo ? T.gold : T.line}`,
+              }}>
+              {MESES_PT[m]} {ano}
+            </button>
+          );
+        })}
+      </div>
+      {erro && <div style={{ fontSize: 12, color: T.bad, marginTop: 10 }}>{erro}</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={gerar} disabled={aProcessar}>
+          {aProcessar ? <Loader2 size={15} className="spin" /> : <Download size={15} />} Gerar e descarregar
+        </Btn>
+      </div>
+    </div>
+  );
+}
 
 function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId }) {
-  const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
+  const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto (modelo Salgueiros)
+  const [aGerarGenerico, setAGerarGenerico] = useState(null); // idem, para um documento calibrado
+  const [aCalibrar, setACalibrar] = useState(null); // id do documento a abrir no Calibrador de Modelos
   const [aCarregar, setACarregar] = useState(false);
   const [erro, setErro] = useState('');
   const fileInputRef = useRef(null);
@@ -4155,9 +4653,19 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, 
                   <div style={{ fontSize: 11, color: T.mutedDim }}>{doc.fileName}</div>
                 </div>
                 {/^\.xlsx?$/i.test(doc.fileName.slice(doc.fileName.lastIndexOf('.'))) && (
-                  <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
-                    <FileSpreadsheet size={14} /> Gerar Ficha de Assiduidade
-                  </Btn>
+                  <>
+                    <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
+                      <FileSpreadsheet size={14} /> Gerar Ficha de Assiduidade
+                    </Btn>
+                    <Btn variant="ghost" onClick={() => setACalibrar(doc.id)}>
+                      <Pencil size={14} /> {doc.modeloConfig ? 'Editar calibração' : 'Configurar modelo'}
+                    </Btn>
+                    {doc.modeloConfig && (
+                      <Btn variant="ghost" onClick={() => setAGerarGenerico(aGerarGenerico === doc.id ? null : doc.id)}>
+                        <FileSpreadsheet size={14} /> Gerar (modelo calibrado)
+                      </Btn>
+                    )}
+                  </>
                 )}
                 <button onClick={() => apagar(doc)} title="Apagar modelo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4 }}>
                   <Trash2 size={15} />
@@ -4166,10 +4674,28 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, 
               {aGerar === doc.id && (
                 <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} onClose={() => setAGerar(null)} />
               )}
+              {aGerarGenerico === doc.id && doc.modeloConfig && (
+                <GerarDocumentoGenericoForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} onClose={() => setAGerarGenerico(null)} />
+              )}
             </div>
           ))}
         </div>
       )}
+
+      {aCalibrar && (() => {
+        const docACalibrar = documentos.find(d => d.id === aCalibrar);
+        if (!docACalibrar) return null;
+        return (
+          <CalibradorModeloModal
+            doc={docACalibrar}
+            onClose={() => setACalibrar(null)}
+            onSave={(config) => {
+              setDocumentos(prev => prev.map(d => d.id === aCalibrar ? { ...d, modeloConfig: config } : d));
+              setACalibrar(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
