@@ -18685,7 +18685,7 @@ function competitionGameDate(comp, roundLabel, opponent) {
     ? rondas.filter((r, i) => (r.label || `Jornada ${i + 1}`) === roundLabel)
     : rondas;
   for (const r of alvo) {
-    for (const g of (r.games || [])) {
+    for (const g of (Array.isArray(r.games) ? r.games : [])) {
       const home = String(g.home || '').trim().toLowerCase();
       const away = String(g.away || '').trim().toLowerCase();
       if ((home === adv || away === adv) && g.date) return g.date;
