@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import ReactDOMServer from 'react-dom/server';
-// SheetJS — lê e escreve ficheiros Excel diretamente no browser, sem
-// servidor nenhum. Precisa de ser instalado no projeto (`npm install
-// xlsx`) para isto compilar — ver nota junto de DocumentosApp.
-import * as XLSX from 'xlsx';
+// JSZip — abre/fecha o .xlsx como o que ele realmente é por dentro (um
+// .zip com XML lá dentro). É isto que permite mudar só o texto exato
+// de uma célula sem reescrever — e sem estragar — o ficheiro inteiro
+// (cores, brasões, estilos). Precisa de `npm install jszip`.
+import JSZip from 'jszip';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, Check, Loader2, Clock,
@@ -737,9 +738,22 @@ function useCollectionSync(table, notifyEdit, teamId) {
         aGravar.current.delete(rec.id);
         if (error) {
           console.error(table, rec.id, error);
-          const nome = (rec.data && (rec.data.title || rec.data.name)) || rec.id;
-          const mb = Math.round(JSON.stringify(rec.data || {}).length / 1024 / 1024);
-          failed.push(mb >= 2 ? `${nome} (~${mb} MB)` : String(nome));
+          const nome = (rec.data && (rec.data.title || rec.data.name || rec.data.nome)) || rec.id;
+          /* O motivo real, não uma suposição.
+
+             Isto dizia sempre "ficheiros grandes não cabem", fosse qual
+             fosse o motivo verdadeiro — o que já enganou uma vez um
+             diagnóstico (um registo pequeníssimo a falhar por outra
+             razão, RLS por exemplo, e o aviso continuava a apontar para
+             o tamanho). Só se assume tamanho quando o registo É mesmo
+             grande; caso contrário mostra-se a mensagem que o Postgres
+             deu, que é sempre mais útil do que adivinhar. */
+          const tamanhoBytes = JSON.stringify(rec.data || {}).length;
+          const ehGrande = tamanhoBytes > 1.5 * 1024 * 1024;
+          const motivo = ehGrande
+            ? `ficheiro grande (~${Math.round(tamanhoBytes / 1024 / 1024)} MB) — não cabe numa linha da base de dados; usa o Storage ou o Google Drive`
+            : (error.message || error.hint || 'motivo desconhecido — vê a consola do browser (F12) para o erro completo');
+          failed.push(`${nome}: ${motivo}`);
           continue;
         }
         (data || []).forEach(r => {
@@ -749,7 +763,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
       }
       if (failed.length) {
         reportSyncError(table, {
-          message: `Não ficou gravado: ${failed.join(', ')}. Ficheiros grandes não cabem na base de dados — usa o separador Google Drive.`,
+          message: `Não ficou gravado: ${failed.join(' · ')}.`,
         });
       }
       if (toDelete.length) {
@@ -3797,10 +3811,26 @@ function Stat({ value, label }) {
    em concreto. Se o clube tiver outros documentos para preencher de
    forma parecida, cada um pede o seu próprio "tradutor" de dados.
 
-   DEPENDÊNCIA NOVA: isto usa a biblioteca "xlsx" (SheetJS) para ler e
-   escrever Excel dentro do browser. Sem ela instalada no projeto
-   (`npm install xlsx`), esta função não compila — ver a nota no
-   `import * as XLSX from 'xlsx'` no topo do ficheiro. */
+   PORQUE NÃO SE USA O SHEETJS PARA REESCREVER O FICHEIRO TODO.
+
+   A primeira versão lia o ficheiro com o SheetJS, mudava os valores, e
+   voltava a escrevê-lo do zero com `XLSX.write`. Os valores saíam certos,
+   mas as CORES, os BRASÕES e os ESTILOS desapareciam — a versão livre
+   do SheetJS não sabe reescrever esses três, só valores e fórmulas.
+
+   A correção: um ficheiro .xlsx é só um .zip com ficheiros XML lá
+   dentro — um por folha, mais um de estilos, mais as imagens. Em vez de
+   reescrever o ficheiro inteiro, abre-se o .zip, muda-se só o TEXTO das
+   células exatas que precisam de mudar dentro do XML da folha certa
+   (mantendo o atributo de estilo `s="N"` que já lá estava), e o resto
+   do .zip — estilos, imagens, todas as outras folhas — nunca é tocado.
+   É por isso que precisa da biblioteca "jszip" (para abrir/fechar o
+   .zip) em vez do "xlsx" para esta parte.
+
+   DEPENDÊNCIA NOVA: isto usa a biblioteca "jszip" para abrir e voltar a
+   fechar o .xlsx como um .zip. Sem ela instalada no projeto (`npm
+   install jszip`), esta função não compila. Já não precisa do "xlsx"
+   (SheetJS) — se o tinhas instalado só por causa disto, podes tirá-lo. */
 
 const MESES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
@@ -3811,32 +3841,84 @@ function semAcentos(s) {
   return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
 
-/* Localiza, dentro da folha "Ficha Assiduidade", o bloco de um mês/ano
-   em concreto. Não assume posições fixas (linha 1, 37, 73...) — varre a
-   coluna A à procura do título "Ficha Assiduidade\n<Mês> <Ano>", porque
-   é mais resistente a pequenas diferenças entre cópias do modelo do que
-   confiar sempre nos mesmos números de linha.
+// Escapa texto para entrar num nó <t> de XML — & < > sempre, e a
+// quebra de linha como &#10; (é assim que o Excel guarda um "Alt+Enter"
+// dentro de uma célula).
+function escaparXml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '').replace(/\n/g, '&#10;');
+}
 
-   Devolve as linhas-chave do bloco: título, cabeçalho dos dias, e a
-   primeira linha de jogador — os restantes jogadores (até 30) seguem
-   imediatamente a seguir, uma linha por jogador. */
-function localizarBlocoAssiduidade(sheet, mes, ano) {
+/* Substitui a célula `ref` (ex.: "B6") por uma STRING EMBUTIDA
+   ("inlineStr"), preservando o atributo de estilo `s="N"` que a célula
+   já tinha — é esse atributo que aponta para a cor de fundo, o negrito,
+   os contornos, etc. no styles.xml, e ao mantê-lo intacto o resto do
+   aspeto da célula não muda nada.
+
+   Funciona tanto em células vazias (`<c r="C6" s="61"/>`, a forma mais
+   comum numa folha em branco) como em células que já tenham conteúdo.
+   Se a célula não existir de todo nesta folha, não faz nada — mais
+   seguro do que tentar inventar uma linha nova a meio do XML. */
+function definirTextoNaCelula(sheetXml, ref, valor) {
+  const re = new RegExp(`<c r="${ref}"([^>]*?)(/>|>[\\s\\S]*?</c>)`);
+  const m = sheetXml.match(re);
+  if (!m) return sheetXml;
+  const sAttr = (m[1].match(/\ss="(\d+)"/) || [])[1];
+  const novaCelula = `<c r="${ref}"${sAttr ? ` s="${sAttr}"` : ''} t="inlineStr"><is><t xml:space="preserve">${escaparXml(valor)}</t></is></c>`;
+  return sheetXml.slice(0, m.index) + novaCelula + sheetXml.slice(m.index + m[0].length);
+}
+
+/* Só para células com FÓRMULA (ex.: o nome de um jogador na Ficha
+   Assiduidade, que vem de `='ESTATÍSTICA TOTAL'!$B$6`): atualiza o
+   VALOR EM CACHE sem tocar na fórmula. Sem isto, o nome só apareceria
+   certo depois de o Excel recalcular ao abrir — o que normalmente
+   acontece sozinho, mas mostrar já o valor certo no ficheiro é mais
+   seguro (por exemplo, para quem o abrir num visualizador que não
+   recalcula, como alguns leitores rápidos de ficheiros). */
+function definirValorEmCache(sheetXml, ref, valor) {
+  const re = new RegExp(`(<c r="${ref}"[^>]*>\\s*<f[^>]*>[\\s\\S]*?</f>)<v>[\\s\\S]*?</v>`);
+  const m = sheetXml.match(re);
+  if (!m) return sheetXml;
+  const novo = `${m[1]}<v>${escaparXml(valor)}</v>`;
+  return sheetXml.slice(0, m.index) + novo + sheetXml.slice(m.index + m[0].length);
+}
+
+// Letra(s) de coluna a partir de um índice COM BASE EM ZERO (0=A, 1=B,
+// 2=C, ...) — o formato que o resto deste ficheiro usa.
+function letraDaColuna(idx0) {
+  let n = idx0 + 1, s = '';
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+/* Todo o texto de um <si> (entrada da tabela de "shared strings") pode
+   vir dividido em vários <r> (rich text — ex.: uma parte a negrito,
+   outra não), cada um com o seu <t>. Para PROCURAR o texto (não para o
+   editar) juntam-se todos. */
+function textoCompletoDoSi(siXml) {
+  return [...siXml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map(t => t[1]).join('');
+}
+
+/* Localiza, dentro do XML da folha "Ficha Assiduidade", a linha onde
+   começa o bloco de um mês (título "Ficha Assiduidade\n<Mês> <Ano>").
+
+   Procura só pelo NOME DO MÊS na tabela de shared strings — o ano que
+   vem escrito no título de cada bloco é o da época em que o modelo foi
+   criado ("2022"/"2023"), gravado como texto fixo, não uma fórmula; só
+   comparar pelo mês (cada um só aparece uma vez no ciclo Agosto→Julho,
+   sem ambiguidade) encontra o bloco certo em qualquer época. */
+function localizarBlocoAssiduidade(sheetXml, sharedStrings, mes) {
   const alvoMes = semAcentos(MESES_PT[mes]);
-  const ref = XLSX.utils.decode_range(sheet['!ref']);
-  for (let r = ref.s.r; r <= ref.e.r; r++) {
-    const cell = sheet[XLSX.utils.encode_cell({ r, c: 0 })];
-    const texto = cell && typeof cell.v === 'string' ? semAcentos(cell.v) : '';
-    // Só pelo NOME DO MÊS — o ano que vem escrito no título de cada
-    // bloco é o da época em que o modelo foi criado (ficou "2022"/
-    // "2023" gravado no texto), não se atualiza sozinho. Comparar
-    // também pelo ano nunca encontrava nada numa época mais recente.
-    if (texto.includes('ficha assiduidade') && texto.includes(alvoMes)) {
-      // Corrige o título com o ano a sério desta época, já agora.
-      cell.v = `Ficha Assiduidade \n${MESES_PT[mes]} ${ano}`;
-      return { linhaTitulo: r, linhaDias: r + 3, linhaNomes: r + 4, primeiraLinhaJogador: r + 5, maxJogadores: 30 };
-    }
-  }
-  return null;
+  let indiceAlvo = null;
+  sharedStrings.forEach((texto, i) => {
+    const t = semAcentos(texto);
+    if (indiceAlvo === null && t.includes('ficha assiduidade') && t.includes(alvoMes)) indiceAlvo = i;
+  });
+  if (indiceAlvo === null) return null;
+  const cellRe = new RegExp(`<c r="A(\\d+)"[^>]*t="s"[^>]*><v>${indiceAlvo}</v></c>`);
+  const m = sheetXml.match(cellRe);
+  if (!m) return null;
+  const linhaTitulo = parseInt(m[1], 10);
+  return { linhaTitulo, primeiraLinhaJogador: linhaTitulo + 5, maxJogadores: 30 };
 }
 
 /* P/F de UM jogador, num dia — 'P' se esteve presente nalguma sessão
@@ -3853,43 +3935,74 @@ function presencaNoDia(playerId, dateStr, sessions, matches) {
   return (presenteEmTreino || presenteEmJogo) ? 'P' : 'F';
 }
 
-/* Gera a Ficha de Assiduidade de um mês, devolve um novo workbook (não
-   mexe no original) pronto a descarregar. `players` já deve vir pela
-   ordem que se quer na folha — ver o comentário em cima do botão
-   "Gerar", que também escreve essa mesma ordem em ESTATÍSTICA TOTAL. */
-function gerarFichaAssiduidade(workbook, players, sessions, matches, mes, ano) {
-  const sheet = workbook.Sheets['Ficha Assiduidade'];
-  if (!sheet) throw new Error('A folha "Ficha Assiduidade" não existe neste modelo.');
-  const bloco = localizarBlocoAssiduidade(sheet, mes, ano);
-  if (!bloco) throw new Error(`Não encontrei o bloco de ${MESES_PT[mes]} ${ano} na Ficha Assiduidade — o modelo pode ter mudado.`);
+/* Resolve o caminho real dentro do .zip para uma folha, a partir do
+   NOME dela — precisa de workbook.xml (nome → r:id) e de
+   workbook.xml.rels (r:id → ficheiro). Sem isto teria de se adivinhar
+   "sheet1.xml", "sheet2.xml"..., que não bate certo com a ordem em que
+   as folhas aparecem no ficheiro. */
+async function resolverCaminhoDaFolha(zip, nomeFolha) {
+  const wbXml = await zip.file('xl/workbook.xml').async('string');
+  const relsXml = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+  const mSheet = wbXml.match(new RegExp(`<sheet name="${nomeFolha.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*r:id="(rId\\d+)"`));
+  if (!mSheet) return null;
+  const mRel = relsXml.match(new RegExp(`<Relationship Id="${mSheet[1]}"[^>]*Target="([^"]+)"`));
+  return mRel ? `xl/${mRel[1]}` : null;
+}
+
+/* Gera o Excel preenchido para um mês, como um ficheiro pronto a
+   descarregar (Blob) — sem guardar nada na app. `players` já deve vir
+   pela ordem que se quer na folha (a app usa `sortByPosition`). */
+async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, mes, ano) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+
+  const estatPath = await resolverCaminhoDaFolha(zip, 'ESTATÍSTICA TOTAL');
+  const assidPath = await resolverCaminhoDaFolha(zip, 'Ficha Assiduidade');
+  if (!estatPath) throw new Error('A folha "ESTATÍSTICA TOTAL" não existe neste modelo.');
+  if (!assidPath) throw new Error('A folha "Ficha Assiduidade" não existe neste modelo.');
+
+  let estatXml = await zip.file(estatPath).async('string');
+  let assidXml = await zip.file(assidPath).async('string');
+
+  // Nomes em ESTATÍSTICA TOTAL!B6:B35 — é de lá que TODOS os blocos da
+  // Ficha Assiduidade buscam o nome de cada jogador, por fórmula.
+  const jogadores = players.slice(0, 30);
+  jogadores.forEach((p, i) => {
+    estatXml = definirTextoNaCelula(estatXml, `B${6 + i}`, p.name);
+  });
+
+  // Localizar o bloco do mês — precisa da tabela de shared strings só
+  // para PROCURAR o título; o texto se é embutido diretamente na
+  // célula ao escrever, não se toca na tabela partilhada em si.
+  const sharedXmlFile = zip.file('xl/sharedStrings.xml');
+  const sharedXml = sharedXmlFile ? await sharedXmlFile.async('string') : '';
+  const sharedStrings = [...sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => textoCompletoDoSi(m[1]));
+  const bloco = localizarBlocoAssiduidade(assidXml, sharedStrings, mes);
+  if (!bloco) throw new Error(`Não encontrei o bloco de ${MESES_PT[mes]} na Ficha Assiduidade — o modelo pode ter mudado.`);
+
+  assidXml = definirTextoNaCelula(assidXml, `A${bloco.linhaTitulo}`, `Ficha Assiduidade \n${MESES_PT[mes]} ${ano}`);
 
   const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-  players.slice(0, bloco.maxJogadores).forEach((p, i) => {
+  jogadores.forEach((p, i) => {
     const linha = bloco.primeiraLinhaJogador + i;
+    // O nome nesta linha vem por FÓRMULA (referencia ESTATÍSTICA TOTAL)
+    // — só se atualiza o valor em cache, a fórmula em si fica intacta.
+    assidXml = definirValorEmCache(assidXml, `B${linha}`, p.name);
     for (let dia = 1; dia <= diasNoMes; dia++) {
-      const col = 2 + dia; // C = dia 1 (ver inspeção do modelo)
+      const ref = letraDaColuna(2 + dia) + linha; // C = dia 1
       const dataStr = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
       const valor = presencaNoDia(p.id, dataStr, sessions, matches);
-      const endereco = XLSX.utils.encode_cell({ r: linha, c: col });
-      if (valor) sheet[endereco] = { t: 's', v: valor };
-      else delete sheet[endereco];
+      if (valor) assidXml = definirTextoNaCelula(assidXml, ref, valor);
+      // Sem sessão marcada nesse dia, a célula fica exatamente como
+      // estava no modelo (em branco) — não se mexe nela de todo.
     }
   });
-  return workbook;
+
+  zip.file(estatPath, estatXml);
+  zip.file(assidPath, assidXml);
+
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
-/* Escreve o plantel (pela ordem escolhida) em ESTATÍSTICA TOTAL!B6:B35 —
-   é essa coluna que TODOS os blocos da Ficha Assiduidade referenciam
-   por fórmula para o nome de cada jogador. Sem isto, a ficha continuava
-   a mostrar os nomes de exemplo do modelo ("Atleta 1 gr", etc.). */
-function escreverPlantelNaEstatistica(workbook, players) {
-  const sheet = workbook.Sheets['ESTATÍSTICA TOTAL'];
-  if (!sheet) return;
-  players.slice(0, 30).forEach((p, i) => {
-    const endereco = XLSX.utils.encode_cell({ r: 5 + i, c: 1 }); // B6 é r=5,c=1 em índice 0
-    sheet[endereco] = { t: 's', v: p.name };
-  });
-}
 
 function DocumentosApp({ documentos, setDocumentos, players, sessions, teamId }) {
   const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
@@ -4011,25 +4124,13 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, onClose }) {
       const { data: ficheiro, error } = await supabase.storage.from('documentos').download(doc.storagePath);
       if (error) throw error;
       const buffer = await ficheiro.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellFormula: true, cellStyles: true });
 
       // A mesma ordem entra nos dois sítios: na coluna dos nomes (para
       // ESTATÍSTICA TOTAL, de onde a Ficha Assiduidade os busca por
       // fórmula) e nas linhas P/F da própria ficha.
       const ordenados = sortByPosition(players);
-      escreverPlantelNaEstatistica(workbook, ordenados);
-      gerarFichaAssiduidade(workbook, ordenados, sessions, [], mes, ano);
+      const blob = await gerarFichaAssiduidade(buffer, ordenados, sessions, [], mes, ano);
 
-      // Os nomes da Ficha Assiduidade vêm por FÓRMULA (de ESTATÍSTICA
-      // TOTAL) — o SheetJS não recalcula fórmulas, só as escreve; é o
-      // Excel/Sheets a recalcular ao abrir o ficheiro. Esta marca força
-      // esse recálculo logo na abertura, mesmo que o cálculo automático
-      // esteja desligado nas definições de quem o for abrir.
-      workbook.Workbook = workbook.Workbook || {};
-      workbook.Workbook.CalcPr = { fullCalcOnLoad: true };
-
-      const saida = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([saida], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
