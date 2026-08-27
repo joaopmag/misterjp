@@ -15475,6 +15475,10 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
   };
   // O canto pertence aos dois eixos, e fica por cima de ambos.
   const cornerCell = { ...headCell, ...nameCell, position: 'sticky', top: 0, left: 0, zIndex: 3 };
+  // Largura/altura de sobra para empurrar a barra nativa para fora da
+  // vista (ver comentário mais abaixo, onde é usada). Generosa (20px)
+  // de propósito — cobre até às barras mais grossas do Windows.
+  const SBAR = 20;
 
   return (
     <div style={{ marginBottom: 22 }}>
@@ -15484,20 +15488,32 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
         </div>
         {monthControl}
       </div>
-      {/* Sem moldura (nem borda, nem cantos arredondados) — é isso que
-          dava o ar de caixa à parte. O scroll próprio continua a
-          existir (é o que prende o cabeçalho e a coluna do nome), só
-          que agora sem nada a desenhar-lhe os limites; a barra fina do
-          `.mjp-scroll-fino` é a única pista visual de que aqui se
-          desliza. */}
-      <div className="mjp-scroll-fino" style={{
-        overflow: 'auto', maxHeight: 'calc(100vh - 220px)',
-      }}>
-        <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
-          <thead>
-            <tr>
-              <th style={{ ...cornerCell, textAlign: 'left', color: T.muted, fontSize: 10 }}>Jogador</th>
-              {ordered.map(d => {
+      {/* SEM DEPENDER DE NENHUMA PROPRIEDADE CSS DE SCROLLBAR.
+
+          As duas tentativas anteriores (`::-webkit-scrollbar`,
+          `scrollbar-width`) deviam chegar em qualquer Chrome atual — e
+          não chegaram, o que só se explica se algo aqui as estiver a
+          ignorar (uma extensão do browser, uma política do sistema,
+          ou uma diferença qualquer que não dá para prever daqui).
+
+          Esta versão não depende de o browser SUPORTAR esconder a
+          barra: empurra-a fisicamente para FORA da zona visível. A
+          caixa de dentro é maior do que a de fora (mais larga e mais
+          alta, em `SBAR` pixels) — é nessa sobra que o browser desenha
+          a barra, tanto a de baixo como a da direita — e a caixa de
+          fora, com overflow escondido e o tamanho "normal", corta essa
+          sobra fora da vista. É só geometria: funciona em qualquer
+          browser, sem exceção. */}
+      <div style={{ overflow: 'hidden', maxHeight: 'calc(100vh - 220px)' }}>
+        <div className="mjp-scroll-fino" style={{
+          overflow: 'auto', maxHeight: `calc(100vh - 220px + ${SBAR}px)`,
+          width: `calc(100% + ${SBAR}px)`,
+        }}>
+          <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
+            <thead>
+              <tr>
+                <th style={{ ...cornerCell, textAlign: 'left', color: T.muted, fontSize: 10 }}>Jogador</th>
+                {ordered.map(d => {
                 const closed = dayClosed(d);
                 return (
                   <th key={d.match ? `m-${d.match.id}` : d.date} style={headCell}>
@@ -15597,7 +15613,8 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
               </tr>
             ))}
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
       <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
         Treinos: P presente / NP não presente. Jogos: C convocado / NC não convocado.
