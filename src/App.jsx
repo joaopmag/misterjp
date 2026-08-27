@@ -1943,8 +1943,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              telemóvel); só deixa de haver qualquer traço a desenhar-se
              por cima da tabela. Usado nas tabelas largas que precisam
              de deslocamento próprio (Presenças, Classificação). */
-          .mjp-scroll-fino::-webkit-scrollbar { display: none; width: 0; height: 0; }
-          .mjp-scroll-fino { scrollbar-width: none; -ms-overflow-style: none; }
+          .mjp-scroll-fino::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+          .mjp-scroll-fino { scrollbar-width: none !important; -ms-overflow-style: none !important; }
         `}</style>
         {previewKiosk && (
           <button onClick={() => setPreviewKiosk(false)} style={{
