@@ -15454,32 +15454,32 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
   const ordered = [...days].sort((a, b) => new Date(a.date) - new Date(b.date));
   if (ordered.length === 0 || players.length === 0) return null;
 
-  /* CABEÇALHO E COLUNA DO NOME FIXOS.
+  /* A COLUNA DO NOME FICA FIXA; O CABEÇALHO JÁ NÃO.
 
-     Com 37 jogadores e vinte e tal dias, ao descer perde-se a data e ao ir
-     para a direita perde-se o nome — e marca-se presença no jogador
-     errado, ou no dia errado. As duas coisas têm de ficar à vista.
+     Antes o quadro tinha `maxHeight` + scroll próprio, só para que o
+     cabeçalho ficasse sempre à vista (`position:sticky` prende-se ao
+     ancestral que faz scroll — sem um "ancestral" com altura limitada,
+     não há a quem prender-se). Era esse scroll próprio, dentro de uma
+     caixa com moldura, que ficava com ar de "caixa dentro da página".
 
-     Isto obriga o quadro a ter scroll PRÓPRIO (`maxHeight` + `overflow`).
-     `position: sticky` prende-se ao ancestral que faz scroll; com o
-     contentor a crescer até à altura do conteúdo, esse ancestral era a
-     página e o cabeçalho nunca colava. Dar-lhe altura máxima é o que o
-     torna o ancestral que faz scroll.
-
-     Os `zIndex` empilham-se: canto 3, cabeçalho 2, coluna do nome 1. E os
-     fundos têm de ser opacos, senão as células passam por baixo e lê-se
-     texto sobre texto. */
+     Sem essa caixa, quem rola a página (não um scroll à parte) é o
+     ecrã todo — e um elemento não pode ficar preso a dois sítios ao
+     mesmo tempo: ou fica preso ao scroll da PÁGINA (e perde-se o
+     cabeçalho ao descer), ou fica preso a um scroll PRÓPRIO (e volta a
+     caixa). Ficou a coluna do nome fixa (preende-se ao scroll
+     HORIZONTAL, que continua a acontecer aqui dentro — a tabela é mais
+     larga do que o ecrã) e o cabeçalho solto, a subir com o resto da
+     página como qualquer título de tabela. */
   const headCell = {
     padding: '6px 4px', fontSize: 10, color: T.muted, textAlign: 'center',
     borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap', minWidth: 78,
-    position: 'sticky', top: 0, background: T.surface, zIndex: 2,
+    background: T.surface,
   };
   const nameCell = {
     padding: '6px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap',
     position: 'sticky', left: 0, background: T.surface, zIndex: 1, borderRight: `1px solid ${T.line}`,
   };
-  // O canto pertence aos dois eixos, e fica por cima de ambos.
-  const cornerCell = { ...headCell, ...nameCell, position: 'sticky', top: 0, left: 0, zIndex: 3 };
+  const cornerCell = { ...headCell, ...nameCell, zIndex: 2 };
 
   return (
     <div style={{ marginBottom: 22 }}>
@@ -15489,15 +15489,13 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
         </div>
         {monthControl}
       </div>
-      {/* A caixa cresce até quase preencher o que resta da janela — só
-          entra a rolar (na vertical) quando mesmo não há mais espaço,
-          não logo aos 640px como antes, que cortava a tabela a meio do
-          ecrã mesmo havendo página livre por baixo. Na horizontal, com
-          muitos dias, continua a precisar de rolar — a barra fina do
-          estilo `.mjp-scroll-fino` acima é o que evita o "azul e cinzento
-          do sistema operativo" a destoar do resto. */}
+      {/* Só rola na horizontal (muitos dias) — a barra fina do estilo
+          `.mjp-scroll-fino` evita o "azul e cinzento do sistema
+          operativo" a destoar do resto. Na vertical, a tabela cresce
+          livremente e é a PÁGINA que rola, sem caixa nem scroll à
+          parte. */}
       <div className="mjp-scroll-fino" style={{
-        overflow: 'auto', maxHeight: 'calc(100vh - 220px)',
+        overflowX: 'auto', overflowY: 'hidden',
         border: `1px solid ${T.line}`, borderRadius: 10,
       }}>
         <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
