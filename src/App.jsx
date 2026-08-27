@@ -18307,7 +18307,7 @@ function syncMatchIntoCompetition(match, standings, season, matches) {
   const fora = emCasa ? adversario : nosso;
   const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
-  const jogos = [...(comp.rounds[ri].games || [])];
+  const jogos = [...(Array.isArray(comp.rounds[ri].games) ? comp.rounds[ri].games : [])];
   // Um encontro entre as mesmas duas equipas nesta jornada já existe?
   let gi = jogos.findIndex(g => (
     (igual(g.home, casa) && igual(g.away, fora)) || (igual(g.home, fora) && igual(g.away, casa))
@@ -18620,7 +18620,8 @@ function jornadaPorData(standings, date) {
   for (const comp of (standings || [])) {
     const rounds = comp.rounds || [];
     for (let i = 0; i < rounds.length; i++) {
-      if ((rounds[i].games || []).some(g => g.date === date)) {
+      const games = rounds[i].games;
+      if (Array.isArray(games) && games.some(g => g.date === date)) {
         return rounds[i].label || `Jornada ${i + 1}`;
       }
     }
