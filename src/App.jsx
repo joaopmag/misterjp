@@ -2211,9 +2211,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 Sair
               </button>
             </div>
-            <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 10 }}>
-              Gravação automática ativa — os teus dados ficam associados à tua conta e sincronizados.
-            </div>
             <DataTools
               season={season} setSeason={setSeason} players={players} setPlayers={setPlayers}
               exercises={exercises} setExercises={setExercises} ideias={ideias} setIdeias={setIdeias}
