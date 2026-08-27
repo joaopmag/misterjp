@@ -4205,8 +4205,8 @@ const TATICAS = {
   '4-3-3': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
     { id: 'DD', rotulo: 'DD', ponto: [0.26, 0.96], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.76], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.24], de: ['DC'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.15, 0.65], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.15, 0.35], de: ['DC'] },
     { id: 'DE', rotulo: 'DE', ponto: [0.26, 0.04], de: ['DE'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC', 'MD'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC', 'MD'] },
@@ -4218,8 +4218,8 @@ const TATICAS = {
   '4-4-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
     { id: 'DD', rotulo: 'DD', ponto: [0.26, 0.96], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.76], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.24], de: ['DC'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.15, 0.65], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.15, 0.35], de: ['DC'] },
     { id: 'DE', rotulo: 'DE', ponto: [0.26, 0.04], de: ['DE'] },
     { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.96], de: ['MD', 'ED'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.44, 0.62], de: ['MC', 'MOC'] },
@@ -4231,8 +4231,8 @@ const TATICAS = {
   '4-2-3-1': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
     { id: 'DD', rotulo: 'DD', ponto: [0.26, 0.96], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.76], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.24], de: ['DC'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.15, 0.65], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.15, 0.35], de: ['DC'] },
     { id: 'DE', rotulo: 'DE', ponto: [0.26, 0.04], de: ['DE'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC', 'MD'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC'] },
