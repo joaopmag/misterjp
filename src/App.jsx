@@ -1943,9 +1943,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              horizontal — a barra cinzenta grossa do sistema, dentro de
              uma caixa com moldura, destoava do resto da app. */
           .mjp-scroll-fino::-webkit-scrollbar { height: 8px; width: 8px; }
-          .mjp-scroll-fino::-webkit-scrollbar-track { background: transparent; }
-          .mjp-scroll-fino::-webkit-scrollbar-thumb { background: ${T.line}; border-radius: 8px; }
+          .mjp-scroll-fino::-webkit-scrollbar-track { background: transparent; border: none; }
+          .mjp-scroll-fino::-webkit-scrollbar-thumb { background: ${T.line}; border-radius: 8px; border: none; }
           .mjp-scroll-fino::-webkit-scrollbar-thumb:hover { background: ${T.mutedDim}; }
+          .mjp-scroll-fino::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+          .mjp-scroll-fino::-webkit-scrollbar-corner { background: transparent; }
           .mjp-scroll-fino { scrollbar-width: thin; scrollbar-color: ${T.line} transparent; }
         `}</style>
         {previewKiosk && (
