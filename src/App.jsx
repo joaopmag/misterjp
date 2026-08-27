@@ -4067,6 +4067,23 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
   zip.file(estatPath, estatXml);
   zip.file(assidPath, assidXml);
 
+  /* SEM ISTO, A COLUNA AH (E QUALQUER OUTRA FÓRMULA) FICA PRESA NO
+     VALOR DE QUANDO O MODELO FOI CRIADO.
+
+     "AH" soma a linha toda ("Total Presenças") — mas como só se está a
+     mudar o TEXTO das células, nunca se pede ao Excel para recalcular
+     nada; ele só o faz sozinho se o cálculo automático estiver ligado
+     E achar que algo mudou. Este sinalizador ("recalcula tudo ao
+     abrir") força esse recálculo logo na abertura do ficheiro, mesmo
+     que quem o abrir tenha o cálculo automático desligado — sem isto,
+     a soma continuava a mostrar 0 (ou o que quer que já lá estivesse)
+     até alguém tocar manualmente numa célula qualquer. */
+  let workbookXml = await zip.file('xl/workbook.xml').async('string');
+  workbookXml = /<calcPr\b[^>]*\/>/.test(workbookXml)
+    ? workbookXml.replace(/<calcPr\b[^>]*\/>/, m => m.includes('fullCalcOnLoad') ? m : m.replace('/>', ' fullCalcOnLoad="1"/>'))
+    : workbookXml.replace('</workbook>', '<calcPr fullCalcOnLoad="1"/></workbook>');
+  zip.file('xl/workbook.xml', workbookXml);
+
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
@@ -16181,7 +16198,13 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                   <th key={d.match ? `m-${d.match.id}` : d.date} style={headCell}>
                     <div style={{ ...mono, color: d.match ? T.warn : T.mutedDim }}>{dayShort(d.date)}</div>
                     <div style={{ fontSize: 9, color: T.mutedDim, marginBottom: 4 }}>
-                      {d.match ? (isFriendlyMatch(d.match) ? 'amigável' : 'jogo') : 'treino'}
+                      {/* Um jogo oficial mostra a própria jornada em vez de
+                          um genérico "jogo" — mais fácil de identificar de
+                          relance qual é qual numa tabela com muitas colunas.
+                          `match.jornada` já vem preenchido sozinho (ver
+                          `jornadaPorData`, em Jogos) sempre que a data bate
+                          com alguma ronda configurada. */}
+                      {d.match ? (isFriendlyMatch(d.match) ? 'amigável' : (d.match.jornada || 'jogo')) : 'treino'}
                     </div>
                     {/* Guardar fecha a coluna (fica só de leitura); Editar
                         volta a abri-la. Substitui os cartões dia a dia. */}
@@ -18581,6 +18604,30 @@ function competitionLabel(name) {
   return /^jogo\s+amig/i.test(txt) ? FRIENDLY : txt;
 }
 
+/* Identifica a jornada de um jogo QUE JÁ TEM DATA, mesmo quando o
+   campo `jornada` do próprio jogo está vazio (ex.: jogos lançados à
+   mão, sem passar pelo "Lançar jornada" em Competições e jornadas, ou
+   de antes de esse campo existir).
+
+   Não presume nada sobre nomes de equipas — só compara DATAS: percorre
+   as rondas de todas as competições configuradas e devolve o rótulo da
+   primeira ronda que tenha algum jogo nesse dia. Como esta equipa só
+   costuma ter um jogo marcado por dia, a data já identifica a jornada
+   sozinha, sem ser preciso adivinhar qual dos nomes (casa/fora) é o
+   nosso clube. */
+function jornadaPorData(standings, date) {
+  if (!date) return '';
+  for (const comp of (standings || [])) {
+    const rounds = comp.rounds || [];
+    for (let i = 0; i < rounds.length; i++) {
+      if ((rounds[i].games || []).some(g => g.date === date)) {
+        return rounds[i].label || `Jornada ${i + 1}`;
+      }
+    }
+  }
+  return '';
+}
+
 /* Uma sessão só é "dia de jogo a sério" quando há um jogo verdadeiro
    (amigável ou oficial) por trás — não sempre que "Jogo" for escolhido
    como Fase de jogo (foco) de um treino normal (jogos condicionados,
@@ -19076,6 +19123,31 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
      diálogo de impressão; sem ele imprime-se a folha vazia. */
   const [printMatch, setPrintMatch] = useState(null);
 
+  /* PREENCHE SOZINHO A JORNADA DOS JOGOS QUE JÁ EXISTIAM SEM ELA.
+
+     Um jogo lançado à mão (sem passar por "Lançar jornada" em
+     Competições e jornadas) fica sem `jornada` — mesmo tendo data e
+     estando claramente dentro do calendário da competição. Em vez de
+     só MOSTRAR a jornada calculada (o que deixava a ficha, a impressão
+     e a partilha, que leem `match.jornada` diretamente, sem saber
+     dela), grava-se a sério: assim que a data bater com alguma ronda
+     configurada, o jogo passa a ter essa jornada como qualquer outro.
+
+     Só ACRESCENTA — nunca substitui uma jornada já preenchida — e só
+     grava quando encontra mesmo uma correspondência; não há nada a
+     inventar quando a data não bate com nenhuma ronda conhecida. Corre
+     sozinho, sem botão, porque é uma correção de dados que já deviam
+     lá estar, não uma decisão nova a pedir confirmação. */
+  useEffect(() => {
+    const corrigidos = matches.map(m => {
+      if ((m.jornada || '').trim()) return m;
+      const encontrada = jornadaPorData(standings, m.date);
+      return encontrada ? { ...m, jornada: encontrada } : m;
+    });
+    if (corrigidos.some((m, i) => m !== matches[i])) setMatches(corrigidos);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matches, standings]);
+
   const doPrintMatch = (m) => {
     setPrintMatch(m);
     setTimeout(() => window.print(), 80);
@@ -19210,6 +19282,10 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
           {visiveis.map(m => {
             const reports = m.convocados ? m.convocados.map(pid => (m.report && m.report[pid]) || {}) : [];
             const goals = reports.reduce((a, r) => a + (Number(r.goals) || 0), 0);
+            // Mostra a jornada guardada no jogo; se estiver vazia (jogos
+            // lançados à mão, sem passar por "Lançar jornada"), procura-se
+            // pela data — ver `jornadaPorData`.
+            const jornadaDoJogo = (m.jornada || '').trim() || jornadaPorData(standings, m.date);
             return (
               /* O cartão inteiro abre a ficha do jogo. O lápis continua a
                  abrir a edição: ver e editar são coisas diferentes, e a
@@ -19226,7 +19302,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
                       )}
                     </div>
                     <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                      {fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length + convidadosDe(m).length} {isFriendlyMatch(m) ? 'presentes' : 'convocados'}
+                      {fmtDate(m.date)}{jornadaDoJogo ? ` · ${jornadaDoJogo}` : ''}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}{m.result ? ` · ${m.result}` : ''} · {(m.convocados || []).length + convidadosDe(m).length} {isFriendlyMatch(m) ? 'presentes' : 'convocados'}
                     </div>
                   </div>
                   {/* `stopPropagation`: sem isto, carregar no lápis abria
