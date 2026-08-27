@@ -15479,6 +15479,16 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
   // vista (ver comentário mais abaixo, onde é usada). Generosa (20px)
   // de propósito — cobre até às barras mais grossas do Windows.
   const SBAR = 20;
+  /* SEM BARRA VISÍVEL, PRECISA DE OUTRA MANEIRA DE ANDAR PARA OS LADOS.
+
+     Escondida a barra, quem só tem rato (sem trackpad nem ecrã tátil)
+     ficava sem forma nenhuma de chegar às datas mais recentes — a roda
+     do rato só desce, não desliza para o lado sozinha. Estes dois
+     botões deslocam a tabela na horizontal na mesma, só que de forma
+     visível e clicável, substituindo a barra em vez de a trazer de
+     volta. */
+  const scrollRef = React.useRef(null);
+  const scrollPor = (dx) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: dx, behavior: 'smooth' }); };
 
   return (
     <div style={{ marginBottom: 22 }}>
@@ -15486,7 +15496,25 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
           Presença e nota por dia
         </div>
-        {monthControl}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ display: 'flex', gap: 4 }}>
+            <button
+              type="button" onClick={() => scrollPor(-320)} title="Ver dias anteriores"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28,
+                borderRadius: 6, background: 'transparent', border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
+              }}
+            ><ChevronLeft size={15} /></button>
+            <button
+              type="button" onClick={() => scrollPor(320)} title="Ver dias seguintes"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28,
+                borderRadius: 6, background: 'transparent', border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
+              }}
+            ><ChevronRight size={15} /></button>
+          </span>
+          {monthControl}
+        </div>
       </div>
       {/* SEM DEPENDER DE NENHUMA PROPRIEDADE CSS DE SCROLLBAR.
 
@@ -15503,9 +15531,12 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
           a barra, tanto a de baixo como a da direita — e a caixa de
           fora, com overflow escondido e o tamanho "normal", corta essa
           sobra fora da vista. É só geometria: funciona em qualquer
-          browser, sem exceção. */}
+          browser, sem exceção.
+
+          Mas sem barra, precisa dos botões ◀ ▶ ali em cima para andar
+          para os lados — ver `scrollRef`/`scrollPor`. */}
       <div style={{ overflow: 'hidden', maxHeight: 'calc(100vh - 220px)' }}>
-        <div className="mjp-scroll-fino" style={{
+        <div ref={scrollRef} className="mjp-scroll-fino" style={{
           overflow: 'auto', maxHeight: `calc(100vh - 220px + ${SBAR}px)`,
           width: `calc(100% + ${SBAR}px)`,
         }}>
