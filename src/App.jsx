@@ -4215,7 +4215,7 @@ const TATICAS = {
     { id: 'MC3', rotulo: 'MC', ponto: [0.50, 0.32], de: ['MC', 'MOC'] },
     { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.90], de: ['ED'] },
     { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.10], de: ['EE'] },
-    { id: 'PL', rotulo: 'PL', ponto: [0.86, 0.38], de: ['PL'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.91, 0.50], de: ['PL'] },
   ],
   '4-4-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
@@ -4241,7 +4241,7 @@ const TATICAS = {
     { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.90], de: ['ED'] },
     { id: 'MOC2', rotulo: 'MOC', ponto: [0.60, 0.50], de: ['MOC'] },
     { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.10], de: ['EE'] },
-    { id: 'PL', rotulo: 'PL', ponto: [0.85, 0.38], de: ['PL'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.90, 0.50], de: ['PL'] },
   ],
   '3-5-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
