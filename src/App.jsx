@@ -2321,7 +2321,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} />
           )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
-          {tab === 'documentos' && <DocumentosApp documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions} teamId={teamId} />}
+          {tab === 'documentos' && <DocumentosApp documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions} matches={matches} clinico={clinico} teamId={teamId} />}
         </div>
         </main>
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
@@ -3806,10 +3806,15 @@ function Stat({ value, label }) {
    ESTA VERSÃO faz UM preenchimento à medida: a "Ficha Assiduidade" do
    ficheiro modelo "estatística e assiduidade" do SC Salgueiros — 12
    blocos mensais empilhados (Agosto a Julho), cada um com os jogadores
-   pela mesma ordem da folha "ESTATÍSTICA TOTAL" e um P/F por dia. Não é
-   um preenchedor genérico de qualquer Excel — é talhado a este modelo
-   em concreto. Se o clube tiver outros documentos para preencher de
-   forma parecida, cada um pede o seu próprio "tradutor" de dados.
+   pela mesma ordem da folha "ESTATÍSTICA TOTAL" e um valor por dia.
+   Esse valor é sempre um NÚMERO, nunca uma letra: presente e lesionado
+   valem 1; falta e outro escalão valem 0 — é assim que a folha do
+   clube soma os totais de cada jogador na própria fórmula do modelo.
+   Dá para escolher vários meses de uma vez; saem todos no mesmo
+   ficheiro, tal como o modelo já os tem empilhados. Não é um
+   preenchedor genérico de qualquer Excel — é talhado a este modelo em
+   concreto. Se o clube tiver outros documentos para preencher de forma
+   parecida, cada um pede o seu próprio "tradutor" de dados.
 
    PORQUE NÃO SE USA O SHEETJS PARA REESCREVER O FICHEIRO TODO.
 
@@ -3867,6 +3872,22 @@ function definirTextoNaCelula(sheetXml, ref, valor) {
   return sheetXml.slice(0, m.index) + novaCelula + sheetXml.slice(m.index + m[0].length);
 }
 
+/* Como `definirTextoNaCelula`, mas escreve um NÚMERO em vez de uma
+   string embutida — sem atributo `t`, que é como o Excel guarda uma
+   célula numérica normal. Preserva o `s="N"` do estilo, tal como a
+   função de texto. É esta a versão usada nas células P/F/L/E da Ficha
+   Assiduidade, porque o modelo soma essa linha com uma fórmula e uma
+   string ("P"/"F") entra nessa soma como zero — só um número a sério
+   conta. */
+function definirNumeroNaCelula(sheetXml, ref, numero) {
+  const re = new RegExp(`<c r="${ref}"([^>]*?)(/>|>[\\s\\S]*?</c>)`);
+  const m = sheetXml.match(re);
+  if (!m) return sheetXml;
+  const sAttr = (m[1].match(/\ss="(\d+)"/) || [])[1];
+  const novaCelula = `<c r="${ref}"${sAttr ? ` s="${sAttr}"` : ''}><v>${numero}</v></c>`;
+  return sheetXml.slice(0, m.index) + novaCelula + sheetXml.slice(m.index + m[0].length);
+}
+
 /* Só para células com FÓRMULA (ex.: o nome de um jogador na Ficha
    Assiduidade, que vem de `='ESTATÍSTICA TOTAL'!$B$6`): atualiza o
    VALOR EM CACHE sem tocar na fórmula. Sem isto, o nome só apareceria
@@ -3921,19 +3942,53 @@ function localizarBlocoAssiduidade(sheetXml, sharedStrings, mes) {
   return { linhaTitulo, primeiraLinhaJogador: linhaTitulo + 5, maxJogadores: 30 };
 }
 
-/* P/F de UM jogador, num dia — 'P' se esteve presente nalguma sessão
-   desse dia, 'F' se havia sessão e não esteve, ou '' se não houve
-   treino/jogo nenhum marcado nesse dia (célula fica em branco, como no
-   modelo original). Junta sessões de treino E jogos (`matches`), porque
-   um dia de jogo também é assiduidade. */
-function presencaNoDia(playerId, dateStr, sessions, matches) {
+/* Estado de UM jogador, num dia — o mesmo vocabulário que a aba
+   "Presenças" usa (`estadoDe`): 'presente', 'falta', 'lesionado',
+   'escalao', ou 'ausente' (não marcado explicitamente, mas havia
+   sessão/jogo). Devolve `null` se não houve treino nem jogo nenhum
+   marcado nesse dia — aí a célula fica em branco, como no modelo
+   original, e não se mexe nela.
+
+   Junta sessões de treino E jogos (`matches`) no MESMO dia num único
+   estado, porque a Ficha Assiduidade só tem uma célula por dia por
+   jogador (ao contrário da tabela "Presenças" no ecrã, que pode ter
+   uma coluna para o treino e outra para o jogo nesse mesmo dia). Um
+   dia de jogo também é assiduidade. */
+function estadoNoDia(playerId, dateStr, sessions, matches, clinico) {
   const doDia = (sessions || []).filter(s => s.date === dateStr && s.phase !== 'Descanso');
   const jogoDoDia = (matches || []).find(m => m.date === dateStr);
-  if (doDia.length === 0 && !jogoDoDia) return '';
+  if (doDia.length === 0 && !jogoDoDia) return null;
+
   const presenteEmTreino = doDia.some(s => (s.attendance || []).includes(playerId));
-  const presenteEmJogo = jogoDoDia ? (jogoDoDia.convocados || []).includes(playerId) : false;
-  return (presenteEmTreino || presenteEmJogo) ? 'P' : 'F';
+  const convocadosJogo = jogoDoDia
+    ? (Array.isArray(jogoDoDia.attendance) ? jogoDoDia.attendance : (jogoDoDia.convocados || []))
+    : [];
+  const presenteEmJogo = convocadosJogo.includes(playerId);
+  if (presenteEmTreino || presenteEmJogo) return 'presente';
+
+  const faltas = [...doDia.flatMap(s => s.faltas || []), ...(jogoDoDia ? (jogoDoDia.faltas || []) : [])];
+  if (faltas.includes(playerId)) return 'falta';
+
+  const lesionados = [...doDia.flatMap(s => s.lesionados || []), ...(jogoDoDia ? (jogoDoDia.lesionados || []) : [])];
+  if (lesionados.includes(playerId)) return 'lesionado';
+
+  const escalao = [...doDia.flatMap(s => s.escalao || []), ...(jogoDoDia ? (jogoDoDia.escalao || []) : [])];
+  if (escalao.includes(playerId)) return 'escalao';
+
+  // Preenche-se sozinho a partir do boletim clínico, tal como a aba
+  // "Presenças" faz — um jogador indisponível por lesão nem sempre
+  // fica marcado sessão a sessão.
+  if (diaAutoLesionado(playerId, dateStr, clinico)) return 'lesionado';
+
+  return 'ausente';
 }
+
+/* A Ficha Assiduidade em papel usa as letras P/F/L/E, mas a versão
+   Excel do SC Salgueiros conta os totais por SOMA da linha — por isso
+   as células têm de levar um NÚMERO, não uma letra. Conversão pedida
+   pelo clube: P (presente) e L (lesionado) valem 1; F (falta), E
+   (escalão) e a ausência não marcada valem 0. */
+const VALOR_ASSIDUIDADE = { presente: 1, lesionado: 1, falta: 0, escalao: 0, ausente: 0 };
 
 /* Resolve o caminho real dentro do .zip para uma folha, a partir do
    NOME dela — precisa de workbook.xml (nome → r:id) e de
@@ -3949,10 +4004,16 @@ async function resolverCaminhoDaFolha(zip, nomeFolha) {
   return mRel ? `xl/${mRel[1]}` : null;
 }
 
-/* Gera o Excel preenchido para um mês, como um ficheiro pronto a
-   descarregar (Blob) — sem guardar nada na app. `players` já deve vir
-   pela ordem que se quer na folha (a app usa `sortByPosition`). */
-async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, mes, ano) {
+/* Gera o Excel preenchido para UM OU VÁRIOS meses de uma só vez, como
+   um ficheiro pronto a descarregar (Blob) — sem guardar nada na app.
+   `players` já deve vir pela ordem que se quer na folha (a app usa
+   `sortByPosition`). `mesesEAnos` é uma lista de `{ mes, ano }` (mes
+   com base em zero, Janeiro=0); o modelo já tem os 12 blocos mensais
+   estampados de fábrica, por isso preencher vários meses é só repetir
+   o mesmo procedimento bloco a bloco, sobre o MESMO .zip, e só no fim
+   gerar o ficheiro — assim os meses escolhidos saem todos juntos num
+   único Excel, tal como já vinham no modelo original. */
+async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, clinico, mesesEAnos) {
   const zip = await JSZip.loadAsync(arrayBuffer);
 
   const estatPath = await resolverCaminhoDaFolha(zip, 'ESTATÍSTICA TOTAL');
@@ -3964,37 +4025,43 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, me
   let assidXml = await zip.file(assidPath).async('string');
 
   // Nomes em ESTATÍSTICA TOTAL!B6:B35 — é de lá que TODOS os blocos da
-  // Ficha Assiduidade buscam o nome de cada jogador, por fórmula.
+  // Ficha Assiduidade buscam o nome de cada jogador, por fórmula. Só
+  // precisa de se escrever uma vez, não por mês.
   const jogadores = players.slice(0, 30);
   jogadores.forEach((p, i) => {
     estatXml = definirTextoNaCelula(estatXml, `B${6 + i}`, p.name);
   });
 
-  // Localizar o bloco do mês — precisa da tabela de shared strings só
-  // para PROCURAR o título; o texto se é embutido diretamente na
-  // célula ao escrever, não se toca na tabela partilhada em si.
+  // A tabela de shared strings só serve para PROCURAR o título de cada
+  // bloco; o texto que se escreve vai embutido diretamente na célula,
+  // não se toca na tabela partilhada em si.
   const sharedXmlFile = zip.file('xl/sharedStrings.xml');
   const sharedXml = sharedXmlFile ? await sharedXmlFile.async('string') : '';
   const sharedStrings = [...sharedXml.matchAll(/<si>([\s\S]*?)<\/si>/g)].map(m => textoCompletoDoSi(m[1]));
-  const bloco = localizarBlocoAssiduidade(assidXml, sharedStrings, mes);
-  if (!bloco) throw new Error(`Não encontrei o bloco de ${MESES_PT[mes]} na Ficha Assiduidade — o modelo pode ter mudado.`);
 
-  assidXml = definirTextoNaCelula(assidXml, `A${bloco.linhaTitulo}`, `Ficha Assiduidade \n${MESES_PT[mes]} ${ano}`);
+  (mesesEAnos || []).forEach(({ mes, ano }) => {
+    const bloco = localizarBlocoAssiduidade(assidXml, sharedStrings, mes);
+    if (!bloco) throw new Error(`Não encontrei o bloco de ${MESES_PT[mes]} na Ficha Assiduidade — o modelo pode ter mudado.`);
 
-  const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-  jogadores.forEach((p, i) => {
-    const linha = bloco.primeiraLinhaJogador + i;
-    // O nome nesta linha vem por FÓRMULA (referencia ESTATÍSTICA TOTAL)
-    // — só se atualiza o valor em cache, a fórmula em si fica intacta.
-    assidXml = definirValorEmCache(assidXml, `B${linha}`, p.name);
-    for (let dia = 1; dia <= diasNoMes; dia++) {
-      const ref = letraDaColuna(2 + dia) + linha; // C = dia 1
-      const dataStr = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-      const valor = presencaNoDia(p.id, dataStr, sessions, matches);
-      if (valor) assidXml = definirTextoNaCelula(assidXml, ref, valor);
-      // Sem sessão marcada nesse dia, a célula fica exatamente como
-      // estava no modelo (em branco) — não se mexe nela de todo.
-    }
+    assidXml = definirTextoNaCelula(assidXml, `A${bloco.linhaTitulo}`, `Ficha Assiduidade \n${MESES_PT[mes]} ${ano}`);
+
+    const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+    jogadores.forEach((p, i) => {
+      const linha = bloco.primeiraLinhaJogador + i;
+      // O nome nesta linha vem por FÓRMULA (referencia ESTATÍSTICA TOTAL)
+      // — só se atualiza o valor em cache, a fórmula em si fica intacta.
+      assidXml = definirValorEmCache(assidXml, `B${linha}`, p.name);
+      for (let dia = 1; dia <= diasNoMes; dia++) {
+        const ref = letraDaColuna(2 + dia) + linha; // C = dia 1
+        const dataStr = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+        const estado = estadoNoDia(p.id, dataStr, sessions, matches, clinico);
+        // Sem sessão nem jogo marcado nesse dia, a célula fica
+        // exatamente como estava no modelo (em branco) — não se mexe
+        // nela de todo. Havendo sessão/jogo, escreve-se sempre um
+        // NÚMERO (1 ou 0), nunca uma letra — ver `VALOR_ASSIDUIDADE`.
+        if (estado !== null) assidXml = definirNumeroNaCelula(assidXml, ref, VALOR_ASSIDUIDADE[estado]);
+      }
+    });
   });
 
   zip.file(estatPath, estatXml);
@@ -4004,7 +4071,7 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, me
 }
 
 
-function DocumentosApp({ documentos, setDocumentos, players, sessions, teamId }) {
+function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId }) {
   const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
   const [aCarregar, setACarregar] = useState(false);
   const [erro, setErro] = useState('');
@@ -4097,7 +4164,7 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions, teamId })
                 </button>
               </div>
               {aGerar === doc.id && (
-                <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} onClose={() => setAGerar(null)} />
+                <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} onClose={() => setAGerar(null)} />
               )}
             </div>
           ))}
@@ -4107,15 +4174,44 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions, teamId })
   );
 }
 
-function GerarFichaAssiduidadeForm({ doc, players, sessions, onClose }) {
+// Ordem "de época" dos meses (Agosto→Julho), tal como os 12 blocos
+// vêm empilhados no modelo do SC Salgueiros — ver o comentário grande
+// no topo desta secção. Cada entrada é o índice em `MESES_PT`
+// (0=Janeiro ... 11=Dezembro).
+const ORDEM_EPOCA = [7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5, 6];
+
+// Ano de calendário de um mês da época, a partir do ano em que a época
+// COMEÇA (Agosto). Agosto-Dezembro ficam nesse ano; Janeiro-Julho já
+// caem no ano seguinte.
+function anoDoMesNaEpoca(mes, anoInicioEpoca) {
+  return mes >= 7 ? anoInicioEpoca : anoInicioEpoca + 1;
+}
+
+function GerarFichaAssiduidadeForm({ doc, players, sessions, matches, clinico, onClose }) {
   const agora = new Date();
-  const [mes, setMes] = useState(agora.getMonth());
-  const [ano, setAno] = useState(agora.getFullYear());
+  // Ano em que a época atual começou: se estamos entre Agosto e
+  // Dezembro a época começou este ano civil, senão começou no anterior.
+  const anoEpocaDefeito = agora.getMonth() >= 7 ? agora.getFullYear() : agora.getFullYear() - 1;
+  const [anoInicioEpoca, setAnoInicioEpoca] = useState(anoEpocaDefeito);
+  // Pré-seleciona só o mês corrente, mas dá para marcar vários de
+  // seguida e descarregar tudo junto num único Excel.
+  const [mesesSelecionados, setMesesSelecionados] = useState(() => new Set([agora.getMonth()]));
   const [erro, setErro] = useState('');
   const [aProcessar, setAProcessar] = useState(false);
 
+  const alternarMes = (m) => {
+    setMesesSelecionados(prev => {
+      const novo = new Set(prev);
+      if (novo.has(m)) novo.delete(m); else novo.add(m);
+      return novo;
+    });
+  };
+
+  const mesesOrdenados = [...mesesSelecionados].sort((a, b) => ORDEM_EPOCA.indexOf(a) - ORDEM_EPOCA.indexOf(b));
+
   const gerar = async () => {
     setErro('');
+    if (mesesOrdenados.length === 0) { setErro('Escolhe pelo menos um mês.'); return; }
     setAProcessar(true);
     try {
       // O ficheiro vive no Supabase Storage — descarrega-se por dentro
@@ -4127,14 +4223,23 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, onClose }) {
 
       // A mesma ordem entra nos dois sítios: na coluna dos nomes (para
       // ESTATÍSTICA TOTAL, de onde a Ficha Assiduidade os busca por
-      // fórmula) e nas linhas P/F da própria ficha.
+      // fórmula) e nas linhas P/F/L/E da própria ficha.
       const ordenados = sortByPosition(players);
-      const blob = await gerarFichaAssiduidade(buffer, ordenados, sessions, [], mes, ano);
+      const mesesEAnos = mesesOrdenados.map(mes => ({ mes, ano: anoDoMesNaEpoca(mes, anoInicioEpoca) }));
+      const blob = await gerarFichaAssiduidade(buffer, ordenados, sessions, matches, clinico, mesesEAnos);
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Ficha Assiduidade - ${MESES_PT[mes]} ${ano}.xlsx`;
+      // Um mês só: "Ficha Assiduidade - Agosto 2025.xlsx". Vários:
+      // intervalo se forem seguidos na época, senão a lista toda.
+      const nomesMeses = mesesEAnos.map(({ mes, ano }) => `${MESES_PT[mes]} ${ano}`);
+      const seguidos = mesesOrdenados.length > 1 && mesesOrdenados.every((m, i) => i === 0
+        || ORDEM_EPOCA.indexOf(m) === ORDEM_EPOCA.indexOf(mesesOrdenados[i - 1]) + 1);
+      const rotulo = nomesMeses.length === 1
+        ? nomesMeses[0]
+        : (seguidos ? `${nomesMeses[0]} a ${nomesMeses[nomesMeses.length - 1]}` : nomesMeses.join(', '));
+      a.download = `Ficha Assiduidade - ${rotulo}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
       onClose();
@@ -4148,15 +4253,34 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, onClose }) {
   return (
     <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
       <div style={{ ...FIELD_GRID }}>
-        <Field label="Mês">
-          <Select value={mes} onChange={e => setMes(Number(e.target.value))}>
-            {MESES_PT.map((m, i) => <option key={m} value={i}>{m}</option>)}
-          </Select>
-        </Field>
-        <Field label="Ano">
-          <Input type="number" value={ano} onChange={e => setAno(Number(e.target.value))} />
+        <Field label="Ano de início da época (Agosto)">
+          <Input type="number" value={anoInicioEpoca} onChange={e => setAnoInicioEpoca(Number(e.target.value))} />
         </Field>
       </div>
+
+      <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 12, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+        Meses a gerar (podes escolher mais do que um — saem todos no mesmo ficheiro)
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {ORDEM_EPOCA.map(m => {
+          const ativo = mesesSelecionados.has(m);
+          const ano = anoDoMesNaEpoca(m, anoInicioEpoca);
+          return (
+            <button
+              key={m} type="button" onClick={() => alternarMes(m)}
+              style={{
+                padding: '6px 10px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                background: ativo ? `${T.gold}22` : 'transparent',
+                color: ativo ? T.gold : T.mutedDim,
+                border: `1px solid ${ativo ? T.gold : T.line}`,
+              }}
+            >
+              {MESES_PT[m]} {ano}
+            </button>
+          );
+        })}
+      </div>
+
       {erro && <div style={{ fontSize: 12, color: T.bad, marginTop: 10 }}>{erro}</div>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
