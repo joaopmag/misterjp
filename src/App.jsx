@@ -8,7 +8,7 @@ import {
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
-  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle
+  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -3866,6 +3866,32 @@ function shortFullName(name) {
    Pedro Cardoso e um Pedro Costa, e a lista mostrava "Pedro C." duas
    vezes — dois jogadores diferentes com exatamente o mesmo rótulo, que é
    pior do que um nome comprido. */
+/* LINK DE WHATSAPP COM MENSAGEM PRONTA — não é envio automático.
+
+   Um envio a sério (sem o treinador ter de tocar em Enviar, um a um)
+   precisa da API oficial do WhatsApp Business: conta verificada da
+   Meta, mensagens em modelo aprovadas antecipadamente, e um servidor
+   próprio a guardar credenciais — nada disto é possível dentro de uma
+   app que corre só no browser, sem servidor próprio por trás.
+
+   O que dá para fazer sem nada disso, e que já poupa a maior parte do
+   trabalho manual: um link `wa.me` que abre o WhatssApp (app ou web) já
+   com o número e a mensagem escritos — só falta tocar em Enviar. É o
+   mesmo link que o botão de partilha do WhatsApp usa em qualquer site.
+
+   O campo "Contacto" do jogador é texto livre (pode ter espaços,
+   parênteses, o "+" do indicativo, ou nem ser um número de todo) — por
+   isso limpa-se para ficar só dígitos e o "+", e só se considera válido
+   com pelo menos 8 dígitos. Sem isso, devolve null e quem chamar decide
+   o que mostrar (normalmente, nada). */
+function linkWhatsApp(contact, mensagem) {
+  if (!contact) return null;
+  const limpo = String(contact).replace(/[^\d+]/g, '');
+  const digitos = limpo.replace(/\D/g, '');
+  if (digitos.length < 8) return null;
+  return `https://wa.me/${limpo.replace(/^\+/, '')}?text=${encodeURIComponent(mensagem)}`;
+}
+
 function shortPlayerName(player, allPlayers) {
   if (!player) return '—';
   const lista = allPlayers || [];
@@ -19206,6 +19232,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   <th style={th2}>Wellness (hoje)</th>
                   <th style={th2}>Últ. PSE treino</th>
                   <th style={th2}>Últ. PSE jogo</th>
+                  <th style={th2}></th>
                 </tr>
               </thead>
               <tbody>
@@ -19220,6 +19247,12 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   const avg = wellnessAvg(lastWellness);
                   const statusColor = avg === null ? T.good : avg >= 3.5 ? T.good : avg >= 2.2 ? T.warn : T.bad;
                   const statusLabel = avg === null ? 'Apto' : avg >= 3.5 ? 'Apto' : avg >= 2.2 ? 'Atenção' : 'Risco';
+                  // Só faz sentido lembrar quem ainda não respondeu hoje e
+                  // tem um contacto guardado — sem as duas coisas, não há
+                  // nada para onde mandar nem nada por que lembrar.
+                  const lembreteUrl = wellnessToday === null
+                    ? linkWhatsApp(p.contact, `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje — consegues responder já? 💪`)
+                    : null;
                   return (
                     <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
                       <td style={td2}>
@@ -19232,6 +19265,14 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                       <td style={{ ...td2, ...mono }}>{wellnessToday !== null ? wellnessToday.toFixed(1) : '—'}</td>
                       <td style={{ ...td2, ...mono }} title={lastRpeTreino ? fmtDate(lastRpeTreino.date) : undefined}>{lastRpeTreino ? lastRpeTreino.pse : '—'}</td>
                       <td style={{ ...td2, ...mono, color: lastRpeJogo ? T.warn : T.mutedDim }} title={lastRpeJogo ? fmtDate(lastRpeJogo.date) : undefined}>{lastRpeJogo ? lastRpeJogo.pse : '—'}</td>
+                      <td style={td2}>
+                        {lembreteUrl && (
+                          <a href={lembreteUrl} target="_blank" rel="noopener noreferrer" title="Lembrar por WhatsApp"
+                            style={{ display: 'inline-flex', color: '#25D366' }}>
+                            <MessageCircle size={16} />
+                          </a>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
