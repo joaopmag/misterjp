@@ -3888,9 +3888,20 @@ function shortFullName(name) {
    mensagem pessoal do treinador. Importa para o atleta perceber a
    origem (não é o treinador que escreveu isto à mão, é a app), e para
    o treinador não ficar com o nome associado a uma mensagem seca de
-   lembrete. */
+   lembrete. Fica no FIM da mensagem, como um rodapé — não tira
+   destaque ao pedido em si.
+
+   Sem hora nenhuma na mensagem — o prazo real de cada questionário
+   (ver CHECKIN_WINDOWS) é usado só para decidir QUANDO mostrar o
+   lembrete (com margem de segurança antes do fecho), não para o
+   escrever ao atleta. Dizer uma hora que não é a hora real do fecho
+   só confundia; e a hora real muda se um dia se decidir ajustar as
+   janelas, sem que seja preciso lembrar de atualizar o texto aqui. */
 const TEXTO_LEMBRETE_WELLNESS = (p) => (
-  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje — consegues responder já? 💪\n\n(Mensagem automática enviada pelo sistema de gestão da equipa.)`
+  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje. Consegues responder já? 💪\n\n(Mensagem automática enviada pelo sistema de gestão da equipa.)`
+);
+const TEXTO_LEMBRETE_PSE = (p) => (
+  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao PSE de hoje. Consegues responder já? 💪\n\n(Mensagem automática enviada pelo sistema de gestão da equipa.)`
 );
 
 function linkWhatsApp(contact, mensagem) {
@@ -19247,18 +19258,31 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
       {players.length > 0 && (
         <Panel title="Plantel — estado atual">
           {(() => {
+            // Um treino/jogo marcado para hoje é o que diz se o PSE faz
+            // sentido hoje — sem sessão, não há PSE nenhum para lembrar.
+            const sessaoHoje = sessions.find(s => s.date === todayDateStr);
+            const precisaPseHoje = !!sessaoHoje && sessaoHoje.phase !== 'Descanso';
             // A mesma lista que dá os ícones individuais da tabela,
             // calculada uma vez aqui para o botão "Lembrar todos" e
-            // reaproveitada célula a célula mais abaixo.
-            const pendentes = sortByPosition(players)
-              .map(p => {
-                const recs = monitoring.filter(m => m.playerId === p.id);
-                const todayWellness = recs.find(r => r.date === todayDateStr && typeof r.sono === 'number');
-                if (todayWellness) return null;
+            // reaproveitada célula a célula mais abaixo. Um jogador pode
+            // entrar duas vezes (falta o Wellness E o PSE) — são dois
+            // lembretes diferentes, não um só.
+            const pendentes = [];
+            sortByPosition(players).forEach(p => {
+              const recs = monitoring.filter(m => m.playerId === p.id);
+              const todayWellness = recs.find(r => r.date === todayDateStr && typeof r.sono === 'number');
+              if (!todayWellness) {
                 const url = linkWhatsApp(p.contact, TEXTO_LEMBRETE_WELLNESS(p));
-                return url ? { player: p, url } : null;
-              })
-              .filter(Boolean);
+                if (url) pendentes.push({ player: p, url, tipo: 'Wellness' });
+              }
+              if (precisaPseHoje) {
+                const todayPse = recs.find(r => r.date === todayDateStr && typeof r.pse === 'number');
+                if (!todayPse) {
+                  const url = linkWhatsApp(p.contact, TEXTO_LEMBRETE_PSE(p));
+                  if (url) pendentes.push({ player: p, url, tipo: 'PSE' });
+                }
+              }
+            });
             return pendentes.length > 0 ? (
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
                 <Btn variant="ghost" onClick={() => setFilaLembretes({ lista: pendentes, indice: 0 })}>
@@ -19280,7 +19304,10 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                 </tr>
               </thead>
               <tbody>
-                {sortByPosition(players).map(p => {
+                {(() => {
+                  const sessaoHoje = sessions.find(s => s.date === todayDateStr);
+                  const precisaPseHoje = !!sessaoHoje && sessaoHoje.phase !== 'Descanso';
+                  return sortByPosition(players).map(p => {
                   const recs = monitoring.filter(m => m.playerId === p.id).sort((a, b) => new Date(b.date) - new Date(a.date));
                   const lastWellness = recs.find(r => typeof r.sono === 'number');
                   const pseRecs = recs.filter(r => typeof r.pse === 'number');
@@ -19294,8 +19321,12 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   // Só faz sentido lembrar quem ainda não respondeu hoje e
                   // tem um contacto guardado — sem as duas coisas, não há
                   // nada para onde mandar nem nada por que lembrar.
-                  const lembreteUrl = wellnessToday === null
+                  const lembreteWellnessUrl = wellnessToday === null
                     ? linkWhatsApp(p.contact, TEXTO_LEMBRETE_WELLNESS(p))
+                    : null;
+                  const todayPse = recs.find(r => r.date === todayDateStr && typeof r.pse === 'number');
+                  const lembretePseUrl = (precisaPseHoje && !todayPse)
+                    ? linkWhatsApp(p.contact, TEXTO_LEMBRETE_PSE(p))
                     : null;
                   return (
                     <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
@@ -19310,16 +19341,25 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                       <td style={{ ...td2, ...mono }} title={lastRpeTreino ? fmtDate(lastRpeTreino.date) : undefined}>{lastRpeTreino ? lastRpeTreino.pse : '—'}</td>
                       <td style={{ ...td2, ...mono, color: lastRpeJogo ? T.warn : T.mutedDim }} title={lastRpeJogo ? fmtDate(lastRpeJogo.date) : undefined}>{lastRpeJogo ? lastRpeJogo.pse : '—'}</td>
                       <td style={td2}>
-                        {lembreteUrl && (
-                          <a href={lembreteUrl} target="_blank" rel="noopener noreferrer" title="Lembrar por WhatsApp"
-                            style={{ display: 'inline-flex', color: '#25D366' }}>
-                            <MessageCircle size={16} />
-                          </a>
-                        )}
+                        <span style={{ display: 'inline-flex', gap: 8 }}>
+                          {lembreteWellnessUrl && (
+                            <a href={lembreteWellnessUrl} target="_blank" rel="noopener noreferrer" title="Lembrar Wellness por WhatsApp"
+                              style={{ display: 'inline-flex', color: '#25D366' }}>
+                              <MessageCircle size={16} />
+                            </a>
+                          )}
+                          {lembretePseUrl && (
+                            <a href={lembretePseUrl} target="_blank" rel="noopener noreferrer" title="Lembrar PSE por WhatsApp"
+                              style={{ display: 'inline-flex', color: '#25D366', opacity: 0.65 }}>
+                              <MessageCircle size={16} />
+                            </a>
+                          )}
+                        </span>
                       </td>
                     </tr>
                   );
-                })}
+                  });
+                })()}
               </tbody>
             </table>
           </div>
@@ -19449,13 +19489,13 @@ function FilaDeLembretes({ fila, onAvancar, onFechar }) {
   if (!atual) return null;
 
   return (
-    <Modal title="Lembrar por WhatsApp" subtitle={`${indice + 1} de ${lista.length}`} onClose={onFechar}>
+    <Modal title={`Lembrar ${atual.tipo} por WhatsApp`} subtitle={`${indice + 1} de ${lista.length}`} onClose={onFechar}>
       <div style={{ textAlign: 'center', padding: '10px 0 6px' }}>
         <div style={{ fontSize: 16, color: T.cream, fontWeight: 600, marginBottom: 4 }}>
           {atual.player.position ? `${atual.player.position} · ` : ''}{atual.player.name}
         </div>
         <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 22 }}>
-          Ainda não respondeu ao Wellness de hoje
+          {atual.tipo === 'PSE' ? 'Ainda não respondeu ao PSE de hoje' : 'Ainda não respondeu ao Wellness de hoje'}
         </div>
         <a
           href={atual.url} target="_blank" rel="noopener noreferrer"
