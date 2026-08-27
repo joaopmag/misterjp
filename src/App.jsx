@@ -1938,17 +1938,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           ::selection { background: ${T.gold}55; }
           input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
-          /* Barra de deslocamento fina e discreta para as tabelas largas
-             (Presenças, Classificação) que precisam mesmo de rolar na
-             horizontal — a barra cinzenta grossa do sistema, dentro de
-             uma caixa com moldura, destoava do resto da app. */
-          .mjp-scroll-fino::-webkit-scrollbar { height: 8px; width: 8px; }
-          .mjp-scroll-fino::-webkit-scrollbar-track { background: transparent; border: none; }
-          .mjp-scroll-fino::-webkit-scrollbar-thumb { background: ${T.line}; border-radius: 8px; border: none; }
-          .mjp-scroll-fino::-webkit-scrollbar-thumb:hover { background: ${T.mutedDim}; }
-          .mjp-scroll-fino::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
-          .mjp-scroll-fino::-webkit-scrollbar-corner { background: transparent; }
-          .mjp-scroll-fino { scrollbar-width: thin; scrollbar-color: ${T.line} transparent; }
+          /* Sem barra nenhuma — nem fina, nem grossa. Continua tudo a
+             deslocar-se na mesma (arrasto, roda do rato, gesto no
+             telemóvel); só deixa de haver qualquer traço a desenhar-se
+             por cima da tabela. Usado nas tabelas largas que precisam
+             de deslocamento próprio (Presenças, Classificação). */
+          .mjp-scroll-fino::-webkit-scrollbar { display: none; width: 0; height: 0; }
+          .mjp-scroll-fino { scrollbar-width: none; -ms-overflow-style: none; }
         `}</style>
         {previewKiosk && (
           <button onClick={() => setPreviewKiosk(false)} style={{
