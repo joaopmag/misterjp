@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import ReactDOMServer from 'react-dom/server';
+// SheetJS — lê e escreve ficheiros Excel diretamente no browser, sem
+// servidor nenhum. Precisa de ser instalado no projeto (`npm install
+// xlsx`) para isto compilar — ver nota junto de DocumentosApp.
+import * as XLSX from 'xlsx';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, Check, Loader2, Clock,
@@ -8,7 +12,7 @@ import {
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
-  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle
+  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -1716,6 +1720,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit, teamId);
   const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit, teamId);
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
+  const [documentos, setDocumentos, documentosReady] = useCollectionSync('documentos', notifyEdit, teamId);
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit, teamId);
   const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit, teamId);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit, teamId);
@@ -1763,7 +1768,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
     || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
-    || !desenvolvimentoReady || !standingsReady || !clinicoReady || !tarefasReady;
+    || !desenvolvimentoReady || !standingsReady || !clinicoReady || !tarefasReady || !documentosReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
   // lateral, quando o link inclui ?checkin=1 — é este o link a partilhar
@@ -1888,6 +1893,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     { id: 'biblioteca', label: 'Biblioteca', icon: Presentation },
     { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, badge: tarefasAMinhaPorta(tarefas, euId) },
     { id: 'diario', label: 'Diário', icon: BookOpen },
+    { id: 'documentos', label: 'Documentos', icon: FileSpreadsheet },
   ];
 
 
@@ -2301,6 +2307,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} />
           )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
+          {tab === 'documentos' && <DocumentosApp documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions} />}
         </div>
         </main>
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
@@ -3768,6 +3775,259 @@ function Stat({ value, label }) {
     <div style={{ textAlign: 'right' }}>
       <div style={{ ...display, fontSize: 26, color: T.warn, fontWeight: 600, lineHeight: 1 }}>{value}</div>
       <div style={{ fontSize: 10.5, color: T.cream, opacity: .75, marginTop: 3, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   DOCUMENTOS — modelos em branco que a app preenche sozinha
+
+   A IDEIA: o clube tem ficheiros próprios (Excel, Word) para preencher
+   à mão — e essa informação já está toda na app (presenças, jogos,
+   plantel). Em vez de escrever tudo duas vezes, carrega-se o modelo em
+   BRANCO uma vez só; sempre que for preciso um preenchido, a app gera-o
+   na hora, na memória do browser, e oferece para descarregar. Nada de
+   preenchido fica guardado na app — só o modelo original.
+
+   ESTA VERSÃO faz UM preenchimento à medida: a "Ficha Assiduidade" do
+   ficheiro modelo "estatística e assiduidade" do SC Salgueiros — 12
+   blocos mensais empilhados (Agosto a Julho), cada um com os jogadores
+   pela mesma ordem da folha "ESTATÍSTICA TOTAL" e um P/F por dia. Não é
+   um preenchedor genérico de qualquer Excel — é talhado a este modelo
+   em concreto. Se o clube tiver outros documentos para preencher de
+   forma parecida, cada um pede o seu próprio "tradutor" de dados.
+
+   DEPENDÊNCIA NOVA: isto usa a biblioteca "xlsx" (SheetJS) para ler e
+   escrever Excel dentro do browser. Sem ela instalada no projeto
+   (`npm install xlsx`), esta função não compila — ver a nota no
+   `import * as XLSX from 'xlsx'` no topo do ficheiro. */
+
+const MESES_PT = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+// Normaliza para comparar nomes de mês sem acentos/maiúsculas — o texto
+// do ficheiro modelo tem acentos ("Março"), o que se escreve à mão para
+// o comparar pode não ter.
+function semAcentos(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+/* Localiza, dentro da folha "Ficha Assiduidade", o bloco de um mês/ano
+   em concreto. Não assume posições fixas (linha 1, 37, 73...) — varre a
+   coluna A à procura do título "Ficha Assiduidade\n<Mês> <Ano>", porque
+   é mais resistente a pequenas diferenças entre cópias do modelo do que
+   confiar sempre nos mesmos números de linha.
+
+   Devolve as linhas-chave do bloco: título, cabeçalho dos dias, e a
+   primeira linha de jogador — os restantes jogadores (até 30) seguem
+   imediatamente a seguir, uma linha por jogador. */
+function localizarBlocoAssiduidade(sheet, mes, ano) {
+  const alvoMes = semAcentos(MESES_PT[mes]);
+  const ref = XLSX.utils.decode_range(sheet['!ref']);
+  for (let r = ref.s.r; r <= ref.e.r; r++) {
+    const cell = sheet[XLSX.utils.encode_cell({ r, c: 0 })];
+    const texto = cell && typeof cell.v === 'string' ? semAcentos(cell.v) : '';
+    // Só pelo NOME DO MÊS — o ano que vem escrito no título de cada
+    // bloco é o da época em que o modelo foi criado (ficou "2022"/
+    // "2023" gravado no texto), não se atualiza sozinho. Comparar
+    // também pelo ano nunca encontrava nada numa época mais recente.
+    if (texto.includes('ficha assiduidade') && texto.includes(alvoMes)) {
+      // Corrige o título com o ano a sério desta época, já agora.
+      cell.v = `Ficha Assiduidade \n${MESES_PT[mes]} ${ano}`;
+      return { linhaTitulo: r, linhaDias: r + 3, linhaNomes: r + 4, primeiraLinhaJogador: r + 5, maxJogadores: 30 };
+    }
+  }
+  return null;
+}
+
+/* P/F de UM jogador, num dia — 'P' se esteve presente nalguma sessão
+   desse dia, 'F' se havia sessão e não esteve, ou '' se não houve
+   treino/jogo nenhum marcado nesse dia (célula fica em branco, como no
+   modelo original). Junta sessões de treino E jogos (`matches`), porque
+   um dia de jogo também é assiduidade. */
+function presencaNoDia(playerId, dateStr, sessions, matches) {
+  const doDia = (sessions || []).filter(s => s.date === dateStr && s.phase !== 'Descanso');
+  const jogoDoDia = (matches || []).find(m => m.date === dateStr);
+  if (doDia.length === 0 && !jogoDoDia) return '';
+  const presenteEmTreino = doDia.some(s => (s.attendance || []).includes(playerId));
+  const presenteEmJogo = jogoDoDia ? (jogoDoDia.convocados || []).includes(playerId) : false;
+  return (presenteEmTreino || presenteEmJogo) ? 'P' : 'F';
+}
+
+/* Gera a Ficha de Assiduidade de um mês, devolve um novo workbook (não
+   mexe no original) pronto a descarregar. `players` já deve vir pela
+   ordem que se quer na folha — ver o comentário em cima do botão
+   "Gerar", que também escreve essa mesma ordem em ESTATÍSTICA TOTAL. */
+function gerarFichaAssiduidade(workbook, players, sessions, matches, mes, ano) {
+  const sheet = workbook.Sheets['Ficha Assiduidade'];
+  if (!sheet) throw new Error('A folha "Ficha Assiduidade" não existe neste modelo.');
+  const bloco = localizarBlocoAssiduidade(sheet, mes, ano);
+  if (!bloco) throw new Error(`Não encontrei o bloco de ${MESES_PT[mes]} ${ano} na Ficha Assiduidade — o modelo pode ter mudado.`);
+
+  const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+  players.slice(0, bloco.maxJogadores).forEach((p, i) => {
+    const linha = bloco.primeiraLinhaJogador + i;
+    for (let dia = 1; dia <= diasNoMes; dia++) {
+      const col = 2 + dia; // C = dia 1 (ver inspeção do modelo)
+      const dataStr = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+      const valor = presencaNoDia(p.id, dataStr, sessions, matches);
+      const endereco = XLSX.utils.encode_cell({ r: linha, c: col });
+      if (valor) sheet[endereco] = { t: 's', v: valor };
+      else delete sheet[endereco];
+    }
+  });
+  return workbook;
+}
+
+/* Escreve o plantel (pela ordem escolhida) em ESTATÍSTICA TOTAL!B6:B35 —
+   é essa coluna que TODOS os blocos da Ficha Assiduidade referenciam
+   por fórmula para o nome de cada jogador. Sem isto, a ficha continuava
+   a mostrar os nomes de exemplo do modelo ("Atleta 1 gr", etc.). */
+function escreverPlantelNaEstatistica(workbook, players) {
+  const sheet = workbook.Sheets['ESTATÍSTICA TOTAL'];
+  if (!sheet) return;
+  players.slice(0, 30).forEach((p, i) => {
+    const endereco = XLSX.utils.encode_cell({ r: 5 + i, c: 1 }); // B6 é r=5,c=1 em índice 0
+    sheet[endereco] = { t: 's', v: p.name };
+  });
+}
+
+function DocumentosApp({ documentos, setDocumentos, players, sessions }) {
+  const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
+  const fileInputRef = useRef(null);
+
+  const carregarFicheiro = (file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setDocumentos(prev => [...(prev || []), {
+        id: uid(), nome: file.name.replace(/\.[^.]+$/, ''), fileName: file.name,
+        dataUrl: reader.result, tamanho: file.size, criadoEm: new Date().toISOString(),
+      }]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const apagar = (doc) => askConfirm({
+    title: 'Apagar modelo?',
+    label: doc.nome,
+    note: 'O modelo em branco é apagado da app. Isto não afeta nenhum ficheiro que já tenhas descarregado.',
+    confirmLabel: 'Apagar',
+    destructive: true,
+    onConfirm: () => setDocumentos(prev => prev.filter(d => d.id !== doc.id)),
+  });
+
+  return (
+    <div>
+      <SectionHeader title="Documentos" subtitle="Modelos em branco que a app preenche sozinha, na hora."
+        action={<Btn onClick={() => fileInputRef.current?.click()}><Plus size={15} /> Carregar modelo</Btn>} />
+      <input
+        ref={fileInputRef} type="file" accept=".xlsx,.xls,.docx,.doc,.pdf" style={{ display: 'none' }}
+        onChange={e => { const f = e.target.files[0]; if (f) carregarFicheiro(f); e.target.value = ''; }}
+      />
+
+      <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 20, maxWidth: 640 }}>
+        Carrega aqui o modelo em branco (Excel, Word ou PDF). A app guarda só esse original — nunca guarda
+        as cópias preenchidas: cada vez que geras uma, é criada na hora e descarregada logo a seguir.
+      </div>
+
+      {(documentos || []).length === 0 ? (
+        <EmptyState text="Ainda sem modelos carregados." action={<Btn onClick={() => fileInputRef.current?.click()}><Plus size={15} /> Carregar modelo</Btn>} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {documentos.map(doc => (
+            <div key={doc.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <FileSpreadsheet size={20} color={T.mutedDim} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.nome}</div>
+                  <div style={{ fontSize: 11, color: T.mutedDim }}>{doc.fileName}</div>
+                </div>
+                {/^\.xlsx?$/i.test(doc.fileName.slice(doc.fileName.lastIndexOf('.'))) && (
+                  <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
+                    <FileSpreadsheet size={14} /> Gerar Ficha de Assiduidade
+                  </Btn>
+                )}
+                <button onClick={() => apagar(doc)} title="Apagar modelo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4 }}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+              {aGerar === doc.id && (
+                <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} onClose={() => setAGerar(null)} />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GerarFichaAssiduidadeForm({ doc, players, sessions, onClose }) {
+  const agora = new Date();
+  const [mes, setMes] = useState(agora.getMonth());
+  const [ano, setAno] = useState(agora.getFullYear());
+  const [erro, setErro] = useState('');
+  const [aProcessar, setAProcessar] = useState(false);
+
+  const gerar = async () => {
+    setErro('');
+    setAProcessar(true);
+    try {
+      // O ficheiro está guardado como data-URL base64 — dá para o SheetJS
+      // ler diretamente, sem passar por um pedido de rede.
+      const resposta = await fetch(doc.dataUrl);
+      const buffer = await resposta.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellFormula: true, cellStyles: true });
+
+      // A mesma ordem entra nos dois sítios: na coluna dos nomes (para
+      // ESTATÍSTICA TOTAL, de onde a Ficha Assiduidade os busca por
+      // fórmula) e nas linhas P/F da própria ficha.
+      const ordenados = sortByPosition(players);
+      escreverPlantelNaEstatistica(workbook, ordenados);
+      gerarFichaAssiduidade(workbook, ordenados, sessions, [], mes, ano);
+
+      // Os nomes da Ficha Assiduidade vêm por FÓRMULA (de ESTATÍSTICA
+      // TOTAL) — o SheetJS não recalcula fórmulas, só as escreve; é o
+      // Excel/Sheets a recalcular ao abrir o ficheiro. Esta marca força
+      // esse recálculo logo na abertura, mesmo que o cálculo automático
+      // esteja desligado nas definições de quem o for abrir.
+      workbook.Workbook = workbook.Workbook || {};
+      workbook.Workbook.CalcPr = { fullCalcOnLoad: true };
+
+      const saida = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([saida], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Ficha Assiduidade - ${MESES_PT[mes]} ${ano}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      onClose();
+    } catch (e) {
+      setErro(e.message || 'Não consegui gerar o ficheiro.');
+    } finally {
+      setAProcessar(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
+      <div style={{ ...FIELD_GRID }}>
+        <Field label="Mês">
+          <Select value={mes} onChange={e => setMes(Number(e.target.value))}>
+            {MESES_PT.map((m, i) => <option key={m} value={i}>{m}</option>)}
+          </Select>
+        </Field>
+        <Field label="Ano">
+          <Input type="number" value={ano} onChange={e => setAno(Number(e.target.value))} />
+        </Field>
+      </div>
+      {erro && <div style={{ fontSize: 12, color: T.bad, marginTop: 10 }}>{erro}</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={gerar} disabled={aProcessar}>
+          {aProcessar ? <Loader2 size={15} className="spin" /> : <Download size={15} />} Gerar e descarregar
+        </Btn>
+      </div>
     </div>
   );
 }
