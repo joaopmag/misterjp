@@ -3884,6 +3884,15 @@ function shortFullName(name) {
    isso limpa-se para ficar só dígitos e o "+", e só se considera válido
    com pelo menos 8 dígitos. Sem isso, devolve null e quem chamar decide
    o que mostrar (normalmente, nada). */
+/* Identifica sempre que é uma mensagem automática do sistema — não uma
+   mensagem pessoal do treinador. Importa para o atleta perceber a
+   origem (não é o treinador que escreveu isto à mão, é a app), e para
+   o treinador não ficar com o nome associado a uma mensagem seca de
+   lembrete. */
+const TEXTO_LEMBRETE_WELLNESS = (p) => (
+  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje — consegues responder já? 💪\n\n(Mensagem automática enviada pelo sistema de gestão da equipa.)`
+);
+
 function linkWhatsApp(contact, mensagem) {
   if (!contact) return null;
   const limpo = String(contact).replace(/[^\d+]/g, '');
@@ -18997,6 +19006,20 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
   // em vez de duas rotas — é a mesma área, só muda o que se está a olhar.
   const [subTab, setSubTab] = useState('wellness');
   const openBoard = (type) => { setModalType(type); setModal(true); };
+  /* FILA DE LEMBRETES — uma conversa de cada vez, sempre.
+
+     O WhatsApp não tem um link que abra várias conversas ao mesmo
+     tempo — isso só a API oficial do WhatsApp Business faz, e essa
+     exige conta verificada pela Meta e um servidor próprio a guardar
+     credenciais, isto é, uma infraestrutura à parte da app.
+
+     O que dá para fazer sem isso é encadear os lembretes: mostra-se um
+     jogador de cada vez, com um botão a abrir o WhatsApp já com a
+     mensagem escrita (um verdadeiro toque do treinador, por isso nunca
+     é bloqueado como pop-up) e "Seguinte" avança para o próximo. Não é
+     "enviar a todos de uma vez", mas tira o trabalho de ir à procura de
+     cada jogador na tabela, um a um. */
+  const [filaLembretes, setFilaLembretes] = useState(null); // { lista: [{ player, url }], indice }
 
   /* O link leva a equipa. Sem ela, o servidor tem de adivinhar de quem é
      o código — e com vários clubes na mesma base, adivinhar mal significa
@@ -19223,6 +19246,27 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 
       {players.length > 0 && (
         <Panel title="Plantel — estado atual">
+          {(() => {
+            // A mesma lista que dá os ícones individuais da tabela,
+            // calculada uma vez aqui para o botão "Lembrar todos" e
+            // reaproveitada célula a célula mais abaixo.
+            const pendentes = sortByPosition(players)
+              .map(p => {
+                const recs = monitoring.filter(m => m.playerId === p.id);
+                const todayWellness = recs.find(r => r.date === todayDateStr && typeof r.sono === 'number');
+                if (todayWellness) return null;
+                const url = linkWhatsApp(p.contact, TEXTO_LEMBRETE_WELLNESS(p));
+                return url ? { player: p, url } : null;
+              })
+              .filter(Boolean);
+            return pendentes.length > 0 ? (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+                <Btn variant="ghost" onClick={() => setFilaLembretes({ lista: pendentes, indice: 0 })}>
+                  <MessageCircle size={15} color="#25D366" /> Lembrar todos ({pendentes.length})
+                </Btn>
+              </div>
+            ) : null;
+          })()}
           <div style={{ overflowX: 'auto' }}>
             <table>
               <thead>
@@ -19251,7 +19295,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   // tem um contacto guardado — sem as duas coisas, não há
                   // nada para onde mandar nem nada por que lembrar.
                   const lembreteUrl = wellnessToday === null
-                    ? linkWhatsApp(p.contact, `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje — consegues responder já? 💪`)
+                    ? linkWhatsApp(p.contact, TEXTO_LEMBRETE_WELLNESS(p))
                     : null;
                   return (
                     <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
@@ -19386,7 +19430,62 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
           onClose={() => setModal(false)} onSave={save}
         />
       )}
+
+      {filaLembretes && (
+        <FilaDeLembretes fila={filaLembretes} onAvancar={setFilaLembretes} onFechar={() => setFilaLembretes(null)} />
+      )}
     </div>
+  );
+}
+
+/* Um jogador de cada vez, sempre — ver a nota no "FILA DE LEMBRETES" lá
+   em cima, em Monitorizacao, sobre porque não dá para abrir todas as
+   conversas de uma só vez. */
+function FilaDeLembretes({ fila, onAvancar, onFechar }) {
+  const { lista, indice } = fila;
+  const atual = lista[indice];
+  const ultimo = indice === lista.length - 1;
+
+  if (!atual) return null;
+
+  return (
+    <Modal title="Lembrar por WhatsApp" subtitle={`${indice + 1} de ${lista.length}`} onClose={onFechar}>
+      <div style={{ textAlign: 'center', padding: '10px 0 6px' }}>
+        <div style={{ fontSize: 16, color: T.cream, fontWeight: 600, marginBottom: 4 }}>
+          {atual.player.position ? `${atual.player.position} · ` : ''}{atual.player.name}
+        </div>
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 22 }}>
+          Ainda não respondeu ao Wellness de hoje
+        </div>
+        <a
+          href={atual.url} target="_blank" rel="noopener noreferrer"
+          onClick={() => {
+            // Um toque = uma conversa aberta e avançada. Se o treinador
+            // preferir não mandar a este, "Saltar" (abaixo) avança sem abrir.
+            setTimeout(() => {
+              if (ultimo) onFechar(); else onAvancar({ lista, indice: indice + 1 });
+            }, 300);
+          }}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 10,
+            background: '#25D366', color: '#0b1a10', fontWeight: 600, fontSize: 14.5, textDecoration: 'none', ...body,
+          }}
+        >
+          <MessageCircle size={18} /> Abrir WhatsApp
+        </a>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 20, borderTop: `1px solid ${T.line}`, paddingTop: 14 }}>
+        <button
+          onClick={() => (ultimo ? onFechar() : onAvancar({ lista, indice: indice + 1 }))}
+          style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13, ...body }}
+        >
+          Saltar {!ultimo && '(sem abrir)'}
+        </button>
+        <button onClick={onFechar} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13, ...body }}>
+          Parar aqui
+        </button>
+      </div>
+    </Modal>
   );
 }
 
