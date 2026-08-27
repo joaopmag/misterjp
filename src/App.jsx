@@ -3441,27 +3441,37 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
           Código de convite
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
-          <span style={{ ...mono, fontSize: 26, color: T.gold, letterSpacing: '.22em' }}>{equipa.codigo}</span>
-          <Btn variant="ghost" onClick={copiarCodigo}>
-            {copiado ? <><Check size={15} /> Copiado</> : <><Copy size={15} /> Copiar</>}
-          </Btn>
-          {/* Só quem administra: gerar um código novo corta o acesso de
-              quem só tinha o código (ex.: alguém que já saiu e o
-              guardou) — é uma ação com peso a mais para deixar a
-              qualquer membro. */}
-          {souDono && (
-            <Btn variant="ghost" onClick={regenerarCodigo}>
-              <RefreshCw size={15} /> Gerar novo código
-            </Btn>
-          )}
-        </div>
-        {/* Isto é uma consequência que não se adivinha, por isso fica. */}
-        <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.6, marginBottom: 20 }}>
-          Quem tiver este código entra na equipa e vê tudo — plantel, presenças, boletim clínico.
-          Trata-o como uma palavra-passe. Se alguém sair da equipa e ainda tiver o código guardado,
-          gera um código novo para lhe cortar essa entrada — quem já é membro não é afetado.
-        </div>
+        {/* Só quem administra vê o código — não só quem o pode gerar de
+            novo. Quantas mais pessoas o veem (e o podem fotografar,
+            copiar, reencaminhar), mais difícil é saber por onde é que
+            ele "vazou" — e menos vale a pena gerar um novo, se os
+            outros membros continuam todos a poder vê-lo e partilhá-lo
+            à mesma. */}
+        {souDono ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+              <span style={{ ...mono, fontSize: 26, color: T.gold, letterSpacing: '.22em' }}>{equipa.codigo}</span>
+              <Btn variant="ghost" onClick={copiarCodigo}>
+                {copiado ? <><Check size={15} /> Copiado</> : <><Copy size={15} /> Copiar</>}
+              </Btn>
+              <Btn variant="ghost" onClick={regenerarCodigo}>
+                <RefreshCw size={15} /> Gerar novo código
+              </Btn>
+            </div>
+            {/* Isto é uma consequência que não se adivinha, por isso fica. */}
+            <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.6, marginBottom: 20 }}>
+              Quem tiver este código entra na equipa e vê tudo — plantel, presenças, boletim clínico.
+              Trata-o como uma palavra-passe. Só tu o vês, e é assim de propósito — se alguém sair da
+              equipa e ainda tiver o código guardado, gera um código novo para lhe cortar essa entrada;
+              quem já é membro não é afetado.
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.6, marginBottom: 20 }}>
+            Só quem administra a equipa vê o código de convite. Se precisares de convidar alguém,
+            pede-o a essa pessoa.
+          </div>
+        )}
 
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
           Emblema
