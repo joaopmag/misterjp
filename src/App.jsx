@@ -15454,32 +15454,31 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
   const ordered = [...days].sort((a, b) => new Date(a.date) - new Date(b.date));
   if (ordered.length === 0 || players.length === 0) return null;
 
-  /* A COLUNA DO NOME FICA FIXA; O CABEÇALHO JÁ NÃO.
+  /* CABEÇALHO E COLUNA DO NOME FIXOS — SEM PARECER UMA CAIXA À PARTE.
 
-     Antes o quadro tinha `maxHeight` + scroll próprio, só para que o
-     cabeçalho ficasse sempre à vista (`position:sticky` prende-se ao
-     ancestral que faz scroll — sem um "ancestral" com altura limitada,
-     não há a quem prender-se). Era esse scroll próprio, dentro de uma
-     caixa com moldura, que ficava com ar de "caixa dentro da página".
+     `position:sticky` só funciona presa a um ancestral que faça scroll;
+     sem lhe dar altura limitada (`maxHeight` + `overflow`), não há a
+     quem o cabeçalho se prender, e perde-se de vista ao descer a lista
+     de jogadores. Isso continua a ser verdade — por isso o scroll
+     próprio volta.
 
-     Sem essa caixa, quem rola a página (não um scroll à parte) é o
-     ecrã todo — e um elemento não pode ficar preso a dois sítios ao
-     mesmo tempo: ou fica preso ao scroll da PÁGINA (e perde-se o
-     cabeçalho ao descer), ou fica preso a um scroll PRÓPRIO (e volta a
-     caixa). Ficou a coluna do nome fixa (preende-se ao scroll
-     HORIZONTAL, que continua a acontecer aqui dentro — a tabela é mais
-     larga do que o ecrã) e o cabeçalho solto, a subir com o resto da
-     página como qualquer título de tabela. */
+     O que dava ar de "caixa dentro da página" não era o scroll em si:
+     era a MOLDURA (borda + cantos arredondados) à volta dele, a marcar
+     visualmente onde a caixa começa e acaba. Sem moldura, e com uma
+     barra de deslocamento fina e da cor do fundo (ver `.mjp-scroll-fino`
+     mais acima), o scroll continua a acontecer aqui dentro — mas não se
+     vê a "caixa", só a tabela. */
   const headCell = {
     padding: '6px 4px', fontSize: 10, color: T.muted, textAlign: 'center',
     borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap', minWidth: 78,
-    background: T.surface,
+    position: 'sticky', top: 0, background: T.surface, zIndex: 2,
   };
   const nameCell = {
     padding: '6px 8px', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap',
     position: 'sticky', left: 0, background: T.surface, zIndex: 1, borderRight: `1px solid ${T.line}`,
   };
-  const cornerCell = { ...headCell, ...nameCell, zIndex: 2 };
+  // O canto pertence aos dois eixos, e fica por cima de ambos.
+  const cornerCell = { ...headCell, ...nameCell, position: 'sticky', top: 0, left: 0, zIndex: 3 };
 
   return (
     <div style={{ marginBottom: 22 }}>
@@ -15489,14 +15488,14 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
         </div>
         {monthControl}
       </div>
-      {/* Só rola na horizontal (muitos dias) — a barra fina do estilo
-          `.mjp-scroll-fino` evita o "azul e cinzento do sistema
-          operativo" a destoar do resto. Na vertical, a tabela cresce
-          livremente e é a PÁGINA que rola, sem caixa nem scroll à
-          parte. */}
+      {/* Sem moldura (nem borda, nem cantos arredondados) — é isso que
+          dava o ar de caixa à parte. O scroll próprio continua a
+          existir (é o que prende o cabeçalho e a coluna do nome), só
+          que agora sem nada a desenhar-lhe os limites; a barra fina do
+          `.mjp-scroll-fino` é a única pista visual de que aqui se
+          desliza. */}
       <div className="mjp-scroll-fino" style={{
-        overflowX: 'auto', overflowY: 'hidden',
-        border: `1px solid ${T.line}`, borderRadius: 10,
+        overflow: 'auto', maxHeight: 'calc(100vh - 220px)',
       }}>
         <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
           <thead>
