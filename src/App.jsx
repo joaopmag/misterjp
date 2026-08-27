@@ -4354,7 +4354,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
 
   const corDoTexto = editavel ? '#fff' : '#A6192E';
   const tagStyle = {
-    display: 'inline-block', padding: '2px 7px', borderRadius: 5,
+    display: 'inline-block', padding: '1px 5px', borderRadius: 4,
     // No ecrã fica preenchido, como sempre. Na folha impressa a maior
     // parte dos telemóveis/impressoras não imprime cor de fundo por
     // omissão ("imprimir gráficos de fundo" desligado) — e um rótulo
@@ -4363,7 +4363,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
     // vê com ou sem cor de fundo.
     background: editavel ? '#B5393F' : 'transparent',
     border: editavel ? 'none' : '1px solid #A6192E',
-    color: corDoTexto, fontSize: 9.5 * escala, fontWeight: 700, letterSpacing: '.03em',
+    color: corDoTexto, fontSize: 7.5 * escala, fontWeight: 700, letterSpacing: '.02em',
   };
   const nomeStyle = (on) => ({
     /* O tamanho base é o do ECRÃ. A folha impressa passa uma `escala`
