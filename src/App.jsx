@@ -5547,21 +5547,32 @@ function Exercicios({ exercises, setExercises, meta }) {
    treinador explica no quadro. */
 
 /* Os momentos de uma ideia, prontos a desenhar. Sem sequência gravada
-   devolve uma imagem só. */
+   devolve uma imagem só.
+
+   SÓ ENTRAM OS PASSOS COM SETAS. Um passo sem seta nenhuma não mostra
+   movimento — é só uma posição parada, e uma sequência impressa é
+   precisamente "o que se move e para onde"; sem isso, é só mais uma
+   imagem igual à anterior a ocupar espaço na folha. Filtra-se primeiro
+   e só depois se numeram os "Momento 1, 2, 3..." — senão ficavam
+   buracos na numeração (1, 3, 4) sempre que um passo do meio fosse
+   descartado, o que lê mal.
+
+   O resultado final entra sempre, com ou sem seta: não é um passo, é
+   para onde as setas do último passo apontam — sem ele a última imagem
+   com setas nunca mostra onde a jogada chega. */
 function passosDaIdeia(diagram) {
   const seq = (diagram && diagram.sequence) || [];
   if (!seq.length) {
     return [{ elements: (diagram && diagram.elements) || [], arrows: (diagram && diagram.arrows) || [], rotulo: null }];
   }
-  const passos = seq.map((step, i) => ({
-    elements: stepElements(step, diagram),
-    arrows: stepStaticArrows(step, diagram),
-    rotulo: `${i + 1}`,
-  }));
+  const comMovimento = seq
+    .map(step => ({ elements: stepElements(step, diagram), arrows: stepStaticArrows(step, diagram) }))
+    .filter(p => p.arrows.length > 0)
+    .map((p, i) => ({ ...p, rotulo: `${i + 1}` }));
   // O estado final não é um passo: é onde a jogada acaba. Sem ele, a
   // última imagem mostra setas que nunca se vê chegar a lado nenhum.
-  passos.push({ elements: (diagram && diagram.elements) || [], arrows: [], rotulo: 'fim' });
-  return passos;
+  comMovimento.push({ elements: (diagram && diagram.elements) || [], arrows: [], rotulo: 'fim' });
+  return comMovimento;
 }
 
 /* Uma ideia dentro do dossier: cabeçalho, descrição e a tira de imagens.
