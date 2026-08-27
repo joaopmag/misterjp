@@ -2307,7 +2307,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} />
           )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
-          {tab === 'documentos' && <DocumentosApp documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions} />}
+          {tab === 'documentos' && <DocumentosApp documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions} teamId={teamId} />}
         </div>
         </main>
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
@@ -3891,19 +3891,44 @@ function escreverPlantelNaEstatistica(workbook, players) {
   });
 }
 
-function DocumentosApp({ documentos, setDocumentos, players, sessions }) {
+function DocumentosApp({ documentos, setDocumentos, players, sessions, teamId }) {
   const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
+  const [aCarregar, setACarregar] = useState(false);
+  const [erro, setErro] = useState('');
   const fileInputRef = useRef(null);
 
-  const carregarFicheiro = (file) => {
-    const reader = new FileReader();
-    reader.onload = () => {
+  /* O FICHEIRO VAI PARA O STORAGE, NÃO PARA A LINHA DA TABELA.
+
+     Um Excel de poucos megabytes já chega para o Postgres recusar a
+     gravação ("statement timeout") quando o ficheiro vai espremido em
+     base64 dentro da própria linha — o mesmo problema que a app já
+     tinha para vídeos grandes. Para vídeo, a solução foi um link do
+     Google Drive (só embutir, nunca ler os bytes). Aqui não dá: para
+     preencher o Excel, a app tem mesmo de LER o ficheiro por dentro —
+     e ler um ficheiro do Drive por código exigiria autorização OAuth
+     da Google, uma peça bem maior.
+
+     A correção a sério: o ficheiro vai para o Supabase Storage (feito
+     de propósito para ficheiros, sem o limite de tamanho de uma linha
+     da base de dados) — e a tabela `documentos` guarda só o CAMINHO
+     onde ele está, um texto pequeno. Precisa de um balde ("bucket")
+     chamado "documentos" criado no Supabase — ver o SQL fornecido. */
+  const carregarFicheiro = async (file) => {
+    setErro('');
+    setACarregar(true);
+    try {
+      const caminho = `${teamId}/${uid()}-${file.name}`;
+      const { error } = await supabase.storage.from('documentos').upload(caminho, file, { upsert: false });
+      if (error) throw error;
       setDocumentos(prev => [...(prev || []), {
         id: uid(), nome: file.name.replace(/\.[^.]+$/, ''), fileName: file.name,
-        dataUrl: reader.result, tamanho: file.size, criadoEm: new Date().toISOString(),
+        storagePath: caminho, tamanho: file.size, criadoEm: new Date().toISOString(),
       }]);
-    };
-    reader.readAsDataURL(file);
+    } catch (e) {
+      setErro(`Não consegui carregar o ficheiro: ${e.message || e}. Confirma que o balde "documentos" existe no Supabase Storage.`);
+    } finally {
+      setACarregar(false);
+    }
   };
 
   const apagar = (doc) => askConfirm({
@@ -3912,13 +3937,20 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions }) {
     note: 'O modelo em branco é apagado da app. Isto não afeta nenhum ficheiro que já tenhas descarregado.',
     confirmLabel: 'Apagar',
     destructive: true,
-    onConfirm: () => setDocumentos(prev => prev.filter(d => d.id !== doc.id)),
+    onConfirm: async () => {
+      if (doc.storagePath) {
+        try { await supabase.storage.from('documentos').remove([doc.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
+      }
+      setDocumentos(prev => prev.filter(d => d.id !== doc.id));
+    },
   });
 
   return (
     <div>
       <SectionHeader title="Documentos" subtitle="Modelos em branco que a app preenche sozinha, na hora."
-        action={<Btn onClick={() => fileInputRef.current?.click()}><Plus size={15} /> Carregar modelo</Btn>} />
+        action={<Btn onClick={() => fileInputRef.current?.click()} disabled={aCarregar}>
+          {aCarregar ? <Loader2 size={15} className="spin" /> : <Plus size={15} />} Carregar modelo
+        </Btn>} />
       <input
         ref={fileInputRef} type="file" accept=".xlsx,.xls,.docx,.doc,.pdf" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files[0]; if (f) carregarFicheiro(f); e.target.value = ''; }}
@@ -3928,6 +3960,7 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions }) {
         Carrega aqui o modelo em branco (Excel, Word ou PDF). A app guarda só esse original — nunca guarda
         as cópias preenchidas: cada vez que geras uma, é criada na hora e descarregada logo a seguir.
       </div>
+      {erro && <div style={{ fontSize: 12.5, color: T.bad, marginBottom: 16, maxWidth: 640 }}>{erro}</div>}
 
       {(documentos || []).length === 0 ? (
         <EmptyState text="Ainda sem modelos carregados." action={<Btn onClick={() => fileInputRef.current?.click()}><Plus size={15} /> Carregar modelo</Btn>} />
@@ -3972,10 +4005,12 @@ function GerarFichaAssiduidadeForm({ doc, players, sessions, onClose }) {
     setErro('');
     setAProcessar(true);
     try {
-      // O ficheiro está guardado como data-URL base64 — dá para o SheetJS
-      // ler diretamente, sem passar por um pedido de rede.
-      const resposta = await fetch(doc.dataUrl);
-      const buffer = await resposta.arrayBuffer();
+      // O ficheiro vive no Supabase Storage — descarrega-se por dentro
+      // do próprio browser, com a mesma sessão já autenticada da app
+      // (nada de pedir ao utilizador para se autenticar outra vez).
+      const { data: ficheiro, error } = await supabase.storage.from('documentos').download(doc.storagePath);
+      if (error) throw error;
+      const buffer = await ficheiro.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellFormula: true, cellStyles: true });
 
       // A mesma ordem entra nos dois sítios: na coluna dos nomes (para
