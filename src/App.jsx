@@ -4208,42 +4208,42 @@ const TATICAS = {
      lateral, que é onde jogam. */
   '4-3-3': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.90], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.10], de: ['DE'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.96], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.58], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.42], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.04], de: ['DE'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC', 'MD'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC', 'MD'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.50, 0.32], de: ['MC', 'MOC'] },
-    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.90], de: ['ED'] },
-    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.10], de: ['EE'] },
-    { id: 'PL', rotulo: 'PL', ponto: [0.91, 0.50], de: ['PL'] },
+    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.96], de: ['ED'] },
+    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.04], de: ['EE'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.94, 0.56], de: ['PL'] },
   ],
   '4-4-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.90], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.10], de: ['DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.90], de: ['MD', 'ED'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.96], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.58], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.42], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.04], de: ['DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.96], de: ['MD', 'ED'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.44, 0.62], de: ['MC', 'MOC'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.44, 0.38], de: ['MC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.10], de: ['EE'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.04], de: ['EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
   '4-2-3-1': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
-    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.90], de: ['DD'] },
-    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.63], de: ['DC'] },
-    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.37], de: ['DC'] },
-    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.10], de: ['DE'] },
+    { id: 'DD', rotulo: 'DD', ponto: [0.19, 0.96], de: ['DD'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.20, 0.58], de: ['DC'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.42], de: ['DC'] },
+    { id: 'DE', rotulo: 'DE', ponto: [0.19, 0.04], de: ['DE'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC', 'MD'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC'] },
-    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.90], de: ['ED'] },
+    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.96], de: ['ED'] },
     { id: 'MOC2', rotulo: 'MOC', ponto: [0.60, 0.50], de: ['MOC'] },
-    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.10], de: ['EE'] },
-    { id: 'PL', rotulo: 'PL', ponto: [0.90, 0.50], de: ['PL'] },
+    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.04], de: ['EE'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.93, 0.56], de: ['PL'] },
   ],
   '3-5-2': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
@@ -4334,8 +4334,8 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
      e só encolhe quando mesmo é preciso caber mais nomes na mesma
      zona. */
   const maisCheio = Math.max(1, ...lugares.map(l => (l.lista || []).length));
-  const fatorNomes = maisCheio <= 2 ? 1 : maisCheio === 3 ? 0.82 : maisCheio === 4 ? 0.68 : maisCheio === 5 ? 0.58 : 0.5;
-  const alturaLinha = 1.5 - (1 - fatorNomes) * 0.55;
+  const fatorNomes = maisCheio <= 2 ? 1 : maisCheio === 3 ? 0.68 : maisCheio === 4 ? 0.56 : maisCheio === 5 ? 0.48 : 0.4;
+  const alturaLinha = 1.45 - (1 - fatorNomes) * 0.5;
 
   /* O GR VOLTA PARA DENTRO DO CAMPO.
 
@@ -4439,7 +4439,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
               /* Um fundo (quase) sólido só no lugar mais cheio evita que,
                  mesmo depois de tudo isto, um resto de transbordo de um
                  lugar vizinho se leia por cima deste. */
-              background: l.lista.length >= 4 ? (editavel ? '#1E3A24' : '#fff') : 'transparent',
+              background: l.lista.length >= 3 ? (editavel ? '#1E3A24' : '#fff') : 'transparent',
             }}
           >
             {conteudoDoLugar(l)}
