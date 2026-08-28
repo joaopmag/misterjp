@@ -1378,6 +1378,7 @@ const TextArea = React.forwardRef(function TextArea(props, ref) {
    limite passa a ser a largura da janela. */
 function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage }) {
   const estreito = useIsMobile(620);
+  useModalHistory(onClose);
   // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
   // são quase todas de edição (exercício, sessão, jogo, jogador...) e um
   // clique acidental fora — muito fácil de dar ao arrastar peças no editor
@@ -1480,9 +1481,9 @@ function SubTabs({ value, onChange, tabs }) {
         const on = value === t.id;
         return (
           <button key={t.id} type="button" onClick={() => onChange(t.id)} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7,
+            display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, flexGrow: 0,
             padding: '7px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', ...body,
-            fontWeight: on ? 600 : 500,
+            fontWeight: on ? 600 : 500, whiteSpace: 'nowrap',
             background: on ? '#B5393F' : 'transparent',
             color: on ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${on ? '#B5393F' : T.line}`,
@@ -1613,6 +1614,74 @@ function useIsMobile(breakpoint = 860) {
     return () => window.removeEventListener('resize', onResize);
   }, [breakpoint]);
   return isMobile;
+}
+
+/* RETROCEDER NO BROWSER DEVOLVE À ABA DE ANTES, NÃO À LISTA DESTA ABA.
+
+   Abrir o perfil de um jogador, a ficha de um jogo, ou qualquer vista
+   de detalhe destas — em cheio, a substituir o conteúdo da aba — nunca
+   mexia no endereço nem no histórico do browser: era só estado do
+   React. Resultado: ao retroceder, o browser ia para a última vez que
+   o ENDEREÇO mudou (a última mudança de aba, ex.: #jogos → #plantel),
+   nunca para "antes de abrir este jogador" — porque, aos olhos do
+   browser, essa abertura nunca tinha acontecido.
+
+   Este hook empurra uma entrada extra no histórico assim que a vista
+   de detalhe abre (mesmo endereço, só um marcador). Retroceder nessa
+   entrada é o que o browser já sabe fazer sozinho — e é isso que faz
+   cair de volta na aba anterior, não na lista desta aba.
+
+   Para o botão "Voltar" DENTRO da app dar o mesmo resultado, ele deve
+   chamar `back()` (devolvido por este hook) em vez de fechar a vista
+   diretamente — assim há só UM caminho a fechar a vista (retroceder no
+   histórico), e os dois gatilhos (botão da app, botão do telemóvel/
+   browser) ficam sempre de acordo, sem risco de uma entrada de
+   histórico ficar esquecida por trás. */
+function useDetailBack(aberto, fechar) {
+  const marcado = useRef(false);
+  useEffect(() => {
+    if (!aberto) { marcado.current = false; return undefined; }
+    window.history.pushState({ mjpDetalhe: true }, '', window.location.hash);
+    marcado.current = true;
+    const onPop = () => { marcado.current = false; fechar(); };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberto]);
+  const back = () => {
+    if (marcado.current) window.history.back();
+    else fechar();
+  };
+  return back;
+}
+
+/* A MESMA IDEIA, MAS PARA QUALQUER Modal — sem precisar de tocar em
+   cada botão "Cancelar"/"Guardar"/X de cada formulário da app, um a
+   um.
+
+   Um Modal só existe montado enquanto está aberto (o padrão em toda a
+   app é `{modal && <Modal onClose={...}>}`) — ou seja, ABRIR é montar
+   e FECHAR é desmontar, seja qual for o botão que o motivou. Aproveita-
+   -se exatamente isso: ao montar, empurra-se uma marca no histórico;
+   ao desmontar (por QUALQUER motivo — X, Cancelar, Guardar, ou o
+   próprio retroceder do browser), confirma-se que essa marca foi
+   mesmo consumida. Se ainda lá estiver (fechou-se por um botão da
+   app, não pelo browser), consome-se sozinho — assim nunca fica uma
+   marca por trás à espera de um retroceder que já não serve para
+   nada, e o retroceder do browser passa a fechar QUALQUER janela desta
+   app, em qualquer aba, sem precisar de dizer isso janela a janela. */
+function useModalHistory(onClose) {
+  const consumida = useRef(false);
+  useEffect(() => {
+    window.history.pushState({ mjpModal: true }, '', window.location.hash);
+    const onPop = () => { consumida.current = true; onClose(); };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (!consumida.current) window.history.back();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 }
 
 function BotaoTopo({ alvoRef, isMobile }) {
@@ -1945,7 +2014,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     { id: 'desenvolvimento', label: 'Desenvolvimento', icon: TrendingUp },
     { id: 'scouting', label: 'Scouting', icon: Search },
     { id: 'biblioteca', label: 'Biblioteca', icon: Presentation },
-    { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, badge: tarefasAMinhaPorta(tarefas, euId) },
+    { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, badge: tarefasAMinhaPorta(tarefas, euId, { sessions, matches, players, monitoring }) },
     { id: 'diario', label: 'Diário', icon: BookOpen },
   ];
 
@@ -2368,7 +2437,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'tarefas' && (
-            <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} />
+            <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId}
+              sessions={sessions} matches={matches} players={players} monitoring={monitoring} />
           )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
         </div>
@@ -2454,11 +2524,14 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             página. Fecha-se com um clique, sem sair daqui. */}
         {(() => {
           const hoje = todayStr();
+          const ctx = { sessions, matches, players, monitoring };
           const minhas = (tarefas || [])
-            .filter(t => t.estado !== 'feita'
-              && (t.responsavel === euId || !t.responsavel)
-              && t.prazo && t.prazo <= hoje)
-            .sort((a, b) => String(a.prazo).localeCompare(String(b.prazo)));
+            .filter(t => (t.responsavel === euId || !t.responsavel) && (
+              t.recorrencia
+                ? tarefaAtivaHoje(t, hoje, ctx) && !tarefaFeitaHoje(t, hoje)
+                : t.estado !== 'feita' && t.prazo && t.prazo <= hoje
+            ))
+            .sort((a, b) => String(a.prazo || hoje).localeCompare(String(b.prazo || hoje)));
           if (!minhas.length) return null;
           return (
             <Panel
@@ -2469,8 +2542,11 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
                 <LinhaTarefa
                   key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje}
                   onAbrir={onVerTarefas}
-                  onAlternar={(x) => setTarefas(tarefas.map(y => (y.id === x.id
-                    ? { ...y, estado: 'feita', feitaEm: new Date().toISOString() } : y)))}
+                  onAlternar={(x) => setTarefas(tarefas.map(y => {
+                    if (y.id !== x.id) return y;
+                    if (y.recorrencia) return { ...y, concluidasEm: [...(y.concluidasEm || []), hoje] };
+                    return { ...y, estado: 'feita', feitaEm: new Date().toISOString() };
+                  }))}
                 />
               ))}
               {minhas.length > 6 && (
@@ -4368,20 +4444,30 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {documentos.map(doc => (
             <div key={doc.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <FileSpreadsheet size={20} color={T.mutedDim} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.nome}</div>
-                  <div style={{ fontSize: 11, color: T.mutedDim }}>{doc.fileName}</div>
+              {/* Duas partes, cada uma com o seu próprio agrupamento: nome
+                  do ficheiro (encolhe, com reticências) de um lado, ações
+                  (nunca encolhem) do outro. Com `flexWrap`, num ecrã
+                  estreito as ações passam para a linha de baixo em vez de
+                  se sobreporem ao nome — era isso que estava a acontecer
+                  antes, sem nenhum dos dois grupos a ceder espaço ao outro. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 200px', minWidth: 0 }}>
+                  <FileSpreadsheet size={20} color={T.mutedDim} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: T.cream, fontWeight: 500, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.nome}</div>
+                    <div style={{ fontSize: 11, color: T.mutedDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.fileName}</div>
+                  </div>
                 </div>
-                {/^\.xlsx?$/i.test(doc.fileName.slice(doc.fileName.lastIndexOf('.'))) && (
-                  <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
-                    <FileSpreadsheet size={14} /> Gerar Ficha de Assiduidade
-                  </Btn>
-                )}
-                <button onClick={() => apagar(doc)} title="Apagar modelo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4 }}>
-                  <Trash2 size={15} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 'auto' }}>
+                  {/^\.xlsx?$/i.test(doc.fileName.slice(doc.fileName.lastIndexOf('.'))) && (
+                    <Btn variant="ghost" onClick={() => setAGerar(aGerar === doc.id ? null : doc.id)}>
+                      <FileSpreadsheet size={14} /> Gerar Ficha de Assiduidade
+                    </Btn>
+                  )}
+                  <button onClick={() => apagar(doc)} title="Apagar modelo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4, flexShrink: 0 }}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
               {aGerar === doc.id && (
                 <GerarFichaAssiduidadeForm doc={doc} players={players} sessions={sessions} matches={matches} clinico={clinico} onClose={() => setAGerar(null)} />
@@ -5052,7 +5138,7 @@ const TATICAS = {
     { id: 'DC2', rotulo: 'DC', ponto: [0.15, 0.35], de: ['DC'] },
     { id: 'DE', rotulo: 'DE', ponto: [0.26, 0.04], de: ['DE'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC', 'MD'] },
-    { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC', 'MD'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.50, 0.32], de: ['MC', 'MOC'] },
     { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.96], de: ['ED'] },
     { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.04], de: ['EE'] },
@@ -5077,8 +5163,8 @@ const TATICAS = {
     { id: 'DC1', rotulo: 'DC', ponto: [0.15, 0.65], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.15, 0.35], de: ['DC'] },
     { id: 'DE', rotulo: 'DE', ponto: [0.26, 0.04], de: ['DE'] },
-    { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC', 'MD'] },
-    { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC', 'MD'] },
     { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.96], de: ['ED'] },
     { id: 'MOC2', rotulo: 'MOC', ponto: [0.60, 0.50], de: ['MOC'] },
     { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.04], de: ['EE'] },
@@ -5228,7 +5314,19 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
         {l.lista.map(j => (
           <div
             key={j.chave}
-            onClick={editavel ? (e) => { e.stopPropagation(); aoTocar({ tipo: 'jogador', chave: j.chave }); } : undefined}
+            onClick={editavel ? (e) => {
+              e.stopPropagation();
+              /* Com um jogador já escolhido, tocar aqui — mesmo em cima
+                 de outro nome, não no fundo vazio — conta como "mover
+                 para ESTE lugar", nunca como "escolher este outro nome".
+                 Sem isto, um lugar cheio (2-3 nomes empilhados, comum em
+                 ecrãs pequenos) tornava quase impossível acertar no
+                 fundo vazio, e o toque acabava a trocar de escolhido em
+                 vez de mover, sem aviso nenhum de que a mudança não
+                 tinha acontecido. */
+              if (selecionado && selecionado !== j.chave) aoTocar({ tipo: 'lugar', id: l.id });
+              else aoTocar({ tipo: 'jogador', chave: j.chave });
+            } : undefined}
             style={nomeStyle(selecionado === j.chave)}
           >
             {j.nome}{j.exp ? <span style={{ opacity: 0.6 }}> exp</span> : null}
@@ -5594,6 +5692,7 @@ function fmtDate(d) {
 function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
   const [statsFor, setStatsFor] = useState(null); // player object (view stats)
+  const fecharPerfil = useDetailBack(!!statsFor, () => setStatsFor(null));
   const [printPlayer, setPrintPlayer] = useState(null); // ficha a imprimir
 
   // Mesma lógica do Scouting: partilha um ficheiro HTML autónomo com a
@@ -5690,10 +5789,10 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
         <PlayerProfilePage
           player={statsFor} sessions={sessions} matches={matches} clinico={clinico}
           monitoring={monitoring} desenvolvimento={desenvolvimento}
-          onBack={() => setStatsFor(null)}
+          onBack={fecharPerfil}
           onShare={() => doShare(statsFor)}
           onPrint={() => { const p = statsFor; doPrint(p); }}
-          onEdit={() => { const p = statsFor; setStatsFor(null); setModal(p); }}
+          onEdit={() => { const p = statsFor; fecharPerfil(); setModal(p); }}
         />
       ) : (
         <>
@@ -5980,6 +6079,19 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
   const wellnessDatas = wellnessRecs.map(r => r.date);
   const wellnessUltimo = wellnessPontos[wellnessPontos.length - 1];
 
+  // Mesma lógica do Wellness, mas para o PSE (escala 1–10) — os registos
+  // deste jogador têm o campo `pse` só nos dias em que respondeu ao
+  // questionário pós-treino/jogo, por isso filtra-se por isso, não por
+  // `sono` como no Wellness.
+  const pseRecs = (monitoring || [])
+    .filter(m => m.playerId === player.id && typeof m.pse === 'number')
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 14)
+    .reverse();
+  const psePontos = pseRecs.map(r => r.pse);
+  const pseDatas = pseRecs.map(r => r.date);
+  const pseUltimo = psePontos[psePontos.length - 1];
+
   const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px' };
   const sectionTitle = { fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 };
   const rowStyle = { display: 'flex', justifyContent: 'space-between', fontSize: 12.5, gap: 10 };
@@ -6078,9 +6190,19 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
           {wellnessRecs.length > 0 && (
             <>
               <div style={sectionTitle}>Wellness — últimos registos</div>
-              <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 14, marginBottom: pseRecs.length > 0 ? 16 : 0 }}>
                 <Sparkline points={wellnessPontos} labels={wellnessDatas} min={1} max={5} color={T.good} unit="/5" mainLabel="wellness" width={140} height={36} />
                 <span style={{ ...display, fontSize: 18, color: T.good }}>{wellnessUltimo}</span>
+              </div>
+            </>
+          )}
+
+          {pseRecs.length > 0 && (
+            <>
+              <div style={sectionTitle}>PSE — últimos registos</div>
+              <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 14 }}>
+                <Sparkline points={psePontos} labels={pseDatas} min={1} max={10} color={T.warn} unit="/10" mainLabel="PSE" width={140} height={36} />
+                <span style={{ ...display, fontSize: 18, color: T.warn }}>{pseUltimo}</span>
               </div>
             </>
           )}
@@ -14182,6 +14304,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
      ser separador próprio: é uma ferramenta que se aplica a um dia, e o
      dia vem do cartão em que se carregou. */
   const [simuladorDia, setSimuladorDia] = useState(null);
+  const fecharSimulador = useDetailBack(!!simuladorDia, () => setSimuladorDia(null));
   const [printSession, setPrintSession] = useState(null);
   /* A ficha do JOGO em papel (a mesma que Jogos usa), para o botão
      Imprimir da janela de leitura do jogo. É diferente da folha da SESSÃO
@@ -14634,7 +14757,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
         }}>
           <div style={{ maxWidth: 1280, margin: '0 auto', padding: '18px 20px 60px' }}>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-              <Btn variant="ghost" onClick={() => setSimuladorDia(null)}>
+              <Btn variant="ghost" onClick={fecharSimulador}>
                 <ChevronLeft size={15} /> Voltar ao Planeamento
               </Btn>
             </div>
@@ -16269,6 +16392,16 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
 function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onPrintPresencas, onPrintPrancheta, onEditSession }) {
   const totalMin = daySessions.reduce((sum, s) => sum + (s.exerciseIds || []).reduce((a, e) => a + (Number(e.duration) || 0), 0), 0);
   const presentPlayers = players.filter(p => daySessions.some(s => (s.attendance || []).includes(p.id)));
+  // Convidados à experiência de qualquer sessão do dia — um convidado que
+  // apareça em duas sessões do mesmo dia só conta uma vez.
+  const presentGuests = (() => {
+    const vistos = new Set();
+    const lista = [];
+    daySessions.forEach(s => convidadosDe(s).forEach(c => {
+      if (!vistos.has(c.id)) { vistos.add(c.id); lista.push(c); }
+    }));
+    return lista;
+  })();
 
   return (
     <Modal title={fmtDate(date)} onClose={onClose} wide>
@@ -16373,19 +16506,39 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
       ))}
 
       <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Presenças</div>
-      {presentPlayers.length === 0 ? (
+      {presentPlayers.length === 0 && presentGuests.length === 0 ? (
         <p style={{ fontSize: 13, color: T.mutedDim, margin: 0 }}>Sem registo</p>
       ) : (
-        /* Em coluna e por posição — não em lista corrida por número, que
-           obrigava a ler nome a nome à procura de alguém em concreto.
-           Mesmo padrão de nome (curto) e de posição da Monitorização. */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {sortByPosition(presentPlayers).map(p => (
-            <div key={p.id} style={{ fontSize: 13, color: T.mutedDim }}>
-              {p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}
+        /* Por posição, jogadores do plantel e convidados à experiência
+           juntos numa lista só (marcada "exp" para se distinguir quem é
+           quem) — mesmo padrão de nome curto e posição da Monitorização.
+
+           EM DUAS COLUNAS, a da esquerda com o nome a mais quando o total
+           é ímpar (ver o mesmo critério em `PrintPresencasPorPosicao`):
+           lê-se de cima para baixo, esquerda primeiro, sem a lista ficar
+           comprida demais para caber no ecrã dum telemóvel. */
+        (() => {
+          const todos = sortByPosition([
+            ...presentPlayers.map(p => ({ id: p.id, position: p.position, number: p.number, label: shortPlayerName(p, players), exp: false })),
+            ...presentGuests.map(c => ({ id: `c:${c.id}`, position: c.position, number: null, label: c.nome, exp: true })),
+          ]);
+          const metade = Math.ceil(todos.length / 2);
+          const col1 = todos.slice(0, metade);
+          const col2 = todos.slice(metade);
+          const linha = (j) => (
+            <div key={j.id} style={{ fontSize: 13, color: T.mutedDim }}>
+              {j.position ? `${j.position} · ` : ''}{j.label}{j.exp ? <span style={{ opacity: 0.6 }}> exp</span> : null}
             </div>
-          ))}
-        </div>
+          );
+          return (
+            <div style={{ display: 'flex', gap: 20 }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>{col1.map(linha)}</div>
+              {col2.length > 0 && (
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>{col2.map(linha)}</div>
+              )}
+            </div>
+          );
+        })()
       )}
     </Modal>
   );
@@ -24863,7 +25016,67 @@ const ESTADOS_TAREFA = ['aberta', 'curso', 'feita'];
 
 /* Em que grupo cai uma tarefa. Devolve também a ordem, para os grupos
    aparecerem sempre na mesma sequência mesmo quando algum está vazio. */
+/* TAREFAS QUE SE REPETEM SOZINHAS.
+
+   Uma tarefa recorrente não tem prazo fixo — tem uma REGRA que diz em
+   que dias está ativa. Em vez de o treinador ter de a recriar todos os
+   dias (ou lembrar-se de o fazer), a app decide sozinha, todos os dias,
+   se ela está "para fazer hoje" — e a conclusão fica marcada só PARA
+   ESSE DIA (`concluidasEm`, uma lista de datas), não como um estado
+   único e permanente. Assim, no dia seguinte, se a regra voltar a
+   estar ativa, a tarefa reaparece automaticamente por fazer — não
+   porque alguém a reabriu, mas porque é um dia novo.
+
+   Quatro tipos de regra:
+   - "diaria": todos os dias, sem exceção.
+   - "semanal": só nos dias da semana escolhidos (0=domingo…6=sábado).
+   - "treino_jogo": só nos dias em que há sessão de treino ou jogo
+     marcado — nos dias de folga não há nada que a justifique.
+   - "wellness_pse": só enquanto houver, neste preciso momento, algum
+     jogador por responder ao Wellness de hoje, ou (havendo treino/jogo
+     hoje) por responder ao PSE — a mesma verificação já usada para os
+     lembretes de WhatsApp em Monitorização. Assim que todos tiverem
+     respondido, a tarefa deixa de estar ativa sozinha, sem ninguém ter
+     de a marcar como feita. */
+const RECORRENCIA_LABEL = {
+  diaria: 'Todos os dias',
+  semanal: 'Dias da semana',
+  treino_jogo: 'Dias de treino ou jogo',
+  wellness_pse: 'Enquanto faltar Wellness/PSE',
+};
+
+function tarefaAtivaHoje(tarefa, hoje, ctx) {
+  const r = tarefa.recorrencia;
+  if (!r) return true; // tarefa normal, sem regra — está sempre "ativa" no sentido de aparecer
+  if (r.tipo === 'diaria') return true;
+  if (r.tipo === 'semanal') return (r.dias || []).includes(new Date(`${hoje}T00:00:00`).getDay());
+  if (r.tipo === 'treino_jogo') {
+    return (ctx.sessions || []).some(s => s.date === hoje && s.phase !== 'Descanso')
+      || (ctx.matches || []).some(m => m.date === hoje);
+  }
+  if (r.tipo === 'wellness_pse') {
+    const haTreinoOuJogoHoje = (ctx.sessions || []).some(s => s.date === hoje && s.phase !== 'Descanso')
+      || (ctx.matches || []).some(m => m.date === hoje);
+    return (ctx.players || []).some(p => {
+      const doJogadorHoje = (ctx.monitoring || []).filter(m => m.playerId === p.id && m.date === hoje);
+      const semWellness = !doJogadorHoje.some(m => typeof m.sono === 'number');
+      const semPse = haTreinoOuJogoHoje && !doJogadorHoje.some(m => typeof m.pse === 'number');
+      return semWellness || semPse;
+    });
+  }
+  return true;
+}
+
+// Concluída HOJE, para uma recorrente — nunca "para sempre" como numa
+// tarefa normal, porque amanhã é outro dia e a regra pode voltar a estar
+// ativa.
+const tarefaFeitaHoje = (tarefa, hoje) => (tarefa.concluidasEm || []).includes(hoje);
+
 function grupoDaTarefa(tarefa, hoje) {
+  // Uma recorrente não tem prazo — está sempre "para hoje", porque só
+  // aparece nos dias em que a regra dela está mesmo ativa (ver
+  // `tarefaAtivaHoje`, que já filtra isto antes de chegar aqui).
+  if (tarefa.recorrencia) return { id: 'hoje', rotulo: 'Hoje', ordem: 2 };
   if (tarefa.estado === 'feita') return { id: 'feitas', rotulo: 'Concluídas', ordem: 9 };
   if (!tarefa.prazo) return { id: 'sem', rotulo: 'Sem prazo', ordem: 5 };
   const dias = Math.round((new Date(`${tarefa.prazo}T00:00:00`) - new Date(`${hoje}T00:00:00`)) / 86400000);
@@ -24896,17 +25109,21 @@ function prazoTexto(prazo, hoje) {
    nem por eu simplesmente ter reparado nela. Prazos distantes ou sem
    prazo continuam a contar, ao contrário do resumo "As minhas tarefas"
    da página principal, que esse sim só mostra o que é urgente. */
-function tarefasAMinhaPorta(tarefas, euId) {
-  return (tarefas || []).filter(t =>
-    t.estado !== 'feita'
-    && (t.responsavel === euId || !t.responsavel)).length;
+function tarefasAMinhaPorta(tarefas, euId, ctx) {
+  const hoje = todayStr();
+  return (tarefas || []).filter(t => {
+    if (t.responsavel !== euId && t.responsavel) return false;
+    if (t.recorrencia) return tarefaAtivaHoje(t, hoje, ctx || {}) && !tarefaFeitaHoje(t, hoje);
+    return t.estado !== 'feita';
+  }).length;
 }
 
 function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
   const [f, setF] = useState(tarefa || {
-    titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta',
+    titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null,
   });
   const valido = String(f.titulo || '').trim().length > 0;
+  const repete = !!f.recorrencia;
 
   return (
     <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} wide>
@@ -24930,9 +25147,14 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
             ))}
           </Select>
         </Field>
-        <Field label="Prazo">
-          <Input type="date" value={f.prazo} onChange={e => setF({ ...f, prazo: e.target.value })} />
-        </Field>
+        {/* Uma tarefa recorrente não tem prazo fixo — é a regra de
+            repetição que diz em que dias ela existe. Os dois campos
+            trocam de sítio consoante "Repete".  */}
+        {!repete && (
+          <Field label="Prazo">
+            <Input type="date" value={f.prazo} onChange={e => setF({ ...f, prazo: e.target.value })} />
+          </Field>
+        )}
         <Field label="Estado">
           <Select value={f.estado} onChange={e => setF({ ...f, estado: e.target.value })}>
             <option value="aberta">Por fazer</option>
@@ -24940,6 +25162,55 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
             <option value="feita">Concluída</option>
           </Select>
         </Field>
+      </div>
+
+      {/* REPETIÇÃO — ver a nota completa junto de `tarefaAtivaHoje`.
+          Resumo rápido: escolhida uma regra, a tarefa passa a aparecer
+          sozinha em "Hoje" sempre que essa regra estiver ativa, e a
+          conclusão marca-se só para esse dia — no dia seguinte, se a
+          regra voltar a estar ativa, reaparece por fazer sozinha. */}
+      <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+        <Field label="Repete">
+          <Select
+            value={f.recorrencia ? f.recorrencia.tipo : ''}
+            onChange={e => {
+              const tipo = e.target.value;
+              if (!tipo) { setF({ ...f, recorrencia: null }); return; }
+              setF({ ...f, prazo: '', recorrencia: { tipo, dias: (f.recorrencia && f.recorrencia.dias) || [1, 2, 3, 4, 5] } });
+            }}
+          >
+            <option value="">Não repete — só esta vez</option>
+            {Object.entries(RECORRENCIA_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          </Select>
+        </Field>
+        {repete && f.recorrencia.tipo === 'semanal' && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            {DIAS_SEMANA.map((nome, i) => {
+              const on = (f.recorrencia.dias || []).includes(i);
+              return (
+                <button
+                  key={i} type="button"
+                  onClick={() => {
+                    const dias = on ? f.recorrencia.dias.filter(d => d !== i) : [...f.recorrencia.dias, i];
+                    setF({ ...f, recorrencia: { ...f.recorrencia, dias } });
+                  }}
+                  style={{
+                    padding: '6px 11px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
+                    background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.mutedDim,
+                    border: `1px solid ${on ? T.crimson : T.line}`, textTransform: 'capitalize',
+                  }}
+                >{nome.slice(0, 3)}</button>
+              );
+            })}
+          </div>
+        )}
+        {repete && (
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 10, lineHeight: 1.5 }}>
+            {f.recorrencia.tipo === 'treino_jogo' && 'Aparece sozinha em qualquer dia com treino ou jogo marcado.'}
+            {f.recorrencia.tipo === 'wellness_pse' && 'Aparece sozinha enquanto houver algum jogador por responder ao Wellness (ou ao PSE, em dia de treino/jogo). Desaparece assim que todos tiverem respondido.'}
+            {f.recorrencia.tipo === 'diaria' && 'Aparece todos os dias, sem exceção.'}
+          </div>
+        )}
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -24965,9 +25236,9 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
 /* Uma linha. A caixa à esquerda fecha a tarefa sem abrir nada — é o
    gesto mais frequente de todos e não devia custar dois cliques. */
 function LinhaTarefa({ tarefa, membros, euId, hoje, onAbrir, onAlternar }) {
-  const feita = tarefa.estado === 'feita';
-  const atrasada = !feita && tarefa.prazo && tarefa.prazo < hoje;
-  const paraHoje = !feita && tarefa.prazo === hoje;
+  const feita = tarefa.recorrencia ? tarefaFeitaHoje(tarefa, hoje) : tarefa.estado === 'feita';
+  const atrasada = !tarefa.recorrencia && !feita && tarefa.prazo && tarefa.prazo < hoje;
+  const paraHoje = !tarefa.recorrencia && !feita && tarefa.prazo === hoje;
   const cor = corDoMembro(tarefa.responsavel);
 
   return (
@@ -24978,7 +25249,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, onAbrir, onAlternar }) {
     }}>
       <button
         onClick={() => onAlternar(tarefa)}
-        title={feita ? 'Reabrir' : 'Marcar como concluída'}
+        title={feita ? (tarefa.recorrencia ? 'Desmarcar hoje' : 'Reabrir') : 'Marcar como concluída'}
         style={{
           width: 17, height: 17, borderRadius: 5, flexShrink: 0, marginTop: 2, cursor: 'pointer',
           background: feita ? T.good : 'transparent',
@@ -25005,12 +25276,17 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, onAbrir, onAlternar }) {
           {tarefa.estado === 'curso' && (
             <span style={{ fontSize: 11.5, color: T.warn }}>• iniciada</span>
           )}
+          {tarefa.recorrencia && (
+            <span style={{ fontSize: 11, color: T.mutedDim, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <RefreshCw size={10} /> {RECORRENCIA_LABEL[tarefa.recorrencia.tipo]}
+            </span>
+          )}
           {tarefa.notas ? <FileText size={12} style={{ color: T.mutedDim }} /> : null}
           <span style={{
             ...mono, fontSize: 11, marginLeft: 'auto', flexShrink: 0,
             color: feita ? T.mutedDim : (atrasada ? T.bad : (paraHoje ? T.warn : T.mutedDim)),
           }}>
-            {feita ? 'concluída' : prazoTexto(tarefa.prazo, hoje)}
+            {tarefa.recorrencia ? (feita ? 'concluída hoje' : 'hoje') : (feita ? 'concluída' : prazoTexto(tarefa.prazo, hoje))}
           </span>
         </div>
       </div>
@@ -25018,11 +25294,12 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, onAbrir, onAlternar }) {
   );
 }
 
-function Tarefas({ tarefas, setTarefas, membros, euId }) {
+function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, players, monitoring }) {
   const [modal, setModal] = useState(null); // 'new' | tarefa
   const [porPessoa, setPorPessoa] = useState(false);
   const [verFeitas, setVerFeitas] = useState(false);
   const hoje = todayStr();
+  const ctx = { sessions, matches, players, monitoring };
 
   const save = (dados) => {
     if (dados.id) setTarefas(tarefas.map(t => (t.id === dados.id ? dados : t)));
@@ -25034,13 +25311,38 @@ function Tarefas({ tarefas, setTarefas, membros, euId }) {
     removeWithUndo(tarefas, setTarefas, id, t ? t.titulo : 'Tarefa');
     setModal(null);
   };
-  const alternar = (t) => setTarefas(tarefas.map(x => (x.id === t.id
-    ? { ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString() }
-    : x)));
+  /* Numa recorrente, "concluir" marca só o DIA DE HOJE
+     (`concluidasEm`) — nunca o estado geral da tarefa, que fica sempre
+     "aberta". É assim que ela volta sozinha a "por fazer" no dia
+     seguinte, sem ninguém ter de a reabrir. Numa tarefa normal,
+     continua a ser o `estado` de sempre. */
+  const alternar = (t) => {
+    if (t.recorrencia) {
+      const feitaHoje = tarefaFeitaHoje(t, hoje);
+      const lista = feitaHoje ? (t.concluidasEm || []).filter(d => d !== hoje) : [...(t.concluidasEm || []), hoje];
+      setTarefas(tarefas.map(x => (x.id === t.id ? { ...x, concluidasEm: lista } : x)));
+      return;
+    }
+    setTarefas(tarefas.map(x => (x.id === t.id
+      ? { ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString() }
+      : x)));
+  };
 
-  const abertas = tarefas.filter(t => t.estado !== 'feita');
-  const feitas = tarefas.filter(t => t.estado === 'feita')
-    .sort((a, b) => String(b.feitaEm || '').localeCompare(String(a.feitaEm || '')));
+  /* As recorrentes só aparecem nos dias em que a regra delas está
+     mesmo ativa (ver `tarefaAtivaHoje`) — nos outros dias, ficam
+     invisíveis, não é "atrasada" nem "por fazer", é simplesmente um
+     dia que não lhes diz respeito. Dentro de um dia ativo, uma
+     concluída HOJE passa para "Concluídas"; volta a "abertas" sozinha
+     amanhã, sem ninguém mexer em nada. */
+  const abertas = tarefas.filter(t => {
+    if (t.estado === 'feita') return false;
+    if (!t.recorrencia) return true;
+    return tarefaAtivaHoje(t, hoje, ctx) && !tarefaFeitaHoje(t, hoje);
+  });
+  const feitas = [
+    ...tarefas.filter(t => t.recorrencia && tarefaAtivaHoje(t, hoje, ctx) && tarefaFeitaHoje(t, hoje)),
+    ...tarefas.filter(t => !t.recorrencia && t.estado === 'feita'),
+  ].sort((a, b) => String(b.feitaEm || hoje).localeCompare(String(a.feitaEm || hoje)));
 
   /* Por prazo: os grupos saem pela ordem definida em `grupoDaTarefa`, e
      dentro de cada um pela data. Sem prazo fica no fim das abertas — não
