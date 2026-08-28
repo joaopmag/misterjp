@@ -1474,9 +1474,9 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage }) {
    O desenho é o mesmo das pílulas de filtro que já existem nos Jogos e
    nas Estatísticas — de propósito: quem já sabe carregar numa sabe
    carregar nestas. */
-function SubTabs({ value, onChange, tabs }) {
+function SubTabs({ value, onChange, tabs, semMargem }) {
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: semMargem ? 0 : 18 }}>
       {tabs.map(t => {
         const on = value === t.id;
         return (
@@ -22250,21 +22250,36 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
   return (
     <div>
       <SectionHeader title="Scouting" subtitle="Jogadores adversários com potencial, para acompanhar ao longo da época." />
-      <SubTabs
-        value={subTab}
-        onChange={(v) => {
-          // Trocar de valência enquanto uma ficha de jogador está aberta
-          // não fazia nada visível: o ecrã continuava preso a essa ficha
-          // (`viewing` tinha sempre prioridade sobre `subTab` a decidir o
-          // que mostrar). Ao trocar, fecha-se a ficha também.
-          setSubTab(v);
-          setViewing(null);
-        }}
-        tabs={[
-          { id: 'jogadores', label: 'Jogadores', icon: Users, count: scouting.length },
-          { id: 'adversarios', label: 'Adversários', icon: Shield, count: adversarios.length },
-        ]}
-      />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+        <SubTabs
+          value={subTab}
+          onChange={(v) => {
+            // Trocar de valência enquanto uma ficha de jogador está aberta
+            // não fazia nada visível: o ecrã continuava preso a essa ficha
+            // (`viewing` tinha sempre prioridade sobre `subTab` a decidir o
+            // que mostrar). Ao trocar, fecha-se a ficha também.
+            setSubTab(v);
+            setViewing(null);
+          }}
+          tabs={[
+            { id: 'jogadores', label: 'Jogadores', icon: Users, count: scouting.length },
+            { id: 'adversarios', label: 'Adversários', icon: Shield, count: adversarios.length },
+          ]}
+          semMargem
+        />
+        {/* As ações só fazem sentido junto de "Jogadores" — nem quando se
+            vê um adversário, nem dentro da ficha de um jogador em
+            concreto (`viewing`). Ficam na mesma linha dos separadores em
+            vez de por baixo, alinhadas do lado oposto. */}
+        {!viewing && subTab === 'jogadores' && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            {scouting.length > 0 && (
+              <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)}><Download size={15} /> Exportar CSV</Btn>
+            )}
+            <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
+          </div>
+        )}
+      </div>
 
       {viewing ? (
         <ScoutSheetPage
@@ -22278,13 +22293,6 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} setScouting={setScouting} videos={videos} setVideos={setVideos} />
       ) : (
       <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 14 }}>
-        {scouting.length > 0 && (
-          <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)}><Download size={15} /> Exportar CSV</Btn>
-        )}
-        <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
-      </div>
-
       {positionsUsed.length > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
           <button onClick={() => setFilter('')} style={{
