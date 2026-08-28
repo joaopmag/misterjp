@@ -22915,41 +22915,65 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
 
 /* Ficha completa em ecrã — o mesmo conteúdo e a mesma disposição da
    página que sai na partilha, para o treinador ver antes de enviar. */
-/* Pontos genéricos de cada posição, para o mini-quadro da ficha de
+/* Pontos genéricos de cada posição, para o mini-campo da ficha de
    observação — SEM tática nenhuma associada (o jogador observado não
    joga por nós, não faz sentido escolher 4-3-3 ou 4-4-2 para ele). É só
    uma referência visual de "mais ou menos aqui em campo", a mesma para
-   qualquer formação. */
-const POSICAO_GENERICA_PONTO = {
-  GR: [0.06, 0.50], DC: [0.20, 0.50], DE: [0.24, 0.06], DD: [0.24, 0.94],
-  MD: [0.42, 0.50], MC: [0.55, 0.50], MOC: [0.68, 0.50],
-  EE: [0.75, 0.06], ED: [0.75, 0.94], PL: [0.92, 0.50],
+   qualquer formação.
+
+   NA VERTICAL, de propósito — diferente do `PrancheteDoPlantel`
+   (pensado para o campo deitado, com vários jogadores por lugar). Aqui
+   é sempre no máximo duas marcas soltas, sem listas de nomes por baixo;
+   um campo alto e estreito lê-se melhor ao lado da foto e da tabela de
+   identificação do que um campo largo, que ali ficava desformatado.
+   `x` é o lado (esquerda/direita), `y` é a profundidade — 0 é a
+   baliza adversária (o ataque), 1 é a própria baliza. */
+const POSICAO_GENERICA_VERTICAL = {
+  PL: [0.50, 0.08], EE: [0.14, 0.20], ED: [0.86, 0.20], MOC: [0.50, 0.32],
+  MC: [0.50, 0.46], MD: [0.50, 0.60], DE: [0.14, 0.78], DD: [0.86, 0.78],
+  DC: [0.50, 0.78], GR: [0.50, 0.94],
 };
 
-/* Quadro pequeno com só as posições que o jogador tem definidas
-   (principal, e secundária se for diferente) — nunca o campo todo com
-   as outras oito vazias, que não diriam nada sobre ELE em concreto.
-   Reaproveita o mesmo `PrancheteDoPlantel` do Plantel; o `aoTocar`
-   vazio é só para lhe pedir o visual "de dentro da app" (fundo verde
-   escuro, etiqueta vermelha) em vez do visual pensado para impressão —
-   não há nada para tocar de facto, os lugares não têm jogadores
-   lá dentro. */
+/* Campo pequeno, na vertical, com só as posições que o jogador tem
+   definidas (principal, e secundária se for diferente) — nunca o campo
+   todo com as outras oito vazias, que não diriam nada sobre ELE em
+   concreto. Desenhado à mão (não reaproveita o `PrancheteDoPlantel`,
+   pensado para o campo deitado e para várias pessoas por lugar — aqui
+   é sempre uma ou duas marcas soltas). */
 function QuadroPosicaoJogador({ position, secondaryPosition }) {
-  const lugares = [];
-  if (position && POSICAO_GENERICA_PONTO[position]) {
-    lugares.push({ id: 'principal', rotulo: position, ponto: POSICAO_GENERICA_PONTO[position], lista: [] });
+  const marcas = [];
+  if (position && POSICAO_GENERICA_VERTICAL[position]) marcas.push({ id: 'p', rotulo: position, ponto: POSICAO_GENERICA_VERTICAL[position] });
+  if (secondaryPosition && secondaryPosition !== position && POSICAO_GENERICA_VERTICAL[secondaryPosition]) {
+    marcas.push({ id: 's', rotulo: secondaryPosition, ponto: POSICAO_GENERICA_VERTICAL[secondaryPosition] });
   }
-  if (secondaryPosition && secondaryPosition !== position && POSICAO_GENERICA_PONTO[secondaryPosition]) {
-    lugares.push({ id: 'secundaria', rotulo: secondaryPosition, ponto: POSICAO_GENERICA_PONTO[secondaryPosition], lista: [] });
-  }
-  if (!lugares.length) return null;
+  if (!marcas.length) return null;
+
+  const W = 100, H = 150; // proporção 2:3 — um campo real deitado a rodar 90°
   return (
-    // Dentro da linha (tabela + foto + isto), sem uma largura própria e
-    // com "flexShrink" por omissão a 1, o campo encolhia para quase
-    // nada — o `width` fixo aqui é o que lhe garante espaço a sério,
-    // mesmo dentro de um `flex` que só sabia encolher tudo.
-    <div style={{ width: 260, flexShrink: 0 }}>
-      <PrancheteDoPlantel lugares={lugares} aoTocar={() => {}} escala={1.1} maxLargura={260} />
+    <div style={{ width: 160, flexShrink: 0 }}>
+      <div style={{
+        position: 'relative', width: '100%', aspectRatio: `${W} / ${H}`,
+        background: '#1E3A24', borderRadius: 10, border: `1px solid ${T.line}`, overflow: 'hidden',
+      }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+          <rect x="3" y="3" width={W - 6} height={H - 6} fill="none" stroke="#ffffff40" strokeWidth="1" />
+          <line x1="3" y1={H / 2} x2={W - 3} y2={H / 2} stroke="#ffffff40" strokeWidth="1" />
+          <circle cx={W / 2} cy={H / 2} r={W * 0.16} fill="none" stroke="#ffffff40" strokeWidth="1" />
+          <circle cx={W / 2} cy={H / 2} r="0.8" fill="#ffffff40" />
+          {/* Grande área — em cima (baliza adversária) e em baixo (a nossa,
+              onde fica sempre o GR). */}
+          <rect x={W * 0.22} y="3" width={W * 0.56} height={H * 0.15} fill="none" stroke="#ffffff40" strokeWidth="1" />
+          <rect x={W * 0.22} y={H - 3 - H * 0.15} width={W * 0.56} height={H * 0.15} fill="none" stroke="#ffffff40" strokeWidth="1" />
+        </svg>
+        {marcas.map(m => (
+          <span key={m.id} style={{
+            position: 'absolute', left: `${m.ponto[0] * 100}%`, top: `${m.ponto[1] * 100}%`,
+            transform: 'translate(-50%, -50%)',
+            background: '#B5393F', color: '#fff', fontSize: 10, fontWeight: 700,
+            padding: '2px 6px', borderRadius: 5, whiteSpace: 'nowrap', letterSpacing: '.02em',
+          }}>{m.rotulo}</span>
+        ))}
+      </div>
     </div>
   );
 }
