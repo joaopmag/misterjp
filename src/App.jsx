@@ -13,7 +13,7 @@ import {
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
-  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet
+  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -1842,6 +1842,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [monitoring, setMonitoring, monitoringReady, monitoringMeta] = useCollectionSync('monitoring', notifyEdit, teamId);
   const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit, teamId);
   const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit, teamId);
+  const [adversarios, setAdversarios, adversariosReady] = useCollectionSync('adversarios', notifyEdit, teamId);
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
   const [documentos, setDocumentos, documentosReady] = useCollectionSync('documentos', notifyEdit, teamId);
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit, teamId);
@@ -1890,7 +1891,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   }, [matchesReady, matches, setMatches, autorizarLimparJogos]);
 
   const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
-    || !matchesReady || !scoutingReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
+    || !matchesReady || !scoutingReady || !adversariosReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
     || !desenvolvimentoReady || !standingsReady || !clinicoReady || !tarefasReady || !documentosReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
@@ -2380,7 +2381,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
-          {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} />}
+          {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
 
              Continuam ambas SEMPRE MONTADAS (escondidas com CSS, não
@@ -22121,7 +22122,8 @@ ${x.notes ? `<h2>Notas gerais</h2><p class="desc">${escapeHtmlText(x.notes)}</p>
 `;
 }
 
-function Scouting({ scouting, setScouting }) {
+function Scouting({ scouting, setScouting, adversarios, setAdversarios }) {
+  const [subTab, setSubTab] = useState('jogadores');
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('');
   const [printScout, setPrintScout] = useState(null);
@@ -22155,6 +22157,18 @@ function Scouting({ scouting, setScouting }) {
 
   return (
     <div>
+      <SubTabs
+        value={subTab} onChange={setSubTab}
+        tabs={[
+          { id: 'jogadores', label: 'Jogadores', icon: Users, count: scouting.length },
+          { id: 'adversarios', label: 'Adversários', icon: Shield, count: adversarios.length },
+        ]}
+      />
+
+      {subTab === 'adversarios' ? (
+        <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} />
+      ) : (
+      <>
       <SectionHeader title="Scouting" subtitle="Jogadores adversários com potencial, para acompanhar ao longo da época."
         action={
           <div style={{ display: 'flex', gap: 8 }}>
@@ -22320,7 +22334,225 @@ function Scouting({ scouting, setScouting }) {
         </div>,
         document.body
       )}
+      </>
+      )}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   ADVERSÁRIOS — a segunda valência do Scouting.
+
+   Um adversário não duplica nada do que já existe: os "jogadores-chave"
+   são as MESMAS fichas da aba "Jogadores" (`scouting`), só marcadas
+   como relevantes para este adversário em concreto — por isso um
+   jogador observado pode pertencer a vários adversários ao longo da
+   época, e editar/apagar a ficha dele em "Jogadores" reflete-se aqui
+   sozinho, sem precisar de sincronizar nada.
+
+   Táticas e Vídeos ficam para as próximas fases (reaproveitam,
+   respetivamente, o editor de prancheta da Ideia de Jogo e a Biblioteca
+   — ver a conversa sobre esta funcionalidade). Por agora, só Resumo e
+   Jogadores-chave. */
+function AdversariosApp({ adversarios, setAdversarios, scouting }) {
+  const [modal, setModal] = useState(null); // 'new' | adversário a editar
+  const [viewing, setViewing] = useState(null); // adversário aberto em página cheia
+  const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
+
+  const save = (dados) => {
+    if (dados.id) {
+      setAdversarios(adversarios.map(a => (a.id === dados.id ? dados : a)));
+      if (viewing && viewing.id === dados.id) setViewing(dados);
+    } else {
+      setAdversarios([...adversarios, { ...dados, id: uid(), jogadoresChaveIds: [] }]);
+    }
+    setModal(null);
+  };
+  const remove = (id) => {
+    const a = adversarios.find(x => x.id === id);
+    removeWithUndo(adversarios, setAdversarios, id, itemLabel(a, 'Adversário'));
+    setViewing(null);
+    setModal(null);
+  };
+
+  if (viewing) {
+    const atual = adversarios.find(a => a.id === viewing.id) || viewing;
+    return (
+      <AdversarioPage
+        adversario={atual} scouting={scouting}
+        onBack={fecharFicha}
+        onEdit={() => setModal(atual)}
+        onRemove={() => remove(atual.id)}
+        onSetJogadoresChave={(ids) => setAdversarios(adversarios.map(a => (a.id === atual.id ? { ...a, jogadoresChaveIds: ids } : a)))}
+      >
+        {modal && <AdversarioModal adversario={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      </AdversarioPage>
+    );
+  }
+
+  return (
+    <div>
+      <SectionHeader title="Adversários" subtitle="Análise por adversário — pontos fortes, fracos, e os jogadores a vigiar."
+        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar adversário</Btn>} />
+
+      {adversarios.length === 0 ? (
+        <EmptyState text="Ainda sem adversários registados." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro</Btn>} />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+          {adversarios.map(a => (
+            <div key={a.id} onClick={() => setViewing(a)} style={{
+              background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
+            }}>
+              <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{a.nome}</div>
+              <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 3 }}>
+                {[a.escalao, a.prova, a.formacaoHabitual].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
+              </div>
+              <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 8 }}>
+                {(a.jogadoresChaveIds || []).length} jogador{(a.jogadoresChaveIds || []).length === 1 ? '' : 'es'}-chave
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {modal && <AdversarioModal adversario={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+    </div>
+  );
+}
+
+function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove, onSetJogadoresChave, children }) {
+  const [aAdicionar, setAAdicionar] = useState('');
+  const chave = (scouting || []).filter(x => (a.jogadoresChaveIds || []).includes(x.id));
+  const disponiveis = (scouting || []).filter(x => !(a.jogadoresChaveIds || []).includes(x.id));
+
+  const remover = (id) => onSetJogadoresChave((a.jogadoresChaveIds || []).filter(x => x !== id));
+  const adicionar = () => {
+    if (!aAdicionar) return;
+    onSetJogadoresChave([...(a.jogadoresChaveIds || []), aAdicionar]);
+    setAAdicionar('');
+  };
+
+  const bloco = (titulo, texto) => texto && (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{titulo}</div>
+      <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px', fontSize: 13, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{texto}</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> Adversários
+      </button>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
+        <div>
+          <div style={{ ...display, fontSize: 20, color: T.cream }}>{a.nome}</div>
+          <div style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 4 }}>
+            {[a.escalao, a.prova, a.formacaoHabitual].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>
+          <Btn variant="danger" onClick={onRemove}><Trash2 size={14} /> Apagar</Btn>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 8 }}>
+        {bloco('Pontos fortes', a.pontosFortes)}
+        {bloco('Pontos fracos', a.pontosFracos)}
+      </div>
+      {bloco('Notas gerais', a.notas)}
+      {!a.pontosFortes && !a.pontosFracos && !a.notas && (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
+          Ainda sem notas de análise. Toca em "Editar" para as acrescentar.
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>
+        Jogadores-chave
+      </div>
+      {disponiveis.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <Select value={aAdicionar} onChange={e => setAAdicionar(e.target.value)} style={{ flex: 1 }}>
+            <option value="">Escolher um jogador já observado…</option>
+            {disponiveis.map(x => <option key={x.id} value={x.id}>{x.name}{x.position ? ` · ${x.position}` : ''}</option>)}
+          </Select>
+          <Btn variant="ghost" onClick={adicionar} disabled={!aAdicionar}><Plus size={14} /> Adicionar</Btn>
+        </div>
+      )}
+      {chave.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
+          {scouting.length === 0
+            ? 'Ainda não há jogadores observados na aba "Jogadores" para ligar aqui.'
+            : 'Nenhum jogador-chave marcado ainda para este adversário.'}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+          {chave.map(x => (
+            <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+                <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
+              </div>
+              <button onClick={() => remover(x.id)} title="Remover dos jogadores-chave" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', flexShrink: 0 }}>
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {children}
+    </div>
+  );
+}
+
+function AdversarioModal({ adversario, onClose, onSave }) {
+  const [f, setF] = useState(adversario || { nome: '', escalao: '', prova: '', formacaoHabitual: '', pontosFortes: '', pontosFracos: '', notas: '' });
+  const valido = String(f.nome || '').trim().length > 0;
+
+  return (
+    <Modal title={adversario ? 'Editar adversário' : 'Novo adversário'} onClose={onClose} wide>
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Clube / Equipa" bloco solto>
+          <Input value={f.nome} onChange={e => setF({ ...f, nome: e.target.value })} placeholder="Ex: FC Padroense" autoFocus />
+        </Field>
+      </div>
+      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        <Field label="Escalão">
+          <Input value={f.escalao} onChange={e => setF({ ...f, escalao: e.target.value })} placeholder="Ex: Sub-19" />
+        </Field>
+        <Field label="Prova">
+          <Input value={f.prova} onChange={e => setF({ ...f, prova: e.target.value })} placeholder="Ex: Campeonato Distrital" />
+        </Field>
+        <Field label="Formação habitual">
+          <Input value={f.formacaoHabitual} onChange={e => setF({ ...f, formacaoHabitual: e.target.value })} placeholder="Ex: 4-4-2" />
+        </Field>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Pontos fortes" bloco solto>
+          <TextArea value={f.pontosFortes} onChange={e => setF({ ...f, pontosFortes: e.target.value })} style={{ minHeight: 64 }} />
+        </Field>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Pontos fracos" bloco solto>
+          <TextArea value={f.pontosFracos} onChange={e => setF({ ...f, pontosFracos: e.target.value })} style={{ minHeight: 64 }} />
+        </Field>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Notas gerais" bloco solto>
+          <TextArea value={f.notas} onChange={e => setF({ ...f, notas: e.target.value })} style={{ minHeight: 64 }} />
+        </Field>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={() => valido && onSave(f)} disabled={!valido}>Guardar</Btn>
+      </div>
+    </Modal>
   );
 }
 
