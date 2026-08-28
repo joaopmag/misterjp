@@ -19785,6 +19785,9 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
   // "Sessão de hoje" fica fechada por omissão — é consulta pontual, não
   // precisa de estar sempre à vista (ver a nota grande junto ao Panel).
   const [mostrarSessaoHoje, setMostrarSessaoHoje] = useState(false);
+  // Mesma lógica: a tabela de respostas é longa e só se costuma abrir
+  // para consultar um caso específico, não para estar sempre visível.
+  const [mostrarRespostas, setMostrarRespostas] = useState(false);
   // Duas vistas sobre a MESMA coleção `monitoring`: Wellness/PSE (dos
   // questionários) e Composição Corporal (pesagens). Um separador simples
   // em vez de duas rotas — é a mesma área, só muda o que se está a olhar.
@@ -20055,8 +20058,15 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 
       <div style={{ height: 16 }} />
 
-      <Panel title="Respostas">
-      {players.length === 0 ? (
+      <Panel title="Respostas"
+        action={<button onClick={() => setMostrarRespostas(!mostrarRespostas)} style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+          {mostrarRespostas ? <><EyeOff size={13} /> Ocultar</> : <><Eye size={13} /> Mostrar</>}
+        </button>}>
+      {!mostrarRespostas ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '4px 0' }}>
+          {sorted.length} {sorted.length === 1 ? 'resposta' : 'respostas'} entre {formatShortDatePt(deData)} e {formatShortDatePt(ateData)} — clica em "Mostrar" para consultar.
+        </div>
+      ) : players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registar dados de monitorização." />
       ) : (
         <>
