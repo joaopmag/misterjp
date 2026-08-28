@@ -5682,6 +5682,21 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
 
   return (
     <div>
+      {/* Um jogador selecionado ocupa a página toda — troca-se a grelha do
+          plantel pelo perfil dele, com "Voltar" a repor a grelha; não é uma
+          janela por cima como as outras fichas, é a própria página a
+          mudar de conteúdo. */}
+      {statsFor ? (
+        <PlayerProfilePage
+          player={statsFor} sessions={sessions} matches={matches} clinico={clinico}
+          monitoring={monitoring} desenvolvimento={desenvolvimento}
+          onBack={() => setStatsFor(null)}
+          onShare={() => doShare(statsFor)}
+          onPrint={() => { const p = statsFor; doPrint(p); }}
+          onEdit={() => { const p = statsFor; setStatsFor(null); setModal(p); }}
+        />
+      ) : (
+        <>
       <SectionHeader title="Plantel" subtitle={`${players.length} jogador${players.length === 1 ? '' : 'es'} inscrito${players.length === 1 ? '' : 's'}`}
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>} />
 
@@ -5735,14 +5750,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
       )}
 
       {modal && <PlayerModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
-      {statsFor && (
-        <PlayerStatsModal
-          player={statsFor} sessions={sessions} matches={matches} clinico={clinico}
-          onClose={() => setStatsFor(null)}
-          onShare={() => doShare(statsFor)}
-          onPrint={() => { const p = statsFor; setStatsFor(null); setTimeout(() => doPrint(p), 60); }}
-          onEdit={() => { const p = statsFor; setStatsFor(null); setModal(p); }}
-        />
+        </>
       )}
 
       {printPlayer && createPortal(
@@ -5941,79 +5949,159 @@ function playerStats(player, sessions, matches) {
   };
 }
 
-function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint, onEdit, clinico }) {
-  /* A ficha de um jogador conta JOGOS OFICIAIS.
+/* PÁGINA DO JOGADOR — não é uma janela por cima, é a própria página do
+   Plantel a trocar de conteúdo (ver `onBack` em Plantel). Reúne, num
+   único sítio, coisas que já existiam espalhadas por três separadores
+   diferentes (Plantel, Monitorização, Desenvolvimento) — nada de dados
+   novos, só uma vista que já não obriga a saltar de separador em
+   separador para perceber "como vai este jogador".
 
-     É o que ela quer dizer quando fala de convocatórias, titularidades e
-     minutos: um jogador com 12 presenças em amigáveis de pré-época não
-     tem a mesma história de um com 12 convocatórias no campeonato, e a
-     ficha é usada para decidir sobre a segunda coisa.
-
-     Os amigáveis têm o seu recorte próprio na tabela de estatísticas do
-     separador Jogos. */
+   Jogos oficiais, como sempre — ver a nota em `playerStats`. */
+function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, onBack, onShare, onPrint, onEdit }) {
   const s = playerStats(player, sessions, jogosOficiaisDe(matches));
+
+  const ocorrencias = (clinico || [])
+    .filter(o => o.playerId === player.id)
+    .sort((a, b) => (b.inicio || '').localeCompare(a.inicio || ''));
+
+  const momentos = (desenvolvimento || []).filter(m => (m.jogadores || []).includes(player.id));
+  const momentosAbertos = momentos.filter(m => !m.fechado).length;
+  const ultimoMomento = momentos.slice().sort((a, b) => (b.data || '').localeCompare(a.data || ''))[0];
+
+  // Últimos 14 registos de Wellness deste jogador, mais antigo primeiro
+  // (é o que o Sparkline espera para desenhar a linha da esquerda para a
+  // direita).
+  const wellnessRecs = (monitoring || [])
+    .filter(m => m.playerId === player.id && wellnessAvg(m) !== null)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 14)
+    .reverse();
+  const wellnessPontos = wellnessRecs.map(r => Number(wellnessAvg(r).toFixed(1)));
+  const wellnessDatas = wellnessRecs.map(r => r.date);
+  const wellnessUltimo = wellnessPontos[wellnessPontos.length - 1];
+
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px' };
+  const sectionTitle = { fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 };
+  const rowStyle = { display: 'flex', justifyContent: 'space-between', fontSize: 12.5, gap: 10 };
+
+  const linha = (label, valor) => valor !== null && valor !== undefined && valor !== '' && (
+    <div key={label} style={rowStyle}>
+      <span style={{ color: T.mutedDim }}>{label}</span>
+      <span style={{ color: T.cream, textAlign: 'right' }}>{valor}</span>
+    </div>
+  );
+
   return (
-    <Modal title={`${player.name} — estatísticas`} onClose={onClose}>
-      {(onShare || onPrint || onEdit) && (
-        <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
-      )}
-      {player.photo && (
-        <img src={player.photo} alt="Fotografia" style={{
-          width: 110, aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 10,
-          border: `1px solid ${T.line}`, background: '#000', marginBottom: 14, display: 'block',
-        }} />
-      )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <Badge label={player.position} />
-        <div>
-          <div style={{ color: T.cream, fontSize: 15 }}>{player.name}</div>
-          <div style={{ color: T.mutedDim, fontSize: 12 }}>{playerBirthLine(player)}</div>
+    <div>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> Plantel
+      </button>
+
+      {/* CABEÇALHO */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap' }}>
+        {player.photo ? (
+          <img src={player.photo} alt="Fotografia" style={{
+            width: 72, aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 8,
+            border: `1px solid ${T.line}`, background: '#000', flexShrink: 0,
+          }} />
+        ) : (
+          <div style={{
+            width: 72, aspectRatio: '3 / 4', borderRadius: 8, background: T.surface, border: `1px solid ${T.line}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            fontSize: 20, fontWeight: 600, color: T.mutedDim, ...display,
+          }}>
+            {(player.name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+          </div>
+        )}
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ ...display, fontSize: 20, color: T.cream }}>{player.name}</span>
+            <CaptainArmband rank={player.captainRank} />
+            {player.statusMain && (
+              <span style={{ background: `${T.good}22`, color: T.good, fontSize: 11, padding: '3px 9px', borderRadius: 12 }}>{player.statusMain}</span>
+            )}
+          </div>
+          <div style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 4 }}>
+            {[player.position, player.number ? `nº ${player.number}` : null, playerBirthLine(player), player.laterality].filter(Boolean).join(' · ')}
+          </div>
+          {(onShare || onPrint || onEdit) && (
+            <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+              {onShare && <button onClick={onShare} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Share2 size={15} /> Partilhar</button>}
+              {onPrint && <button onClick={onPrint} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Printer size={15} /> Imprimir</button>}
+              {onEdit && <button onClick={onEdit} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Pencil size={15} /> Editar</button>}
+            </div>
+          )}
         </div>
       </div>
 
-      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Treino</div>
-      <StatsGrid items={[
-        ['Assiduidade', s.attendancePct === null ? '—' : `${s.attendancePct}%`],
-        ['Presenças', `${s.attended}/${s.totalSessions}`],
-        ['Nota média treino', s.avgTrainingRating ?? '—'],
-      ]} />
+      {/* NÚMEROS EM DESTAQUE */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 20 }}>
+        <div style={card}>
+          <div style={{ ...mono, fontSize: 19, fontWeight: 500, color: T.warn }}>{s.attendancePct === null ? '—' : `${s.attendancePct}%`}</div>
+          <div style={{ fontSize: 10.5, color: T.mutedDim, marginTop: 2 }}>Assiduidade</div>
+        </div>
+        <div style={card}>
+          <div style={{ ...mono, fontSize: 19, fontWeight: 500, color: T.warn }}>{s.matchesPlayed}</div>
+          <div style={{ fontSize: 10.5, color: T.mutedDim, marginTop: 2 }}>Convocatórias</div>
+        </div>
+        <div style={card}>
+          <div style={{ ...mono, fontSize: 19, fontWeight: 500, color: T.warn }}>{s.goals + s.assists}</div>
+          <div style={{ fontSize: 10.5, color: T.mutedDim, marginTop: 2 }}>Golos + assist.</div>
+        </div>
+        <div style={card}>
+          <div style={{ ...mono, fontSize: 19, fontWeight: 500, color: T.warn }}>{s.avgMatchRating ?? '—'}</div>
+          <div style={{ fontSize: 10.5, color: T.mutedDim, marginTop: 2 }}>Nota média</div>
+        </div>
+      </div>
 
-      <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 0 8px' }}>Jogos</div>
-      <StatsGrid items={[
-        ['Convocatórias', s.matchesPlayed],
-        ['Titular', s.starts],
-        ['Minutos', s.minutes],
-        ['Golos', s.goals],
-        ['Assistências', s.assists],
-        ['Amarelos', s.yellow],
-        ['Vermelhos', s.red],
-        ['Nota média jogo', s.avgMatchRating ?? '—'],
-      ]} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+        {/* COLUNA ESQUERDA: características + treino + wellness */}
+        <div>
+          <div style={sectionTitle}>Características</div>
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {linha('Altura / Peso', [player.height && `${player.height} cm`, player.weight && `${player.weight} kg`].filter(Boolean).join(' · ') || null)}
+            {linha('Nacionalidade', player.nationality)}
+            {linha('Contacto', player.contact)}
+            {linha('Clube anterior', player.previousClub)}
+            {linha('No clube desde', player.entryDate ? fmtShort(player.entryDate) : null)}
+          </div>
 
-      {/* HISTÓRICO CLÍNICO DESTE JOGADOR.
+          <div style={sectionTitle}>Treino</div>
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {linha('Presenças', `${s.attended}/${s.totalSessions}`)}
+            {linha('Nota média de treino', s.avgTrainingRating ?? '—')}
+          </div>
 
-          O Boletim Clínico responde a "quem tenho fora esta semana?".
-          Esta lista responde à outra pergunta, que é de outra natureza e
-          só se faz aqui: "este miúdo magoa-se muito? sempre no mesmo
-          sítio?". Só aparece se houver alguma coisa para mostrar. */}
-      {(() => {
-        const dele = (clinico || [])
-          .filter(o => o.playerId === player.id)
-          .sort((a, b) => (b.inicio || '').localeCompare(a.inicio || ''));
-        if (!dele.length) return null;
-        const diasFora = dele.reduce((t, o) => t + (diasDeOcorrencia(o) || 0), 0);
-        return (
-          <>
-            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 0 8px' }}>
-              Boletim clínico
-            </div>
-            <StatsGrid items={[
-              ['Ocorrências', dele.length],
-              ['Dias fora', diasFora],
-              ['Abertas', dele.filter(o => !o.fim).length],
-            ]} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
-              {dele.map(o => {
+          {wellnessRecs.length > 0 && (
+            <>
+              <div style={sectionTitle}>Wellness — últimos registos</div>
+              <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 14 }}>
+                <Sparkline points={wellnessPontos} labels={wellnessDatas} min={1} max={5} color={T.good} unit="/5" mainLabel="wellness" width={140} height={36} />
+                <span style={{ ...display, fontSize: 18, color: T.good }}>{wellnessUltimo}</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* COLUNA DIREITA: jogos + boletim clínico + desenvolvimento */}
+        <div>
+          <div style={sectionTitle}>Jogos</div>
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {linha('Titular', s.starts)}
+            {linha('Entrou do banco', s.subsUsed)}
+            {linha('Minutos', s.minutes)}
+            {linha('Cartões', [s.yellow ? `${s.yellow} amarelo${s.yellow === 1 ? '' : 's'}` : null, s.red ? `${s.red} vermelho${s.red === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || '—')}
+          </div>
+
+          <div style={sectionTitle}>Boletim clínico</div>
+          {ocorrencias.length === 0 ? (
+            <div style={{ ...card, color: T.mutedDim, fontSize: 12.5, marginBottom: 16 }}>Sem ocorrências registadas.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+              {ocorrencias.map(o => {
                 const nivel = nivelClinico(o.nivel);
                 const dias = diasDeOcorrencia(o);
                 return (
@@ -6035,29 +6123,20 @@ function PlayerStatsModal({ player, sessions, matches, onClose, onShare, onPrint
                 );
               })}
             </div>
-          </>
-        );
-      })()}
+          )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-        <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-function StatsGrid({ items }) {
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
-      {items.map(([label, value]) => (
-        <div key={label} style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px' }}>
-          <div style={{ ...mono, color: T.warn, fontSize: 16, fontWeight: 500 }}>{value}</div>
-          <div style={{ fontSize: 10.5, color: T.mutedDim, marginTop: 2 }}>{label}</div>
+          <div style={sectionTitle}>Desenvolvimento individual</div>
+          <div style={{ ...card, color: momentos.length ? T.cream : T.mutedDim, fontSize: 12.5 }}>
+            {momentos.length === 0
+              ? 'Ainda sem momentos de desenvolvimento.'
+              : `${momentosAbertos} momento${momentosAbertos === 1 ? '' : 's'} ${momentosAbertos === 1 ? 'aberto' : 'abertos'} de ${momentos.length}${ultimoMomento ? ` · último a ${fmtShort(ultimoMomento.data)}` : ''}`}
+          </div>
         </div>
-      ))}
+      </div>
     </div>
   );
 }
+
 
 function age(birthYearOrDate) {
   if (!birthYearOrDate) return null;
