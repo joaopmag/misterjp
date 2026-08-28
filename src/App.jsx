@@ -974,9 +974,15 @@ function removeWithUndo(list, setList, id, label, depois) {
 
 function ConfirmDialog() {
   const [pedido, setPedido] = useState(null);
+  // Só para quando o pedido pede para escrever uma palavra/nome antes de
+  // deixar confirmar (ex.: apagar uma equipa). Reinicia sempre que muda
+  // o pedido — inclusive quando um pedido é substituído por outro
+  // encadeado (ver a nota em `confirmar`), para não sobrar texto escrito
+  // no diálogo anterior.
+  const [digitado, setDigitado] = useState('');
 
   useEffect(() => {
-    confirmHandler = (next) => setPedido(next);
+    confirmHandler = (next) => { setDigitado(''); setPedido(next); };
     return () => { confirmHandler = null; };
   }, []);
 
@@ -991,7 +997,22 @@ function ConfirmDialog() {
 
   if (!pedido) return null;
 
-  const confirmar = () => { try { pedido.onConfirm(); } catch (e) { console.error(e); } setPedido(null); };
+  const precisaTexto = !!pedido.confirmText;
+  const textoBate = !precisaTexto
+    || digitado.trim().toLowerCase() === String(pedido.confirmText).trim().toLowerCase();
+
+  const confirmar = () => {
+    if (!textoBate) return;
+    /* `onConfirm` pode, ele próprio, chamar `askConfirm` outra vez — é o
+       caso de "apagar equipa", que encadeia um segundo diálogo (a última
+       confirmação) a seguir a este. Se se fechasse sempre com
+       `setPedido(null)` no fim, isso apagava esse segundo diálogo mesmo
+       antes de ele chegar a aparecer. Por isso só se fecha AQUI se
+       ninguém tiver posto um pedido novo entretanto. */
+    const pedidoAntes = pedido;
+    try { pedido.onConfirm(); } catch (e) { console.error(e); }
+    setPedido(prev => (prev === pedidoAntes ? null : prev));
+  };
 
   return createPortal(
     <div
@@ -1021,9 +1042,28 @@ function ConfirmDialog() {
             ? <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 18px', ...body }}>{nota}</p>
             : <div style={{ height: 14 }} />;
         })()}
+        {precisaTexto && (
+          <div style={{ margin: '0 0 18px' }}>
+            <div style={{ color: T.muted, fontSize: 12.5, margin: '0 0 8px', ...body }}>
+              Para confirmar, escreve: <strong style={{ color: T.cream }}>{pedido.confirmText}</strong>
+            </div>
+            <input
+              autoFocus
+              value={digitado}
+              onChange={e => setDigitado(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && textoBate) confirmar(); }}
+              placeholder={pedido.confirmText}
+              style={{
+                width: '100%', boxSizing: 'border-box', background: T.surface,
+                border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px',
+                color: T.cream, fontSize: 14, outline: 'none', ...body,
+              }}
+            />
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <Btn variant="ghost" onClick={() => setPedido(null)}>Cancelar</Btn>
-          <Btn onClick={confirmar}>
+          <Btn onClick={confirmar} disabled={!textoBate}>
             {pedido.destructive === false ? <Check size={15} /> : <Trash2 size={15} />}
             {pedido.confirmLabel || 'Apagar'}
           </Btn>
@@ -3424,24 +3464,25 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
        distração não chega para destruir uma época. */
   const apagarEquipa = () => {
     const alvo = (equipa.clube || equipa.nome || '').trim();
-    const escrito = typeof window !== 'undefined'
-      ? window.prompt(`Vais apagar esta equipa e TODOS os seus dados: ${retrato.jogadores} jogadores, ${retrato.wellness} registos de bem-estar, ${retrato.clinico} do boletim clínico.\n\nIsto não tem volta e não há cópia.\n\nPara confirmar, escreve: ${alvo}`)
-      : null;
-    if (escrito === null) return;
-    if (String(escrito).trim().toLowerCase() !== alvo.toLowerCase()) {
-      setErro('O nome não coincide. Nada foi apagado.');
-      return;
-    }
     askConfirm({
-      title: 'Apagar definitivamente?',
-      label: alvo,
-      note: 'Última confirmação. Depois disto os dados não se recuperam.',
-      confirmLabel: 'Apagar tudo',
-      onConfirm: async () => {
-        const { error } = await supabase.from('teams').delete().eq('id', equipa.id);
-        if (error) { setErro(error.message); return; }
-        try { window.localStorage.removeItem(CHAVE_EQUIPA); } catch (e) { /* modo privado */ }
-        window.location.reload();
+      title: 'Apagar esta equipa?',
+      label: `Vais apagar esta equipa e TODOS os seus dados: ${retrato.jogadores} jogadores, ${retrato.wellness} registos de bem-estar, ${retrato.clinico} do boletim clínico.`,
+      note: 'Isto não tem volta e não há cópia.',
+      confirmText: alvo,
+      confirmLabel: 'Continuar',
+      onConfirm: () => {
+        askConfirm({
+          title: 'Apagar definitivamente?',
+          label: alvo,
+          note: 'Última confirmação. Depois disto os dados não se recuperam.',
+          confirmLabel: 'Apagar tudo',
+          onConfirm: async () => {
+            const { error } = await supabase.from('teams').delete().eq('id', equipa.id);
+            if (error) { setErro(error.message); return; }
+            try { window.localStorage.removeItem(CHAVE_EQUIPA); } catch (e) { /* modo privado */ }
+            window.location.reload();
+          },
+        });
       },
     });
   };
@@ -5966,7 +6007,7 @@ function PlayerModal({ player, onClose, onSave }) {
   });
 
   return (
-    <Modal title={player ? 'Editar jogador' : 'Novo jogador'} onClose={onClose} wide>
+    <Modal title={player ? 'Editar jogador' : 'Novo jogador'} onClose={onClose} wide xwide fullPage>
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Identificação</div>
         <div style={{ ...FIELD_GRID }}>
@@ -6327,7 +6368,7 @@ function DossierModal({ ideias, onClose, onImprimir }) {
   const total = escolhidas.size;
 
   return (
-    <Modal title="Dossier de ideias de jogo" subtitle="O modelo de jogo num documento só." onClose={onClose} wide>
+    <Modal title="Dossier de ideias de jogo" subtitle="O modelo de jogo num documento só." onClose={onClose} wide xwide fullPage>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <Btn variant="ghost" onClick={() => setEscolhidas(new Set(ideias.map(i => i.id)))}>Todas</Btn>
         <Btn variant="ghost" onClick={() => setEscolhidas(new Set())}>Nenhuma</Btn>
@@ -15836,7 +15877,7 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
   const totalMin = f.exerciseIds.reduce((sum, e) => sum + (Number(e.duration) || 0), 0);
 
   return (
-    <Modal title={session ? 'Editar sessão' : 'Nova sessão'} onClose={onClose} wide>
+    <Modal title={session ? 'Editar sessão' : 'Nova sessão'} onClose={onClose} wide xwide fullPage>
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <Field label="Data"><Input type="date" value={f.date} onChange={e => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Fase de jogo (foco)">
@@ -22071,7 +22112,7 @@ function ScoutModal({ player, onClose, onSave }) {
   const avg = pillarAverage(f);
 
   return (
-    <Modal title={player ? 'Editar jogador adversário' : 'Novo jogador adversário'} onClose={onClose} wide>
+    <Modal title={player ? 'Editar jogador adversário' : 'Novo jogador adversário'} onClose={onClose} wide xwide fullPage>
 
       <SubHeading>Dados e perfil</SubHeading>
       <div style={{ ...FIELD_GRID, marginBottom: 18 }}>
