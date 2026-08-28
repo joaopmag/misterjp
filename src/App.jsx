@@ -22166,7 +22166,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios }) {
       />
 
       {subTab === 'adversarios' ? (
-        <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} />
+        <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} setScouting={setScouting} />
       ) : (
       <>
       <SectionHeader title="Scouting" subtitle="Jogadores adversários com potencial, para acompanhar ao longo da época."
@@ -22354,7 +22354,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios }) {
    respetivamente, o editor de prancheta da Ideia de Jogo e a Biblioteca
    — ver a conversa sobre esta funcionalidade). Por agora, só Resumo e
    Jogadores-chave. */
-function AdversariosApp({ adversarios, setAdversarios, scouting }) {
+function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) {
   const [modal, setModal] = useState(null); // 'new' | adversário a editar
   const [viewing, setViewing] = useState(null); // adversário aberto em página cheia
   const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
@@ -22379,7 +22379,7 @@ function AdversariosApp({ adversarios, setAdversarios, scouting }) {
     const atual = adversarios.find(a => a.id === viewing.id) || viewing;
     return (
       <AdversarioPage
-        adversario={atual} scouting={scouting}
+        adversario={atual} scouting={scouting} setScouting={setScouting}
         onBack={fecharFicha}
         onEdit={() => setModal(atual)}
         onRemove={() => remove(atual.id)}
@@ -22420,16 +22420,26 @@ function AdversariosApp({ adversarios, setAdversarios, scouting }) {
   );
 }
 
-function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove, onSetJogadoresChave, children }) {
-  const [aAdicionar, setAAdicionar] = useState('');
+function AdversarioPage({ adversario: a, scouting, setScouting, onBack, onEdit, onRemove, onSetJogadoresChave, children }) {
+  const [aAdicionarModal, setAAdicionarModal] = useState(false);
   const chave = (scouting || []).filter(x => (a.jogadoresChaveIds || []).includes(x.id));
-  const disponiveis = (scouting || []).filter(x => !(a.jogadoresChaveIds || []).includes(x.id));
 
   const remover = (id) => onSetJogadoresChave((a.jogadoresChaveIds || []).filter(x => x !== id));
-  const adicionar = () => {
-    if (!aAdicionar) return;
-    onSetJogadoresChave([...(a.jogadoresChaveIds || []), aAdicionar]);
-    setAAdicionar('');
+  /* O jogador escolhido pode já existir em "Jogadores" (liga-se pelo id
+     dele) ou pode ser um nome novo, escrito à mão, que ainda não estava
+     observado — nesse caso cria-se já uma ficha nova em "Jogadores", só
+     com o nome preenchido, para se completar mais tarde (posição,
+     clube, características…), por exemplo depois de o veres jogar.
+     Nunca se perde a ligação a "Jogadores": seja qual for o caminho, o
+     jogador-chave acaba sempre por ser uma ficha a sério de lá. */
+  const adicionarChave = (resultado) => {
+    if (resultado.novoNome) {
+      const novoId = uid();
+      setScouting([...(scouting || []), { id: novoId, name: resultado.novoNome }]);
+      onSetJogadoresChave([...(a.jogadoresChaveIds || []), novoId]);
+    } else {
+      onSetJogadoresChave([...(a.jogadoresChaveIds || []), resultado.id]);
+    }
   };
 
   const bloco = (titulo, texto) => texto && (
@@ -22475,20 +22485,12 @@ function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove, onS
       <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>
         Jogadores-chave
       </div>
-      {disponiveis.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <Select value={aAdicionar} onChange={e => setAAdicionar(e.target.value)} style={{ flex: 1 }}>
-            <option value="">Escolher um jogador já observado…</option>
-            {disponiveis.map(x => <option key={x.id} value={x.id}>{x.name}{x.position ? ` · ${x.position}` : ''}</option>)}
-          </Select>
-          <Btn variant="ghost" onClick={adicionar} disabled={!aAdicionar}><Plus size={14} /> Adicionar</Btn>
-        </div>
-      )}
+      <div style={{ marginBottom: 12 }}>
+        <Btn variant="ghost" onClick={() => setAAdicionarModal(true)}><Plus size={14} /> Adicionar jogador-chave</Btn>
+      </div>
       {chave.length === 0 ? (
         <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
-          {scouting.length === 0
-            ? 'Ainda não há jogadores observados na aba "Jogadores" para ligar aqui.'
-            : 'Nenhum jogador-chave marcado ainda para este adversário.'}
+          Nenhum jogador-chave marcado ainda para este adversário.
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
@@ -22506,8 +22508,61 @@ function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove, onS
         </div>
       )}
 
+      {aAdicionarModal && (
+        <AdicionarJogadorChaveModal
+          scouting={scouting} jaChaveIds={a.jogadoresChaveIds || []}
+          onClose={() => setAAdicionarModal(false)}
+          onAdd={adicionarChave}
+        />
+      )}
+
       {children}
     </div>
+  );
+}
+
+/* Janela própria (não um menu apertado dentro da página) para escolher
+   um jogador-chave — com sugestões de quem já está observado, mas sem
+   OBRIGAR a escolher de lá: um nome que não corresponda a ninguém cria
+   uma ficha nova em "Jogadores", só com o nome, para se completar mais
+   tarde. O `<datalist>` é a forma mais simples e nativa de dar as duas
+   coisas ao mesmo tempo — sugestões clicáveis, e à mesma um campo de
+   texto livre por baixo. */
+function AdicionarJogadorChaveModal({ scouting, jaChaveIds, onClose, onAdd }) {
+  const [nome, setNome] = useState('');
+  const disponiveis = (scouting || []).filter(x => !jaChaveIds.includes(x.id));
+  const valido = nome.trim().length > 0;
+
+  const confirmar = () => {
+    const texto = nome.trim();
+    if (!texto) return;
+    const existente = disponiveis.find(x => (x.name || '').trim().toLowerCase() === texto.toLowerCase());
+    onAdd(existente ? { id: existente.id } : { novoNome: texto });
+    onClose();
+  };
+
+  return (
+    <Modal title="Adicionar jogador-chave" onClose={onClose}>
+      <Field label="Nome do jogador" bloco solto>
+        <Input
+          list="jogadores-scouting-existentes" value={nome} onChange={e => setNome(e.target.value)}
+          placeholder="Escreve o nome — escolhe um já observado, ou escreve um novo"
+          autoFocus onKeyDown={e => { if (e.key === 'Enter' && valido) confirmar(); }}
+        />
+        <datalist id="jogadores-scouting-existentes">
+          {disponiveis.map(x => <option key={x.id} value={x.name} />)}
+        </datalist>
+      </Field>
+      <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+        Se o nome não corresponder a ninguém já observado, cria-se uma ficha nova em "Jogadores" — só com o nome
+        preenchido, pronta a completar mais tarde (posição, clube, características…), por exemplo depois de o
+        veres jogar.
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={confirmar} disabled={!valido}>Adicionar</Btn>
+      </div>
+    </Modal>
   );
 }
 
