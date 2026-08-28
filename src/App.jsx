@@ -2300,6 +2300,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <GestaoEquipa
               equipa={equipaAtiva} session={session}
               onEquipasMudaram={onEquipasMudaram}
+              setPlayers={setPlayers}
               dados={{
                 season, players, exercises, ideias, sessions, monitoring, matches,
                 scouting, videos, apresentacoes, convocatorias, diario,
@@ -3281,7 +3282,8 @@ function retratoDeDados({ players, monitoring, clinico, sessions, matches, desen
   };
 }
 
-function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
+function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) {
+  const players = (dados && dados.players) || [];
   const estreito = useIsMobile(640);
 
   /* UMA REGRA SÓ PARA TODOS OS BOTÕES DESTE ECRÃ.
@@ -3306,6 +3308,13 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
   const [logo, setLogo] = useState(equipa.logo || '');
   const [meuNome, setMeuNome] = useState('');
   const [aGuardarLogo, setAGuardarLogo] = useState(false);
+  // Códigos de acesso individuais dos atletas — mudou-se para aqui a
+  // partir de Monitorização: é informação tão reservada como o próprio
+  // código de convite (dá entrada na plataforma), por isso faz mais
+  // sentido viver ao lado dele do que entre gráficos de wellness.
+  // Fechados por omissão, pela mesma razão que o código de convite só
+  // aparece a quem administra.
+  const [showCodes, setShowCodes] = useState(false);
 
   /* O LOGÓTIPO É UM ENDEREÇO, NÃO UM FICHEIRO.
 
@@ -3503,6 +3512,51 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
     },
   });
 
+  /* Gerar um código novo invalida o antigo: o atleta deixa de conseguir
+     entrar até alguém lhe dar o novo. É destrutivo o suficiente para
+     merecer confirmação — e o botão fica ao lado do código, fácil de
+     acertar sem querer. */
+  /* Quem ainda tem código curto, e a forma de atualizar todos de uma vez.
+     Um a um seriam quarenta confirmações; mas continua a ser uma ação
+     deliberada, com aviso, porque todos esses atletas ficam sem conseguir
+     entrar até receberem o novo. */
+  const curtos = players.filter(p => p.code && String(p.code).length < CHECKIN_CODE_LEN);
+
+  const atualizarCodigosCurtos = () => askConfirm({
+    title: 'Atualizar os códigos antigos?',
+    label: `${curtos.length} ${curtos.length === 1 ? 'atleta' : 'atletas'}`,
+    note: 'Os códigos atuais deixam de funcionar. Tens de enviar o novo a cada um antes do próximo questionário.',
+    confirmLabel: 'Atualizar códigos',
+    destructive: false,
+    onConfirm: () => {
+      const used = new Set(players.map(p => p.code).filter(Boolean));
+      setPlayers(players.map(p => {
+        if (!p.code || String(p.code).length >= CHECKIN_CODE_LEN) return p;
+        used.delete(p.code);
+        return { ...p, code: genPlayerCode(used) };
+      }));
+    },
+  });
+
+  const regenerateCode = (playerId) => {
+    const jogador = players.find(p => p.id === playerId);
+    if (!jogador) return;
+    askConfirm({
+      title: 'Gerar um código novo?',
+      label: `${jogador.name}${jogador.code ? ` · código atual ${jogador.code}` : ''}`,
+      note: 'O código atual deixa de funcionar. Tens de enviar o novo ao atleta para ele voltar a conseguir responder.',
+      confirmLabel: 'Gerar novo código',
+      destructive: false,
+      onConfirm: () => {
+        const used = new Set(players.filter(p => p.id !== playerId && p.code).map(p => p.code));
+        setPlayers(players.map(p => (p.id === playerId ? { ...p, code: genPlayerCode(used) } : p)));
+      },
+    });
+  };
+
+  const th2 = { textAlign: 'left', padding: '9px 12px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}` };
+  const td2 = { padding: '9px 12px', fontSize: 13, color: T.mutedDim };
+
   return (
     <div>
       <SectionHeader title="Equipa" subtitle="Quem tem acesso e como convidar." />
@@ -3619,6 +3673,77 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados }) {
           <Btn variant="ghost" onClick={sairDaEquipa} style={botaoAcao}><LogOut size={15} /> Sair desta equipa</Btn>
         </div>
       </Panel>
+
+      {/* CÓDIGOS DE ACESSO INDIVIDUAIS — mudou-se para aqui a partir de
+          Monitorização. É o login de cada atleta na plataforma, tão
+          reservado como o código de convite logo acima — por isso vive
+          ao lado dele, e não entre os gráficos de wellness onde
+          qualquer consulta ao ecrã empurrava demasiado scroll antes de
+          se chegar à tabela de respostas do dia. Pela mesma razão do
+          código de convite, só quem administra a equipa vê e gere. */}
+      {souDono && players.length > 0 && (
+        <>
+          <div style={{ height: 16 }} />
+          <Panel title="Códigos de acesso individuais"
+            action={<button onClick={() => setShowCodes(!showCodes)} style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+              {showCodes ? <><EyeOff size={13} /> Ocultar</> : <><Eye size={13} /> Mostrar</>}
+            </button>}>
+            {showCodes ? (
+              <>
+                {/* CÓDIGOS ANTIGOS, CURTOS.
+
+                    Os de quatro dígitos ainda entram, mas são adivinháveis:
+                    nove mil hipóteses para um plantel de quarenta. O aviso
+                    só aparece enquanto houver algum por atualizar, e
+                    desaparece sozinho quando deixar de haver — um aviso
+                    permanente deixa de ser lido. */}
+                {curtos.length > 0 && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                    padding: '11px 14px', marginBottom: 12, borderRadius: 8,
+                    background: `${T.warn}18`, border: `1px solid ${T.warn}55`,
+                  }}>
+                    <AlertTriangle size={15} style={{ color: T.warn, flexShrink: 0 }} />
+                    <div style={{ fontSize: 12.5, color: T.cream, flex: 1, minWidth: 180, lineHeight: 1.5 }}>
+                      {curtos.length} {curtos.length === 1 ? 'atleta tem um código antigo' : 'atletas têm códigos antigos'} de 4 dígitos,
+                      fáceis de adivinhar por quem tenha o link.
+                    </div>
+                    <Btn variant="ghost" onClick={atualizarCodigosCurtos} style={{ flexShrink: 0 }}>
+                      <RefreshCw size={14} /> Atualizar
+                    </Btn>
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 10, lineHeight: 1.5 }}>
+                  Cada atleta tem um código pessoal de {CHECKIN_CODE_LEN} dígitos. É o login dele no questionário: entra só com o próprio código e só vê o seu nome — nunca a lista do plantel. Envia o código individualmente a cada um (ex: mensagem privada).
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table>
+                    <thead><tr><th style={th2}>Jogador</th><th style={th2}>Código</th><th style={th2}></th></tr></thead>
+                    <tbody>
+                      {sortByPosition(players).map(p => (
+                        <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+                          <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
+                          <td style={{ ...td2, ...mono, color: T.warn, letterSpacing: '.1em' }}>{p.code || '—'}</td>
+                          <td style={td2}>
+                            <button onClick={() => regenerateCode(p.id)} title="Gerar novo código"
+                              style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5 }}>
+                              <RefreshCw size={12} /> Novo código
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '4px 0' }}>
+                Códigos ocultos. Clica em "Mostrar" para veres e geres os códigos de acesso de cada atleta.
+              </div>
+            )}
+          </Panel>
+        </>
+      )}
 
       <div style={{ height: 16 }} />
 
@@ -19656,8 +19781,10 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
   const ctx = { matches, sessions };
   const [modal, setModal] = useState(false);
   const [modalType, setModalType] = useState('wellness');
-  const [showCodes, setShowCodes] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  // "Sessão de hoje" fica fechada por omissão — é consulta pontual, não
+  // precisa de estar sempre à vista (ver a nota grande junto ao Panel).
+  const [mostrarSessaoHoje, setMostrarSessaoHoje] = useState(false);
   // Duas vistas sobre a MESMA coleção `monitoring`: Wellness/PSE (dos
   // questionários) e Composição Corporal (pesagens). Um separador simples
   // em vez de duas rotas — é a mesma área, só muda o que se está a olhar.
@@ -19709,47 +19836,6 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
     });
   };
   const remove = (id) => removeWithUndo(monitoring, setMonitoring, id, 'Registo de monitorização');
-  /* Gerar um código novo invalida o antigo: o atleta deixa de conseguir
-     entrar até alguém lhe dar o novo. É destrutivo o suficiente para
-     merecer confirmação — e o botão fica ao lado do código, fácil de
-     acertar sem querer. */
-  /* Quem ainda tem código curto, e a forma de atualizar todos de uma vez.
-     Um a um seriam quarenta confirmações; mas continua a ser uma ação
-     deliberada, com aviso, porque todos esses atletas ficam sem conseguir
-     entrar até receberem o novo. */
-  const curtos = players.filter(p => p.code && String(p.code).length < CHECKIN_CODE_LEN);
-
-  const atualizarCodigosCurtos = () => askConfirm({
-    title: 'Atualizar os códigos antigos?',
-    label: `${curtos.length} ${curtos.length === 1 ? 'atleta' : 'atletas'}`,
-    note: 'Os códigos atuais deixam de funcionar. Tens de enviar o novo a cada um antes do próximo questionário.',
-    confirmLabel: 'Atualizar códigos',
-    destructive: false,
-    onConfirm: () => {
-      const used = new Set(players.map(p => p.code).filter(Boolean));
-      setPlayers(players.map(p => {
-        if (!p.code || String(p.code).length >= CHECKIN_CODE_LEN) return p;
-        used.delete(p.code);
-        return { ...p, code: genPlayerCode(used) };
-      }));
-    },
-  });
-
-  const regenerateCode = (playerId) => {
-    const jogador = players.find(p => p.id === playerId);
-    if (!jogador) return;
-    askConfirm({
-      title: 'Gerar um código novo?',
-      label: `${jogador.name}${jogador.code ? ` · código atual ${jogador.code}` : ''}`,
-      note: 'O código atual deixa de funcionar. Tens de enviar o novo ao atleta para ele voltar a conseguir responder.',
-      confirmLabel: 'Gerar novo código',
-      destructive: false,
-      onConfirm: () => {
-        const used = new Set(players.filter(p => p.id !== playerId && p.code).map(p => p.code));
-        setPlayers(players.map(p => (p.id === playerId ? { ...p, code: genPlayerCode(used) } : p)));
-      },
-    });
-  };
 
   const todayDateStr = todayStr();
   const yesterdayDateStr = addDays(todayDateStr, -1);
@@ -19812,7 +19898,7 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
       <>
       <Panel title="Questionário para os atletas">
         <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
-          Envia este link aos atletas — abre diretamente o ecrã de código pessoal, sem mostrar o resto da plataforma. Cada um entra com o seu código individual (ver "Códigos de acesso individuais" abaixo).
+          Envia este link aos atletas — abre diretamente o ecrã de código pessoal, sem mostrar o resto da plataforma. Cada um entra com o seu código individual (em Equipa → Membros e convite).
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
           <Input readOnly value={checkinUrl} onFocus={e => e.target.select()} style={{ flex: 1, minWidth: 220, ...mono, fontSize: 12.5 }} />
@@ -19825,81 +19911,36 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
         </div>
       </Panel>
 
-      <Panel title="Sessão de hoje (usada no RPE)">
-        {todaySession ? (
-          <div style={{ fontSize: 13, color: T.cream, display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <div style={{ fontWeight: 500 }}>{todaySession.phase === 'Descanso' ? 'Folga' : (todaySession.focus || todaySession.phase || 'Sessão de treino')}</div>
-            <div style={{ fontSize: 12, color: T.mutedDim }}>
-              {[todaySession.phase, intensityText(todaySession)].filter(Boolean).join(' · ')}
+      {/* FICA FECHADO POR OMISSÃO.
+          É informação de consulta pontual (só interessa saber ao montar
+          o treino de hoje), não algo que precise de estar sempre à
+          vista — e era isto, mais os Códigos de acesso (agora em
+          Equipa → Membros e convite), que empurrava a tabela de
+          respostas — o conteúdo principal deste ecrã — para muito mais
+          abaixo do que devia. */}
+      <Panel title="Sessão de hoje (usada no RPE)"
+        action={<button onClick={() => setMostrarSessaoHoje(!mostrarSessaoHoje)} style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+          {mostrarSessaoHoje ? <><EyeOff size={13} /> Ocultar</> : <><Eye size={13} /> Mostrar</>}
+        </button>}>
+        {mostrarSessaoHoje ? (
+          todaySession ? (
+            <div style={{ fontSize: 13, color: T.cream, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ fontWeight: 500 }}>{todaySession.phase === 'Descanso' ? 'Folga' : (todaySession.focus || todaySession.phase || 'Sessão de treino')}</div>
+              <div style={{ fontSize: 12, color: T.mutedDim }}>
+                {[todaySession.phase, intensityText(todaySession)].filter(Boolean).join(' · ')}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+              Ainda não há sessão criada para hoje em Planeamento. O RPE dos atletas fica associado automaticamente à sessão do dia — cria a sessão de hoje em Planeamento para que fiquem ligados.
+            </div>
+          )
         ) : (
-          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-            Ainda não há sessão criada para hoje em Planeamento. O RPE dos atletas fica associado automaticamente à sessão do dia — cria a sessão de hoje em Planeamento para que fiquem ligados.
+          <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '4px 0' }}>
+            {todaySession ? (todaySession.phase === 'Descanso' ? 'Folga' : (todaySession.focus || todaySession.phase || 'Sessão de treino')) : 'Sem sessão criada para hoje.'} — clica em "Mostrar" para os detalhes.
           </div>
         )}
       </Panel>
-
-      {players.length > 0 && (
-        <Panel title="Códigos de acesso individuais"
-          action={<button onClick={() => setShowCodes(!showCodes)} style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
-            {showCodes ? <><EyeOff size={13} /> Ocultar</> : <><Eye size={13} /> Mostrar</>}
-          </button>}>
-          {showCodes ? (
-            <>
-              {/* CÓDIGOS ANTIGOS, CURTOS.
-
-                  Os de quatro dígitos ainda entram, mas são adivinháveis:
-                  nove mil hipóteses para um plantel de quarenta. O aviso
-                  só aparece enquanto houver algum por atualizar, e
-                  desaparece sozinho quando deixar de haver — um aviso
-                  permanente deixa de ser lido. */}
-              {curtos.length > 0 && (
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-                  padding: '11px 14px', marginBottom: 12, borderRadius: 8,
-                  background: `${T.warn}18`, border: `1px solid ${T.warn}55`,
-                }}>
-                  <AlertTriangle size={15} style={{ color: T.warn, flexShrink: 0 }} />
-                  <div style={{ fontSize: 12.5, color: T.cream, flex: 1, minWidth: 180, lineHeight: 1.5 }}>
-                    {curtos.length} {curtos.length === 1 ? 'atleta tem um código antigo' : 'atletas têm códigos antigos'} de 4 dígitos,
-                    fáceis de adivinhar por quem tenha o link.
-                  </div>
-                  <Btn variant="ghost" onClick={atualizarCodigosCurtos} style={{ flexShrink: 0 }}>
-                    <RefreshCw size={14} /> Atualizar
-                  </Btn>
-                </div>
-              )}
-              <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 10, lineHeight: 1.5 }}>
-                Cada atleta tem um código pessoal de {CHECKIN_CODE_LEN} dígitos. É o login dele: entra só com o próprio código e só vê o seu nome — nunca a lista do plantel. Envia o código individualmente a cada um (ex: mensagem privada).
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table>
-                  <thead><tr><th style={th2}>Jogador</th><th style={th2}>Código</th><th style={th2}></th></tr></thead>
-                  <tbody>
-                    {sortByPosition(players).map(p => (
-                      <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
-                        <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
-                        <td style={{ ...td2, ...mono, color: T.warn, letterSpacing: '.1em' }}>{p.code || '—'}</td>
-                        <td style={td2}>
-                          <button onClick={() => regenerateCode(p.id)} title="Gerar novo código"
-                            style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5 }}>
-                            <RefreshCw size={12} /> Novo código
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : (
-            <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '4px 0' }}>
-              Códigos ocultos. Clica em "Mostrar" para veres e geres os códigos de acesso de cada atleta.
-            </div>
-          )}
-        </Panel>
-      )}
 
       {players.length > 0 && (
         <Panel title="Plantel — estado atual">
