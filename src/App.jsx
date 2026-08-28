@@ -2478,6 +2478,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              eram dois separadores e continua a ser agora que são duas
              sub-abas: o `display: none` é justamente o que o permite. */}
           <div style={{ display: tab === 'biblioteca' ? 'block' : 'none' }}>
+            <SectionHeader title="Biblioteca" subtitle="Vídeos, apresentações e documentos da equipa." />
             <SubTabs
               value={biblioteca}
               onChange={setBiblioteca}
@@ -16199,6 +16200,7 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <SectionHeader title="Boletim Clínico" subtitle="Registo de ocorrências." />
       <Panel
         title="Fora esta semana"
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ocorrência</Btn>}
@@ -19719,18 +19721,20 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   if (aba === 'convocatorias') {
     return (
       <div>
-        <SubTabs
-          value={aba}
-          onChange={setAba}
-          tabs={[
-            { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
-            { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
-          ]}
-        />
         <Convocatorias
           convocatorias={convocatorias} setConvocatorias={setConvocatorias}
           players={players} season={season} standings={standings}
           matches={matches} setMatches={setMatches} clinico={clinico}
+          subTabs={(
+            <SubTabs
+              value={aba}
+              onChange={setAba}
+              tabs={[
+                { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
+                { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
+              ]}
+            />
+          )}
         />
       </div>
     );
@@ -19738,6 +19742,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
 
   return (
     <div>
+      <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
+        action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
       <SubTabs
         value={aba}
         onChange={setAba}
@@ -19746,8 +19752,6 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
           { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
         ]}
       />
-      <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
-        action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
 
       <div style={{ marginBottom: 20 }}>
         <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />
@@ -22245,6 +22249,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
 
   return (
     <div>
+      <SectionHeader title="Scouting" subtitle="Jogadores adversários com potencial, para acompanhar ao longo da época." />
       <SubTabs
         value={subTab}
         onChange={(v) => {
@@ -22273,15 +22278,12 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} setScouting={setScouting} videos={videos} setVideos={setVideos} />
       ) : (
       <>
-      <SectionHeader title="Scouting" subtitle="Jogadores adversários com potencial, para acompanhar ao longo da época."
-        action={
-          <div style={{ display: 'flex', gap: 8 }}>
-            {scouting.length > 0 && (
-              <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)}><Download size={15} /> Exportar CSV</Btn>
-            )}
-            <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
-          </div>
-        } />
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 14 }}>
+        {scouting.length > 0 && (
+          <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)}><Download size={15} /> Exportar CSV</Btn>
+        )}
+        <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
+      </div>
 
       {positionsUsed.length > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
@@ -25211,7 +25213,7 @@ function syncMatchConvocatoria(match, convocatorias, season) {
   });
 }
 
-function Convocatorias({ convocatorias, setConvocatorias, players, season, standings, matches, setMatches, clinico }) {
+function Convocatorias({ convocatorias, setConvocatorias, players, season, standings, matches, setMatches, clinico, subTabs }) {
   const [modal, setModal] = useState(null);
   const [printConvocatoria, setPrintConvocatoria] = useState(null);
 
@@ -25248,6 +25250,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
     <div>
       <SectionHeader title="Convocatórias" subtitle={`U19 - ${season?.name || ''}`}
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Nova convocatória</Btn>} />
+      {subTabs}
 
       <div style={{ display: 'flex', gap: 24, marginBottom: 18, borderBottom: `1px solid ${T.line}` }}>
         <span style={{
