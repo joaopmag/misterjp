@@ -22355,48 +22355,81 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios }) {
    — ver a conversa sobre esta funcionalidade). Por agora, só Resumo e
    Jogadores-chave. */
 function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) {
-  const [modal, setModal] = useState(null); // 'new' | adversário a editar
-  const [viewing, setViewing] = useState(null); // adversário aberto em página cheia
+  const [editando, setEditando] = useState(null); // 'new' | adversário a editar — página cheia
+  const [viewing, setViewing] = useState(null); // ficha em consulta — página cheia
+  const fecharEdicao = useDetailBack(!!editando, () => setEditando(null));
   const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
 
-  const save = (dados) => {
-    if (dados.id) {
-      setAdversarios(adversarios.map(a => (a.id === dados.id ? dados : a)));
-      if (viewing && viewing.id === dados.id) setViewing(dados);
+  /* Guardar resolve os jogadores-chave escritos no formulário: cada
+     linha com um nome que já existe em "Jogadores" (comparado sem
+     maiúsculas/minúsculas) liga-se a essa ficha; um nome novo cria uma
+     ficha lá, só com nome e posição — nunca antes disto, só ao
+     guardar. */
+  const save = (dados, linhasChave) => {
+    const scoutingFinal = [...scouting];
+    const jogadoresChaveIds = [];
+    (linhasChave || []).forEach(l => {
+      const nome = (l.nome || '').trim();
+      if (!nome) return;
+      const idx = scoutingFinal.findIndex(x => (x.name || '').trim().toLowerCase() === nome.toLowerCase());
+      if (idx >= 0) {
+        if (!scoutingFinal[idx].position && l.posicao) scoutingFinal[idx] = { ...scoutingFinal[idx], position: l.posicao };
+        jogadoresChaveIds.push(scoutingFinal[idx].id);
+      } else {
+        const novo = { id: uid(), name: nome, position: l.posicao || '' };
+        scoutingFinal.push(novo);
+        jogadoresChaveIds.push(novo.id);
+      }
+    });
+    if (scoutingFinal.length !== scouting.length || scoutingFinal.some((x, i) => x !== scouting[i])) setScouting(scoutingFinal);
+
+    const registo = { ...dados, jogadoresChaveIds };
+    if (registo.id) {
+      setAdversarios(adversarios.map(a => (a.id === registo.id ? registo : a)));
+      if (viewing && viewing.id === registo.id) setViewing(registo);
     } else {
-      setAdversarios([...adversarios, { ...dados, id: uid(), jogadoresChaveIds: [] }]);
+      registo.id = uid();
+      setAdversarios([...adversarios, registo]);
     }
-    setModal(null);
+    fecharEdicao();
   };
   const remove = (id) => {
     const a = adversarios.find(x => x.id === id);
     removeWithUndo(adversarios, setAdversarios, id, itemLabel(a, 'Adversário'));
     setViewing(null);
-    setModal(null);
+    setEditando(null);
   };
+
+  if (editando) {
+    return (
+      <AdversarioForm
+        adversario={editando === 'new' ? null : editando}
+        scouting={scouting}
+        onBack={fecharEdicao}
+        onSave={save}
+      />
+    );
+  }
 
   if (viewing) {
     const atual = adversarios.find(a => a.id === viewing.id) || viewing;
     return (
       <AdversarioPage
-        adversario={atual} scouting={scouting} setScouting={setScouting}
+        adversario={atual} scouting={scouting}
         onBack={fecharFicha}
-        onEdit={() => setModal(atual)}
+        onEdit={() => setEditando(atual)}
         onRemove={() => remove(atual.id)}
-        onSetJogadoresChave={(ids) => setAdversarios(adversarios.map(a => (a.id === atual.id ? { ...a, jogadoresChaveIds: ids } : a)))}
-      >
-        {modal && <AdversarioModal adversario={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
-      </AdversarioPage>
+      />
     );
   }
 
   return (
     <div>
       <SectionHeader title="Adversários" subtitle="Análise por adversário — pontos fortes, fracos, e os jogadores a vigiar."
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar adversário</Btn>} />
+        action={<Btn onClick={() => setEditando('new')}><Plus size={15} /> Adicionar adversário</Btn>} />
 
       {adversarios.length === 0 ? (
-        <EmptyState text="Ainda sem adversários registados." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro</Btn>} />
+        <EmptyState text="Ainda sem adversários registados." action={<Btn onClick={() => setEditando('new')}><Plus size={15} /> Adicionar o primeiro</Btn>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {adversarios.map(a => (
@@ -22414,33 +22447,12 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) 
           ))}
         </div>
       )}
-
-      {modal && <AdversarioModal adversario={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
     </div>
   );
 }
 
-function AdversarioPage({ adversario: a, scouting, setScouting, onBack, onEdit, onRemove, onSetJogadoresChave, children }) {
-  const [aAdicionarModal, setAAdicionarModal] = useState(false);
+function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove }) {
   const chave = (scouting || []).filter(x => (a.jogadoresChaveIds || []).includes(x.id));
-
-  const remover = (id) => onSetJogadoresChave((a.jogadoresChaveIds || []).filter(x => x !== id));
-  /* O jogador escolhido pode já existir em "Jogadores" (liga-se pelo id
-     dele) ou pode ser um nome novo, escrito à mão, que ainda não estava
-     observado — nesse caso cria-se já uma ficha nova em "Jogadores", só
-     com o nome preenchido, para se completar mais tarde (posição,
-     clube, características…), por exemplo depois de o veres jogar.
-     Nunca se perde a ligação a "Jogadores": seja qual for o caminho, o
-     jogador-chave acaba sempre por ser uma ficha a sério de lá. */
-  const adicionarChave = (resultado) => {
-    if (resultado.novoNome) {
-      const novoId = uid();
-      setScouting([...(scouting || []), { id: novoId, name: resultado.novoNome }]);
-      onSetJogadoresChave([...(a.jogadoresChaveIds || []), novoId]);
-    } else {
-      onSetJogadoresChave([...(a.jogadoresChaveIds || []), resultado.id]);
-    }
-  };
 
   const bloco = (titulo, texto) => texto && (
     <div style={{ marginBottom: 16 }}>
@@ -22485,93 +22497,62 @@ function AdversarioPage({ adversario: a, scouting, setScouting, onBack, onEdit, 
       <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>
         Jogadores-chave
       </div>
-      <div style={{ marginBottom: 12 }}>
-        <Btn variant="ghost" onClick={() => setAAdicionarModal(true)}><Plus size={14} /> Adicionar jogador-chave</Btn>
-      </div>
       {chave.length === 0 ? (
         <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
-          Nenhum jogador-chave marcado ainda para este adversário.
+          Nenhum jogador-chave marcado ainda. Toca em "Editar" para os acrescentar.
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 16 }}>
           {chave.map(x => (
-            <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
-                <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
-              </div>
-              <button onClick={() => remover(x.id)} title="Remover dos jogadores-chave" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', flexShrink: 0 }}>
-                <X size={14} />
-              </button>
+            <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
+              <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+              <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
             </div>
           ))}
         </div>
       )}
-
-      {aAdicionarModal && (
-        <AdicionarJogadorChaveModal
-          scouting={scouting} jaChaveIds={a.jogadoresChaveIds || []}
-          onClose={() => setAAdicionarModal(false)}
-          onAdd={adicionarChave}
-        />
-      )}
-
-      {children}
     </div>
   );
 }
 
-/* Janela própria (não um menu apertado dentro da página) para escolher
-   um jogador-chave — com sugestões de quem já está observado, mas sem
-   OBRIGAR a escolher de lá: um nome que não corresponda a ninguém cria
-   uma ficha nova em "Jogadores", só com o nome, para se completar mais
-   tarde. O `<datalist>` é a forma mais simples e nativa de dar as duas
-   coisas ao mesmo tempo — sugestões clicáveis, e à mesma um campo de
-   texto livre por baixo. */
-function AdicionarJogadorChaveModal({ scouting, jaChaveIds, onClose, onAdd }) {
-  const [nome, setNome] = useState('');
-  const disponiveis = (scouting || []).filter(x => !jaChaveIds.includes(x.id));
-  const valido = nome.trim().length > 0;
+/* Formulário de página inteira — cria/edita o adversário e, na mesma
+   página, os jogadores-chave (nome + posição). Um nome que já exista
+   em "Jogadores" (comparado sem maiúsculas/minúsculas) liga-se a essa
+   ficha ao Guardar; um nome novo cria lá uma ficha nova, só com nome e
+   posição — NUNCA antes disso, só no momento de guardar. */
+function AdversarioForm({ adversario, scouting, onBack, onSave }) {
+  const [f, setF] = useState(adversario || { nome: '', escalao: '', prova: '', formacaoHabitual: '', pontosFortes: '', pontosFracos: '', notas: '' });
+  const [linhas, setLinhas] = useState(() => {
+    const iniciais = ((adversario && adversario.jogadoresChaveIds) || [])
+      .map(id => scouting.find(x => x.id === id))
+      .filter(Boolean)
+      .map(x => ({ nome: x.name || '', posicao: x.position || '' }));
+    return iniciais.length ? iniciais : [{ nome: '', posicao: '' }];
+  });
+  const valido = String(f.nome || '').trim().length > 0;
 
-  const confirmar = () => {
-    const texto = nome.trim();
-    if (!texto) return;
-    const existente = disponiveis.find(x => (x.name || '').trim().toLowerCase() === texto.toLowerCase());
-    onAdd(existente ? { id: existente.id } : { novoNome: texto });
-    onClose();
+  const nomesExistentes = (scouting || []).map(x => x.name).filter(Boolean);
+  const atualizarLinha = (i, campo, valor) => setLinhas(linhas.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)));
+  const removerLinha = (i) => setLinhas(linhas.filter((_, idx) => idx !== i));
+
+  const guardar = () => {
+    if (!valido) return;
+    onSave(f, linhas);
   };
 
   return (
-    <Modal title="Adicionar jogador-chave" onClose={onClose}>
-      <Field label="Nome do jogador" bloco solto>
-        <Input
-          list="jogadores-scouting-existentes" value={nome} onChange={e => setNome(e.target.value)}
-          placeholder="Escreve o nome — escolhe um já observado, ou escreve um novo"
-          autoFocus onKeyDown={e => { if (e.key === 'Enter' && valido) confirmar(); }}
-        />
-        <datalist id="jogadores-scouting-existentes">
-          {disponiveis.map(x => <option key={x.id} value={x.name} />)}
-        </datalist>
-      </Field>
-      <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
-        Se o nome não corresponder a ninguém já observado, cria-se uma ficha nova em "Jogadores" — só com o nome
-        preenchido, pronta a completar mais tarde (posição, clube, características…), por exemplo depois de o
-        veres jogar.
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={confirmar} disabled={!valido}>Adicionar</Btn>
-      </div>
-    </Modal>
-  );
-}
+    <div>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> Adversários
+      </button>
 
-function AdversarioModal({ adversario, onClose, onSave }) {
-  const [f, setF] = useState(adversario || { nome: '', escalao: '', prova: '', formacaoHabitual: '', pontosFortes: '', pontosFracos: '', notas: '' });
-  const valido = String(f.nome || '').trim().length > 0;
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 20 }}>
+        {adversario ? 'Editar adversário' : 'Novo adversário'}
+      </div>
 
-  return (
-    <Modal title={adversario ? 'Editar adversário' : 'Novo adversário'} onClose={onClose} wide>
       <div style={{ marginBottom: 14 }}>
         <Field label="Clube / Equipa" bloco solto>
           <Input value={f.nome} onChange={e => setF({ ...f, nome: e.target.value })} placeholder="Ex: FC Padroense" autoFocus />
@@ -22598,16 +22579,48 @@ function AdversarioModal({ adversario, onClose, onSave }) {
           <TextArea value={f.pontosFracos} onChange={e => setF({ ...f, pontosFracos: e.target.value })} style={{ minHeight: 64 }} />
         </Field>
       </div>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 24 }}>
         <Field label="Notas gerais" bloco solto>
           <TextArea value={f.notas} onChange={e => setF({ ...f, notas: e.target.value })} style={{ minHeight: 64 }} />
         </Field>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => valido && onSave(f)} disabled={!valido}>Guardar</Btn>
+
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
+        Jogadores-chave
       </div>
-    </Modal>
+      <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
+        Um nome que já exista em "Jogadores" liga-se a essa ficha; um nome novo cria lá uma ficha, só com nome e
+        posição — prontos a completar mais tarde (clube, características…), por exemplo depois de o veres jogar.
+      </div>
+      <datalist id="jogadores-scouting-existentes">
+        {nomesExistentes.map(nome => <option key={nome} value={nome} />)}
+      </datalist>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+        {linhas.map((l, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Input
+              list="jogadores-scouting-existentes" value={l.nome} onChange={e => atualizarLinha(i, 'nome', e.target.value)}
+              placeholder="Nome do jogador" style={{ flex: 2, minWidth: 0 }}
+            />
+            <Select value={l.posicao} onChange={e => atualizarLinha(i, 'posicao', e.target.value)} style={{ flex: 1, minWidth: 90 }}>
+              <option value="">Posição</option>
+              {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+            </Select>
+            <button onClick={() => removerLinha(i)} title="Remover esta linha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', flexShrink: 0 }}>
+              <X size={16} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <Btn variant="ghost" onClick={() => setLinhas([...linhas, { nome: '', posicao: '' }])}>
+        <Plus size={14} /> Adicionar jogador-chave
+      </Btn>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 28, paddingTop: 18, borderTop: `1px solid ${T.line}` }}>
+        <Btn variant="ghost" onClick={onBack}>Cancelar</Btn>
+        <Btn onClick={guardar} disabled={!valido}>Guardar</Btn>
+      </div>
+    </div>
   );
 }
 
