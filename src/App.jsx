@@ -1663,22 +1663,65 @@ function useSubColecao(itemsCompletos, setItemsCompletos, pertence) {
   return [items, setItems];
 }
 
+/* RETROCEDER NO BROWSER DEVOLVE À ABA DE ANTES, NÃO À LISTA DESTA ABA.
+
+   Abrir o perfil de um jogador, a ficha de um jogo, ou qualquer vista
+   de detalhe destas — em cheio, a substituir o conteúdo da aba — nunca
+   mexia no endereço nem no histórico do browser: era só estado do
+   React. Resultado: ao retroceder, o browser ia para a última vez que
+   o ENDEREÇO mudou (a última mudança de aba, ex.: #jogos → #plantel),
+   nunca para "antes de abrir este jogador" — porque, aos olhos do
+   browser, essa abertura nunca tinha acontecido.
+
+   Este hook empurra uma entrada extra no histórico assim que a vista
+   de detalhe abre (mesmo endereço, só um marcador). Retroceder nessa
+   entrada é o que o browser já sabe fazer sozinho — e é isso que faz
+   cair de volta na aba anterior, não na lista desta aba.
+
+   Para o botão "Voltar" DENTRO da app dar o mesmo resultado, ele deve
+   chamar `back()` (devolvido por este hook) em vez de fechar a vista
+   diretamente — assim há só UM caminho a fechar a vista (retroceder no
+   histórico), e os dois gatilhos (botão da app, botão do telemóvel/
+   browser) ficam sempre de acordo, sem risco de uma entrada de
+   histórico ficar esquecida por trás.
+
+   UMA VISTA DENTRO DE OUTRA (ex.: abrir uma tática de dentro da ficha
+   de um adversário) EMPILHA duas destas marcas, uma por cima da outra.
+   Sem cuidado, fechar a de dentro dispara UM "popstate" só — e esse
+   evento único chega a AMBOS os ouvintes (o de dentro e o de fora), que
+   sem saberem distinguir "foi a minha marca que saiu?" fechavam-se os
+   dois de uma vez, fazendo saltar duas vistas com um só fecho. Cada
+   marca leva por isso um identificador próprio (`marker`); ao ouvir um
+   "popstate", compara-se o identificador que ficou no topo do
+   histórico com o nosso — só nos fechamos se DEIXOU de ser o nosso
+   (sinal de que foi mesmo a nossa entrada, ou algo acima dela, que
+   saiu); se ainda é o nosso, foi uma marca mais funda a sair, e não nos
+   diz respeito. */
 function useDetailBack(aberto, fechar) {
-  const marcado = useRef(false);
+  const markerRef = useRef(null);
+  const fechadoPeloPop = useRef(false);
   useEffect(() => {
-    if (!aberto) { marcado.current = false; return undefined; }
-    window.history.pushState({ mjpDetalhe: true }, '', window.location.hash);
-    marcado.current = true;
-    const onPop = () => { marcado.current = false; fechar(); };
+    if (!aberto) return undefined;
+    const meuMarker = uid();
+    markerRef.current = meuMarker;
+    fechadoPeloPop.current = false;
+    window.history.pushState({ mjpMarker: meuMarker }, '', window.location.hash);
+    const onPop = () => {
+      const atual = window.history.state && window.history.state.mjpMarker;
+      if (atual === meuMarker) return; // saiu uma marca mais funda, não a nossa
+      fechadoPeloPop.current = true;
+      fechar();
+    };
     window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (fechadoPeloPop.current) return; // já foi o próprio retroceder a tratar disto
+      const atual = window.history.state && window.history.state.mjpMarker;
+      if (atual === meuMarker) window.history.back();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberto]);
-  const back = () => {
-    if (marcado.current) window.history.back();
-    else fechar();
-  };
-  return back;
+  return () => window.history.back();
 }
 
 /* A MESMA IDEIA, MAS PARA QUALQUER Modal — sem precisar de tocar em
@@ -1695,16 +1738,31 @@ function useDetailBack(aberto, fechar) {
    app, não pelo browser), consome-se sozinho — assim nunca fica uma
    marca por trás à espera de um retroceder que já não serve para
    nada, e o retroceder do browser passa a fechar QUALQUER janela desta
-   app, em qualquer aba, sem precisar de dizer isso janela a janela. */
+   app, em qualquer aba, sem precisar de dizer isso janela a janela.
+
+   Mesmo cuidado do `useDetailBack` com marcas identificadas — ver a
+   nota lá em cima sobre vistas empilhadas (um Modal aberto de dentro
+   de outra vista de detalhe): sem isso, fechar o Modal de dentro fazia
+   fechar também a vista de fora, com um só gesto. */
 function useModalHistory(onClose) {
-  const consumida = useRef(false);
+  const markerRef = useRef(null);
+  const fechadoPeloPop = useRef(false);
   useEffect(() => {
-    window.history.pushState({ mjpModal: true }, '', window.location.hash);
-    const onPop = () => { consumida.current = true; onClose(); };
+    const meuMarker = uid();
+    markerRef.current = meuMarker;
+    window.history.pushState({ mjpMarker: meuMarker }, '', window.location.hash);
+    const onPop = () => {
+      const atual = window.history.state && window.history.state.mjpMarker;
+      if (atual === meuMarker) return; // saiu uma marca mais funda, não a nossa
+      fechadoPeloPop.current = true;
+      onClose();
+    };
     window.addEventListener('popstate', onPop);
     return () => {
       window.removeEventListener('popstate', onPop);
-      if (!consumida.current) window.history.back();
+      if (fechadoPeloPop.current) return;
+      const atual = window.history.state && window.history.state.mjpMarker;
+      if (atual === meuMarker) window.history.back();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -22188,7 +22246,15 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
   return (
     <div>
       <SubTabs
-        value={subTab} onChange={setSubTab}
+        value={subTab}
+        onChange={(v) => {
+          // Trocar de valência enquanto uma ficha de jogador está aberta
+          // não fazia nada visível: o ecrã continuava preso a essa ficha
+          // (`viewing` tinha sempre prioridade sobre `subTab` a decidir o
+          // que mostrar). Ao trocar, fecha-se a ficha também.
+          setSubTab(v);
+          setViewing(null);
+        }}
         tabs={[
           { id: 'jogadores', label: 'Jogadores', icon: Users, count: scouting.length },
           { id: 'adversarios', label: 'Adversários', icon: Shield, count: adversarios.length },
