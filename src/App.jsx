@@ -20053,18 +20053,17 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
         </Panel>
       )}
 
+      <div style={{ height: 16 }} />
+
+      <Panel title="Respostas">
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registar dados de monitorização." />
       ) : (
         <>
           {/* Mesma grelha e mesmos atalhos do histórico do plantel, mais
               abaixo: dois filtros de data com aspetos diferentes na mesma
-              página obrigam a reaprender o mesmo gesto duas vezes.
-
-              O espaço em cima separa-o da tabela do estado atual. Sem ele,
-              a etiqueta "DATA DE INÍCIO" encostava à última linha da
-              tabela e lia-se como se fizesse parte dela. */}
-          <div style={{ ...FIELD_GRID, marginTop: 28, marginBottom: 14 }}>
+              página obrigam a reaprender o mesmo gesto duas vezes. */}
+          <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
             <Field label="Data de início">
               <Input type="date" value={deData} max={ateData || undefined} onChange={e => setDeData(e.target.value)} />
             </Field>
@@ -20143,9 +20142,13 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
           )}
         </>
       )}
+      </Panel>
 
       {players.length > 0 && (
-        <PlantelHistorico players={players} monitoring={monitoring} matches={matches} sessions={sessions} />
+        <>
+          <div style={{ height: 16 }} />
+          <PlantelHistorico players={players} monitoring={monitoring} matches={matches} sessions={sessions} />
+        </>
       )}
       </>
       )}
