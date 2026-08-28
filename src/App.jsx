@@ -22364,26 +22364,42 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) 
      linha com um nome que já existe em "Jogadores" (comparado sem
      maiúsculas/minúsculas) liga-se a essa ficha; um nome novo cria uma
      ficha lá, só com nome e posição — nunca antes disto, só ao
-     guardar. */
-  const save = (dados, linhasChave) => {
+     guardar.
+
+     O quadro de posições, no formulário, trabalhou com um `localId`
+     próprio de cada linha (as fichas ainda não existiam para terem um
+     id real). Aqui troca-se cada `localId` pelo id definitivo — o da
+     ficha encontrada ou criada agora mesmo — antes de gravar os
+     "mexidos à mão" do quadro. */
+  const save = (dados, linhasChave, quadroTatica, quadroOverridesLocal) => {
     const scoutingFinal = [...scouting];
     const jogadoresChaveIds = [];
+    const idFinalPorLocalId = {};
     (linhasChave || []).forEach(l => {
       const nome = (l.nome || '').trim();
       if (!nome) return;
       const idx = scoutingFinal.findIndex(x => (x.name || '').trim().toLowerCase() === nome.toLowerCase());
+      let idFinal;
       if (idx >= 0) {
         if (!scoutingFinal[idx].position && l.posicao) scoutingFinal[idx] = { ...scoutingFinal[idx], position: l.posicao };
-        jogadoresChaveIds.push(scoutingFinal[idx].id);
+        idFinal = scoutingFinal[idx].id;
       } else {
         const novo = { id: uid(), name: nome, position: l.posicao || '' };
         scoutingFinal.push(novo);
-        jogadoresChaveIds.push(novo.id);
+        idFinal = novo.id;
       }
+      jogadoresChaveIds.push(idFinal);
+      idFinalPorLocalId[l.localId] = idFinal;
     });
     if (scoutingFinal.length !== scouting.length || scoutingFinal.some((x, i) => x !== scouting[i])) setScouting(scoutingFinal);
 
-    const registo = { ...dados, jogadoresChaveIds };
+    const quadroOverrides = {};
+    Object.entries(quadroOverridesLocal || {}).forEach(([localId, lugarId]) => {
+      const idFinal = idFinalPorLocalId[localId];
+      if (idFinal) quadroOverrides[idFinal] = lugarId;
+    });
+
+    const registo = { ...dados, jogadoresChaveIds, quadroTatica, quadroOverrides };
     if (registo.id) {
       setAdversarios(adversarios.map(a => (a.id === registo.id ? registo : a)));
       if (viewing && viewing.id === registo.id) setViewing(registo);
@@ -22518,14 +22534,25 @@ function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove, onU
           Nenhum jogador-chave marcado ainda. Toca em "Editar" para os acrescentar.
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 16 }}>
-          {chave.map(x => (
-            <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
-              <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
-              <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
-            </div>
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 16 }}>
+            {chave.map(x => (
+              <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
+                <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+                <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
+              </div>
+            ))}
+          </div>
+          {/* O mesmo quadro montado na edição, aqui só para consulta —
+              nada para tocar, é o "provável onze" do adversário. Ajusta-se
+              em "Editar". */}
+          <PrancheteDoPlantel
+            lugares={distribuirPlantel({
+              players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
+            })}
+            escala={1.25}
+          />
+        </>
       )}
 
       {/* TÁTICAS — o mesmo editor de prancheta e a mesma apresentação
@@ -22625,8 +22652,22 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
     const iniciais = ((adversario && adversario.jogadoresChaveIds) || [])
       .map(id => scouting.find(x => x.id === id))
       .filter(Boolean)
-      .map(x => ({ nome: x.name || '', posicao: x.position || '' }));
-    return iniciais.length ? iniciais : [{ nome: '', posicao: '' }];
+      // O id real da ficha já existente serve logo como `localId` — é
+      // estável e não muda ao guardar, ao contrário de uma linha nova.
+      .map(x => ({ localId: x.id, nome: x.name || '', posicao: x.position || '' }));
+    return iniciais.length ? iniciais : [{ localId: uid(), nome: '', posicao: '' }];
+  });
+  // O quadro de posições precisa de UM id por jogador para arrumar os
+  // "mexidos à mão" — mas os jogadores-chave só ganham um id real (o da
+  // ficha em "Jogadores") ao Guardar. Por isso usa-se aqui um `localId`
+  // próprio, só desta sessão de edição; ao guardar, `onSave` troca essas
+  // chaves locais pelos ids reais — ver `AdversariosApp.save`.
+  const [quadroTatica, setQuadroTatica] = useState((adversario && adversario.quadroTatica) || TATICA_OMISSAO);
+  const [quadroOverrides, setQuadroOverrides] = useState(() => {
+    if (!adversario || !adversario.quadroOverrides) return {};
+    // Reconstrói as chaves locais a partir dos ids reais gravados — os
+    // localId das linhas iniciais SÃO esses ids reais (ver em cima).
+    return adversario.quadroOverrides;
   });
   const valido = String(f.nome || '').trim().length > 0;
 
@@ -22636,7 +22677,7 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
 
   const guardar = () => {
     if (!valido) return;
-    onSave(f, linhas);
+    onSave(f, linhas, quadroTatica, quadroOverrides);
   };
 
   return (
@@ -22696,7 +22737,7 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
       </datalist>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {linhas.map((l, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div key={l.localId} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Input
               list="jogadores-scouting-existentes" value={l.nome} onChange={e => atualizarLinha(i, 'nome', e.target.value)}
               placeholder="Nome do jogador" style={{ flex: 2, minWidth: 0 }}
@@ -22711,9 +22752,27 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
           </div>
         ))}
       </div>
-      <Btn variant="ghost" onClick={() => setLinhas([...linhas, { nome: '', posicao: '' }])}>
+      <Btn variant="ghost" onClick={() => setLinhas([...linhas, { localId: uid(), nome: '', posicao: '' }])}>
         <Plus size={14} /> Adicionar jogador-chave
       </Btn>
+
+      {/* O MESMO QUADRO DE POSIÇÕES DO PLANTEL — só que aqui arruma os
+          jogadores-chave escritos em cima, não o nosso plantel. Como
+          nenhum deles ainda tem uma ficha gravada (isso só acontece ao
+          Guardar), usa-se o `localId` de cada linha como se fosse o id
+          do jogador — o `EditorPrancheta` nem sabe que está a lidar com
+          fichas por criar. */}
+      <div style={{ marginTop: 24 }}>
+        <EditorPrancheta
+          players={linhas.filter(l => l.nome.trim()).map(l => ({ id: l.localId, name: l.nome.trim(), position: l.posicao }))}
+          attendance={linhas.filter(l => l.nome.trim()).map(l => l.localId)}
+          convidados={[]}
+          overrides={quadroOverrides}
+          tatica={quadroTatica}
+          onChange={setQuadroOverrides}
+          onTatica={setQuadroTatica}
+        />
+      </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 28, paddingTop: 18, borderTop: `1px solid ${T.line}` }}>
         <Btn variant="ghost" onClick={onBack}>Cancelar</Btn>
