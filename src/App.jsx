@@ -3684,7 +3684,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) 
       {souDono && players.length > 0 && (
         <>
           <div style={{ height: 16 }} />
-          <Panel title="Códigos de acesso individuais"
+          <Panel title={<>Códigos de acesso individuais <span style={{ color: T.mutedDim, fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>(questionários wellness e PSE)</span></>}
             action={<button onClick={() => setShowCodes(!showCodes)} style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
               {showCodes ? <><EyeOff size={13} /> Ocultar</> : <><Eye size={13} /> Mostrar</>}
             </button>}>
