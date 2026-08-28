@@ -22157,6 +22157,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
   const [filter, setFilter] = useState('');
   const [printScout, setPrintScout] = useState(null);
   const [viewing, setViewing] = useState(null); // ficha completa em ecrã
+  const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
 
   const save = (data) => {
     if (data.id) setScouting(scouting.map(x => x.id === data.id ? data : x));
@@ -22194,7 +22195,15 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         ]}
       />
 
-      {subTab === 'adversarios' ? (
+      {viewing ? (
+        <ScoutSheetPage
+          player={viewing}
+          onBack={fecharFicha}
+          onEdit={() => { setModal(viewing); setViewing(null); }}
+          onShare={() => doShare(viewing)}
+          onPrint={() => { const p = viewing; setViewing(null); setTimeout(() => doPrint(p), 60); }}
+        />
+      ) : subTab === 'adversarios' ? (
         <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} setScouting={setScouting} videos={videos} setVideos={setVideos} />
       ) : (
       <>
@@ -22277,15 +22286,6 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
       )}
 
       {modal && <ScoutModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
-      {viewing && (
-        <ScoutSheetModal
-          player={viewing}
-          onClose={() => setViewing(null)}
-          onEdit={() => { setModal(viewing); setViewing(null); }}
-          onShare={() => doShare(viewing)}
-          onPrint={() => { const p = viewing; setViewing(null); setTimeout(() => doPrint(p), 60); }}
-        />
-      )}
 
       {printScout && createPortal(
         <div className="print-sheet">
@@ -22839,7 +22839,42 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
 
 /* Ficha completa em ecrã — o mesmo conteúdo e a mesma disposição da
    página que sai na partilha, para o treinador ver antes de enviar. */
-function ScoutSheetModal({ player: x, onClose, onEdit, onShare, onPrint }) {
+/* Pontos genéricos de cada posição, para o mini-quadro da ficha de
+   observação — SEM tática nenhuma associada (o jogador observado não
+   joga por nós, não faz sentido escolher 4-3-3 ou 4-4-2 para ele). É só
+   uma referência visual de "mais ou menos aqui em campo", a mesma para
+   qualquer formação. */
+const POSICAO_GENERICA_PONTO = {
+  GR: [0.06, 0.50], DC: [0.20, 0.50], DE: [0.24, 0.06], DD: [0.24, 0.94],
+  MD: [0.42, 0.50], MC: [0.55, 0.50], MOC: [0.68, 0.50],
+  EE: [0.75, 0.06], ED: [0.75, 0.94], PL: [0.92, 0.50],
+};
+
+/* Quadro pequeno com só as posições que o jogador tem definidas
+   (principal, e secundária se for diferente) — nunca o campo todo com
+   as outras oito vazias, que não diriam nada sobre ELE em concreto.
+   Reaproveita o mesmo `PrancheteDoPlantel` do Plantel; o `aoTocar`
+   vazio é só para lhe pedir o visual "de dentro da app" (fundo verde
+   escuro, etiqueta vermelha) em vez do visual pensado para impressão —
+   não há nada para tocar de facto, os lugares não têm jogadores
+   lá dentro. */
+function QuadroPosicaoJogador({ position, secondaryPosition }) {
+  const lugares = [];
+  if (position && POSICAO_GENERICA_PONTO[position]) {
+    lugares.push({ id: 'principal', rotulo: position, ponto: POSICAO_GENERICA_PONTO[position], lista: [] });
+  }
+  if (secondaryPosition && secondaryPosition !== position && POSICAO_GENERICA_PONTO[secondaryPosition]) {
+    lugares.push({ id: 'secundaria', rotulo: secondaryPosition, ponto: POSICAO_GENERICA_PONTO[secondaryPosition], lista: [] });
+  }
+  if (!lugares.length) return null;
+  return (
+    <div style={{ maxWidth: 320 }}>
+      <PrancheteDoPlantel lugares={lugares} aoTocar={() => {}} escala={1.1} maxLargura={320} />
+    </div>
+  );
+}
+
+function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
   const avg = pillarAverage(x);
   const potentialLabel = (RATING_LEVELS.find(r => r.value === Number(x.potential)) || {}).label || '';
   const idRows = [
@@ -22856,7 +22891,15 @@ function ScoutSheetModal({ player: x, onClose, onEdit, onShare, onPrint }) {
   ].filter(([, v]) => v);
 
   return (
-    <Modal title={x.name || 'Jogador observado'} onClose={onClose} wide>
+    <div>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> Jogadores
+      </button>
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 14 }}>{x.name || 'Jogador observado'}</div>
       <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
 
       <SubHeading>Identificação</SubHeading>
@@ -22880,6 +22923,7 @@ function ScoutSheetModal({ player: x, onClose, onEdit, onShare, onPrint }) {
             borderRadius: 10, border: `1px solid ${T.line}`, background: '#000',
           }} />
         )}
+        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
       </div>
 
       <SubHeading>Potencial geral</SubHeading>
@@ -22921,7 +22965,7 @@ function ScoutSheetModal({ player: x, onClose, onEdit, onShare, onPrint }) {
           <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.notes}</p>
         </>
       )}
-    </Modal>
+    </div>
   );
 }
 
