@@ -1637,6 +1637,32 @@ function useIsMobile(breakpoint = 860) {
    histórico), e os dois gatilhos (botão da app, botão do telemóvel/
    browser) ficam sempre de acordo, sem risco de uma entrada de
    histórico ficar esquecida por trás. */
+/* UMA "FATIA" DE UMA COLEÇÃO MAIOR, QUE ESCREVE DE VOLTA SEM PERDER O
+   RESTO.
+
+   Usado para os vídeos de um adversário (Scouting) e para o Canal geral
+   (Biblioteca) — os dois são o MESMO `videos`, só filtrados por
+   critérios diferentes (`pertence`). Sem isto, um componente genérico
+   como o `MediaLibrary` — que só conhece a fatia que lhe é dada, nunca
+   a coleção toda — apagaria sem querer tudo o que tivesse ficado de
+   fora do filtro sempre que escrevesse (criar, editar, apagar um
+   vídeo): ele escreve sempre a lista INTEIRA de volta, e só sabe da
+   fatia que recebeu. Aqui, cada escrita reconstrói a coleção completa:
+   o que está fora do filtro fica exatamente como estava; só a fatia de
+   dentro é substituída pela nova. */
+function useSubColecao(itemsCompletos, setItemsCompletos, pertence) {
+  const items = (itemsCompletos || []).filter(pertence);
+  const setItems = (novoOuFn) => {
+    setItemsCompletos(prevFull => {
+      const dentroAntes = (prevFull || []).filter(pertence);
+      const foraAntes = (prevFull || []).filter(x => !pertence(x));
+      const dentroDepois = typeof novoOuFn === 'function' ? novoOuFn(dentroAntes) : novoOuFn;
+      return [...foraAntes, ...dentroDepois];
+    });
+  };
+  return [items, setItems];
+}
+
 function useDetailBack(aberto, fechar) {
   const marcado = useRef(false);
   useEffect(() => {
@@ -1845,6 +1871,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [adversarios, setAdversarios, adversariosReady] = useCollectionSync('adversarios', notifyEdit, teamId);
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
   const [documentos, setDocumentos, documentosReady] = useCollectionSync('documentos', notifyEdit, teamId);
+  // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
+  // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
+  const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId);
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit, teamId);
   const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit, teamId);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit, teamId);
@@ -2381,7 +2410,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
-          {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} />}
+          {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
 
              Continuam ambas SEMPRE MONTADAS (escondidas com CSS, não
@@ -2402,7 +2431,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
             <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
               <MediaLibrary
-                items={videos} setItems={setVideos}
+                items={videosGerais} setItems={setVideosGerais}
                 title="Canal" subtitle="Vídeos de jogos e treinos."
                 addLabel="Adicionar vídeo"
                 emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
@@ -22122,7 +22151,7 @@ ${x.notes ? `<h2>Notas gerais</h2><p class="desc">${escapeHtmlText(x.notes)}</p>
 `;
 }
 
-function Scouting({ scouting, setScouting, adversarios, setAdversarios }) {
+function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, setVideos }) {
   const [subTab, setSubTab] = useState('jogadores');
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('');
@@ -22166,7 +22195,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios }) {
       />
 
       {subTab === 'adversarios' ? (
-        <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} setScouting={setScouting} />
+        <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} setScouting={setScouting} videos={videos} setVideos={setVideos} />
       ) : (
       <>
       <SectionHeader title="Scouting" subtitle="Jogadores adversários com potencial, para acompanhar ao longo da época."
@@ -22354,7 +22383,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios }) {
    respetivamente, o editor de prancheta da Ideia de Jogo e a Biblioteca
    — ver a conversa sobre esta funcionalidade). Por agora, só Resumo e
    Jogadores-chave. */
-function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) {
+function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, videos, setVideos }) {
   const [editando, setEditando] = useState(null); // 'new' | adversário a editar — página cheia
   const [viewing, setViewing] = useState(null); // ficha em consulta — página cheia
   const fecharEdicao = useDetailBack(!!editando, () => setEditando(null));
@@ -22431,7 +22460,7 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) 
     const atual = adversarios.find(a => a.id === viewing.id) || viewing;
     return (
       <AdversarioPage
-        adversario={atual} scouting={scouting}
+        adversario={atual} scouting={scouting} videos={videos} setVideos={setVideos}
         onBack={fecharFicha}
         onEdit={() => setEditando(atual)}
         onRemove={() => remove(atual.id)}
@@ -22472,11 +22501,22 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) 
   );
 }
 
-function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove, onUpdate }) {
+function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, onEdit, onRemove, onUpdate }) {
   const chave = (scouting || []).filter(x => (a.jogadoresChaveIds || []).includes(x.id));
   const taticas = a.taticas || [];
   const [taticaModal, setTaticaModal] = useState(null); // null | 'new' | tática a editar
   const [taticaViewing, setTaticaViewing] = useState(null);
+  /* A fatia dos vídeos DESTE adversário — qualquer vídeo criado aqui
+     dentro (pelo MediaLibrary, que não sabe nada de adversários) fica
+     automaticamente marcado com o `adversarioId` certo, sem aparecer no
+     Canal geral da Biblioteca. Ver `useSubColecao`. */
+  const [videosDoAdversario, setVideosDoAdversarioBase] = useSubColecao(videos, setVideos, v => v.adversarioId === a.id);
+  const setVideosDoAdversario = (novoOuFn) => {
+    setVideosDoAdversarioBase(prev => {
+      const novo = typeof novoOuFn === 'function' ? novoOuFn(prev) : novoOuFn;
+      return novo.map(v => (v.adversarioId ? v : { ...v, adversarioId: a.id }));
+    });
+  };
 
   const labelTatica = (t) => (t.nome && t.nome.trim()) ? t.nome.trim() : `Tática ${taticas.indexOf(t) + 1}`;
   const saveTatica = (dados) => {
@@ -22602,6 +22642,21 @@ function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove, onU
           onEdit={() => { setTaticaModal(taticaViewing); setTaticaViewing(null); }}
         />
       )}
+
+      {/* VÍDEOS — a mesma Biblioteca (Canal), com a mesma forma de
+          adicionar (colar link do YouTube/Instagram/TikTok, ou carregar
+          um ficheiro) — só que filtrada a este adversário, e sem
+          aparecer no Canal geral da equipa. O próprio MediaLibrary já
+          traz o seu cabeçalho ("Vídeos"), por isso não se repete aqui. */}
+      <div style={{ marginTop: 20 }}>
+        <MediaLibrary
+          items={videosDoAdversario} setItems={setVideosDoAdversario}
+          title="Vídeos" subtitle="Filmagens deste adversário."
+          addLabel="Adicionar vídeo"
+          emptyText="Ainda sem vídeos deste adversário. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro."
+          emptyFirstLabel="Adicionar o primeiro vídeo"
+        />
+      </div>
     </div>
   );
 }
