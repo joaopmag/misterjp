@@ -22927,15 +22927,19 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
             borderRadius: 10, border: `1px solid ${T.line}`, background: '#000',
           }} />
         )}
-        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
       </div>
 
       <SubHeading>Potencial geral</SubHeading>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <RatingStars value={Number(x.potential) || 0} />
-        <span style={{ fontSize: 13, color: T.cream }}>
-          {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
-        </span>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 22, flexWrap: 'wrap', marginBottom: 16 }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <RatingStars value={Number(x.potential) || 0} />
+            <span style={{ fontSize: 13, color: T.cream }}>
+              {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
+            </span>
+          </div>
+        </div>
+        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
       </div>
 
       {SCOUT_PILLARS.map(p => {
