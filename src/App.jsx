@@ -22868,8 +22868,12 @@ function QuadroPosicaoJogador({ position, secondaryPosition }) {
   }
   if (!lugares.length) return null;
   return (
-    <div style={{ maxWidth: 320 }}>
-      <PrancheteDoPlantel lugares={lugares} aoTocar={() => {}} escala={1.1} maxLargura={320} />
+    // Dentro da linha (tabela + foto + isto), sem uma largura própria e
+    // com "flexShrink" por omissão a 1, o campo encolhia para quase
+    // nada — o `width` fixo aqui é o que lhe garante espaço a sério,
+    // mesmo dentro de um `flex` que só sabia encolher tudo.
+    <div style={{ width: 260, flexShrink: 0 }}>
+      <PrancheteDoPlantel lugares={lugares} aoTocar={() => {}} escala={1.1} maxLargura={260} />
     </div>
   );
 }
