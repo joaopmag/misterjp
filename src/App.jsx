@@ -15876,6 +15876,22 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
 
   const totalMin = f.exerciseIds.reduce((sum, e) => sum + (Number(e.duration) || 0), 0);
 
+  /* A LISTA DE EXERCÍCIOS SEGUE A FASE ESCOLHIDA EM CIMA.
+
+     Antes mostrava sempre os exercícios todos, de qualquer fase, e quem
+     estava a montar uma sessão de "Transição Defensiva" tinha de
+     procurar entre exercícios de Bola Parada e Organização Ofensiva
+     pelo meio. Por omissão só aparecem os da mesma fase da sessão —
+     mas um exercício já escolhido nunca desaparece só por se ter
+     mudado a fase depois (senão perdia-se a escolha sem se dar conta).
+     "Mostrar todas as fases" continua a existir para quando se quer
+     mesmo juntar, por exemplo, um exercício de Ativação a uma sessão
+     de outra fase. */
+  const [verTodasAsFases, setVerTodasAsFases] = useState(false);
+  const exerciciosVisiveis = verTodasAsFases
+    ? exercises
+    : exercises.filter(x => x.phase === f.phase || f.exerciseIds.some(e => e.exId === x.id));
+
   return (
     <Modal title={session ? 'Editar sessão' : 'Nova sessão'} onClose={onClose} wide xwide fullPage>
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
@@ -15917,14 +15933,29 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
       ) : (
         <>
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-              Exercícios da sessão {totalMin ? `· ${totalMin} min total` : ''}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                Exercícios da sessão {totalMin ? `· ${totalMin} min total` : ''}
+              </div>
+              {exercises.length > 0 && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.mutedDim, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={verTodasAsFases} onChange={e => setVerTodasAsFases(e.target.checked)} />
+                  Mostrar todas as fases
+                </label>
+              )}
             </div>
             {exercises.length === 0 ? (
               <div style={{ fontSize: 13, color: T.mutedDim }}>Cria exercícios primeiro no separador Exercícios.</div>
+            ) : exerciciosVisiveis.length === 0 ? (
+              <div style={{ fontSize: 13, color: T.mutedDim }}>
+                Sem exercícios em "{f.phase}".{' '}
+                <button type="button" onClick={() => setVerTodasAsFases(true)} style={{ background: 'none', border: 'none', padding: 0, color: T.gold, cursor: 'pointer', fontSize: 13, textDecoration: 'underline', ...body }}>
+                  Mostrar todas as fases
+                </button>
+              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
-                {exercises.map(x => {
+                {exerciciosVisiveis.map(x => {
                   const picked = f.exerciseIds.find(e => e.exId === x.id);
                   return (
                     <div key={x.id} style={{
