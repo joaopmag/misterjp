@@ -22419,6 +22419,11 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) 
         onBack={fecharFicha}
         onEdit={() => setEditando(atual)}
         onRemove={() => remove(atual.id)}
+        onUpdate={(patch) => {
+          const registo = { ...atual, ...patch };
+          setAdversarios(adversarios.map(a => (a.id === atual.id ? registo : a)));
+          setViewing(registo);
+        }}
       />
     );
   }
@@ -22451,8 +22456,19 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting }) 
   );
 }
 
-function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove }) {
+function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove, onUpdate }) {
   const chave = (scouting || []).filter(x => (a.jogadoresChaveIds || []).includes(x.id));
+  const taticas = a.taticas || [];
+  const [taticaModal, setTaticaModal] = useState(null); // null | 'new' | tática a editar
+  const [taticaViewing, setTaticaViewing] = useState(null);
+
+  const labelTatica = (t) => (t.nome && t.nome.trim()) ? t.nome.trim() : `Tática ${taticas.indexOf(t) + 1}`;
+  const saveTatica = (dados) => {
+    if (dados.id) onUpdate({ taticas: taticas.map(t => (t.id === dados.id ? dados : t)) });
+    else onUpdate({ taticas: [...taticas, { ...dados, id: uid() }] });
+    setTaticaModal(null);
+  };
+  const removeTatica = (id) => onUpdate({ taticas: taticas.filter(t => t.id !== id) });
 
   const bloco = (titulo, texto) => texto && (
     <div style={{ marginBottom: 16 }}>
@@ -22511,7 +22527,90 @@ function AdversarioPage({ adversario: a, scouting, onBack, onEdit, onRemove }) {
           ))}
         </div>
       )}
+
+      {/* TÁTICAS — o mesmo editor de prancheta e a mesma apresentação
+          animada da Ideia de Jogo (`DiagramEditor`, `ExercisePresentation`),
+          só que aqui o que se desenha é o que O ADVERSÁRIO faz — a saída
+          de bola dele, o pressing, uma bola parada que sofreram — não o
+          nosso plano. Nada de motor novo, só outro propósito. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px' }}>
+        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>Táticas</div>
+        <Btn variant="ghost" onClick={() => setTaticaModal('new')}><Plus size={14} /> Adicionar tática</Btn>
+      </div>
+      {taticas.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
+          Ainda sem táticas registadas para este adversário.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
+          {taticas.map(t => (
+            <div key={t.id} onClick={() => setTaticaViewing(t)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, cursor: 'pointer' }}>
+              <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, marginBottom: 6 }}>{labelTatica(t)}</div>
+              {t.phase && (
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{ display: 'inline-block', fontSize: 10.5, color: T.warn, background: `${T.crimson}55`, padding: '2px 8px', borderRadius: 12 }}>{t.phase}</span>
+                </div>
+              )}
+              <DiagramThumb diagram={t.diagram} />
+              <div style={{ display: 'flex', gap: 14, marginTop: 8, justifyContent: 'flex-end' }}>
+                <button onClick={(e) => { e.stopPropagation(); setTaticaModal(t); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
+                <button onClick={(e) => { e.stopPropagation(); removeTatica(t.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={13} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {taticaModal && (
+        <TaticaAdversarioModal
+          tatica={taticaModal === 'new' ? null : taticaModal}
+          onClose={() => setTaticaModal(null)}
+          onSave={saveTatica}
+        />
+      )}
+      {taticaViewing && (
+        <ExercisePresentation
+          exercise={{ ...taticaViewing, name: labelTatica(taticaViewing) }}
+          onClose={() => setTaticaViewing(null)}
+          onEdit={() => { setTaticaModal(taticaViewing); setTaticaViewing(null); }}
+        />
+      )}
     </div>
+  );
+}
+
+function TaticaAdversarioModal({ tatica, onClose, onSave }) {
+  const [f, setF] = useState(tatica || { nome: '', phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
+  const [diagramColor, setDiagramColor] = useState('A');
+
+  return (
+    <Modal title={tatica ? 'Editar tática' : 'Nova tática'} onClose={onClose} wide xwide fullPage>
+      <div style={{ marginBottom: 12 }}>
+        <Field label="Nome"><Input value={f.nome || ''} onChange={e => setF({ ...f, nome: e.target.value })} placeholder="Ex: Saída de bola a 3, pressing alto" /></Field>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Momento de jogo">
+          <Select value={f.phase} onChange={e => setF({ ...f, phase: e.target.value })}>
+            {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
+          </Select>
+        </Field>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Esquema tático" bloco>
+          <DiagramEditor
+            value={f.diagram || { elements: [], arrows: [] }}
+            onChange={d => setF(prev => ({ ...prev, diagram: d }))}
+            exerciseInfo={{ phase: f.phase }}
+            activeColor={diagramColor}
+            onColorChange={setDiagramColor}
+          />
+        </Field>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={() => onSave(f)}>Guardar</Btn>
+      </div>
+    </Modal>
   );
 }
 
