@@ -23111,9 +23111,9 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
     // esquerda — e o lado (x) fica no eixo vertical.
     const W = 150, H = 100; // 3:2 — campo deitado
     return (
-      <div style={{ width: '100%' }}>
+      <div style={{ height: '100%', display: 'flex', justifyContent: 'center' }}>
         <div style={{
-          position: 'relative', width: '100%', aspectRatio: `${W} / ${H}`,
+          position: 'relative', height: '100%', maxWidth: '100%', aspectRatio: `${W} / ${H}`,
           background: '#1E3A24', borderRadius: 10, border: `1px solid ${T.line}`, overflow: 'hidden',
         }}>
           <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
@@ -23249,11 +23249,17 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
         {avg !== null && <span style={{ fontSize: 12.5, color: T.mutedDim }}>· Média dos 4 pilares: {avg}</span>}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-        {/* COLUNA ESQUERDA: identificação + 4 pilares de rendimento */}
-        <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20, alignItems: 'stretch' }}>
+        {/* LINHA 1: Identificação e Posição em campo — as MESMAS medidas.
+            `alignItems: stretch` (o valor por omissão do grid) já obriga
+            os dois blocos à mesma altura da linha; o cartão do campo
+            cresce com `flex: 1` até essa altura, e é o campo lá dentro
+            que se adapta a ela (ver `QuadroPosicaoJogador`), nunca ao
+            contrário. Antes o campo mandava (a moldura seguia a LARGURA
+            da coluna) e saía sempre mais alto do que a Identificação. */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={sectionTitle}>Identificação</div>
-          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {linha('Clube atual', x.club)}
             {linha('Ano de nascimento', x.birthYear)}
             {linha('Idade', playerAge ? `${playerAge} anos` : null)}
@@ -23264,7 +23270,23 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
             {linha('Pé dominante', x.dominantFoot)}
             {linha('Data de observação', x.observationDate ? fmtDate(x.observationDate) : null)}
           </div>
+        </div>
 
+        {(x.position || x.secondaryPosition) && (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={sectionTitle}>Posição em campo</div>
+            <div style={{ ...card, flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center' }}>
+              <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} horizontal />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+        {/* LINHA 2: 4 pilares de rendimento e Características/Notas —
+            preenchem as duas colunas ao mesmo tempo, sem depender da
+            altura da linha 1 em cima. */}
+        <div>
           <div style={sectionTitle}>4 pilares de rendimento</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {semPilares ? (
@@ -23286,18 +23308,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
           </div>
         </div>
 
-        {/* COLUNA DIREITA: posição em campo (horizontal) + características
-            e notas — preenche a coluna toda, ao lado dos 4 pilares, em vez
-            de deixar um vazio grande por baixo do campo. */}
         <div>
-          {(x.position || x.secondaryPosition) && (
-            <>
-              <div style={sectionTitle}>Posição em campo</div>
-              <div style={{ ...card, display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-                <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} horizontal />
-              </div>
-            </>
-          )}
           {x.traits && (
             <>
               <div style={sectionTitle}>Características</div>
