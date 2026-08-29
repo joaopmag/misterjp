@@ -22219,6 +22219,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
   const [filter, setFilter] = useState('');
   const [printScout, setPrintScout] = useState(null);
   const [viewing, setViewing] = useState(null); // ficha completa em ecrã
+  const [editandoAdversario, setEditandoAdversario] = useState(null); // 'new' | adversário — ver nota no botão partilhado, mais abaixo
   const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
 
   const save = (data) => {
@@ -22267,10 +22268,12 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
           ]}
           semMargem
         />
-        {/* As ações só fazem sentido junto de "Jogadores" — nem quando se
-            vê um adversário, nem dentro da ficha de um jogador em
-            concreto (`viewing`). Ficam na mesma linha dos separadores em
-            vez de por baixo, alinhadas do lado oposto. */}
+        {/* As ações só fazem sentido junto da lista — nem quando se vê a
+            ficha de um jogador em concreto, nem a meio de a editar.
+            "Adicionar adversário" vive aqui (não dentro do
+            AdversariosApp) exatamente pela mesma razão: fica na mesma
+            linha dos separadores, alinhada do lado oposto, como as
+            ações de "Jogadores". */}
         {!viewing && subTab === 'jogadores' && (
           <div style={{ display: 'flex', gap: 8 }}>
             {scouting.length > 0 && (
@@ -22278,6 +22281,9 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
             )}
             <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
           </div>
+        )}
+        {!viewing && subTab === 'adversarios' && !editandoAdversario && (
+          <Btn onClick={() => setEditandoAdversario('new')}><Plus size={15} /> Adicionar adversário</Btn>
         )}
       </div>
 
@@ -22290,7 +22296,11 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
           onPrint={() => { const p = viewing; setViewing(null); setTimeout(() => doPrint(p), 60); }}
         />
       ) : subTab === 'adversarios' ? (
-        <AdversariosApp adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} setScouting={setScouting} videos={videos} setVideos={setVideos} />
+        <AdversariosApp
+          adversarios={adversarios} setAdversarios={setAdversarios} scouting={scouting} setScouting={setScouting}
+          videos={videos} setVideos={setVideos}
+          editando={editandoAdversario} setEditando={setEditandoAdversario}
+        />
       ) : (
       <>
       {positionsUsed.length > 0 && (
@@ -22459,8 +22469,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
    respetivamente, o editor de prancheta da Ideia de Jogo e a Biblioteca
    — ver a conversa sobre esta funcionalidade). Por agora, só Resumo e
    Jogadores-chave. */
-function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, videos, setVideos }) {
-  const [editando, setEditando] = useState(null); // 'new' | adversário a editar — página cheia
+function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, videos, setVideos, editando, setEditando }) {
   const [viewing, setViewing] = useState(null); // ficha em consulta — página cheia
   const fecharEdicao = useDetailBack(!!editando, () => setEditando(null));
   const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
@@ -22551,9 +22560,6 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
 
   return (
     <div>
-      <SectionHeader title="Adversários" subtitle="Análise por adversário — pontos fortes, fracos, e os jogadores a vigiar."
-        action={<Btn onClick={() => setEditando('new')}><Plus size={15} /> Adicionar adversário</Btn>} />
-
       {adversarios.length === 0 ? (
         <EmptyState text="Ainda sem adversários registados." action={<Btn onClick={() => setEditando('new')}><Plus size={15} /> Adicionar o primeiro</Btn>} />
       ) : (
