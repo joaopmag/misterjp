@@ -23012,38 +23012,27 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 14 }}>{x.name || 'Jogador observado'}</div>
       <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
 
-      {/* Cada secção com a sua própria linha, imagem incluída — a foto
-          dentro do bloco de "Identificação", o campo dentro do bloco de
-          "Potencial geral" (a acompanhar as estrelas E as quatro
-          avaliações, para a altura das duas colunas ficar parecida). Só
-          quando a imagem for mesmo mais alta do que o texto é que sobra
-          alguma folga antes da secção seguinte — aceite, porque é isso
-          que mantém a imagem DENTRO da secção certa, em vez de user
-          numa coluna à parte, mais alta do que qualquer secção
-          isolada. */}
-      <SubHeading>Identificação</SubHeading>
-      <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
-        <table style={{ borderCollapse: 'collapse', flex: '0 1 auto', width: 'auto' }}>
-          <tbody>
-            {idRows.map(([k, v]) => (
-              <tr key={k}>
-                <th style={{ textAlign: 'left', padding: '3px 18px 3px 0', fontSize: 12.5, color: T.muted, fontWeight: 500, whiteSpace: 'nowrap' }}>{k}</th>
-                <td style={{ padding: '3px 0', fontSize: 13, color: T.cream }}>{v}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {x.photo && (
-          <img src={x.photo} alt="Fotografia" style={{
-            width: 160, flex: '0 0 auto', aspectRatio: '3 / 4', objectFit: 'cover',
-            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000',
-          }} />
-        )}
-      </div>
+      {/* Uma coluna à esquerda com TODO o texto (Identificação, Potencial
+          geral, as quatro avaliações) e uma coluna à direita com a foto
+          e, logo por baixo dela, o campo — ambos alinhados por
+          partilharem a mesma coluna. A largura da coluna do texto é
+          limitada (não `1fr`) para a coluna das imagens ficar encostada
+          ao texto, não à margem direita da página. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 560px) auto', gap: 22, alignItems: 'start' }}>
+        <div>
+          <SubHeading>Identificação</SubHeading>
+          <table style={{ borderCollapse: 'collapse', width: 'auto', marginBottom: 18 }}>
+            <tbody>
+              {idRows.map(([k, v]) => (
+                <tr key={k}>
+                  <th style={{ textAlign: 'left', padding: '3px 18px 3px 0', fontSize: 12.5, color: T.muted, fontWeight: 500, whiteSpace: 'nowrap' }}>{k}</th>
+                  <td style={{ padding: '3px 0', fontSize: 13, color: T.cream }}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-      <SubHeading>Potencial geral</SubHeading>
-      <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
-        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <SubHeading>Potencial geral</SubHeading>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
             <RatingStars value={Number(x.potential) || 0} />
             <span style={{ fontSize: 13, color: T.cream }}>
@@ -23071,9 +23060,18 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
           )}
         </div>
 
-        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
+        <div>
+          {x.photo && (
+            <img src={x.photo} alt="Fotografia" style={{
+              width: 160, aspectRatio: '3 / 4', objectFit: 'cover',
+              borderRadius: 10, border: `1px solid ${T.line}`, background: '#000', display: 'block', marginBottom: 14,
+            }} />
+          )}
+          <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
+        </div>
       </div>
 
+      <div style={{ marginTop: 18 }}>
       {x.traits && (
         <>
           <SubHeading>Características</SubHeading>
@@ -23086,6 +23084,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
           <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.notes}</p>
         </>
       )}
+      </div>
     </div>
   );
 }
