@@ -5844,6 +5844,7 @@ function fmtDate(d) {
 ---------------------------------------------------------------- */
 function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
+  const [modalVoltarPerfil, setModalVoltarPerfil] = useState(false); // true só quando abriu a partir do perfil
   const [statsFor, setStatsFor] = useState(null); // player object (view stats)
   const fecharPerfil = useDetailBack(!!statsFor, () => setStatsFor(null));
   const [printPlayer, setPrintPlayer] = useState(null); // ficha a imprimir
@@ -5864,12 +5865,14 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
   };
 
   const save = (data) => {
-    if (data.id) {
+    const isEdicao = !!data.id;
+    if (isEdicao) {
       setPlayers(players.map(p => p.id === data.id ? data : p));
     } else {
       setPlayers([...players, { ...data, id: uid() }]);
     }
-    setModal(null);
+    if (isEdicao && modalVoltarPerfil) trocarJanela(() => setModal(null), () => setStatsFor(data));
+    else setModal(null);
   };
   /* APAGAR UM JOGADOR APAGA MESMO O JOGADOR.
 
@@ -5945,15 +5948,15 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
           onBack={fecharPerfil}
           onShare={() => doShare(statsFor)}
           onPrint={() => { const p = statsFor; doPrint(p); }}
-          onEdit={() => { const p = statsFor; trocarJanela(() => setStatsFor(null), () => setModal(p)); }}
+          onEdit={() => { const p = statsFor; setModalVoltarPerfil(true); trocarJanela(() => setStatsFor(null), () => setModal(p)); }}
         />
       ) : (
         <>
       <SectionHeader title="Plantel" subtitle={`${players.length} jogador${players.length === 1 ? '' : 'es'} inscrito${players.length === 1 ? '' : 's'}`}
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>} />
+        action={<Btn onClick={() => { setModalVoltarPerfil(false); setModal('new'); }}><Plus size={15} /> Adicionar jogador</Btn>} />
 
       {players.length === 0 ? (
-        <EmptyState text="O plantel está vazio." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro jogador</Btn>} />
+        <EmptyState text="O plantel está vazio." action={<Btn onClick={() => { setModalVoltarPerfil(false); setModal('new'); }}><Plus size={15} /> Adicionar o primeiro jogador</Btn>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {sortByPosition(players).map(p => {
@@ -5979,7 +5982,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 9 }}>
                       <button onClick={(e) => { e.stopPropagation(); doShare(p); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={15} /></button>
                       <button onClick={(e) => { e.stopPropagation(); doPrint(p); }} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={15} /></button>
-                      <button onClick={(e) => { e.stopPropagation(); setModal(p); }} title="Editar jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={15} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setModalVoltarPerfil(false); setModal(p); }} title="Editar jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={15} /></button>
                       <button onClick={(e) => { e.stopPropagation(); remove(p.id); }} title="Remover jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={15} /></button>
                     </div>
                   </div>
@@ -6001,7 +6004,13 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
         </div>
       )}
 
-      {modal && <PlayerModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      {modal && (
+        <PlayerModal
+          player={modal === 'new' ? null : modal}
+          onClose={() => (modalVoltarPerfil ? trocarJanela(() => setModal(null), () => setStatsFor(modal)) : setModal(null))}
+          onSave={save}
+        />
+      )}
         </>
       )}
 
@@ -6568,9 +6577,11 @@ function Exercicios({ exercises, setExercises, meta }) {
   const [historyFor, setHistoryFor] = useState(null); // exercício a ver o histórico de alterações
 
   const save = (data) => {
-    if (data.id) setExercises(exercises.map(x => x.id === data.id ? data : x));
+    const isEdicao = !!data.id;
+    if (isEdicao) setExercises(exercises.map(x => x.id === data.id ? data : x));
     else setExercises([...exercises, { ...data, id: uid() }]);
-    setModal(null);
+    if (isEdicao) trocarJanela(() => setModal(null), () => setViewing(data));
+    else setModal(null);
   };
   const remove = (id) => removeWithUndo(exercises, setExercises, id, itemLabel(exercises.find(x => x.id === id), 'Exercício'));
   const doPrint = (x) => {
@@ -6659,7 +6670,14 @@ function Exercicios({ exercises, setExercises, meta }) {
         </div>
       )}
 
-      {modal && <ExerciseModal exercise={modal === 'new' ? null : modal} allExercises={exercises} onClose={() => setModal(null)} onSave={save} />}
+      {modal && (
+        <ExerciseModal
+          exercise={modal === 'new' ? null : modal}
+          allExercises={exercises}
+          onClose={() => (modal === 'new' ? setModal(null) : trocarJanela(() => setModal(null), () => setViewing(modal)))}
+          onSave={save}
+        />
+      )}
       {historyFor && <HistoryModal table="exercises" recordId={historyFor.id} title={`Histórico · ${historyFor.name}`} onClose={() => setHistoryFor(null)} />}
       {viewing && (
         <ExercisePresentation
@@ -6944,9 +6962,11 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   const [filter, setFilter] = useState('Todas');
 
   const save = (data) => {
-    if (data.id) setIdeias(ideias.map(x => x.id === data.id ? data : x));
+    const isEdicao = !!data.id;
+    if (isEdicao) setIdeias(ideias.map(x => x.id === data.id ? data : x));
     else setIdeias([...ideias, { ...data, id: uid() }]);
-    setModal(null);
+    if (isEdicao) trocarJanela(() => setModal(null), () => setViewing(data));
+    else setModal(null);
   };
   const remove = (id) => removeWithUndo(ideias, setIdeias, id, itemLabel(ideias.find(x => x.id === id), 'Ideia'));
 
@@ -7030,7 +7050,14 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
         </div>
       )}
 
-      {modal && <IdeiaModal ideia={modal === 'new' ? null : modal} allIdeias={ideias} onClose={() => setModal(null)} onSave={save} />}
+      {modal && (
+        <IdeiaModal
+          ideia={modal === 'new' ? null : modal}
+          allIdeias={ideias}
+          onClose={() => (modal === 'new' ? setModal(null) : trocarJanela(() => setModal(null), () => setViewing(modal)))}
+          onSave={save}
+        />
+      )}
       {historyFor && <HistoryModal table="ideias" recordId={historyFor.id} title={`Histórico · ${labelOf(historyFor)}`} onClose={() => setHistoryFor(null)} />}
       {viewing && (
         // Reaproveita a apresentação dos exercícios: os campos que a ideia
@@ -14446,7 +14473,9 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
 
 function Planeamento({ sessions, setSessions, exercises, players, setPlayers, matches, setMatches, standings, season, clinico }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
+  const [modalVoltarDia, setModalVoltarDia] = useState(false); // true só quando abriu a partir da janela do dia
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
+  const [matchModalVoltarFicha, setMatchModalVoltarFicha] = useState(false); // true só quando o editor abriu a partir da ficha
   // Ficha de leitura do jogo — o mesmo conceito usado em Jogos: o cartão
   // abre a ficha (resultado, formação, destaques); o lápis continua a
   // abrir a edição direta. Como `matches` é o MESMO estado partilhado
@@ -14614,18 +14643,22 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
   };
 
   const save = (data) => {
-    if (data.id) setSessions(sessions.map(s => s.id === data.id ? data : s));
+    const isEdicao = !!data.id;
+    if (isEdicao) setSessions(sessions.map(s => s.id === data.id ? data : s));
     else setSessions([...sessions, { ...data, id: uid() }]);
-    setModal(null);
+    if (isEdicao && modalVoltarDia) trocarJanela(() => setModal(null), () => setDayModalDate(data.date));
+    else setModal(null);
   };
   const remove = (id) => removeWithUndo(sessions, setSessions, id, itemLabel(sessions.find(x => x.id === id), 'Sessão'));
 
   const saveMatch = (data) => {
-    const registo = data.id ? data : { ...data, id: uid() };
-    if (data.id) setMatches(matches.map(m => m.id === data.id ? registo : m));
+    const isEdicao = !!data.id;
+    const registo = isEdicao ? data : { ...data, id: uid() };
+    if (isEdicao) setMatches(matches.map(m => m.id === data.id ? registo : m));
     else setMatches([...matches, registo]);
     setSessions(prev => ensureFriendlySession(registo, prev));
-    setMatchModal(null);
+    if (isEdicao && matchModalVoltarFicha) trocarJanela(() => setMatchModal(null), () => setFicha(registo));
+    else setMatchModal(null);
   };
 
   /* A lista mostra treinos E jogos, para o calendário da semana ficar
@@ -14704,7 +14737,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
   return (
     <div>
       <SectionHeader title="Planeamento" subtitle="A semana de treino, sessão a sessão."
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova sessão</Btn>} />
+        action={<Btn onClick={() => { setModalVoltarDia(false); setModal('new'); }}><Plus size={15} /> Nova sessão</Btn>} />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
         {[['lista', 'Lista'], ['agenda', 'Agenda semanal']].map(([id, label]) => (
@@ -14722,13 +14755,13 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           setWeekStart={setWeekStart}
           sessions={sessions}
           matches={matches}
-          onEdit={(s) => setModal(s)}
-          onAddForDate={(d) => setModal({ presetDate: d })}
-          onEditMatch={(m) => setMatchModal(m)}
+          onEdit={(s) => { setModalVoltarDia(false); setModal(s); }}
+          onAddForDate={(d) => { setModalVoltarDia(false); setModal({ presetDate: d }); }}
+          onEditMatch={(m) => { setMatchModalVoltarFicha(false); setMatchModal(m); }}
           season={season}
         />
       ) : sessions.length === 0 && matchItems.length === 0 ? (
-        <EmptyState text="Ainda não há sessões planeadas." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Criar a primeira sessão</Btn>} />
+        <EmptyState text="Ainda não há sessões planeadas." action={<Btn onClick={() => { setModalVoltarDia(false); setModal('new'); }}><Plus size={15} /> Criar a primeira sessão</Btn>} />
       ) : (
         Object.entries(grouped).map(([week, items]) => {
           const collapsed = isWeekCollapsed(week);
@@ -14817,7 +14850,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                           <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
                         </>
                       )}
-                      <button onClick={e => { e.stopPropagation(); setMatchModal(s); }} title="Editar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
+                      <button onClick={e => { e.stopPropagation(); setMatchModalVoltarFicha(false); setMatchModal(s); }} title="Editar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                     </div>
                   </div>
                 </div>
@@ -14883,7 +14916,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                       <button onClick={() => setSimuladorDia(s.date)} title="Distribuir equipas para este treino" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Shuffle size={14} /></button>
                       <button onClick={() => doShare(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Partilhar como ficheiro"><Share2 size={14} /></button>
                       <button onClick={() => doPrint(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Imprimir ficha"><Printer size={14} /></button>
-                      <button onClick={() => setModal(s)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Editar sessão"><Pencil size={14} /></button>
+                      <button onClick={() => { setModalVoltarDia(false); setModal(s); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Editar sessão"><Pencil size={14} /></button>
                       <button onClick={() => remove(s.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }} title="Apagar sessão"><Trash2 size={14} /></button>
                     </div>
                   </div>
@@ -14938,7 +14971,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             convidado: c, players, setPlayers,
             aoRetirar: () => setLista && setLista((lista || []).filter(x => x.id !== c.id)),
           })}
-          onClose={() => setModal(null)}
+          onClose={() => (isEditing && modalVoltarDia ? trocarJanela(() => setModal(null), () => setDayModalDate(modal.date)) : setModal(null))}
           onSave={save}
         />
       )}
@@ -14955,7 +14988,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             players={players}
             season={season}
             onClose={() => setFicha(null)}
-            onEdit={() => trocarJanela(() => setFicha(null), () => setMatchModal(atual))}
+            onEdit={() => { setMatchModalVoltarFicha(true); trocarJanela(() => setFicha(null), () => setMatchModal(atual)); }}
             onShare={() => doShareMatch(atual)}
             onPrint={() => doPrintMatch(atual)}
             onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
@@ -14972,7 +15005,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           standings={standings}
           season={season}
           clinico={clinico}
-          onClose={() => setMatchModal(null)}
+          onClose={() => (matchModalVoltarFicha ? trocarJanela(() => setMatchModal(null), () => setFicha(matchModal)) : setMatchModal(null))}
           onSave={saveMatch}
         />
       )}
@@ -15240,7 +15273,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           onPrint={() => doPrintDay(dayModalDate)}
           onPrintPresencas={() => doPrintFolha(dayModalDate, 'presencas')}
           onPrintPrancheta={() => doPrintFolha(dayModalDate, 'prancheta')}
-          onEditSession={(s) => trocarJanela(() => setDayModalDate(null), () => setModal(s))}
+          onEditSession={(s) => { setModalVoltarDia(true); trocarJanela(() => setDayModalDate(null), () => setModal(s)); }}
         />
       )}
 
@@ -19717,6 +19750,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
      coisa. */
   const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : 'jogos');
   const [modal, setModal] = useState(null);
+  const [modalVoltarFicha, setModalVoltarFicha] = useState(false); // true só quando o editor abriu a partir da ficha
   const [ficha, setFicha] = useState(null);
   /* O jogo a imprimir. A folha vive fora da app (montada no body) e só
      existe enquanto a impressão acontece — o mesmo padrão do Planeamento.
@@ -19742,8 +19776,9 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   };
 
   const save = (data) => {
-    const registo = data.id ? data : { ...data, id: uid() };
-    if (data.id) setMatches(matches.map(m => m.id === data.id ? registo : m));
+    const isEdicao = !!data.id;
+    const registo = isEdicao ? data : { ...data, id: uid() };
+    if (isEdicao) setMatches(matches.map(m => m.id === data.id ? registo : m));
     else setMatches([...matches, registo]);
     // Amigável: entra também na agenda como sessão (ver ensureFriendlySession).
     // A Lista do Planeamento esconde o cartão repetido — a sessão continua
@@ -19769,7 +19804,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
         }
       }
     }
-    setModal(null);
+    if (isEdicao && modalVoltarFicha) trocarJanela(() => setModal(null), () => setFicha(registo));
+    else setModal(null);
   };
   const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
 
@@ -19818,7 +19854,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   return (
     <div>
       <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
-        action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
+        action={<Btn onClick={() => { setModalVoltarFicha(false); setModal('new'); }} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
       <SubTabs
         value={aba}
         onChange={setAba}
@@ -19837,7 +19873,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no Plantel antes de registares um jogo." />
       ) : sorted.length === 0 ? (
-        <EmptyState text="Ainda sem jogos registados." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Registar o primeiro jogo</Btn>} />
+        <EmptyState text="Ainda sem jogos registados." action={<Btn onClick={() => { setModalVoltarFicha(false); setModal('new'); }}><Plus size={15} /> Registar o primeiro jogo</Btn>} />
       ) : (
         <>
           {separadores.length > 2 && (
@@ -19890,7 +19926,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
                     <button onClick={e => { e.stopPropagation(); doShareMatch(m); }} title="Partilhar ficha do jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
                     <button onClick={e => { e.stopPropagation(); doPrintMatch(m); }} title="Imprimir ficha do jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
-                    <button onClick={e => { e.stopPropagation(); setModal(m); }} title="Editar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
+                    <button onClick={e => { e.stopPropagation(); setModalVoltarFicha(false); setModal(m); }} title="Editar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                     <button onClick={e => { e.stopPropagation(); remove(m.id); }} title="Apagar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                   </div>
                 </div>
@@ -19912,7 +19948,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
             players={players}
             season={season}
             onClose={() => setFicha(null)}
-            onEdit={() => trocarJanela(() => setFicha(null), () => setModal(atual))}
+            onEdit={() => { setModalVoltarFicha(true); trocarJanela(() => setFicha(null), () => setModal(atual)); }}
             onShare={() => doShareMatch(atual)}
             onPrint={() => doPrintMatch(atual)}
               /* Mudar de formação limpa o alinhamento manual: os lugares
@@ -19925,7 +19961,18 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
         );
       })()}
 
-      {modal && <MatchModal match={modal === 'new' ? null : modal} players={players} standings={standings} season={season} clinico={clinico} onIntegrarConvidado={setPlayers ? (c) => integrarConvidado({ convidado: c, players, setPlayers }) : null} onClose={() => setModal(null)} onSave={save} />}
+      {modal && (
+        <MatchModal
+          match={modal === 'new' ? null : modal}
+          players={players}
+          standings={standings}
+          season={season}
+          clinico={clinico}
+          onIntegrarConvidado={setPlayers ? (c) => integrarConvidado({ convidado: c, players, setPlayers }) : null}
+          onClose={() => (modalVoltarFicha ? trocarJanela(() => setModal(null), () => setFicha(modal)) : setModal(null))}
+          onSave={save}
+        />
+      )}
 
       {printMatch && createPortal(
         <PrintFichaJogo match={printMatch} players={players} season={season} />,
@@ -22672,6 +22719,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
   const chave = (scouting || []).filter(x => (a.jogadoresChaveIds || []).includes(x.id));
   const taticas = a.taticas || [];
   const [taticaModal, setTaticaModal] = useState(null); // null | 'new' | tática a editar
+  const [taticaModalVoltarViewing, setTaticaModalVoltarViewing] = useState(false); // true só quando abriu a partir da pré-visualização
   const [taticaViewing, setTaticaViewing] = useState(null);
   /* A fatia dos vídeos DESTE adversário — qualquer vídeo criado aqui
      dentro (pelo MediaLibrary, que não sabe nada de adversários) fica
@@ -22687,9 +22735,11 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
 
   const labelTatica = (t) => (t.nome && t.nome.trim()) ? t.nome.trim() : `Tática ${taticas.indexOf(t) + 1}`;
   const saveTatica = (dados) => {
-    if (dados.id) onUpdate({ taticas: taticas.map(t => (t.id === dados.id ? dados : t)) });
+    const isEdicao = !!dados.id;
+    if (isEdicao) onUpdate({ taticas: taticas.map(t => (t.id === dados.id ? dados : t)) });
     else onUpdate({ taticas: [...taticas, { ...dados, id: uid() }] });
-    setTaticaModal(null);
+    if (isEdicao && taticaModalVoltarViewing) trocarJanela(() => setTaticaModal(null), () => setTaticaViewing(dados));
+    else setTaticaModal(null);
   };
   const removeTatica = (id) => onUpdate({ taticas: taticas.filter(t => t.id !== id) });
 
@@ -22769,7 +22819,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
           nosso plano. Nada de motor novo, só outro propósito. */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px' }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>Táticas</div>
-        <Btn variant="ghost" onClick={() => setTaticaModal('new')}><Plus size={14} /> Adicionar tática</Btn>
+        <Btn variant="ghost" onClick={() => { setTaticaModalVoltarViewing(false); setTaticaModal('new'); }}><Plus size={14} /> Adicionar tática</Btn>
       </div>
       {taticas.length === 0 ? (
         <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
@@ -22787,7 +22837,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
               )}
               <DiagramThumb diagram={t.diagram} />
               <div style={{ display: 'flex', gap: 14, marginTop: 8, justifyContent: 'flex-end' }}>
-                <button onClick={(e) => { e.stopPropagation(); setTaticaModal(t); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
+                <button onClick={(e) => { e.stopPropagation(); setTaticaModalVoltarViewing(false); setTaticaModal(t); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
                 <button onClick={(e) => { e.stopPropagation(); removeTatica(t.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={13} /></button>
               </div>
             </div>
@@ -22798,7 +22848,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
       {taticaModal && (
         <TaticaAdversarioModal
           tatica={taticaModal === 'new' ? null : taticaModal}
-          onClose={() => setTaticaModal(null)}
+          onClose={() => (taticaModalVoltarViewing ? trocarJanela(() => setTaticaModal(null), () => setTaticaViewing(taticaModal)) : setTaticaModal(null))}
           onSave={saveTatica}
         />
       )}
@@ -22806,7 +22856,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         <ExercisePresentation
           exercise={{ ...taticaViewing, name: labelTatica(taticaViewing) }}
           onClose={() => setTaticaViewing(null)}
-          onEdit={() => trocarJanela(() => setTaticaViewing(null), () => setTaticaModal(taticaViewing))}
+          onEdit={() => { setTaticaModalVoltarViewing(true); trocarJanela(() => setTaticaViewing(null), () => setTaticaModal(taticaViewing)); }}
         />
       )}
 
