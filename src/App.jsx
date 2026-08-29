@@ -23010,27 +23010,35 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 14 }}>{x.name || 'Jogador observado'}</div>
       <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
 
-      {/* Uma coluna à esquerda com TODO o texto (Identificação, Potencial
-          geral, as quatro avaliações) e uma coluna à direita com a foto
-          e, logo por baixo dela, o campo — ambos alinhados por
-          partilharem a mesma coluna. A largura da coluna do texto é
-          limitada (não `1fr`) para a coluna das imagens ficar encostada
-          ao texto, não à margem direita da página. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 560px) auto', gap: 22, alignItems: 'start' }}>
-        <div>
-          <SubHeading>Identificação</SubHeading>
-          <table style={{ borderCollapse: 'collapse', width: 'auto', marginBottom: 18 }}>
-            <tbody>
-              {idRows.map(([k, v]) => (
-                <tr key={k}>
-                  <th style={{ textAlign: 'left', padding: '3px 18px 3px 0', fontSize: 12.5, color: T.muted, fontWeight: 500, whiteSpace: 'nowrap' }}>{k}</th>
-                  <td style={{ padding: '3px 0', fontSize: 13, color: T.cream }}>{v}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Uma grelha só, com os títulos de secção a atravessar as DUAS
+          colunas — é isso que faz a linha divisória esticar-se por cima
+          de onde a imagem vai ficar, em vez de parar no fim do texto.
+          Cada imagem entra exatamente na largura dela (160px, nem mais
+          nem menos) e cai sempre logo a seguir à linha da sua própria
+          secção — nunca antes, nunca depois. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 560px) 160px', columnGap: 22, alignItems: 'start' }}>
+        <div style={{ gridColumn: '1 / -1' }}><SubHeading>Identificação</SubHeading></div>
 
-          <SubHeading>Potencial geral</SubHeading>
+        <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
+          <tbody>
+            {idRows.map(([k, v]) => (
+              <tr key={k}>
+                <th style={{ textAlign: 'left', padding: '3px 18px 3px 0', fontSize: 12.5, color: T.muted, fontWeight: 500, whiteSpace: 'nowrap' }}>{k}</th>
+                <td style={{ padding: '3px 0', fontSize: 13, color: T.cream }}>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {x.photo && (
+          <img src={x.photo} alt="Fotografia" style={{
+            width: 160, aspectRatio: '3 / 4', objectFit: 'cover',
+            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000', display: 'block',
+          }} />
+        )}
+
+        <div style={{ gridColumn: '1 / -1' }}><SubHeading>Potencial geral</SubHeading></div>
+
+        <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
             <RatingStars value={Number(x.potential) || 0} />
             <span style={{ fontSize: 13, color: T.cream }}>
@@ -23058,15 +23066,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
           )}
         </div>
 
-        <div>
-          {x.photo && (
-            <img src={x.photo} alt="Fotografia" style={{
-              width: 160, aspectRatio: '3 / 4', objectFit: 'cover',
-              borderRadius: 10, border: `1px solid ${T.line}`, background: '#000', display: 'block', marginBottom: 14,
-            }} />
-          )}
-          <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
-        </div>
+        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
       </div>
 
       <div style={{ marginTop: 18 }}>
