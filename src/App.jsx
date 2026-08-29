@@ -22400,7 +22400,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
             AdversariosApp) exatamente pela mesma razão: fica na mesma
             linha dos separadores, alinhada do lado oposto, como as
             ações de "Jogadores". */}
-        {!viewing && subTab === 'jogadores' && (
+        {!viewing && !modal && subTab === 'jogadores' && (
           <div style={{ display: 'flex', gap: 8 }}>
             {scouting.length > 0 && (
               <Btn variant="ghost" onClick={() => exportScoutingCSV(scouting)}><Download size={15} /> Exportar CSV</Btn>
@@ -22408,7 +22408,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
             <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar jogador</Btn>
           </div>
         )}
-        {!viewing && subTab === 'adversarios' && !editandoAdversario && (
+        {!viewing && !modal && subTab === 'adversarios' && !editandoAdversario && (
           <Btn onClick={() => setEditandoAdversario('new')}><Plus size={15} /> Adicionar adversário</Btn>
         )}
       </div>
@@ -22420,6 +22420,12 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
           onEdit={() => trocarJanela(() => setViewing(null), () => setModal(viewing))}
           onShare={() => doShare(viewing)}
           onPrint={() => doPrint(viewing)}
+        />
+      ) : modal ? (
+        <ScoutPlayerForm
+          player={modal === 'new' ? null : modal}
+          onBack={() => (modal === 'new' ? setModal(null) : trocarJanela(() => setModal(null), () => setViewing(modal)))}
+          onSave={save}
         />
       ) : subTab === 'adversarios' ? (
         <AdversariosApp
@@ -22497,12 +22503,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         </div>
       )}
 
-      {modal && (
-        <ScoutModal
-          player={modal === 'new' ? null : modal}
-          onClose={() => (modal === 'new' ? setModal(null) : trocarJanela(() => setModal(null), () => setViewing(modal)))}
-          onSave={save}
-        />
+      </>
       )}
 
       {printScout && createPortal(
@@ -22580,8 +22581,6 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
           )}
         </div>,
         document.body
-      )}
-      </>
       )}
     </div>
   );
@@ -23315,18 +23314,28 @@ const emptyScout = {
   traits: '', observationDate: '', notes: '', photo: null,
 };
 
-function ScoutModal({ player, onClose, onSave }) {
+function ScoutPlayerForm({ player, onBack, onSave }) {
   const [f, setF] = useState(player ? { ...emptyScout, ...player } : { ...emptyScout });
   const playerAge = f.birthYear ? age(f.birthYear) : null;
   const avg = pillarAverage(f);
 
   return (
-    <Modal title={player ? 'Editar jogador adversário' : 'Novo jogador adversário'} onClose={onClose} wide xwide fullPage>
+    <div>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> Jogadores
+      </button>
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 20 }}>
+        {player ? 'Editar jogador adversário' : 'Novo jogador adversário'}
+      </div>
 
       <SubHeading>Dados e perfil</SubHeading>
       <div style={{ ...FIELD_GRID, marginBottom: 18 }}>
         <div style={FIELD_FULL}>
-          <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" /></Field>
+          <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" autoFocus /></Field>
         </div>
         <Field label="Nacionalidade(s)"><Input value={f.nationality} onChange={e => setF({ ...f, nationality: e.target.value })} placeholder="Portuguesa" /></Field>
         <Field label="Ano de nascimento">
@@ -23403,10 +23412,10 @@ function ScoutModal({ player, onClose, onSave }) {
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn variant="ghost" onClick={onBack}>Cancelar</Btn>
         <Btn disabled={!f.name} onClick={() => onSave(f)}><Check size={15} /> Guardar</Btn>
       </div>
-    </Modal>
+    </div>
   );
 }
 
