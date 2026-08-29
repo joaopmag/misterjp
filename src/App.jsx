@@ -22782,14 +22782,12 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
+        {/* ESTRUTURA HABITUAL — o mesmo quadro montado na edição, aqui só
+            para consulta — nada para tocar. Ajusta-se em "Editar". `tela`:
+            isto é para ver no ecrã, não para imprimir — sem isso, o
+            quadro saía com o fundo branco pensado para papel, destoando
+            do resto da página escura. */}
         <div>
-          {bloco('Pontos fortes', a.pontosFortes)}
-
-          {/* ESTRUTURA HABITUAL — o mesmo quadro montado na edição, aqui só
-              para consulta — nada para tocar. Ajusta-se em "Editar". `tela`:
-              isto é para ver no ecrã, não para imprimir — sem isso, o
-              quadro saía com o fundo branco pensado para papel, destoando
-              do resto da página escura. */}
           <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Estrutura habitual</div>
           {chave.length === 0 ? (
             <div style={{ fontSize: 12.5, color: T.mutedDim }}>
@@ -22810,6 +22808,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         </div>
 
         <div>
+          {bloco('Pontos fortes', a.pontosFortes)}
           {bloco('Pontos fracos', a.pontosFracos)}
 
           {/* JOGADORES-CHAVE */}
