@@ -5882,6 +5882,14 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
     setPrintPlayer(p);
     setTimeout(() => window.print(), 80);
   };
+  /* A folha tem de sair do body depois de imprimir — mesmo padrão usado
+     nas outras folhas (ver Simulador, Planeamento, Jogos). */
+  useEffect(() => {
+    if (!printPlayer) return undefined;
+    const limpar = () => setPrintPlayer(null);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [printPlayer]);
 
   const save = (data) => {
     const isEdicao = !!data.id;
@@ -6691,7 +6699,10 @@ function Exercicios({ exercises, setExercises, meta }) {
                   </div>
                 )
               )}
-              <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px' }}>{x.description}</p>
+              <p style={{
+                color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px',
+                display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              }}>{x.description}</p>
               <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: T.mutedDim, ...mono }}>
                 {x.space && <span>📐 {x.space}</span>}
                 {x.playersCount && <span>👥 {x.playersCount}</span>}
@@ -22483,6 +22494,15 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
     setPrintScout(x);
     setTimeout(() => window.print(), 80);
   };
+  /* A folha tem de sair do body depois de imprimir — senão fica montada
+     e a impressão seguinte (mesmo de outra coisa qualquer, como um
+     adversário) leva-a colada. Mesmo padrão usado nas outras folhas. */
+  useEffect(() => {
+    if (!printScout) return undefined;
+    const limpar = () => setPrintScout(null);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [printScout]);
 
   const visible = [...scouting]
     .filter(x => !filter || x.position === filter)
@@ -22739,6 +22759,15 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
     setPrintAdversario(a);
     setTimeout(() => window.print(), 80);
   };
+  /* A folha tem de sair do body depois de imprimir — senão fica montada
+     e a impressão seguinte leva-a colada (por exemplo, à de um jogador
+     do Scouting). Mesmo padrão usado nas outras folhas. */
+  useEffect(() => {
+    if (!printAdversario) return undefined;
+    const limpar = () => setPrintAdversario(null);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [printAdversario]);
 
   /* Guardar resolve os jogadores-chave escritos no formulário: cada
      linha com um nome que já existe em "Jogadores" (comparado sem
@@ -25776,6 +25805,14 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
     setPrintConvocatoria({ ...c, __tipo: tipo });
     setTimeout(() => window.print(), 80);
   };
+  /* A folha tem de sair do body depois de imprimir — mesmo padrão usado
+     nas outras folhas. */
+  useEffect(() => {
+    if (!printConvocatoria) return undefined;
+    const limpar = () => setPrintConvocatoria(null);
+    window.addEventListener('afterprint', limpar);
+    return () => window.removeEventListener('afterprint', limpar);
+  }, [printConvocatoria]);
 
   const list = [...convocatorias].sort((a, b) => new Date(a.data || 0) - new Date(b.data || 0));
 
