@@ -22792,76 +22792,67 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>
-        Jogadores-chave
-      </div>
-      {chave.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
-          Nenhum jogador-chave marcado ainda. Toca em "Editar" para os acrescentar.
-        </div>
-      ) : (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 16 }}>
-            {chave.map(x => (
-              <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
-                <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
-                <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
-              </div>
-            ))}
-          </div>
-          {/* O mesmo quadro montado na edição, aqui só para consulta —
-              nada para tocar, é o "provável onze" do adversário. Ajusta-se
-              em "Editar". `tela`: isto é para ver no ecrã, não para
-              imprimir — sem isso, o quadro saía com o fundo branco pensado
-              para papel, destoando do resto da página escura. */}
-          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-            Onze provável
-          </div>
-          <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, maxWidth: 560 }}>
-            <PrancheteDoPlantel
-              lugares={distribuirPlantel({
-                players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
-              })}
-              escala={1.1}
-              maxLargura={530}
-              tela
-            />
-          </div>
-        </>
-      )}
-
-      {/* TÁTICAS — o mesmo editor de prancheta e a mesma apresentação
-          animada da Ideia de Jogo (`DiagramEditor`, `ExercisePresentation`),
-          só que aqui o que se desenha é o que O ADVERSÁRIO faz — a saída
-          de bola dele, o pressing, uma bola parada que sofreram — não o
-          nosso plano. Nada de motor novo, só outro propósito. */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px' }}>
-        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>Táticas</div>
-        <Btn variant="ghost" onClick={() => { setTaticaModalVoltarViewing(false); setTaticaModal('new'); }}><Plus size={14} /> Adicionar tática</Btn>
-      </div>
-      {taticas.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
-          Ainda sem táticas registadas para este adversário.
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
-          {taticas.map(t => (
-            <div key={t.id} onClick={() => setTaticaViewing(t)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, cursor: 'pointer' }}>
-              <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, marginBottom: 6 }}>{labelTatica(t)}</div>
-              {t.phase && (
-                <div style={{ marginBottom: 8 }}>
-                  <span style={{ display: 'inline-block', fontSize: 10.5, color: T.warn, background: `${T.crimson}55`, padding: '2px 8px', borderRadius: 12 }}>{t.phase}</span>
-                </div>
-              )}
-              <DiagramThumb diagram={t.diagram} />
-              <div style={{ display: 'flex', gap: 14, marginTop: 8, justifyContent: 'flex-end' }}>
-                <button onClick={(e) => { e.stopPropagation(); setTaticaModalVoltarViewing(false); setTaticaModal(t); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
-                <button onClick={(e) => { e.stopPropagation(); removeTatica(t.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={13} /></button>
-              </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
+        {/* ESTRUTURA HABITUAL — o mesmo quadro montado na edição, aqui só
+            para consulta — nada para tocar. Ajusta-se em "Editar". `tela`:
+            isto é para ver no ecrã, não para imprimir — sem isso, o
+            quadro saía com o fundo branco pensado para papel, destoando
+            do resto da página escura. */}
+        <div>
+          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Estrutura habitual</div>
+          {chave.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+              Marca jogadores-chave para veres aqui a estrutura provável.
             </div>
-          ))}
+          ) : (
+            <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, maxWidth: 560 }}>
+              <PrancheteDoPlantel
+                lugares={distribuirPlantel({
+                  players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
+                })}
+                escala={1.1}
+                maxLargura={530}
+                tela
+              />
+            </div>
+          )}
         </div>
-      )}
+
+        {/* TÁTICAS — o mesmo editor de prancheta e a mesma apresentação
+            animada da Ideia de Jogo (`DiagramEditor`, `ExercisePresentation`),
+            só que aqui o que se desenha é o que O ADVERSÁRIO faz — a saída
+            de bola dele, o pressing, uma bola parada que sofreram — não o
+            nosso plano. Nada de motor novo, só outro propósito. */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>Táticas</div>
+            <Btn variant="ghost" onClick={() => { setTaticaModalVoltarViewing(false); setTaticaModal('new'); }}><Plus size={14} /> Adicionar tática</Btn>
+          </div>
+          {taticas.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+              Ainda sem táticas registadas para este adversário.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+              {taticas.map(t => (
+                <div key={t.id} onClick={() => setTaticaViewing(t)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, cursor: 'pointer' }}>
+                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, marginBottom: 6 }}>{labelTatica(t)}</div>
+                  {t.phase && (
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ display: 'inline-block', fontSize: 10.5, color: T.warn, background: `${T.crimson}55`, padding: '2px 8px', borderRadius: 12 }}>{t.phase}</span>
+                    </div>
+                  )}
+                  <DiagramThumb diagram={t.diagram} />
+                  <div style={{ display: 'flex', gap: 14, marginTop: 8, justifyContent: 'flex-end' }}>
+                    <button onClick={(e) => { e.stopPropagation(); setTaticaModalVoltarViewing(false); setTaticaModal(t); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); removeTatica(t.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={13} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {taticaModal && (
         <TaticaAdversarioModal
@@ -22876,6 +22867,24 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
           onClose={() => setTaticaViewing(null)}
           onEdit={() => { setTaticaModalVoltarViewing(true); trocarJanela(() => setTaticaViewing(null), () => setTaticaModal(taticaViewing)); }}
         />
+      )}
+
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>
+        Jogadores-chave
+      </div>
+      {chave.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
+          Nenhum jogador-chave marcado ainda. Toca em "Editar" para os acrescentar.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 16 }}>
+          {chave.map(x => (
+            <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
+              <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+              <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* VÍDEOS — a mesma Biblioteca (Canal), com a mesma forma de
