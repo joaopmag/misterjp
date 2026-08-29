@@ -22784,6 +22784,32 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
         <div>
           {bloco('Pontos fortes', a.pontosFortes)}
+
+          {/* ESTRUTURA HABITUAL — o mesmo quadro montado na edição, aqui só
+              para consulta — nada para tocar. Ajusta-se em "Editar". `tela`:
+              isto é para ver no ecrã, não para imprimir — sem isso, o
+              quadro saía com o fundo branco pensado para papel, destoando
+              do resto da página escura. */}
+          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Estrutura habitual</div>
+          {chave.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+              Marca jogadores-chave para veres aqui a estrutura provável.
+            </div>
+          ) : (
+            <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+              <PrancheteDoPlantel
+                lugares={distribuirPlantel({
+                  players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
+                })}
+                escala={1.25}
+                maxLargura={900}
+                tela
+              />
+            </div>
+          )}
+        </div>
+
+        <div>
           {bloco('Pontos fracos', a.pontosFracos)}
 
           {/* JOGADORES-CHAVE */}
@@ -22802,33 +22828,6 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
                   <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
                 </div>
               ))}
-            </div>
-          )}
-        </div>
-
-        {/* ESTRUTURA HABITUAL — o mesmo quadro montado na edição, aqui só
-            para consulta — nada para tocar. Ajusta-se em "Editar". `tela`:
-            isto é para ver no ecrã, não para imprimir — sem isso, o
-            quadro saía com o fundo branco pensado para papel, destoando
-            do resto da página escura. Mais pequeno do que a Ficha do
-            Jogador — aqui é só uma referência rápida, não o foco
-            principal da página. */}
-        <div>
-          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Estrutura habitual</div>
-          {chave.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-              Marca jogadores-chave para veres aqui a estrutura provável.
-            </div>
-          ) : (
-            <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, maxWidth: 340 }}>
-              <PrancheteDoPlantel
-                lugares={distribuirPlantel({
-                  players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
-                })}
-                escala={0.85}
-                maxLargura={310}
-                tela
-              />
             </div>
           )}
         </div>
