@@ -11010,7 +11010,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const restart = () => { stop(); setTimeout(start, 30); };
 
   return (
-    <Modal title={exercise.name} onClose={onClose} wide xwide>
+    <Modal title={exercise.name} onClose={onClose} wide xwide fullPage>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
         <span style={{ fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '2px 9px', borderRadius: 12 }}>{exercise.phase}</span>
         {exercise.space && <span style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>📐 {exercise.space}</span>}
@@ -22256,9 +22256,6 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
   const save = (data) => {
     if (data.id) setScouting(scouting.map(x => x.id === data.id ? data : x));
     else setScouting([...scouting, { ...data, id: uid() }]);
-    // Guardar de dentro da ficha (Editar) não a fecha — a ficha atualiza-se
-    // sozinha com os dados novos, para continuar exatamente onde estava.
-    if (viewing && data.id === viewing.id) setViewing(data);
     setModal(null);
   };
   const remove = (id) => removeWithUndo(scouting, setScouting, id, itemLabel(scouting.find(x => x.id === id), 'Jogador observado'));
@@ -22325,9 +22322,9 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         <ScoutSheetPage
           player={viewing}
           onBack={fecharFicha}
-          onEdit={() => setModal(viewing)}
+          onEdit={() => { setModal(viewing); setViewing(null); }}
           onShare={() => doShare(viewing)}
-          onPrint={() => doPrint(viewing)}
+          onPrint={() => { const p = viewing; setViewing(null); setTimeout(() => doPrint(p), 60); }}
         />
       ) : subTab === 'adversarios' ? (
         <AdversariosApp
@@ -22405,8 +22402,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         </div>
       )}
 
-      </>
-      )}
+      {modal && <ScoutModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
 
       {printScout && createPortal(
         <div className="print-sheet">
@@ -22484,11 +22480,8 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         </div>,
         document.body
       )}
-
-      {/* Fora do "ou" de cima de propósito — Editar e Imprimir podem ser
-          pedidos tanto a partir da ficha em ecrã (`viewing`) como da
-          lista, e têm de aparecer em qualquer um dos dois casos. */}
-      {modal && <ScoutModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      </>
+      )}
     </div>
   );
 }
@@ -22983,7 +22976,7 @@ const POSICAO_GENERICA_VERTICAL = {
    concreto. Desenhado à mão (não reaproveita o `PrancheteDoPlantel`,
    pensado para o campo deitado e para várias pessoas por lugar — aqui
    é sempre uma ou duas marcas soltas). */
-function QuadroPosicaoJogador({ position, secondaryPosition, largura = 160 }) {
+function QuadroPosicaoJogador({ position, secondaryPosition }) {
   const marcas = [];
   if (position && POSICAO_GENERICA_VERTICAL[position]) marcas.push({ id: 'p', rotulo: position, ponto: POSICAO_GENERICA_VERTICAL[position] });
   if (secondaryPosition && secondaryPosition !== position && POSICAO_GENERICA_VERTICAL[secondaryPosition]) {
@@ -22993,7 +22986,7 @@ function QuadroPosicaoJogador({ position, secondaryPosition, largura = 160 }) {
 
   const W = 100, H = 150; // proporção 2:3 — um campo real deitado a rodar 90°
   return (
-    <div style={{ width: largura, flexShrink: 0 }}>
+    <div style={{ width: 160, flexShrink: 0 }}>
       <div style={{
         position: 'relative', width: '100%', aspectRatio: `${W} / ${H}`,
         background: '#1E3A24', borderRadius: 10, border: `1px solid ${T.line}`, overflow: 'hidden',
@@ -23049,15 +23042,15 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 14 }}>{x.name || 'Jogador observado'}</div>
       <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
 
-      {/* O texto flui normalmente, largura nenhuma reservada nem
-          empurrada para lado nenhum — exatamente como se as imagens não
-          existissem. A foto e o campo ficam por CIMA, presos ao canto
-          superior direito de cada secção (`position: absolute` dentro de
-          um `position: relative` por secção), pequenos o suficiente para
-          caberem dentro da altura que o texto da própria secção já dá,
-          sem depender de a esticar. */}
-      <div style={{ position: 'relative', maxWidth: 480 }}>
-        <SubHeading>Identificação</SubHeading>
+      {/* Uma grelha só, com os títulos de secção a atravessar as DUAS
+          colunas — é isso que faz a linha divisória esticar-se por cima
+          de onde a imagem vai ficar, em vez de parar no fim do texto.
+          Cada imagem entra exatamente na largura dela (160px, nem mais
+          nem menos) e cai sempre logo a seguir à linha da sua própria
+          secção — nunca antes, nunca depois. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 560px) 160px', columnGap: 22, alignItems: 'start' }}>
+        <div style={{ gridColumn: '1 / -1' }}><SubHeading>Identificação</SubHeading></div>
+
         <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
           <tbody>
             {idRows.map(([k, v]) => (
@@ -23070,46 +23063,45 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
         </table>
         {x.photo && (
           <img src={x.photo} alt="Fotografia" style={{
-            position: 'absolute', top: 38, right: 30, width: 112, aspectRatio: '3 / 4', objectFit: 'cover',
-            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000',
+            width: 160, aspectRatio: '3 / 4', objectFit: 'cover',
+            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000', display: 'block',
           }} />
         )}
-      </div>
 
-      <div style={{ position: 'relative', maxWidth: 480, marginTop: 18 }}>
-        <SubHeading>Potencial geral</SubHeading>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <RatingStars value={Number(x.potential) || 0} />
-          <span style={{ fontSize: 13, color: T.cream }}>
-            {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
-          </span>
-        </div>
+        <div style={{ gridColumn: '1 / -1' }}><SubHeading>Potencial geral</SubHeading></div>
 
-        {SCOUT_PILLARS.map(p => {
-          const rating = x[`${p.key}Rating`];
-          const notes = x[`${p.key}Notes`];
-          if (!rating && !notes) return null;
-          return (
-            <div key={p.key} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 500 }}>{p.label}</span>
-                {rating ? <RatingStars value={Number(rating)} /> : <span style={{ fontSize: 12, color: T.mutedDim }}>sem avaliação</span>}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <RatingStars value={Number(x.potential) || 0} />
+            <span style={{ fontSize: 13, color: T.cream }}>
+              {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
+            </span>
+          </div>
+
+          {SCOUT_PILLARS.map(p => {
+            const rating = x[`${p.key}Rating`];
+            const notes = x[`${p.key}Notes`];
+            if (!rating && !notes) return null;
+            return (
+              <div key={p.key} style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                  <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 500 }}>{p.label}</span>
+                  {rating ? <RatingStars value={Number(rating)} /> : <span style={{ fontSize: 12, color: T.mutedDim }}>sem avaliação</span>}
+                </div>
+                {notes && <p style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
               </div>
-              {notes && <p style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
-            </div>
-          );
-        })}
+            );
+          })}
 
-        {avg !== null && (
-          <div style={{ fontSize: 13, color: T.warn, fontWeight: 600, marginTop: 14 }}>Média dos 4 pilares: {avg}</div>
-        )}
-
-        <div style={{ position: 'absolute', top: 38, right: 30 }}>
-          <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} largura={112} />
+          {avg !== null && (
+            <div style={{ fontSize: 13, color: T.warn, fontWeight: 600, marginTop: 14 }}>Média dos 4 pilares: {avg}</div>
+          )}
         </div>
+
+        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
       </div>
 
-      <div style={{ marginTop: 18, maxWidth: 480 }}>
+      <div style={{ marginTop: 18 }}>
       {x.traits && (
         <>
           <SubHeading>Características</SubHeading>
