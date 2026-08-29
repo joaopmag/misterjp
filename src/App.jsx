@@ -22256,6 +22256,9 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
   const save = (data) => {
     if (data.id) setScouting(scouting.map(x => x.id === data.id ? data : x));
     else setScouting([...scouting, { ...data, id: uid() }]);
+    // Guardar de dentro da ficha (Editar) não a fecha — a ficha atualiza-se
+    // sozinha com os dados novos, para continuar exatamente onde estava.
+    if (viewing && data.id === viewing.id) setViewing(data);
     setModal(null);
   };
   const remove = (id) => removeWithUndo(scouting, setScouting, id, itemLabel(scouting.find(x => x.id === id), 'Jogador observado'));
@@ -22322,9 +22325,9 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         <ScoutSheetPage
           player={viewing}
           onBack={fecharFicha}
-          onEdit={() => { setModal(viewing); setViewing(null); }}
+          onEdit={() => setModal(viewing)}
           onShare={() => doShare(viewing)}
-          onPrint={() => { const p = viewing; setViewing(null); setTimeout(() => doPrint(p), 60); }}
+          onPrint={() => doPrint(viewing)}
         />
       ) : subTab === 'adversarios' ? (
         <AdversariosApp
@@ -22402,7 +22405,8 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         </div>
       )}
 
-      {modal && <ScoutModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      </>
+      )}
 
       {printScout && createPortal(
         <div className="print-sheet">
@@ -22480,8 +22484,11 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         </div>,
         document.body
       )}
-      </>
-      )}
+
+      {/* Fora do "ou" de cima de propósito — Editar e Imprimir podem ser
+          pedidos tanto a partir da ficha em ecrã (`viewing`) como da
+          lista, e têm de aparecer em qualquer um dos dois casos. */}
+      {modal && <ScoutModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
     </div>
   );
 }
