@@ -22318,6 +22318,33 @@ function starsText(n) {
   return '★'.repeat(v) + '☆'.repeat(5 - v);
 }
 
+function buildAdversarioReportHtml(a, chave) {
+  const table = (pairs) => {
+    const valid = pairs.filter(([, v]) => v !== null && v !== undefined && v !== '');
+    if (!valid.length) return '';
+    return `<table>${valid.map(([k, v]) => `<tr><th>${escapeHtmlText(k)}</th><td>${escapeHtmlText(String(v))}</td></tr>`).join('')}</table>`;
+  };
+
+  const identificacao = table([
+    ['Escalão', a.escalao],
+    ['Prova', a.prova],
+    ['Estrutura habitual', a.quadroTatica],
+  ]);
+
+  const jogadoresHtml = (chave || []).length
+    ? `<ul>${chave.map(x => `<li>${escapeHtmlText(x.name)}${x.position ? ` — ${escapeHtmlText(x.position)}` : ''}</li>`).join('')}</ul>`
+    : '';
+
+  return `
+<div>
+${identificacao ? `<h2 style="margin-top:0">Identificação</h2>${identificacao}` : ''}
+${a.pontosFortes ? `<h2>Pontos fortes</h2><p class="desc">${escapeHtmlText(a.pontosFortes)}</p>` : ''}
+${a.pontosFracos ? `<h2>Pontos fracos</h2><p class="desc">${escapeHtmlText(a.pontosFracos)}</p>` : ''}
+${jogadoresHtml ? `<h2>Jogadores-chave</h2>${jogadoresHtml}` : ''}
+</div>
+`;
+}
+
 function buildScoutReportHtml(x) {
   const table = (pairs) => {
     const valid = pairs.filter(([, v]) => v !== null && v !== undefined && v !== '');
@@ -22644,8 +22671,23 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
    Jogadores-chave. */
 function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, videos, setVideos, editando, setEditando }) {
   const [viewing, setViewing] = useState(null); // ficha em consulta — página cheia
+  const [printAdversario, setPrintAdversario] = useState(null);
   const fecharEdicao = useDetailBack(!!editando, () => setEditando(null));
   const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
+
+  const chaveDe = (a) => (scouting || []).filter(x => (a.jogadoresChaveIds || []).includes(x.id));
+  const doShare = (a) => {
+    const title = a.nome || 'Adversário';
+    const html = buildShareableHtmlDoc({
+      title, metaLines: [a.escalao, a.prova, a.quadroTatica].filter(Boolean), blocks: [],
+      extraHtml: buildAdversarioReportHtml(a, chaveDe(a)),
+    });
+    shareOrDownloadHtml(`adversario_${title.replace(/[^\w-]+/g, '_')}.html`, html, title);
+  };
+  const doPrint = (a) => {
+    setPrintAdversario(a);
+    setTimeout(() => window.print(), 80);
+  };
 
   /* Guardar resolve os jogadores-chave escritos no formulário: cada
      linha com um nome que já existe em "Jogadores" (comparado sem
@@ -22722,6 +22764,8 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
         onBack={fecharFicha}
         onEdit={() => setEditando(atual)}
         onRemove={() => remove(atual.id)}
+        onShare={() => doShare(atual)}
+        onPrint={() => doPrint(atual)}
         onUpdate={(patch) => {
           const registo = { ...atual, ...patch };
           setAdversarios(adversarios.map(a => (a.id === atual.id ? registo : a)));
@@ -22741,7 +22785,15 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
             <div key={a.id} onClick={() => setViewing(a)} style={{
               background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
             }}>
-              <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{a.nome}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{a.nome}</div>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  <button onClick={(e) => { e.stopPropagation(); doShare(a); }} title="Partilhar ficha do adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); doPrint(a); }} title="Imprimir ficha do adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); setEditando(a); }} title="Editar adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); remove(a.id); }} title="Apagar adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                </div>
+              </div>
               <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 3 }}>
                 {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
               </div>
@@ -22752,11 +22804,43 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
           ))}
         </div>
       )}
+
+      {printAdversario && createPortal(
+        <div className="print-sheet">
+          <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{printAdversario.nome || 'Adversário'}</h2>
+          <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>
+            {[printAdversario.escalao, printAdversario.prova, printAdversario.quadroTatica].filter(Boolean).join(' · ')}
+          </p>
+          {printAdversario.pontosFortes && (
+            <>
+              <h3 style={{ fontSize: 14, margin: '0 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Pontos fortes</h3>
+              <p style={{ fontSize: 12.5, margin: '0 0 14px', whiteSpace: 'pre-wrap' }}>{printAdversario.pontosFortes}</p>
+            </>
+          )}
+          {printAdversario.pontosFracos && (
+            <>
+              <h3 style={{ fontSize: 14, margin: '0 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Pontos fracos</h3>
+              <p style={{ fontSize: 12.5, margin: '0 0 14px', whiteSpace: 'pre-wrap' }}>{printAdversario.pontosFracos}</p>
+            </>
+          )}
+          {chaveDe(printAdversario).length > 0 && (
+            <>
+              <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Jogadores-chave</h3>
+              <ul style={{ fontSize: 12.5, margin: 0, paddingLeft: 18 }}>
+                {chaveDe(printAdversario).map(x => (
+                  <li key={x.id}>{x.name}{x.position ? ` — ${x.position}` : ''}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
-function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, onEdit, onRemove, onUpdate }) {
+function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, onEdit, onRemove, onShare, onPrint, onUpdate }) {
   const chave = (scouting || []).filter(x => (a.jogadoresChaveIds || []).includes(x.id));
   const taticas = a.taticas || [];
   const [taticaModal, setTaticaModal] = useState(null); // null | 'new' | tática a editar
@@ -22800,16 +22884,15 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         <ChevronLeft size={15} /> Adversários
       </button>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-        <div>
-          <div style={{ ...display, fontSize: 20, color: T.cream }}>{a.nome}</div>
-          <div style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 4 }}>
-            {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
-          </div>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ ...display, fontSize: 20, color: T.cream }}>{a.nome}</div>
+        <div style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 4 }}>
+          {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Btn variant="ghost" onClick={onEdit}><Pencil size={14} /> Editar</Btn>
-          <Btn variant="danger" onClick={onRemove}><Trash2 size={14} /> Apagar</Btn>
+        <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+          {onShare && <button onClick={onShare} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Share2 size={15} /> Partilhar</button>}
+          {onPrint && <button onClick={onPrint} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Printer size={15} /> Imprimir</button>}
+          <button onClick={onEdit} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Pencil size={15} /> Editar</button>
         </div>
       </div>
 
@@ -23147,6 +23230,7 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
     // passa a eixo horizontal — ataque à direita, baliza própria à
     // esquerda — e o lado (x) fica no eixo vertical.
     const W = 150, H = 100; // 3:2 — campo deitado
+    const raio = 4; // cantos
     return (
       <div style={{ height: '100%', display: 'flex', justifyContent: 'center' }}>
         <div style={{
@@ -23162,6 +23246,19 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
                 direita (baliza adversária). */}
             <rect x="3" y={H * 0.22} width={W * 0.15} height={H * 0.56} fill="none" stroke="#ffffff40" strokeWidth="1" />
             <rect x={W - 3 - W * 0.15} y={H * 0.22} width={W * 0.15} height={H * 0.56} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            {/* Pequena área e marca de grande penalidade, dos dois lados. */}
+            <rect x="3" y={H * 0.36} width={W * 0.06} height={H * 0.28} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <rect x={W - 3 - W * 0.06} y={H * 0.36} width={W * 0.06} height={H * 0.28} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <circle cx={W * 0.12} cy={H / 2} r="0.7" fill="#ffffff40" />
+            <circle cx={W - W * 0.12} cy={H / 2} r="0.7" fill="#ffffff40" />
+            {/* Balizas — o próprio "N" da rede a sair da linha de fundo. */}
+            <rect x={3 - 2.4} y={H * 0.42} width="2.4" height={H * 0.16} fill="none" stroke="#ffffff66" strokeWidth="1" />
+            <rect x={W - 3} y={H * 0.42} width="2.4" height={H * 0.16} fill="none" stroke="#ffffff66" strokeWidth="1" />
+            {/* Cantos — um quarto de círculo em cada esquina. */}
+            <path d={`M ${3 + raio} 3 A ${raio} ${raio} 0 0 0 3 ${3 + raio}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <path d={`M ${W - 3 - raio} 3 A ${raio} ${raio} 0 0 1 ${W - 3} ${3 + raio}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <path d={`M 3 ${H - 3 - raio} A ${raio} ${raio} 0 0 1 ${3 + raio} ${H - 3}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <path d={`M ${W - 3} ${H - 3 - raio} A ${raio} ${raio} 0 0 0 ${W - 3 - raio} ${H - 3}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
           </svg>
           {marcas.map(m => (
             <span key={m.id} style={{
@@ -23311,7 +23408,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
 
         {(x.position || x.secondaryPosition) && (
           <div style={{ display: 'flex', flexDirection: 'column', minHeight: 220 }}>
-            <div style={sectionTitle}>Posição em campo</div>
+            <div style={sectionTitle}>Posição</div>
             <div style={{ ...card, flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center' }}>
               <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} horizontal />
             </div>
