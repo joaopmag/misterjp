@@ -2811,13 +2811,13 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         <StandingsFullModal
           standings={standings} season={season}
           onClose={() => setStandingsOpen(false)}
-          onEdit={setStandings ? () => { setStandingsOpen(false); setStandingsEdit(true); } : null}
+          onEdit={setStandings ? () => trocarJanela(() => setStandingsOpen(false), () => setStandingsEdit(true)) : null}
         />
       )}
       {standingsEdit && (
         <StandingsModal
           standings={standings}
-          onClose={() => { setStandingsEdit(false); setStandingsOpen(true); }}
+          onClose={() => trocarJanela(() => setStandingsEdit(false), () => setStandingsOpen(true))}
           onSave={(data) => {
             setStandings(data);
             // Mesma regra dos Jogos: os encontros da nossa equipa acompanham
@@ -2829,8 +2829,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
               // já com a moldura preenchida e os nomes por escolher.
               if (setConvocatorias) setConvocatorias(prev => syncCompetitionConvocatorias(jogos, prev, season));
             }
-            setStandingsEdit(false);
-            setStandingsOpen(true);
+            trocarJanela(() => setStandingsEdit(false), () => setStandingsOpen(true));
           }}
         />
       )}
@@ -2838,17 +2837,16 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         <PlantelStatusModal
           players={players}
           onClose={() => setStatusOpen(false)}
-          onEditPlayer={setPlayers ? (p) => { setStatusOpen(false); setPlayerModal(p); } : null}
+          onEditPlayer={setPlayers ? (p) => trocarJanela(() => setStatusOpen(false), () => setPlayerModal(p)) : null}
         />
       )}
       {playerModal && (
         <PlayerModal
           player={playerModal}
-          onClose={() => { setPlayerModal(null); setStatusOpen(true); }}
+          onClose={() => trocarJanela(() => setPlayerModal(null), () => setStatusOpen(true))}
           onSave={(data) => {
             setPlayers(players.map(x => (x.id === data.id ? data : x)));
-            setPlayerModal(null);
-            setStatusOpen(true);
+            trocarJanela(() => setPlayerModal(null), () => setStatusOpen(true));
           }}
         />
       )}
@@ -15240,9 +15238,9 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           players={players}
           onClose={() => setDayModalDate(null)}
           onPrint={() => doPrintDay(dayModalDate)}
-          onPrintPresencas={() => { setDayModalDate(null); doPrintFolha(dayModalDate, 'presencas'); }}
-          onPrintPrancheta={() => { setDayModalDate(null); doPrintFolha(dayModalDate, 'prancheta'); }}
-          onEditSession={(s) => { setDayModalDate(null); setModal(s); }}
+          onPrintPresencas={() => doPrintFolha(dayModalDate, 'presencas')}
+          onPrintPrancheta={() => doPrintFolha(dayModalDate, 'prancheta')}
+          onEditSession={(s) => trocarJanela(() => setDayModalDate(null), () => setModal(s))}
         />
       )}
 
@@ -15489,11 +15487,22 @@ function openAndPrintPdfSequential(attachments) {
     setTimeout(() => {
       const w = window.open(att.dataUrl, '_blank');
       if (w) {
-        const tryPrint = () => { try { w.focus(); w.print(); } catch (e) { /* ignora: alguns browsers bloqueiam print entre origens de data URL */ } };
-        w.onload = () => setTimeout(tryPrint, 300);
-        setTimeout(tryPrint, 800);
+        let jaImprimiu = false;
+        const tryPrint = () => {
+          if (jaImprimiu) return;
+          jaImprimiu = true;
+          try { w.focus(); w.print(); } catch (e) { /* ignora: alguns browsers bloqueiam print entre origens de data URL */ }
+        };
+        // O `onload` da aba raramente dispara para um PDF em data URL (o
+        // visualizador nativo do browser não é a mesma coisa que carregar
+        // uma página) — por isso o tempo de reserva abaixo é que faz o
+        // trabalho a sério na maioria dos casos. 800ms era pouco para um
+        // PDF maior ou um telemóvel mais lento: a impressão disparava
+        // antes de haver alguma coisa desenhada, e via-se a aba em branco.
+        w.onload = () => setTimeout(tryPrint, 500);
+        setTimeout(tryPrint, 1800);
       }
-    }, 700 * i);
+    }, 900 * i);
   });
 }
 // Bloco de impressão de um exercício dentro de uma ficha de sessão/dia.
@@ -22359,7 +22368,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
           onBack={fecharFicha}
           onEdit={() => trocarJanela(() => setViewing(null), () => setModal(viewing))}
           onShare={() => doShare(viewing)}
-          onPrint={() => { const p = viewing; setViewing(null); setTimeout(() => doPrint(p), 60); }}
+          onPrint={() => doPrint(viewing)}
         />
       ) : subTab === 'adversarios' ? (
         <AdversariosApp
@@ -23049,21 +23058,32 @@ function QuadroPosicaoJogador({ position, secondaryPosition }) {
   );
 }
 
+/* Ficha do jogador observado — segue a MESMA estrutura da ficha do
+   plantel (`PlayerProfilePage`): cabeçalho com foto/iniciais à
+   esquerda e nome à direita, depois cartões numa grelha simples de
+   duas colunas (`repeat(auto-fit, minmax(280px, 1fr))`). Nada de
+   grelhas com títulos a atravessar colunas fixas nem imagens presas a
+   uma célula concreta — era isso que partia sempre que se ajustava
+   fosse o quê fosse. A foto entra no cabeçalho (como no plantel) e o
+   campo de posições entra dentro do seu próprio cartão, centrado —
+   cada peça vive isolada dentro da sua caixa, sem depender da
+   disposição das outras. */
 function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
   const avg = pillarAverage(x);
   const potentialLabel = (RATING_LEVELS.find(r => r.value === Number(x.potential)) || {}).label || '';
-  const idRows = [
-    ['Nome', x.name],
-    ['Clube atual', x.club],
-    ['Ano de nascimento', x.birthYear],
-    ['Idade', x.birthYear ? `${age(x.birthYear)} anos` : (x.age || '')],
-    ['Nacionalidade(s)', x.nationality],
-    ['Fim de contrato', x.contractEnd],
-    ['Posição principal', x.position],
-    ['Posição secundária', x.secondaryPosition],
-    ['Pé dominante', x.dominantFoot],
-    ['Data de observação', x.observationDate ? fmtDate(x.observationDate) : ''],
-  ].filter(([, v]) => v);
+  const playerAge = x.birthYear ? age(x.birthYear) : (x.age || null);
+
+  const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px' };
+  const sectionTitle = { fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 };
+  const rowStyle = { display: 'flex', justifyContent: 'space-between', fontSize: 12.5, gap: 10 };
+  const linha = (label, valor) => valor !== null && valor !== undefined && valor !== '' && (
+    <div key={label} style={rowStyle}>
+      <span style={{ color: T.mutedDim }}>{label}</span>
+      <span style={{ color: T.cream, textAlign: 'right' }}>{valor}</span>
+    </div>
+  );
+
+  const semPilares = SCOUT_PILLARS.every(p => !x[`${p.key}Rating`] && !x[`${p.key}Notes`]);
 
   return (
     <div>
@@ -23074,82 +23094,114 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
         <ChevronLeft size={15} /> Jogadores
       </button>
 
-      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 14 }}>{x.name || 'Jogador observado'}</div>
-      <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
-
-      {/* Uma grelha só, com os títulos de secção a atravessar as DUAS
-          colunas — é isso que faz a linha divisória esticar-se por cima
-          de onde a imagem vai ficar, em vez de parar no fim do texto.
-          Cada imagem entra exatamente na largura dela (160px, nem mais
-          nem menos) e cai sempre logo a seguir à linha da sua própria
-          secção — nunca antes, nunca depois. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 560px) 160px', columnGap: 22, alignItems: 'start' }}>
-        <div style={{ gridColumn: '1 / -1' }}><SubHeading>Identificação</SubHeading></div>
-
-        <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
-          <tbody>
-            {idRows.map(([k, v]) => (
-              <tr key={k}>
-                <th style={{ textAlign: 'left', padding: '3px 18px 3px 0', fontSize: 12.5, color: T.muted, fontWeight: 500, whiteSpace: 'nowrap' }}>{k}</th>
-                <td style={{ padding: '3px 0', fontSize: 13, color: T.cream }}>{v}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {x.photo && (
+      {/* CABEÇALHO — foto (ou iniciais) à esquerda, nome e dados-chave
+          à direita, tal como na ficha do plantel. */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 18, flexWrap: 'wrap' }}>
+        {x.photo ? (
           <img src={x.photo} alt="Fotografia" style={{
-            width: 160, aspectRatio: '3 / 4', objectFit: 'cover',
-            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000', display: 'block',
+            width: 72, aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 8,
+            border: `1px solid ${T.line}`, background: '#000', flexShrink: 0,
           }} />
+        ) : (
+          <div style={{
+            width: 72, aspectRatio: '3 / 4', borderRadius: 8, background: T.surface, border: `1px solid ${T.line}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            fontSize: 20, fontWeight: 600, color: T.mutedDim, ...display,
+          }}>
+            {(x.name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+          </div>
         )}
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ ...display, fontSize: 20, color: T.cream }}>{x.name || 'Jogador observado'}</div>
+          <div style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 4 }}>
+            {[
+              x.position ? (x.secondaryPosition ? `${x.position}/${x.secondaryPosition}` : x.position) : null,
+              x.club, playerAge ? `${playerAge} anos` : (x.birthYear || null), x.dominantFoot,
+            ].filter(Boolean).join(' · ')}
+          </div>
+          <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
+        </div>
+      </div>
 
-        <div style={{ gridColumn: '1 / -1' }}><SubHeading>Potencial geral</SubHeading></div>
+      {/* POTENCIAL EM DESTAQUE */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        <RatingStars value={Number(x.potential) || 0} />
+        <span style={{ fontSize: 13, color: T.cream }}>
+          {x.potential ? `Potencial ${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação de potencial'}
+        </span>
+        {avg !== null && <span style={{ fontSize: 12.5, color: T.mutedDim }}>· Média dos 4 pilares: {avg}</span>}
+      </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+        {/* COLUNA ESQUERDA: identificação + posição em campo */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <RatingStars value={Number(x.potential) || 0} />
-            <span style={{ fontSize: 13, color: T.cream }}>
-              {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
-            </span>
+          <div style={sectionTitle}>Identificação</div>
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+            {linha('Clube atual', x.club)}
+            {linha('Ano de nascimento', x.birthYear)}
+            {linha('Idade', playerAge ? `${playerAge} anos` : null)}
+            {linha('Nacionalidade(s)', x.nationality)}
+            {linha('Fim de contrato', x.contractEnd)}
+            {linha('Posição principal', x.position)}
+            {linha('Posição secundária', x.secondaryPosition)}
+            {linha('Pé dominante', x.dominantFoot)}
+            {linha('Data de observação', x.observationDate ? fmtDate(x.observationDate) : null)}
           </div>
 
-          {SCOUT_PILLARS.map(p => {
-            const rating = x[`${p.key}Rating`];
-            const notes = x[`${p.key}Notes`];
-            if (!rating && !notes) return null;
-            return (
-              <div key={p.key} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                  <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 500 }}>{p.label}</span>
-                  {rating ? <RatingStars value={Number(rating)} /> : <span style={{ fontSize: 12, color: T.mutedDim }}>sem avaliação</span>}
-                </div>
-                {notes && <p style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
+          {(x.position || x.secondaryPosition) && (
+            <>
+              <div style={sectionTitle}>Posição em campo</div>
+              <div style={{ ...card, display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
               </div>
-            );
-          })}
-
-          {avg !== null && (
-            <div style={{ fontSize: 13, color: T.warn, fontWeight: 600, marginTop: 14 }}>Média dos 4 pilares: {avg}</div>
+            </>
           )}
         </div>
 
-        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
+        {/* COLUNA DIREITA: 4 pilares de rendimento */}
+        <div>
+          <div style={sectionTitle}>4 pilares de rendimento</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {semPilares ? (
+              <div style={{ ...card, color: T.mutedDim, fontSize: 12.5 }}>Ainda sem avaliação dos 4 pilares.</div>
+            ) : SCOUT_PILLARS.map(p => {
+              const rating = p ? x[`${p.key}Rating`] : null;
+              const notes = x[`${p.key}Notes`];
+              if (!rating && !notes) return null;
+              return (
+                <div key={p.key} style={card}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: notes ? 6 : 0 }}>
+                    <span style={{ color: T.cream, fontSize: 13, fontWeight: 500 }}>{p.label}</span>
+                    {rating ? <RatingStars value={Number(rating)} /> : <span style={{ fontSize: 11.5, color: T.mutedDim }}>sem avaliação</span>}
+                  </div>
+                  {notes && <p style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
-      <div style={{ marginTop: 18 }}>
-      {x.traits && (
-        <>
-          <SubHeading>Características</SubHeading>
-          <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: '0 0 16px', whiteSpace: 'pre-wrap' }}>{x.traits}</p>
-        </>
+      {(x.traits || x.notes) && (
+        <div style={{ marginTop: 20 }}>
+          {x.traits && (
+            <>
+              <div style={sectionTitle}>Características</div>
+              <div style={{ ...card, marginBottom: 16 }}>
+                <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.traits}</p>
+              </div>
+            </>
+          )}
+          {x.notes && (
+            <>
+              <div style={sectionTitle}>Notas gerais</div>
+              <div style={card}>
+                <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.notes}</p>
+              </div>
+            </>
+          )}
+        </div>
       )}
-      {x.notes && (
-        <>
-          <SubHeading>Notas gerais</SubHeading>
-          <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.notes}</p>
-        </>
-      )}
-      </div>
     </div>
   );
 }
