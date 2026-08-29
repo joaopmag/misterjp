@@ -22376,19 +22376,21 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
 
   return (
     <div>
-      <SectionHeader title="Scouting" subtitle="Jogadores adversários com potencial, para acompanhar ao longo da época." />
+      <SectionHeader title="Scouting" subtitle="Jogadores e adversários para acompanhar ao longo da época." />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
         <SubTabs
           value={subTab}
           onChange={(v) => {
             // Trocar de valência enquanto uma ficha de jogador está aberta
-            // — ou a meio de a criar/editar — não fazia nada visível: o
-            // ecrã continuava preso a essa ficha ou àquele formulário
-            // (`viewing`/`modal` tinham sempre prioridade sobre `subTab` a
-            // decidir o que mostrar). Ao trocar, fecham-se os dois.
+            // — ou a meio de a criar/editar, dos dois lados (jogador ou
+            // adversário) — não fazia nada visível: o ecrã continuava
+            // preso a essa ficha ou àquele formulário (`viewing`/`modal`/
+            // `editandoAdversario` tinham sempre prioridade sobre `subTab`
+            // a decidir o que mostrar). Ao trocar, fecham-se os três.
             setSubTab(v);
             setViewing(null);
             setModal(null);
+            setEditandoAdversario(null);
           }}
           tabs={[
             { id: 'jogadores', label: 'Jogadores', icon: Users, count: scouting.length },
