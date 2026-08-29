@@ -22485,6 +22485,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
       {viewing ? (
         <ScoutSheetPage
           player={viewing}
+          videos={videos} setVideos={setVideos}
           onBack={fecharFicha}
           onEdit={() => trocarJanela(() => setViewing(null), () => setModal(viewing))}
           onShare={() => doShare(viewing)}
@@ -23315,10 +23316,20 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
    campo de posições entra dentro do seu próprio cartão, centrado —
    cada peça vive isolada dentro da sua caixa, sem depender da
    disposição das outras. */
-function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
+function ScoutSheetPage({ player: x, videos, setVideos, onBack, onEdit, onShare, onPrint }) {
   const avg = pillarAverage(x);
   const potentialLabel = (RATING_LEVELS.find(r => r.value === Number(x.potential)) || {}).label || '';
   const playerAge = x.birthYear ? age(x.birthYear) : (x.age || null);
+  /* A fatia dos vídeos DESTE jogador observado — mesmo padrão do
+     adversário: qualquer vídeo criado aqui dentro fica automaticamente
+     marcado com o `scoutId` certo, sem aparecer no Canal geral. */
+  const [videosDoJogador, setVideosDoJogadorBase] = useSubColecao(videos, setVideos, v => v.scoutId === x.id);
+  const setVideosDoJogador = (novoOuFn) => {
+    setVideosDoJogadorBase(prev => {
+      const novo = typeof novoOuFn === 'function' ? novoOuFn(prev) : novoOuFn;
+      return novo.map(v => (v.scoutId ? v : { ...v, scoutId: x.id }));
+    });
+  };
 
   const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px' };
   const sectionTitle = { fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 };
@@ -23463,6 +23474,21 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
           </div>
         </div>
       </div>
+
+      {/* VÍDEOS — mesma Biblioteca (Canal) usada no adversário, filtrada a
+          este jogador observado. `semCatalogo`: só há os vídeos dele, não
+          há nada para organizar em pastas. */}
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>
+        Vídeos
+      </div>
+      <MediaLibrary
+        items={videosDoJogador} setItems={setVideosDoJogador}
+        addLabel="Adicionar vídeo"
+        addButtonVariant="ghost"
+        semCatalogo
+        emptyText="Ainda sem vídeos deste jogador. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro."
+        emptyFirstLabel="Adicionar o primeiro vídeo"
+      />
     </div>
   );
 }
