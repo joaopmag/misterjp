@@ -23102,7 +23102,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
         </div>
       </div>
 
-      <div style={{ marginTop: 18 }}>
+      <div style={{ marginTop: 18, maxWidth: 480 }}>
       {x.traits && (
         <>
           <SubHeading>Características</SubHeading>
