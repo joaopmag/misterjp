@@ -23012,6 +23012,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         items={videosDoAdversario} setItems={setVideosDoAdversario}
         addLabel="Adicionar vídeo"
         addButtonVariant="ghost"
+        semCatalogo
         emptyText="Ainda sem vídeos deste adversário. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro."
         emptyFirstLabel="Adicionar o primeiro vídeo"
       />
@@ -23905,7 +23906,7 @@ function cleanFolder(name) {
 // Etiqueta usada no filtro para os itens que não estão em nenhuma pasta.
 const NO_FOLDER = '__sem_pasta__';
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo }, ref) {
   const [modal, setModal] = useState(null);
   React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
   // Pasta atualmente aberta: null = todas.
@@ -24137,13 +24138,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               {(v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
               {/* Só se mostra a pasta quando se está a ver tudo —
                   dentro de uma pasta seria informação repetida. */}
-              {folderFilter === null && cleanFolder(v.pasta) && (
+              {folderFilter === null && !semCatalogo && cleanFolder(v.pasta) && (
                 <div style={{ fontSize: 10.5, color: T.warn, marginTop: 2 }}>{cleanFolder(v.pasta)}</div>
               )}
             </span>
           </button>
           {/* Mover para outra pasta sem abrir a janela de edição. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isNarrow ? { justifyContent: 'flex-end' } : {}) }}>
+          {!semCatalogo && (
           <select
             value={cleanFolder(v.pasta)}
             onChange={e => moveItem(v.id, e.target.value)}
@@ -24161,6 +24163,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             <option value="">Sem pasta</option>
             {folders.map(name => <option key={name} value={name}>{name}</option>)}
           </select>
+          )}
           {/* Imprimir sem ter de abrir o item primeiro. Só faz
               sentido em documentos (PDF carregado ou do Drive). */}
           {/* O lugar da impressora existe sempre, mesmo nos itens que
@@ -24215,8 +24218,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       )}
 
       {/* PASTAS — filtro por pasta. As pastas criam-se ao escrever o nome
-          no campo "Pasta" ao adicionar ou editar um item. */}
-      {items.length > 0 && (folders.length > 0 || countIn(NO_FOLDER) > 0) && (
+          no campo "Pasta" ao adicionar ou editar um item. `semCatalogo`
+          desliga isto: quando os vídeos já vivem à parte de um único
+          adversário (ou outro contexto próprio), não há nada para
+          catalogar — são sempre só os vídeos dele. */}
+      {!semCatalogo && items.length > 0 && (folders.length > 0 || countIn(NO_FOLDER) > 0) && (
         /* No telemóvel os separadores das pastas ficam numa faixa única que
            desliza na horizontal, em vez de se partirem em três linhas
            desalinhadas que empurravam o conteúdo todo para baixo. A faixa
@@ -24517,6 +24523,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               muitos ficheiros, a página inteira ficava com metros de altura
               e o visualizador à esquerda saía do ecrã. */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+            {!semCatalogo && (
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
               <input
@@ -24536,6 +24543,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 ><X size={14} /></button>
               )}
             </div>
+            )}
 
             {visibleItems.length === 0 ? (
               <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '10px 2px' }}>
@@ -24571,6 +24579,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           folders={folders}
           // Ao adicionar dentro de uma pasta aberta, já vem preenchida.
           defaultFolder={folderFilter && folderFilter !== NO_FOLDER ? folderFilter : ''}
+          semCatalogo={semCatalogo}
           onClose={() => setModal(null)}
           onSave={save}
         />
@@ -24776,7 +24785,7 @@ function driveOpenSrc(drive) {
     : `https://drive.google.com/file/d/${drive.id}/view`;
 }
 
-function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' }) {
+function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', semCatalogo }) {
   const initialSource = item
     ? (item.drive ? 'drive' : ((item.youtubeId || item.social) ? 'link' : 'file'))
     : 'link';
@@ -24874,7 +24883,10 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
           branco põe o item fora de qualquer pasta. */}
       {/* PASTA — a lista escolhe uma das existentes; a caixa ao lado serve
           para criar uma nova. Antes era um <datalist>, cuja seta o browser
-          desenha mas não abre de forma fiável no telemóvel. */}
+          desenha mas não abre de forma fiável no telemóvel. `semCatalogo`
+          esconde tudo isto — não há pastas para escolher quando os vídeos
+          já vivem à parte de um único adversário. */}
+      {!semCatalogo && (
       <div style={{ marginBottom: 14 }}>
         <div style={{ ...FIELD_GRID }}>
           <Field label="Pasta existente">
@@ -24895,6 +24907,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '' })
           </Field>
         </div>
       </div>
+      )}
 
       {source === 'drive' ? (
         <div style={{ marginBottom: 8 }}>
