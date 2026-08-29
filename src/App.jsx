@@ -5336,6 +5336,19 @@ const TATICAS = {
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
+  '3-4-3': [
+    { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
+    { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.74], de: ['DC', 'DD'] },
+    { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.50], de: ['DC'] },
+    { id: 'DC3', rotulo: 'DC', ponto: [0.19, 0.26], de: ['DC', 'DE'] },
+    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.90], de: ['DD', 'ED', 'MD'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.42, 0.62], de: ['MC'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.42, 0.38], de: ['MC'] },
+    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.10], de: ['DE', 'EE'] },
+    { id: 'ED', rotulo: 'ED', ponto: [0.84, 0.85], de: ['ED', 'PL'] },
+    { id: 'PL', rotulo: 'PL', ponto: [0.90, 0.50], de: ['PL'] },
+    { id: 'EE', rotulo: 'EE', ponto: [0.84, 0.15], de: ['EE', 'PL'] },
+  ],
 };
 const TATICA_OMISSAO = '4-3-3';
 const LUGAR_FORA = { id: 'fora', rotulo: 'Sem lugar', ponto: P.fora, de: [] };
@@ -22742,7 +22755,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
     });
   };
 
-  const labelTatica = (t) => (t.nome && t.nome.trim()) ? t.nome.trim() : `Tática ${taticas.indexOf(t) + 1}`;
+  const labelTatica = (t) => (t.nome && t.nome.trim()) ? t.nome.trim() : `Dinâmica ${taticas.indexOf(t) + 1}`;
   const saveTatica = (dados) => {
     const isEdicao = !!dados.id;
     if (isEdicao) onUpdate({ taticas: taticas.map(t => (t.id === dados.id ? dados : t)) });
@@ -22844,12 +22857,12 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
           de bola dele, o pressing, uma bola parada que sofreram — não o
           nosso plano. Nada de motor novo, só outro propósito. */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px' }}>
-        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>Táticas</div>
-        <Btn variant="ghost" onClick={() => { setTaticaModalVoltarViewing(false); setTaticaModal('new'); }}><Plus size={14} /> Adicionar tática</Btn>
+        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>Dinâmicas</div>
+        <Btn variant="ghost" onClick={() => { setTaticaModalVoltarViewing(false); setTaticaModal('new'); }}><Plus size={14} /> Adicionar dinâmica</Btn>
       </div>
       {taticas.length === 0 ? (
         <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
-          Ainda sem táticas registadas para este adversário.
+          Ainda sem dinâmicas registadas para este adversário.
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
@@ -22908,7 +22921,7 @@ function TaticaAdversarioModal({ tatica, onClose, onSave }) {
   const [diagramColor, setDiagramColor] = useState('A');
 
   return (
-    <Modal title={tatica ? 'Editar tática' : 'Nova tática'} onClose={onClose} wide xwide fullPage>
+    <Modal title={tatica ? 'Editar dinâmica' : 'Nova dinâmica'} onClose={onClose} wide xwide fullPage>
       <div style={{ marginBottom: 12 }}>
         <Field label="Nome"><Input value={f.nome || ''} onChange={e => setF({ ...f, nome: e.target.value })} placeholder="Ex: Saída de bola a 3, pressing alto" /></Field>
       </div>
