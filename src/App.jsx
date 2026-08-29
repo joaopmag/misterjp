@@ -22976,7 +22976,7 @@ const POSICAO_GENERICA_VERTICAL = {
    concreto. Desenhado à mão (não reaproveita o `PrancheteDoPlantel`,
    pensado para o campo deitado e para várias pessoas por lugar — aqui
    é sempre uma ou duas marcas soltas). */
-function QuadroPosicaoJogador({ position, secondaryPosition }) {
+function QuadroPosicaoJogador({ position, secondaryPosition, largura = 160 }) {
   const marcas = [];
   if (position && POSICAO_GENERICA_VERTICAL[position]) marcas.push({ id: 'p', rotulo: position, ponto: POSICAO_GENERICA_VERTICAL[position] });
   if (secondaryPosition && secondaryPosition !== position && POSICAO_GENERICA_VERTICAL[secondaryPosition]) {
@@ -22986,7 +22986,7 @@ function QuadroPosicaoJogador({ position, secondaryPosition }) {
 
   const W = 100, H = 150; // proporção 2:3 — um campo real deitado a rodar 90°
   return (
-    <div style={{ width: 160, flexShrink: 0 }}>
+    <div style={{ width: largura, flexShrink: 0 }}>
       <div style={{
         position: 'relative', width: '100%', aspectRatio: `${W} / ${H}`,
         background: '#1E3A24', borderRadius: 10, border: `1px solid ${T.line}`, overflow: 'hidden',
@@ -23042,15 +23042,15 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 14 }}>{x.name || 'Jogador observado'}</div>
       <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
 
-      {/* Uma grelha só, com os títulos de secção a atravessar as DUAS
-          colunas — é isso que faz a linha divisória esticar-se por cima
-          de onde a imagem vai ficar, em vez de parar no fim do texto.
-          Cada imagem entra exatamente na largura dela (160px, nem mais
-          nem menos) e cai sempre logo a seguir à linha da sua própria
-          secção — nunca antes, nunca depois. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 560px) 160px', columnGap: 22, alignItems: 'start' }}>
-        <div style={{ gridColumn: '1 / -1' }}><SubHeading>Identificação</SubHeading></div>
-
+      {/* O texto flui normalmente, largura nenhuma reservada nem
+          empurrada para lado nenhum — exatamente como se as imagens não
+          existissem. A foto e o campo ficam por CIMA, presos ao canto
+          superior direito de cada secção (`position: absolute` dentro de
+          um `position: relative` por secção), pequenos o suficiente para
+          caberem dentro da altura que o texto da própria secção já dá,
+          sem depender de a esticar. */}
+      <div style={{ position: 'relative', maxWidth: 480 }}>
+        <SubHeading>Identificação</SubHeading>
         <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
           <tbody>
             {idRows.map(([k, v]) => (
@@ -23063,42 +23063,43 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
         </table>
         {x.photo && (
           <img src={x.photo} alt="Fotografia" style={{
-            width: 160, aspectRatio: '3 / 4', objectFit: 'cover',
-            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000', display: 'block',
+            position: 'absolute', top: 38, right: 0, width: 100, aspectRatio: '3 / 4', objectFit: 'cover',
+            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000',
           }} />
         )}
+      </div>
 
-        <div style={{ gridColumn: '1 / -1' }}><SubHeading>Potencial geral</SubHeading></div>
-
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <RatingStars value={Number(x.potential) || 0} />
-            <span style={{ fontSize: 13, color: T.cream }}>
-              {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
-            </span>
-          </div>
-
-          {SCOUT_PILLARS.map(p => {
-            const rating = x[`${p.key}Rating`];
-            const notes = x[`${p.key}Notes`];
-            if (!rating && !notes) return null;
-            return (
-              <div key={p.key} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                  <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 500 }}>{p.label}</span>
-                  {rating ? <RatingStars value={Number(rating)} /> : <span style={{ fontSize: 12, color: T.mutedDim }}>sem avaliação</span>}
-                </div>
-                {notes && <p style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
-              </div>
-            );
-          })}
-
-          {avg !== null && (
-            <div style={{ fontSize: 13, color: T.warn, fontWeight: 600, marginTop: 14 }}>Média dos 4 pilares: {avg}</div>
-          )}
+      <div style={{ position: 'relative', maxWidth: 480, marginTop: 18 }}>
+        <SubHeading>Potencial geral</SubHeading>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <RatingStars value={Number(x.potential) || 0} />
+          <span style={{ fontSize: 13, color: T.cream }}>
+            {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
+          </span>
         </div>
 
-        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
+        {SCOUT_PILLARS.map(p => {
+          const rating = x[`${p.key}Rating`];
+          const notes = x[`${p.key}Notes`];
+          if (!rating && !notes) return null;
+          return (
+            <div key={p.key} style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 500 }}>{p.label}</span>
+                {rating ? <RatingStars value={Number(rating)} /> : <span style={{ fontSize: 12, color: T.mutedDim }}>sem avaliação</span>}
+              </div>
+              {notes && <p style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5, margin: 0, whiteSpace: 'pre-wrap' }}>{notes}</p>}
+            </div>
+          );
+        })}
+
+        {avg !== null && (
+          <div style={{ fontSize: 13, color: T.warn, fontWeight: 600, marginTop: 14 }}>Média dos 4 pilares: {avg}</div>
+        )}
+
+        <div style={{ position: 'absolute', top: 38, right: 0 }}>
+          <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} largura={90} />
+        </div>
       </div>
 
       <div style={{ marginTop: 18 }}>
