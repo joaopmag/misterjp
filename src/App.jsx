@@ -23011,6 +23011,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
       <MediaLibrary
         items={videosDoAdversario} setItems={setVideosDoAdversario}
         addLabel="Adicionar vídeo"
+        addButtonVariant="ghost"
         emptyText="Ainda sem vídeos deste adversário. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro."
         emptyFirstLabel="Adicionar o primeiro vídeo"
       />
@@ -23904,7 +23905,7 @@ function cleanFolder(name) {
 // Etiqueta usada no filtro para os itens que não estão em nenhuma pasta.
 const NO_FOLDER = '__sem_pasta__';
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant }, ref) {
   const [modal, setModal] = useState(null);
   React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
   // Pasta atualmente aberta: null = todas.
@@ -24210,7 +24211,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   return (
     <div>
       {!semBotaoTopo && (
-        <SectionHeader action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {addLabel}</Btn>} />
+        <SectionHeader action={<Btn variant={addButtonVariant} onClick={() => setModal('new')}><Plus size={15} /> {addLabel}</Btn>} />
       )}
 
       {/* PASTAS — filtro por pasta. As pastas criam-se ao escrever o nome
