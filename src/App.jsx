@@ -23015,7 +23015,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
           esquerdo, a coluna cresce o suficiente para não sobrar vazio, e
           a foto e o campo, ambos do lado direito, alinham-se por
           partilharem a mesma coluna. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 22, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 560px) auto', gap: 22, alignItems: 'start' }}>
         <div>
           <SubHeading>Identificação</SubHeading>
           <table style={{ borderCollapse: 'collapse', width: 'auto', marginBottom: 18 }}>
