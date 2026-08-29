@@ -2491,7 +2491,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
               <MediaLibrary
                 items={videosGerais} setItems={setVideosGerais}
-                title="Canal" subtitle="Vídeos de jogos e treinos."
                 addLabel="Adicionar vídeo"
                 emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
@@ -2500,7 +2499,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <div style={{ display: biblioteca === 'apresentacoes' ? 'block' : 'none' }}>
               <MediaLibrary
                 items={apresentacoes} setItems={setApresentacoes}
-                title="Apresentações" subtitle="Partilha de ideias."
                 addLabel="Adicionar ficheiro"
                 emptyText="Ainda sem apresentações. Carrega um PDF ou PowerPoint, cola um link do Google Drive (para ficheiros grandes) ou um link de vídeo, para começares."
                 emptyFirstLabel="Adicionar o primeiro ficheiro"
@@ -4512,7 +4510,7 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, 
 
   return (
     <div>
-      <SectionHeader title="Documentos" subtitle="Modelos em branco que a app preenche sozinha, na hora."
+      <SectionHeader
         action={<Btn onClick={() => fileInputRef.current?.click()} disabled={aCarregar}>
           {aCarregar ? <Loader2 size={15} className="spin" /> : <Plus size={15} />} Carregar modelo
         </Btn>} />
@@ -5761,7 +5759,7 @@ function SectionHeader({ title, subtitle, action }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 22, flexWrap: 'wrap', gap: 12 }}>
       <div>
-        <h1 style={{ ...display, color: T.cream, fontSize: 26, fontWeight: 600, margin: 0 }}>{title}</h1>
+        {title && <h1 style={{ ...display, color: T.cream, fontSize: 26, fontWeight: 600, margin: 0 }}>{title}</h1>}
         {subtitle && <p style={{ color: T.mutedDim, fontSize: 13.5, margin: '4px 0 0' }}>{subtitle}</p>}
       </div>
       {action}
