@@ -22785,7 +22785,27 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         <div>
           {bloco('Pontos fortes', a.pontosFortes)}
           {bloco('Pontos fracos', a.pontosFracos)}
+
+          {/* JOGADORES-CHAVE */}
+          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+            Jogadores-chave
+          </div>
+          {chave.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
+              Nenhum jogador-chave marcado ainda. Toca em "Editar" para os acrescentar.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+              {chave.map(x => (
+                <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
+                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+                  <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
         {/* ESTRUTURA HABITUAL — o mesmo quadro montado na edição, aqui só
             para consulta — nada para tocar. Ajusta-se em "Editar". `tela`:
             isto é para ver no ecrã, não para imprimir — sem isso, o
@@ -22809,27 +22829,6 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
                 maxLargura={310}
                 tela
               />
-            </div>
-          )}
-        </div>
-
-        {/* JOGADORES-CHAVE */}
-        <div>
-          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-            Jogadores-chave
-          </div>
-          {chave.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-              Nenhum jogador-chave marcado ainda. Toca em "Editar" para os acrescentar.
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
-              {chave.map(x => (
-                <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
-                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
-                  <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
-                </div>
-              ))}
             </div>
           )}
         </div>
