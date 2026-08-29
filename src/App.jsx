@@ -22382,11 +22382,13 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
           value={subTab}
           onChange={(v) => {
             // Trocar de valência enquanto uma ficha de jogador está aberta
-            // não fazia nada visível: o ecrã continuava preso a essa ficha
-            // (`viewing` tinha sempre prioridade sobre `subTab` a decidir o
-            // que mostrar). Ao trocar, fecha-se a ficha também.
+            // — ou a meio de a criar/editar — não fazia nada visível: o
+            // ecrã continuava preso a essa ficha ou àquele formulário
+            // (`viewing`/`modal` tinham sempre prioridade sobre `subTab` a
+            // decidir o que mostrar). Ao trocar, fecham-se os dois.
             setSubTab(v);
             setViewing(null);
+            setModal(null);
           }}
           tabs={[
             { id: 'jogadores', label: 'Jogadores', icon: Users, count: scouting.length },
