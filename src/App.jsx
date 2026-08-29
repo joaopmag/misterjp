@@ -23063,7 +23063,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
         </table>
         {x.photo && (
           <img src={x.photo} alt="Fotografia" style={{
-            position: 'absolute', top: 38, right: 30, width: 118, aspectRatio: '3 / 4', objectFit: 'cover',
+            position: 'absolute', top: 38, right: 30, width: 112, aspectRatio: '3 / 4', objectFit: 'cover',
             borderRadius: 10, border: `1px solid ${T.line}`, background: '#000',
           }} />
         )}
@@ -23098,7 +23098,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
         )}
 
         <div style={{ position: 'absolute', top: 38, right: 30 }}>
-          <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} largura={106} />
+          <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} largura={112} />
         </div>
       </div>
 
