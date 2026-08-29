@@ -1697,15 +1697,49 @@ function useSubColecao(itemsCompletos, setItemsCompletos, pertence) {
    (sinal de que foi mesmo a nossa entrada, ou algo acima dela, que
    saiu); se ainda é o nosso, foi uma marca mais funda a sair, e não nos
    diz respeito. */
+/* TROCAR DE JANELA SEM PASSAR PELO HISTÓRICO NO MEIO.
+
+   Fechar uma janela (Modal ou vista de detalhe) empurra um "voltar"
+   pendente no histórico; abrir outra empurra logo a seguir uma marca
+   nova. Quando as duas coisas acontecem no MESMO gesto — o botão
+   "Editar" de qualquer ficha, que fecha a vista e abre o editor ao
+   mesmo tempo — o "voltar" só é processado pelo browser depois de a
+   marca nova já lá estar, e acaba por desfazer a marca ERRADA (a da
+   janela que acabou de abrir, não a da que fechou). O efeito visto foi
+   o editor a abrir e fechar-se sozinho de imediato, voltando à janela
+   anterior.
+
+   `modalHandoffAtivo` avisa a próxima janela a montar que está a
+   HERDAR a marca da anterior em vez de empilhar uma nova — sem
+   empilhar nem desempilhar nada no meio, não há corrida nenhuma.
+   `trocarJanela` é o que qualquer botão "Editar" (ou equivalente) deve
+   usar em vez de chamar o fecho e a abertura diretamente. */
+let modalHandoffAtivo = false;
+function trocarJanela(fechar, abrir) {
+  modalHandoffAtivo = true;
+  fechar();
+  abrir();
+}
+function herdarOuEmpurrarMarca() {
+  if (modalHandoffAtivo) {
+    modalHandoffAtivo = false;
+    const atual = window.history.state && window.history.state.mjpMarker;
+    if (atual) return atual;
+    // Handoff sem marca nenhuma por baixo (raro): cria uma na mesma,
+    // sem empilhar, para não ficar sem histórico nenhum.
+  }
+  const meuMarker = uid();
+  window.history.pushState({ mjpMarker: meuMarker }, '', window.location.hash);
+  return meuMarker;
+}
 function useDetailBack(aberto, fechar) {
   const markerRef = useRef(null);
   const fechadoPeloPop = useRef(false);
   useEffect(() => {
     if (!aberto) return undefined;
-    const meuMarker = uid();
+    const meuMarker = herdarOuEmpurrarMarca();
     markerRef.current = meuMarker;
     fechadoPeloPop.current = false;
-    window.history.pushState({ mjpMarker: meuMarker }, '', window.location.hash);
     const onPop = () => {
       const atual = window.history.state && window.history.state.mjpMarker;
       if (atual === meuMarker) return; // saiu uma marca mais funda, não a nossa
@@ -1716,6 +1750,7 @@ function useDetailBack(aberto, fechar) {
     return () => {
       window.removeEventListener('popstate', onPop);
       if (fechadoPeloPop.current) return; // já foi o próprio retroceder a tratar disto
+      if (modalHandoffAtivo) return; // outra janela vai herdar esta marca, não a desfazer agora
       const atual = window.history.state && window.history.state.mjpMarker;
       if (atual === meuMarker) window.history.back();
     };
@@ -1748,9 +1783,8 @@ function useModalHistory(onClose) {
   const markerRef = useRef(null);
   const fechadoPeloPop = useRef(false);
   useEffect(() => {
-    const meuMarker = uid();
+    const meuMarker = herdarOuEmpurrarMarca();
     markerRef.current = meuMarker;
-    window.history.pushState({ mjpMarker: meuMarker }, '', window.location.hash);
     const onPop = () => {
       const atual = window.history.state && window.history.state.mjpMarker;
       if (atual === meuMarker) return; // saiu uma marca mais funda, não a nossa
@@ -1761,6 +1795,7 @@ function useModalHistory(onClose) {
     return () => {
       window.removeEventListener('popstate', onPop);
       if (fechadoPeloPop.current) return;
+      if (modalHandoffAtivo) return; // outra janela vai herdar esta marca, não a desfazer agora
       const atual = window.history.state && window.history.state.mjpMarker;
       if (atual === meuMarker) window.history.back();
     };
@@ -5912,7 +5947,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
           onBack={fecharPerfil}
           onShare={() => doShare(statsFor)}
           onPrint={() => { const p = statsFor; doPrint(p); }}
-          onEdit={() => { const p = statsFor; fecharPerfil(); setModal(p); }}
+          onEdit={() => { const p = statsFor; trocarJanela(() => setStatsFor(null), () => setModal(p)); }}
         />
       ) : (
         <>
@@ -6632,7 +6667,7 @@ function Exercicios({ exercises, setExercises, meta }) {
         <ExercisePresentation
           exercise={viewing}
           onClose={() => setViewing(null)}
-          onEdit={() => { setModal(viewing); setViewing(null); }}
+          onEdit={() => trocarJanela(() => setViewing(null), () => setModal(viewing))}
         />
       )}
 
@@ -7005,7 +7040,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
         <ExercisePresentation
           exercise={{ ...viewing, name: labelOf(viewing) }}
           onClose={() => setViewing(null)}
-          onEdit={() => { setModal(viewing); setViewing(null); }}
+          onEdit={() => trocarJanela(() => setViewing(null), () => setModal(viewing))}
         />
       )}
 
@@ -14922,7 +14957,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             players={players}
             season={season}
             onClose={() => setFicha(null)}
-            onEdit={() => { setFicha(null); setMatchModal(atual); }}
+            onEdit={() => trocarJanela(() => setFicha(null), () => setMatchModal(atual))}
             onShare={() => doShareMatch(atual)}
             onPrint={() => doPrintMatch(atual)}
             onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
@@ -19868,7 +19903,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
             players={players}
             season={season}
             onClose={() => setFicha(null)}
-            onEdit={() => { setFicha(null); setModal(atual); }}
+            onEdit={() => trocarJanela(() => setFicha(null), () => setModal(atual))}
             onShare={() => doShareMatch(atual)}
             onPrint={() => doPrintMatch(atual)}
               /* Mudar de formação limpa o alinhamento manual: os lugares
@@ -22322,7 +22357,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         <ScoutSheetPage
           player={viewing}
           onBack={fecharFicha}
-          onEdit={() => { setModal(viewing); setViewing(null); }}
+          onEdit={() => trocarJanela(() => setViewing(null), () => setModal(viewing))}
           onShare={() => doShare(viewing)}
           onPrint={() => { const p = viewing; setViewing(null); setTimeout(() => doPrint(p), 60); }}
         />
@@ -22752,7 +22787,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         <ExercisePresentation
           exercise={{ ...taticaViewing, name: labelTatica(taticaViewing) }}
           onClose={() => setTaticaViewing(null)}
-          onEdit={() => { setTaticaModal(taticaViewing); setTaticaViewing(null); }}
+          onEdit={() => trocarJanela(() => setTaticaViewing(null), () => setTaticaModal(taticaViewing))}
         />
       )}
 
