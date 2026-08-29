@@ -5395,9 +5395,15 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
 
 /* O quadro desenhado. `aoTocar` transforma-o em editável: sem ele é só
    para ler, que é o que a folha impressa precisa. */
-function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLargura = 640 }) {
+function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLargura = 640, tela = false }) {
   if (!lugares || !lugares.length) return null;
   const editavel = typeof aoTocar === 'function';
+  // `escuro` decide as CORES (tema da app vs folha impressa); `editavel`
+  // continua a decidir só a interatividade (cliques, contorno de seleção).
+  // Um quadro só de consulta no ECRÃ (nem editável nem impresso) tem de
+  // ficar escuro na mesma — só a folha em papel é que precisa de fundo
+  // branco.
+  const escuro = editavel || tela;
 
   /* QUANTO MAIS GENTE NUM LUGAR SÓ, MAIS PEQUENA A LETRA DE TODOS.
 
@@ -5434,7 +5440,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
   const GR_FX = 0;
   const GR_LARGURA = '10%';
 
-  const corDoTexto = editavel ? '#fff' : '#A6192E';
+  const corDoTexto = escuro ? '#fff' : '#A6192E';
   const tagStyle = {
     display: 'inline-block', padding: '1px 5px', borderRadius: 4,
     // No ecrã fica preenchido, como sempre. Na folha impressa a maior
@@ -5443,8 +5449,8 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
     // branco sobre fundo branco desaparece por completo. Por isso,
     // impresso, é uma cor de tinta a sério (contorno + texto), que se
     // vê com ou sem cor de fundo.
-    background: editavel ? '#B5393F' : 'transparent',
-    border: editavel ? 'none' : '1px solid #A6192E',
+    background: escuro ? '#B5393F' : 'transparent',
+    border: escuro ? 'none' : '1px solid #A6192E',
     color: corDoTexto, fontSize: 7.5 * escala, fontWeight: 700, letterSpacing: '.02em',
   };
   const nomeStyle = (on) => ({
@@ -5454,7 +5460,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
        `fatorNomes` encolhe os DOIS por igual quando o quadro fica
        cheio — ver comentário no topo da função. */
     fontSize: 8.5 * escala * fatorNomes, lineHeight: alturaLinha, fontWeight: 500,
-    color: editavel ? (on ? '#0d140e' : T.cream) : '#111',
+    color: escuro ? (on ? '#0d140e' : T.cream) : '#111',
     background: on ? T.gold : 'transparent',
     borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -5492,12 +5498,12 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
   return (
     <div style={{
       position: 'relative', width: '100%', maxWidth: maxLargura, aspectRatio: ASPECT_CAMPO_PRINT,
-      background: editavel ? '#1E3A24' : '#fff', margin: '0 auto',
-      borderRadius: editavel ? 10 : 0, border: editavel ? `1px solid ${T.line}` : 'none',
+      background: escuro ? '#1E3A24' : '#fff', margin: '0 auto',
+      borderRadius: escuro ? 10 : 0, border: escuro ? `1px solid ${T.line}` : 'none',
     }}>
       <MarcacoesCampoPrint
-        traco={editavel ? '#ffffff40' : '#999'}
-        baliza={editavel ? '#ffffff66' : '#666'}
+        traco={escuro ? '#ffffff40' : '#999'}
+        baliza={escuro ? '#ffffff66' : '#666'}
       />
       {lugares.map(l => {
         const eGR = l.id === 'GR';
@@ -5529,7 +5535,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
               /* Um fundo (quase) sólido só no lugar mais cheio evita que,
                  mesmo depois de tudo isto, um resto de transbordo de um
                  lugar vizinho se leia por cima deste. */
-              background: l.lista.length >= 3 ? (editavel ? '#1E3A24' : '#fff') : 'transparent',
+              background: l.lista.length >= 3 ? (escuro ? '#1E3A24' : '#fff') : 'transparent',
             }}
           >
             {conteudoDoLugar(l)}
@@ -22805,13 +22811,21 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
           </div>
           {/* O mesmo quadro montado na edição, aqui só para consulta —
               nada para tocar, é o "provável onze" do adversário. Ajusta-se
-              em "Editar". */}
-          <PrancheteDoPlantel
-            lugares={distribuirPlantel({
-              players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
-            })}
-            escala={1.25}
-          />
+              em "Editar". `tela`: isto é para ver no ecrã, não para
+              imprimir — sem isso, o quadro saía com o fundo branco pensado
+              para papel, destoando do resto da página escura. */}
+          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+            Onze provável
+          </div>
+          <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+            <PrancheteDoPlantel
+              lugares={distribuirPlantel({
+                players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
+              })}
+              escala={1.25}
+              tela
+            />
+          </div>
         </>
       )}
 
