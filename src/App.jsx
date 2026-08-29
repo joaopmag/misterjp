@@ -22781,18 +22781,8 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
         {bloco('Pontos fortes', a.pontosFortes)}
-        {bloco('Pontos fracos', a.pontosFracos)}
-      </div>
-      {bloco('Notas gerais', a.notas)}
-      {!a.pontosFortes && !a.pontosFracos && !a.notas && (
-        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
-          Ainda sem notas de análise. Toca em "Editar" para as acrescentar.
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
         {/* ESTRUTURA HABITUAL — o mesmo quadro montado na edição, aqui só
             para consulta — nada para tocar. Ajusta-se em "Editar". `tela`:
             isto é para ver no ecrã, não para imprimir — sem isso, o
@@ -22820,7 +22810,10 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
           )}
         </div>
 
-        {/* JOGADORES-CHAVE — ao lado da estrutura, não das táticas. */}
+        {bloco('Pontos fracos', a.pontosFracos)}
+
+        {/* JOGADORES-CHAVE — ao lado dos pontos fracos, agora que a
+            estrutura foi para cima, ao lado dos pontos fortes. */}
         <div>
           <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
             Jogadores-chave
@@ -22841,6 +22834,13 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
           )}
         </div>
       </div>
+
+      {bloco('Notas gerais', a.notas)}
+      {!a.pontosFortes && !a.pontosFracos && !a.notas && (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
+          Ainda sem notas de análise. Toca em "Editar" para as acrescentar.
+        </div>
+      )}
 
       {/* TÁTICAS — o mesmo editor de prancheta e a mesma apresentação
           animada da Ideia de Jogo (`DiagramEditor`, `ExercisePresentation`),
