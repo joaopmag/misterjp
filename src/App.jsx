@@ -23294,9 +23294,9 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
             que se adapta a ela (ver `QuadroPosicaoJogador`), nunca ao
             contrário. Antes o campo mandava (a moldura seguia a LARGURA
             da coluna) e saía sempre mais alto do que a Identificação. */}
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: 220 }}>
           <div style={sectionTitle}>Identificação</div>
-          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
             {linha('Clube atual', x.club)}
             {linha('Ano de nascimento', x.birthYear)}
             {linha('Idade', playerAge ? `${playerAge} anos` : null)}
@@ -23310,7 +23310,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
         </div>
 
         {(x.position || x.secondaryPosition) && (
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 220 }}>
             <div style={sectionTitle}>Posição em campo</div>
             <div style={{ ...card, flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center' }}>
               <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} horizontal />
