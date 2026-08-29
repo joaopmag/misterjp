@@ -23006,46 +23006,44 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 14 }}>{x.name || 'Jogador observado'}</div>
       <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
 
-      {/* Duas colunas, lado a lado: a da esquerda junta a tabela de
-          identificação e (por baixo) as estrelas do potencial; a da
-          direita junta a foto e (por baixo, na mesma largura) o campo —
-          é essa mesma coluna que os mantém alinhados um por cima do
-          outro, sem depender de acertar larguras à mão. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 22, alignItems: 'start', marginBottom: 18 }}>
-        <div>
-          <SubHeading>Identificação</SubHeading>
-          {/* width:auto sobrepõe o `table { width:100% }` global — sem isto a
-              tabela ocupava a coluna toda, empurrando os valores para longe
-              das etiquetas. */}
-          <table style={{ borderCollapse: 'collapse', width: 'auto', marginBottom: 18 }}>
-            <tbody>
-              {idRows.map(([k, v]) => (
-                <tr key={k}>
-                  <th style={{ textAlign: 'left', padding: '3px 18px 3px 0', fontSize: 12.5, color: T.muted, fontWeight: 500, whiteSpace: 'nowrap' }}>{k}</th>
-                  <td style={{ padding: '3px 0', fontSize: 13, color: T.cream }}>{v}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Duas linhas SEPARADAS, cada uma com o seu próprio par — não uma
+         coluna só à direita com a foto e o campo empilhados, que ficava
+         mais alta do que o conteúdo da esquerda e deixava um vazio
+         enorme antes de "Técnico" começar. Aqui, cada linha só é tão
+         alta quanto ela própria precisa: a foto ao lado dos dados de
+         identificação, o campo ao lado das estrelas do potencial. */}
+      <SubHeading>Identificação</SubHeading>
+      <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 18 }}>
+        {/* width:auto sobrepõe o `table { width:100% }` global — sem isto a
+            tabela ocupava a linha toda, empurrando os valores para longe
+            das etiquetas e a foto para baixo. */}
+        <table style={{ borderCollapse: 'collapse', flex: '0 1 auto', width: 'auto' }}>
+          <tbody>
+            {idRows.map(([k, v]) => (
+              <tr key={k}>
+                <th style={{ textAlign: 'left', padding: '3px 18px 3px 0', fontSize: 12.5, color: T.muted, fontWeight: 500, whiteSpace: 'nowrap' }}>{k}</th>
+                <td style={{ padding: '3px 0', fontSize: 13, color: T.cream }}>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {x.photo && (
+          <img src={x.photo} alt="Fotografia" style={{
+            width: 160, flex: '0 0 auto', aspectRatio: '3 / 4', objectFit: 'cover',
+            borderRadius: 10, border: `1px solid ${T.line}`, background: '#000',
+          }} />
+        )}
+      </div>
 
-          <SubHeading>Potencial geral</SubHeading>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <RatingStars value={Number(x.potential) || 0} />
-            <span style={{ fontSize: 13, color: T.cream }}>
-              {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
-            </span>
-          </div>
+      <SubHeading>Potencial geral</SubHeading>
+      <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <RatingStars value={Number(x.potential) || 0} />
+          <span style={{ fontSize: 13, color: T.cream }}>
+            {x.potential ? `${x.potential}/5${potentialLabel ? ` — ${potentialLabel}` : ''}` : 'Sem classificação'}
+          </span>
         </div>
-
-        <div>
-          {x.photo && (
-            <img src={x.photo} alt="Fotografia" style={{
-              width: 160, aspectRatio: '3 / 4', objectFit: 'cover',
-              borderRadius: 10, border: `1px solid ${T.line}`, background: '#000', display: 'block', marginBottom: 14,
-            }} />
-          )}
-          <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
-        </div>
+        <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
       </div>
 
       {SCOUT_PILLARS.map(p => {
