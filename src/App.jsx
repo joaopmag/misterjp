@@ -22298,9 +22298,13 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
   const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
 
   const save = (data) => {
-    if (data.id) setScouting(scouting.map(x => x.id === data.id ? data : x));
+    const isEdicao = !!data.id;
+    if (isEdicao) setScouting(scouting.map(x => x.id === data.id ? data : x));
     else setScouting([...scouting, { ...data, id: uid() }]);
-    setModal(null);
+    // Editar mantém no jogador (volta à ficha, não à lista); só criar de
+    // novo é que fecha de vez, porque nunca houve uma ficha para voltar.
+    if (isEdicao) trocarJanela(() => setModal(null), () => setViewing(data));
+    else setModal(null);
   };
   const remove = (id) => removeWithUndo(scouting, setScouting, id, itemLabel(scouting.find(x => x.id === id), 'Jogador observado'));
 
@@ -22446,7 +22450,13 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
         </div>
       )}
 
-      {modal && <ScoutModal player={modal === 'new' ? null : modal} onClose={() => setModal(null)} onSave={save} />}
+      {modal && (
+        <ScoutModal
+          player={modal === 'new' ? null : modal}
+          onClose={() => (modal === 'new' ? setModal(null) : trocarJanela(() => setModal(null), () => setViewing(modal)))}
+          onSave={save}
+        />
+      )}
 
       {printScout && createPortal(
         <div className="print-sheet">
@@ -23020,13 +23030,47 @@ const POSICAO_GENERICA_VERTICAL = {
    concreto. Desenhado à mão (não reaproveita o `PrancheteDoPlantel`,
    pensado para o campo deitado e para várias pessoas por lugar — aqui
    é sempre uma ou duas marcas soltas). */
-function QuadroPosicaoJogador({ position, secondaryPosition }) {
+function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
   const marcas = [];
   if (position && POSICAO_GENERICA_VERTICAL[position]) marcas.push({ id: 'p', rotulo: position, ponto: POSICAO_GENERICA_VERTICAL[position] });
   if (secondaryPosition && secondaryPosition !== position && POSICAO_GENERICA_VERTICAL[secondaryPosition]) {
     marcas.push({ id: 's', rotulo: secondaryPosition, ponto: POSICAO_GENERICA_VERTICAL[secondaryPosition] });
   }
   if (!marcas.length) return null;
+
+  if (horizontal) {
+    // Mesmos pontos genéricos, rodados 90°: a profundidade (y, 0 = ataque)
+    // passa a eixo horizontal — ataque à direita, baliza própria à
+    // esquerda — e o lado (x) fica no eixo vertical.
+    const W = 150, H = 100; // 3:2 — campo deitado
+    return (
+      <div style={{ width: '100%', maxWidth: 320 }}>
+        <div style={{
+          position: 'relative', width: '100%', aspectRatio: `${W} / ${H}`,
+          background: '#1E3A24', borderRadius: 10, border: `1px solid ${T.line}`, overflow: 'hidden',
+        }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+            <rect x="3" y="3" width={W - 6} height={H - 6} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <line x1={W / 2} y1="3" x2={W / 2} y2={H - 3} stroke="#ffffff40" strokeWidth="1" />
+            <circle cx={W / 2} cy={H / 2} r={H * 0.24} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <circle cx={W / 2} cy={H / 2} r="0.8" fill="#ffffff40" />
+            {/* Grande área — à esquerda (a nossa, onde fica sempre o GR) e à
+                direita (baliza adversária). */}
+            <rect x="3" y={H * 0.22} width={W * 0.15} height={H * 0.56} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <rect x={W - 3 - W * 0.15} y={H * 0.22} width={W * 0.15} height={H * 0.56} fill="none" stroke="#ffffff40" strokeWidth="1" />
+          </svg>
+          {marcas.map(m => (
+            <span key={m.id} style={{
+              position: 'absolute', left: `${(1 - m.ponto[1]) * 100}%`, top: `${m.ponto[0] * 100}%`,
+              transform: 'translate(-50%, -50%)',
+              background: '#B5393F', color: '#fff', fontSize: 10, fontWeight: 700,
+              padding: '2px 6px', borderRadius: 5, whiteSpace: 'nowrap', letterSpacing: '.02em',
+            }}>{m.rotulo}</span>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const W = 100, H = 150; // proporção 2:3 — um campo real deitado a rodar 90°
   return (
@@ -23119,7 +23163,13 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
               x.club, playerAge ? `${playerAge} anos` : (x.birthYear || null), x.dominantFoot,
             ].filter(Boolean).join(' · ')}
           </div>
-          <SheetActions onShare={onShare} onPrint={onPrint} onEdit={onEdit} />
+          {(onShare || onPrint || onEdit) && (
+            <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+              {onShare && <button onClick={onShare} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Share2 size={15} /> Partilhar</button>}
+              {onPrint && <button onClick={onPrint} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Printer size={15} /> Imprimir</button>}
+              {onEdit && <button onClick={onEdit} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, padding: 0 }}><Pencil size={15} /> Editar</button>}
+            </div>
+          )}
         </div>
       </div>
 
@@ -23133,7 +23183,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-        {/* COLUNA ESQUERDA: identificação + posição em campo */}
+        {/* COLUNA ESQUERDA: identificação + 4 pilares de rendimento */}
         <div>
           <div style={sectionTitle}>Identificação</div>
           <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
@@ -23148,18 +23198,6 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
             {linha('Data de observação', x.observationDate ? fmtDate(x.observationDate) : null)}
           </div>
 
-          {(x.position || x.secondaryPosition) && (
-            <>
-              <div style={sectionTitle}>Posição em campo</div>
-              <div style={{ ...card, display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-                <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} />
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* COLUNA DIREITA: 4 pilares de rendimento */}
-        <div>
           <div style={sectionTitle}>4 pilares de rendimento</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {semPilares ? (
@@ -23180,6 +23218,16 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
             })}
           </div>
         </div>
+
+        {/* COLUNA DIREITA: posição em campo, campo na horizontal */}
+        {(x.position || x.secondaryPosition) && (
+          <div>
+            <div style={sectionTitle}>Posição em campo</div>
+            <div style={{ ...card, display: 'flex', justifyContent: 'center' }}>
+              <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} horizontal />
+            </div>
+          </div>
+        )}
       </div>
 
       {(x.traits || x.notes) && (
