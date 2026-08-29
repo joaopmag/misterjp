@@ -5552,7 +5552,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
    nomes de 8 px o alvo é pequeno de mais para o dedo.
 
    Só o que se move fica guardado. */
-function EditorPrancheta({ players, attendance, convidados, overrides, tatica, onChange, onTatica }) {
+function EditorPrancheta({ players, attendance, convidados, overrides, tatica, onChange, onTatica, titulo = 'Quadro de posições' }) {
   const [escolhido, setEscolhido] = useState(null);
   const lugares = distribuirPlantel({ players, attendance, convidados, overrides, tatica });
 
@@ -5572,7 +5572,7 @@ function EditorPrancheta({ players, attendance, convidados, overrides, tatica, o
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
         <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-          Quadro de posições
+          {titulo}
         </span>
         {/* Trocar de táctica muda os lugares, não quem está presente. O
             que arrumaste à mão mantém-se sempre que o lugar continuar a
@@ -22711,7 +22711,7 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
             }}>
               <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{a.nome}</div>
               <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 3 }}>
-                {[a.escalao, a.prova, a.formacaoHabitual].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
+                {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
               </div>
               <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 8 }}>
                 {(a.jogadoresChaveIds || []).length} jogador{(a.jogadoresChaveIds || []).length === 1 ? '' : 'es'}-chave
@@ -22772,7 +22772,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         <div>
           <div style={{ ...display, fontSize: 20, color: T.cream }}>{a.nome}</div>
           <div style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 4 }}>
-            {[a.escalao, a.prova, a.formacaoHabitual].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
+            {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -22832,8 +22832,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         </div>
       </div>
 
-      {bloco('Notas gerais', a.notas)}
-      {!a.pontosFortes && !a.pontosFracos && !a.notas && (
+      {!a.pontosFortes && !a.pontosFracos && (
         <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>
           Ainda sem notas de análise. Toca em "Editar" para as acrescentar.
         </div>
@@ -22945,7 +22944,7 @@ function TaticaAdversarioModal({ tatica, onClose, onSave }) {
    ficha ao Guardar; um nome novo cria lá uma ficha nova, só com nome e
    posição — NUNCA antes disso, só no momento de guardar. */
 function AdversarioForm({ adversario, scouting, onBack, onSave }) {
-  const [f, setF] = useState(adversario || { nome: '', escalao: '', prova: '', formacaoHabitual: '', pontosFortes: '', pontosFracos: '', notas: '' });
+  const [f, setF] = useState(adversario || { nome: '', escalao: '', prova: '', pontosFortes: '', pontosFracos: '', notas: '' });
   const [linhas, setLinhas] = useState(() => {
     const iniciais = ((adversario && adversario.jogadoresChaveIds) || [])
       .map(id => scouting.find(x => x.id === id))
@@ -23003,9 +23002,6 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
         <Field label="Prova">
           <Input value={f.prova} onChange={e => setF({ ...f, prova: e.target.value })} placeholder="Ex: Campeonato Distrital" />
         </Field>
-        <Field label="Formação habitual">
-          <Input value={f.formacaoHabitual} onChange={e => setF({ ...f, formacaoHabitual: e.target.value })} placeholder="Ex: 4-4-2" />
-        </Field>
       </div>
       <div style={{ marginBottom: 14 }}>
         <Field label="Pontos fortes" bloco solto>
@@ -23015,11 +23011,6 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
       <div style={{ marginBottom: 14 }}>
         <Field label="Pontos fracos" bloco solto>
           <TextArea value={f.pontosFracos} onChange={e => setF({ ...f, pontosFracos: e.target.value })} style={{ minHeight: 64 }} />
-        </Field>
-      </div>
-      <div style={{ marginBottom: 24 }}>
-        <Field label="Notas gerais" bloco solto>
-          <TextArea value={f.notas} onChange={e => setF({ ...f, notas: e.target.value })} style={{ minHeight: 64 }} />
         </Field>
       </div>
 
@@ -23054,14 +23045,18 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
         <Plus size={14} /> Adicionar jogador-chave
       </Btn>
 
-      {/* O MESMO QUADRO DE POSIÇÕES DO PLANTEL — só que aqui arruma os
-          jogadores-chave escritos em cima, não o nosso plantel. Como
-          nenhum deles ainda tem uma ficha gravada (isso só acontece ao
-          Guardar), usa-se o `localId` de cada linha como se fosse o id
-          do jogador — o `EditorPrancheta` nem sabe que está a lidar com
-          fichas por criar. */}
+      {/* ESTRUTURA HABITUAL — o mesmo quadro de posições do plantel, só que
+          aqui arruma os jogadores-chave escritos em cima, não o nosso
+          plantel. Como nenhum deles ainda tem uma ficha gravada (isso só
+          acontece ao Guardar), usa-se o `localId` de cada linha como se
+          fosse o id do jogador — o `EditorPrancheta` nem sabe que está a
+          lidar com fichas por criar. A dropdown da tática AQUI é que
+          define a estrutura habitual do adversário — deixou de haver um
+          campo de texto à parte para não haver duas fontes da mesma
+          informação, sempre a poderem dizer coisas diferentes. */}
       <div style={{ marginTop: 24 }}>
         <EditorPrancheta
+          titulo="Estrutura habitual"
           players={linhas.filter(l => l.nome.trim()).map(l => ({ id: l.localId, name: l.nome.trim(), position: l.posicao }))}
           attendance={linhas.filter(l => l.nome.trim()).map(l => l.localId)}
           convidados={[]}
