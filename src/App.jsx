@@ -1932,6 +1932,12 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
   // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
   const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId);
+  // Referências para o botão partilhado da Biblioteca (na mesma linha dos
+  // separadores) conseguir abrir "adicionar" em quem estiver visível, sem
+  // duplicar o botão dentro de cada sub-aba.
+  const canalRef = useRef(null);
+  const apresentacoesRef = useRef(null);
+  const documentosRef = useRef(null);
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit, teamId);
   const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit, teamId);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit, teamId);
@@ -2479,27 +2485,47 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              sub-abas: o `display: none` é justamente o que o permite. */}
           <div style={{ display: tab === 'biblioteca' ? 'block' : 'none' }}>
             <SectionHeader title="Biblioteca" subtitle="Vídeos, apresentações e documentos da equipa." />
-            <SubTabs
-              value={biblioteca}
-              onChange={setBiblioteca}
-              tabs={[
-                { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).length },
-                { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
-                { id: 'documentos', label: 'Documentos', icon: FileSpreadsheet, count: (documentos || []).length },
-              ]}
-            />
+            {/* Um botão só, na mesma linha dos separadores, alinhado à
+                direita — o rótulo e o clique mudam consoante a sub-aba
+                aberta, mas é sempre este único botão a aparecer, nunca um
+                por baixo de cada sub-aba (essas continuam com o botão
+                próprio escondido via `semBotaoTopo`, para o caso de o
+                voltarmos a mostrar algures). */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+              <SubTabs
+                value={biblioteca}
+                onChange={setBiblioteca}
+                tabs={[
+                  { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).length },
+                  { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
+                  { id: 'documentos', label: 'Documentos', icon: FileSpreadsheet, count: (documentos || []).length },
+                ]}
+                semMargem
+              />
+              {biblioteca === 'videos' && (
+                <Btn onClick={() => canalRef.current?.abrirNovo()}><Plus size={15} /> Adicionar vídeo</Btn>
+              )}
+              {biblioteca === 'apresentacoes' && (
+                <Btn onClick={() => apresentacoesRef.current?.abrirNovo()}><Plus size={15} /> Adicionar ficheiro</Btn>
+              )}
+              {biblioteca === 'documentos' && (
+                <Btn onClick={() => documentosRef.current?.abrirNovo()}><Plus size={15} /> Carregar modelo</Btn>
+              )}
+            </div>
             <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
               <MediaLibrary
+                ref={canalRef}
                 items={videosGerais} setItems={setVideosGerais}
-                addLabel="Adicionar vídeo"
+                addLabel="Adicionar vídeo" semBotaoTopo
                 emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
               />
             </div>
             <div style={{ display: biblioteca === 'apresentacoes' ? 'block' : 'none' }}>
               <MediaLibrary
+                ref={apresentacoesRef}
                 items={apresentacoes} setItems={setApresentacoes}
-                addLabel="Adicionar ficheiro"
+                addLabel="Adicionar ficheiro" semBotaoTopo
                 emptyText="Ainda sem apresentações. Carrega um PDF ou PowerPoint, cola um link do Google Drive (para ficheiros grandes) ou um link de vídeo, para começares."
                 emptyFirstLabel="Adicionar o primeiro ficheiro"
               />
@@ -2511,7 +2537,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 sub-abas, pela mesma razão: trocar de sub-aba não deve
                 perder o estado do que estava aberto. */}
             <div style={{ display: biblioteca === 'documentos' ? 'block' : 'none' }}>
-              <DocumentosApp documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions} matches={matches} clinico={clinico} teamId={teamId} />
+              <DocumentosApp
+                ref={documentosRef}
+                documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions}
+                matches={matches} clinico={clinico} teamId={teamId} semBotaoTopo
+              />
             </div>
           </div>
           {tab === 'desenvolvimento' && (
@@ -4454,11 +4484,12 @@ async function gerarFichaAssiduidade(arrayBuffer, players, sessions, matches, cl
 }
 
 
-function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId }) {
+const DocumentosApp = React.forwardRef(function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, clinico, teamId, semBotaoTopo }, ref) {
   const [aGerar, setAGerar] = useState(null); // id do documento com o formulário de geração aberto
   const [aCarregar, setACarregar] = useState(false);
   const [erro, setErro] = useState('');
   const fileInputRef = useRef(null);
+  React.useImperativeHandle(ref, () => ({ abrirNovo: () => fileInputRef.current?.click() }));
 
   /* O FICHEIRO VAI PARA O STORAGE, NÃO PARA A LINHA DA TABELA.
 
@@ -4510,10 +4541,12 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, 
 
   return (
     <div>
-      <SectionHeader
-        action={<Btn onClick={() => fileInputRef.current?.click()} disabled={aCarregar}>
-          {aCarregar ? <Loader2 size={15} className="spin" /> : <Plus size={15} />} Carregar modelo
-        </Btn>} />
+      {!semBotaoTopo && (
+        <SectionHeader
+          action={<Btn onClick={() => fileInputRef.current?.click()} disabled={aCarregar}>
+            {aCarregar ? <Loader2 size={15} className="spin" /> : <Plus size={15} />} Carregar modelo
+          </Btn>} />
+      )}
       <input
         ref={fileInputRef} type="file" accept=".xlsx,.xls,.docx,.doc,.pdf" style={{ display: 'none' }}
         onChange={e => { const f = e.target.files[0]; if (f) carregarFicheiro(f); e.target.value = ''; }}
@@ -4565,7 +4598,7 @@ function DocumentosApp({ documentos, setDocumentos, players, sessions, matches, 
       )}
     </div>
   );
-}
+});
 
 // Ordem "de época" dos meses (Agosto→Julho), tal como os 12 blocos
 // vêm empilhados no modelo do SC Salgueiros — ver o comentário grande
@@ -22726,17 +22759,16 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
       {/* VÍDEOS — a mesma Biblioteca (Canal), com a mesma forma de
           adicionar (colar link do YouTube/Instagram/TikTok, ou carregar
           um ficheiro) — só que filtrada a este adversário, e sem
-          aparecer no Canal geral da equipa. O próprio MediaLibrary já
-          traz o seu cabeçalho ("Vídeos"), por isso não se repete aqui. */}
-      <div style={{ marginTop: 20 }}>
-        <MediaLibrary
-          items={videosDoAdversario} setItems={setVideosDoAdversario}
-          title="Vídeos" subtitle="Filmagens deste adversário."
-          addLabel="Adicionar vídeo"
-          emptyText="Ainda sem vídeos deste adversário. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro."
-          emptyFirstLabel="Adicionar o primeiro vídeo"
-        />
+          aparecer no Canal geral da equipa. */}
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>
+        Vídeos
       </div>
+      <MediaLibrary
+        items={videosDoAdversario} setItems={setVideosDoAdversario}
+        addLabel="Adicionar vídeo"
+        emptyText="Ainda sem vídeos deste adversário. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro."
+        emptyFirstLabel="Adicionar o primeiro vídeo"
+      />
     </div>
   );
 }
@@ -23516,8 +23548,9 @@ function cleanFolder(name) {
 // Etiqueta usada no filtro para os itens que não estão em nenhuma pasta.
 const NO_FOLDER = '__sem_pasta__';
 
-function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, emptyFirstLabel }) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo }, ref) {
   const [modal, setModal] = useState(null);
+  React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
   // Pasta atualmente aberta: null = todas.
   const [folderFilter, setFolderFilter] = useState(null);
   const [renaming, setRenaming] = useState(null); // nome antigo, enquanto se renomeia
@@ -23820,8 +23853,9 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
 
   return (
     <div>
-      <SectionHeader title={title} subtitle={subtitle}
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {addLabel}</Btn>} />
+      {!semBotaoTopo && (
+        <SectionHeader action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {addLabel}</Btn>} />
+      )}
 
       {/* PASTAS — filtro por pasta. As pastas criam-se ao escrever o nome
           no campo "Pasta" ao adicionar ou editar um item. */}
@@ -24248,7 +24282,7 @@ function MediaLibrary({ items, setItems, title, subtitle, addLabel, emptyText, e
       )}
     </div>
   );
-}
+});
 
 /* ---------------------------------------------------------------
    GOOGLE DRIVE — alternativa ao carregamento de ficheiro.
