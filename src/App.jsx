@@ -23284,9 +23284,28 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-        {/* LINHA 2: 4 pilares de rendimento e Características/Notas —
+        {/* LINHA 2: Características/Notas e 4 pilares de rendimento —
             preenchem as duas colunas ao mesmo tempo, sem depender da
             altura da linha 1 em cima. */}
+        <div>
+          {x.traits && (
+            <>
+              <div style={sectionTitle}>Características</div>
+              <div style={{ ...card, marginBottom: 16 }}>
+                <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.traits}</p>
+              </div>
+            </>
+          )}
+          {x.notes && (
+            <>
+              <div style={sectionTitle}>Notas gerais</div>
+              <div style={card}>
+                <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.notes}</p>
+              </div>
+            </>
+          )}
+        </div>
+
         <div>
           <div style={sectionTitle}>4 pilares de rendimento</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -23307,25 +23326,6 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
               );
             })}
           </div>
-        </div>
-
-        <div>
-          {x.traits && (
-            <>
-              <div style={sectionTitle}>Características</div>
-              <div style={{ ...card, marginBottom: 16 }}>
-                <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.traits}</p>
-              </div>
-            </>
-          )}
-          {x.notes && (
-            <>
-              <div style={sectionTitle}>Notas gerais</div>
-              <div style={card}>
-                <p style={{ fontSize: 13, color: T.mutedDim, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{x.notes}</p>
-              </div>
-            </>
-          )}
         </div>
       </div>
     </div>
