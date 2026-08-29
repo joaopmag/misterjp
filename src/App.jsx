@@ -6707,10 +6707,10 @@ function Exercicios({ exercises, setExercises, meta }) {
             <img
               src={printExercise.attachment.dataUrl}
               alt={printExercise.attachment.name}
-              style={{ width: '100%', maxWidth: 640, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
+              style={{ width: '100%', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
             />
           ) : (
-            <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 640, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
               <PitchMarkings printMode />
               <SpaceZonesReadOnly diagram={printExercise.diagram} spaceText={printExercise.space} printMode />
               <DiagramElements
@@ -7161,7 +7161,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
           <div style={{ margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0' }}>
             <strong>Fase de jogo:</strong> {printIdeia.phase}
           </div>
-          <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 640, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
             <SpaceZonesReadOnly diagram={printIdeia.diagram} printMode />
             <DiagramElements
@@ -10383,7 +10383,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {exerciseInfo?.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
           )}
-          <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 640, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
             <PitchMarkings printMode />
             {zones.map(z => (
               <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
@@ -15701,10 +15701,10 @@ function PrintExerciseBlock({ e, ex, index, equipas }) {
         <img
           src={ex.attachment.dataUrl}
           alt={ex.attachment.name}
-          style={{ width: '100%', maxWidth: 540, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
+          style={{ width: '100%', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
         />
       ) : (ex.attachment && ex.attachment.type === 'pdf') ? null : (
-        <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', maxWidth: 540, aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+        <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
           <PitchMarkings printMode />
           <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
           {(() => {
@@ -15722,7 +15722,7 @@ function PrintExerciseBlock({ e, ex, index, equipas }) {
         </svg>
       )}
       {!ex.attachment && (
-        <div style={{ textAlign: 'right', maxWidth: 540, margin: '2px 0 0' }}>
+        <div style={{ textAlign: 'right', margin: '2px 0 0' }}>
           <span style={{ fontSize: 9.5, color: '#888', letterSpacing: '.04em' }}>™ Mister JP</span>
         </div>
       )}
