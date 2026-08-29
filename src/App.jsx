@@ -22524,7 +22524,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
       {visible.length === 0 ? (
         <EmptyState text="Ainda sem jogadores adversários registados." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro</Btn>} />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
           {visible.map(x => {
             const playerAge = x.birthYear ? age(x.birthYear) : (x.age || null);
             const avg = pillarAverage(x);
@@ -22555,7 +22555,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                   <RatingStars value={x.potential || 0} />
                   <span style={{ color: T.mutedDim, fontSize: 11 }}>Potencial geral</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
                   {SCOUT_PILLARS.map(p => (
                     <div key={p.key} style={{ textAlign: 'center', background: T.surfaceRaise, borderRadius: 6, padding: '5px 2px' }}>
                       <div style={{ color: T.mutedDim, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{p.label}</div>
