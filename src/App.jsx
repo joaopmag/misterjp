@@ -12440,7 +12440,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
 
       {/* Criar momento. */}
       {novoMomento && (
-        <Modal title="Avaliar" onClose={() => setNovoMomento(null)} wide>
+        <Modal title="Avaliar" onClose={() => setNovoMomento(null)} wide fullPage>
           <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
             <Field label="Nome do momento">
               <Input value={novoMomento.nome} onChange={e => setNovoMomento({ ...novoMomento, nome: e.target.value })} placeholder="Ex: Avaliação inicial" />
@@ -16494,7 +16494,7 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
   })();
 
   return (
-    <Modal title={fmtDate(date)} onClose={onClose} wide>
+    <Modal title={fmtDate(date)} onClose={onClose} wide fullPage>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10 }}>
         <span style={{ fontSize: 12.5, color: T.mutedDim }}>
           {daySessions.length} {daySessions.length === 1 ? 'sessão' : 'sessões'} · {totalMin} min total
@@ -19946,7 +19946,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
   const convocadoPlayers = players.filter(p => f.convocados.includes(p.id));
 
   return (
-    <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide>
+    <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide fullPage>
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <Field label="Competição">
           <Select value={compAtual} onChange={e => setF({ ...f, competition: e.target.value, opponent: '', jornada: '' })}>
