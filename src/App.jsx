@@ -6005,6 +6005,25 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
                       <button onClick={(e) => { e.stopPropagation(); remove(p.id); }} title="Remover jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={15} /></button>
                     </div>
                   </div>
+                  {/* FOTOGRAFIA — o canto que sobrava vazio à direita do
+                      cartão. Iniciais como recurso para quem ainda não
+                      tem foto carregada, para o espaço não ficar em
+                      branco nem o cartão saltar de tamanho consoante o
+                      jogador tem ou não fotografia. */}
+                  {p.photo ? (
+                    <img src={p.photo} alt="Fotografia" style={{
+                      width: 52, aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 7,
+                      border: `1px solid ${T.line}`, background: '#000', flexShrink: 0,
+                    }} />
+                  ) : (
+                    <div style={{
+                      width: 52, aspectRatio: '3 / 4', borderRadius: 7, background: T.surfaceRaise, border: `1px solid ${T.line}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      fontSize: 14, fontWeight: 600, color: T.mutedDim, ...display,
+                    }}>
+                      {(p.name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 14, fontSize: 11.5, ...mono, borderTop: `1px solid ${T.line}`, paddingTop: 9 }}>
                   <span style={{ color: attColor }}>Assid. {stats.attendancePct === null ? '—' : `${stats.attendancePct}%`}</span>
