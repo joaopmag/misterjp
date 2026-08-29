@@ -23097,7 +23097,7 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
     // esquerda — e o lado (x) fica no eixo vertical.
     const W = 150, H = 100; // 3:2 — campo deitado
     return (
-      <div style={{ width: '100%', maxWidth: 320 }}>
+      <div style={{ width: '100%' }}>
         <div style={{
           position: 'relative', width: '100%', aspectRatio: `${W} / ${H}`,
           background: '#1E3A24', borderRadius: 10, border: `1px solid ${T.line}`, overflow: 'hidden',
@@ -23272,19 +23272,18 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
           </div>
         </div>
 
-        {/* COLUNA DIREITA: posição em campo, campo na horizontal */}
-        {(x.position || x.secondaryPosition) && (
-          <div>
-            <div style={sectionTitle}>Posição em campo</div>
-            <div style={{ ...card, display: 'flex', justifyContent: 'center' }}>
-              <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} horizontal />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {(x.traits || x.notes) && (
-        <div style={{ marginTop: 20 }}>
+        {/* COLUNA DIREITA: posição em campo (horizontal) + características
+            e notas — preenche a coluna toda, ao lado dos 4 pilares, em vez
+            de deixar um vazio grande por baixo do campo. */}
+        <div>
+          {(x.position || x.secondaryPosition) && (
+            <>
+              <div style={sectionTitle}>Posição em campo</div>
+              <div style={{ ...card, display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                <QuadroPosicaoJogador position={x.position} secondaryPosition={x.secondaryPosition} horizontal />
+              </div>
+            </>
+          )}
           {x.traits && (
             <>
               <div style={sectionTitle}>Características</div>
@@ -23302,7 +23301,7 @@ function ScoutSheetPage({ player: x, onBack, onEdit, onShare, onPrint }) {
             </>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
