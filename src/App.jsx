@@ -14991,9 +14991,9 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             onEdit={() => { setMatchModalVoltarFicha(true); trocarJanela(() => setFicha(null), () => setMatchModal(atual)); }}
             onShare={() => doShareMatch(atual)}
             onPrint={() => doPrintMatch(atual)}
-            onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
-            onAlinhamento={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
-            onStarters={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
+            onFormacao={(f) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
+            onAlinhamento={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
+            onStarters={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
           />
         );
       })()}
@@ -19954,9 +19954,9 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
               /* Mudar de formação limpa o alinhamento manual: os lugares
                passam a ser outros e as posições antigas deixam de fazer
                sentido. A equipa é recolocada pela sugestão automática. */
-            onFormacao={(f) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
-            onAlinhamento={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
-            onStarters={(lista) => setMatches(matches.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
+            onFormacao={(f) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
+            onAlinhamento={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
+            onStarters={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
           />
         );
       })()}
