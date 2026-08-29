@@ -23257,8 +23257,8 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
             <rect x={3 - 2.4} y={H * 0.42} width="2.4" height={H * 0.16} fill="none" stroke="#ffffff66" strokeWidth="1" />
             <rect x={W - 3} y={H * 0.42} width="2.4" height={H * 0.16} fill="none" stroke="#ffffff66" strokeWidth="1" />
             {/* Cantos — um quarto de círculo em cada esquina. */}
-            <path d={`M ${3 + raio} 3 A ${raio} ${raio} 0 0 0 3 ${3 + raio}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
-            <path d={`M ${W - 3 - raio} 3 A ${raio} ${raio} 0 0 1 ${W - 3} ${3 + raio}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <path d={`M ${3 + raio} 3 A ${raio} ${raio} 0 0 1 3 ${3 + raio}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
+            <path d={`M ${W - 3 - raio} 3 A ${raio} ${raio} 0 0 0 ${W - 3} ${3 + raio}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
             <path d={`M 3 ${H - 3 - raio} A ${raio} ${raio} 0 0 1 ${3 + raio} ${H - 3}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
             <path d={`M ${W - 3} ${H - 3 - raio} A ${raio} ${raio} 0 0 0 ${W - 3 - raio} ${H - 3}`} fill="none" stroke="#ffffff40" strokeWidth="1" />
           </svg>
