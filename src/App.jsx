@@ -22327,6 +22327,44 @@ function starsText(n) {
   return '★'.repeat(v) + '☆'.repeat(5 - v);
 }
 
+/* O ESQUEMA DA ESTRUTURA HABITUAL, PARA O FICHEIRO PARTILHADO.
+
+   Mesmo desenho do "Onze provável" no ecrã (PrancheteDoPlantel), só que
+   em SVG estático — sem cliques, sem estado, pronto a abrir em qualquer
+   lado. `distribuirPlantel` já sabe posicionar os jogadores-chave pela
+   tática escolhida; só falta desenhar o campo por baixo e escrever cada
+   nome no sítio certo, exatamente como `campoDaEquipaHtml` faz para o
+   onze de um jogo. */
+function buildEstruturaHabitualHtml(a, chave) {
+  const tatica = a.quadroTatica || TATICA_OMISSAO;
+  const lugares = distribuirPlantel({
+    players: chave, attendance: (chave || []).map(x => x.id), overrides: a.quadroOverrides, tatica,
+  });
+  if (!lugares || !lugares.length) return '';
+
+  const marcacoes = ReactDOMServer.renderToStaticMarkup(
+    <MarcacoesCampoPrint traco="#ffffff40" baliza="#ffffff66" />
+  ).replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+
+  // As coordenadas de `l.ponto` já são a fração do campo REAL (0 a 1,
+  // 105×68m) — o mesmo sistema do viewBox do campo, sem precisar de
+  // nenhuma conversão extra (ver `posCampoPrint`, que faz a mesma conta).
+  const nomes = lugares.map(l => {
+    const fx = l.id === 'GR' ? 0 : l.ponto[0];
+    const fy = l.ponto[1];
+    const x = fx * 105;
+    const y = fy * 68;
+    const nomesLista = (l.lista || []).map(j => j.nome).join(', ');
+    const rotulo = escapeHtmlText(l.rotulo || '');
+    const nome = escapeHtmlText(nomesLista || '—');
+    return `<text x="${x.toFixed(2)}" y="${(y - 1.4).toFixed(2)}" text-anchor="middle" font-size="2.1" fill="#ffffff88">${rotulo}</text>`
+      + `<text x="${x.toFixed(2)}" y="${(y + 1.6).toFixed(2)}" text-anchor="middle" font-size="2.4" font-weight="600" fill="${nomesLista ? '#F0E7D6' : '#ffffff55'}">${nome}</text>`;
+  }).join('');
+
+  return `<svg class="campo" viewBox="${VIEWBOX_CAMPO_PRINT}" preserveAspectRatio="xMidYMid meet"`
+    + ` style="aspect-ratio:105/68" xmlns="http://www.w3.org/2000/svg">${marcacoes}${nomes}</svg>`;
+}
+
 function buildAdversarioReportHtml(a, chave) {
   const table = (pairs) => {
     const valid = pairs.filter(([, v]) => v !== null && v !== undefined && v !== '');
@@ -22340,6 +22378,8 @@ function buildAdversarioReportHtml(a, chave) {
     ['Estrutura habitual', a.quadroTatica],
   ]);
 
+  const estruturaHtml = buildEstruturaHabitualHtml(a, chave);
+
   const jogadoresHtml = (chave || []).length
     ? `<ul>${chave.map(x => `<li>${escapeHtmlText(x.name)}${x.position ? ` — ${escapeHtmlText(x.position)}` : ''}</li>`).join('')}</ul>`
     : '';
@@ -22347,6 +22387,7 @@ function buildAdversarioReportHtml(a, chave) {
   return `
 <div>
 ${identificacao ? `<h2 style="margin-top:0">Identificação</h2>${identificacao}` : ''}
+${estruturaHtml ? `<h2>Estrutura habitual</h2>${estruturaHtml}` : ''}
 ${a.pontosFortes ? `<h2>Pontos fortes</h2><p class="desc">${escapeHtmlText(a.pontosFortes)}</p>` : ''}
 ${a.pontosFracos ? `<h2>Pontos fracos</h2><p class="desc">${escapeHtmlText(a.pontosFracos)}</p>` : ''}
 ${jogadoresHtml ? `<h2>Jogadores-chave</h2>${jogadoresHtml}` : ''}
@@ -22821,6 +22862,20 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
           <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>
             {[printAdversario.escalao, printAdversario.prova, printAdversario.quadroTatica].filter(Boolean).join(' · ')}
           </p>
+          {chaveDe(printAdversario).length > 0 && (
+            <>
+              <h3 style={{ fontSize: 14, margin: '0 0 8px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Estrutura habitual</h3>
+              <div style={{ marginBottom: 14 }}>
+                <PrancheteDoPlantel
+                  lugares={distribuirPlantel({
+                    players: chaveDe(printAdversario), attendance: chaveDe(printAdversario).map(x => x.id),
+                    overrides: printAdversario.quadroOverrides, tatica: printAdversario.quadroTatica,
+                  })}
+                  maxLargura={480}
+                />
+              </div>
+            </>
+          )}
           {printAdversario.pontosFortes && (
             <>
               <h3 style={{ fontSize: 14, margin: '0 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Pontos fortes</h3>
