@@ -22817,12 +22817,13 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
           <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
             Onze provável
           </div>
-          <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+          <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, maxWidth: 560 }}>
             <PrancheteDoPlantel
               lugares={distribuirPlantel({
                 players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
               })}
-              escala={1.25}
+              escala={1.1}
+              maxLargura={530}
               tela
             />
           </div>
