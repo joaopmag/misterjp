@@ -16730,7 +16730,7 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <SectionHeader title="Boletim Clínico" subtitle="Registo de ocorrências." />
       <Panel
-        title="Fora esta semana"
+        title="Lista clínica"
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ocorrência</Btn>}
       >
         {/* Quantos e em que nível, antes da lista: é a pergunta que se faz
