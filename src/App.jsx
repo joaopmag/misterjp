@@ -7236,6 +7236,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
     return () => window.removeEventListener('afterprint', limpar);
   }, [printDossier]);
   const [filter, setFilter] = useState('Todas');
+  const [portalAtleta, setPortalAtleta] = useState(false);
 
   const save = (data) => {
     const isEdicao = !!data.id;
@@ -7287,10 +7288,17 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
             {ideias.length > 0 && (
               <Btn variant="ghost" onClick={() => setDossier(true)}><BookOpen size={15} /> Dossier</Btn>
             )}
+            {ideias.length > 0 && (
+              <Btn variant="ghost" onClick={() => setPortalAtleta(true)}><Eye size={15} /> Portal do Atleta</Btn>
+            )}
             <Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ideia</Btn>
           </div>
         )} />
 
+      {portalAtleta ? (
+        <PortalAtletaIdeias ideias={ideias} setIdeias={setIdeias} labelOf={labelOf} onBack={() => setPortalAtleta(false)} />
+      ) : (
+        <>
       <MomentoFilter value={filter} onChange={setFilter} options={EXERCISE_PHASES} />
 
       {visible.length === 0 ? (
@@ -7302,8 +7310,13 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
             return (
               <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{labelOf(x)}</div>
-                <div style={{ marginBottom: 8 }}>
+                <div style={{ marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
+                  {x.visivelAtletas && (
+                    <span title="Visível para os atletas no Portal do Atleta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.good, background: `${T.good}22`, padding: '3px 9px', borderRadius: 12 }}>
+                      <Eye size={11} /> Atletas
+                    </span>
+                  )}
                 </div>
                 <DiagramThumb diagram={x.diagram} />
                 {/* Ícones por baixo da imagem, encostados à margem direita
@@ -7324,6 +7337,8 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
             );
           })}
         </div>
+      )}
+        </>
       )}
 
       {modal && (
@@ -7454,6 +7469,68 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   );
 }
 
+/* PORTAL DO ATLETA — escolher, de uma assentada, quais as ideias já
+   criadas que os atletas veem.
+
+   Antes só dava para ligar isto ideia a ideia, a abrir cada uma para
+   editar — lento quando já há uma dúzia feitas e só se quer marcar
+   três ou quatro. Aqui é só a lista, com um visto ao lado de cada uma;
+   tocar já grava, sem "Guardar" à parte (mesmo padrão do resto da
+   app — ver `useCollectionSync`, que grava a cada mudança). */
+function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
+  const toggle = (id) => {
+    setIdeias(ideias.map(x => (x.id === id ? { ...x, visivelAtletas: !x.visivelAtletas } : x)));
+  };
+  const nVisiveis = ideias.filter(x => x.visivelAtletas).length;
+
+  return (
+    <div>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> Ideia de Jogo
+      </button>
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Portal do Atleta</div>
+      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 18 }}>
+        Marca as ideias que queres que os atletas vejam no telemóvel deles. {nVisiveis > 0
+          ? `${nVisiveis} de ${ideias.length} visível${nVisiveis === 1 ? '' : 'eis'}.`
+          : 'Nenhuma partilhada ainda.'}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {ideias.map(x => {
+          const marcada = !!x.visivelAtletas;
+          return (
+            <button
+              key={x.id}
+              onClick={() => toggle(x.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
+                background: marcada ? `${T.good}18` : T.surface, border: `1px solid ${marcada ? T.good : T.line}`,
+                borderRadius: 10, padding: '12px 14px', cursor: 'pointer', ...body,
+              }}
+            >
+              <span style={{
+                width: 22, height: 22, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: marcada ? T.good : 'transparent', border: `1px solid ${marcada ? T.good : T.line}`,
+              }}>
+                {marcada && <Check size={14} color="#0d140e" />}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelOf(x)}</div>
+                {x.phase && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 1 }}>{x.phase}</div>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
   const [f, setF] = useState(ideia || { name: '', phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
   // Tal como no ExerciseModal, a cor ativa do editor vive aqui (no modal) e
@@ -7575,6 +7652,22 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
             </div>
           )}
         </Field>
+      </div>
+
+      {/* PARTILHADA COM OS ATLETAS — nada fica visível no Portal do
+          Atleta por omissão. Só as ideias que o treinador marcar aqui é
+          que aparecem lá, exatamente como as fichas de scouting nunca
+          saem daqui para fora sem se querer. */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={!!f.visivelAtletas}
+            onChange={e => setF({ ...f, visivelAtletas: e.target.checked })}
+            style={{ width: 16, height: 16, accentColor: T.crimson, cursor: 'pointer' }}
+          />
+          <span style={{ fontSize: 13, color: T.cream }}>Visível para os atletas no Portal do Atleta</span>
+        </label>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -20579,6 +20672,18 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
             style={{ minHeight: 90 }}
           />
         </Field>
+        {/* Nada disto chega ao Portal do Atleta sem se querer — o
+            interruptor fica ao lado do texto para não passar
+            despercebido. */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 8 }}>
+          <input
+            type="checkbox"
+            checked={!!f.ideiasVisivelAtletas}
+            onChange={e => setF({ ...f, ideiasVisivelAtletas: e.target.checked })}
+            style={{ width: 16, height: 16, accentColor: T.crimson, cursor: 'pointer' }}
+          />
+          <span style={{ fontSize: 12.5, color: T.mutedDim }}>Partilhar com os atletas no Portal do Atleta</span>
+        </label>
       </div>
 
       {/* Num amigável não há convocatória: vai quem aparece. A lista é a
@@ -21931,7 +22036,7 @@ function checkinWindowState(type, dateStr, now = new Date()) {
    rede — bastava abrir as ferramentas de programador. Agora a validação
    do código acontece no servidor (função checkin_bootstrap) e o que chega
    ao browser é apenas o registo de quem entrou. */
-function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnostico }) {
+function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnostico, code, teamId }) {
   const loggedPlayerId = player && player.id;
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
   const [selectedDate, setSelectedDate] = useState(todayStr());
@@ -22036,6 +22141,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     );
   }
 
+  if (activeType === 'ideiaJogo') {
+    return <PlayerIdeiaJogoView code={code} teamId={teamId} onBack={() => setActiveType(null)} />;
+  }
+
   return (
     <PlayerKioskHome
       player={player} session={sessionForDate}
@@ -22045,8 +22154,119 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       wellnessWindow={wellnessWindow} rpeWindow={rpeWindow}
       onOpenWellness={() => { if (wellnessWindow.open) setActiveType('wellness'); }}
       onOpenRpe={() => { if (rpeWindow.open) setActiveType('rpe'); }}
+      onOpenIdeiaJogo={() => setActiveType('ideiaJogo')}
       onLogout={onLogout}
     />
+  );
+}
+
+/* IDEIA DE JOGO, DO LADO DO ATLETA — só consulta, nunca edição.
+
+   Vai buscar tudo a uma função própria (`checkin_ideia_jogo`), pelo
+   MESMO código de 4/6 dígitos já validado no login — nada de nova
+   sessão, nada de nova credencial. A função só devolve o que o
+   treinador marcou como visível: o texto do próximo jogo (se
+   partilhado) e as ideias de jogo (esquemas) marcadas como tal. Sem
+   nada partilhado, o ecrã diz isso mesmo, em vez de aparecer vazio sem
+   explicação. */
+function PlayerIdeiaJogoView({ code, teamId, onBack }) {
+  const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
+  const [dados, setDados] = useState(null); // { proximoJogo, ideias }
+  const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('checkin_ideia_jogo', { p_code: code, p_team: teamId });
+        if (cancelado) return;
+        if (error) throw error;
+        let d = data;
+        if (Array.isArray(d)) d = d[0];
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
+        setDados(d || { proximoJogo: null, ideias: [] });
+        setEstado('pronto');
+      } catch (e) {
+        if (!cancelado) setEstado('erro');
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [code, teamId]);
+
+  if (aVer) {
+    return (
+      <ExercisePresentation
+        exercise={{ ...aVer, name: aVer.name || aVer.phase || 'Ideia de jogo' }}
+        onClose={() => setAVer(null)}
+      />
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 460, margin: '0 auto', padding: '28px 18px 60px' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+      }}>
+        <ChevronLeft size={15} /> Voltar
+      </button>
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 16 }}>Ideia de Jogo</div>
+
+      {estado === 'a-carregar' && (
+        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+      )}
+
+      {estado === 'erro' && (
+        <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>
+      )}
+
+      {estado === 'pronto' && (
+        <>
+          {dados.proximoJogo && (
+            <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '16px 16px', marginBottom: 18 }}>
+              <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+                Próximo jogo{dados.proximoJogo.opponent ? ` · vs ${dados.proximoJogo.opponent}` : ''}
+              </div>
+              {dados.proximoJogo.date && (
+                <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 10 }}>{fmtDate(dados.proximoJogo.date)}</div>
+              )}
+              <p style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.55, margin: 0, whiteSpace: 'pre-wrap' }}>{dados.proximoJogo.ideias}</p>
+            </div>
+          )}
+
+          {dados.ideias && dados.ideias.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {dados.ideias.map(x => (
+                <button
+                  key={x.id}
+                  onClick={() => setAVer(x)}
+                  style={{
+                    width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${T.line}`,
+                    borderRadius: 10, padding: '14px 16px', cursor: 'pointer', ...body,
+                    display: 'flex', alignItems: 'center', gap: 12,
+                  }}
+                >
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 600, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {x.name || x.phase || 'Ideia de jogo'}
+                    </div>
+                    {x.phase && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>{x.phase}</div>}
+                  </span>
+                  <ChevronRight size={16} color={T.mutedDim} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            !dados.proximoJogo && (
+              <div style={{ fontSize: 13, color: T.mutedDim }}>
+                Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver.
+              </div>
+            )
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -22172,7 +22392,7 @@ function DaySelectStrip({ recentDates, dayStatus, selectedDate, onSelectDate }) 
   );
 }
 
-function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onLogout }) {
+function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenIdeiaJogo, onLogout }) {
   const isToday = selectedDate === todayStr();
   const isRestDay = session && session.phase === 'Descanso';
   const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : `Sem sessão definida para ${isToday ? 'hoje' : 'este dia'}`;
@@ -22246,6 +22466,23 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
           <div style={{ fontSize: 12, color: doneRpe ? T.good : (rWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{rpeHint}</div>
         </span>
         {doneRpe ? <Check size={18} color={T.good} /> : rWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
+      </button>
+
+      {/* IDEIA DE JOGO — sempre disponível, não tem janela horária (não é
+          um questionário, é só consulta). Fica visível mesmo sem nada
+          partilhado ainda: o ecrã explica isso lá dentro, em vez de o
+          botão desaparecer sem explicação nenhuma. */}
+      <button onClick={onOpenIdeiaJogo} style={{
+        width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${T.line}`,
+        borderRadius: 12, padding: '18px 16px', cursor: 'pointer',
+        ...body, marginTop: 12, display: 'flex', alignItems: 'center', gap: 14,
+      }}>
+        <span style={{ fontSize: 26 }}>🧠</span>
+        <span style={{ flex: 1 }}>
+          <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Ideia de Jogo</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>O plano para o próximo jogo e esquemas táticos</div>
+        </span>
+        <ChevronRight size={18} color={T.mutedDim} />
       </button>
 
       <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 18, lineHeight: 1.5 }}>
@@ -27499,6 +27736,8 @@ function CheckinApp() {
       diagnostico={{ chavesRecebidas: Object.keys(dados || {}) }}
       onSave={guardar}
       onLogout={sair}
+      code={codigo}
+      teamId={equipaDoLink}
     />
   );
 }
