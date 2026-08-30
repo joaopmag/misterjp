@@ -22480,7 +22480,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         <span style={{ fontSize: 26 }}>🧠</span>
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Ideia de Jogo</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>O plano para o próximo jogo e esquemas táticos</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Os esquemas táticos da nossa ideia</div>
         </span>
         <ChevronRight size={18} color={T.mutedDim} />
       </button>
