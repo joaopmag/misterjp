@@ -40,6 +40,12 @@ const T = {
   teamB: '#3A6FC4',
   teamC: '#D9A72E',
   teamD: '#8C3F9E',
+  // A COR DA PRÓPRIA EQUIPA nos quadros de posições (Simulador, Ficha
+  // de Jogo, Estrutura habitual do Adversário) — bolas vermelhas por
+  // omissão, mas cada equipa pode escolher a sua em "Gerir equipa".
+  // `App` atualiza isto assim que sabe qual é a equipa ativa (ver mais
+  // abaixo); os quadros só leem `T.corEquipa`, nunca um vermelho fixo.
+  corEquipa: '#B5393F',
 };
 
 /* Text-on-accent color: light text used on the crimson accent
@@ -1944,6 +1950,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
 
+  // A app é de uma equipa de cada vez — por isso isto atualiza uma
+  // variável partilhada em vez de andar a passar `corEquipa` por
+  // props por meia dúzia de componentes (Simulador, Ficha de Jogo,
+  // Adversário…). Corre em todos os renders, mas é só atribuir um
+  // valor — sem isto, os quadros de posições ficavam sempre com o
+  // vermelho de origem, mesmo com outra cor escolhida em "Gerir
+  // equipa".
+  T.corEquipa = (equipaAtiva && equipaAtiva.cor) || '#B5393F';
+
   /* MENU ABERTO TRANCA A PÁGINA ATRÁS.
 
      Sem isto, arrastar dentro do menu passava o movimento para a página
@@ -3302,6 +3317,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
   const [clube, setClube] = useState('');
   const [escalao, setEscalao] = useState('');
   const [logo, setLogo] = useState('');
+  const [cor, setCor] = useState('#B5393F');
   const [codigo, setCodigo] = useState('');
   /* O NOME PEDE-SE À ENTRADA.
 
@@ -3334,6 +3350,12 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
         p_logo: logo.trim() || null, p_meu_nome: meuNome.trim() || null,
       });
       if (error) throw error;
+      // A cor não faz parte da função que cria a equipa — grava-se logo a
+      // seguir, na equipa que acabou de nascer, pelo mesmo caminho usado
+      // depois em "Gerir equipa" (a mesma coluna `cor` na tabela `teams`).
+      if (cor && data) {
+        await supabase.from('teams').update({ cor }).eq('id', data);
+      }
       onPronto(data);
     } catch (e) {
       setErro(e.message || 'Não foi possível criar a equipa.');
@@ -3448,7 +3470,30 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
               />
             </Field>
             <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
-              Cola o endereço de uma imagem já publicada. Podes acrescentar ou trocar depois.
+              Cola o endereço de uma imagem. É possível alterar depois.
+            </div>
+            <div style={{ height: 12 }} />
+            {/* A COR ESCOLHE-SE JÁ AQUI, tal como o emblema — é o mesmo
+                momento em que se pensa na identidade da equipa. As bolas
+                dos jogadores nos quadros de posições (Simulador, Ficha de
+                Jogo, Estrutura habitual de um adversário) usam-na em vez
+                do vermelho de sempre. Também se pode trocar depois, em
+                "Gerir equipa". */}
+            <Field label="Cor da equipa" bloco solto>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <input
+                  type="color"
+                  value={cor}
+                  onChange={e => setCor(e.target.value)}
+                  style={{ width: 44, height: 44, padding: 0, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: 'pointer', flexShrink: 0 }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Input value={cor} onChange={e => setCor(e.target.value)} placeholder="#B5393F" />
+                </div>
+              </div>
+            </Field>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
+              A cor das bolas dos jogadores nos quadros de posições. Também dá para trocar depois.
             </div>
             <div style={{ height: 12 }} />
             <Field label="O teu nome" bloco solto>
@@ -3607,6 +3652,8 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) 
   const [erro, setErro] = useState('');
   const [copiado, setCopiado] = useState(false);
   const [logo, setLogo] = useState(equipa.logo || '');
+  const [cor, setCor] = useState(equipa.cor || '#B5393F');
+  const [aGuardarCor, setAGuardarCor] = useState(false);
   const [meuNome, setMeuNome] = useState('');
   const [aGuardarLogo, setAGuardarLogo] = useState(false);
   // Códigos de acesso individuais dos atletas — mudou-se para aqui a
@@ -3631,6 +3678,18 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) 
     setAGuardarLogo(true); setErro('');
     const { error } = await supabase.from('teams').update({ logo: logo.trim() || null }).eq('id', equipa.id);
     setAGuardarLogo(false);
+    if (error) { setErro(error.message); return; }
+    if (onEquipasMudaram) onEquipasMudaram();
+  };
+
+  /* A COR DA EQUIPA — usada nos quadros de posições (Simulador, Ficha
+     de Jogo, Estrutura habitual do Adversário) em vez do vermelho fixo
+     de sempre. Uma equipa nova que jogue de azul, por exemplo, vê as
+     suas bolas a azul em todo o lado onde a app desenha o onze. */
+  const guardarCor = async () => {
+    setAGuardarCor(true); setErro('');
+    const { error } = await supabase.from('teams').update({ cor: cor || null }).eq('id', equipa.id);
+    setAGuardarCor(false);
     if (error) { setErro(error.message); return; }
     if (onEquipasMudaram) onEquipasMudaram();
   };
@@ -3922,6 +3981,39 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) 
         <div style={barraAcoes}>
           <Btn variant="ghost" onClick={guardarLogo} disabled={aGuardarLogo} style={botaoAcao}>
             {aGuardarLogo ? 'A guardar…' : 'Guardar emblema'}
+          </Btn>
+        </div>
+      </Panel>
+
+      <div style={{ height: 16 }} />
+
+      <Panel title="Cor da equipa">
+        <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+          Bolas dos jogadores
+        </div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="color"
+            value={cor}
+            onChange={e => setCor(e.target.value)}
+            style={{ width: 44, height: 44, padding: 0, border: `1px solid ${T.line}`, borderRadius: 8, background: 'none', cursor: 'pointer', flexShrink: 0 }}
+          />
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <Input
+              value={cor}
+              onChange={e => setCor(e.target.value)}
+              placeholder="#B5393F"
+            />
+          </div>
+        </div>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.6 }}>
+          A cor das bolas dos jogadores no Simulador, na Ficha de Jogo e na Estrutura habitual
+          de um adversário. Uma equipa que jogue de azul, por exemplo, pode trocar aqui o
+          vermelho de origem.
+        </div>
+        <div style={barraAcoes}>
+          <Btn variant="ghost" onClick={guardarCor} disabled={aGuardarCor} style={botaoAcao}>
+            {aGuardarCor ? 'A guardar…' : 'Guardar cor'}
           </Btn>
         </div>
       </Panel>
@@ -5531,7 +5623,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
   const GR_FX = 0;
   const GR_LARGURA = '10%';
 
-  const corDoTexto = escuro ? '#fff' : '#A6192E';
+  const corDoTexto = escuro ? '#fff' : T.corEquipa;
   // O CÍRCULO TEM SEMPRE O MESMO TAMANHO, em qualquer sítio da app —
   // não acompanha `escala`. Antes acompanhava, e a mesma bola saía
   // visivelmente maior na folha do Plantel (escala 1.35) do que na do
@@ -5547,8 +5639,8 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
     // branco sobre fundo branco desaparece por completo. Por isso,
     // impresso, é uma cor de tinta a sério (contorno + texto), que se
     // vê com ou sem cor de fundo.
-    background: escuro ? '#B5393F' : 'transparent',
-    border: escuro ? 'none' : '1px solid #A6192E',
+    background: escuro ? T.corEquipa : 'transparent',
+    border: escuro ? 'none' : `1px solid ${T.corEquipa}`,
     color: corDoTexto, fontSize: 7, fontWeight: 700, letterSpacing: '.01em',
   };
   const nomeStyle = (on) => ({
@@ -13677,9 +13769,9 @@ function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
             <span style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: 22, height: 22, borderRadius: '50%', ...mono, fontSize: 10.5,
-              background: l.jogador ? '#B5393F' : '#00000055',
+              background: l.jogador ? T.corEquipa : '#00000055',
               color: l.jogador ? '#fff' : T.mutedDim,
-              border: `1px solid ${l.jogador ? '#B5393F' : T.line}`,
+              border: `1px solid ${l.jogador ? T.corEquipa : T.line}`,
             }}>{l.jogador ? (l.jogador.number || l.lugar) : l.lugar}</span>
             {l.jogador && (
               <span style={{
@@ -18308,7 +18400,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                   <span style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     width: 22, height: 22, margin: '0 auto', borderRadius: '50%', ...mono, fontSize: 11,
-                    background: eGR ? '#F2F2EE' : '#B5393F',
+                    background: eGR ? '#F2F2EE' : T.corEquipa,
                     color: eGR ? '#16281B' : '#fff',
                     border: eGR ? '1px solid #16281B55' : 'none',
                   }}>{p.number || lugares[i]}</span>
