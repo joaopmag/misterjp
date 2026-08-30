@@ -22187,20 +22187,22 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo }) {
       </button>
 
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Portal do Atleta</div>
-      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 18 }}>O que o treinador for partilhando contigo.</div>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 22 }}>Conteúdos que a equipa técnica partilha contigo.</div>
 
-      <button onClick={onOpenIdeiaJogo} style={{
-        width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${T.line}`,
-        borderRadius: 12, padding: '18px 16px', cursor: 'pointer',
-        ...body, display: 'flex', alignItems: 'center', gap: 14,
-      }}>
-        <span style={{ fontSize: 26 }}>🧠</span>
-        <span style={{ flex: 1 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Ideia de Jogo</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Os esquemas táticos da nossa ideia</div>
-        </span>
-        <ChevronRight size={18} color={T.mutedDim} />
-      </button>
+      {/* UM CÍRCULO GRANDE POR TEMA — mais Vídeos e Composição Corporal
+          entram aqui ao lado, à medida que forem sendo construídos. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 18 }}>
+        <button onClick={onOpenIdeiaJogo} style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+          background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
+        }}>
+          <span style={{
+            width: 92, height: 92, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38,
+          }}>🧠</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Ideia de Jogo</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -22288,25 +22290,21 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
           )}
 
           {dados.ideias && dados.ideias.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
               {dados.ideias.map(x => (
-                <button
+                <div
                   key={x.id}
                   onClick={() => setAVer(x)}
-                  style={{
-                    width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${T.line}`,
-                    borderRadius: 10, padding: '14px 16px', cursor: 'pointer', ...body,
-                    display: 'flex', alignItems: 'center', gap: 12,
-                  }}
+                  style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}
                 >
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14.5, fontWeight: 600, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {x.name || x.phase || 'Ideia de jogo'}
+                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{x.name || x.phase || 'Ideia de jogo'}</div>
+                  {x.phase && (
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
                     </div>
-                    {x.phase && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>{x.phase}</div>}
-                  </span>
-                  <ChevronRight size={16} color={T.mutedDim} />
-                </button>
+                  )}
+                  <DiagramThumb diagram={x.diagram} />
+                </div>
               ))}
             </div>
           ) : (
@@ -22550,7 +22548,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         <span style={{ fontSize: 26 }}>📖</span>
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Portal do Atleta</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Ideia de jogo e o que o treinador partilhar contigo</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Conteúdos que a equipa técnica partilha contigo</div>
         </span>
         <ChevronRight size={18} color={T.mutedDim} />
       </button>
