@@ -5532,9 +5532,15 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
   const GR_LARGURA = '10%';
 
   const corDoTexto = escuro ? '#fff' : '#A6192E';
+  // O CÍRCULO TEM SEMPRE O MESMO TAMANHO, em qualquer sítio da app —
+  // não acompanha `escala`. Antes acompanhava, e a mesma bola saía
+  // visivelmente maior na folha do Plantel (escala 1.35) do que na do
+  // Adversário (escala 1), sem nenhuma razão para serem diferentes: é
+  // sempre a mesma sigla de duas letras, só o texto por baixo (os
+  // nomes) é que precisa de `escala` para se ler de pé, no campo.
   const tagStyle = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto',
-    width: 20 * escala, height: 20 * escala, borderRadius: '50%',
+    width: 20, height: 20, borderRadius: '50%',
     // No ecrã fica preenchido, como sempre. Na folha impressa a maior
     // parte dos telemóveis/impressoras não imprime cor de fundo por
     // omissão ("imprimir gráficos de fundo" desligado) — e um rótulo
@@ -5543,7 +5549,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
     // vê com ou sem cor de fundo.
     background: escuro ? '#B5393F' : 'transparent',
     border: escuro ? 'none' : '1px solid #A6192E',
-    color: corDoTexto, fontSize: 7 * escala, fontWeight: 700, letterSpacing: '.01em',
+    color: corDoTexto, fontSize: 7, fontWeight: 700, letterSpacing: '.01em',
   };
   const nomeStyle = (on) => ({
     /* O tamanho base é o do ECRÃ. A folha impressa passa uma `escala`
@@ -5626,12 +5632,18 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
             style={{
               position: 'absolute', ...posCampoPrint(fx, fy), zIndex: eGR ? 1 : l.lista.length,
               transform: `translate(-${ancoraX}%, -${ancoraY}%)`, textAlign: 'center',
-              width: eGR ? GR_LARGURA : '17%',
+              // Largura pelo CONTEÚDO, não uma fatia fixa do campo — um
+              // lugar com um ou dois nomes curtos não precisa dos mesmos
+              // 17% que um lugar cheio, e essa largura a mais era o que
+              // apagava marcações do campo que calhassem por baixo (a
+              // grande área, um arco de canto), mesmo sem texto nenhum
+              // ali para proteger.
+              width: 'max-content', maxWidth: eGR ? GR_LARGURA : '22%',
               cursor: editavel && selecionado ? 'pointer' : 'default',
               // Enquanto há alguém escolhido, os lugares acendem-se: sem
               // isso não se percebe que se pode tocar neles.
               outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none',
-              outlineOffset: 4, borderRadius: 6, padding: '2px 0',
+              outlineOffset: 4, borderRadius: 6, padding: '2px 4px',
               /* Um fundo (quase) sólido só no lugar mais cheio evita que,
                  mesmo depois de tudo isto, um resto de transbordo de um
                  lugar vizinho se leia por cima deste. */
