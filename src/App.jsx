@@ -10134,6 +10134,57 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             {!t.symbol && (isNarrowEditor && t.curto ? t.curto : t.label)}
           </button>
         ))}
+        {/* DESFAZER / REFAZER / IMPRIMIR / LIMPAR TUDO — ações sobre o
+            DESENHO, não sobre a animação (essa tem a sua própria linha,
+            mais abaixo). Estavam antes numa linha à parte, por baixo do
+            campo; seguem agora a par das restantes ferramentas, no fim da
+            mesma linha. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            type="button"
+            onClick={undo}
+            disabled={!canUndo}
+            title="Retroceder (Ctrl+Z)"
+            style={{
+              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: `1px solid ${T.line}`,
+              color: canUndo ? T.cream : T.mutedDim, cursor: canUndo ? 'pointer' : 'not-allowed',
+              opacity: canUndo ? 1 : 0.5, flexShrink: 0,
+            }}
+          >
+            <Undo2 size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            title="Refazer (Ctrl+Y)"
+            style={{
+              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: `1px solid ${T.line}`,
+              color: canRedo ? T.cream : T.mutedDim, cursor: canRedo ? 'pointer' : 'not-allowed',
+              opacity: canRedo ? 1 : 0.5, flexShrink: 0,
+            }}
+          >
+            <Redo2 size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={doPrint}
+            title="Imprimir prancheta"
+            style={{
+              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: '#B5393F', border: '1px solid #B5393F', cursor: 'pointer', flexShrink: 0,
+            }}
+          >
+            <Printer size={14} color={TEXT_ON_ACCENT} />
+          </button>
+        </div>
+        {(elements.length > 0 || arrows.length > 0 || zones.length > 0) && (
+          <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+            Limpar tudo
+          </button>
+        )}
       </div>
       <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6 }}>
         Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
@@ -10295,58 +10346,6 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           >
             {isPlaying ? <Square size={13} /> : <Play size={13} />}
             {isPlaying ? 'Parar' : 'Animar'}
-          </button>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button
-            type="button"
-            onClick={undo}
-            disabled={!canUndo}
-            title="Retroceder (Ctrl+Z)"
-            style={{
-              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: `1px solid ${T.line}`,
-              color: canUndo ? T.cream : T.mutedDim, cursor: canUndo ? 'pointer' : 'not-allowed',
-              opacity: canUndo ? 1 : 0.5,
-            }}
-          >
-            <Undo2 size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={redo}
-            disabled={!canRedo}
-            title="Refazer (Ctrl+Y)"
-            style={{
-              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: `1px solid ${T.line}`,
-              color: canRedo ? T.cream : T.mutedDim, cursor: canRedo ? 'pointer' : 'not-allowed',
-              opacity: canRedo ? 1 : 0.5,
-            }}
-          >
-            <Redo2 size={14} />
-          </button>
-          <button
-            type="button"
-            onClick={doPrint}
-            title="Imprimir prancheta"
-            style={{
-              width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: '#B5393F', border: '1px solid #B5393F', cursor: 'pointer',
-            }}
-          >
-            <Printer size={14} color={TEXT_ON_ACCENT} />
-          </button>
-
-        </div>
-        {/* "Limpar tudo" volta para junto do imprimir: é uma ação sobre o
-            DESENHO, não sobre a animação, e é aí que se procura. */}
-        {(elements.length > 0 || arrows.length > 0 || zones.length > 0) && (
-          <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>
-            Limpar tudo
           </button>
         )}
       </div>
