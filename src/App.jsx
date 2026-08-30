@@ -1632,11 +1632,17 @@ function useIsMobile(breakpoint = 860) {
    browser dispara a seguir (senão o toque de soltar reabria o
    seletor de jogador logo depois da troca).
 
-   Cada lugar/jogador precisa de um `data-slot="<id>"` no elemento —
-   é por aí que se descobre o alvo, com `elementFromPoint` no ponto
-   onde se soltou. */
+   Cada lugar/jogador precisa de um `data-slot="<id>"` no elemento. O
+   alvo não é "o que está exatamente por baixo do dedo" — isso falhava
+   sempre que se largava um pouco ao lado do círculo pequeno (ex.: um
+   avançado arrastado até à defesa, do outro lado do campo, raramente
+   cai em cima do alvo ao milímetro). É antes O LUGAR MAIS PRÓXIMO de
+   onde se soltou, medido pelo centro de cada `[data-slot]` dentro do
+   campo — sempre acerta nalgum, mesmo que o dedo largue um pouco a
+   mais ou a menos. */
 function useArrastarParaTrocar(aoTrocar, limiar = 6) {
   const estado = useRef(null);
+  const containerRef = useRef(null);
   const [arrastando, setArrastando] = useState(null); // { origem, dx, dy }
   const bloquearClique = useRef(false);
 
@@ -1652,6 +1658,18 @@ function useArrastarParaTrocar(aoTrocar, limiar = 6) {
     if (!st.moveu && Math.hypot(dx, dy) > limiar) st.moveu = true;
     if (st.moveu) setArrastando({ origem: st.origem, dx, dy });
   };
+  const encontrarAlvo = (x, y) => {
+    const raiz = containerRef.current;
+    if (!raiz) return null;
+    const nos = raiz.querySelectorAll('[data-slot]');
+    let melhorId = null, melhorDist = Infinity;
+    nos.forEach(no => {
+      const r = no.getBoundingClientRect();
+      const d = Math.hypot(r.left + r.width / 2 - x, r.top + r.height / 2 - y);
+      if (d < melhorDist) { melhorDist = d; melhorId = no.getAttribute('data-slot'); }
+    });
+    return melhorId;
+  };
   const finalizar = (e) => {
     const st = estado.current;
     estado.current = null;
@@ -1659,9 +1677,7 @@ function useArrastarParaTrocar(aoTrocar, limiar = 6) {
     setArrastando(null);
     if (!st.moveu) return; // foi só um toque — deixa o onClick tratar disto
     bloquearClique.current = true;
-    const alvoEl = document.elementFromPoint(e.clientX, e.clientY);
-    const alvo = alvoEl && alvoEl.closest('[data-slot]');
-    const destino = alvo && alvo.getAttribute('data-slot');
+    const destino = encontrarAlvo(e.clientX, e.clientY);
     if (destino && destino !== st.origem) aoTrocar(st.origem, destino);
   };
   const onClickCapture = (e) => {
@@ -1672,7 +1688,7 @@ function useArrastarParaTrocar(aoTrocar, limiar = 6) {
     ? { transform: `translate(${arrastando.dx}px, ${arrastando.dy}px) scale(1.08)`, zIndex: 20, pointerEvents: 'none', cursor: 'grabbing' }
     : { cursor: 'grab' });
 
-  return { onPointerDown, onPointerMove, onPointerUp: finalizar, onPointerCancel: finalizar, onClickCapture, estiloArrasto };
+  return { onPointerDown, onPointerMove, onPointerUp: finalizar, onPointerCancel: finalizar, onClickCapture, estiloArrasto, containerRef };
 }
 
 /* RETROCEDER NO BROWSER DEVOLVE À ABA DE ANTES, NÃO À LISTA DESTA ABA.
@@ -5573,6 +5589,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
 
   return (
     <div
+      ref={arrasto.containerRef}
       onPointerMove={editavel ? arrasto.onPointerMove : undefined}
       onPointerUp={editavel ? arrasto.onPointerUp : undefined}
       onPointerCancel={editavel ? arrasto.onPointerCancel : undefined}
@@ -13607,6 +13624,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
   });
   return (
     <div
+      ref={arrasto.containerRef}
       onPointerMove={arrasto.onPointerMove}
       onPointerUp={arrasto.onPointerUp}
       onPointerCancel={arrasto.onPointerCancel}
@@ -18236,6 +18254,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
               não um campo. Passa a usar o MESMO desenho da folha impressa,
               com cores claras em vez de cinzentas. */}
           <div
+            ref={arrasto.containerRef}
             onPointerMove={arrasto.onPointerMove}
             onPointerUp={arrasto.onPointerUp}
             onPointerCancel={arrasto.onPointerCancel}
