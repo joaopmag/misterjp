@@ -17809,6 +17809,51 @@ function cardBadge(card) {
    mais exigentes — o guarda-redes, que só pode ser um guarda-redes —
    para que um lugar específico não fique sem ninguém por o candidato ter
    sido gasto num lugar que outro qualquer serviria. */
+/* PREENCHE POR BLOCO DE FAMÍLIA — guarda-redes, depois TODAS as posições
+   de defesa, depois TODO o meio-campo, depois TODO o ataque. Nunca
+   posição a posição pela ordem da formação: escolher assim podia
+   "gastar" um defesa numa posição de meio-campo processada mais cedo,
+   antes de as posições de defesa a seguir terem sequer chance de
+   reclamar os defesas que sobravam — e era assim que se via um extremo
+   a acabar no meio-campo e um médio no ataque, uma troca sem nexo
+   nenhum. Cada família esgota primeiro o SEU próprio grupo de
+   candidatos; só recorre a outra família se não sobrar mais ninguém
+   dela, e mesmo assim prefere a família vizinha (defesa↔meio,
+   meio↔ataque) a saltar para a oposta (defesa↔ataque).
+
+   Partilhada pelas DUAS situações que precisam disto: o preenchimento
+   automático normal, e os lugares que sobram vazios quando já existe
+   um alinhamento manual (só esse tinha, antes, um atalho que pegava no
+   primeiro jogador que sobrasse, família nenhuma — o mesmo bug via-se
+   ali mesmo depois de corrigido no preenchimento automático). Muda
+   `colocados` e `pool` diretamente (por referência), não devolve nada. */
+function preencherPorFamilia(posicoesAPreencher, pool, colocados) {
+  const ORDEM_FAMILIAS = ['DEF', 'MEIO', 'ATA'];
+  const grupos = ['GR', ...ORDEM_FAMILIAS].map(familia => ({
+    familia,
+    posicoes: posicoesAPreencher.filter(x => (familia === 'GR' ? x.lugar === 'GR' : (FAMILIA[x.lugar] || 'MEIO') === familia)),
+  }));
+
+  grupos.forEach(({ familia, posicoes }) => {
+    posicoes.forEach(({ lugar, i }) => {
+      const eGR = lugar === 'GR';
+      const candidatos = pool.filter(p => (eGR ? ehGuardaRedes(p) : !ehGuardaRedes(p)));
+      if (!candidatos.length) return;
+      const nota = (p) => {
+        if (posicaoServe(lugar, p) || p.position === lugar) return 0;
+        const familiaP = familiaDe(p);
+        if (familiaP === familia) return 1;
+        if (eGR) return 3; // não deveria acontecer (candidatos já filtrados), rede de segurança
+        const distancia = Math.abs(ORDEM_FAMILIAS.indexOf(familiaP) - ORDEM_FAMILIAS.indexOf(familia));
+        return 2 + Math.max(0, distancia - 1); // família vizinha: 2 · família oposta: 3
+      };
+      const escolhido = candidatos.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), candidatos[0]);
+      colocados[i] = escolhido;
+      pool.splice(pool.indexOf(escolhido), 1);
+    });
+  });
+}
+
 function distribuirOnzeNoCampo(titulares, formacao, alinhamento) {
   const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
 
@@ -17831,16 +17876,13 @@ function distribuirOnzeNoCampo(titulares, formacao, alinhamento) {
       return p || null;
     });
     const restantes = [...porId.values()];
-    // Os que sobraram entram nos lugares ainda vazios, pela mesma regra.
+    // Os que sobraram entram nos lugares ainda vazios, pela mesma regra
+    // de família em bloco usada no preenchimento automático.
     if (restantes.length) {
-      const vazios = colocadosManual.map((v, i) => (v ? -1 : i)).filter(i => i >= 0);
-      const auto = distribuirOnzeNoCampo(restantes, formacao);
-      vazios.forEach(i => {
-        const cand = auto.colocados[i] || auto.colocados.find(Boolean);
-        if (!cand) return;
-        colocadosManual[i] = cand;
-        auto.colocados[auto.colocados.indexOf(cand)] = null;
-      });
+      const posicoesVazias = colocadosManual
+        .map((v, i) => (v ? null : { lugar: lugares[i], i }))
+        .filter(Boolean);
+      preencherPorFamilia(posicoesVazias, restantes, colocadosManual);
     }
     const usados = new Set(colocadosManual.filter(Boolean).map(p => p.id));
     return { lugares, colocados: colocadosManual, sobram: titulares.filter(p => !usados.has(p.id)) };
@@ -17848,45 +17890,7 @@ function distribuirOnzeNoCampo(titulares, formacao, alinhamento) {
 
   const porColocar = [...titulares];
   const colocados = new Array(lugares.length).fill(null);
-
-  /* PREENCHE POR BLOCO DE FAMÍLIA — guarda-redes, depois TODAS as
-     posições de defesa, depois TODO o meio-campo, depois TODO o ataque.
-     Nunca posição a posição pela ordem da formação: escolher assim
-     podia "gastar" um defesa numa posição de meio-campo processada mais
-     cedo, antes de as posições de defesa a seguir terem sequer chance
-     de reclamar os defesas que sobravam — e é assim que se via um
-     extremo a acabar no meio-campo e um médio no ataque, uma troca sem
-     nexo nenhum. Cada família esgota primeiro o SEU próprio grupo de
-     candidatos; só recorre a outra família se não sobrar mais ninguém
-     dela, e mesmo assim prefere a família vizinha (defesa↔meio,
-     meio↔ataque) a saltar para a oposta (defesa↔ataque). */
-  const ORDEM_FAMILIAS = ['DEF', 'MEIO', 'ATA'];
-  const blocos = [
-    { familia: 'GR', posicoes: lugares.map((lugar, i) => ({ lugar, i })).filter(x => x.lugar === 'GR') },
-    ...ORDEM_FAMILIAS.map(familia => ({
-      familia,
-      posicoes: lugares.map((lugar, i) => ({ lugar, i })).filter(x => (FAMILIA[x.lugar] || 'MEIO') === familia),
-    })),
-  ];
-
-  blocos.forEach(({ familia, posicoes }) => {
-    posicoes.forEach(({ lugar, i }) => {
-      const eGR = lugar === 'GR';
-      const candidatos = porColocar.filter(p => (eGR ? ehGuardaRedes(p) : !ehGuardaRedes(p)));
-      if (!candidatos.length) return;
-      const nota = (p) => {
-        if (posicaoServe(lugar, p) || p.position === lugar) return 0;
-        const familiaP = familiaDe(p);
-        if (familiaP === familia) return 1;
-        if (eGR) return 3; // não deveria acontecer (candidatos já filtrados), rede de segurança
-        const distancia = Math.abs(ORDEM_FAMILIAS.indexOf(familiaP) - ORDEM_FAMILIAS.indexOf(familia));
-        return 2 + Math.max(0, distancia - 1); // família vizinha: 2 · família oposta: 3
-      };
-      const escolhido = candidatos.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), candidatos[0]);
-      colocados[i] = escolhido;
-      porColocar.splice(porColocar.indexOf(escolhido), 1);
-    });
-  });
+  preencherPorFamilia(lugares.map((lugar, i) => ({ lugar, i })), porColocar, colocados);
 
   return { lugares, colocados, sobram: porColocar };
 }
@@ -20525,7 +20529,16 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
           {players.length > 0 && (
             <SelectAllBar
               onSelectAll={() => {
-                const ids = sortByPosition(players).map(p => p.id);
+                // Quem está indisponível (lesão/doença marcada como tal no
+                // boletim clínico) NAQUELA data não entra — nem como
+                // convocado, nem muito menos como titular. "Selecionar
+                // todos" é para poupar cliques, não para convocar quem
+                // está de fora.
+                const disponiveis = players.filter(p => {
+                  const estado = estadoClinicoEm(p.id, f.date, clinico);
+                  return !(estado && estado.avisaJogo);
+                });
+                const ids = sortByPosition(disponiveis).map(p => p.id);
                 // "Selecionar todos" tem de escolher um onze que FAÇA
                 // SENTIDO para a formação do jogo — não os primeiros 11
                 // pela ordem fixa GR/DC/DE/DD/MD/MC/MOC/EE/ED/PL, que
