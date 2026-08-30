@@ -1650,20 +1650,9 @@ function useArrastarParaTrocar(aoTrocar, limiar = 6) {
   const estado = useRef(null);
   const containerRef = useRef(null);
   const [arrastando, setArrastando] = useState(null); // { origem, dx, dy }
+  const [alvo, setAlvo] = useState(null); // id do lugar mais próximo AGORA, enquanto se arrasta
   const bloquearClique = useRef(false);
 
-  const onPointerDown = (origem) => (e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    estado.current = { origem, startX: e.clientX, startY: e.clientY, moveu: false };
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* ignora */ }
-  };
-  const onPointerMove = (e) => {
-    const st = estado.current;
-    if (!st) return;
-    const dx = e.clientX - st.startX, dy = e.clientY - st.startY;
-    if (!st.moveu && Math.hypot(dx, dy) > limiar) st.moveu = true;
-    if (st.moveu) setArrastando({ origem: st.origem, dx, dy });
-  };
   const encontrarAlvo = (x, y) => {
     const raiz = containerRef.current;
     if (!raiz) return null;
@@ -1676,11 +1665,35 @@ function useArrastarParaTrocar(aoTrocar, limiar = 6) {
     });
     return melhorId;
   };
+  const onPointerDown = (origem) => (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    estado.current = { origem, startX: e.clientX, startY: e.clientY, moveu: false };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* ignora */ }
+  };
+  const onPointerMove = (e) => {
+    const st = estado.current;
+    if (!st) return;
+    const dx = e.clientX - st.startX, dy = e.clientY - st.startY;
+    if (!st.moveu && Math.hypot(dx, dy) > limiar) st.moveu = true;
+    if (st.moveu) {
+      setArrastando({ origem: st.origem, dx, dy });
+      // A ZONA CENTRAL DO CAMPO TEM VÁRIOS JOGADORES PERTO UNS DOS
+      // OUTROS — "o lugar mais próximo" ali pode não ser o que se está a
+      // ver a olho, e sem nenhuma pista SÓ SE DESCOBRE ao soltar (às
+      // vezes trocando com o vizinho errado, dando a impressão de que
+      // "não fez nada"). Perto das linhas há sempre só um jogador por
+      // perto, e por isso nunca falha aí — é mesmo uma questão de
+      // pontaria no meio, que isto resolve mostrando o alvo em tempo
+      // real, antes de soltar.
+      setAlvo(encontrarAlvo(e.clientX, e.clientY));
+    }
+  };
   const finalizar = (e) => {
     const st = estado.current;
     estado.current = null;
     if (!st) return;
     setArrastando(null);
+    setAlvo(null);
     if (!st.moveu) return; // foi só um toque — deixa o onClick tratar disto
     bloquearClique.current = true;
     const destino = encontrarAlvo(e.clientX, e.clientY);
@@ -1693,8 +1706,15 @@ function useArrastarParaTrocar(aoTrocar, limiar = 6) {
   const estiloArrasto = (id) => (estaArrastando(id)
     ? { transform: `translate(${arrastando.dx}px, ${arrastando.dy}px) scale(1.08)`, zIndex: 20, pointerEvents: 'none', cursor: 'grabbing' }
     : { cursor: 'grab' });
+  // O ALVO ganha um contorno vivo — só enquanto se arrasta, e nunca no
+  // próprio jogador que se está a arrastar (esse já tem o seu próprio
+  // realce, o `estiloArrasto` acima).
+  const estaAlvo = (id) => !!arrastando && alvo === id && id !== arrastando.origem;
+  const estiloAlvo = (id) => (estaAlvo(id)
+    ? { outline: `2px solid ${T.gold}`, outlineOffset: 2, borderRadius: 8 }
+    : {});
 
-  return { onPointerDown, onPointerMove, onPointerUp: finalizar, onPointerCancel: finalizar, onClickCapture, estiloArrasto, containerRef };
+  return { onPointerDown, onPointerMove, onPointerUp: finalizar, onPointerCancel: finalizar, onClickCapture, estiloArrasto, estiloAlvo, containerRef };
 }
 
 /* RETROCEDER NO BROWSER DEVOLVE À ABA DE ANTES, NÃO À LISTA DESTA ABA.
@@ -5743,6 +5763,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
                  mesmo depois de tudo isto, um resto de transbordo de um
                  lugar vizinho se leia por cima deste. */
               background: l.lista.length >= 3 ? (escuro ? '#1E3A24' : '#fff') : 'transparent',
+              ...(editavel ? arrasto.estiloAlvo(l.id) : {}),
             }}
           >
             {conteudoDoLugar(l)}
@@ -13772,7 +13793,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
               transform: 'translate(-50%, -50%)', cursor: 'pointer', ...body,
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
               background: 'none', border: 'none', padding: 0, maxWidth: '20%',
-              touchAction: 'none', ...arrasto.estiloArrasto(String(i)),
+              touchAction: 'none', ...arrasto.estiloArrasto(String(i)), ...arrasto.estiloAlvo(String(i)),
             }}
           >
             {/* Círculo com o número (ou o lugar, sem número) — o mesmo
@@ -18400,7 +18421,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                     position: 'absolute', ...posCampoPrint(fx, fy),
                     transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '22%',
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...body,
-                    touchAction: 'none', ...arrasto.estiloArrasto(String(i)),
+                    touchAction: 'none', ...arrasto.estiloArrasto(String(i)), ...arrasto.estiloAlvo(String(i)),
                   }}
                 >
                   {/* Círculo com o número — mais compacto do que a etiqueta
@@ -18449,6 +18470,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                     transform: 'translate(-50%, -50%)', cursor: 'pointer', ...body,
                     background: '#00000055', border: `1px dashed ${T.line}`, borderRadius: 6,
                     padding: '4px 7px', color: T.mutedDim, fontSize: 10.5,
+                    ...arrasto.estiloAlvo(String(i)),
                   }}
                 >{lugares[i]}</button>
               );
