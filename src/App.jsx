@@ -8384,18 +8384,34 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
         const isRunDashed = a.type === 'arrow-run';
         const dashed = isDotted || isRunDashed;
         const isSelected = interactive && selectedArrowId === a.id;
+        /* A PEGA DO MEIO curva o passe/a corrida — arrasta-se para o lado
+           para simular uma trajetória em curva, ou mais "para cima" (mais
+           afastada da linha reta) para um passe mais lançado/à parábola.
+           Sem `cx`/`cy` gravados (nunca mexida, ou seta antiga de antes
+           disto existir), o ponto médio de uma curva quadrática cai
+           exatamente em cima do ponto médio da reta — por isso o mesmo
+           <path> serve sempre, reto ou curvo, sem precisar de dois modos
+           de desenho diferentes. Só o Passe e a Corrida ganham esta pega:
+           uma linha simples de referência não representa movimento
+           nenhum para "curvar". */
+        const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
+        const curvaX = a.cx != null ? a.cx : mx;
+        const curvaY = a.cy != null ? a.cy : my;
+        const d = `M ${a.x1} ${a.y1} Q ${curvaX} ${curvaY} ${a.x2} ${a.y2}`;
         return (
           <g key={a.id}>
             {hitsEnabled && (
-              <line
-                x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+              <path
+                d={d}
+                fill="none"
                 stroke="transparent" strokeWidth="2.2" strokeLinecap="round"
                 onPointerDown={(e) => onArrowDown(e, a.id)}
                 style={{ cursor: 'grab', touchAction: 'none' }}
               />
             )}
-            <line
-              x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+            <path
+              d={d}
+              fill="none"
               stroke={dashed ? dashedColor : arrowColor}
               strokeWidth={isDotted ? (isSelected ? '0.55' : '0.42') : (isSelected ? '0.55' : '0.35')}
               strokeDasharray={isDotted ? '0.1,2.1' : (isRunDashed ? '2.4,1.8' : undefined)}
@@ -8409,6 +8425,10 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
                   onPointerDown={(e) => onHandleDown(e, a.id, 'start')} style={{ cursor: 'grab', touchAction: 'none' }} />
                 <circle cx={a.x2} cy={a.y2} r="1.3" fill="#C9A227" stroke={TEXT_ON_ACCENT} strokeWidth="0.3"
                   onPointerDown={(e) => onHandleDown(e, a.id, 'end')} style={{ cursor: 'grab', touchAction: 'none' }} />
+                {isArrow && (
+                  <circle cx={curvaX} cy={curvaY} r="1.1" fill={TEXT_ON_ACCENT} stroke="#C9A227" strokeWidth="0.35"
+                    onPointerDown={(e) => onHandleDown(e, a.id, 'curve')} style={{ cursor: 'grab', touchAction: 'none' }} />
+                )}
               </>
             )}
           </g>
@@ -8666,6 +8686,26 @@ function buildAnimationChainsPure(arrowList) {
 }
 function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
+/* O PONTO NA SETA a meio caminho (0 a 1) — reta por omissão, curva se a
+   pega do meio (`cx`/`cy`) alguma vez foi arrastada para fora do ponto
+   médio. Sem `cx`/`cy` guardados (setas antigas, ou nunca curvadas), o
+   ponto médio matemático de uma curva quadrática coincide exatamente
+   com o ponto médio da reta — por isso não é preciso "if curvo, se
+   não…" em lado nenhum: esta única fórmula serve sempre. Usada tanto a
+   desenhar a seta como a animar o que se move ao longo dela — sem
+   isto, o desenho ficava curvo mas a bola cortava caminho em linha
+   reta por cima da curva. */
+function pontoNaSeta(a, t) {
+  const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
+  const cx = a.cx != null ? a.cx : mx;
+  const cy = a.cy != null ? a.cy : my;
+  const u = 1 - t;
+  return {
+    x: u * u * a.x1 + 2 * u * t * cx + t * t * a.x2,
+    y: u * u * a.y1 + 2 * u * t * cy + t * t * a.y2,
+  };
+}
+
 /* Medidas e posição REAL de uma caixa de texto no campo.
 
    Uma só fonte de verdade, usada por todos os que precisam de saber onde
@@ -8873,10 +8913,7 @@ function computeDiagramAnimationFrames(diagram, zones, phase) {
         const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
         const t = easeInOutQuadPure(active.duration ? localElapsed / active.duration : 1);
         const { arrow } = active;
-        movedPositions.set(mover.id, {
-          x: arrow.x1 + (arrow.x2 - arrow.x1) * t,
-          y: arrow.y1 + (arrow.y2 - arrow.y1) * t,
-        });
+        movedPositions.set(mover.id, pontoNaSeta(arrow, t));
       });
       const frameElements = baseElements.map(el => (movedPositions.has(el.id) ? { ...el, x: movedPositions.get(el.id).x, y: movedPositions.get(el.id).y } : el));
       pushFrame(frameElements, FRAME_MS, stepArrows);
@@ -9137,15 +9174,34 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     const cx = x1 + t * dx, cy = y1 + t * dy;
     return Math.hypot(px - cx, py - cy);
   };
+  // Distância a uma SETA — reta ou curva. Uma seta curvada não segue o
+  // segmento reto ponta a ponta; sem amostrar a curva, a borracha só
+  // apagava se se roçasse nessa reta imaginária, nunca no arco a sério
+  // que se vê desenhado.
+  const distToArrow = (px, py, a) => {
+    const mx = (a.x1 + a.x2) / 2, my = (a.y1 + a.y2) / 2;
+    const curvaX = a.cx != null ? a.cx : mx, curvaY = a.cy != null ? a.cy : my;
+    if (a.cx == null && a.cy == null) return distToSegment(px, py, a.x1, a.y1, a.x2, a.y2);
+    const N = 10;
+    let melhor = Infinity;
+    let prev = { x: a.x1, y: a.y1 };
+    for (let i = 1; i <= N; i++) {
+      const t = i / N, u = 1 - t;
+      const pt = { x: u * u * a.x1 + 2 * u * t * curvaX + t * t * a.x2, y: u * u * a.y1 + 2 * u * t * curvaY + t * t * a.y2 };
+      melhor = Math.min(melhor, distToSegment(px, py, prev.x, prev.y, pt.x, pt.y));
+      prev = pt;
+    }
+    return melhor;
+  };
   // Apaga tudo o que a borracha "tocar" num dado ponto — usado tanto no
   // toque inicial como continuamente enquanto se arrasta, para que os
   // itens desapareçam logo ao serem roçados em vez de só no final do gesto.
   const eraseAt = (p) => {
     const hitEl = elements.some(el => Math.hypot(el.x - p.x, el.y - p.y) < 2.6);
-    const hitArrow = arrows.some(a => distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) < 1.6);
+    const hitArrow = arrows.some(a => distToArrow(p.x, p.y, a) < 1.6);
     if (!hitEl && !hitArrow) return;
     const remainingIds = new Set(elements.filter(el => Math.hypot(el.x - p.x, el.y - p.y) >= 2.6).map(el => el.id));
-    const remainingArrowIds = new Set(arrows.filter(a => distToSegment(p.x, p.y, a.x1, a.y1, a.x2, a.y2) >= 1.6).map(a => a.id));
+    const remainingArrowIds = new Set(arrows.filter(a => distToArrow(p.x, p.y, a) >= 1.6).map(a => a.id));
     if (selectedId && !remainingIds.has(selectedId)) setSelectedId(null);
     if (selectedArrowId && !remainingArrowIds.has(selectedArrowId)) setSelectedArrowId(null);
     const apagados = new Set(elements.filter(el => !remainingIds.has(el.id)).map(el => el.id));
@@ -9454,7 +9510,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
         const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
         const { arrow } = active;
-        return { id, type: arrow.type, mover, x: arrow.x1 + (arrow.x2 - arrow.x1) * t, y: arrow.y1 + (arrow.y2 - arrow.y1) * t };
+        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
       }));
       if (elapsed < maxDuration) {
         animRef.current = requestAnimationFrame(tick);
@@ -9553,7 +9609,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
         const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
         const { arrow } = active;
-        return { id, type: arrow.type, mover, x: arrow.x1 + (arrow.x2 - arrow.x1) * t, y: arrow.y1 + (arrow.y2 - arrow.y1) * t };
+        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
       }));
       if (elapsed < maxDuration) {
         presentAnimRef.current = requestAnimationFrame(tick);
@@ -9744,9 +9800,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)) });
     } else if (dragHandle) {
       const p = toPoint(e);
-      const key1 = dragHandle.which === 'start' ? 'x1' : 'x2';
-      const key2 = dragHandle.which === 'start' ? 'y1' : 'y2';
-      onChange({ ...value, arrows: arrows.map(a => a.id === dragHandle.id ? { ...a, [key1]: p.x, [key2]: p.y } : a) });
+      if (dragHandle.which === 'curve') {
+        onChange({ ...value, arrows: arrows.map(a => a.id === dragHandle.id ? { ...a, cx: p.x, cy: p.y } : a) });
+      } else {
+        const key1 = dragHandle.which === 'start' ? 'x1' : 'x2';
+        const key2 = dragHandle.which === 'start' ? 'y1' : 'y2';
+        onChange({ ...value, arrows: arrows.map(a => a.id === dragHandle.id ? { ...a, [key1]: p.x, [key2]: p.y } : a) });
+      }
     } else if (dragArrowId) {
       const p = toPoint(e);
       const ref = dragArrowRef.current;
@@ -9756,7 +9816,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       if (Math.hypot(dx, dy) > 0.6) setArrowMoved(true);
       onChange({
         ...value,
-        arrows: arrows.map(a => a.id === dragArrowId ? { ...a, x1: ref.orig.x1 + dx, y1: ref.orig.y1 + dy, x2: ref.orig.x2 + dx, y2: ref.orig.y2 + dy } : a),
+        arrows: arrows.map(a => (a.id === dragArrowId ? {
+          ...a,
+          x1: ref.orig.x1 + dx, y1: ref.orig.y1 + dy,
+          x2: ref.orig.x2 + dx, y2: ref.orig.y2 + dy,
+          // A curva (se alguma vez foi mexida) viaja junto com a seta —
+          // senão, mover uma seta já curvada deixava a curva para trás,
+          // desalinhada da nova posição.
+          ...(ref.orig.cx != null ? { cx: ref.orig.cx + dx, cy: ref.orig.cy + dy } : {}),
+        } : a)),
       });
     } else if (resizingZoneId) {
       const zone = zones.find(z => z.id === resizingZoneId);
@@ -9852,7 +9920,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     const arrow = arrows.find(a => a.id === id);
     if (!arrow) return;
-    dragArrowRef.current = { start: toPoint(e), orig: { x1: arrow.x1, y1: arrow.y1, x2: arrow.x2, y2: arrow.y2 } };
+    dragArrowRef.current = { start: toPoint(e), orig: { x1: arrow.x1, y1: arrow.y1, x2: arrow.x2, y2: arrow.y2, cx: arrow.cx, cy: arrow.cy } };
     setArrowMoved(false);
     setDragArrowId(id);
   };
@@ -11205,7 +11273,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
         const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
         const { arrow } = active;
-        return { id, type: arrow.type, mover, x: arrow.x1 + (arrow.x2 - arrow.x1) * t, y: arrow.y1 + (arrow.y2 - arrow.y1) * t };
+        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
       }));
       if (elapsed < maxDuration) {
         animRef.current = requestAnimationFrame(tick);
