@@ -23658,7 +23658,7 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
               transform: 'translate(-50%, -50%)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: 22, height: 22, borderRadius: '50%',
-              background: '#B5393F', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '.01em',
+              background: T.corEquipa, color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '.01em',
             }}>{m.rotulo}</span>
           ))}
         </div>
@@ -23689,7 +23689,7 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
             transform: 'translate(-50%, -50%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 22, height: 22, borderRadius: '50%',
-            background: '#B5393F', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '.01em',
+            background: T.corEquipa, color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '.01em',
           }}>{m.rotulo}</span>
         ))}
       </div>
