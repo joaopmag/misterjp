@@ -22218,6 +22218,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
   const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
   const [dados, setDados] = useState(null); // { proximoJogo, ideias }
   const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
+  const [detalheTecnico, setDetalheTecnico] = useState(''); // resposta em bruto, para diagnóstico
 
   useEffect(() => {
     let cancelado = false;
@@ -22225,6 +22226,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
       try {
         const { data, error } = await supabase.rpc('checkin_ideia_jogo', { p_code: code, p_team: teamId });
         if (cancelado) return;
+        setDetalheTecnico(JSON.stringify({ code, teamId, data, error: error && error.message }, null, 1).slice(0, 800));
         if (error) throw error;
         let d = data;
         if (Array.isArray(d)) d = d[0];
@@ -22246,6 +22248,11 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
       />
     );
   }
+
+  // Só aparece quando não há nada partilhado (ou a chamada falha) — é
+  // exatamente aí que é preciso ver o que a função devolveu de facto,
+  // em vez de adivinhar porque é que ficou vazio.
+  const mostrarDetalheTecnico = estado === 'erro' || (estado === 'pronto' && !dados.proximoJogo && (!dados.ideias || dados.ideias.length === 0));
 
   return (
     <div style={{ maxWidth: 460, margin: '0 auto', padding: '28px 18px 60px' }}>
@@ -22310,6 +22317,24 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
             )
           )}
         </>
+      )}
+
+      {mostrarDetalheTecnico && detalheTecnico && (
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 11, color: T.mutedDim, marginBottom: 6 }}>Detalhes técnicos (para o treinador enviar se pedirem ajuda):</div>
+          <pre style={{
+            background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: 10,
+            fontSize: 10, color: T.muted, textAlign: 'left', whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word', maxHeight: 220, overflow: 'auto', ...mono,
+          }}>{detalheTecnico}</pre>
+          <button
+            type="button"
+            onClick={() => { try { navigator.clipboard.writeText(detalheTecnico); } catch (e) { /* seleciona à mão */ } }}
+            style={{ marginTop: 8, fontSize: 11.5, color: T.mutedDim, background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer' }}
+          >
+            Copiar
+          </button>
+        </div>
       )}
     </div>
   );
