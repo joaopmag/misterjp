@@ -9869,7 +9869,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     if (erasing) setErasing(false);
     if (drawing) {
       if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) > 0.8) {
-        commit({ ...value, arrows: [...arrows, { id: uid(), ...drawing }] });
+        const novoId = uid();
+        commit({ ...value, arrows: [...arrows, { id: novoId, ...drawing }] });
+        // Fica logo selecionada — é assim que a pega de curvar (o ponto do
+        // meio) aparece de imediato, sem ser preciso tocar na seta outra
+        // vez só para a poder curvar.
+        setSelectedArrowId(novoId);
+        setSelectedId(null);
       }
       setDrawing(null);
     }
