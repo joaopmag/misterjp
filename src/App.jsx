@@ -22992,31 +22992,43 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
 
   if (editando) {
     return (
-      <AdversarioForm
-        adversario={editando === 'new' ? null : editando}
-        scouting={scouting}
-        onBack={fecharEdicao}
-        onSave={save}
-      />
+      <>
+        <AdversarioForm
+          adversario={editando === 'new' ? null : editando}
+          scouting={scouting}
+          onBack={fecharEdicao}
+          onSave={save}
+        />
+        {printAdversario && createPortal(
+          <FolhaImpressaoAdversario adversario={printAdversario} chave={chaveDe(printAdversario)} />,
+          document.body
+        )}
+      </>
     );
   }
 
   if (viewing) {
     const atual = adversarios.find(a => a.id === viewing.id) || viewing;
     return (
-      <AdversarioPage
-        adversario={atual} scouting={scouting} videos={videos} setVideos={setVideos}
-        onBack={fecharFicha}
-        onEdit={() => setEditando(atual)}
-        onRemove={() => remove(atual.id)}
-        onShare={() => doShare(atual)}
-        onPrint={() => doPrint(atual)}
-        onUpdate={(patch) => {
-          const registo = { ...atual, ...patch };
-          setAdversarios(adversarios.map(a => (a.id === atual.id ? registo : a)));
-          setViewing(registo);
-        }}
-      />
+      <>
+        <AdversarioPage
+          adversario={atual} scouting={scouting} videos={videos} setVideos={setVideos}
+          onBack={fecharFicha}
+          onEdit={() => setEditando(atual)}
+          onRemove={() => remove(atual.id)}
+          onShare={() => doShare(atual)}
+          onPrint={() => doPrint(atual)}
+          onUpdate={(patch) => {
+            const registo = { ...atual, ...patch };
+            setAdversarios(adversarios.map(a => (a.id === atual.id ? registo : a)));
+            setViewing(registo);
+          }}
+        />
+        {printAdversario && createPortal(
+          <FolhaImpressaoAdversario adversario={printAdversario} chave={chaveDe(printAdversario)} />,
+          document.body
+        )}
+      </>
     );
   }
 
@@ -23051,49 +23063,61 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
       )}
 
       {printAdversario && createPortal(
-        <div className="print-sheet">
-          <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{printAdversario.nome || 'Adversário'}</h2>
-          <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>
-            {[printAdversario.escalao, printAdversario.prova, printAdversario.quadroTatica].filter(Boolean).join(' · ')}
-          </p>
-          {chaveDe(printAdversario).length > 0 && (
-            <>
-              <h3 style={{ fontSize: 14, margin: '0 0 8px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Estrutura habitual</h3>
-              <div style={{ marginBottom: 14 }}>
-                <PrancheteDoPlantel
-                  lugares={distribuirPlantel({
-                    players: chaveDe(printAdversario), attendance: chaveDe(printAdversario).map(x => x.id),
-                    overrides: printAdversario.quadroOverrides, tatica: printAdversario.quadroTatica,
-                  })}
-                  maxLargura={480}
-                />
-              </div>
-            </>
-          )}
-          {printAdversario.pontosFortes && (
-            <>
-              <h3 style={{ fontSize: 14, margin: '0 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Pontos fortes</h3>
-              <p style={{ fontSize: 12.5, margin: '0 0 14px', whiteSpace: 'pre-wrap' }}>{printAdversario.pontosFortes}</p>
-            </>
-          )}
-          {printAdversario.pontosFracos && (
-            <>
-              <h3 style={{ fontSize: 14, margin: '0 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Pontos fracos</h3>
-              <p style={{ fontSize: 12.5, margin: '0 0 14px', whiteSpace: 'pre-wrap' }}>{printAdversario.pontosFracos}</p>
-            </>
-          )}
-          {chaveDe(printAdversario).length > 0 && (
-            <>
-              <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Jogadores-chave</h3>
-              <ul style={{ fontSize: 12.5, margin: 0, paddingLeft: 18 }}>
-                {chaveDe(printAdversario).map(x => (
-                  <li key={x.id}>{x.name}{x.position ? ` — ${x.position}` : ''}</li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>,
+        <FolhaImpressaoAdversario adversario={printAdversario} chave={chaveDe(printAdversario)} />,
         document.body
+      )}
+    </div>
+  );
+}
+
+/* A FOLHA DE IMPRESSÃO É PARTILHADA PELOS TRÊS RAMOS (lista, ficha,
+   formulário) — antes só vivia no ramo da lista, e imprimir a partir
+   da ficha (o botão mais usado) mandava a app para `window.print()`
+   sem NADA de classe `print-sheet` montado, porque esse ramo nunca
+   chegava a desenhar-se: `AdversariosApp` devolvia a ficha e parava
+   ali. Saía sempre em branco. */
+function FolhaImpressaoAdversario({ adversario: printAdversario, chave: chaveDe }) {
+  return (
+    <div className="print-sheet">
+      <h2 style={{ margin: '0 0 10px', fontSize: 24 }}>{printAdversario.nome || 'Adversário'}</h2>
+      <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>
+        {[printAdversario.escalao, printAdversario.prova, printAdversario.quadroTatica].filter(Boolean).join(' · ')}
+      </p>
+      {chaveDe.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 14, margin: '0 0 8px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Estrutura habitual</h3>
+          <div style={{ marginBottom: 14 }}>
+            <PrancheteDoPlantel
+              lugares={distribuirPlantel({
+                players: chaveDe, attendance: chaveDe.map(x => x.id),
+                overrides: printAdversario.quadroOverrides, tatica: printAdversario.quadroTatica,
+              })}
+              maxLargura={480}
+            />
+          </div>
+        </>
+      )}
+      {printAdversario.pontosFortes && (
+        <>
+          <h3 style={{ fontSize: 14, margin: '0 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Pontos fortes</h3>
+          <p style={{ fontSize: 12.5, margin: '0 0 14px', whiteSpace: 'pre-wrap' }}>{printAdversario.pontosFortes}</p>
+        </>
+      )}
+      {printAdversario.pontosFracos && (
+        <>
+          <h3 style={{ fontSize: 14, margin: '0 0 4px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Pontos fracos</h3>
+          <p style={{ fontSize: 12.5, margin: '0 0 14px', whiteSpace: 'pre-wrap' }}>{printAdversario.pontosFracos}</p>
+        </>
+      )}
+      {chaveDe.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 14, margin: '0 0 6px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Jogadores-chave</h3>
+          <ul style={{ fontSize: 12.5, margin: 0, paddingLeft: 18 }}>
+            {chaveDe.map(x => (
+              <li key={x.id}>{x.name}{x.position ? ` — ${x.position}` : ''}</li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );
