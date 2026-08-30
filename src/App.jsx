@@ -1616,6 +1616,65 @@ function useIsMobile(breakpoint = 860) {
   return isMobile;
 }
 
+/* ARRASTAR UM JOGADOR PARA CIMA DE OUTRO (OU DE UM LUGAR VAZIO) TROCA-OS
+   DE SÍTIO — em qualquer campo da app que mostre jogadores em lugares
+   fixos de uma formação (Simulador, Ficha de Jogo, Estrutura habitual
+   do Adversário).
+
+   Um só hook para os três, porque a mecânica é sempre a mesma: só
+   muda o que "trocar dois lugares" significa para quem o usa (mexer
+   num `overrides`, ou trocar duas posições de um array `alinhamento`).
+
+   O TOQUE CONTINUA A FUNCIONAR COMO SEMPRE. Só se conta como arrasto
+   se o dedo/rato se mexer mais do que `limiar` antes de soltar — um
+   toque parado dispara o `onClick` de sempre, sem qualquer mudança.
+   Quando é mesmo um arrasto, bloqueia-se o `click` sintético que o
+   browser dispara a seguir (senão o toque de soltar reabria o
+   seletor de jogador logo depois da troca).
+
+   Cada lugar/jogador precisa de um `data-slot="<id>"` no elemento —
+   é por aí que se descobre o alvo, com `elementFromPoint` no ponto
+   onde se soltou. */
+function useArrastarParaTrocar(aoTrocar, limiar = 6) {
+  const estado = useRef(null);
+  const [arrastando, setArrastando] = useState(null); // { origem, dx, dy }
+  const bloquearClique = useRef(false);
+
+  const onPointerDown = (origem) => (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    estado.current = { origem, startX: e.clientX, startY: e.clientY, moveu: false };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* ignora */ }
+  };
+  const onPointerMove = (e) => {
+    const st = estado.current;
+    if (!st) return;
+    const dx = e.clientX - st.startX, dy = e.clientY - st.startY;
+    if (!st.moveu && Math.hypot(dx, dy) > limiar) st.moveu = true;
+    if (st.moveu) setArrastando({ origem: st.origem, dx, dy });
+  };
+  const finalizar = (e) => {
+    const st = estado.current;
+    estado.current = null;
+    if (!st) return;
+    setArrastando(null);
+    if (!st.moveu) return; // foi só um toque — deixa o onClick tratar disto
+    bloquearClique.current = true;
+    const alvoEl = document.elementFromPoint(e.clientX, e.clientY);
+    const alvo = alvoEl && alvoEl.closest('[data-slot]');
+    const destino = alvo && alvo.getAttribute('data-slot');
+    if (destino && destino !== st.origem) aoTrocar(st.origem, destino);
+  };
+  const onClickCapture = (e) => {
+    if (bloquearClique.current) { bloquearClique.current = false; e.stopPropagation(); }
+  };
+  const estaArrastando = (id) => !!arrastando && arrastando.origem === id;
+  const estiloArrasto = (id) => (estaArrastando(id)
+    ? { transform: `translate(${arrastando.dx}px, ${arrastando.dy}px) scale(1.08)`, zIndex: 20, pointerEvents: 'none', cursor: 'grabbing' }
+    : { cursor: 'grab' });
+
+  return { onPointerDown, onPointerMove, onPointerUp: finalizar, onPointerCancel: finalizar, onClickCapture, estiloArrasto };
+}
+
 /* RETROCEDER NO BROWSER DEVOLVE À ABA DE ANTES, NÃO À LISTA DESTA ABA.
 
    Abrir o perfil de um jogador, a ficha de um jogo, ou qualquer vista
@@ -5408,9 +5467,12 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
 
 /* O quadro desenhado. `aoTocar` transforma-o em editável: sem ele é só
    para ler, que é o que a folha impressa precisa. */
-function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLargura = 640, tela = false }) {
-  if (!lugares || !lugares.length) return null;
+function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala = 1, maxLargura = 640, tela = false }) {
   const editavel = typeof aoTocar === 'function';
+  const arrasto = useArrastarParaTrocar((origemChave, destinoLugarId) => {
+    if (aoArrastar) aoArrastar(origemChave, destinoLugarId);
+  });
+  if (!lugares || !lugares.length) return null;
   // `escuro` decide as CORES (tema da app vs folha impressa); `editavel`
   // continua a decidir só a interatividade (cliques, contorno de seleção).
   // Um quadro só de consulta no ECRÃ (nem editável nem impresso) tem de
@@ -5486,6 +5548,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
         {l.lista.map(j => (
           <div
             key={j.chave}
+            onPointerDown={editavel ? arrasto.onPointerDown(j.chave) : undefined}
             onClick={editavel ? (e) => {
               e.stopPropagation();
               /* Com um jogador já escolhido, tocar aqui — mesmo em cima
@@ -5499,7 +5562,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
               if (selecionado && selecionado !== j.chave) aoTocar({ tipo: 'lugar', id: l.id });
               else aoTocar({ tipo: 'jogador', chave: j.chave });
             } : undefined}
-            style={nomeStyle(selecionado === j.chave)}
+            style={{ ...nomeStyle(selecionado === j.chave), touchAction: editavel ? 'none' : undefined, ...(editavel ? arrasto.estiloArrasto(j.chave) : {}) }}
           >
             {j.nome}{j.exp ? <span style={{ opacity: 0.6 }}> exp</span> : null}
           </div>
@@ -5509,7 +5572,12 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
   );
 
   return (
-    <div style={{
+    <div
+      onPointerMove={editavel ? arrasto.onPointerMove : undefined}
+      onPointerUp={editavel ? arrasto.onPointerUp : undefined}
+      onPointerCancel={editavel ? arrasto.onPointerCancel : undefined}
+      onClickCapture={editavel ? arrasto.onClickCapture : undefined}
+      style={{
       position: 'relative', width: '100%', maxWidth: maxLargura, aspectRatio: ASPECT_CAMPO_PRINT,
       background: escuro ? '#1E3A24' : '#fff', margin: '0 auto',
       borderRadius: escuro ? 10 : 0, border: escuro ? `1px solid ${T.line}` : 'none',
@@ -5535,6 +5603,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, selecionado, escala = 1, maxLarg
         return (
           <div
             key={l.id}
+            data-slot={l.id}
             onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
             style={{
               position: 'absolute', ...posCampoPrint(fx, fy), zIndex: eGR ? 1 : l.lista.length,
@@ -5596,7 +5665,10 @@ function EditorPrancheta({ players, attendance, convidados, overrides, tatica, o
           </Select>
         </div>
       </div>
-      <PrancheteDoPlantel lugares={lugares} aoTocar={tocar} selecionado={escolhido} escala={1.25} />
+      <PrancheteDoPlantel
+        lugares={lugares} aoTocar={tocar} selecionado={escolhido} escala={1.25}
+        aoArrastar={(chave, lugarId) => onChange({ ...(overrides || {}), [chave]: lugarId })}
+      />
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
         <span style={{ fontSize: 11.5, color: T.mutedDim, flex: 1, minWidth: 180, lineHeight: 1.6 }}>
           {escolhido
@@ -13525,10 +13597,21 @@ const LAYOUT_FORMACAO = {
 /* Prancheta do onze: nomes ao lado da posição, suplentes fora das quatro
    linhas. Cada lugar é clicável para trocar de jogador — a distribuição é
    uma sugestão, não uma imposição. */
-function PranchetaOnze({ periodo, formacao, onTrocar }) {
+function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
+  const arrasto = useArrastarParaTrocar((origemStr, destinoStr) => {
+    if (!onTrocarDireto) return;
+    const origem = Number(origemStr), destino = Number(destinoStr);
+    if (Number.isNaN(origem) || Number.isNaN(destino) || origem === destino) return;
+    onTrocarDireto(origem, destino);
+  });
   return (
-    <div style={{
+    <div
+      onPointerMove={arrasto.onPointerMove}
+      onPointerUp={arrasto.onPointerUp}
+      onPointerCancel={arrasto.onPointerCancel}
+      onClickCapture={arrasto.onClickCapture}
+      style={{
       position: 'relative', width: '100%', aspectRatio: '105 / 68',
       background: '#1E3A24', border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden',
     }}>
@@ -13545,22 +13628,34 @@ function PranchetaOnze({ periodo, formacao, onTrocar }) {
         return (
           <button
             key={i}
+            data-slot={i}
+            onPointerDown={l.jogador ? arrasto.onPointerDown(String(i)) : undefined}
             onClick={() => onTrocar(i)}
-            title={l.jogador ? `${l.lugar} · ${l.jogador.name} — tocar para trocar` : `${l.lugar} — por preencher`}
+            title={l.jogador ? `${l.lugar} · ${l.jogador.name} — arrasta para trocar, ou toca para trocar de jogador` : `${l.lugar} — por preencher`}
             style={{
               position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
               transform: 'translate(-50%, -50%)', cursor: 'pointer', ...body,
-              background: l.jogador ? '#B5393FEE' : '#00000055',
-              border: `1px solid ${l.jogador ? '#B5393F' : T.line}`,
-              borderRadius: 7, padding: '4px 7px', maxWidth: '26%',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+              background: 'none', border: 'none', padding: 0, maxWidth: '20%',
+              touchAction: 'none', ...arrasto.estiloArrasto(String(i)),
             }}
           >
-            <span style={{ ...mono, fontSize: 8.5, color: '#ffffffAA', lineHeight: 1 }}>{l.lugar}</span>
+            {/* Círculo com o número (ou o lugar, sem número) — o mesmo
+                desenho da Ficha de Jogo, e é o que se arrasta para trocar
+                de lugar. */}
             <span style={{
-              fontSize: 10.5, fontWeight: 600, color: l.jogador ? TEXT_ON_ACCENT : T.mutedDim,
-              lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
-            }}>{l.jogador ? firstNameOf(l.jogador.name) : '—'}</span>
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 22, height: 22, borderRadius: '50%', ...mono, fontSize: 10.5,
+              background: l.jogador ? '#B5393F' : '#00000055',
+              color: l.jogador ? '#fff' : T.mutedDim,
+              border: `1px solid ${l.jogador ? '#B5393F' : T.line}`,
+            }}>{l.jogador ? (l.jogador.number || l.lugar) : l.lugar}</span>
+            {l.jogador && (
+              <span style={{
+                fontSize: 10.5, fontWeight: 600, color: TEXT_ON_ACCENT,
+                lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
+              }}>{firstNameOf(l.jogador.name)}</span>
+            )}
           </button>
         );
       })}
@@ -13821,6 +13916,26 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
 
   /* Trocar um jogador de um lugar do onze. A recomendação é um ponto de
      partida: o treinador sabe coisas que o simulador não sabe. */
+  const trocarDiretoNoPeriodo = (pi, indiceOrigem, indiceDestino) => {
+    setJogo(j => {
+      const periodos = j.periodos.map((per, k) => {
+        if (k !== pi) return per;
+        const onze = per.onze.map((l, i2) => {
+          if (i2 === indiceOrigem) return { ...l, jogador: per.onze[indiceDestino].jogador };
+          if (i2 === indiceDestino) return { ...l, jogador: per.onze[indiceOrigem].jogador };
+          return l;
+        });
+        const emCampo = new Set(onze.map(l => l.jogador && l.jogador.id).filter(Boolean));
+        return { ...per, onze, suplentes: presentes.filter(p => !emCampo.has(p.id)) };
+      });
+      const minutos = new Map(presentes.map(p => [p.id, 0]));
+      periodos.forEach(per => per.onze.forEach(l => {
+        if (l.jogador) minutos.set(l.jogador.id, (minutos.get(l.jogador.id) || 0) + per.minutos);
+      }));
+      return { ...j, periodos, minutosPorJogador: minutos };
+    });
+  };
+
   const aplicarTroca = (novoJogador) => {
     if (!trocar || !jogo) return;
     const { periodo: pi, indice } = trocar;
@@ -14351,6 +14466,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                   periodo={per}
                   formacao={jogo.formacao}
                   onTrocar={(indice) => setTrocar({ periodo: pi, indice })}
+                  onTrocarDireto={(origem, destino) => trocarDiretoNoPeriodo(pi, origem, destino)}
                 />
                 <div>
                   <div style={{ fontSize: 11.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 7 }}>
@@ -18058,6 +18174,21 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
 
   const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 };
 
+  /* Arrastar um jogador para cima de outro lugar troca os dois — direto,
+     sem passar pelo seletor. `colocados` está sempre na mesma ordem de
+     `lugares`/`layout` (índice a índice), por isso a troca é só mexer
+     em duas posições do array de ids antes de gravar. */
+  const trocarDireto = (origemStr, destinoStr) => {
+    const origem = Number(origemStr), destino = Number(destinoStr);
+    if (Number.isNaN(origem) || Number.isNaN(destino) || origem === destino) return;
+    const ids = colocados.map(v => (v ? v.id : null));
+    const tmp = ids[origem];
+    ids[origem] = ids[destino];
+    ids[destino] = tmp;
+    onAlinhamento(ids);
+  };
+  const arrasto = useArrastarParaTrocar(trocarDireto);
+
   return (
     <Modal
       title={`${nosso} vs ${match.opponent || 'Adversário por definir'}`}
@@ -18104,7 +18235,12 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
               áreas, sem marcas de penálti nem cantos — parecia um esquema,
               não um campo. Passa a usar o MESMO desenho da folha impressa,
               com cores claras em vez de cinzentas. */}
-          <div style={{
+          <div
+            onPointerMove={arrasto.onPointerMove}
+            onPointerUp={arrasto.onPointerUp}
+            onPointerCancel={arrasto.onPointerCancel}
+            onClickCapture={arrasto.onClickCapture}
+            style={{
             position: 'relative', width: '100%', aspectRatio: ASPECT_CAMPO_PRINT,
             background: '#1E3A24', border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden',
           }}>
@@ -18118,25 +18254,31 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
               return (
                 <button
                   key={p.id}
+                  data-slot={i}
+                  onPointerDown={arrasto.onPointerDown(String(i))}
                   onClick={() => setTrocar(i)}
-                  title={`${lugares[i]} · ${p.name} — tocar para trocar de jogador`}
+                  title={`${lugares[i]} · ${p.name} — arrasta para trocar, ou toca para trocar de jogador`}
                   style={{
                     // Com balizas fora da linha de fundo, o desenho é mais
                     // largo do que o campo — `posCampoPrint` converte.
                     position: 'absolute', ...posCampoPrint(fx, fy),
                     transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '22%',
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...body,
+                    touchAction: 'none', ...arrasto.estiloArrasto(String(i)),
                   }}
                 >
-                  {/* O guarda-redes de branco, como no equipamento: é a
-                      convenção de qualquer ficha de jogo e distingue-o do
-                      resto da equipa sem precisar de legenda. */}
+                  {/* Círculo com o número — mais compacto do que a etiqueta
+                      retangular de antes, e é o que se arrasta para trocar
+                      de lugar. O guarda-redes de branco, como no
+                      equipamento: é a convenção de qualquer ficha de jogo
+                      e distingue-o do resto da equipa sem precisar de
+                      legenda. */}
                   <span style={{
-                    display: 'inline-block', ...mono, fontSize: 11,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 22, height: 22, margin: '0 auto', borderRadius: '50%', ...mono, fontSize: 11,
                     background: eGR ? '#F2F2EE' : '#B5393F',
                     color: eGR ? '#16281B' : '#fff',
                     border: eGR ? '1px solid #16281B55' : 'none',
-                    borderRadius: 6, padding: '2px 5px',
                   }}>{p.number || lugares[i]}</span>
                   <div style={{
                     fontSize: 11, color: T.cream, marginTop: 2, lineHeight: 1.2,
@@ -18154,13 +18296,16 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
             })}
 
             {/* Lugares por preencher: continuam clicáveis, para se poder
-                pôr lá alguém sem ter de passar pela ficha de edição. */}
+                pôr lá alguém sem ter de passar pela ficha de edição. Também
+                aceitam um jogador arrastado de outro lugar — é como MOVER
+                em vez de trocar (o lugar de origem fica vazio). */}
             {colocados.map((p, i) => {
               if (p) return null;
               const [fx, fy] = layout[i] || [0.5, 0.5];
               return (
                 <button
                   key={`vazio-${i}`}
+                  data-slot={i}
                   onClick={() => setTrocar(i)}
                   title={`${lugares[i]} — por preencher`}
                   style={{
