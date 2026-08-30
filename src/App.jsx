@@ -22142,7 +22142,16 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }
 
   if (activeType === 'ideiaJogo') {
-    return <PlayerIdeiaJogoView code={code} teamId={teamId} onBack={() => setActiveType(null)} />;
+    return <PlayerIdeiaJogoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+  }
+
+  if (activeType === 'portal') {
+    return (
+      <PlayerPortalHome
+        onBack={() => setActiveType(null)}
+        onOpenIdeiaJogo={() => setActiveType('ideiaJogo')}
+      />
+    );
   }
 
   return (
@@ -22154,9 +22163,45 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       wellnessWindow={wellnessWindow} rpeWindow={rpeWindow}
       onOpenWellness={() => { if (wellnessWindow.open) setActiveType('wellness'); }}
       onOpenRpe={() => { if (rpeWindow.open) setActiveType('rpe'); }}
-      onOpenIdeiaJogo={() => setActiveType('ideiaJogo')}
+      onOpenPortal={() => setActiveType('portal')}
       onLogout={onLogout}
     />
+  );
+}
+
+/* PORTAL DO ATLETA — a "casa" do que o treinador for partilhando.
+
+   Começa só com "Ideia de Jogo", mas é AQUI que entram Vídeos,
+   Composição Corporal, etc., à medida que forem sendo construídos —
+   cada um como mais um cartão nesta lista, sem mexer no resto do
+   quiosque (Wellness/RPE continuam a viver fora do Portal, são
+   questionários, não conteúdo para consultar). */
+function PlayerPortalHome({ onBack, onOpenIdeiaJogo }) {
+  return (
+    <div style={{ maxWidth: 460, margin: '0 auto', padding: '28px 18px 60px' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+      }}>
+        <ChevronLeft size={15} /> Voltar
+      </button>
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Portal do Atleta</div>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 18 }}>O que o treinador for partilhando contigo.</div>
+
+      <button onClick={onOpenIdeiaJogo} style={{
+        width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${T.line}`,
+        borderRadius: 12, padding: '18px 16px', cursor: 'pointer',
+        ...body, display: 'flex', alignItems: 'center', gap: 14,
+      }}>
+        <span style={{ fontSize: 26 }}>🧠</span>
+        <span style={{ flex: 1 }}>
+          <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Ideia de Jogo</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Os esquemas táticos da nossa ideia</div>
+        </span>
+        <ChevronRight size={18} color={T.mutedDim} />
+      </button>
+    </div>
   );
 }
 
@@ -22392,7 +22437,7 @@ function DaySelectStrip({ recentDates, dayStatus, selectedDate, onSelectDate }) 
   );
 }
 
-function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenIdeiaJogo, onLogout }) {
+function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenPortal, onLogout }) {
   const isToday = selectedDate === todayStr();
   const isRestDay = session && session.phase === 'Descanso';
   const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : `Sem sessão definida para ${isToday ? 'hoje' : 'este dia'}`;
@@ -22468,19 +22513,19 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         {doneRpe ? <Check size={18} color={T.good} /> : rWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
       </button>
 
-      {/* IDEIA DE JOGO — sempre disponível, não tem janela horária (não é
-          um questionário, é só consulta). Fica visível mesmo sem nada
+      {/* PORTAL DO ATLETA — sempre disponível, não tem janela horária (não
+          é um questionário, é só consulta). Fica visível mesmo sem nada
           partilhado ainda: o ecrã explica isso lá dentro, em vez de o
           botão desaparecer sem explicação nenhuma. */}
-      <button onClick={onOpenIdeiaJogo} style={{
+      <button onClick={onOpenPortal} style={{
         width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${T.line}`,
         borderRadius: 12, padding: '18px 16px', cursor: 'pointer',
         ...body, marginTop: 12, display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <span style={{ fontSize: 26 }}>🧠</span>
+        <span style={{ fontSize: 26 }}>📖</span>
         <span style={{ flex: 1 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Ideia de Jogo</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Os esquemas táticos da nossa ideia</div>
+          <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Portal do Atleta</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Ideia de jogo e o que o treinador partilhar contigo</div>
         </span>
         <ChevronRight size={18} color={T.mutedDim} />
       </button>
