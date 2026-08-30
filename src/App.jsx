@@ -20519,9 +20519,20 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
                 // tivesse mais defesas do que avançados (ver `onzeProvavel`,
                 // o mesmo critério já usado quando o onze vem de uma
                 // convocatória).
-                setF({ ...f, convocados: ids, starters: onzeProvavel(ids, players, (match && match.formacao) || '4-3-3') });
+                //
+                // `alinhamento: null` — um jogo já visto antes pode trazer
+                // um alinhamento manual de uma seleção anterior. Sem isto,
+                // esse alinhamento antigo continuava a mandar em qualquer
+                // jogador que calhasse repetir-se na nova seleção, dando a
+                // sensação de que a app "se lembrava" da equipa de antes em
+                // vez de fazer uma escolha nova a sério.
+                setF({
+                  ...f, convocados: ids,
+                  starters: onzeProvavel(ids, players, (match && match.formacao) || '4-3-3'),
+                  alinhamento: null,
+                });
               }}
-              onClear={() => setF({ ...f, convocados: [], starters: [], report: {} })}
+              onClear={() => setF({ ...f, convocados: [], starters: [], report: {}, alinhamento: null })}
             />
           )}
         </div>
