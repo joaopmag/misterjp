@@ -17805,49 +17805,22 @@ function cardBadge(card) {
    as duas coisas: para cada lugar do desenho, procura entre os titulares
    ainda por colocar o que melhor lhe serve.
 
-   PREENCHE EM DUAS FASES — nunca lugar a lugar pela ordem da formação,
-   nem bloco de família a seguir a bloco de família. As duas versões
-   mais simples tinham o mesmo problema de fundo: se aos médios
-   faltassem médios a sério, "emprestavam" um avançado (família
-   vizinha) ANTES de o bloco do ataque sequer ter tido a vez de
-   reclamar esse mesmo avançado — via-se assim um médio a acabar no
-   ataque e um avançado a mais no meio, por o meio ter sido processado
-   primeiro e ter levado quem o ataque precisava.
-
-   Por isso:
-   FASE 1 — cada lugar só aceita alguém da SUA família exata (ou GR).
-   Ninguém empresta nada a ninguém nesta fase: se ainda há candidatos à
-   letra para uma posição, ficam reservados para ela, doa a quem doer.
-   FASE 2 — só depois de tudo o que tinha família certa estar
-   arrumado é que os lugares ainda vazios aceitam a família mais
-   próxima disponível (defesa↔meio, meio↔ataque antes de defesa↔ataque)
-   — desta vez já sem receio de tirar a alguém que ainda precisasse. */
+   CADA LUGAR SÓ ACEITA A SUA FAMÍLIA — guarda-redes só com guarda-redes,
+   defesa (DD/DE/DC/DC) só com defesas, meio-campo (MD/MC/MC) só com
+   médios, ataque (EE/ED/PL) só com avançados. Nunca troca entre
+   famílias: se faltarem avançados a sério, o lugar de avançado FICA EM
+   BRANCO — nunca um médio ou um defesa por lá enfiado, doa a quem
+   doer. Um médio a acabar no ataque (ou vice-versa) não é um "onze
+   possível", é só confuso. */
 function preencherPorFamilia(posicoesAPreencher, pool, colocados) {
-  const ORDEM_FAMILIAS = ['DEF', 'MEIO', 'ATA'];
   const familiaDoLugar = (lugar) => (lugar === 'GR' ? 'GR' : (FAMILIA[lugar] || 'MEIO'));
 
-  // FASE 1 — só família exata.
   posicoesAPreencher.forEach(({ lugar, i }) => {
     const familia = familiaDoLugar(lugar);
     const eGR = familia === 'GR';
     const candidatos = pool.filter(p => (eGR ? ehGuardaRedes(p) : !ehGuardaRedes(p) && familiaDe(p) === familia));
-    if (!candidatos.length) return;
+    if (!candidatos.length) return; // sem ninguém da família certa — fica em branco, não se força nada
     const nota = (p) => (posicaoServe(lugar, p) || p.position === lugar ? 0 : 1);
-    const escolhido = candidatos.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), candidatos[0]);
-    colocados[i] = escolhido;
-    pool.splice(pool.indexOf(escolhido), 1);
-  });
-
-  // FASE 2 — o que sobrou vazio aceita agora a família mais próxima
-  // ainda disponível, sem essa preocupação (já não há ninguém "certo"
-  // à espera de ser reclamado por outro lugar).
-  posicoesAPreencher.forEach(({ lugar, i }) => {
-    if (colocados[i]) return;
-    const familia = familiaDoLugar(lugar);
-    const eGR = familia === 'GR';
-    const candidatos = pool.filter(p => (eGR ? ehGuardaRedes(p) : !ehGuardaRedes(p)));
-    if (!candidatos.length) return;
-    const nota = (p) => (eGR ? 0 : Math.abs(ORDEM_FAMILIAS.indexOf(familiaDe(p)) - ORDEM_FAMILIAS.indexOf(familia)));
     const escolhido = candidatos.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), candidatos[0]);
     colocados[i] = escolhido;
     pool.splice(pool.indexOf(escolhido), 1);
