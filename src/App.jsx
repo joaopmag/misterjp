@@ -20373,17 +20373,17 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
     setF(data ? { ...next, date: data } : next);
   };
 
-  /* PRESENÇAS NUM AMIGÁVEL: OS PRIMEIROS ONZE SÃO O ONZE.
-
-     Num jogo oficial os titulares vêm da convocatória (ver `onzeProvavel`)
-     e o treinador só afina. Num amigável não há convocatória nenhuma — a
-     lista começava toda no banco e obrigava a onze cliques extra em
-     "Titular" para dizer o óbvio: os primeiros que se escolhem são os que
+  /* OS PRIMEIROS ONZE ESCOLHIDOS SÃO O ONZE — em qualquer jogo, não só
+     amigáveis. Um jogo oficial pode ainda vir com titulares já definidos
+     pela convocatória (`onzeProvavel`), mas ao editar a lista de
+     convocados aqui à mão a regra é sempre a mesma: sem isto, a lista
+     começava toda no banco e obrigava a onze cliques extra em "Titular"
+     para dizer o óbvio — os primeiros que se escolhem são os que
      começam a jogar.
 
-     Não há limite de presenças: num amigável podem ir os 37. O onze é que
-     tem onze lugares — a partir do décimo segundo escolhido, os seguintes
-     ficam suplentes, e qualquer troca continua a fazer-se no botão
+     Não há limite de convocados: podem ir os 37. O onze é que tem onze
+     lugares — a partir do décimo segundo escolhido, os seguintes ficam
+     suplentes, e qualquer troca continua a fazer-se no botão
      Titular/Suplente da linha do jogador. */
   const toggleConvocado = (pid) => {
     const inList = f.convocados.includes(pid);
@@ -20392,7 +20392,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
       setF({ ...f, convocados: f.convocados.filter(id => id !== pid), starters: f.starters.filter(id => id !== pid), report });
     } else {
       const convocados = [...f.convocados, pid];
-      const promover = eAmigavel && f.starters.length < 11;
+      const promover = f.starters.length < 11;
       setF({ ...f, convocados, starters: promover ? [...f.starters, pid] : f.starters });
     }
   };
@@ -20485,7 +20485,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
             <SelectAllBar
               onSelectAll={() => {
                 const ids = sortByPosition(players).map(p => p.id);
-                setF({ ...f, convocados: ids, starters: eAmigavel ? ids.slice(0, 11) : f.starters });
+                setF({ ...f, convocados: ids, starters: ids.slice(0, 11) });
               }}
               onClear={() => setF({ ...f, convocados: [], starters: [], report: {} })}
             />
@@ -20493,12 +20493,11 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
         </div>
         {/* A regra é invisível se não for dita: quem escolhe o décimo
             segundo jogador tem de perceber porque é que ele não ficou
-            titular como os anteriores. */}
-        {eAmigavel && (
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.5 }}>
-            Os primeiros onze escolhidos entram como titulares; os seguintes ficam suplentes.
-          </div>
-        )}
+            titular como os anteriores. Vale para qualquer jogo, não só
+            amigáveis — é a mesma regra que já usávamos em Convocatórias. */}
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.5 }}>
+          Os primeiros onze escolhidos entram como titulares; os seguintes ficam suplentes.
+        </div>
         <PlayerChipList
           players={players}
           isOn={p => f.convocados.includes(p.id)}
