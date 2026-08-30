@@ -17849,24 +17849,43 @@ function distribuirOnzeNoCampo(titulares, formacao, alinhamento) {
   const porColocar = [...titulares];
   const colocados = new Array(lugares.length).fill(null);
 
-  // Primeiro os lugares de guarda-redes, depois os restantes.
-  const ordem = lugares
-    .map((lugar, i) => ({ lugar, i }))
-    .sort((a, b) => (a.lugar === 'GR' ? -1 : 0) - (b.lugar === 'GR' ? -1 : 0));
+  /* PREENCHE POR BLOCO DE FAMÍLIA — guarda-redes, depois TODAS as
+     posições de defesa, depois TODO o meio-campo, depois TODO o ataque.
+     Nunca posição a posição pela ordem da formação: escolher assim
+     podia "gastar" um defesa numa posição de meio-campo processada mais
+     cedo, antes de as posições de defesa a seguir terem sequer chance
+     de reclamar os defesas que sobravam — e é assim que se via um
+     extremo a acabar no meio-campo e um médio no ataque, uma troca sem
+     nexo nenhum. Cada família esgota primeiro o SEU próprio grupo de
+     candidatos; só recorre a outra família se não sobrar mais ninguém
+     dela, e mesmo assim prefere a família vizinha (defesa↔meio,
+     meio↔ataque) a saltar para a oposta (defesa↔ataque). */
+  const ORDEM_FAMILIAS = ['DEF', 'MEIO', 'ATA'];
+  const blocos = [
+    { familia: 'GR', posicoes: lugares.map((lugar, i) => ({ lugar, i })).filter(x => x.lugar === 'GR') },
+    ...ORDEM_FAMILIAS.map(familia => ({
+      familia,
+      posicoes: lugares.map((lugar, i) => ({ lugar, i })).filter(x => (FAMILIA[x.lugar] || 'MEIO') === familia),
+    })),
+  ];
 
-  ordem.forEach(({ lugar, i }) => {
-    const eGR = lugar === 'GR';
-    const candidatos = porColocar.filter(p => (eGR ? ehGuardaRedes(p) : !ehGuardaRedes(p)));
-    if (!candidatos.length) return;
-    const familiaLugar = FAMILIA[lugar] || 'MEIO';
-    const nota = (p) => {
-      if (posicaoServe(lugar, p) || p.position === lugar) return 0;
-      if (familiaDe(p) === familiaLugar) return 1;
-      return 2;
-    };
-    const escolhido = candidatos.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), candidatos[0]);
-    colocados[i] = escolhido;
-    porColocar.splice(porColocar.indexOf(escolhido), 1);
+  blocos.forEach(({ familia, posicoes }) => {
+    posicoes.forEach(({ lugar, i }) => {
+      const eGR = lugar === 'GR';
+      const candidatos = porColocar.filter(p => (eGR ? ehGuardaRedes(p) : !ehGuardaRedes(p)));
+      if (!candidatos.length) return;
+      const nota = (p) => {
+        if (posicaoServe(lugar, p) || p.position === lugar) return 0;
+        const familiaP = familiaDe(p);
+        if (familiaP === familia) return 1;
+        if (eGR) return 3; // não deveria acontecer (candidatos já filtrados), rede de segurança
+        const distancia = Math.abs(ORDEM_FAMILIAS.indexOf(familiaP) - ORDEM_FAMILIAS.indexOf(familia));
+        return 2 + Math.max(0, distancia - 1); // família vizinha: 2 · família oposta: 3
+      };
+      const escolhido = candidatos.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), candidatos[0]);
+      colocados[i] = escolhido;
+      porColocar.splice(porColocar.indexOf(escolhido), 1);
+    });
   });
 
   return { lugares, colocados, sobram: porColocar };
