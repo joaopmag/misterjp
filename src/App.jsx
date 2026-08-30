@@ -3214,7 +3214,7 @@ function useEquipas() {
       /* A RLS já limita este select às equipas de que sou membro, por
          isso não é preciso filtrar aqui. */
       const { data, error } = await supabase
-        .from('teams').select('id, nome, clube, escalao, codigo, logo').order('nome');
+        .from('teams').select('id, nome, clube, escalao, codigo, logo, cor').order('nome');
       if (error) throw error;
       setEquipas(data || []);
     } catch (e) {
@@ -3353,8 +3353,11 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
       // A cor não faz parte da função que cria a equipa — grava-se logo a
       // seguir, na equipa que acabou de nascer, pelo mesmo caminho usado
       // depois em "Gerir equipa" (a mesma coluna `cor` na tabela `teams`).
+      // Não impede a equipa de nascer se isto falhar (por exemplo, a
+      // coluna ainda não existir no Supabase) — só avisa.
       if (cor && data) {
-        await supabase.from('teams').update({ cor }).eq('id', data);
+        const { error: erroCor } = await supabase.from('teams').update({ cor }).eq('id', data);
+        if (erroCor) console.error('Não foi possível gravar a cor da equipa:', erroCor.message);
       }
       onPronto(data);
     } catch (e) {
@@ -3493,7 +3496,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
               </div>
             </Field>
             <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
-              A cor das bolas dos jogadores nos quadros de posições. Também dá para trocar depois.
+              Escolhe a cor para o 2D do jogador. É possível alterar depois.
             </div>
             <div style={{ height: 12 }} />
             <Field label="O teu nome" bloco solto>
