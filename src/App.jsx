@@ -20507,7 +20507,14 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
             <SelectAllBar
               onSelectAll={() => {
                 const ids = sortByPosition(players).map(p => p.id);
-                setF({ ...f, convocados: ids, starters: ids.slice(0, 11) });
+                // "Selecionar todos" tem de escolher um onze que FAÇA
+                // SENTIDO para a formação do jogo — não os primeiros 11
+                // pela ordem fixa GR/DC/DE/DD/MD/MC/MOC/EE/ED/PL, que
+                // deixava posições de ataque vazias sempre que o plantel
+                // tivesse mais defesas do que avançados (ver `onzeProvavel`,
+                // o mesmo critério já usado quando o onze vem de uma
+                // convocatória).
+                setF({ ...f, convocados: ids, starters: onzeProvavel(ids, players, (match && match.formacao) || '4-3-3') });
               }}
               onClear={() => setF({ ...f, convocados: [], starters: [], report: {} })}
             />
@@ -25989,10 +25996,10 @@ function AttachmentPreview({ item, tall }) {
    que a ficha de jogo usa para colocar os jogadores no campo. É uma
    sugestão de partida, não uma decisão: o onze muda-se na ficha do jogo
    com dois toques. */
-function onzeProvavel(ids, players) {
+function onzeProvavel(ids, players, formacao = '4-3-3') {
   const lista = (ids || []).map(id => (players || []).find(p => p.id === id)).filter(Boolean);
   if (lista.length <= 11) return lista.map(p => p.id);
-  const { colocados } = distribuirOnzeNoCampo(lista, '4-3-3');
+  const { colocados } = distribuirOnzeNoCampo(lista, formacao);
   return colocados.filter(Boolean).map(p => p.id);
 }
 
