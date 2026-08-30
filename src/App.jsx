@@ -5509,7 +5509,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
      e só encolhe quando mesmo é preciso caber mais nomes na mesma
      zona. */
   const maisCheio = Math.max(1, ...lugares.map(l => (l.lista || []).length));
-  const fatorNomes = maisCheio <= 2 ? 1 : maisCheio === 3 ? 0.68 : maisCheio === 4 ? 0.56 : maisCheio === 5 ? 0.48 : 0.4;
+  const fatorNomes = maisCheio <= 2 ? 1 : maisCheio === 3 ? 0.8 : maisCheio === 4 ? 0.72 : maisCheio === 5 ? 0.64 : 0.58;
   const alturaLinha = 1.45 - (1 - fatorNomes) * 0.5;
 
   /* O GR VOLTA PARA DENTRO DO CAMPO.
@@ -5533,7 +5533,8 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
 
   const corDoTexto = escuro ? '#fff' : '#A6192E';
   const tagStyle = {
-    display: 'inline-block', padding: '1px 5px', borderRadius: 4,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto',
+    width: 20 * escala, height: 20 * escala, borderRadius: '50%',
     // No ecrã fica preenchido, como sempre. Na folha impressa a maior
     // parte dos telemóveis/impressoras não imprime cor de fundo por
     // omissão ("imprimir gráficos de fundo" desligado) — e um rótulo
@@ -5542,7 +5543,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
     // vê com ou sem cor de fundo.
     background: escuro ? '#B5393F' : 'transparent',
     border: escuro ? 'none' : '1px solid #A6192E',
-    color: corDoTexto, fontSize: 7.5 * escala, fontWeight: 700, letterSpacing: '.02em',
+    color: corDoTexto, fontSize: 7 * escala, fontWeight: 700, letterSpacing: '.01em',
   };
   const nomeStyle = (on) => ({
     /* O tamanho base é o do ECRÃ. A folha impressa passa uma `escala`
@@ -23524,8 +23525,9 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
             <span key={m.id} style={{
               position: 'absolute', left: `${(1 - m.ponto[1]) * 100}%`, top: `${m.ponto[0] * 100}%`,
               transform: 'translate(-50%, -50%)',
-              background: '#B5393F', color: '#fff', fontSize: 10, fontWeight: 700,
-              padding: '2px 6px', borderRadius: 5, whiteSpace: 'nowrap', letterSpacing: '.02em',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 22, height: 22, borderRadius: '50%',
+              background: '#B5393F', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '.01em',
             }}>{m.rotulo}</span>
           ))}
         </div>
@@ -23554,8 +23556,9 @@ function QuadroPosicaoJogador({ position, secondaryPosition, horizontal }) {
           <span key={m.id} style={{
             position: 'absolute', left: `${m.ponto[0] * 100}%`, top: `${m.ponto[1] * 100}%`,
             transform: 'translate(-50%, -50%)',
-            background: '#B5393F', color: '#fff', fontSize: 10, fontWeight: 700,
-            padding: '2px 6px', borderRadius: 5, whiteSpace: 'nowrap', letterSpacing: '.02em',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: '50%',
+            background: '#B5393F', color: '#fff', fontSize: 9.5, fontWeight: 700, letterSpacing: '.01em',
           }}>{m.rotulo}</span>
         ))}
       </div>
