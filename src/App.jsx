@@ -6542,7 +6542,10 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
             )}
           </div>
           <div style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 4 }}>
-            {[player.position, player.number ? `nº ${player.number}` : null, playerBirthLine(player), player.laterality].filter(Boolean).join(' · ')}
+            {[
+              player.position ? (player.secondaryPosition ? `${player.position}/${player.secondaryPosition}` : player.position) : null,
+              player.number ? `nº ${player.number}` : null, playerBirthLine(player), player.laterality,
+            ].filter(Boolean).join(' · ')}
           </div>
           {(onShare || onPrint || onEdit) && (
             <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
@@ -6732,7 +6735,7 @@ function CaptainArmband({ rank, size = 16, title }) {
 
 function PlayerModal({ player, onClose, onSave }) {
   const [f, setF] = useState(player || {
-    name: '', number: '', position: 'MC', nationality: '', birthdate: '', laterality: '', contact: '',
+    name: '', number: '', position: 'MC', secondaryPosition: '', nationality: '', birthdate: '', laterality: '', contact: '',
     weight: '', height: '', previousClub: '', entryDate: '', exitDate: '',
     statusMain: '', statusSecondary: '', photo: null,
   });
@@ -6750,6 +6753,12 @@ function PlayerModal({ player, onClose, onSave }) {
           <Field label="Ano de nascimento"><Input value={f.birthdate} onChange={e => setF({ ...f, birthdate: e.target.value })} placeholder="AAAA" maxLength={4} /></Field>
           <Field label="Posição">
             <Select value={f.position} onChange={e => setF({ ...f, position: e.target.value })}>
+              {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+            </Select>
+          </Field>
+          <Field label="Posição secundária">
+            <Select value={f.secondaryPosition || ''} onChange={e => setF({ ...f, secondaryPosition: e.target.value })}>
+              <option value="">—</option>
               {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
             </Select>
           </Field>
