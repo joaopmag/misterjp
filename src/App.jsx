@@ -10189,8 +10189,16 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             </button>
           </div>
           {(elements.length > 0 || arrows.length > 0 || zones.length > 0) && (
-            <button type="button" onClick={clearAll} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
-              Limpar tudo
+            <button
+              type="button"
+              onClick={clearAll}
+              title="Limpar tudo"
+              style={{
+                width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent', border: `1px solid ${T.line}`, color: T.mutedDim, cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              <Trash2 size={14} />
             </button>
           )}
         </div>
