@@ -22145,11 +22145,16 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return <PlayerIdeiaJogoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
   }
 
+  if (activeType === 'treino') {
+    return <PlayerTreinoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+  }
+
   if (activeType === 'portal') {
     return (
       <PlayerPortalHome
         onBack={() => setActiveType(null)}
         onOpenIdeiaJogo={() => setActiveType('ideiaJogo')}
+        onOpenTreino={() => setActiveType('treino')}
       />
     );
   }
@@ -22176,7 +22181,111 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
    cada um como mais um cartão nesta lista, sem mexer no resto do
    quiosque (Wellness/RPE continuam a viver fora do Portal, são
    questionários, não conteúdo para consultar). */
-function PlayerPortalHome({ onBack, onOpenIdeiaJogo }) {
+/* TREINO — "Plano do dia", só consulta.
+
+   Mesmo padrão do Ideia de Jogo, mas sem interruptor nenhum para o
+   treinador ligar/desligar: é sempre HOJE, e é sempre o que já está
+   no Planeamento — não faz sentido curar isto exercício a exercício,
+   muda todos os dias sozinho. Em dia de jogo (amigável ou de
+   competição) a função nem devolve nada de propósito: não é
+   "emparelhamento" de treino nenhum. */
+function PlayerTreinoView({ code, teamId, onBack }) {
+  const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
+  const [sessao, setSessao] = useState(null); // { phase, exercicios } | null
+  const [aVer, setAVer] = useState(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('checkin_plano_dia', { p_code: code, p_team: teamId });
+        if (cancelado) return;
+        if (error) throw error;
+        let d = data;
+        if (Array.isArray(d)) d = d[0];
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
+        setSessao((d && d.sessao) || null);
+        setEstado('pronto');
+      } catch (e) {
+        if (!cancelado) setEstado('erro');
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [code, teamId]);
+
+  if (aVer) {
+    return (
+      <ExercisePresentation
+        exercise={{ ...aVer, name: aVer.name || aVer.phase || 'Exercício' }}
+        onClose={() => setAVer(null)}
+      />
+    );
+  }
+
+  const eDescanso = sessao && sessao.phase === 'Descanso';
+  const exercicios = (sessao && sessao.exercicios) || [];
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+      }}>
+        <ChevronLeft size={15} /> Voltar
+      </button>
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Treino</div>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 20 }}>Plano do dia</div>
+
+      {estado === 'a-carregar' && (
+        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+      )}
+
+      {estado === 'erro' && (
+        <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>
+      )}
+
+      {estado === 'pronto' && (
+        !sessao ? (
+          <div style={{ fontSize: 13, color: T.mutedDim }}>
+            Sem treino hoje — ou é dia de jogo, ou ainda não há nada marcado no plano.
+          </div>
+        ) : eDescanso ? (
+          <div style={{ fontSize: 13, color: T.mutedDim }}>Hoje é dia de descanso.</div>
+        ) : exercicios.length === 0 ? (
+          <div style={{ fontSize: 13, color: T.mutedDim }}>O treino de hoje ainda não tem exercícios marcados.</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+            {exercicios.map((x, i) => (
+              <div
+                key={x.id || i}
+                onClick={() => setAVer(x)}
+                style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}
+              >
+                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{x.name || 'Exercício'}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {x.phase && (
+                    <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
+                  )}
+                  {x.duration && (
+                    <span style={{ display: 'inline-block', fontSize: 11, color: T.mutedDim, background: T.surfaceRaise, padding: '3px 9px', borderRadius: 12 }}>{x.duration} min</span>
+                  )}
+                </div>
+                {x.description && (
+                  <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{x.description}</p>
+                )}
+                <DiagramThumb diagram={x.diagram} />
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+
+function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino }) {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
@@ -22203,8 +22312,18 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo }) {
           <span style={{
             width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42,
-          }}>🧠</span>
+          }}><span style={{ filter: 'grayscale(1)' }}>🧠</span></span>
           <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Ideia de Jogo</span>
+        </button>
+        <button onClick={onOpenTreino} style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+          background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
+        }}>
+          <span style={{
+            width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42,
+          }}>🏃</span>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Treino</span>
         </button>
       </div>
     </div>
