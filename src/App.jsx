@@ -22291,26 +22291,17 @@ function PlayerTreinoView({ code, teamId, onBack }) {
    quando o ícone principal, por si só, não deixaria isso óbvio, como
    um cérebro). `tonsDeCinza` tira a cor ao ícone principal (usado no
    cérebro, para não ficar rosa). */
-function TemaCirculo({ icon, badge, label, onClick, tonsDeCinza }) {
+function TemaCirculo({ Icon, label, onClick }) {
   return (
     <button onClick={onClick} style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
       background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
     }}>
-      <span style={{ position: 'relative', width: 104, height: 104 }}>
-        <span style={{
-          width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42,
-        }}>
-          <span style={tonsDeCinza ? { filter: 'grayscale(1)' } : undefined}>{icon}</span>
-        </span>
-        {badge && (
-          <span style={{
-            position: 'absolute', bottom: -2, right: -2, width: 34, height: 34, borderRadius: '50%',
-            background: T.bg, border: `2px solid ${T.surface}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17,
-          }}>{badge}</span>
-        )}
+      <span style={{
+        width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Icon size={38} color={T.gold} strokeWidth={1.6} />
       </span>
       <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>{label}</span>
     </button>
@@ -22337,8 +22328,8 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino }) {
           parecia perdido no meio do ecrã em vez de arrumado numa
           grelha com espaço para crescer). */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 28, maxWidth: 760 }}>
-        <TemaCirculo icon="🧠" badge="⚽" label="Ideia de Jogo" onClick={onOpenIdeiaJogo} tonsDeCinza />
-        <TemaCirculo icon="🏃" badge="⚽" label="Treino" onClick={onOpenTreino} />
+        <TemaCirculo Icon={Lightbulb} label="Ideia de Jogo" onClick={onOpenIdeiaJogo} />
+        <TemaCirculo Icon={CalendarDays} label="Treino" onClick={onOpenTreino} />
       </div>
     </div>
   );
