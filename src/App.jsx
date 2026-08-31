@@ -22178,7 +22178,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
    questionários, não conteúdo para consultar). */
 function PlayerPortalHome({ onBack, onOpenIdeiaJogo }) {
   return (
-    <div style={{ maxWidth: 460, margin: '0 auto', padding: '28px 18px 60px' }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
         display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
         borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
@@ -22187,20 +22187,24 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo }) {
       </button>
 
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Portal do Atleta</div>
-      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 22 }}>Conteúdos que a equipa técnica partilha contigo.</div>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 28 }}>Conteúdos que a equipa técnica partilha contigo.</div>
 
       {/* UM CÍRCULO GRANDE POR TEMA — mais Vídeos e Composição Corporal
-          entram aqui ao lado, à medida que forem sendo construídos. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 18 }}>
+          entram aqui ao lado, à medida que forem sendo construídos. A
+          página usa agora a largura toda do ecrã (antes ficava presa a
+          uma coluna estreita, sempre centrada, por isso um único tema
+          parecia perdido no meio do ecrã em vez de arrumado numa
+          grelha com espaço para crescer). */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 28, maxWidth: 760 }}>
         <button onClick={onOpenIdeiaJogo} style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
           background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
         }}>
           <span style={{
-            width: 92, height: 92, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38,
+            width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42,
           }}>🧠</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Ideia de Jogo</span>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Ideia de Jogo</span>
         </button>
       </div>
     </div>
