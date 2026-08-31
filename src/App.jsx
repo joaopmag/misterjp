@@ -22285,6 +22285,38 @@ function PlayerTreinoView({ code, teamId, onBack }) {
 }
 
 
+/* UM TEMA DO PORTAL — o círculo grande com o ícone, mais uma bolinha de
+   futebol sobreposta a marcar de que jogo se trata (todos os temas
+   aqui são sobre futebol — a bola amarra isso visualmente, mesmo
+   quando o ícone principal, por si só, não deixaria isso óbvio, como
+   um cérebro). `tonsDeCinza` tira a cor ao ícone principal (usado no
+   cérebro, para não ficar rosa). */
+function TemaCirculo({ icon, badge, label, onClick, tonsDeCinza }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+      background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
+    }}>
+      <span style={{ position: 'relative', width: 104, height: 104 }}>
+        <span style={{
+          width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42,
+        }}>
+          <span style={tonsDeCinza ? { filter: 'grayscale(1)' } : undefined}>{icon}</span>
+        </span>
+        {badge && (
+          <span style={{
+            position: 'absolute', bottom: -2, right: -2, width: 34, height: 34, borderRadius: '50%',
+            background: T.bg, border: `2px solid ${T.surface}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17,
+          }}>{badge}</span>
+        )}
+      </span>
+      <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>{label}</span>
+    </button>
+  );
+}
+
 function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino }) {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
@@ -22305,26 +22337,8 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino }) {
           parecia perdido no meio do ecrã em vez de arrumado numa
           grelha com espaço para crescer). */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 28, maxWidth: 760 }}>
-        <button onClick={onOpenIdeiaJogo} style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-          background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
-        }}>
-          <span style={{
-            width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42,
-          }}><span style={{ filter: 'grayscale(1)' }}>🧠</span></span>
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Ideia de Jogo</span>
-        </button>
-        <button onClick={onOpenTreino} style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-          background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
-        }}>
-          <span style={{
-            width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 42,
-          }}>🏃</span>
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Treino</span>
-        </button>
+        <TemaCirculo icon="🧠" badge="⚽" label="Ideia de Jogo" onClick={onOpenIdeiaJogo} tonsDeCinza />
+        <TemaCirculo icon="🏃" badge="⚽" label="Treino" onClick={onOpenTreino} />
       </div>
     </div>
   );
