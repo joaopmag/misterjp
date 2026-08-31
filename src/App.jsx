@@ -22254,7 +22254,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
   }
 
   return (
-    <div style={{ maxWidth: 460, margin: '0 auto', padding: '28px 18px 60px' }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
         display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
         borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
@@ -22275,7 +22275,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
       {estado === 'pronto' && (
         <>
           {dados.proximoJogo && (
-            <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '16px 16px', marginBottom: 18 }}>
+            <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '16px 16px', marginBottom: 18, maxWidth: 560 }}>
               <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
                 Próximo jogo{dados.proximoJogo.opponent ? ` · vs ${dados.proximoJogo.opponent}` : ''}
               </div>
