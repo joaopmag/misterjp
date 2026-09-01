@@ -10966,12 +10966,16 @@ function AnimOverlay({ items, iconScale = 1 }) {
   );
 }
 
-function DiagramThumb({ diagram, space, phase, height = 95 }) {
+function DiagramThumb({ diagram, space, phase, height = 95, fill = false }) {
   const zones = getSpaceZones(diagram, space);
   const hasDiagram = diagram && (diagram.elements?.length || diagram.arrows?.length);
   if (!hasDiagram && !zones.length) return null;
   return (
-    <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', height, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
+    <svg
+      viewBox={PITCH_VIEWBOX}
+      preserveAspectRatio={fill ? 'xMidYMid slice' : 'xMidYMid meet'}
+      style={{ width: '100%', height, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}
+    >
       <PitchMarkings />
       {zones.map(z => (
         <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
@@ -22499,8 +22503,8 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
 // padding) — usada para a lista mostrar exatamente 3 cartões de cada
 // vez. Reduzida mais uma vez: a coluna inteira (cabeçalho + setas + 3
 // cartões) tem de caber na página sem ela própria precisar de scroll.
-const ALTURA_CARTAO_IDEIA = 165;
-const ALTURA_MINIATURA = 82;
+const ALTURA_CARTAO_IDEIA = 178;
+const ALTURA_MINIATURA = 92;
 const GAP_CARTOES = 10;
 
 function ColunaIdeias({ titulo, itens, onAbrir }) {
@@ -22562,7 +22566,7 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{x.name || 'Ideia de jogo'}</div>
             {temDiagrama ? (
-              <DiagramThumb diagram={x.diagram} height={ALTURA_MINIATURA} />
+              <DiagramThumb diagram={x.diagram} height={ALTURA_MINIATURA} fill />
             ) : (
               <div style={{
                 width: '100%', height: ALTURA_MINIATURA, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
