@@ -22344,10 +22344,16 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino }) {
    partilhado) e as ideias de jogo (esquemas) marcadas como tal. Sem
    nada partilhado, o ecrã diz isso mesmo, em vez de aparecer vazio sem
    explicação. */
+// As colunas do quadro tático, do lado do atleta — os mesmos cinco
+// momentos de jogo que a app já usa (`PHASES`), pela mesma ordem.
+const MOMENTOS_JOGO = ['Organização Defensiva', 'Transição Ofensiva', 'Organização Ofensiva', 'Transição Defensiva', 'Bola Parada'];
+
 function PlayerIdeiaJogoView({ code, teamId, onBack }) {
   const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
   const [dados, setDados] = useState(null); // { proximoJogo, ideias }
   const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
+  const colunasRef = useRef(null);
+  const deslizar = (dx) => { if (colunasRef.current) colunasRef.current.scrollBy({ left: dx, behavior: 'smooth' }); };
 
   useEffect(() => {
     let cancelado = false;
@@ -22411,23 +22417,77 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
           )}
 
           {dados.ideias && dados.ideias.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
-              {dados.ideias.map(x => (
-                <div
-                  key={x.id}
-                  onClick={() => setAVer(x)}
-                  style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}
-                >
-                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{x.name || x.phase || 'Ideia de jogo'}</div>
-                  {x.phase && (
-                    <div style={{ marginBottom: 8 }}>
-                      <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
+            <>
+            <div ref={colunasRef} style={{ display: 'flex', gap: 20, overflowX: 'auto', paddingBottom: 8, scrollBehavior: 'smooth' }}>
+              {MOMENTOS_JOGO.map(momento => {
+                const doMomento = dados.ideias.filter(x => x.phase === momento);
+                if (!doMomento.length) return null;
+                return (
+                  <div key={momento} style={{ flex: '0 0 260px', minWidth: 260 }}>
+                    <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{momento}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {doMomento.map(x => (
+                        <div
+                          key={x.id}
+                          onClick={() => setAVer(x)}
+                          style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}
+                        >
+                          <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{x.name || 'Ideia de jogo'}</div>
+                          <DiagramThumb diagram={x.diagram} />
+                        </div>
+                      ))}
                     </div>
-                  )}
-                  <DiagramThumb diagram={x.diagram} />
-                </div>
-              ))}
+                  </div>
+                );
+              })}
+              {/* Ideias com uma fase fora das cinco categorias (Preparação
+                  Física, Ativação, etc.) continuam a aparecer — só não têm
+                  uma coluna própria, ficam numa "Outras". */}
+              {(() => {
+                const restantes = dados.ideias.filter(x => !MOMENTOS_JOGO.includes(x.phase));
+                if (!restantes.length) return null;
+                return (
+                  <div style={{ flex: '0 0 260px', minWidth: 260 }}>
+                    <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>Outras</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {restantes.map(x => (
+                        <div
+                          key={x.id}
+                          onClick={() => setAVer(x)}
+                          style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}
+                        >
+                          <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{x.name || x.phase || 'Ideia de jogo'}</div>
+                          <DiagramThumb diagram={x.diagram} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
+            {/* SETAS PARA DESLIZAR — no quiosque, arrastar com o dedo para
+                fazer scroll horizontal nem sempre é óbvio. Duas setas por
+                baixo resolvem isso: avançam uma "página" de cada vez, sem
+                precisar de arrastar nada. */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginTop: 18 }}>
+              <button
+                onClick={() => deslizar(-300)}
+                title="Deslizar para trás"
+                style={{
+                  width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
+                }}
+              ><ChevronLeft size={20} /></button>
+              <button
+                onClick={() => deslizar(300)}
+                title="Deslizar para a frente"
+                style={{
+                  width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
+                }}
+              ><ChevronRight size={20} /></button>
+            </div>
+            </>
           ) : (
             !dados.proximoJogo && (
               <div style={{ fontSize: 13, color: T.mutedDim }}>
