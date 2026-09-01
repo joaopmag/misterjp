@@ -22452,7 +22452,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
           )}
 
           {dados.ideias && dados.ideias.length > 0 ? (
-            <div style={{ display: 'flex', gap: 20, overflowX: 'auto', paddingBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 16 }}>
               {MOMENTOS_JOGO.map(momento => {
                 const doMomento = dados.ideias.filter(x => x.phase === momento);
                 if (!doMomento.length) return null;
@@ -22499,7 +22499,7 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
     background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer', margin: '0 auto', flexShrink: 0,
   };
   return (
-    <div style={{ flex: '0 0 260px', minWidth: 260, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{titulo}</div>
       {/* As setas aparecem SEMPRE, mesmo com uma única ideia — só ficam
           desativadas (mais apagadas, sem clique) nesse caso. Antes
