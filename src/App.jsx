@@ -1385,6 +1385,7 @@ const TextArea = React.forwardRef(function TextArea(props, ref) {
    limite passa a ser a largura da janela. */
 function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage }) {
   const estreito = useIsMobile(620);
+  const scrollRef = useRef(null);
   useModalHistory(onClose);
   // IMPORTANTE: o clique no fundo escuro NÃO fecha a janela. Estas janelas
   // são quase todas de edição (exercício, sessão, jogo, jogador...) e um
@@ -1404,8 +1405,14 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage }) {
      caixa nem fundo escurecido — só o cabeçalho com o título e o X a
      fechar, tal como qualquer outra janela. */
   if (fullPage) {
+    // Referência ao próprio contentor que rola aqui dentro — é ele que
+    // tem overflowY:auto, ao contrário da janela normal que fica presa
+    // ao scroll do <main>. Sem isto o botão de "voltar ao topo" nunca
+    // saberia até onde se desceu no editor de exercício/ideia de jogo,
+    // que são justamente os formulários mais compridos da app (ver
+    // comentário acima).
     return (
-      <div style={{
+      <div ref={scrollRef} style={{
         position: 'fixed', inset: 0, background: T.bg, zIndex: 50,
         overflowY: 'auto', overflowX: 'hidden',
       }}>
@@ -1424,6 +1431,7 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage }) {
           </div>
           {children}
         </div>
+        <BotaoTopo alvoRef={scrollRef} isMobile={estreito} />
       </div>
     );
   }
