@@ -2317,6 +2317,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              continuam a funcionar, porque o corte é só ao nível da
              página. */
           html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; }
+          /* Reserva sempre o espaço da barra de scroll vertical — ver o
+             mesmo comentário em CheckinApp/moldura. Sem isto, trocar de
+             ecrã aqui na pré-visualização (Pré-visualizar, no separador
+             Monitorização) também fazia o conteúdo saltar de lado. */
+          html { scrollbar-gutter: stable; }
           ::selection { background: ${T.gold}55; }
           input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -22425,10 +22430,10 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
   const abrirNoVisualizador = (item) => { if (item.kind) setAVer(item); };
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '18px 24px 60px' }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
         display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 14,
+        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
       }}>
         <ChevronLeft size={15} /> Voltar
       </button>
@@ -22608,10 +22613,10 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '18px 24px 30px' }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
         display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 14,
+        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
       }}>
         <ChevronLeft size={15} /> Voltar
       </button>
@@ -28212,6 +28217,14 @@ function CheckinApp() {
         ::selection { background: ${T.gold}55; }
         input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+        /* Reserva sempre o espaço da barra de scroll vertical, mesmo
+           quando o conteúdo é curto e não precisa dela. Sem isto, uma
+           página curta (Portal do Atleta) fica sem barra e uma mais
+           comprida (Treino) ganha uma — o conteúdo salta uns pixéis
+           para o lado ao trocar de página, porque a largura disponível
+           muda. Só afeta desktop (a maioria dos browsers de telemóvel
+           já usa uma barra sobreposta, que não ocupa espaço nenhum). */
+        html { scrollbar-gutter: stable; }
       `}</style>
       {erro && (
         <div style={{
