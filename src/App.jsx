@@ -24990,7 +24990,9 @@ const TIKTOK_PLAYER_PARAMS = 'rel=0&loop=1&description=0&music_info=0&controls=1
 function MediaFeedItem({ item, onOpen }) {
   const fonte = item.youtubeId
     ? `https://www.youtube.com/embed/${item.youtubeId}?rel=0&playsinline=1`
-    : (item.social ? socialEmbedSrc(item.social) : null);
+    : item.social
+      ? socialEmbedSrc(item.social)
+      : (item.kind === 'drive' && item.drive) ? driveEmbedSrc(item.drive) : null;
   const externo = item.youtubeId
     ? `https://www.youtube.com/watch?v=${item.youtubeId}`
     : (item.social ? socialExternalUrl(item.social) : (item.kind === 'drive' ? driveOpenSrc(item.drive) : null));
