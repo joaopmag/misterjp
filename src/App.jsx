@@ -22501,9 +22501,19 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
   return (
     <div style={{ flex: '0 0 260px', minWidth: 260, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{titulo}</div>
-      {itens.length > 1 && (
-        <button onClick={() => deslizar(-(ALTURA_CARTAO_IDEIA + GAP_CARTOES))} title="Subir" style={{ ...setaEstilo, marginBottom: 8 }}><ChevronUp size={14} /></button>
-      )}
+      {/* As setas aparecem SEMPRE, mesmo com uma única ideia — só ficam
+          desativadas (mais apagadas, sem clique) nesse caso. Antes
+          desapareciam por completo quando não fazia falta deslizar, e
+          isso fazia cada coluna parecer estruturada de forma diferente
+          (uma com setas, outra sem). Mostrar sempre a mesma forma,
+          ativa ou não, é o que dá o "mesmo comportamento" a todos os
+          momentos. */}
+      <button
+        onClick={() => itens.length > 1 && deslizar(-(ALTURA_CARTAO_IDEIA + GAP_CARTOES))}
+        title="Subir"
+        disabled={itens.length <= 1}
+        style={{ ...setaEstilo, marginBottom: 8, opacity: itens.length > 1 ? 1 : 0.35, cursor: itens.length > 1 ? 'pointer' : 'default' }}
+      ><ChevronUp size={14} /></button>
       {/* MOSTRA SEMPRE 3 CARTÕES — nem a quantidade de ideias, nem a
           altura do ecrã, decidem isto; é uma conta fixa (3 cartões + 2
           espaços entre eles). O resto esconde-se por dentro, sem
@@ -22518,32 +22528,45 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
         }}
       >
         <style>{'.sem-scrollbar-mjp{scrollbar-width:none;-ms-overflow-style:none;}.sem-scrollbar-mjp::-webkit-scrollbar{display:none;}'}</style>
-        {itens.map(x => (
+        {itens.map(x => {
+          const temDiagrama = x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length);
+          return (
           <div
             key={x.id}
             onClick={() => onAbrir(x)}
             style={{
               background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
-              flexShrink: 0,
+              flexShrink: 0, height: ALTURA_CARTAO_IDEIA, overflow: 'hidden', boxSizing: 'border-box',
             }}
           >
             {/* Título com altura fixa (2 linhas, sempre) — é a única parte
                 de tamanho variável entre cartões; a miniatura do campo já
-                tem altura fixa (ver DiagramThumb). Fixar isto é o que
-                deixa todos os cartões da mesma altura. */}
+                tem altura fixa (ver DiagramThumb). Fixar a ALTURA DO
+                CARTÃO INTEIRO (não só um mínimo) é o que garante que
+                todos ficam mesmo iguais — uma ideia sem esquema nenhum
+                (ainda por desenhar) não pode esticar a caixa. */}
             <div style={{
-              color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8, minHeight: 40,
+              color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8, height: 40,
               display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
             }}>{x.name || 'Ideia de jogo'}</div>
-            <div style={{ minHeight: 103 }}>
+            {temDiagrama ? (
               <DiagramThumb diagram={x.diagram} />
-            </div>
+            ) : (
+              <div style={{
+                width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
+              }}>Sem esquema</div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
-      {itens.length > 1 && (
-        <button onClick={() => deslizar(ALTURA_CARTAO_IDEIA + GAP_CARTOES)} title="Descer" style={{ ...setaEstilo, marginTop: 8 }}><ChevronDown size={14} /></button>
-      )}
+      <button
+        onClick={() => itens.length > 1 && deslizar(ALTURA_CARTAO_IDEIA + GAP_CARTOES)}
+        title="Descer"
+        disabled={itens.length <= 1}
+        style={{ ...setaEstilo, marginTop: 8, opacity: itens.length > 1 ? 1 : 0.35, cursor: itens.length > 1 ? 'pointer' : 'default' }}
+      ><ChevronDown size={14} /></button>
     </div>
   );
 }
