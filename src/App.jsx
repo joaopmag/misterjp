@@ -25009,7 +25009,15 @@ function MediaFeedItem({ item, onOpen }) {
       </div>
 
       {fonte ? (
-        <div style={{ position: 'relative', width: '100%', paddingTop: item.social ? '125%' : '56.25%', background: '#000' }}>
+        <div style={{
+          position: 'relative', width: '100%', background: '#000',
+          // O Drive reserva a sua própria barra de controlos (play/pause,
+          // volume, legendas) por baixo do vídeo — dentro de uma caixa
+          // apertada a 16:9 essa barra ficava cortada no fundo. Dá-se-lhe
+          // mais altura (75% em vez de 56.25%) só a ele; YouTube e as
+          // redes sociais continuam com o rácio que já tinham.
+          paddingTop: item.social ? '125%' : (item.kind === 'drive' ? '75%' : '56.25%'),
+        }}>
           <iframe
             src={fonte}
             title={item.title || 'media'}
