@@ -7314,7 +7314,10 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
             const m = meta && meta[x.id];
             return (
               <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6 }}>{labelOf(x)}</div>
+                <div style={{
+                  color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6, height: 40,
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}>{labelOf(x)}</div>
                 <div style={{ marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
                   {x.visivelAtletas && (
@@ -7323,7 +7326,14 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                     </span>
                   )}
                 </div>
-                <DiagramThumb diagram={x.diagram} />
+                {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
+                  <DiagramThumb diagram={x.diagram} height={80} />
+                ) : (
+                  <div style={{
+                    width: '100%', height: 80, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
+                  }}>Sem esquema</div>
+                )}
                 {/* Ícones por baixo da imagem, encostados à margem direita
                     do cartão. */}
                 <div style={{ display: 'flex', gap: 16, marginTop: 8, justifyContent: 'flex-end' }}>
@@ -22489,8 +22499,8 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
 // padding) — usada para a lista mostrar exatamente 3 cartões de cada
 // vez. Reduzida mais uma vez: a coluna inteira (cabeçalho + setas + 3
 // cartões) tem de caber na página sem ela própria precisar de scroll.
-const ALTURA_CARTAO_IDEIA = 140;
-const ALTURA_MINIATURA = 68;
+const ALTURA_CARTAO_IDEIA = 165;
+const ALTURA_MINIATURA = 82;
 const GAP_CARTOES = 10;
 
 function ColunaIdeias({ titulo, itens, onAbrir }) {
@@ -22548,7 +22558,7 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
                 todos ficam mesmo iguais — uma ideia sem esquema nenhum
                 (ainda por desenhar) não pode esticar a caixa. */}
             <div style={{
-              color: T.cream, fontWeight: 500, fontSize: 13.5, marginBottom: 6, height: 18,
+              color: T.cream, fontWeight: 500, fontSize: 14, marginBottom: 7, height: 19,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{x.name || 'Ideia de jogo'}</div>
             {temDiagrama ? (
