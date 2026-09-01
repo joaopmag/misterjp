@@ -22489,16 +22489,28 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
   const listaRef = useRef(null);
   const deslizar = (dy) => { if (listaRef.current) listaRef.current.scrollBy({ top: dy, behavior: 'smooth' }); };
   const setaEstilo = {
-    width: 36, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer', margin: '0 auto',
+    width: 48, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer', margin: '0 auto', flexShrink: 0,
   };
   return (
-    <div style={{ flex: '0 0 260px', minWidth: 260 }}>
+    <div style={{ flex: '0 0 260px', minWidth: 260, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{titulo}</div>
       {itens.length > 1 && (
-        <button onClick={() => deslizar(-240)} title="Subir" style={{ ...setaEstilo, marginBottom: 8 }}><ChevronUp size={16} /></button>
+        <button onClick={() => deslizar(-260)} title="Subir" style={{ ...setaEstilo, marginBottom: 10 }}><ChevronUp size={20} /></button>
       )}
-      <div ref={listaRef} style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 560, overflowY: 'auto', scrollBehavior: 'smooth' }}>
+      {/* ALTURA PRESA AO ECRÃ (nunca à quantidade de ideias) — é o que
+          garante que quem cresce é esta lista sozinha, por dentro, e
+          nunca a página toda. Sem isto, uma fase com muitas ideias
+          empurrava a página inteira para baixo, e as setas deixavam de
+          fazer sentido (a de descer saía do ecrã antes de se chegar
+          lá). */}
+      <div
+        ref={listaRef}
+        style={{
+          display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', scrollBehavior: 'smooth',
+          height: 'min(58vh, 560px)',
+        }}
+      >
         {itens.map(x => (
           <div
             key={x.id}
@@ -22523,7 +22535,7 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
         ))}
       </div>
       {itens.length > 1 && (
-        <button onClick={() => deslizar(240)} title="Descer" style={{ ...setaEstilo, marginTop: 8 }}><ChevronDown size={16} /></button>
+        <button onClick={() => deslizar(260)} title="Descer" style={{ ...setaEstilo, marginTop: 10 }}><ChevronDown size={20} /></button>
       )}
     </div>
   );
