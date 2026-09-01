@@ -8,7 +8,7 @@ import ReactDOMServer from 'react-dom/server';
 import JSZip from 'jszip';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
-  Pencil, ChevronLeft, ChevronRight, Check, Loader2, Clock,
+  Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
   Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
@@ -22352,8 +22352,6 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
   const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
   const [dados, setDados] = useState(null); // { proximoJogo, ideias }
   const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
-  const colunasRef = useRef(null);
-  const deslizar = (dx) => { if (colunasRef.current) colunasRef.current.scrollBy({ left: dx, behavior: 'smooth' }); };
 
   useEffect(() => {
     let cancelado = false;
@@ -22417,28 +22415,11 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
           )}
 
           {dados.ideias && dados.ideias.length > 0 ? (
-            <>
-            <div ref={colunasRef} style={{ display: 'flex', gap: 20, overflowX: 'auto', paddingBottom: 8, scrollBehavior: 'smooth' }}>
+            <div style={{ display: 'flex', gap: 20, overflowX: 'auto', paddingBottom: 8 }}>
               {MOMENTOS_JOGO.map(momento => {
                 const doMomento = dados.ideias.filter(x => x.phase === momento);
                 if (!doMomento.length) return null;
-                return (
-                  <div key={momento} style={{ flex: '0 0 260px', minWidth: 260 }}>
-                    <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{momento}</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {doMomento.map(x => (
-                        <div
-                          key={x.id}
-                          onClick={() => setAVer(x)}
-                          style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}
-                        >
-                          <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{x.name || 'Ideia de jogo'}</div>
-                          <DiagramThumb diagram={x.diagram} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
+                return <ColunaIdeias key={momento} titulo={momento} itens={doMomento} onAbrir={setAVer} />;
               })}
               {/* Ideias com uma fase fora das cinco categorias (Preparação
                   Física, Ativação, etc.) continuam a aparecer — só não têm
@@ -22446,48 +22427,9 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
               {(() => {
                 const restantes = dados.ideias.filter(x => !MOMENTOS_JOGO.includes(x.phase));
                 if (!restantes.length) return null;
-                return (
-                  <div style={{ flex: '0 0 260px', minWidth: 260 }}>
-                    <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>Outras</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {restantes.map(x => (
-                        <div
-                          key={x.id}
-                          onClick={() => setAVer(x)}
-                          style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}
-                        >
-                          <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{x.name || x.phase || 'Ideia de jogo'}</div>
-                          <DiagramThumb diagram={x.diagram} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
+                return <ColunaIdeias titulo="Outras" itens={restantes} onAbrir={setAVer} />;
               })()}
             </div>
-            {/* SETAS PARA DESLIZAR — no quiosque, arrastar com o dedo para
-                fazer scroll horizontal nem sempre é óbvio. Duas setas por
-                baixo resolvem isso: avançam uma "página" de cada vez, sem
-                precisar de arrastar nada. */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginTop: 18 }}>
-              <button
-                onClick={() => deslizar(-300)}
-                title="Deslizar para trás"
-                style={{
-                  width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
-                }}
-              ><ChevronLeft size={20} /></button>
-              <button
-                onClick={() => deslizar(300)}
-                title="Deslizar para a frente"
-                style={{
-                  width: 42, height: 42, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
-                }}
-              ><ChevronRight size={20} /></button>
-            </div>
-            </>
           ) : (
             !dados.proximoJogo && (
               <div style={{ fontSize: 13, color: T.mutedDim }}>
@@ -22496,6 +22438,55 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
             )
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/* UMA COLUNA DE UM MOMENTO DE JOGO — altura fixa, com setas para cima
+   e para baixo por cima/baixo da própria coluna, não do ecrã inteiro.
+   Cada coluna pode ter muitas ideias empilhadas; sem isto, era preciso
+   arrastar o dedo dentro da coluna para as ver todas, o que no
+   quiosque é fácil de confundir com um scroll da página toda. */
+function ColunaIdeias({ titulo, itens, onAbrir }) {
+  const listaRef = useRef(null);
+  const deslizar = (dy) => { if (listaRef.current) listaRef.current.scrollBy({ top: dy, behavior: 'smooth' }); };
+  const setaEstilo = {
+    width: 36, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer', margin: '0 auto',
+  };
+  return (
+    <div style={{ flex: '0 0 260px', minWidth: 260 }}>
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{titulo}</div>
+      {itens.length > 1 && (
+        <button onClick={() => deslizar(-240)} title="Subir" style={{ ...setaEstilo, marginBottom: 8 }}><ChevronUp size={16} /></button>
+      )}
+      <div ref={listaRef} style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 560, overflowY: 'auto', scrollBehavior: 'smooth' }}>
+        {itens.map(x => (
+          <div
+            key={x.id}
+            onClick={() => onAbrir(x)}
+            style={{
+              background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {/* Título com altura fixa (2 linhas, sempre) — é a única parte
+                de tamanho variável entre cartões; a miniatura do campo já
+                tem altura fixa (ver DiagramThumb). Fixar isto é o que
+                deixa todos os cartões da mesma altura. */}
+            <div style={{
+              color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8, minHeight: 40,
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}>{x.name || 'Ideia de jogo'}</div>
+            <div style={{ minHeight: 103 }}>
+              <DiagramThumb diagram={x.diagram} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {itens.length > 1 && (
+        <button onClick={() => deslizar(240)} title="Descer" style={{ ...setaEstilo, marginTop: 8 }}><ChevronDown size={16} /></button>
       )}
     </div>
   );
