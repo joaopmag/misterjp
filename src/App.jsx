@@ -22290,7 +22290,12 @@ function PlayerTreinoView({ code, teamId, onBack }) {
     let cancelado = false;
     (async () => {
       try {
-        const { data, error } = await supabase.rpc('checkin_plano_dia', { p_code: code, p_team: teamId });
+        /* O "hoje" tem de ser o do TELEMÓVEL do atleta, não o do
+           servidor — sem `p_date`, a função calculava a data sozinha
+           (provavelmente com `current_date`, em UTC), e à noite em
+           Portugal (adiantada em relação a UTC) ainda mostrava o
+           treino de ontem depois da meia-noite local. */
+        const { data, error } = await supabase.rpc('checkin_plano_dia', { p_code: code, p_team: teamId, p_date: todayStr() });
         if (cancelado) return;
         if (error) throw error;
         let d = data;
