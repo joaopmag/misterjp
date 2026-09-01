@@ -7327,10 +7327,10 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                   )}
                 </div>
                 {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
-                  <DiagramThumb diagram={x.diagram} height={80} />
+                  <DiagramThumb diagram={x.diagram} height={130} />
                 ) : (
                   <div style={{
-                    width: '100%', height: 80, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
+                    width: '100%', height: 130, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
                   }}>Sem esquema</div>
                 )}
