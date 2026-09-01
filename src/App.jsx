@@ -1742,9 +1742,12 @@ function useArrastarParaTrocar(aoTrocar, limiar = 6) {
 /* UMA "FATIA" DE UMA COLEÇÃO MAIOR, QUE ESCREVE DE VOLTA SEM PERDER O
    RESTO.
 
-   Usado para os vídeos de um adversário (Scouting) e para o Canal geral
-   (Biblioteca) — os dois são o MESMO `videos`, só filtrados por
-   critérios diferentes (`pertence`). Sem isto, um componente genérico
+   Usado para os vídeos de um adversário (Scouting), de um jogador
+   observado (Scouting) e para o Canal geral (Biblioteca) — os três são
+   o MESMO `videos`, só filtrados por critérios diferentes (`pertence`).
+   O Canal geral exclui tanto `adversarioId` como `scoutId`: vídeos de
+   scouting (adversário ou jogador) são coisa à parte, não aparecem lá.
+   Sem isto, um componente genérico
    como o `MediaLibrary` — que só conhece a fatia que lhe é dada, nunca
    a coleção toda — apagaria sem querer tudo o que tivesse ficado de
    fora do filtro sempre que escrevesse (criar, editar, apagar um
@@ -2077,7 +2080,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [documentos, setDocumentos, documentosReady] = useCollectionSync('documentos', notifyEdit, teamId);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
   // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
-  const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId);
+  const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId);
   // Referências para o botão partilhado da Biblioteca (na mesma linha dos
   // separadores) conseguir abrir "adicionar" em quem estiver visível, sem
   // duplicar o botão dentro de cada sub-aba.
@@ -22220,12 +22223,17 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return <PlayerTreinoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
   }
 
+  if (activeType === 'biblioteca') {
+    return <PlayerBibliotecaView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+  }
+
   if (activeType === 'portal') {
     return (
       <PlayerPortalHome
         onBack={() => setActiveType(null)}
         onOpenIdeiaJogo={() => setActiveType('ideiaJogo')}
         onOpenTreino={() => setActiveType('treino')}
+        onOpenBiblioteca={() => setActiveType('biblioteca')}
       />
     );
   }
@@ -22356,6 +22364,144 @@ function PlayerTreinoView({ code, teamId, onBack }) {
 }
 
 
+/* BIBLIOTECA, DO LADO DO ATLETA — o Canal geral (Biblioteca > Canal) tal
+   como o staff o organiza, só consulta. Mostra SEMPRE tudo o que está no
+   Canal (ao contrário da Ideia de Jogo, não há marcação vídeo a vídeo) —
+   os vídeos de Scouting (adversário ou jogador observado) nunca aparecem
+   aqui, porque nunca fizeram parte do Canal geral (ver `checkin_biblioteca`
+   e o filtro de `videosGerais` em App: `!v.adversarioId && !v.scoutId`).
+
+   Segue o MESMO modelo de organização do Canal: separadores de pasta em
+   cima ("Tudo", cada pasta, "Sem pasta"), e o conteúdo da pasta escolhida
+   abre por baixo — mas sem nada de editar, mover ou apagar, que aqui não
+   faz sentido nenhum. */
+function PlayerBibliotecaView({ code, teamId, onBack }) {
+  const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
+  const [videos, setVideosState] = useState([]);
+  const [folderFilter, setFolderFilter] = useState(null); // null = Tudo
+  const [aVer, setAVer] = useState(null); // item aberto em ecrã inteiro
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('checkin_biblioteca', { p_code: code, p_team: teamId });
+        if (cancelado) return;
+        if (error) throw error;
+        let d = data;
+        if (Array.isArray(d)) d = d[0];
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
+        setVideosState((d && d.videos) || []);
+        setEstado('pronto');
+      } catch (e) {
+        if (!cancelado) setEstado('erro');
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [code, teamId]);
+
+  const folders = Array.from(new Set(videos.map(v => cleanFolder(v.pasta)).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, 'pt'));
+  const countIn = (name) => (name === NO_FOLDER
+    ? videos.filter(v => !cleanFolder(v.pasta)).length
+    : videos.filter(v => cleanFolder(v.pasta) === name).length);
+  const visiveis = folderFilter === null
+    ? videos
+    : (folderFilter === NO_FOLDER
+      ? videos.filter(v => !cleanFolder(v.pasta))
+      : videos.filter(v => cleanFolder(v.pasta) === folderFilter));
+
+  // Só ficheiros locais (vídeo/pdf/pptx) e do Drive precisam do
+  // visualizador em ecrã inteiro — YouTube, Instagram/TikTok e imagens já
+  // tocam diretamente dentro do cartão (ver MediaFeedItem).
+  const abrirNoVisualizador = (item) => { if (item.kind) setAVer(item); };
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '18px 24px 60px' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 14,
+      }}>
+        <ChevronLeft size={15} /> Voltar
+      </button>
+
+      <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Biblioteca</div>
+
+      {estado === 'a-carregar' && (
+        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+      )}
+
+      {estado === 'erro' && (
+        <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>
+      )}
+
+      {estado === 'pronto' && (
+        videos.length === 0 ? (
+          <div style={{ fontSize: 13, color: T.mutedDim }}>
+            Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver.
+          </div>
+        ) : (
+          <>
+            {(folders.length > 0 || countIn(NO_FOLDER) > 0) && (
+              <div style={{
+                display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18,
+              }}>
+                <button onClick={() => setFolderFilter(null)} style={{
+                  padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                  flexShrink: 0, whiteSpace: 'nowrap',
+                  background: folderFilter === null ? '#B5393F' : 'transparent',
+                  color: folderFilter === null ? TEXT_ON_ACCENT : T.muted,
+                  border: `1px solid ${folderFilter === null ? '#B5393F' : T.line}`,
+                }}>Tudo ({videos.length})</button>
+                {folders.map(name => {
+                  const on = folderFilter === name;
+                  return (
+                    <button key={name} onClick={() => setFolderFilter(on ? null : name)} style={{
+                      padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                      flexShrink: 0, whiteSpace: 'nowrap',
+                      background: on ? '#B5393F' : 'transparent',
+                      color: on ? TEXT_ON_ACCENT : T.muted,
+                      border: `1px solid ${on ? '#B5393F' : T.line}`,
+                    }}>{name} ({countIn(name)})</button>
+                  );
+                })}
+                {countIn(NO_FOLDER) > 0 && folders.length > 0 && (
+                  <button onClick={() => setFolderFilter(folderFilter === NO_FOLDER ? null : NO_FOLDER)} style={{
+                    padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                    flexShrink: 0, whiteSpace: 'nowrap',
+                    background: folderFilter === NO_FOLDER ? '#B5393F' : 'transparent',
+                    color: folderFilter === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
+                    border: `1px solid ${folderFilter === NO_FOLDER ? '#B5393F' : T.line}`,
+                  }}>Sem pasta ({countIn(NO_FOLDER)})</button>
+                )}
+              </div>
+            )}
+
+            {/* O CONTEÚDO DA PASTA ESCOLHIDA ABRE AQUI POR BAIXO — mesma
+                largura de leitura do modo "feed" do Canal (560px): um
+                vídeo de cada vez, legível sem ter de mover a cabeça. */}
+            {visiveis.length === 0 ? (
+              <div style={{ fontSize: 13, color: T.mutedDim }}>Esta pasta está vazia.</div>
+            ) : (
+              <div style={{ maxWidth: 560, margin: '0 auto' }}>
+                {visiveis.map(v => (
+                  <MediaFeedItem key={v.id} item={v} onOpen={abrirNoVisualizador} />
+                ))}
+              </div>
+            )}
+          </>
+        )
+      )}
+
+      {aVer && (
+        <Modal title={aVer.title || aVer.fileName || 'Ficheiro'} onClose={() => setAVer(null)} wide>
+          <AttachmentPreview item={aVer} tall />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 /* UM TEMA DO PORTAL — o círculo grande com o ícone, mais uma bolinha de
    futebol sobreposta a marcar de que jogo se trata (todos os temas
    aqui são sobre futebol — a bola amarra isso visualmente, mesmo
@@ -22379,7 +22525,7 @@ function TemaCirculo({ Icon, label, onClick }) {
   );
 }
 
-function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino }) {
+function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca }) {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
@@ -22401,6 +22547,7 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 28, maxWidth: 760 }}>
         <TemaCirculo Icon={Lightbulb} label="Ideia de Jogo" onClick={onOpenIdeiaJogo} />
         <TemaCirculo Icon={CalendarDays} label="Treino" onClick={onOpenTreino} />
+        <TemaCirculo Icon={Tv} label="Biblioteca" onClick={onOpenBiblioteca} />
       </div>
     </div>
   );
