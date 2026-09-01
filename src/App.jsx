@@ -7483,6 +7483,21 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
   };
   const nVisiveis = ideias.filter(x => x.visivelAtletas).length;
 
+  // Agrupadas por momento de jogo — mesma divisão do Dossier (`PHASES`,
+  // pela mesma ordem), com um balde "Sem fase" no fim para o que não
+  // encaixa em nenhuma.
+  const porFase = PHASES
+    .map(fase => ({ fase, lista: ideias.filter(i => i.phase === fase) }))
+    .filter(g => g.lista.length);
+  const semFase = ideias.filter(i => !PHASES.includes(i.phase));
+  if (semFase.length) porFase.push({ fase: 'Sem fase', lista: semFase });
+
+  const alternarFase = (lista) => {
+    const todasMarcadas = lista.every(i => i.visivelAtletas);
+    const idsDaFase = new Set(lista.map(i => i.id));
+    setIdeias(ideias.map(x => (idsDaFase.has(x.id) ? { ...x, visivelAtletas: !todasMarcadas } : x)));
+  };
+
   return (
     <div>
       <button onClick={onBack} style={{
@@ -7499,33 +7514,50 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
           : 'Nenhuma partilhada ainda.'}
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {ideias.map(x => {
-          const marcada = !!x.visivelAtletas;
-          return (
-            <button
-              key={x.id}
-              onClick={() => toggle(x.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
-                background: marcada ? `${T.good}18` : T.surface, border: `1px solid ${marcada ? T.good : T.line}`,
-                borderRadius: 10, padding: '12px 14px', cursor: 'pointer', ...body,
-              }}
-            >
-              <span style={{
-                width: 22, height: 22, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: marcada ? T.good : 'transparent', border: `1px solid ${marcada ? T.good : T.line}`,
-              }}>
-                {marcada && <Check size={14} color="#0d140e" />}
-              </span>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelOf(x)}</div>
-                {x.phase && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 1 }}>{x.phase}</div>}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {porFase.map(({ fase, lista }) => (
+        <div key={fase} style={{ marginBottom: 20 }}>
+          <button
+            type="button"
+            onClick={() => alternarFase(lista)}
+            title="Marcar ou desmarcar este momento todo"
+            style={{
+              display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', textAlign: 'left',
+              background: 'none', border: 'none', padding: 0, marginBottom: 8, cursor: 'pointer',
+            }}
+          >
+            <span style={{ ...display, fontSize: 14, fontWeight: 600, color: T.cream }}>{fase}</span>
+            <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{lista.filter(i => i.visivelAtletas).length}/{lista.length}</span>
+            <span style={{ flex: 1, height: 1, background: T.line }} />
+          </button>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {lista.map(x => {
+              const marcada = !!x.visivelAtletas;
+              return (
+                <button
+                  key={x.id}
+                  onClick={() => toggle(x.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
+                    background: marcada ? `${T.good}18` : T.surface, border: `1px solid ${marcada ? T.good : T.line}`,
+                    borderRadius: 10, padding: '12px 14px', cursor: 'pointer', ...body,
+                  }}
+                >
+                  <span style={{
+                    width: 22, height: 22, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: marcada ? T.good : 'transparent', border: `1px solid ${marcada ? T.good : T.line}`,
+                  }}>
+                    {marcada && <Check size={14} color="#0d140e" />}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {labelOf(x)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
