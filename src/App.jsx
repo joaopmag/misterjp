@@ -97,14 +97,6 @@ const PHASES = ['Organização Defensiva', 'Transição Ofensiva', 'Organizaçã
 // Fases de jogo disponíveis na edição de exercícios: "Descanso" é uma fase
 // de sessão (dia de folga), não faz sentido classificar um exercício assim.
 const EXERCISE_PHASES = PHASES.filter(p => p !== 'Descanso');
-
-// Altura mínima PARTILHADA entre os cartões de Exercícios e os de
-// Ideia de Jogo — os de Exercícios têm mais conteúdo (descrição,
-// material), por isso são eles que decidem o valor; os de Ideia
-// ficam com a mesma altura mesmo sobrando espaço, para os dois
-// ficarem sempre do mesmo tamanho, em vez de dependerem de contar
-// à mão quanto conteúdo cada um tem.
-const CARTAO_ALTURA_EXERCICIO_IDEIA = 420;
 const INTENSITIES = [
   { value: 'baixa', label: 'Baixa' },
   { value: 'media', label: 'Média' },
@@ -6908,7 +6900,7 @@ function Exercicios({ exercises, setExercises, meta }) {
           {visible.map(x => {
             const m = meta && meta[x.id];
             return (
-            <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column', minHeight: CARTAO_ALTURA_EXERCICIO_IDEIA }}>
+            <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
               {/* Nome sozinho na primeira linha; a fase e os ícones ficam
                   por baixo, para o título não ser cortado a meio. Altura
                   fixa (2 linhas) — mesmo critério já usado na Ideia de
@@ -7340,7 +7332,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
           {visible.map(x => {
             const m = meta && meta[x.id];
             return (
-              <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column', minHeight: CARTAO_ALTURA_EXERCICIO_IDEIA }}>
+              <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
                 <div style={{
                   color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6, height: 40,
                   display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
