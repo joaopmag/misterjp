@@ -6929,10 +6929,10 @@ function Exercicios({ exercises, setExercises, meta }) {
                   (descrição, material) — é o que faz os dois ficarem do
                   mesmo tamanho final. */}
               {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
-                <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={90} />
+                <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={130} />
               ) : !x.attachment && (
                 <div style={{
-                  width: '100%', height: 90, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
+                  width: '100%', height: 130, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
                 }}>Sem esquema</div>
               )}
