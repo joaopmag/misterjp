@@ -6902,8 +6902,13 @@ function Exercicios({ exercises, setExercises, meta }) {
             return (
             <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
               {/* Nome sozinho na primeira linha; a fase e os ícones ficam
-                  por baixo, para o título não ser cortado a meio. */}
-              <div style={{ color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8 }}>{x.name}</div>
+                  por baixo, para o título não ser cortado a meio. Altura
+                  fixa (2 linhas) — mesmo critério já usado na Ideia de
+                  Jogo, para os cartões ficarem todos do mesmo tamanho. */}
+              <div style={{
+                color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8, height: 40,
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              }}>{x.name}</div>
               <div style={{ marginBottom: 8 }}>
                 <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
               </div>
@@ -6916,7 +6921,19 @@ function Exercicios({ exercises, setExercises, meta }) {
                   <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                 </div>
               </div>
-              <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} />
+              {/* `fill` (em vez de encolher o desenho todo dentro da caixa,
+                  deixando faixas vazias) recorta um pouco de cima/baixo do
+                  campo para preencher a largura toda — a caixa é bem mais
+                  larga do que alta, e o campo tem outra proporção. Mesmo
+                  ajuste já feito nos cartões da Ideia de Jogo. */}
+              {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
+                <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={130} fill />
+              ) : !x.attachment && (
+                <div style={{
+                  width: '100%', height: 130, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
+                }}>Sem esquema</div>
+              )}
               {x.attachment && (
                 x.attachment.type === 'image' ? (
                   <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: 95, objectFit: 'cover', borderRadius: 6, marginBottom: 8 }} />
@@ -6927,7 +6944,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                 )
               )}
               <p style={{
-                color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px',
+                color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px', height: 56,
                 display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
               }}>{x.description}</p>
               <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: T.mutedDim, ...mono }}>
