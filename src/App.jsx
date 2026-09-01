@@ -7237,6 +7237,11 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   }, [printDossier]);
   const [filter, setFilter] = useState('Todas');
   const [portalAtleta, setPortalAtleta] = useState(false);
+  // Retroceder no browser tem de fechar o Portal do Atleta e voltar à
+  // lista de ideias — sem isto, o "voltar" saltava por cima deste
+  // ecrã e ia diretamente para o que estava aberto antes da Ideia de
+  // Jogo. Mesmo padrão já usado no resto da app (ver `useDetailBack`).
+  const fecharPortalAtleta = useDetailBack(portalAtleta, () => setPortalAtleta(false));
 
   const save = (data) => {
     const isEdicao = !!data.id;
@@ -7296,7 +7301,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
         )} />
 
       {portalAtleta ? (
-        <PortalAtletaIdeias ideias={ideias} setIdeias={setIdeias} labelOf={labelOf} onBack={() => setPortalAtleta(false)} />
+        <PortalAtletaIdeias ideias={ideias} setIdeias={setIdeias} labelOf={labelOf} onBack={fecharPortalAtleta} />
       ) : (
         <>
       <MomentoFilter value={filter} onChange={setFilter} options={EXERCISE_PHASES} />
