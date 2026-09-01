@@ -22485,32 +22485,39 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
    Cada coluna pode ter muitas ideias empilhadas; sem isto, era preciso
    arrastar o dedo dentro da coluna para as ver todas, o que no
    quiosque é fácil de confundir com um scroll da página toda. */
+// Altura de um cartão (título de 2 linhas + miniatura fixa + padding) —
+// usada para a lista mostrar exatamente 3 cartões de cada vez, nem
+// mais nem menos, seja qual for a altura do ecrã.
+const ALTURA_CARTAO_IDEIA = 183;
+const GAP_CARTOES = 12;
+
 function ColunaIdeias({ titulo, itens, onAbrir }) {
   const listaRef = useRef(null);
   const deslizar = (dy) => { if (listaRef.current) listaRef.current.scrollBy({ top: dy, behavior: 'smooth' }); };
   const setaEstilo = {
-    width: 48, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
     background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer', margin: '0 auto', flexShrink: 0,
   };
   return (
     <div style={{ flex: '0 0 260px', minWidth: 260, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{titulo}</div>
       {itens.length > 1 && (
-        <button onClick={() => deslizar(-260)} title="Subir" style={{ ...setaEstilo, marginBottom: 10 }}><ChevronUp size={20} /></button>
+        <button onClick={() => deslizar(-(ALTURA_CARTAO_IDEIA + GAP_CARTOES))} title="Subir" style={{ ...setaEstilo, marginBottom: 8 }}><ChevronUp size={14} /></button>
       )}
-      {/* ALTURA PRESA AO ECRÃ (nunca à quantidade de ideias) — é o que
-          garante que quem cresce é esta lista sozinha, por dentro, e
-          nunca a página toda. Sem isto, uma fase com muitas ideias
-          empurrava a página inteira para baixo, e as setas deixavam de
-          fazer sentido (a de descer saía do ecrã antes de se chegar
-          lá). */}
+      {/* MOSTRA SEMPRE 3 CARTÕES — nem a quantidade de ideias, nem a
+          altura do ecrã, decidem isto; é uma conta fixa (3 cartões + 2
+          espaços entre eles). O resto esconde-se por dentro, sem
+          barra de scroll visível (`sem-scrollbar-mjp`) — quem manda no
+          deslizar são as setas, a barra só distraía. */}
       <div
         ref={listaRef}
+        className="sem-scrollbar-mjp"
         style={{
-          display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', scrollBehavior: 'smooth',
-          height: 'min(58vh, 560px)',
+          display: 'flex', flexDirection: 'column', gap: GAP_CARTOES, overflowY: 'auto', scrollBehavior: 'smooth',
+          height: ALTURA_CARTAO_IDEIA * 3 + GAP_CARTOES * 2,
         }}
       >
+        <style>{'.sem-scrollbar-mjp{scrollbar-width:none;-ms-overflow-style:none;}.sem-scrollbar-mjp::-webkit-scrollbar{display:none;}'}</style>
         {itens.map(x => (
           <div
             key={x.id}
@@ -22535,7 +22542,7 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
         ))}
       </div>
       {itens.length > 1 && (
-        <button onClick={() => deslizar(260)} title="Descer" style={{ ...setaEstilo, marginTop: 10 }}><ChevronDown size={20} /></button>
+        <button onClick={() => deslizar(ALTURA_CARTAO_IDEIA + GAP_CARTOES)} title="Descer" style={{ ...setaEstilo, marginTop: 8 }}><ChevronDown size={14} /></button>
       )}
     </div>
   );
