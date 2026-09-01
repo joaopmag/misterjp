@@ -10956,12 +10956,12 @@ function AnimOverlay({ items, iconScale = 1 }) {
   );
 }
 
-function DiagramThumb({ diagram, space, phase }) {
+function DiagramThumb({ diagram, space, phase, height = 95 }) {
   const zones = getSpaceZones(diagram, space);
   const hasDiagram = diagram && (diagram.elements?.length || diagram.arrows?.length);
   if (!hasDiagram && !zones.length) return null;
   return (
-    <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
+    <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', height, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}>
       <PitchMarkings />
       {zones.map(z => (
         <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
@@ -22419,15 +22419,15 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '18px 24px 30px' }}>
       <button onClick={onBack} style={{
         display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 14,
       }}>
         <ChevronLeft size={15} /> Voltar
       </button>
 
-      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 16 }}>Ideia de Jogo</div>
+      <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Ideia de Jogo</div>
 
       {estado === 'a-carregar' && (
         <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
@@ -22485,22 +22485,24 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
    Cada coluna pode ter muitas ideias empilhadas; sem isto, era preciso
    arrastar o dedo dentro da coluna para as ver todas, o que no
    quiosque é fácil de confundir com um scroll da página toda. */
-// Altura de um cartão (título de 2 linhas + miniatura fixa + padding) —
-// usada para a lista mostrar exatamente 3 cartões de cada vez, nem
-// mais nem menos, seja qual for a altura do ecrã.
-const ALTURA_CARTAO_IDEIA = 183;
-const GAP_CARTOES = 12;
+// Altura de um cartão (título de 1 linha + miniatura mais pequena +
+// padding) — usada para a lista mostrar exatamente 3 cartões de cada
+// vez. Reduzida mais uma vez: a coluna inteira (cabeçalho + setas + 3
+// cartões) tem de caber na página sem ela própria precisar de scroll.
+const ALTURA_CARTAO_IDEIA = 140;
+const ALTURA_MINIATURA = 68;
+const GAP_CARTOES = 10;
 
 function ColunaIdeias({ titulo, itens, onAbrir }) {
   const listaRef = useRef(null);
   const deslizar = (dy) => { if (listaRef.current) listaRef.current.scrollBy({ top: dy, behavior: 'smooth' }); };
   const setaEstilo = {
-    width: 36, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 32, height: 22, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
     background: T.surface, border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer', margin: '0 auto', flexShrink: 0,
   };
   return (
     <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>{titulo}</div>
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{titulo}</div>
       {/* As setas aparecem SEMPRE, mesmo com uma única ideia — só ficam
           desativadas (mais apagadas, sem clique) nesse caso. Antes
           desapareciam por completo quando não fazia falta deslizar, e
@@ -22512,8 +22514,8 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
         onClick={() => itens.length > 1 && deslizar(-(ALTURA_CARTAO_IDEIA + GAP_CARTOES))}
         title="Subir"
         disabled={itens.length <= 1}
-        style={{ ...setaEstilo, marginBottom: 8, opacity: itens.length > 1 ? 1 : 0.35, cursor: itens.length > 1 ? 'pointer' : 'default' }}
-      ><ChevronUp size={14} /></button>
+        style={{ ...setaEstilo, marginBottom: 6, opacity: itens.length > 1 ? 1 : 0.35, cursor: itens.length > 1 ? 'pointer' : 'default' }}
+      ><ChevronUp size={13} /></button>
       {/* MOSTRA SEMPRE 3 CARTÕES — nem a quantidade de ideias, nem a
           altura do ecrã, decidem isto; é uma conta fixa (3 cartões + 2
           espaços entre eles). O resto esconde-se por dentro, sem
@@ -22535,26 +22537,26 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
             key={x.id}
             onClick={() => onAbrir(x)}
             style={{
-              background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
+              background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, cursor: 'pointer',
               flexShrink: 0, height: ALTURA_CARTAO_IDEIA, overflow: 'hidden', boxSizing: 'border-box',
             }}
           >
-            {/* Título com altura fixa (2 linhas, sempre) — é a única parte
+            {/* Título com altura fixa (1 linha, sempre) — é a única parte
                 de tamanho variável entre cartões; a miniatura do campo já
                 tem altura fixa (ver DiagramThumb). Fixar a ALTURA DO
                 CARTÃO INTEIRO (não só um mínimo) é o que garante que
                 todos ficam mesmo iguais — uma ideia sem esquema nenhum
                 (ainda por desenhar) não pode esticar a caixa. */}
             <div style={{
-              color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8, height: 40,
-              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              color: T.cream, fontWeight: 500, fontSize: 13.5, marginBottom: 6, height: 18,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{x.name || 'Ideia de jogo'}</div>
             {temDiagrama ? (
-              <DiagramThumb diagram={x.diagram} />
+              <DiagramThumb diagram={x.diagram} height={ALTURA_MINIATURA} />
             ) : (
               <div style={{
-                width: '100%', height: 95, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
+                width: '100%', height: ALTURA_MINIATURA, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, color: T.mutedDim,
               }}>Sem esquema</div>
             )}
           </div>
@@ -22565,8 +22567,8 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
         onClick={() => itens.length > 1 && deslizar(ALTURA_CARTAO_IDEIA + GAP_CARTOES)}
         title="Descer"
         disabled={itens.length <= 1}
-        style={{ ...setaEstilo, marginTop: 8, opacity: itens.length > 1 ? 1 : 0.35, cursor: itens.length > 1 ? 'pointer' : 'default' }}
-      ><ChevronDown size={14} /></button>
+        style={{ ...setaEstilo, marginTop: 6, opacity: itens.length > 1 ? 1 : 0.35, cursor: itens.length > 1 ? 'pointer' : 'default' }}
+      ><ChevronDown size={13} /></button>
     </div>
   );
 }
