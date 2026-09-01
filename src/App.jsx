@@ -13,7 +13,8 @@ import {
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
-  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield
+  Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
+  HeartPulse
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -22782,7 +22783,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         opacity: wellnessEnabled || doneWellness ? 1 : 0.55,
         ...body, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <span style={{ fontSize: 26 }}>💪</span>
+        <Activity size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Wellness</div>
           <div style={{ fontSize: 12, color: doneWellness ? T.good : (wWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{wellnessHint}</div>
@@ -22796,7 +22797,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         opacity: rpeEnabled || doneRpe ? 1 : 0.55,
         ...body, display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <span style={{ fontSize: 26 }}>🏋</span>
+        <HeartPulse size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>RPE</div>
           <div style={{ fontSize: 12, color: doneRpe ? T.good : (rWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{rpeHint}</div>
@@ -22813,7 +22814,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         borderRadius: 12, padding: '18px 16px', cursor: 'pointer',
         ...body, marginTop: 12, display: 'flex', alignItems: 'center', gap: 14,
       }}>
-        <span style={{ fontSize: 26 }}>📖</span>
+        <LayoutGrid size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Portal do Atleta</div>
           <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Conteúdos que a equipa técnica partilha contigo</div>
