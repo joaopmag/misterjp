@@ -6921,16 +6921,18 @@ function Exercicios({ exercises, setExercises, meta }) {
                   <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                 </div>
               </div>
-              {/* `fill` (em vez de encolher o desenho todo dentro da caixa,
-                  deixando faixas vazias) recorta um pouco de cima/baixo do
-                  campo para preencher a largura toda — a caixa é bem mais
-                  larga do que alta, e o campo tem outra proporção. Mesmo
-                  ajuste já feito nos cartões da Ideia de Jogo. */}
+              {/* Sem recorte aqui (ao contrário do Portal do Atleta) —
+                  a caixa de espaço desenhada (o retângulo tracejado) é a
+                  informação principal do exercício, e recortar podia
+                  cortá-la fora. Tamanho mais pequeno do que na Ideia de
+                  Jogo, porque aqui o cartão já tem mais conteúdo a seguir
+                  (descrição, material) — é o que faz os dois ficarem do
+                  mesmo tamanho final. */}
               {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
-                <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={130} fill />
+                <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={90} />
               ) : !x.attachment && (
                 <div style={{
-                  width: '100%', height: 130, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
+                  width: '100%', height: 90, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
                 }}>Sem esquema</div>
               )}
