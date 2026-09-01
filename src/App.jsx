@@ -22521,7 +22521,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
 // vez. Reduzida mais uma vez: a coluna inteira (cabeçalho + setas + 3
 // cartões) tem de caber na página sem ela própria precisar de scroll.
 const ALTURA_CARTAO_IDEIA = 178;
-const ALTURA_MINIATURA = 92;
+const ALTURA_MINIATURA = 120;
 const GAP_CARTOES = 10;
 
 function ColunaIdeias({ titulo, itens, onAbrir }) {
