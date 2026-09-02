@@ -16179,6 +16179,15 @@ function todayStr() {
   return toLocalISODate(new Date());
 }
 
+// Data de hoje por extenso ("quarta-feira, 3 de setembro"), sempre a
+// partir da hora LOCAL de quem está a ver o ecrã — `new Date()` sem mais
+// nada usa o fuso horário do próprio aparelho, nunca o do servidor, por
+// isso não há risco de mostrar o dia errado a quem está noutro fuso.
+function dataDeHojeExtenso() {
+  const s = new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function getMonday(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
@@ -23188,7 +23197,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, gap: 10 }}>
         <div>
           <div style={{ ...display, fontSize: 22, fontWeight: 700, color: T.cream }}>{greetingNow()}, {player.name.split(' ')[0]}!</div>
-          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>{player.position ? `${player.position} · ` : ''}Sessão privada — só tu vês isto.</div>
+          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>{player.position ? `${player.position} · ` : ''}{dataDeHojeExtenso()}</div>
         </div>
         <button onClick={onLogout} title="Terminar sessão" style={{
           display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`,
