@@ -17055,6 +17055,37 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
   const fechadas = ordenar((clinico || []).filter(o => o.fim));
 
   const save = (data) => {
+    /* MUDAR DE "INDISPONÍVEL" PARA "APTO COM VIGILÂNCIA"/"TREINO
+       CONDICIONADO" DIVIDE A OCORRÊNCIA EM DUAS, EM VEZ DE REESCREVER A
+       MESMA.
+
+       `diaAutoLesionado` olha para o `nivel` da ocorrência inteira, do
+       início ao fim — não sabe que nível se aplicava a CADA dia dentro
+       desse período. Se se limitasse a trocar o `nivel` no mesmo
+       registo, os dias passados em que o jogador esteve mesmo
+       indisponível deixavam de bater certo com "indisponível" e
+       perdiam o L também — reescrevendo um histórico que estava
+       correto. Fechando a ocorrência antiga em hoje (o L fica
+       gravado como esteve até aqui) e abrindo uma nova com o nível
+       novo a partir de hoje, os dias passados continuam a apontar
+       para a ocorrência fechada (com o nível de então) e os dias
+       futuros passam a apontar para a nova — sem se apagar nada que já
+       tinha acontecido. */
+    const original = data.id ? clinico.find(o => o.id === data.id) : null;
+    const mudouDeIndisponivel = original && original.nivel === 'indisponivel' && data.nivel !== 'indisponivel';
+
+    if (mudouDeIndisponivel) {
+      const fechada = { ...original, fim: (original.fim && original.fim < hoje) ? original.fim : hoje };
+      const nova = { ...data, id: uid(), inicio: hoje };
+      setClinico([...clinico.map(o => (o.id === fechada.id ? fechada : o)), nova]);
+      setModal(null);
+      proporMarcacaoClinica({
+        ocorrencia: nova, sessions, matches, setSessions, setMatches,
+        jogador: jogadorDe(nova.playerId),
+      });
+      return;
+    }
+
     const registo = data.id ? data : { ...data, id: uid() };
     setClinico(data.id ? clinico.map(o => (o.id === data.id ? data : o)) : [...clinico, registo]);
     setModal(null);
