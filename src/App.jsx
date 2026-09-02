@@ -23046,7 +23046,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         }}>
           <PartyPopper size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
           <span style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.4, fontWeight: 600 }}>
-            Parabéns, {player.name.split(' ')[0]}! Toda a equipa técnica te deseja um ótimo dia. 🎉
+            Parabéns, {player.name.split(' ')[0]}! Toda a equipa técnica deseja-te um ótimo dia. 🎉
           </span>
         </div>
       )}
