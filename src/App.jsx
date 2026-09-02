@@ -8883,9 +8883,9 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
                     maior no ecrã, e os círculos ao tamanho antigo passaram
                     a tapar-se uns aos outros nas zonas com muita gente. */}
                 {isKeeper ? (
-                  <rect x={el.x - 1.9 * k} y={el.y - 1.9 * k} width={3.8 * k} height={3.8 * k} rx={0.78 * k} fill={tm.fill} stroke="#F0E7D6" strokeWidth={0.38 * k} />
+                  <rect x={el.x - 1.9 * k} y={el.y - 1.9 * k} width={3.8 * k} height={3.8 * k} rx={0.78 * k} fill={tm.fill} stroke={printMode ? '#1A1A1A' : '#F0E7D6'} strokeWidth={0.38 * k} />
                 ) : (
-                  <circle cx={el.x} cy={el.y} r={1.9 * k} fill={tm.fill} stroke={TEXT_ON_ACCENT} strokeWidth={0.27 * k} />
+                  <circle cx={el.x} cy={el.y} r={1.9 * k} fill={tm.fill} stroke={printMode ? '#1A1A1A' : TEXT_ON_ACCENT} strokeWidth={0.27 * k} />
                 )}
                 <text x={el.x} y={el.y + 0.71 * k} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.42 : 2) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {elementLabel(el.number, isKeeper)}
