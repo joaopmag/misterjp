@@ -14,7 +14,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame
+  HeartPulse, Flame, PartyPopper
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -2819,7 +2819,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             >
               {minhas.slice(0, 6).map(t => (
                 <LinhaTarefa
-                  key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje}
+                  key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
                   onAbrir={onVerTarefas}
                   onAlternar={(x) => setTarefas(tarefas.map(y => {
                     if (y.id !== x.id) return y;
@@ -6310,7 +6310,7 @@ function playerReportRows(p) {
     ['Nome', p.name],
     ['Número', p.number],
     ['Posição', p.position],
-    ['Ano de nascimento', p.birthdate],
+    ['Data de nascimento', formatBirthdate(p.birthdate)],
     ['Idade', p.birthdate && age(p.birthdate) !== null ? `${age(p.birthdate)} anos` : ''],
     ['Nacionalidade', p.nationality],
     ['Lateralidade', p.laterality],
@@ -6709,9 +6709,48 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
 function age(birthYearOrDate) {
   if (!birthYearOrDate) return null;
   const s = String(birthYearOrDate);
-  const y = s.length > 4 ? new Date(s).getFullYear() : parseInt(s, 10);
+  // Data completa (registos novos, desde que o campo passou a ser "Data
+  // de nascimento"): idade exata, sensível ao dia/mês, não só ao ano.
+  if (s.length > 4) {
+    const d = new Date(s + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) return null;
+    const hoje = new Date();
+    let a = hoje.getFullYear() - d.getFullYear();
+    const aindaNaoFezAnosEsteAno = (hoje.getMonth() < d.getMonth())
+      || (hoje.getMonth() === d.getMonth() && hoje.getDate() < d.getDate());
+    if (aindaNaoFezAnosEsteAno) a--;
+    return a;
+  }
+  // Só o ano (registos antigos, de antes desta mudança): aproximação por
+  // diferença de anos civis, como sempre foi.
+  const y = parseInt(s, 10);
   if (!y || Number.isNaN(y)) return null;
   return new Date().getFullYear() - y;
+}
+
+// Formata a data de nascimento para apresentação — dd/mm/aaaa quando há
+// dia completo; só o ano, tal como está gravado, nos registos antigos
+// que nunca tiveram mais do que isso.
+function formatBirthdate(v) {
+  if (!v) return '';
+  const s = String(v);
+  if (s.length <= 4) return s;
+  const d = new Date(s + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return s;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+}
+
+// Verdadeiro só quando há dia e mês gravados (registos antigos, com só
+// o ano, nunca fazem "anos" para este efeito — não há dia para
+// comparar) e esse dia/mês coincide com hoje.
+function isBirthdayToday(birthdate, hoje) {
+  if (!birthdate) return false;
+  const s = String(birthdate);
+  if (s.length <= 4) return false;
+  const d = new Date(s + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return false;
+  const h = hoje || new Date();
+  return d.getDate() === h.getDate() && d.getMonth() === h.getMonth();
 }
 
 // Ano de nascimento + idade, para o subtítulo dos cartões de jogador.
@@ -6788,7 +6827,7 @@ function PlayerModal({ player, onClose, onSave }) {
           </div>
           <Field label="Nº"><Input value={f.number} onChange={e => setF({ ...f, number: e.target.value })} placeholder="10" /></Field>
           <Field label="Nacionalidade"><Input value={f.nationality} onChange={e => setF({ ...f, nationality: e.target.value })} /></Field>
-          <Field label="Ano de nascimento"><Input value={f.birthdate} onChange={e => setF({ ...f, birthdate: e.target.value })} placeholder="AAAA" maxLength={4} /></Field>
+          <Field label="Data de nascimento"><Input type="date" value={f.birthdate} onChange={e => setF({ ...f, birthdate: e.target.value })} /></Field>
           <Field label="Posição">
             <Select value={f.position} onChange={e => setF({ ...f, position: e.target.value })}>
               {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
@@ -22934,6 +22973,18 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         </button>
       </div>
 
+      {isBirthdayToday(player.birthdate) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22,
+          background: `${T.gold}1a`, border: `1px solid ${T.gold}`, borderRadius: 12, padding: '14px 16px',
+        }}>
+          <PartyPopper size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.4, fontWeight: 600 }}>
+            Parabéns, {player.name.split(' ')[0]}! Toda a equipa técnica te deseja um ótimo dia. 🎉
+          </span>
+        </div>
+      )}
+
       {recentDates && (
         <StreakCard recentDates={recentDates} dayStatus={dayStatus} />
       )}
@@ -27436,13 +27487,26 @@ const ESTADOS_TAREFA = ['aberta', 'curso', 'feita'];
      hoje) por responder ao PSE — a mesma verificação já usada para os
      lembretes de WhatsApp em Monitorização. Assim que todos tiverem
      respondido, a tarefa deixa de estar ativa sozinha, sem ninguém ter
-     de a marcar como feita. */
+     de a marcar como feita.
+   - "aniversario": só nos dias em que algum jogador do plantel faz
+     anos (dia/mês do `birthdate` a coincidir com hoje). Uma tarefa só
+     — "Há aniversário no plantel" — reaparece sozinha todos os anos,
+     sem o treinador ter de se lembrar da data de cada jogador. Só
+     conta jogadores com dia completo gravado (`isBirthdayToday`
+     devolve sempre falso para registos antigos que só têm o ano). */
 const RECORRENCIA_LABEL = {
   diaria: 'Todos os dias',
   semanal: 'Dias da semana',
   treino_jogo: 'Dias de treino ou jogo',
   wellness_pse: 'Enquanto faltar Wellness/PSE',
+  aniversario: 'Aniversário de jogador',
 };
+
+// Jogadores do plantel que fazem anos num dado dia (string 'AAAA-MM-DD').
+function aniversariantesEm(players, diaStr) {
+  const d = new Date(`${diaStr}T00:00:00`);
+  return (players || []).filter(p => isBirthdayToday(p.birthdate, d));
+}
 
 function tarefaAtivaHoje(tarefa, hoje, ctx) {
   const r = tarefa.recorrencia;
@@ -27462,6 +27526,9 @@ function tarefaAtivaHoje(tarefa, hoje, ctx) {
       const semPse = haTreinoOuJogoHoje && !doJogadorHoje.some(m => typeof m.pse === 'number');
       return semWellness || semPse;
     });
+  }
+  if (r.tipo === 'aniversario') {
+    return aniversariantesEm(ctx.players, hoje).length > 0;
   }
   return true;
 }
@@ -27608,6 +27675,7 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
             {f.recorrencia.tipo === 'treino_jogo' && 'Aparece sozinha em qualquer dia com treino ou jogo marcado.'}
             {f.recorrencia.tipo === 'wellness_pse' && 'Aparece sozinha enquanto houver algum jogador por responder ao Wellness (ou ao PSE, em dia de treino/jogo). Desaparece assim que todos tiverem respondido.'}
             {f.recorrencia.tipo === 'diaria' && 'Aparece todos os dias, sem exceção.'}
+            {f.recorrencia.tipo === 'aniversario' && 'Aparece sozinha em qualquer dia em que um jogador do plantel faça anos (precisa da data de nascimento completa, em Editar Jogador — registos com só o ano não contam).'}
           </div>
         )}
       </div>
@@ -27634,11 +27702,17 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
 
 /* Uma linha. A caixa à esquerda fecha a tarefa sem abrir nada — é o
    gesto mais frequente de todos e não devia custar dois cliques. */
-function LinhaTarefa({ tarefa, membros, euId, hoje, onAbrir, onAlternar }) {
+function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar }) {
   const feita = tarefa.recorrencia ? tarefaFeitaHoje(tarefa, hoje) : tarefa.estado === 'feita';
   const atrasada = !tarefa.recorrencia && !feita && tarefa.prazo && tarefa.prazo < hoje;
   const paraHoje = !tarefa.recorrencia && !feita && tarefa.prazo === hoje;
   const cor = corDoMembro(tarefa.responsavel);
+  // Numa tarefa de "Aniversário de jogador", diz-se logo aqui quem faz
+  // anos hoje — sem isto, o título sozinho ("Há aniversário no
+  // plantel") obrigava a abrir a tarefa para saber de quem se trata.
+  const aniversariantes = tarefa.recorrencia && tarefa.recorrencia.tipo === 'aniversario'
+    ? aniversariantesEm(players, hoje)
+    : [];
 
   return (
     <div style={{
@@ -27663,6 +27737,12 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, onAbrir, onAlternar }) {
           color: feita ? T.mutedDim : T.cream,
           textDecoration: feita ? 'line-through' : 'none',
         }}>{tarefa.titulo}</div>
+
+        {aniversariantes.length > 0 && (
+          <div style={{ fontSize: 11.5, color: T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <PartyPopper size={12} /> {aniversariantes.map(p => p.name).join(', ')}
+          </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 7, flexWrap: 'wrap' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.muted }}>
@@ -27813,7 +27893,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
                 </div>
               ) : g.lista.map(t => (
                 <LinhaTarefa
-                  key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje}
+                  key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
                   onAbrir={setModal} onAlternar={alternar}
                 />
               ))}
@@ -27834,7 +27914,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           <div style={{ fontSize: 12.5, color: T.mutedDim }}>{feitas.length} {feitas.length === 1 ? 'tarefa concluída' : 'tarefas concluídas'}.</div>
         ) : feitas.map(t => (
           <LinhaTarefa
-            key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje}
+            key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
             onAbrir={setModal} onAlternar={alternar}
           />
         ))}
