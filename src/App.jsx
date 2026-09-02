@@ -11124,6 +11124,52 @@ function DiagramThumb({ diagram, space, phase, height = 95, fill = false }) {
   );
 }
 
+/* CAMPO DE TEMPO COM CONTA RÁPIDA — aceita escrever direto uma soma ou
+   multiplicação ("7+7", "3x5") em vez de fazer a conta de cabeça antes
+   de preencher. Assim que a expressão fica completa, o campo mostra-a
+   por extenso com o resultado ("7+7=14") — e é o RESULTADO (14) que
+   fica gravado como duração, não o texto; o texto é só o que se vê
+   enquanto não se volta a mexer no campo. Aceita "+", "x", "X", "×" e
+   "*" como símbolos, para não obrigar a decorar um só.
+   `value`/`onChange` continuam a portar-se como um número normal para
+   quem usa este componente — a única diferença está por dentro. */
+function TempoInput({ value, onChange, placeholder }) {
+  const [texto, setTexto] = useState(value !== null && value !== undefined && value !== '' ? String(value) : '');
+
+  // Sincroniza com o valor de fora (ex.: ao abrir um exercício já
+  // existente) — mas nunca por cima de uma conta que ainda está escrita
+  // no campo (teria o efeito de apagar "7+7=14" mal o 14 chegasse ao
+  // componente pai).
+  useEffect(() => {
+    if (!/[+x×*]/i.test(texto)) {
+      setTexto(value !== null && value !== undefined && value !== '' ? String(value) : '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const handleChange = (e) => {
+    let t = e.target.value;
+    const m = t.match(/^\s*(\d+)\s*([+x×*])\s*(\d+)\s*$/i);
+    if (m) {
+      const a = parseInt(m[1], 10);
+      const op = m[2].toLowerCase();
+      const b = parseInt(m[3], 10);
+      const resultado = (op === '+') ? a + b : a * b;
+      t = `${m[1]}${m[2]}${m[3]}=${resultado}`;
+      setTexto(t);
+      onChange(resultado);
+      return;
+    }
+    setTexto(t);
+    // Só um número simples e completo conta como duração válida — uma
+    // conta a meio escrever (ex.: "7+") ainda não tem resultado nenhum
+    // para gravar.
+    if (/^\d+$/.test(t.trim())) onChange(Number(t));
+  };
+
+  return <Input value={texto} onChange={handleChange} placeholder={placeholder} />;
+}
+
 function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
   const [f, setF] = useState(exercise || { name: '', phase: PHASES[0], description: '', space: '', playersCount: '', material: '', defaultDuration: 15, diagram: { elements: [], arrows: [] }, attachment: null });
   // A cor ativa do editor tático vive aqui (no modal, que não é recriado
@@ -11302,7 +11348,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
             {EXERCISE_PHASES.map(p => <option key={p} value={p}>{p}</option>)}
           </Select>
         </Field>
-        <Field label="Duração padrão (min)"><Input type="number" value={f.defaultDuration} onChange={e => setF({ ...f, defaultDuration: e.target.value })} /></Field>
+        <Field label="Tempo (min)"><TempoInput value={f.defaultDuration} onChange={v => setF({ ...f, defaultDuration: v })} placeholder="Ex: 15 ou 7+7" /></Field>
         <Field label="Espaço"><Input value={f.space} onChange={e => setF({ ...f, space: e.target.value })} onBlur={applySpaceText} placeholder="20x20 ou 20x20 (2)" /></Field>
         <Field label="Nº jogadores">
           <Input value={f.playersCount} onChange={e => setF({ ...f, playersCount: e.target.value })} onBlur={autoInsertPlayers} placeholder="4x4, 4+1, 3 Gr" />
