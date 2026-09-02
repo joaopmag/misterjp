@@ -11167,11 +11167,16 @@ function TempoInput({ value, onChange, placeholder }) {
 
   const handleChange = (e) => {
     const t = e.target.value;
+    // Distingue escrever de apagar: só um "=" que ACABOU de ser escrito
+    // (o texto ficou maior) conta como o sinal de "calcula agora". Sem
+    // isto, apagar o resultado de "7+7=14" ficava impossível — mal se
+    // chegava a "7+7=" (o "=" que sobra ao apagar o "14") o campo
+    // achava que a pessoa tinha acabado de o escrever, e calculava outra
+    // vez, sem deixar apagar mais nada.
+    const foiEscrito = t.length > texto.length;
     setTexto(t);
     if (/^\d+$/.test(t.trim())) { onChange(Number(t)); return; }
-    // O "=" escrito à mão é o sinal explícito de "terminei, calcula
-    // agora" — não é preciso esperar por sair do campo.
-    if (/=\s*$/.test(t)) calcular(t);
+    if (foiEscrito && /=\s*$/.test(t)) calcular(t);
   };
 
   return (
