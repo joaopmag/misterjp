@@ -27837,7 +27837,9 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             ...mono, fontSize: 11, marginLeft: 'auto', flexShrink: 0,
             color: feita ? T.mutedDim : (atrasada ? T.bad : (paraHoje ? T.warn : T.mutedDim)),
           }}>
-            {tarefa.recorrencia ? (feita ? 'concluída hoje' : 'hoje') : (feita ? 'concluída' : prazoTexto(tarefa.prazo, hoje))}
+            {tarefa.recorrencia
+              ? (feita ? 'concluída hoje' : 'hoje')
+              : (feita ? `concluída${tarefa.feitaEm ? ` · ${fmtShort(tarefa.feitaEm.slice(0, 10))}` : ''}` : prazoTexto(tarefa.prazo, hoje))}
           </span>
         </div>
       </div>
