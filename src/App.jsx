@@ -17572,6 +17572,43 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
      volta. */
   const scrollRef = React.useRef(null);
   const scrollPor = (dx) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: dx, behavior: 'smooth' }); };
+  // Referência a cada coluna de dia, só para se poder saltar direto para
+  // ela — ver o efeito mais abaixo, que traz "hoje" para a vista assim
+  // que a tabela abre.
+  const thRefs = React.useRef({});
+
+  /* AO ABRIR, MOSTRAR HOJE — NÃO O DIA MAIS ANTIGO.
+
+     Sem isto, a tabela abria sempre lá atrás, no primeiro treino da
+     época, obrigando a percorrer meses de histórico com os botões ◀▶
+     só para chegar aos dias recentes, que são os que interessam no
+     dia a dia. Salta para o dia de hoje (ou, se hoje não tiver
+     treino/jogo marcado, para o último dia já passado — o mais
+     provável de ainda ter presenças por preencher; sem nenhum passado,
+     para o primeiro dia futuro).
+
+     A dependência é a LISTA de dias (datas, por ordem), não o array
+     `ordered` em si — esse é recriado a cada render (o `[...days].sort`
+     lá em cima), por isso usá-lo diretamente fazia o efeito disparar
+     mesmo ao marcar uma presença, saltando a vista para hoje a meio de
+     se editar outro dia qualquer. Com a chave a só mudar quando os
+     PRÓPRIOS dias mudam (mês filtrado, sessão nova), o salto só
+     acontece quando a tabela abre ou muda de conteúdo — nunca por
+     interagir com uma célula. */
+  const diasKey = ordered.map(d => (d.match ? `m-${d.match.id}` : d.date)).join(',');
+  React.useEffect(() => {
+    const hojeStr = todayStr();
+    let alvo = ordered.find(d => d.date === hojeStr);
+    if (!alvo) {
+      const passados = ordered.filter(d => d.date <= hojeStr);
+      alvo = passados.length ? passados[passados.length - 1] : ordered[0];
+    }
+    if (!alvo) return;
+    const key = alvo.match ? `m-${alvo.match.id}` : alvo.date;
+    const el = thRefs.current[key];
+    if (el) el.scrollIntoView({ inline: 'center', block: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diasKey]);
 
   return (
     <div style={{ marginBottom: 22 }}>
@@ -17630,7 +17667,7 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                 {ordered.map(d => {
                 const closed = dayClosed(d);
                 return (
-                  <th key={d.match ? `m-${d.match.id}` : d.date} style={headCell}>
+                  <th key={d.match ? `m-${d.match.id}` : d.date} ref={el => { thRefs.current[d.match ? `m-${d.match.id}` : d.date] = el; }} style={headCell}>
                     <div style={{ ...mono, color: d.match ? T.warn : T.mutedDim }}>{dayShort(d.date)}</div>
                     <div style={{ fontSize: 9, color: T.mutedDim, marginBottom: 4 }}>
                       {d.match ? (isFriendlyMatch(d.match) ? 'amigável' : 'jogo') : 'treino'}
