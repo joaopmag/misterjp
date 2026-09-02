@@ -20379,7 +20379,7 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 
   return (
-    <Modal title="Competições e classificação" onClose={onClose} wide>
+    <Modal title="Competições e classificação" onClose={onClose} wide xwide fullPage>
       {/* --- seletor de competição --- */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Competição</div>
