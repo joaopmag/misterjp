@@ -12652,7 +12652,7 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
   };
 
   return (
-    <Modal title={titulo} subtitle={subtitulo} onClose={onClose} wide>
+    <Modal title={titulo} subtitle={subtitulo} onClose={onClose} wide xwide fullPage>
       <div ref={topoRef} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <span style={{ ...mono, fontSize: 12, color: respondidos === DI_INDICADORES.length ? T.good : T.warn }}>
