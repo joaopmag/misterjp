@@ -11126,48 +11126,61 @@ function DiagramThumb({ diagram, space, phase, height = 95, fill = false }) {
 
 /* CAMPO DE TEMPO COM CONTA RÁPIDA — aceita escrever direto uma soma ou
    multiplicação ("7+7", "3x5") em vez de fazer a conta de cabeça antes
-   de preencher. Assim que a expressão fica completa, o campo mostra-a
-   por extenso com o resultado ("7+7=14") — e é o RESULTADO (14) que
-   fica gravado como duração, não o texto; o texto é só o que se vê
-   enquanto não se volta a mexer no campo. Aceita "+", "x", "X", "×" e
-   "*" como símbolos, para não obrigar a decorar um só.
-   `value`/`onChange` continuam a portar-se como um número normal para
-   quem usa este componente — a única diferença está por dentro. */
+   de preencher. O resultado só se calcula quando se termina de escrever
+   — ao sair do campo, ao carregar Enter, ou ao escrever "=" — nunca a
+   meio da digitação. Calcular logo que "15+1" parecesse uma conta
+   válida (a cada tecla) trocava o campo a meio de se escrever "15+15":
+   mal chegava a "15+1" já virava "15+1=16", e o "5" que faltava ficava
+   colado a seguir a esse resultado ("15+1=165"), sem voltar a
+   calcular. Só no fim é que se sabe mesmo o que a pessoa quis escrever.
+
+   É o RESULTADO que fica gravado como duração, não o texto — o texto é
+   só o que se vê depois de calculado. `value`/`onChange` continuam a
+   portar-se como um número normal para quem usa este componente — a
+   diferença fica toda por dentro. */
 function TempoInput({ value, onChange, placeholder }) {
   const [texto, setTexto] = useState(value !== null && value !== undefined && value !== '' ? String(value) : '');
 
   // Sincroniza com o valor de fora (ex.: ao abrir um exercício já
-  // existente) — mas nunca por cima de uma conta que ainda está escrita
-  // no campo (teria o efeito de apagar "7+7=14" mal o 14 chegasse ao
-  // componente pai).
+  // existente) — mas nunca por cima de uma conta ainda por terminar,
+  // nem por cima de um resultado já calculado (teria o efeito de apagar
+  // "7+7=14" mal o 14 chegasse ao componente pai).
   useEffect(() => {
-    if (!/[+x×*]/i.test(texto)) {
+    if (!/[+x×*=]/i.test(texto)) {
       setTexto(value !== null && value !== undefined && value !== '' ? String(value) : '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  const handleChange = (e) => {
-    let t = e.target.value;
-    const m = t.match(/^\s*(\d+)\s*([+x×*])\s*(\d+)\s*$/i);
-    if (m) {
-      const a = parseInt(m[1], 10);
-      const op = m[2].toLowerCase();
-      const b = parseInt(m[3], 10);
-      const resultado = (op === '+') ? a + b : a * b;
-      t = `${m[1]}${m[2]}${m[3]}=${resultado}`;
-      setTexto(t);
-      onChange(resultado);
-      return;
-    }
-    setTexto(t);
-    // Só um número simples e completo conta como duração válida — uma
-    // conta a meio escrever (ex.: "7+") ainda não tem resultado nenhum
-    // para gravar.
-    if (/^\d+$/.test(t.trim())) onChange(Number(t));
+  const calcular = (t) => {
+    const semIgual = t.replace(/=\s*\d*$/, ''); // tanto faz ter escrito o "=" ou não
+    const m = semIgual.match(/^\s*(\d+)\s*([+x×*])\s*(\d+)\s*$/i);
+    if (!m) return false;
+    const a = parseInt(m[1], 10);
+    const op = m[2].toLowerCase();
+    const b = parseInt(m[3], 10);
+    const resultado = (op === '+') ? a + b : a * b;
+    setTexto(`${m[1]}${m[2]}${m[3]}=${resultado}`);
+    onChange(resultado);
+    return true;
   };
 
-  return <Input value={texto} onChange={handleChange} placeholder={placeholder} />;
+  const handleChange = (e) => {
+    const t = e.target.value;
+    setTexto(t);
+    if (/^\d+$/.test(t.trim())) { onChange(Number(t)); return; }
+    // O "=" escrito à mão é o sinal explícito de "terminei, calcula
+    // agora" — não é preciso esperar por sair do campo.
+    if (/=\s*$/.test(t)) calcular(t);
+  };
+
+  return (
+    <Input
+      value={texto} onChange={handleChange} placeholder={placeholder}
+      onBlur={() => calcular(texto)}
+      onKeyDown={e => { if (e.key === 'Enter') calcular(texto); }}
+    />
+  );
 }
 
 function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
