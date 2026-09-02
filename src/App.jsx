@@ -23156,7 +23156,7 @@ function sequenciaWellness(recentDates, dayStatus) {
 function StreakCard({ recentDates, dayStatus }) {
   const dias = sequenciaWellness(recentDates, dayStatus);
   const texto = dias === 0
-    ? 'Responde hoje ao Wellness para começares uma sequência.'
+    ? 'Acende a chama — começa hoje a tua sequência.'
     : `${dias} ${dias === 1 ? 'dia seguido' : 'dias seguidos'} a responder ao Wellness.`;
   return (
     <div style={{
@@ -23192,12 +23192,21 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
       : isRestDay ? 'Dia de folga — sem PSE a registar'
         : !session ? 'Ainda sem sessão criada para hoje'
           : `Intensidade de: ${sessionLabel}`;
+  // Quebra "Ainda fechado — abre às..." em duas linhas, só quando é
+  // mesmo esse texto — as outras mensagens ("Já fechou às...", "Só pode
+  // ser respondido...") ficam como estão, numa linha só.
+  const quebrarHint = (texto) => {
+    if (typeof texto === 'string' && texto.startsWith('Ainda fechado — ')) {
+      return <>Ainda fechado<br />{texto.slice('Ainda fechado — '.length)}</>;
+    }
+    return texto;
+  };
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', padding: '28px 18px 60px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, gap: 10 }}>
         <div>
           <div style={{ ...display, fontSize: 22, fontWeight: 700, color: T.cream }}>{greetingNow()}, {player.name.split(' ')[0]}!</div>
-          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>{player.position ? `${player.position} · ` : ''}{dataDeHojeExtenso()}</div>
+          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>{dataDeHojeExtenso()}</div>
         </div>
         <button onClick={onLogout} title="Terminar sessão" style={{
           display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`,
@@ -23238,7 +23247,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         <Activity size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Wellness</div>
-          <div style={{ fontSize: 12, color: doneWellness ? T.good : (wWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{wellnessHint}</div>
+          <div style={{ fontSize: 12, color: doneWellness ? T.good : (wWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{quebrarHint(wellnessHint)}</div>
         </span>
         {doneWellness ? <Check size={18} color={T.good} /> : wWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
       </button>
@@ -23252,7 +23261,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         <HeartPulse size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>RPE</div>
-          <div style={{ fontSize: 12, color: doneRpe ? T.good : (rWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{rpeHint}</div>
+          <div style={{ fontSize: 12, color: doneRpe ? T.good : (rWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{quebrarHint(rpeHint)}</div>
         </span>
         {doneRpe ? <Check size={18} color={T.good} /> : rWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
       </button>
