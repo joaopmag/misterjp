@@ -21981,8 +21981,14 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
   const doneCount = players.filter(p => recordFor(p.id, type)).length;
 
   const submit = (fields) => {
-    if (!activePlayer) return;
+    if (!activePlayer) return false;
     onSave({ playerId: activePlayer.id, date, type, ...fields });
+    // Este caminho (registo manual do staff) grava direto no estado local
+    // — sem pedido ao servidor a aguardar, por isso é sempre um sucesso
+    // imediato. O `true` aqui é o que os wizards (Wellness/RPE/
+    // Composição) agora exigem para mostrarem "Registado" — sem ele,
+    // ficavam a mostrar erro de gravação também aqui, por engano.
+    return true;
   };
 
   const shell = (children) => (
@@ -23233,6 +23239,7 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  const [erroGravar, setErroGravar] = useState('');
   /* Nada vem preenchido por omissão: enquanto o atleta não tocar, cada
      resposta fica a null. Antes abria tudo em 3 (e "Não" na dor), o que
      tornava impossível distinguir uma resposta real de um valor por
@@ -23263,11 +23270,21 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
   const confirm = () => {
     if (!step2Done) return;
     setSaving(true);
-    setTimeout(() => {
-      onSubmit({ ...f });
+    setErroGravar('');
+    // Só mostra "Registado" (e só volta sozinho ao início) DEPOIS de o
+    // servidor confirmar que gravou de facto — sem isto, uma falha de
+    // rede ou uma recusa do servidor (ex.: janela fechada entretanto)
+    // mostrava sempre sucesso na mesma, e o ecrã já tinha mudado de
+    // página antes de o atleta conseguir ver qualquer aviso de erro.
+    setTimeout(async () => {
+      const ok = await onSubmit({ ...f });
       setSaving(false);
-      setDone(true);
-      setTimeout(() => onBack(), 1100);
+      if (ok) {
+        setDone(true);
+        setTimeout(() => onBack(), 1100);
+      } else {
+        setErroGravar('Não foi possível guardar. Verifica a internet e tenta outra vez.');
+      }
     }, 450);
   };
 
@@ -23326,6 +23343,11 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
               Falta responder a alguma pergunta acima.
             </div>
           )}
+          {erroGravar && (
+            <div style={{ fontSize: 12.5, color: T.bad, margin: '4px 0 10px', textAlign: 'center' }}>
+              {erroGravar}
+            </div>
+          )}
           <BigButton onClick={confirm} disabled={saving || !step2Done} accent style={{ marginTop: 10 }}>
             {saving ? 'A guardar…' : <>Confirmar <Check size={17} /></>}
           </BigButton>
@@ -23343,6 +23365,7 @@ function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
 function ComposicaoWizard({ player, initial, date, onBack, onSubmit, notice }) {
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  const [erroGravar, setErroGravar] = useState('');
   const [f, setF] = useState({
     peso: initial?.peso ?? '',
     massaGorda: initial?.massaGorda ?? '',
@@ -23364,8 +23387,9 @@ function ComposicaoWizard({ player, initial, date, onBack, onSubmit, notice }) {
   const confirm = () => {
     if (!podeGuardar) return;
     setSaving(true);
-    setTimeout(() => {
-      onSubmit({
+    setErroGravar('');
+    setTimeout(async () => {
+      const ok = await onSubmit({
         peso: pesoNum,
         massaGorda: num(f.massaGorda),
         massaMuscular: num(f.massaMuscular),
@@ -23373,8 +23397,12 @@ function ComposicaoWizard({ player, initial, date, onBack, onSubmit, notice }) {
         notasComposicao: f.notasComposicao.trim() || undefined,
       });
       setSaving(false);
-      setDone(true);
-      setTimeout(() => onBack(), 1100);
+      if (ok) {
+        setDone(true);
+        setTimeout(() => onBack(), 1100);
+      } else {
+        setErroGravar('Não foi possível guardar. Verifica a internet e tenta outra vez.');
+      }
     }, 350);
   };
 
@@ -23419,6 +23447,11 @@ function ComposicaoWizard({ player, initial, date, onBack, onSubmit, notice }) {
           Introduz pelo menos o peso para guardar.
         </div>
       )}
+      {erroGravar && (
+        <div style={{ fontSize: 12.5, color: T.bad, marginTop: 4, marginBottom: 10, textAlign: 'center' }}>
+          {erroGravar}
+        </div>
+      )}
       <BigButton onClick={confirm} disabled={saving || !podeGuardar} accent style={{ marginTop: podeGuardar ? 12 : 0 }}>
         {saving ? 'A guardar…' : <>Confirmar <Check size={17} /></>}
       </BigButton>
@@ -23438,6 +23471,7 @@ function RpeWizard({ player, session, date, onBack, onSubmit, initial, notice, c
   );
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
+  const [erroGravar, setErroGravar] = useState('');
 
   const sessionLabel = session
     ? (session.focus || session.phase || (eJogo ? 'Jogo de hoje' : 'Sessão de hoje'))
@@ -23446,11 +23480,16 @@ function RpeWizard({ player, session, date, onBack, onSubmit, initial, notice, c
   const confirm = () => {
     if (value === null) return;
     setSaving(true);
-    setTimeout(() => {
-      onSubmit({ pse: value, sessionId: session?.id || null, treino: sessionLabel, contexto });
+    setErroGravar('');
+    setTimeout(async () => {
+      const ok = await onSubmit({ pse: value, sessionId: session?.id || null, treino: sessionLabel, contexto });
       setSaving(false);
-      setDone(true);
-      setTimeout(() => onBack(), 1100);
+      if (ok) {
+        setDone(true);
+        setTimeout(() => onBack(), 1100);
+      } else {
+        setErroGravar('Não foi possível guardar. Verifica a internet e tenta outra vez.');
+      }
     }, 450);
   };
 
@@ -23474,6 +23513,11 @@ function RpeWizard({ player, session, date, onBack, onSubmit, initial, notice, c
           </button>
         ))}
       </div>
+      {erroGravar && (
+        <div style={{ fontSize: 12.5, color: T.bad, margin: '4px 0 10px', textAlign: 'center' }}>
+          {erroGravar}
+        </div>
+      )}
       <BigButton onClick={confirm} disabled={value === null || saving} accent>
         {saving ? 'A guardar…' : <>Confirmar <Check size={17} /></>}
       </BigButton>
@@ -28364,9 +28408,14 @@ function CheckinApp() {
       if (error) throw error;
       const d = await buscar(codigo);
       if (d) setDados(d);
+      return true; // confirmação real de que ficou gravado
     } catch (e) {
       console.error('checkin_save', e);
       setErro('A resposta não ficou guardada. Tenta outra vez ou fala com o staff.');
+      return false; // quem chamou (WellnessWizard/RpeWizard/ComposicaoWizard)
+      // usa isto para NÃO mostrar "Registado" nem voltar sozinho ao
+      // início — sem isto, o atleta via sempre o ecrã de sucesso, quer a
+      // gravação tivesse mesmo acontecido quer não.
     }
   };
 
