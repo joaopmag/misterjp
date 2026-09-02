@@ -2707,7 +2707,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               <MediaLibrary
                 ref={canalRef}
                 items={videosGerais} setItems={setVideosGerais}
-                addLabel="Adicionar vídeo" semBotaoTopo
+                addLabel="Adicionar vídeo" semBotaoTopo recentesPrimeiro
                 emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
               />
@@ -22512,7 +22512,9 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
         let d = data;
         if (Array.isArray(d)) d = d[0];
         if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
-        setVideosState((d && d.videos) || []);
+        // A função devolve por ordem de criação (mais antigo primeiro);
+        // aqui faz mais sentido ver o mais recente primeiro.
+        setVideosState((((d && d.videos) || [])).slice().reverse());
         setEstado('pronto');
       } catch (e) {
         if (!cancelado) setEstado('erro');
@@ -25332,7 +25334,7 @@ function cleanFolder(name) {
 // Etiqueta usada no filtro para os itens que não estão em nenhuma pasta.
 const NO_FOLDER = '__sem_pasta__';
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro }, ref) {
   const [modal, setModal] = useState(null);
   React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
   // Pasta atualmente aberta: null = todas.
@@ -25468,11 +25470,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const countIn = (name) => (name === NO_FOLDER
     ? items.filter(v => !cleanFolder(v.pasta)).length
     : items.filter(v => cleanFolder(v.pasta) === name).length);
-  const naPasta = folderFilter === null
+  const naPastaBase = folderFilter === null
     ? items
     : (folderFilter === NO_FOLDER
       ? items.filter(v => !cleanFolder(v.pasta))
       : items.filter(v => cleanFolder(v.pasta) === folderFilter));
+  // `items` chega sempre por ordem de criação (mais antigo primeiro —
+  // é como a leitura vem da base de dados). No Canal geral faz mais
+  // sentido ver o mais recente primeiro; inverte-se só aqui, na leitura
+  // — a escrita (criar, mover, apagar) continua a usar `items` tal
+  // como veio, por isso não há risco de baralhar a ordem gravada.
+  const naPasta = recentesPrimeiro ? [...naPastaBase].reverse() : naPastaBase;
   const termo = busca.trim().toLowerCase();
   /* Duas formas de percorrer a mesma pasta: o visualizador (um ficheiro
      de cada vez, com controlos) ou a coluna contínua, com tudo aberto,
