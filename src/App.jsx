@@ -2103,6 +2103,35 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      as gravações falham em SILÊNCIO, sem erro nenhum. */
   const [clinico, setClinico, clinicoReady, clinicoMeta] = useCollectionSync('clinico', notifyEdit, teamId);
   const [tarefas, setTarefas, tarefasReady] = useCollectionSync('tarefas', notifyEdit, teamId);
+  /* ALERTA DE ANIVERSÁRIO — AUTOMÁTICO, SEM NINGUÉM TER DE CRIAR NADA.
+
+     Em vez de pedir ao treinador para criar à mão a tarefa recorrente
+     "Aniversário de jogador" (ver `tarefaAtivaHoje`), a app garante
+     sozinha que ela existe: assim que as Tarefas desta equipa carregam,
+     se não houver nenhuma com essa recorrência, cria-se uma automaticamente.
+     A partir daí segue o mecanismo já existente — aparece sozinha,
+     com notificação, em qualquer dia em que um jogador faça anos,
+     puxando só da data de nascimento em Editar Jogador. Corre uma vez
+     por equipa (a própria condição impede duplicar em cada arranque). */
+  useEffect(() => {
+    if (!tarefasReady) return;
+    const jaExiste = (tarefas || []).some(t => t.recorrencia && t.recorrencia.tipo === 'aniversario');
+    if (jaExiste) return;
+    setTarefas(prev => ([
+      ...(prev || []),
+      {
+        id: uid(),
+        titulo: 'Há aniversário no plantel 🎉',
+        notas: 'Criada automaticamente pela app — aparece sozinha em qualquer dia em que um jogador do plantel faça anos (precisa da data de nascimento completa em Editar Jogador).',
+        responsavel: '',
+        estado: 'aberta',
+        recorrencia: { tipo: 'aniversario' },
+        criadoEm: new Date().toISOString(),
+      },
+    ]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarefasReady]);
+
   // Momentos de avaliação do Desenvolvimento Individual. Guarda os
   // momentos e, dentro de cada um, um registo por jogador — não duplica o
   // plantel, referencia-o pelo id.
