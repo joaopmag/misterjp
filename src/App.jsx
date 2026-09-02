@@ -23267,6 +23267,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
 
       <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 18, lineHeight: 1.5 }}>
         Horários: Wellness {CHECKIN_WINDOWS.wellness.label} · PSE {CHECKIN_WINDOWS.rpe.label}.
+        <br />
         Fora destas horas fala com o staff técnico.
       </div>
     </div>
