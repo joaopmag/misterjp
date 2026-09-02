@@ -14,7 +14,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse
+  HeartPulse, Flame
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -22855,41 +22855,43 @@ function CheckinLogin({ onSubmit, equipa }) {
   );
 }
 
-function DaySelectStrip({ recentDates, dayStatus, selectedDate, onSelectDate }) {
-  const todayDateStr = todayStr();
+/* SEQUÊNCIA DE RESPOSTAS — substitui o calendário antigo.
+
+   Sem "responder por trás" (CHECKIN_ALLOW_BACKFILL a false), um
+   calendário onde só o dia de hoje é clicável não servia para nada —
+   os dias passados eram só histórico visual preso atrás de um
+   seletor. Isto é mais direto: conta quantos dias seguidos, a contar
+   de hoje para trás, o atleta respondeu ao Wellness (o questionário
+   que existe todos os dias, ao contrário do RPE, que só existe em
+   dias com sessão). Se hoje ainda não respondeu, a sequência conta a
+   partir de ontem — não fica a zero só porque ainda é cedo.
+
+   Limitada aos mesmos `CHECKIN_DAYS_BACK` dias que a app já trazia
+   para o histórico — não é preciso pedir mais nada ao servidor. */
+function sequenciaWellness(recentDates, dayStatus) {
+  const hoje = todayStr();
+  let i = recentDates.length - 1;
+  if (recentDates[i] === hoje && !(dayStatus[recentDates[i]] && dayStatus[recentDates[i]].wellness)) i--;
+  let count = 0;
+  for (; i >= 0; i--) {
+    if (dayStatus[recentDates[i]] && dayStatus[recentDates[i]].wellness) count++;
+    else break;
+  }
+  return count;
+}
+
+function StreakCard({ recentDates, dayStatus }) {
+  const dias = sequenciaWellness(recentDates, dayStatus);
+  const texto = dias === 0
+    ? 'Responde hoje ao Wellness para começares uma sequência.'
+    : `${dias} ${dias === 1 ? 'dia seguido' : 'dias seguidos'} a responder ao Wellness.`;
   return (
-    <div style={{ marginBottom: 22 }}>
-      <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 8 }}>
-        {CHECKIN_ALLOW_BACKFILL ? 'A responder por:' : 'Os teus últimos dias (só respondes ao dia de hoje):'}
-      </div>
-      <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2 }}>
-        {recentDates.map(d => {
-          const isSelected = d === selectedDate;
-          const isToday = d === todayDateStr;
-          const status = dayStatus[d] || { wellness: false, rpe: false };
-          const bothDone = status.wellness && status.rpe;
-          const someDone = status.wellness || status.rpe;
-          // Sem backfill, os dias anteriores servem só de histórico visual.
-          const locked = !CHECKIN_ALLOW_BACKFILL && !isToday;
-          return (
-            <button key={d} onClick={() => { if (!locked) onSelectDate(d); }} disabled={locked} style={{
-              flex: '0 0 auto', width: 46, padding: '8px 0 7px', borderRadius: 10, cursor: locked ? 'default' : 'pointer',
-              opacity: locked ? 0.5 : 1,
-              background: isSelected ? T.cream : T.surface,
-              border: `1px solid ${isSelected ? T.cream : (isToday ? T.gold : T.line)}`,
-              color: isSelected ? T.bg : T.cream, ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-            }}>
-              <span style={{ fontSize: 10.5, color: isSelected ? T.bg : T.mutedDim, textTransform: 'uppercase' }}>{weekdayAbbr(d)}</span>
-              <span style={{ ...display, fontSize: 16, fontWeight: 700 }}>{dayOfMonth(d)}</span>
-              <span style={{
-                width: 6, height: 6, borderRadius: '50%',
-                background: bothDone ? (isSelected ? T.bg : T.good) : someDone ? T.warn : 'transparent',
-                border: someDone ? 'none' : `1px solid ${isSelected ? T.bg + '55' : T.line}`,
-              }} />
-            </button>
-          );
-        })}
-      </div>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22,
+      background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '14px 16px',
+    }}>
+      <Flame size={26} color={dias > 0 ? T.gold : T.mutedDim} strokeWidth={1.6} style={{ flexShrink: 0 }} />
+      <span style={{ fontSize: 13, color: T.cream, lineHeight: 1.4 }}>{texto}</span>
     </div>
   );
 }
@@ -22933,7 +22935,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
       </div>
 
       {recentDates && (
-        <DaySelectStrip recentDates={recentDates} dayStatus={dayStatus} selectedDate={selectedDate} onSelectDate={onSelectDate} />
+        <StreakCard recentDates={recentDates} dayStatus={dayStatus} />
       )}
 
       {!isToday && (
