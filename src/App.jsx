@@ -161,8 +161,12 @@ function diaAutoLesionado(jogadorId, data, clinico) {
   if (!jogadorId || !data) return false;
   return (clinico || []).some(o => (
     o.playerId === jogadorId && o.nivel === 'indisponivel'
-    && o.inicio && o.previsaoRetorno
-    && o.inicio <= data && data <= o.previsaoRetorno
+    && o.inicio && o.inicio <= data
+    // Enquanto a ocorrência não tem `fim` (alta), o jogador continua
+    // indisponível — mesmo que já se tenha passado a previsão de
+    // regresso que se escreveu na altura (era só uma estimativa). Sem
+    // isto, um treino ou jogo criado depois dessa data ficava por
+    // preencher (NP) em vez de L, como se a lesão já não existisse.
     && (!o.fim || data <= o.fim)
   ));
 }
