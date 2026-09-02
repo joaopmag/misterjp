@@ -6528,8 +6528,36 @@ function playerStats(player, sessions, matches) {
    separador para perceber "como vai este jogador".
 
    Jogos oficiais, como sempre — ver a nota em `playerStats`. */
+/* AMPLIAR UMA FOTOGRAFIA — clique fora ou no X para fechar, Esc também
+   fecha. Simples de propósito: não é uma janela de edição (essas não
+   fecham com Esc nem com o clique de fora, ver `Modal`), é só para
+   ver melhor, por isso pode fechar-se da forma mais óbvia possível. */
+function ImageLightbox({ src, alt, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, background: '#000000cc', zIndex: 60,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out',
+    }}>
+      <img
+        src={src} alt={alt || ''} onClick={e => e.stopPropagation()}
+        style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 10, boxShadow: '0 20px 60px #00000080', cursor: 'default' }}
+      />
+      <button onClick={onClose} title="Fechar" style={{
+        position: 'fixed', top: 16, right: 16, background: 'rgba(0,0,0,0.55)', border: 'none', borderRadius: '50%',
+        width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer',
+      }}><X size={18} /></button>
+    </div>
+  );
+}
+
 function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, onBack, onShare, onPrint, onEdit }) {
   const s = playerStats(player, sessions, jogosOficiaisDe(matches));
+  const [fotoAmpliada, setFotoAmpliada] = useState(false);
 
   const ocorrencias = (clinico || [])
     .filter(o => o.playerId === player.id)
@@ -6587,10 +6615,13 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
       {/* CABEÇALHO */}
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap' }}>
         {player.photo ? (
-          <img src={player.photo} alt="Fotografia" style={{
-            width: 72, aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 8,
-            border: `1px solid ${T.line}`, background: '#000', flexShrink: 0,
-          }} />
+          <img
+            src={player.photo} alt="Fotografia" onClick={() => setFotoAmpliada(true)}
+            title="Ver fotografia ampliada"
+            style={{
+              width: 72, aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 8,
+              border: `1px solid ${T.line}`, background: '#000', flexShrink: 0, cursor: 'zoom-in',
+            }} />
         ) : (
           <div style={{
             width: 72, aspectRatio: '3 / 4', borderRadius: 8, background: T.surface, border: `1px solid ${T.line}`,
@@ -6730,6 +6761,10 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
           </div>
         </div>
       </div>
+
+      {fotoAmpliada && player.photo && (
+        <ImageLightbox src={player.photo} alt={player.name} onClose={() => setFotoAmpliada(false)} />
+      )}
     </div>
   );
 }
