@@ -2116,25 +2116,34 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      A partir daí segue o mecanismo já existente — aparece sozinha,
      com notificação, em qualquer dia em que um jogador faça anos,
      puxando só da data de nascimento em Editar Jogador. Corre uma vez
-     por equipa (a própria condição impede duplicar em cada arranque). */
+     por equipa (a própria condição impede duplicar em cada arranque).
+
+     A criação escreve DIRETO no Supabase (`insert`), em vez de passar por
+     `setTarefas` — de propósito: `setTarefas` alimenta o efeito de
+     gravação genérico de `useCollectionSync`, que no fim chama
+     `notifyEdit('tarefas')` e faz esta criação automática aparecer em
+     "Última atividade" como se fosse uma ação de quem tem a app aberta
+     nesse momento, o que confundia (parecia teres criado uma tarefa sem
+     te lembrares). Escrevendo direto, a subscrição de Realtime já
+     existente traz a tarefa nova para `tarefas` sozinha, sem passar pelo
+     caminho que dispara essa notificação — a tarefa continua a
+     criar-se e a funcionar exatamente na mesma, só não aparece ali. */
   useEffect(() => {
-    if (!tarefasReady) return;
+    if (!tarefasReady || !teamId) return;
     const jaExiste = (tarefas || []).some(t => t.recorrencia && t.recorrencia.tipo === 'aniversario');
     if (jaExiste) return;
-    setTarefas(prev => ([
-      ...(prev || []),
-      {
-        id: uid(),
-        titulo: 'Há aniversário no plantel 🎉',
-        notas: 'Criada automaticamente pela app — aparece sozinha em qualquer dia em que um jogador do plantel faça anos (precisa da data de nascimento completa em Editar Jogador).',
-        responsavel: '',
-        estado: 'aberta',
-        recorrencia: { tipo: 'aniversario' },
-        criadoEm: new Date().toISOString(),
-      },
-    ]));
+    const registo = {
+      titulo: 'Há aniversário no plantel 🎉',
+      notas: 'Criada automaticamente pela app — aparece sozinha em qualquer dia em que um jogador do plantel faça anos (precisa da data de nascimento completa em Editar Jogador).',
+      responsavel: '',
+      estado: 'aberta',
+      recorrencia: { tipo: 'aniversario' },
+      criadoEm: new Date().toISOString(),
+    };
+    supabase.from('tarefas').insert([{ id: uid(), data: registo, team_id: teamId }])
+      .then(({ error }) => { if (error) console.error('tarefas (auto aniversário)', error); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tarefasReady]);
+  }, [tarefasReady, teamId]);
 
   // Momentos de avaliação do Desenvolvimento Individual. Guarda os
   // momentos e, dentro de cada um, um registo por jogador — não duplica o
