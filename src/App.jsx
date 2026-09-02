@@ -23192,6 +23192,14 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
       : isRestDay ? 'Dia de folga — sem PSE a registar'
         : !session ? 'Ainda sem sessão criada para hoje'
           : `Intensidade de: ${sessionLabel}`;
+  // O "(das 08:00 às 13:00)" passa para a linha de baixo — só quando
+  // existe mesmo um parêntesis no texto; as mensagens sem ele ("Já
+  // respondeste hoje", "Dia de folga", etc.) ficam como estão.
+  const quebrarParenteses = (texto) => {
+    const i = typeof texto === 'string' ? texto.indexOf('(') : -1;
+    if (i === -1) return texto;
+    return <>{texto.slice(0, i).trimEnd()}<br />{texto.slice(i)}</>;
+  };
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', padding: '28px 18px 60px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, gap: 10 }}>
@@ -23238,7 +23246,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         <Activity size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Wellness</div>
-          <div style={{ fontSize: 12, color: doneWellness ? T.good : (wWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{wellnessHint}</div>
+          <div style={{ fontSize: 12, color: doneWellness ? T.good : (wWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{quebrarParenteses(wellnessHint)}</div>
         </span>
         {doneWellness ? <Check size={18} color={T.good} /> : wWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
       </button>
@@ -23252,7 +23260,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
         <HeartPulse size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
         <span style={{ flex: 1 }}>
           <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>RPE</div>
-          <div style={{ fontSize: 12, color: doneRpe ? T.good : (rWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{rpeHint}</div>
+          <div style={{ fontSize: 12, color: doneRpe ? T.good : (rWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{quebrarParenteses(rpeHint)}</div>
         </span>
         {doneRpe ? <Check size={18} color={T.good} /> : rWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
       </button>
