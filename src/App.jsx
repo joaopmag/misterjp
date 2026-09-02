@@ -8650,6 +8650,14 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
   // (fundo branco) isso fica invisível, por isso passam a um tom escuro.
   const arrowColor = printMode ? '#2A2A2A' : '#F0E7D6';
   const dashedColor = printMode ? '#2A2A2A' : '#FFFFFF';
+  // A ORDEM DE DESENHO decide quem fica por cima de quem, quando dois
+  // itens se sobrepõem. Por omissão é a ordem de `elements` (quem foi
+  // colocado — ou tocado — por último em `onElementDown` já vai parar
+  // ao fim dessa lista, ver DiagramEditor). A bola é a ÚNICA exceção:
+  // fica sempre por cima de tudo, mesmo que se toque nela ou nalgum
+  // jogador depois — um "sort" estável só a empurra para o fim, sem
+  // baralhar a ordem relativa dos restantes.
+  const elementosParaDesenhar = [...elements].sort((a, b) => (a.kind === 'ball' ? 1 : 0) - (b.kind === 'ball' ? 1 : 0));
   return (
     <>
       <defs>
@@ -8717,7 +8725,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           </g>
         );
       })}
-      {elements.map(el => {
+      {elementosParaDesenhar.map(el => {
         const handler = hitsEnabled ? (e) => onElementDown(e, el.id) : undefined;
         const cursorStyle = { cursor: hitsEnabled ? 'grab' : 'default', touchAction: 'none' };
         const hitStyle = { ...cursorStyle, fill: 'transparent' };
@@ -10192,6 +10200,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       return;
     }
     beginGesture();
+    // Traz o elemento tocado para cima de tudo o resto que não seja
+    // bola — sem isto, quem foi colocado mais cedo ficava sempre por
+    // baixo de quem veio depois, mesmo arrastando um por cima do
+    // outro agora. A bola é a única exceção a este "por cima de quem
+    // se mexeu por último": fica sempre por cima de tudo, mesmo que se
+    // lhe toque — ver o ordenamento usado no desenho, mais abaixo.
+    const semEste = elements.filter(el => el.id !== id);
+    const este = elements.find(el => el.id === id);
+    if (este) onChange({ ...value, elements: [...semEste, este] });
     try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     dragStartRef.current = toPoint(e);
     setDragMoved(false);
