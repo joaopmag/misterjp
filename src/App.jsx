@@ -19273,6 +19273,14 @@ function filtrarJogosPorVista(matches, vista) {
 function MatchDashboard({ players, matches }) {
   const [vista, setVista] = useState('competicao');
   const [imprimir, setImprimir] = useState(false);
+  // null = ordem por omissão (nota média, do melhor para o pior — como
+  // já era antes de haver colunas clicáveis). Uma vez escolhida uma
+  // coluna, o clique seguinte na MESMA coluna inverte o sentido; clicar
+  // numa coluna diferente troca de coluna e volta a começar por
+  // descendente (o mais alto primeiro é o que normalmente interessa
+  // ver primeiro nestas colunas — jogos, minutos, golos, etc.).
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState('desc');
   const vistaAtual = VISTAS_JOGO.find(v => v.id === vista) || VISTAS_JOGO[0];
   const escolhidos = filtrarJogosPorVista(matches, vista);
 
@@ -19280,10 +19288,6 @@ function MatchDashboard({ players, matches }) {
   // Um jogo ainda sem ninguém escolhido não conta como não convocado para
   // toda a gente — era isso que punha a coluna sempre no total de jogos.
   const totalMatches = escolhidos.filter(m => (m.convocados || []).length > 0).length;
-  const rows = players
-    .map(p => ({ player: p, s: playerStats(p, [], escolhidos) }))
-    .filter(r => r.s.matchesPlayed > 0)
-    .sort((a, b) => (b.s.avgMatchRating || 0) - (a.s.avgMatchRating || 0));
 
   /* AS COLUNAS DEFINIDAS UMA VEZ SÓ.
 
@@ -19305,6 +19309,35 @@ function MatchDashboard({ players, matches }) {
     { h: 'V', t: 'Cartões vermelhos', v: s => s.red },
     { h: 'Nota', t: 'Nota média', v: s => s.avgMatchRating ?? '—', destaque: true },
   ];
+
+  // Clicar num cabeçalho ordena por essa coluna; um segundo clique na
+  // mesma inverte o sentido. Sem coluna escolhida, mantém-se a ordem de
+  // sempre (nota média, do melhor para o pior).
+  const colunaOrdenada = sortCol != null ? colunas[sortCol] : null;
+  const rows = players
+    .map(p => ({ player: p, s: playerStats(p, [], escolhidos) }))
+    .filter(r => r.s.matchesPlayed > 0)
+    .sort((a, b) => {
+      if (colunaOrdenada) {
+        const va = colunaOrdenada.v(a.s);
+        const vb = colunaOrdenada.v(b.s);
+        const na = typeof va === 'number' ? va : -Infinity;
+        const nb = typeof vb === 'number' ? vb : -Infinity;
+        const diff = sortDir === 'asc' ? na - nb : nb - na;
+        if (diff !== 0) return diff;
+      }
+      return (b.s.avgMatchRating || 0) - (a.s.avgMatchRating || 0);
+    });
+
+  const alternarOrdenacao = (i) => {
+    if (sortCol === i) {
+      setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortCol(i);
+      setSortDir('desc');
+    }
+  };
+
   const nomeJogador = (p) => `${p.number ? `${p.number} ` : ''}${p.name}`;
   const tituloTabela = `Estatísticas — ${vistaAtual.label}`;
 
@@ -19416,7 +19449,14 @@ function MatchDashboard({ players, matches }) {
           <thead>
             <tr style={{ background: T.bg }}>
               <th style={thName}>Jogador</th>
-              {colunas.map(c => <th key={c.h} style={th} title={c.t}>{c.h}</th>)}
+              {colunas.map((c, i) => (
+                <th
+                  key={c.h} style={{ ...th, cursor: 'pointer', userSelect: 'none' }} title={c.t}
+                  onClick={() => alternarOrdenacao(i)}
+                >
+                  {c.h}{sortCol === i && (sortDir === 'desc' ? ' ▾' : ' ▴')}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
