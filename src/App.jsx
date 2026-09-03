@@ -157,6 +157,24 @@ const nivelClinico = (id) => NIVEIS_CLINICOS.find(n => n.id === id) || NIVEIS_CL
    preencher, e a marcação continua ao critério de quem regista dia a
    dia. Se entretanto foi dada alta mais cedo (`fim` antes da previsão),
    essa alta manda: o preenchimento automático para nesse dia. */
+// Mantém em sincronia os dois interruptores "Visível no Portal" de uma
+// convocatória — o do próprio jogo (em `matches`) e o da ficha formal
+// (em `convocatorias`, no separador Jogos → Convocatórias).
+//
+// No sentido jogo → convocatória, quem trata disso é `syncMatchConvocatoria`
+// (já corre sempre que um jogo é gravado, e cria a convocatória se ainda
+// não existir). Esta função aqui é só para o sentido inverso — tocar no
+// olho da convocatória tem de acender/apagar também o interruptor do
+// lado do jogo, se houver um jogo correspondente (mesmo adversário +
+// data, já que são coleções sem ligação direta entre si).
+function sincronizarVisivelNoJogo(data, adversario, visivel, matches, setMatches) {
+  if (!setMatches || !matches) return;
+  const alvo = matches.find(m => m.date === data && m.opponent === adversario);
+  if (alvo && !!alvo.convocatoriaVisivelAtletas !== visivel) {
+    setMatches(matches.map(m => (m.id === alvo.id ? { ...m, convocatoriaVisivelAtletas: visivel } : m)));
+  }
+}
+
 function diaAutoLesionado(jogadorId, data, clinico) {
   if (!jogadorId || !data) return false;
   return (clinico || []).some(o => (
@@ -2665,7 +2683,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           )}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
           {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
-          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} />}
+          {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
           {tab === 'equipa' && (
             <GestaoEquipa
@@ -2977,7 +2995,11 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         <MatchModal
           match={matchModal} players={players} standings={standings} season={season}
           onClose={() => setMatchModal(null)}
-          onSave={(data) => { setMatches(matches.map(x => (x.id === data.id ? data : x))); setMatchModal(null); }}
+          onSave={(data) => {
+            setMatches(matches.map(x => (x.id === data.id ? data : x)));
+            if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(data, prev, season));
+            setMatchModal(null);
+          }}
         />
       )}
       {standingsOpen && (
@@ -15287,7 +15309,7 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
   );
 }
 
-function Planeamento({ sessions, setSessions, exercises, players, setPlayers, matches, setMatches, standings, season, clinico }) {
+function Planeamento({ sessions, setSessions, exercises, players, setPlayers, matches, setMatches, standings, season, clinico, convocatorias, setConvocatorias }) {
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [modalVoltarDia, setModalVoltarDia] = useState(false); // true só quando abriu a partir da janela do dia
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
@@ -15472,6 +15494,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
     const registo = isEdicao ? data : { ...data, id: uid() };
     if (isEdicao) setMatches(matches.map(m => m.id === data.id ? registo : m));
     else setMatches([...matches, registo]);
+    if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
     setSessions(prev => ensureFriendlySession(registo, prev));
     if (isEdicao && matchModalVoltarFicha) trocarJanela(() => setMatchModal(null), () => setFicha(registo));
     else setMatchModal(null);
@@ -27634,6 +27657,11 @@ function syncMatchConvocatoria(match, convocatorias, season) {
     competicao: competitionLabel(match.competition) || '',
     jornada: match.jornada || '',
     casaFora: match.atHome === undefined ? undefined : (match.atHome ? 'Casa' : 'Fora'),
+    // O interruptor "Visível no Portal" é UM SÓ conceito partilhado
+    // pelos dois sítios (o jogo e a ficha formal) — sincroniza-se
+    // sempre que o jogo é gravado, para nunca ficar um ligado e o
+    // outro desligado.
+    visivelAtletas: !!match.convocatoriaVisivelAtletas,
   };
   Object.keys(base).forEach(k => { if (base[k] === undefined) delete base[k]; });
 
@@ -27742,7 +27770,11 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'flex-end' }}>
                       <button
-                        onClick={() => setConvocatorias(convocatorias.map(x => (x.id === c.id ? { ...x, visivelAtletas: !x.visivelAtletas } : x)))}
+                        onClick={() => {
+                          const querido = !c.visivelAtletas;
+                          setConvocatorias(convocatorias.map(x => (x.id === c.id ? { ...x, visivelAtletas: querido } : x)));
+                          sincronizarVisivelNoJogo(c.data, c.adversario, querido, matches, setMatches);
+                        }}
                         title={c.visivelAtletas ? 'Visível no Portal do Atleta — clicar para esconder' : 'Tornar visível no Portal do Atleta'}
                         style={{ background: 'none', border: 'none', color: c.visivelAtletas ? T.gold : T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}
                       >{c.visivelAtletas ? <Eye size={14} /> : <EyeOff size={14} />}</button>
