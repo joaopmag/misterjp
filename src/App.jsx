@@ -2187,11 +2187,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     || !desenvolvimentoReady || !standingsReady || !clinicoReady || !tarefasReady || !documentosReady;
 
   // O questionário (Wellness/RPE) abre em ecrã inteiro, sem a barra
-  // lateral, quando o link inclui ?checkin=1 — é este o link a partilhar
-  // com os atletas. O botão "Pré-visualizar" na Monitorização ativa o
-  // mesmo ecrã sem precisar de editar o URL (útil para testar aqui).
+  // lateral, quando o link inclui ?checkin=1 (links antigos, já
+  // partilhados) ou ?portal=<id-da-equipa> (links novos, mais curtos e
+  // com o nome do próprio Portal do Atleta) — é este o link a
+  // partilhar com os atletas. O botão "Pré-visualizar" na
+  // Monitorização ativa o mesmo ecrã sem precisar de editar o URL
+  // (útil para testar aqui).
   const isCheckin = previewKiosk || (typeof window !== 'undefined' &&
-    (window.location.search.includes('checkin') || window.location.hash.includes('checkin')));
+    (window.location.search.includes('checkin') || window.location.hash.includes('checkin')
+      || window.location.search.includes('portal=') || window.location.hash.includes('portal=')));
 
   // Mesma protecção contra o ciclo save→realtime→save descrita em
   // useSingletonSync: a Época tem os seus próprios efeitos (é anterior ao
@@ -21195,9 +21199,16 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
 
   /* O link leva a equipa. Sem ela, o servidor tem de adivinhar de quem é
      o código — e com vários clubes na mesma base, adivinhar mal significa
-     um atleta a abrir o questionário de outro. */
+     um atleta a abrir o questionário de outro.
+
+     Link novo, mais curto: ?portal=<id-da-equipa> — o próprio Portal do
+     Atleta é agora o conceito principal, por isso passa a dar-lhe o
+     nome. Os links antigos (?checkin=1&e=...), já partilhados com
+     atletas antes desta mudança, continuam a funcionar na mesma (ver
+     `equipaDoLink`) — só os NOVOS links copiados a partir de agora é
+     que vêm neste formato. */
   const checkinUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}${window.location.pathname}?checkin=1${teamId ? `&e=${teamId}` : ''}`
+    ? `${window.location.origin}${window.location.pathname}${teamId ? `?portal=${teamId}` : '?checkin=1'}`
     : '';
 
   const copyCheckinUrl = async () => {
@@ -28499,11 +28510,20 @@ function CheckinApp() {
   const equipaDoLink = (() => {
     if (typeof window === 'undefined') return null;
     try {
+      // Link novo: ?portal=<id-da-equipa> — o próprio valor já é o id,
+      // não precisa de um "e=" à parte.
+      const p = new URLSearchParams(window.location.search).get('portal');
+      if (p) return p;
+      // Link antigo (?checkin=1&e=<id-da-equipa>) — continua a funcionar,
+      // para não partir nada que já tenha sido partilhado.
       const q = new URLSearchParams(window.location.search).get('e');
       if (q) return q;
-      // Também se aceita no fragmento (#checkin&e=...), porque é assim
-      // que alguns clientes de email reescrevem os endereços.
+      // Também se aceita no fragmento (#checkin&e=... ou #portal=...),
+      // porque é assim que alguns clientes de email reescrevem os
+      // endereços.
       const h = window.location.hash.replace('#', '');
+      const mPortal = h.match(/(?:^|&)portal=([^&]+)/);
+      if (mPortal) return mPortal[1];
       const m = h.match(/(?:^|&)e=([^&]+)/);
       return m ? m[1] : null;
     } catch (e) { return null; }
@@ -28775,12 +28795,14 @@ export default function AppRoot() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // O link do questionário (?checkin=1 ou #checkin) é para os atletas, que
-  // não têm (nem devem precisar de) conta de treinador — por isso esta
+  // O link do questionário (?checkin=1, dos links antigos, ou
+  // ?portal=<id-da-equipa>, dos novos) é para os atletas, que não têm
+  // (nem devem precisar de) conta de treinador — por isso esta
   // verificação acontece ANTES do portão de login, e nunca mostra o ecrã
   // de autenticação da plataforma.
   const isCheckin = typeof window !== 'undefined' &&
-    (window.location.search.includes('checkin') || window.location.hash.includes('checkin'));
+    (window.location.search.includes('checkin') || window.location.hash.includes('checkin')
+      || window.location.search.includes('portal=') || window.location.hash.includes('portal='));
   if (isCheckin) return <ErrorBoundary><CheckinApp /></ErrorBoundary>;
 
   if (session === undefined) {
