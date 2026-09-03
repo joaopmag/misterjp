@@ -7860,8 +7860,14 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
       {/* PARTILHADA COM OS ATLETAS — nada fica visível no Portal do
           Atleta por omissão. Só as ideias que o treinador marcar aqui é
           que aparecem lá, exatamente como as fichas de scouting nunca
-          saem daqui para fora sem se querer. */}
-      <div style={{ marginBottom: 16 }}>
+          saem daqui para fora sem se querer.
+
+          Dois interruptores independentes, não um só: a mesma ideia
+          pode interessar ao "Ideia de Jogo" geral, ao "Plano de Jogo"
+          dentro de Jogos, aos dois, ou a nenhum — o conteúdo é o
+          mesmo, só o SÍTIO onde aparece no Portal é que se escolhe
+          aqui, sem duplicar nada. */}
+      <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -7869,7 +7875,16 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
             onChange={e => setF({ ...f, visivelAtletas: e.target.checked })}
             style={{ width: 16, height: 16, accentColor: T.crimson, cursor: 'pointer' }}
           />
-          <span style={{ fontSize: 13, color: T.cream }}>Visível para os atletas no Portal do Atleta</span>
+          <span style={{ fontSize: 13, color: T.cream }}>Visível no Portal → Ideia de Jogo</span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={!!f.visivelPlanoJogo}
+            onChange={e => setF({ ...f, visivelPlanoJogo: e.target.checked })}
+            style={{ width: 16, height: 16, accentColor: T.crimson, cursor: 'pointer' }}
+          />
+          <span style={{ fontSize: 13, color: T.cream }}>Visível no Portal → Jogos → Plano de Jogo</span>
         </label>
       </div>
 
@@ -22531,6 +22546,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return <PlayerBibliotecaView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
   }
 
+  if (activeType === 'jogos') {
+    return <PlayerJogosHome code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+  }
+
   if (activeType === 'portal') {
     return (
       <PlayerPortalHome
@@ -22538,6 +22557,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         onOpenIdeiaJogo={() => setActiveType('ideiaJogo')}
         onOpenTreino={() => setActiveType('treino')}
         onOpenBiblioteca={() => setActiveType('biblioteca')}
+        onOpenJogos={() => setActiveType('jogos')}
       />
     );
   }
@@ -22836,7 +22856,7 @@ function TemaCirculo({ Icon, label, onClick }) {
   );
 }
 
-function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca }) {
+function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca, onOpenJogos }) {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
@@ -22859,7 +22879,167 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBibliot
         <TemaCirculo Icon={Lightbulb} label="Ideia de Jogo" onClick={onOpenIdeiaJogo} />
         <TemaCirculo Icon={CalendarDays} label="Treino" onClick={onOpenTreino} />
         <TemaCirculo Icon={Tv} label="Biblioteca" onClick={onOpenBiblioteca} />
+        <TemaCirculo Icon={Shield} label="Jogos" onClick={onOpenJogos} />
       </div>
+    </div>
+  );
+}
+
+/* JOGOS, DENTRO DO PORTAL — três separadores independentes:
+   Convocatórias, Plano de Jogo, Adversário. Cada um vem de uma função
+   própria no servidor (checkin_convocatoria / checkin_plano_jogo /
+   checkin_adversario), pela mesma razão de sempre: o atleta nunca lê as
+   tabelas diretamente, só o que o treinador marcou como visível. */
+function PlayerJogosHome({ code, teamId, onBack }) {
+  const [subTab, setSubTab] = useState('convocatorias');
+  const abas = [
+    { id: 'convocatorias', label: 'Convocatórias' },
+    { id: 'planoJogo', label: 'Plano de Jogo' },
+    { id: 'adversario', label: 'Adversário' },
+  ];
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+      }}>
+        <ChevronLeft size={15} /> Voltar
+      </button>
+
+      <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Jogos</div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+        {abas.map(a => {
+          const on = subTab === a.id;
+          return (
+            <button key={a.id} onClick={() => setSubTab(a.id)} style={{
+              padding: '7px 14px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+              background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${on ? '#B5393F' : T.line}`,
+            }}>{a.label}</button>
+          );
+        })}
+      </div>
+
+      {subTab === 'convocatorias' && <PlayerConvocatoriasTab code={code} teamId={teamId} />}
+      {subTab === 'planoJogo' && <PlayerPlanoJogoTab code={code} teamId={teamId} />}
+      {subTab === 'adversario' && <PlayerAdversarioTab code={code} teamId={teamId} />}
+    </div>
+  );
+}
+
+function usePortalFetch(rpcName, code, teamId) {
+  const [estado, setEstado] = useState('a-carregar');
+  const [dados, setDados] = useState(null);
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc(rpcName, { p_code: code, p_team: teamId });
+        if (cancelado) return;
+        if (error) throw error;
+        let d = data;
+        if (Array.isArray(d)) d = d[0];
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
+        setDados(d || {});
+        setEstado('pronto');
+      } catch (e) {
+        if (!cancelado) setEstado('erro');
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [rpcName, code, teamId]);
+  return [estado, dados];
+}
+
+function PlayerConvocatoriasTab({ code, teamId }) {
+  const [estado, dados] = usePortalFetch('checkin_convocatoria', code, teamId);
+  if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
+  if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
+  const lista = (dados && dados.convocatorias) || [];
+  if (lista.length === 0) {
+    return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhuma convocatória partilhada contigo.</div>;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560 }}>
+      {lista.map(c => (
+        <div key={c.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, marginBottom: 4 }}>
+            Estás convocado — {c.casaFora === 'Fora' ? `${c.adversario} vs Salgueiros` : `vs ${c.adversario}`}
+          </div>
+          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+            {[c.data && formatShortDatePt(c.data), c.horaJogo, c.localJogo].filter(Boolean).join(' · ')}
+          </div>
+          {(c.horaConcentracao || c.localConcentracao) && (
+            <div style={{ fontSize: 12, color: T.gold, marginTop: 6 }}>
+              Concentração: {[c.horaConcentracao, c.localConcentracao].filter(Boolean).join(' · ')}
+            </div>
+          )}
+          {c.outrasInfo && <div style={{ fontSize: 12.5, color: T.cream, marginTop: 8, lineHeight: 1.5 }}>{c.outrasInfo}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlayerPlanoJogoTab({ code, teamId }) {
+  const [estado, dados] = usePortalFetch('checkin_plano_jogo', code, teamId);
+  if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
+  if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
+  const ideias = (dados && dados.ideias) || [];
+  if (ideias.length === 0) {
+    return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhum plano de jogo partilhado contigo.</div>;
+  }
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
+      {ideias.map(i => (
+        <div key={i.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ height: 130, background: T.bg }}>
+            <DiagramThumb diagram={i.diagram} height={130} fill />
+          </div>
+          <div style={{ padding: '10px 12px' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: T.cream }}>{i.name || 'Ideia de jogo'}</div>
+            {i.phase && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>{i.phase}</div>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlayerAdversarioTab({ code, teamId }) {
+  const [estado, dados] = usePortalFetch('checkin_adversario', code, teamId);
+  const [aVer, setAVer] = useState(null);
+  if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
+  if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
+  const lista = (dados && dados.adversarios) || [];
+  if (lista.length === 0) {
+    return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhum adversário partilhado contigo.</div>;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560 }}>
+      {lista.map(a => (
+        <div key={a.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, marginBottom: 4 }}>{a.nome}</div>
+          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10 }}>
+            {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ')}
+          </div>
+          {a.caracteristicas && <div style={{ fontSize: 12.5, color: T.cream, marginBottom: 8, lineHeight: 1.5 }}>{a.caracteristicas}</div>}
+          {a.notas && <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.5 }}>{a.notas}</div>}
+          {(a.videos || []).length > 0 && (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {a.videos.map(v => (
+                <MediaFeedItem key={v.id} item={v} onOpen={item => { if (item.kind) setAVer(item); }} />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {aVer && (
+        <Modal title={aVer.title || aVer.fileName || 'Ficheiro'} onClose={() => setAVer(null)} wide>
+          <AttachmentPreview item={aVer} tall />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -24388,6 +24568,11 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{a.nome}</div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setAdversarios(adversarios.map(x => (x.id === a.id ? { ...x, visivelAtletas: !x.visivelAtletas } : x))); }}
+                    title={a.visivelAtletas ? 'Visível no Portal do Atleta — clicar para esconder' : 'Tornar visível no Portal do Atleta'}
+                    style={{ background: 'none', border: 'none', color: a.visivelAtletas ? T.gold : T.mutedDim, cursor: 'pointer' }}
+                  >{a.visivelAtletas ? <Eye size={13} /> : <EyeOff size={13} />}</button>
                   <button onClick={(e) => { e.stopPropagation(); doShare(a); }} title="Partilhar ficha do adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(a); }} title="Imprimir ficha do adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setEditando(a); }} title="Editar adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
@@ -27644,6 +27829,12 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
           </div>
           <div style={FIELD_FULL}>
             <Field label="Outras informações"><TextArea value={f.outrasInfo} onChange={e => setF({ ...f, outrasInfo: e.target.value })} /></Field>
+          </div>
+          <div style={FIELD_FULL}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', ...body, fontSize: 13, color: T.cream }}>
+              <input type="checkbox" checked={!!f.visivelAtletas} onChange={e => setF({ ...f, visivelAtletas: e.target.checked })} />
+              Visível no Portal do Atleta (cada convocado vê só que está convocado — nunca se é titular ou suplente)
+            </label>
           </div>
         </div>
       </div>
