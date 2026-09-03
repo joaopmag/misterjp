@@ -22879,7 +22879,7 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBibliot
         <TemaCirculo Icon={Lightbulb} label="Ideia de Jogo" onClick={onOpenIdeiaJogo} />
         <TemaCirculo Icon={CalendarDays} label="Treino" onClick={onOpenTreino} />
         <TemaCirculo Icon={Tv} label="Biblioteca" onClick={onOpenBiblioteca} />
-        <TemaCirculo Icon={Shield} label="Jogos" onClick={onOpenJogos} />
+        <TemaCirculo Icon={Trophy} label="Jogos" onClick={onOpenJogos} />
       </div>
     </div>
   );
