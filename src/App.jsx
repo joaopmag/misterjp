@@ -21036,13 +21036,15 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
         <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
       </div>
 
-      {/* IDEIAS PARA O JOGO.
-
-          O plano em palavras: como se quer atacar, como se quer pressionar,
-          o que fazer nas bolas paradas, o que vigiar no adversário. Fica
-          fora da grelha de campos curtos porque é texto corrido e precisa
-          da largura toda; aparece depois na ficha do jogo, por baixo do
-          campo, que é onde se lê antes de entrar. */}
+      {/* IDEIAS PARA O JOGO — nota interna do treinador (como se quer
+          atacar, pressionar, bolas paradas, o que vigiar no adversário).
+          Fica fora da grelha de campos curtos porque é texto corrido e
+          precisa da largura toda; aparece na ficha do jogo, por baixo do
+          campo. Já não tem interruptor para o Portal do Atleta — essa
+          partilha passou a fazer-se pelas Ideias de Jogo com diagrama,
+          marcadas como "Visível no Portal → Jogos → Plano de Jogo" (ver
+          IdeiaModal), que é mais claro para o atleta do que um texto
+          solto sem imagem. */}
       <div style={{ marginBottom: 16 }}>
         <Field label="Ideias para o jogo" bloco solto>
           <TextArea
@@ -21052,18 +21054,6 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
             style={{ minHeight: 90 }}
           />
         </Field>
-        {/* Nada disto chega ao Portal do Atleta sem se querer — o
-            interruptor fica ao lado do texto para não passar
-            despercebido. */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 8 }}>
-          <input
-            type="checkbox"
-            checked={!!f.ideiasVisivelAtletas}
-            onChange={e => setF({ ...f, ideiasVisivelAtletas: e.target.checked })}
-            style={{ width: 16, height: 16, accentColor: T.crimson, cursor: 'pointer' }}
-          />
-          <span style={{ fontSize: 12.5, color: T.mutedDim }}>Partilhar com os atletas no Portal do Atleta</span>
-        </label>
       </div>
 
       {/* Num amigável não há convocatória: vai quem aparece. A lista é a
@@ -22973,47 +22963,83 @@ function PlayerConvocatoriasTab({ code, teamId }) {
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560 }}>
-      {lista.map(c => (
-        <div key={c.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, marginBottom: 4 }}>
-            Estás convocado — {c.casaFora === 'Fora' ? `${c.adversario} vs Salgueiros` : `vs ${c.adversario}`}
-          </div>
-          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-            {[c.data && formatShortDatePt(c.data), c.horaJogo, c.localJogo].filter(Boolean).join(' · ')}
-          </div>
-          {(c.horaConcentracao || c.localConcentracao) && (
-            <div style={{ fontSize: 12, color: T.gold, marginTop: 6 }}>
-              Concentração: {[c.horaConcentracao, c.localConcentracao].filter(Boolean).join(' · ')}
+      {lista.map(c => {
+        // Por número da camisola — quem não tem número atribuído vai
+        // para o fim, não para o topo (0 seria enganador, parecia o
+        // número 0 a jogo).
+        const convocados = [...(c.convocados || [])].sort((a, b) => {
+          const na = typeof a.number === 'number' ? a.number : Infinity;
+          const nb = typeof b.number === 'number' ? b.number : Infinity;
+          return na - nb;
+        });
+        return (
+          <div key={c.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.gold, marginBottom: 4 }}>Excelente! Foste convocado.</div>
+            <div style={{ fontSize: 13.5, color: T.cream, marginBottom: 4 }}>
+              {c.casaFora === 'Fora' ? `${c.adversario} vs Salgueiros` : `vs ${c.adversario}`}
             </div>
-          )}
-          {c.outrasInfo && <div style={{ fontSize: 12.5, color: T.cream, marginTop: 8, lineHeight: 1.5 }}>{c.outrasInfo}</div>}
-        </div>
-      ))}
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+              {[c.data && formatShortDatePt(c.data), c.horaJogo, c.localJogo].filter(Boolean).join(' · ')}
+            </div>
+            {(c.horaConcentracao || c.localConcentracao) && (
+              <div style={{ fontSize: 12, color: T.gold, marginTop: 6 }}>
+                Concentração: {[c.horaConcentracao, c.localConcentracao].filter(Boolean).join(' · ')}
+              </div>
+            )}
+            {c.outrasInfo && <div style={{ fontSize: 12.5, color: T.cream, marginTop: 8, lineHeight: 1.5 }}>{c.outrasInfo}</div>}
+
+            {convocados.length > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
+                <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+                  Convocados
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {convocados.map(p => (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: T.cream }}>
+                      <span style={{ ...mono, color: T.mutedDim, width: 24, flexShrink: 0, textAlign: 'right' }}>
+                        {typeof p.number === 'number' ? p.number : '—'}
+                      </span>
+                      <span>{p.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 function PlayerPlanoJogoTab({ code, teamId }) {
   const [estado, dados] = usePortalFetch('checkin_plano_jogo', code, teamId);
+  const [aVer, setAVer] = useState(null);
   if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
   if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
   const ideias = (dados && dados.ideias) || [];
+  if (aVer) {
+    return <ExercisePresentation exercise={{ ...aVer, name: aVer.name || aVer.phase || 'Ideia de jogo' }} onClose={() => setAVer(null)} />;
+  }
   if (ideias.length === 0) {
     return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhum plano de jogo partilhado contigo.</div>;
   }
+  // Mesma organização por momento de jogo do "Ideia de Jogo" — reaproveita
+  // `MOMENTOS_JOGO`/`ColunaIdeias`, para o atleta encontrar as coisas nos
+  // dois sítios da mesma forma, em vez de teres de aprender duas
+  // organizações diferentes.
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
-      {ideias.map(i => (
-        <div key={i.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ height: 130, background: T.bg }}>
-            <DiagramThumb diagram={i.diagram} height={130} fill />
-          </div>
-          <div style={{ padding: '10px 12px' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: T.cream }}>{i.name || 'Ideia de jogo'}</div>
-            {i.phase && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>{i.phase}</div>}
-          </div>
-        </div>
-      ))}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 16 }}>
+      {MOMENTOS_JOGO.map(momento => {
+        const doMomento = ideias.filter(x => x.phase === momento);
+        if (!doMomento.length) return null;
+        return <ColunaIdeias key={momento} titulo={momento} itens={doMomento} onAbrir={setAVer} />;
+      })}
+      {(() => {
+        const restantes = ideias.filter(x => !MOMENTOS_JOGO.includes(x.phase));
+        if (!restantes.length) return null;
+        return <ColunaIdeias titulo="Outras" itens={restantes} onAbrir={setAVer} />;
+      })()}
     </div>
   );
 }
