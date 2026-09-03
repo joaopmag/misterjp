@@ -27735,14 +27735,19 @@ function syncMatchConvocatoria(match, convocatorias, season) {
       ...base,
     }];
   }
-  /* Numa convocatória que já existe, os convocados só são reescritos se o
-     jogo tiver alguém e ela ainda estiver vazia. É a convocatória que
-     manda na lista de nomes — foi lá que o treinador escolheu o onze e o
-     banco, e gravar o jogo não pode desfazer essa escolha. */
+  /* Os convocados acompanham sempre o jogo, tal como já acontece com o
+     interruptor "Visível no Portal" — a última gravação é que manda,
+     em vez de a convocatória ficar presa a uma lista mais antiga e
+     mais curta. Antes só se copiava a lista do jogo enquanto a
+     convocatória estivesse vazia; a partir da segunda vez que se
+     mexia nos convocados do jogo (ex.: de 5 para 35), a convocatória
+     já não seguia — ficava parada no número antigo, mesmo o Portal já
+     a mostrar corretamente a partir do próprio jogo (que tem sempre a
+     versão mais recente). */
   return lista.map((c, i) => {
     if (i !== idx) return c;
     const next = { ...c, ...base };
-    if (!(c.convocados || []).length && (match.convocados || []).length) {
+    if ((match.convocados || []).length) {
       next.convocados = [...match.convocados];
     }
     return next;
