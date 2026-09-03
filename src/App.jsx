@@ -27694,6 +27694,11 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                       três ícones empilhavam-se um debaixo do outro. */}
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setConvocatorias(convocatorias.map(x => (x.id === c.id ? { ...x, visivelAtletas: !x.visivelAtletas } : x)))}
+                        title={c.visivelAtletas ? 'Visível no Portal do Atleta — clicar para esconder' : 'Tornar visível no Portal do Atleta'}
+                        style={{ background: 'none', border: 'none', color: c.visivelAtletas ? T.gold : T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}
+                      >{c.visivelAtletas ? <Eye size={14} /> : <EyeOff size={14} />}</button>
                       <button onClick={() => doPrint(c, 'lista')} title="Imprimir a convocatória (só os nomes, para afixar)" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
                       <button onClick={() => doPrint(c, 'ficha')} title="Imprimir a ficha técnica (onze, suplentes e capitães)" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><ClipboardList size={14} /></button>
                       <button onClick={() => setModal(c)} title="Editar convocatória" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
@@ -27931,12 +27936,6 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
           </div>
           <div style={FIELD_FULL}>
             <Field label="Outras informações"><TextArea value={f.outrasInfo} onChange={e => setF({ ...f, outrasInfo: e.target.value })} /></Field>
-          </div>
-          <div style={FIELD_FULL}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', ...body, fontSize: 13, color: T.cream }}>
-              <input type="checkbox" checked={!!f.visivelAtletas} onChange={e => setF({ ...f, visivelAtletas: e.target.checked })} />
-              Visível no Portal do Atleta (cada convocado vê só que está convocado — nunca se é titular ou suplente)
-            </label>
           </div>
         </div>
       </div>
