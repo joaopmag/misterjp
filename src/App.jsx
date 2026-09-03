@@ -16737,7 +16737,7 @@ function equipaEmColunasHtml(titulares, suplentes) {
 function equipaDoAmigavel({ session, jogo, players }) {
   const dados = session && session.equipasSimulador && session.equipasSimulador.onzeAmigavel;
   const doSimulador = !!(dados && dados.onze && dados.onze.some(l => l.jogador));
-  const comNumero = (p) => `${p.number ? `${p.number} ` : ''}${p.name}`;
+  const comNumero = (p) => `${p.number ? `${p.number} ` : ''}${p.name}${p.convidado ? ' (exp)' : ''}`;
 
   /* As listas saem sempre como [{ nome, x }]: `nome` para escrever, `x`
      com os acontecimentos do jogo quando eles existem. O Simulador só
@@ -18515,11 +18515,30 @@ function eventosDoJogo(match, players, duracao = 90) {
   };
 
   const todos = convocados.map(doJogador).filter(Boolean);
+
+  /* Jogadores à experiência (ainda sem ficha no Plantel, `match.convidados`)
+     não têm `id`, por isso nunca apareciam aqui — `doJogador` procura por
+     `id` em `players` e não os encontra, e ficavam sistematicamente de
+     fora de qualquer lista, resumo ou partilha que passasse por esta
+     função (que é a fonte de quase tudo: FichaJogo, ficha impressa,
+     partilha em HTML). Entram sempre como suplentes, sem estatísticas
+     (não há `report` para quem não tem `id`), e sempre no fim da lista
+     de suplentes — nunca misturados a meio de quem já tem ficha. */
+  const convidados = ((match && match.convidados) || []).map((c, i) => ({
+    player: { id: `convidado-${i}`, name: c.nome, position: c.position || '', convidado: true },
+    titular: false,
+    minutos: null, golos: 0, assistencias: 0, cartao: null, nota: null,
+    saiuAo: null, entrouAo: null, jogou: false,
+  }));
+
   return {
     titulares: todos.filter(x => x.titular),
-    suplentes: sortByPosition(todos.filter(x => !x.titular).map(x => x.player))
-      .map(p => todos.find(x => x.player.id === p.id)),
-    todos,
+    suplentes: [
+      ...sortByPosition(todos.filter(x => !x.titular).map(x => x.player))
+        .map(p => todos.find(x => x.player.id === p.id)),
+      ...convidados,
+    ],
+    todos: [...todos, ...convidados],
   };
 }
 
@@ -19127,7 +19146,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                     {x.player.number || '—'}
                   </span>
                   <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {shortPlayerName(x.player, players)}
+                    {shortPlayerName(x.player, players)}{x.player.convidado ? ' (exp)' : ''}
                   </span>
                   <EventosDoJogador x={x} />
                 </div>
