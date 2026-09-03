@@ -2996,8 +2996,9 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           match={matchModal} players={players} standings={standings} season={season}
           onClose={() => setMatchModal(null)}
           onSave={(data) => {
-            setMatches(matches.map(x => (x.id === data.id ? data : x)));
-            if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(data, prev, season));
+            const registo = podarPresencasForaDosConvocados(data);
+            setMatches(matches.map(x => (x.id === registo.id ? registo : x)));
+            if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
             setMatchModal(null);
           }}
         />
@@ -15495,7 +15496,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
 
   const saveMatch = (data) => {
     const isEdicao = !!data.id;
-    const registo = isEdicao ? data : { ...data, id: uid() };
+    const registo = podarPresencasForaDosConvocados(isEdicao ? data : { ...data, id: uid() });
     if (isEdicao) setMatches(matches.map(m => m.id === data.id ? registo : m));
     else setMatches([...matches, registo]);
     if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
@@ -20839,7 +20840,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
 
   const save = (data) => {
     const isEdicao = !!data.id;
-    const registo = isEdicao ? data : { ...data, id: uid() };
+    const registo = podarPresencasForaDosConvocados(isEdicao ? data : { ...data, id: uid() });
     if (isEdicao) setMatches(matches.map(m => m.id === data.id ? registo : m));
     else setMatches([...matches, registo]);
     // Amigável: entra também na agenda como sessão (ver ensureFriendlySession).
@@ -27780,7 +27781,10 @@ function syncConvocatoriaMatch(conv, matches, players) {
        ficha do jogo: a partir daí manda o que o treinador registou no
        relatório, que reflete o que aconteceu mesmo em campo. */
     if ((m.starters || []).length > 0) next.starters = m.starters;
-    return next;
+    // Quem saiu dos convocados sai também da Presenças (attendance,
+    // faltas, lesionados, escalão) — sem isto ficava marcado como "C"
+    // numa grelha que já nem devia mostrá-lo.
+    return podarPresencasForaDosConvocados(next);
   });
 }
 
@@ -27795,6 +27799,35 @@ function syncConvocatoriaMatch(conv, matches, players) {
      nunca se cria uma segunda convocatória para o mesmo jogo;
    · amigáveis não geram convocatória nenhuma. Não há convocatória num
      amigável: há presenças, e essas vivem na tabela de presenças. */
+/* SEM CONVOCATÓRIA, SEM PRESENÇA MARCADA.
+
+   `convocados` (quem foi chamado) e `attendance`/`faltas`/`lesionados`/
+   `escalao` (o que aconteceu a cada um na Presenças) são campos
+   diferentes do jogo — mas dependem um do outro: não faz sentido
+   alguém continuar marcado como "C" (convocado) na grelha de Presenças
+   depois de ter sido tirado da lista de convocados. Sem esta poda, uma
+   marca antiga ficava pendurada e a Presenças mostrava gente que já
+   não estava convocada.
+
+   Chamada sempre que um jogo é gravado — cobre tanto editar os
+   convocados diretamente no jogo como a sincronização vinda da
+   convocatória (as duas acabam por passar por aqui). */
+function podarPresencasForaDosConvocados(match) {
+  const validos = new Set(match.convocados || []);
+  const podado = { ...match };
+  ['attendance', 'faltas', 'lesionados', 'escalao'].forEach(campo => {
+    if (Array.isArray(podado[campo])) {
+      podado[campo] = podado[campo].filter(id => validos.has(id));
+    }
+  });
+  if (podado.ratings) {
+    const ratings = {};
+    Object.keys(podado.ratings).forEach(id => { if (validos.has(id)) ratings[id] = podado.ratings[id]; });
+    podado.ratings = ratings;
+  }
+  return podado;
+}
+
 function syncMatchConvocatoria(match, convocatorias, season) {
   const lista = convocatorias || [];
   if (!match || !match.date || isFriendlyMatch(match)) return lista;
