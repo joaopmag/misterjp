@@ -23067,8 +23067,8 @@ function PlayerConvocatoriasTab({ code, teamId }) {
                   Convocados
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {convocados.map(p => (
-                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: T.cream }}>
+                  {convocados.map((p, i) => (
+                    <div key={p.id || `x-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: T.cream }}>
                       <span style={{ ...mono, color: T.mutedDim, width: 24, flexShrink: 0, textAlign: 'right' }}>
                         {typeof p.number === 'number' ? p.number : '—'}
                       </span>
@@ -27702,6 +27702,11 @@ function syncMatchConvocatoria(match, convocatorias, season) {
     // sempre que o jogo é gravado, para nunca ficar um ligado e o
     // outro desligado.
     visivelAtletas: !!match.convocatoriaVisivelAtletas,
+    // Jogadores à experiência (ainda sem ficha no Plantel) só existem
+    // no jogo, nunca na tabela `players` — sem os trazer também para
+    // cá, ficavam de fora da lista de convocados sempre que se
+    // imprimisse ou partilhasse a convocatória a partir DAQUI.
+    convidados: match.convidados || [],
   };
   Object.keys(base).forEach(k => { if (base[k] === undefined) delete base[k]; });
 
@@ -27804,7 +27809,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{competitionLabel(c.competicao) || '—'}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.jornada || '—'}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.localJogo || '—'}</td>
-                  <td style={{ ...td, textAlign: 'center' }}>{(c.convocados || []).length}</td>
+                  <td style={{ ...td, textAlign: 'center' }}>{(c.convocados || []).length + convidadosDe(c).length}</td>
                   {/* Célula estreita e sem quebra: sem isto, no telemóvel os
                       três ícones empilhavam-se um debaixo do outro. */}
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
@@ -27846,7 +27851,9 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
       {printConvocatoria && createPortal(
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
-            {printConvocatoria.adversario ? `vs ${printConvocatoria.adversario}` : 'Convocatória'}
+            {printConvocatoria.adversario
+              ? `${(season && season.club) || 'Equipa'} vs ${printConvocatoria.adversario}`
+              : 'Convocatória'}
           </h2>
           <div style={{ fontSize: 12.5, color: '#444', margin: '0 0 14px' }}>
             {[
@@ -27875,6 +27882,11 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
 
           {(() => {
             const ids = printConvocatoria.convocados || [];
+            // Jogadores à experiência (ainda sem ficha no Plantel) vêm à
+            // parte, só com o nome — aparecem sempre no fim da lista de
+            // convocados (ou dos suplentes, na ficha técnica), nunca
+            // misturados na ordem de quem já tem número.
+            const experiencia = nomesDosConvidados(printConvocatoria);
             const nome = (pid) => {
               const p = players.find(pl => pl.id === pid);
               return p ? `${p.number ? `${p.number} · ` : ''}${p.name}` : null;
@@ -27888,11 +27900,12 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
             if (printConvocatoria.__tipo !== 'ficha') {
               return (
                 <>
-                  <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Convocados {ids.length ? `(${ids.length})` : ''}</h3>
+                  <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Convocados {(ids.length + experiencia.length) ? `(${ids.length + experiencia.length})` : ''}</h3>
                   <div style={{
                     fontSize: 12.5, marginBottom: 16, lineHeight: 1.65,
                   }}>
                     {ids.map((pid, i) => { const n = nome(pid); return n ? <div key={pid}>{i + 1}. {n}</div> : null; })}
+                    {experiencia.map((n, i) => <div key={`x-${i}`}>{ids.length + i + 1}. {n} (experiência)</div>)}
                   </div>
                 </>
               );
@@ -27914,9 +27927,10 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                   {onze.map((pid, i) => { const n = nome(pid); return n ? <div key={pid}>{i + 1}. {n}{bracadeira(pid)}</div> : null; })}
                 </div>
 
-                <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Suplentes ({banco.length})</h3>
+                <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Suplentes ({banco.length + experiencia.length})</h3>
                 <div style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.65 }}>
                   {banco.map(pid => { const n = nome(pid); return n ? <div key={pid}>{n}{bracadeira(pid)}</div> : null; })}
+                  {experiencia.map((n, i) => <div key={`x-${i}`}>{n} (experiência)</div>)}
                 </div>
 
                 <div style={{ fontSize: 12.5, marginBottom: 14 }}>
