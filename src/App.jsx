@@ -19319,10 +19319,14 @@ function MatchDashboard({ players, matches }) {
     .filter(r => r.s.matchesPlayed > 0)
     .sort((a, b) => {
       if (colunaOrdenada) {
-        const va = colunaOrdenada.v(a.s);
-        const vb = colunaOrdenada.v(b.s);
-        const na = typeof va === 'number' ? va : -Infinity;
-        const nb = typeof vb === 'number' ? vb : -Infinity;
+        // A nota vem como texto ("6.3", de `.toFixed(1)`), não como
+        // número — `typeof` sozinho tratava-a sempre como "não é
+        // número" e a ordenação por Nota não fazia nada. `Number(...)`
+        // converte tanto números como texto numérico da mesma forma.
+        const va = Number(colunaOrdenada.v(a.s));
+        const vb = Number(colunaOrdenada.v(b.s));
+        const na = Number.isNaN(va) ? -Infinity : va;
+        const nb = Number.isNaN(vb) ? -Infinity : vb;
         const diff = sortDir === 'asc' ? na - nb : nb - na;
         if (diff !== 0) return diff;
       }
@@ -19454,7 +19458,12 @@ function MatchDashboard({ players, matches }) {
                   key={c.h} style={{ ...th, cursor: 'pointer', userSelect: 'none' }} title={c.t}
                   onClick={() => alternarOrdenacao(i)}
                 >
-                  {c.h}{sortCol === i && (sortDir === 'desc' ? ' ▾' : ' ▴')}
+                  {c.h}
+                  {/* A seta ocupa sempre o mesmo espaço, mesmo quando
+                      invisível (opacity, não display) — só a torna visível
+                      muda a largura da coluna e empurra as outras para o
+                      lado a cada clique, que era o que estava a acontecer. */}
+                  <span style={{ opacity: sortCol === i ? 1 : 0 }}>{sortDir === 'desc' ? ' ▾' : ' ▴'}</span>
                 </th>
               ))}
             </tr>
