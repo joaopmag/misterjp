@@ -21099,7 +21099,14 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
     const inList = f.convocados.includes(pid);
     if (inList) {
       const report = { ...f.report }; delete report[pid];
-      setF({ ...f, convocados: f.convocados.filter(id => id !== pid), starters: f.starters.filter(id => id !== pid), report });
+      setF({
+        ...f, convocados: f.convocados.filter(id => id !== pid), starters: f.starters.filter(id => id !== pid), report,
+        // Tirar alguém dos convocados também lhe tira a braçadeira, se a
+        // tivesse — não pode continuar capitão de um jogo para o qual já
+        // não está convocado.
+        capitao: f.capitao === pid ? undefined : f.capitao,
+        subcapitao: f.subcapitao === pid ? undefined : f.subcapitao,
+      });
     } else {
       const convocados = [...f.convocados, pid];
       const promover = f.starters.length < 11;
@@ -21109,6 +21116,23 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
   const toggleStarter = (pid) => {
     const isStarter = f.starters.includes(pid);
     setF({ ...f, starters: isStarter ? f.starters.filter(id => id !== pid) : [...f.starters, pid] });
+  };
+  // Mesmo mecanismo já usado em Convocatórias — clicar em "C" ou "SC"
+  // marca esse jogador; clicar outra vez tira. Escolher um novo capitão
+  // tira a braçadeira a quem a tinha antes, nunca ficam dois ao mesmo
+  // tempo. Fica aqui também (não só na convocatória formal) porque
+  // muitos jogos são geridos só por aqui, sem nunca abrir a outra
+  // página — sem isto, não havia como escolher capitão nesses jogos.
+  const setBracadeira = (pid, papel) => {
+    setF(prev => {
+      const outro = papel === 'capitao' ? 'subcapitao' : 'capitao';
+      const jaTem = prev[papel] === pid;
+      return {
+        ...prev,
+        [papel]: jaTem ? undefined : pid,
+        [outro]: prev[outro] === pid ? undefined : prev[outro],
+      };
+    });
   };
   const setReport = (pid, field, val) => {
     setF({ ...f, report: { ...f.report, [pid]: { ...(f.report[pid] || {}), [field]: val } } });
@@ -21266,20 +21290,34 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
       {convocadoPlayers.length > 0 && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-            Relatório de jogo — titular, minutos, cartão, golos, assistências, nota
+            Relatório de jogo — titular, capitão, minutos, cartão, golos, assistências, nota
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto', overflowX: 'auto' }}>
             {convocadoPlayers.map(p => {
               const r = f.report[p.id] || {};
               const isStarter = f.starters.includes(p.id);
+              const eCapitao = f.capitao === p.id;
+              const eSub = f.subcapitao === p.id;
               return (
                 <div key={p.id} style={{
-                  display: 'grid', gridTemplateColumns: '1.3fr auto 0.7fr 1fr 0.6fr 0.6fr 0.6fr', gap: 6, alignItems: 'center',
-                  padding: '7px 8px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7, minWidth: 560,
+                  display: 'grid', gridTemplateColumns: '1.3fr auto auto 0.7fr 1fr 0.6fr 0.6fr 0.6fr', gap: 6, alignItems: 'center',
+                  padding: '7px 8px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7, minWidth: 620,
                 }}>
                   <span style={{ fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.number ? `${p.number} ` : ''}{p.name}
                   </span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button type="button" onClick={() => setBracadeira(p.id, 'capitao')} title="Capitão neste jogo" style={{
+                      padding: '3px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, cursor: 'pointer', ...mono,
+                      background: eCapitao ? T.gold : 'transparent', color: eCapitao ? '#1A1A1A' : T.mutedDim,
+                      border: `1px solid ${eCapitao ? T.gold : T.line}`,
+                    }}>C</button>
+                    <button type="button" onClick={() => setBracadeira(p.id, 'subcapitao')} title="Subcapitão neste jogo" style={{
+                      padding: '3px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, cursor: 'pointer', ...mono,
+                      background: eSub ? '#B08A1E' : 'transparent', color: eSub ? '#1A1A1A' : T.mutedDim,
+                      border: `1px solid ${eSub ? '#B08A1E' : T.line}`,
+                    }}>SC</button>
+                  </div>
                   <button type="button" onClick={() => toggleStarter(p.id)} title="Titular" style={{
                     fontSize: 10, padding: '4px 7px', borderRadius: 5, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
                     background: isStarter ? '#B5393F' : 'transparent', color: isStarter ? TEXT_ON_ACCENT : T.mutedDim,
@@ -27763,6 +27801,11 @@ function syncMatchConvocatoria(match, convocatorias, season) {
     // sempre que o jogo é gravado, para nunca ficar um ligado e o
     // outro desligado.
     visivelAtletas: !!match.convocatoriaVisivelAtletas,
+    // Capitão e subcapitão também são um só conceito partilhado — quem
+    // os escolhe aqui (no jogo) ou na ficha formal vê a escolha refletida
+    // no outro lado, tal como já acontece com "Visível no Portal".
+    capitao: match.capitao,
+    subcapitao: match.subcapitao,
     // Jogadores à experiência (ainda sem ficha no Plantel) só existem
     // no jogo, nunca na tabela `players` — sem os trazer também para
     // cá, ficavam de fora da lista de convocados sempre que se
