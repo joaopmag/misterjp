@@ -27945,7 +27945,10 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
 
             // Ficha técnica: onze, banco e braçadeiras.
             const onze = ids.slice(0, 11);
-            const banco = ids.slice(11, 20);
+            // Sem limite — antes parava nos 20 primeiros (onze + 9 do
+            // banco), e com convocatórias maiores (ex.: pré-época, com
+            // 35) os últimos ficavam de fora da ficha sem aviso nenhum.
+            const banco = ids.slice(11);
             return (
               <>
                 {/* UMA COLUNA, e não uma grelha que se espalha pela folha.
