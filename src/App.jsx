@@ -19064,16 +19064,21 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                   <div style={{
                     fontSize: 11, color: T.cream, marginTop: 2, lineHeight: 1.2,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
                   }}>
                     {shortPlayerName(p, players)}
-                    {/* Braçadeira do jogo (`match.capitao`, escolhida na
-                        convocatória) — não confundir com `captainRank`,
-                        que é o capitão por omissão do Plantel. Aqui é
-                        sempre a escolha específica deste jogo. */}
-                    {match.capitao === p.id && <CaptainArmband rank={1} size={13} title="Capitão neste jogo" />}
-                    {match.subcapitao === p.id && <CaptainArmband rank={2} size={13} title="Subcapitão neste jogo" />}
                   </div>
+                  {/* Braçadeira do jogo (`match.capitao`, escolhida na
+                      convocatória) — não confundir com `captainRank`,
+                      que é o capitão por omissão do Plantel. Aqui é
+                      sempre a escolha específica deste jogo. Fica numa
+                      linha própria, por baixo do nome, para não disputar
+                      espaço com ele quando o nome já é comprido. */}
+                  {(match.capitao === p.id || match.subcapitao === p.id) && (
+                    <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
+                      {match.capitao === p.id && <CaptainArmband rank={1} size={13} title="Capitão neste jogo" />}
+                      {match.subcapitao === p.id && <CaptainArmband rank={2} size={13} title="Subcapitão neste jogo" />}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'center', marginTop: 1 }}>
                     <EventosDoJogador x={x} compacto />
                   </div>
