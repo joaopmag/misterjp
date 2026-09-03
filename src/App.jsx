@@ -28076,7 +28076,7 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
   };
 
   return (
-    <Modal title={convocatoria ? 'Editar convocatória' : 'Nova convocatória'} onClose={onClose} wide>
+    <Modal title={convocatoria ? 'Editar convocatória' : 'Nova convocatória'} onClose={onClose} wide xwide fullPage>
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 18 }}>
         <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>Jogo</div>
         <div style={{ ...FIELD_GRID }}>
