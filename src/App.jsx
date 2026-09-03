@@ -23040,6 +23040,7 @@ function PlayerConvocatoriasTab({ code, teamId }) {
   if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
   if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
   const lista = (dados && dados.convocatorias) || [];
+  const nossoClube = (dados && dados.clube) || 'Equipa';
   if (lista.length === 0) {
     return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhuma convocatória partilhada contigo.</div>;
   }
@@ -23047,9 +23048,13 @@ function PlayerConvocatoriasTab({ code, teamId }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560 }}>
       {lista.map(c => {
         // Por número da camisola — quem não tem número atribuído vai
-        // para o fim, não para o topo (0 seria enganador, parecia o
-        // número 0 a jogo).
+        // para o fim. Os jogadores à experiência (sem `id`, porque não
+        // têm ficha no Plantel) vão sempre a seguir a esses, no fundo
+        // de todos — nunca misturados a meio da lista.
         const convocados = [...(c.convocados || [])].sort((a, b) => {
+          const expA = a.id == null;
+          const expB = b.id == null;
+          if (expA !== expB) return expA ? 1 : -1;
           const na = typeof a.number === 'number' ? a.number : Infinity;
           const nb = typeof b.number === 'number' ? b.number : Infinity;
           return na - nb;
@@ -23058,7 +23063,7 @@ function PlayerConvocatoriasTab({ code, teamId }) {
           <div key={c.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: T.gold, marginBottom: 4 }}>Excelente! Foste convocado.</div>
             <div style={{ fontSize: 13.5, color: T.cream, marginBottom: 4 }}>
-              {c.casaFora === 'Fora' ? `${c.adversario} vs Salgueiros` : `vs ${c.adversario}`}
+              {c.casaFora === 'Fora' ? `${c.adversario} vs ${nossoClube}` : `${nossoClube} vs ${c.adversario}`}
             </div>
             <div style={{ fontSize: 12.5, color: T.mutedDim }}>
               {[c.data && formatShortDatePt(c.data), c.horaJogo, c.localJogo].filter(Boolean).join(' · ')}
@@ -23081,7 +23086,7 @@ function PlayerConvocatoriasTab({ code, teamId }) {
                       <span style={{ ...mono, color: T.mutedDim, width: 24, flexShrink: 0, textAlign: 'right' }}>
                         {typeof p.number === 'number' ? p.number : '—'}
                       </span>
-                      <span>{p.name}</span>
+                      <span>{p.name}{p.id == null && <span style={{ color: T.mutedDim }}> (exp)</span>}</span>
                     </div>
                   ))}
                 </div>
@@ -27861,7 +27866,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
             {printConvocatoria.adversario
-              ? `${(season && season.club) || 'Equipa'} vs ${printConvocatoria.adversario}`
+              ? `${clubeSemEscalao(season && season.club) || 'Equipa'} vs ${printConvocatoria.adversario}`
               : 'Convocatória'}
           </h2>
           <div style={{ fontSize: 12.5, color: '#444', margin: '0 0 14px' }}>
@@ -27914,7 +27919,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                     fontSize: 12.5, marginBottom: 16, lineHeight: 1.65,
                   }}>
                     {ids.map((pid, i) => { const n = nome(pid); return n ? <div key={pid}>{i + 1}. {n}</div> : null; })}
-                    {experiencia.map((n, i) => <div key={`x-${i}`}>{ids.length + i + 1}. {n} (experiência)</div>)}
+                    {experiencia.map((n, i) => <div key={`x-${i}`}>{ids.length + i + 1}. {n} (exp)</div>)}
                   </div>
                 </>
               );
@@ -27939,7 +27944,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                 <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Suplentes ({banco.length + experiencia.length})</h3>
                 <div style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.65 }}>
                   {banco.map(pid => { const n = nome(pid); return n ? <div key={pid}>{n}{bracadeira(pid)}</div> : null; })}
-                  {experiencia.map((n, i) => <div key={`x-${i}`}>{n} (experiência)</div>)}
+                  {experiencia.map((n, i) => <div key={`x-${i}`}>{n} (exp)</div>)}
                 </div>
 
                 <div style={{ fontSize: 12.5, marginBottom: 14 }}>
