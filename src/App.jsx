@@ -14298,7 +14298,11 @@ function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
             title={l.jogador ? `${l.lugar} · ${l.jogador.name} — arrasta para trocar, ou toca para trocar de jogador` : `${l.lugar} — por preencher`}
             style={{
               position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
-              transform: 'translate(-50%, -50%)', cursor: 'pointer', ...body,
+              // Só translateX centra na horizontal — na vertical o ponto de
+              // ancoragem é o centro do círculo (11px, metade dos 22px
+              // dele), não do bloco todo (círculo + nome por baixo). Ver a
+              // mesma explicação em FichaJogo.
+              transform: 'translateX(-50%)', marginTop: -11, cursor: 'pointer', ...body,
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
               background: 'none', border: 'none', padding: 0, maxWidth: '20%',
               touchAction: 'none', ...arrasto.estiloArrasto(String(i)), ...arrasto.estiloAlvo(String(i)),
@@ -19044,7 +19048,15 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                     // Com balizas fora da linha de fundo, o desenho é mais
                     // largo do que o campo — `posCampoPrint` converte.
                     position: 'absolute', ...posCampoPrint(fx, fy),
-                    transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '22%',
+                    // Só translateX centra na horizontal; na vertical, o
+                    // ponto de ancoragem é o CENTRO DO CÍRCULO (11px, metade
+                    // dos 22px dele), não do bloco todo. Com
+                    // `translate(-50%,-50%)` no bloco inteiro, o nome (e a
+                    // braçadeira, quando existe) por baixo do círculo — sem
+                    // nada equivalente por cima — puxava o centro visual do
+                    // círculo para cima da linha/marca do campo, em vez de
+                    // ficar em cima dela.
+                    transform: 'translateX(-50%)', marginTop: -11, textAlign: 'center', maxWidth: '22%',
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer', ...body,
                     touchAction: 'none', ...arrasto.estiloArrasto(String(i)), ...arrasto.estiloAlvo(String(i)),
                   }}
