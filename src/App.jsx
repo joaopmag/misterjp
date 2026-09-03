@@ -15689,6 +15689,19 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                           <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
                         </>
                       )}
+                      {/* Jogos oficiais não têm sessão de treino associada
+                          (só os amigáveis têm, ver `ensureFriendlySession`)
+                          — por isso ficavam sem nenhum ícone de partilhar
+                          ou imprimir aqui. `doShareMatch`/`doPrintMatch` já
+                          existiam (usados pela janela de leitura do jogo);
+                          faltava só pô-los também no cartão, para não
+                          obrigar a abrir a ficha primeiro só para imprimir. */}
+                      {!sessaoJogo && (
+                        <>
+                          <button onClick={e => { e.stopPropagation(); doShareMatch(s); }} title="Partilhar ficha do jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
+                          <button onClick={e => { e.stopPropagation(); doPrintMatch(s); }} title="Imprimir ficha do jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
+                        </>
+                      )}
                       <button onClick={e => { e.stopPropagation(); setMatchModalVoltarFicha(false); setMatchModal(s); }} title="Editar jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Pencil size={14} /></button>
                     </div>
                   </div>
