@@ -19064,10 +19064,15 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                   <div style={{
                     fontSize: 11, color: T.cream, marginTop: 2, lineHeight: 1.2,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
                   }}>
                     {shortPlayerName(p, players)}
-                    {match.capitao === p.id && <span style={{ color: T.gold }}> C</span>}
-                    {match.subcapitao === p.id && <span style={{ color: T.gold }}> SC</span>}
+                    {/* Braçadeira do jogo (`match.capitao`, escolhida na
+                        convocatória) — não confundir com `captainRank`,
+                        que é o capitão por omissão do Plantel. Aqui é
+                        sempre a escolha específica deste jogo. */}
+                    {match.capitao === p.id && <CaptainArmband rank={1} size={13} title="Capitão neste jogo" />}
+                    {match.subcapitao === p.id && <CaptainArmband rank={2} size={13} title="Subcapitão neste jogo" />}
                   </div>
                   <div style={{ display: 'flex', gap: 3, justifyContent: 'center', alignItems: 'center', marginTop: 1 }}>
                     <EventosDoJogador x={x} compacto />
@@ -19148,6 +19153,11 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                   <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {shortPlayerName(x.player, players)}{x.player.convidado ? ' (exp)' : ''}
                   </span>
+                  {/* O subcapitão pode calhar no banco (não joga sempre
+                      quem tem a braçadeira) — por isso a marca fica aqui
+                      também, não só no campo. */}
+                  {match.subcapitao === x.player.id && <CaptainArmband rank={2} size={13} title="Subcapitão neste jogo" />}
+                  {match.capitao === x.player.id && <CaptainArmband rank={1} size={13} title="Capitão neste jogo" />}
                   <EventosDoJogador x={x} />
                 </div>
               ))}
