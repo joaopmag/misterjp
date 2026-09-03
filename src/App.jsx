@@ -18023,13 +18023,23 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
      A ordem importa — quem está marcado como presente é presente, mesmo
      que por engano também esteja na lista de faltas. */
   const estadoDe = (d, pid) => {
-    if (isPresent(d, pid)) return 'presente';
+    // Uma marcação explícita (falta/lesionado/escalão) tem sempre
+    // prioridade sobre "presente" — não o contrário. Em dias de jogo,
+    // "presente" vem de `convocadosOf`, que — quando o jogo ainda não
+    // tem `attendance` próprio gravado — junta também a lista da
+    // tabela Convocatórias em separado. Essa tabela não é tocada ao
+    // marcar falta/lesionado/escalão aqui, por isso podia continuar a
+    // incluir o jogador e fazer o clique voltar sozinho a "presente"
+    // no instante a seguir — exatamente o "clico em F e salta para P"
+    // relatado. Verificando as marcações explícitas primeiro, um
+    // toque na célula nunca é anulado por essa segunda lista.
     const faltas = d.match ? (d.match.faltas || []) : (d.list || []).flatMap(x => x.faltas || []);
     if (faltas.includes(pid)) return 'falta';
     const lesionados = d.match ? (d.match.lesionados || []) : (d.list || []).flatMap(x => x.lesionados || []);
     if (lesionados.includes(pid)) return 'lesionado';
     const escalao = d.match ? (d.match.escalao || []) : (d.list || []).flatMap(x => x.escalao || []);
     if (escalao.includes(pid)) return 'escalao';
+    if (isPresent(d, pid)) return 'presente';
     // Preenche-se sozinho a partir do boletim clínico: um jogador
     // indisponível com regresso previsto aparece como lesionado em
     // cada dia dentro desse período, sem ser preciso marcar sessão a
