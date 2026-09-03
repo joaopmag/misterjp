@@ -27767,10 +27767,15 @@ function syncConvocatoriaMatch(conv, matches, players) {
   return list.map((m, i) => {
     if (i !== idx) return m;
     const next = { ...m, ...base };
-    /* A lista de convocados do jogo só acompanha a convocatória enquanto o
-       staff não tiver mexido nas presenças desse jogo. A partir daí manda a
-       tabela de presenças (`attendance`) e não se reescreve nada. */
-    if (!Array.isArray(m.attendance)) next.convocados = [...(conv.convocados || [])];
+    /* Os convocados seguem sempre a convocatória, para as duas listas
+       nunca discordarem — a mesma regra "última gravação manda" já
+       aplicada no sentido inverso (jogo → convocatória). Apagar aqui
+       apaga lá, e vice-versa. Isto substitui uma proteção antiga que só
+       deixava copiar enquanto `m.attendance` não tivesse sido tocado —
+       fazia sentido para não reescrever presenças já registadas, mas
+       tinha o efeito de travar a sincronização assim que alguém marcava
+       UMA presença, mesmo sem intenção de fixar a lista para sempre. */
+    next.convocados = [...(conv.convocados || [])];
     /* Os titulares só são reescritos enquanto ninguém os tiver mexido na
        ficha do jogo: a partir daí manda o que o treinador registou no
        relatório, que reflete o que aconteceu mesmo em campo. */
