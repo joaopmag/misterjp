@@ -27840,20 +27840,15 @@ function syncMatchConvocatoria(match, convocatorias, season) {
   }
   /* Os convocados acompanham sempre o jogo, tal como já acontece com o
      interruptor "Visível no Portal" — a última gravação é que manda,
-     em vez de a convocatória ficar presa a uma lista mais antiga e
-     mais curta. Antes só se copiava a lista do jogo enquanto a
-     convocatória estivesse vazia; a partir da segunda vez que se
-     mexia nos convocados do jogo (ex.: de 5 para 35), a convocatória
-     já não seguia — ficava parada no número antigo, mesmo o Portal já
-     a mostrar corretamente a partir do próprio jogo (que tem sempre a
-     versão mais recente). */
+     em vez de a convocatória ficar presa a uma lista mais antiga.
+     Inclui o caminho inverso: apagar todos os convocados no jogo
+     (lista vazia) também tem de limpar a convocatória — antes só
+     copiava quando a lista do jogo tinha alguém, por isso esvaziar no
+     Planeamento não se refletia em Jogos, e a convocatória ficava
+     presa no número antigo. */
   return lista.map((c, i) => {
     if (i !== idx) return c;
-    const next = { ...c, ...base };
-    if ((match.convocados || []).length) {
-      next.convocados = [...match.convocados];
-    }
-    return next;
+    return { ...c, ...base, convocados: [...(match.convocados || [])] };
   });
 }
 
