@@ -23010,31 +23010,133 @@ function PlayerPlanoJogoTab({ code, teamId }) {
 function PlayerAdversarioTab({ code, teamId }) {
   const [estado, dados] = usePortalFetch('checkin_adversario', code, teamId);
   const [aVer, setAVer] = useState(null);
+  const [taticaViewing, setTaticaViewing] = useState(null);
+  const [selecionadoId, setSelecionadoId] = useState(null);
+
   if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
   if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
   const lista = (dados && dados.adversarios) || [];
   if (lista.length === 0) {
     return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhum adversário partilhado contigo.</div>;
   }
+  const a = lista.find(x => x.id === selecionadoId) || lista[0];
+  const chave = a.chave || [];
+  const taticas = a.taticas || [];
+  const labelTatica = (t) => (t.nome && t.nome.trim()) ? t.nome.trim() : `Dinâmica ${taticas.indexOf(t) + 1}`;
+  const bloco = (titulo, texto) => texto && (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{titulo}</div>
+      <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px', fontSize: 13, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{texto}</div>
+    </div>
+  );
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560 }}>
-      {lista.map(a => (
-        <div key={a.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, marginBottom: 4 }}>{a.nome}</div>
-          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10 }}>
-            {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ')}
+    <div>
+      {/* Mais do que um adversário partilhado — um separador simples
+          para trocar entre eles, tal como as pastas na Biblioteca. */}
+      {lista.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+          {lista.map(x => {
+            const on = x.id === a.id;
+            return (
+              <button key={x.id} onClick={() => setSelecionadoId(x.id)} style={{
+                padding: '7px 14px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
+                border: `1px solid ${on ? '#B5393F' : T.line}`,
+              }}>{x.nome}</button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* MESMA PÁGINA DO ADVERSÁRIO QUE O STAFF VÊ EM SCOUTING — só de
+          consulta: sem "Adicionar dinâmica", sem "Adicionar vídeo",
+          sem ícones de editar/apagar em lado nenhum. */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ ...display, fontSize: 20, color: T.cream }}>{a.nome}</div>
+        <div style={{ color: T.mutedDim, fontSize: 12.5, marginTop: 4 }}>
+          {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Estrutura habitual</div>
+          {chave.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem estrutura marcada para este adversário.</div>
+          ) : (
+            <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
+              <PrancheteDoPlantel
+                lugares={distribuirPlantel({
+                  players: chave, attendance: chave.map(x => x.id), overrides: a.quadroOverrides, tatica: a.quadroTatica,
+                })}
+                escala={1.25}
+                maxLargura={900}
+                tela
+              />
+            </div>
+          )}
+        </div>
+
+        <div>
+          {bloco('Pontos fortes', a.pontosFortes)}
+          {bloco('Pontos fracos', a.pontosFracos)}
+
+          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+            Jogadores-chave
           </div>
-          {a.caracteristicas && <div style={{ fontSize: 12.5, color: T.cream, marginBottom: 8, lineHeight: 1.5 }}>{a.caracteristicas}</div>}
-          {a.notas && <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.5 }}>{a.notas}</div>}
-          {(a.videos || []).length > 0 && (
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {a.videos.map(v => (
-                <MediaFeedItem key={v.id} item={v} onOpen={item => { if (item.kind) setAVer(item); }} />
+          {chave.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>Nenhum jogador-chave marcado ainda.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+              {chave.map(x => (
+                <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
+                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+                  <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
+                </div>
               ))}
             </div>
           )}
         </div>
-      ))}
+      </div>
+
+      {!a.pontosFortes && !a.pontosFracos && (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>Ainda sem notas de análise.</div>
+      )}
+
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>Dinâmicas</div>
+      {taticas.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>Ainda sem dinâmicas registadas para este adversário.</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, marginBottom: 16 }}>
+          {taticas.map(t => (
+            <div key={t.id} onClick={() => setTaticaViewing(t)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, cursor: 'pointer' }}>
+              <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, marginBottom: 6 }}>{labelTatica(t)}</div>
+              {t.phase && (
+                <div style={{ marginBottom: 8 }}>
+                  <span style={{ display: 'inline-block', fontSize: 10.5, color: T.warn, background: `${T.crimson}55`, padding: '2px 8px', borderRadius: 12 }}>{t.phase}</span>
+                </div>
+              )}
+              <DiagramThumb diagram={t.diagram} />
+            </div>
+          ))}
+        </div>
+      )}
+      {taticaViewing && (
+        <ExercisePresentation exercise={{ ...taticaViewing, name: labelTatica(taticaViewing) }} onClose={() => setTaticaViewing(null)} />
+      )}
+
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: '20px 0 10px' }}>Vídeos</div>
+      {(a.videos || []).length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem vídeos deste adversário.</div>
+      ) : (
+        <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {a.videos.map(v => (
+            <MediaFeedItem key={v.id} item={v} onOpen={item => { if (item.kind) setAVer(item); }} />
+          ))}
+        </div>
+      )}
+
       {aVer && (
         <Modal title={aVer.title || aVer.fileName || 'Ficheiro'} onClose={() => setAVer(null)} wide>
           <AttachmentPreview item={aVer} tall />
