@@ -21110,6 +21110,17 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
               onClear={() => setF({ ...f, convocados: [], starters: [], report: {}, alinhamento: null })}
             />
           )}
+          {!eAmigavel && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={!!f.convocatoriaVisivelAtletas}
+                onChange={e => setF({ ...f, convocatoriaVisivelAtletas: e.target.checked })}
+                style={{ width: 15, height: 15, accentColor: T.crimson, cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: 11.5, color: T.mutedDim }}>Visível no Portal (cada convocado vê só que está convocado)</span>
+            </label>
+          )}
         </div>
         {/* A regra é invisível se não for dita: quem escolhe o décimo
             segundo jogador tem de perceber porque é que ele não ficou
