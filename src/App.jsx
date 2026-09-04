@@ -403,7 +403,7 @@ function useSingletonSync(table, fallback, notifyEdit, teamId) {
       const s = await loadSingleton(table, fallback, teamId);
       if (cancelled) return;
       rowIdRef.current = s.rowId;
-      syncedRef.current = JSON.stringify(s.value);
+      syncedRef.current = jsonEstavel(s.value);
       setValue(s.value);
       setMeta(s.editedBy ? { email: s.editedBy, at: s.editedAt } : { email: null, at: null });
       // Só fica pronto (= só autoriza gravar) se a leitura correu bem.
@@ -415,7 +415,7 @@ function useSingletonSync(table, fallback, notifyEdit, teamId) {
 
   useEffect(() => {
     if (!ready) return;
-    const signature = JSON.stringify(value);
+    const signature = jsonEstavel(value);
     // Nada mudou de facto (ex.: veio do realtime, ou é o valor acabado de
     // carregar) — não voltar a gravar nem marcar nova atividade.
     if (signature === syncedRef.current) return;
@@ -436,7 +436,7 @@ function useSingletonSync(table, fallback, notifyEdit, teamId) {
       .on('postgres_changes', { event: '*', schema: 'public', table, filter: `team_id=eq.${teamId}` }, (payload) => {
         const row = payload.new;
         if (!row) return;
-        const signature = JSON.stringify(row.data);
+        const signature = jsonEstavel(row.data);
         if (signature === syncedRef.current) return; // é o eco da nossa própria gravação
         syncedRef.current = signature;
         rowIdRef.current = row.id;
@@ -561,6 +561,30 @@ function SyncErrorBanner() {
    a usar as funções checkin_bootstrap/checkin_save (ver checkin_rpc.sql)
    e não toca em tabela nenhuma. Sem exceção, não há forma de contornar a
    verificação de sessão por engano. */
+/* JSON ESTÁVEL — as chaves sempre pela mesma ordem, ordenadas
+   alfabeticamente, tanto para objetos como para o que vier dentro de
+   arrays.
+
+   O Postgres (jsonb) NÃO guarda os campos na ordem em que foram
+   escritos — pode devolvê-los canonicalizados numa ordem diferente da
+   nossa. Comparar `JSON.stringify` normal (que respeita a ordem de
+   inserção do objeto local) contra o que veio da base de dados dava
+   "diferente" só por causa da ordem, mesmo quando o CONTEÚDO era
+   exatamente igual — e isso fazia a gravação achar sempre que havia
+   qualquer coisa por gravar, escrevendo o mesmo registo vezes sem
+   conta, em ciclo. Foi isto que fez uma marcação em massa de 7 ideias
+   disparar mais de vinte pedidos à base de dados, uns a pisar os
+   outros. Ordenando as chaves dos dois lados antes de comparar, a
+   mesma informação produz sempre o mesmo texto, veio de onde vier. */
+function jsonEstavel(valor) {
+  if (Array.isArray(valor)) return `[${valor.map(jsonEstavel).join(',')}]`;
+  if (valor && typeof valor === 'object') {
+    const chaves = Object.keys(valor).sort();
+    return `{${chaves.map(k => `${JSON.stringify(k)}:${jsonEstavel(valor[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(valor);
+}
+
 function useCollectionSync(table, notifyEdit, teamId) {
   const [items, setItems] = useState([]);
   /* Autorização de UMA remoção em massa (ver o travão de segurança mais
@@ -677,7 +701,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
 
           const snap = new Map();
           const meta = {};
-          rows.forEach(r => { snap.set(r.id, JSON.stringify(r.data)); meta[r.id] = { email: r.updated_by_email, at: r.updated_at }; });
+          rows.forEach(r => { snap.set(r.id, jsonEstavel(r.data)); meta[r.id] = { email: r.updated_by_email, at: r.updated_at }; });
           snapshot.current = snap;
           setRecordMeta(meta);
           setItems(rows.map(r => ({ ...r.data, id: r.id })));
@@ -739,7 +763,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
 
         function applyRow(row) {
           if (aGravar.current.has(row.id)) return;
-          snapshot.current.set(row.id, JSON.stringify(row.data));
+          snapshot.current.set(row.id, jsonEstavel(row.data));
           setItems(prev => {
             const item = { ...row.data, id: row.id };
             return prev.some(it => it.id === row.id) ? prev.map(it => it.id === row.id ? item : it) : [...prev, item];
@@ -774,7 +798,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
         // limite do Realtime acima) — gravá-lo destruiria o registo bom que
         // está na base de dados.
         if (Object.keys(rest).length === 0 && snapshot.current.has(id)) continue;
-        const json = JSON.stringify(rest);
+        const json = jsonEstavel(rest);
         /* O `team_id` vai em cada gravação. É também o que a política de
            INSERT valida no WITH CHECK: sem ele, ou com o de outra equipa,
            o Postgres recusa a linha. */
@@ -821,7 +845,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
           continue;
         }
         (data || []).forEach(r => {
-          snapshot.current.set(r.id, JSON.stringify(r.data));
+          snapshot.current.set(r.id, jsonEstavel(r.data));
           setRecordMeta(prev => ({ ...prev, [r.id]: { email: r.updated_by_email, at: r.updated_at } }));
         });
       }
@@ -2270,7 +2294,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         club: [equipaAtiva && equipaAtiva.clube, equipaAtiva && equipaAtiva.escalao].filter(Boolean).join(' · '),
       }, teamId);
       seasonRowIdRef.current = s.rowId;
-      seasonSyncedRef.current = JSON.stringify(s.value);
+      seasonSyncedRef.current = jsonEstavel(s.value);
       setSeason(s.value);
       setLastEdits(prev => ({ ...prev, season_config: s.editedBy ? { email: s.editedBy, at: s.editedAt } : undefined }));
       // Mesma regra do useSingletonSync: leitura falhada não autoriza
@@ -2282,7 +2306,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 
   useEffect(() => {
     if (!seasonReady || !teamId) return;
-    const signature = JSON.stringify(season);
+    const signature = jsonEstavel(season);
     if (signature === seasonSyncedRef.current) return;
     seasonSyncedRef.current = signature;
     saveSingleton('season_config', season, teamId, seasonRowIdRef.current);
@@ -2298,7 +2322,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       .on('postgres_changes', { event: '*', schema: 'public', table: 'season_config', filter: `team_id=eq.${teamId}` }, (payload) => {
         const row = payload.new;
         if (!row) return;
-        const signature = JSON.stringify(row.data);
+        const signature = jsonEstavel(row.data);
         if (signature === seasonSyncedRef.current) return; // eco da nossa própria gravação
         seasonSyncedRef.current = signature;
         seasonRowIdRef.current = row.id;
