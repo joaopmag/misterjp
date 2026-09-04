@@ -584,6 +584,31 @@ function useCollectionSync(table, notifyEdit, teamId) {
      coisa que o servidor nos possa devolver desse id. Os ecos de OUTRAS
      linhas, e de outros dispositivos, continuam a entrar normalmente. */
   const aGravar = useRef(new Set());
+  /* UM CICLO DE GRAVAÇÃO DE CADA VEZ, nunca dois ao mesmo tempo.
+
+     Marcar sete ideias visíveis de uma só vez (ver `alternarFase`)
+     muda `items` uma vez, mas grava sete registos UM A UM (mais
+     abaixo, de propósito — ver esse comentário). Enquanto o registo #1
+     ainda está a gravar, o eco de Realtime da SUA PRÓPRIA escrita
+     confirmada faz `setItems` disparar de novo — e o React volta a
+     correr este efeito, com `items` a apontar para o mesmo objeto de
+     sempre (ainda com os sete marcados) mas ainda a meio da primeira
+     passagem pelo ciclo. Sem proteção, arrancava um SEGUNDO ciclo em
+     paralelo com o primeiro, os dois a decidir "isto ainda não foi
+     escrito" a partir do mesmo `snapshot` desatualizado — e conforme a
+     ordem por que cada um chegava ao servidor, um dos dois podia achar
+     que um registo já tinha mudado de outra forma e reescrevê-lo com
+     um valor antigo. Era isto que fazia alguns itens "perderem" a
+     marcação sozinhos, sem se tocar em mais nada.
+
+     `aEscrever` deixa só UM ciclo ativo; se `items` mudar outra vez
+     enquanto esse ciclo ainda decorre, fica um pedido pendente que o
+     próprio ciclo relê no fim, em vez de arrancar um segundo em
+     paralelo. */
+  const aEscrever = useRef(false);
+  const pedidoPendente = useRef(false);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   useEffect(() => {
     let cancelled = false;
@@ -729,7 +754,17 @@ function useCollectionSync(table, notifyEdit, teamId) {
 
   useEffect(() => {
     if (!ready || !teamId) return;
+    if (aEscrever.current) { pedidoPendente.current = true; return; }
+    aEscrever.current = true;
     (async () => {
+      // Sempre a versão MAIS RECENTE de `items` — se, enquanto este
+      // ciclo escreve, chegar outra alteração local (um clique a mais,
+      // ou o eco da própria escrita a repor `items`), o pedido fica
+      // marcado em `pedidoPendente` e este `do/while` relê-a no fim, em
+      // vez de um segundo efeito arrancar um ciclo à parte.
+      do {
+        pedidoPendente.current = false;
+        const items = itemsRef.current;
       const currentIds = new Set(items.map(it => it.id));
       const toUpsert = [];
       for (const it of items) {
@@ -831,6 +866,8 @@ function useCollectionSync(table, notifyEdit, teamId) {
         }
       }
       if (toUpsert.length || toDelete.length) notifyEdit(table);
+      } while (pedidoPendente.current);
+      aEscrever.current = false;
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, ready]);
