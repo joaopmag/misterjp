@@ -901,6 +901,29 @@ function useCollectionSync(table, notifyEdit, teamId) {
         });
         setRecordMeta(prev => ({ ...prev, [row.id]: { email: row.updated_by_email, at: row.updated_at } }));
       });
+      /* Também remove quem foi apagado por outra pessoa nesse intervalo.
+
+         O que este ciclo traz é sempre a fotografia completa do servidor
+         — quem já não lá está foi apagado. Sem isto, um registo apagado
+         por outra pessoa enquanto a ligação estava morta ficava "fantasma"
+         no ecrã (visível, mas já não existe na base de dados) até um
+         refresh a sério. Não se toca em nada que esteja a ser gravado
+         agora mesmo (`aGravar`), para nunca fazer desaparecer algo que o
+         próprio utilizador acabou de criar e ainda não confirmou.
+
+         SÓ quando a leitura trouxe alguma coisa: uma lista vazia pode ser
+         a equipa mesmo sem registos, mas pode também ser uma leitura
+         silenciosamente recusada (RLS, token expirado) — ver o mesmo
+         cuidado tomado na leitura inicial, mais acima. Sem esta guarda,
+         uma leitura falhada em silêncio apagaria tudo do ecrã por engano. */
+      if ((data || []).length > 0) {
+        const idsNoServidor = new Set(data.map(r => r.id));
+        setItems(prev => {
+          const alguemFalta = prev.some(it => !idsNoServidor.has(it.id) && !aGravar.current.has(it.id));
+          if (!alguemFalta) return prev;
+          return prev.filter(it => idsNoServidor.has(it.id) || aGravar.current.has(it.id));
+        });
+      }
     };
     document.addEventListener('visibilitychange', apanharAtraso);
     window.addEventListener('focus', apanharAtraso);
