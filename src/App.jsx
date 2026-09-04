@@ -4656,6 +4656,7 @@ function SeletorEquipa({ equipas, equipaAtiva, onNova, onGerir }) {
 function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, ideias, setIdeias, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario, clinico, setClinico, desenvolvimento, setDesenvolvimento, standings, setStandings }) {
   const fileInputRef = React.useRef(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [erroImport, setErroImport] = useState('');
 
   const doExport = () => {
     /* TUDO O QUE A APP GUARDA — SEM EXCEÇÕES.
@@ -4685,6 +4686,7 @@ function DataTools({ season, setSeason, players, setPlayers, exercises, setExerc
   const handleImportFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setErroImport('');
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -4709,22 +4711,34 @@ function DataTools({ season, setSeason, players, setPlayers, exercises, setExerc
         if (data.desenvolvimento && setDesenvolvimento) setDesenvolvimento(data.desenvolvimento);
         if (data.standings && setStandings) setStandings(data.standings);
       } catch (err) {
+        // Além da consola (para eu conseguir diagnosticar), a pessoa
+        // TEM de ver que a importação falhou — antes disto, um ficheiro
+        // corrompido ou do formato errado falhava em silêncio: o botão
+        // "Escolher ficheiro" fechava a janela e não acontecia mais nada
+        // visível, dando a entender que tinha corrido bem.
         console.error('Importação falhou', err);
+        setErroImport('Não foi possível importar este ficheiro. Confirma que é um backup exportado por esta app (Exportar → guarda o .json → Importar esse mesmo ficheiro).');
       }
     };
+    reader.onerror = () => setErroImport('Não foi possível ler o ficheiro. Tenta escolher outra vez.');
     reader.readAsText(file);
     e.target.value = '';
   };
 
   return (
-    <div style={{ display: 'flex', gap: 14 }}>
-      <button onClick={doExport} title="Exportar dados" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, ...body }}>
-        <Download size={13} /> Exportar
-      </button>
-      <button onClick={() => setImportOpen(true)} title="Importar dados" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, ...body }}>
-        <Upload size={13} /> Importar
-      </button>
-      <input type="file" accept="application/json" ref={fileInputRef} onChange={handleImportFile} style={{ display: 'none' }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: 14 }}>
+        <button onClick={doExport} title="Exportar dados" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, ...body }}>
+          <Download size={13} /> Exportar
+        </button>
+        <button onClick={() => setImportOpen(true)} title="Importar dados" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, ...body }}>
+          <Upload size={13} /> Importar
+        </button>
+        <input type="file" accept="application/json" ref={fileInputRef} onChange={handleImportFile} style={{ display: 'none' }} />
+      </div>
+      {erroImport && (
+        <div style={{ fontSize: 11.5, color: T.bad, maxWidth: 320, lineHeight: 1.4, ...body }}>{erroImport}</div>
+      )}
 
       {importOpen && (
         <Modal title="Importar dados" onClose={() => setImportOpen(false)}>
