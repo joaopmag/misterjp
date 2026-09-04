@@ -598,6 +598,42 @@ function jsonEstavel(valor) {
   return JSON.stringify(valor);
 }
 
+/* LER TUDO, EM BLOCOS — nunca confiar no limite por omissão.
+
+   O Supabase (PostgREST) devolve no máximo 1000 linhas por pedido, salvo
+   se se disser o contrário — e isso não é um aviso, é simplesmente o que
+   vem. Uma equipa com uma temporada de Wellness + PSE diários acumula
+   isso depressa (30 jogadores × 2 registos por dia passam de 1000 em
+   pouco mais de dois meses). Como a leitura ficava ordenada do mais
+   antigo para o mais novo, ao passar dos 1000 registos os MAIS RECENTES
+   — as respostas de hoje — ficavam sempre de fora, silenciosamente: sem
+   erro nenhum, só ausentes. Foi isto que fez respostas gravadas
+   corretamente nunca aparecerem como respondidas, por mais vezes que se
+   desse refresh.
+
+   A correção não é subir o limite (isso só adia o mesmo problema para
+   quando a equipa acumular mais um tanto) — é ir buscar tudo, às fatias,
+   até a última fatia vir mais pequena do que o pedido, o que só acontece
+   quando já não há mais nada por trazer. */
+async function fetchAllRows(table, teamId) {
+  const PAGE = 1000;
+  let offset = 0;
+  const todas = [];
+  for (;;) {
+    const { data, error } = await supabase.from(table)
+      .select('id, data, updated_by_email, updated_at')
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const pagina = data || [];
+    todas.push(...pagina);
+    if (pagina.length < PAGE) break;
+    offset += PAGE;
+  }
+  return todas;
+}
+
 function useCollectionSync(table, notifyEdit, teamId) {
   const [items, setItems] = useState([]);
   /* Autorização de UMA remoção em massa (ver o travão de segurança mais
@@ -691,11 +727,17 @@ function useCollectionSync(table, notifyEdit, teamId) {
         /* O filtro por equipa está aqui E na RLS, de propósito. A RLS é
            a fronteira de segurança; este filtro é correção e velocidade —
            não traz para o browser o que não vai ser usado. Se um dia um
-           deles falhar, o outro ainda segura. */
-        const { data, error } = await supabase.from(table)
-          .select('id, data, updated_by_email, updated_at')
-          .eq('team_id', teamId)
-          .order('created_at', { ascending: true });
+           deles falhar, o outro ainda segura.
+
+           `fetchAllRows` (e não um `.select()` direto) — ver o comentário
+           ao lado da função: sem paginação, uma tabela com mais de 1000
+           registos perdia sempre os mais recentes. */
+        let data, error;
+        try {
+          data = await fetchAllRows(table, teamId);
+        } catch (e) {
+          error = e;
+        }
         if (cancelled) return;
         if (!error) {
           const rows = data || [];
@@ -837,9 +879,12 @@ function useCollectionSync(table, notifyEdit, teamId) {
     let cancelled = false;
     const apanharAtraso = async () => {
       if (!ready || document.visibilityState === 'hidden') return;
-      const { data, error } = await supabase.from(table)
-        .select('id, data, updated_by_email, updated_at')
-        .eq('team_id', teamId);
+      let data, error;
+      try {
+        data = await fetchAllRows(table, teamId);
+      } catch (e) {
+        error = e;
+      }
       if (cancelled || error) return;
       (data || []).forEach(row => {
         if (aGravar.current.has(row.id)) return;
