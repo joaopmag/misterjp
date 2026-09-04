@@ -7736,6 +7736,25 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
               const emIdeia = !!x.visivelAtletas;
               const emPlano = !!x.visivelPlanoJogo;
               const marcada = emIdeia || emPlano;
+              const pill = (ativo, cor, texto, onClick) => (
+                <button
+                  type="button"
+                  onClick={onClick}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11.5, ...body,
+                    color: ativo ? cor : T.mutedDim, flexShrink: 0, background: 'none',
+                    border: `1px solid ${ativo ? cor : T.line}`, borderRadius: 20, padding: '4px 10px 4px 6px',
+                  }}
+                >
+                  <span style={{
+                    width: 14, height: 14, borderRadius: 4, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: ativo ? cor : 'transparent', border: `1px solid ${ativo ? cor : T.line}`,
+                  }}>
+                    {ativo && <Check size={10} color="#0d140e" />}
+                  </span>
+                  {texto}
+                </button>
+              );
               return (
                 <div
                   key={x.id}
@@ -7750,21 +7769,16 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
                   </span>
                   {/* Dois interruptores independentes, lado a lado — a
                       mesma ideia pode ir para os dois sítios do Portal,
-                      só para um, ou para nenhum. */}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11.5, color: emIdeia ? T.good : T.mutedDim, flexShrink: 0 }}>
-                    <input
-                      type="checkbox" checked={emIdeia} onChange={() => toggleCampo(x.id, 'visivelAtletas')}
-                      style={{ width: 15, height: 15, accentColor: T.good, cursor: 'pointer' }}
-                    />
-                    Ideia de Jogo
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11.5, color: emPlano ? T.gold : T.mutedDim, flexShrink: 0 }}>
-                    <input
-                      type="checkbox" checked={emPlano} onChange={() => toggleCampo(x.id, 'visivelPlanoJogo')}
-                      style={{ width: 15, height: 15, accentColor: T.gold, cursor: 'pointer' }}
-                    />
-                    Plano de Jogo
-                  </label>
+                      só para um, ou para nenhum. Botões próprios, não
+                      `<input type="checkbox">`: colados uns aos outros
+                      como aqui ficam, alguns browsers "arrastam" o
+                      estado ao passar o rato por cima com o botão
+                      ainda em baixo — o mesmo gesto de um clique um
+                      pouco impreciso (vulgar em trackpad) passava a
+                      destocar caixas vizinhas sem se querer. Um botão
+                      normal só reage a um clique a sério. */}
+                  {pill(emIdeia, T.good, 'Ideia de Jogo', () => toggleCampo(x.id, 'visivelAtletas'))}
+                  {pill(emPlano, T.gold, 'Plano de Jogo', () => toggleCampo(x.id, 'visivelPlanoJogo'))}
                 </div>
               );
             })}
