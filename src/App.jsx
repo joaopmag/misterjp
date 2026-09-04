@@ -563,7 +563,7 @@ function SyncErrorBanner() {
    verificação de sessão por engano. */
 /* JSON ESTÁVEL — as chaves sempre pela mesma ordem, ordenadas
    alfabeticamente, tanto para objetos como para o que vier dentro de
-   arrays.
+   arrays; e os números sempre com a MESMA representação de texto.
 
    O Postgres (jsonb) NÃO guarda os campos na ordem em que foram
    escritos — pode devolvê-los canonicalizados numa ordem diferente da
@@ -572,15 +572,28 @@ function SyncErrorBanner() {
    "diferente" só por causa da ordem, mesmo quando o CONTEÚDO era
    exatamente igual — e isso fazia a gravação achar sempre que havia
    qualquer coisa por gravar, escrevendo o mesmo registo vezes sem
-   conta, em ciclo. Foi isto que fez uma marcação em massa de 7 ideias
-   disparar mais de vinte pedidos à base de dados, uns a pisar os
-   outros. Ordenando as chaves dos dois lados antes de comparar, a
-   mesma informação produz sempre o mesmo texto, veio de onde vier. */
+   conta, em ciclo.
+
+   Ordenar as chaves não chegou sozinho: os diagramas das ideias têm
+   dezenas de coordenadas decimais (posições de jogadores e setas), e
+   um número como 0.1 pode voltar do Postgres escrito de forma
+   ligeiramente diferente da nossa (mais ou menos casas decimais,
+   ainda que o VALOR seja rigorosamente o mesmo) — e cada uma dessas
+   pequenas diferenças de texto também contava como "isto mudou",
+   mantendo o ciclo de reescrita vivo. Arredondar todos os números à
+   mesma precisão antes de comparar tira essa última fonte de
+   "diferenças" que não são diferenças nenhumas. */
 function jsonEstavel(valor) {
   if (Array.isArray(valor)) return `[${valor.map(jsonEstavel).join(',')}]`;
   if (valor && typeof valor === 'object') {
     const chaves = Object.keys(valor).sort();
     return `{${chaves.map(k => `${JSON.stringify(k)}:${jsonEstavel(valor[k])}`).join(',')}}`;
+  }
+  if (typeof valor === 'number' && Number.isFinite(valor)) {
+    // 9 casas decimais chegam e sobram para qualquer coordenada ou nota
+    // desta app — é só para tirar ruído de vírgula flutuante, não para
+    // arredondar valores a sério.
+    return JSON.stringify(Math.round(valor * 1e9) / 1e9);
   }
   return JSON.stringify(valor);
 }
