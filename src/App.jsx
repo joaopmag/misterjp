@@ -836,7 +836,20 @@ function useCollectionSync(table, notifyEdit, teamId) {
         aGravar.current.add(rec.id);
         const { data, error } = await supabase.from(table).upsert([rec], { onConflict: 'id' })
           .select('id, data, updated_by_email, updated_at');
-        aGravar.current.delete(rec.id);
+        /* NÃO se tira já a proteção deste id — só passados uns instantes.
+
+           O eco de Realtime da NOSSA PRÓPRIA gravação costuma chegar
+           quase de imediato, mas não é garantido: uma rede mais lenta,
+           ou várias gravações seguidas (clicar duas vezes seguidas no
+           mesmo momento) podem atrasá-lo o suficiente para chegar DEPOIS
+           de já se ter tirado a proteção — e nessa altura ele já não é
+           reconhecido como "nosso", é tratado como uma alteração vinda
+           de fora e aplicado por cima do que já estava (uma versão mais
+           antiga a substituir uma mais recente, perdendo a marcação).
+           Um segundo de folga chega para cobrir essa demora sem
+           atrapalhar gravações a sério de outra pessoa, que continuam a
+           reconhecer-se por serem de um id diferente. */
+        setTimeout(() => aGravar.current.delete(rec.id), 1200);
         if (error) {
           console.error(table, rec.id, error);
           const nome = (rec.data && (rec.data.title || rec.data.name || rec.data.nome)) || rec.id;
