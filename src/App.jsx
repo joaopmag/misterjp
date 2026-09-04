@@ -9934,6 +9934,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       arrows: [...(ultimo.staticArrows || []), ...(ultimo.arrows || [])],
       sequence: seq.slice(0, -1),
     });
+    // A referência de "desde" acompanha o passo que passou a ser o
+    // último — sem isto, ficava presa a um passo que já não existe.
+    setInserirDesde(seq.length > 1 ? seq.length - 2 : null);
     setSelectedId(null);
     setSelectedArrowId(null);
   };
@@ -9952,6 +9955,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       arrows: (value.arrows || []).filter(a => !animadas.has(a.id)),
       sequence: [...(value.sequence || []), passo],
     });
+    setInserirDesde((value.sequence || []).length);
     setSelectedId(null);
     setSelectedArrowId(null);
   };
@@ -10213,6 +10217,19 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           arrows: arrows.filter(a => !animatedIds.has(a.id)),
           sequence: [...(value.sequence || []), stepSnapshot],
         });
+        /* O passo que se acaba de gravar passa a ser a referência por
+           omissão de "desde" — sem isto, colocar e apagar usavam um
+           ponto de referência DIFERENTE por omissão (colocar entrava só
+           a partir de agora; apagar tirava de toda a coreografia), e só
+           ficavam consistentes se a pessoa fosse a um menu escolher o
+           mesmo passo dos dois lados, coisa fácil de esquecer. Agora os
+           dois seguem sozinhos o passo mais recente — colocar uma caixa
+           de texto e mais tarde apagá-la (sem tocar em mais nada) já
+           mantém sozinho as duas coisas certas: fica nos passos onde
+           esteve, desaparece só a partir de onde se apagou. Continua a
+           poder escolher-se outro passo à mão, para os casos em que se
+           precisa mesmo de recuar mais no tempo. */
+        setInserirDesde(value.sequence.length);
         // Um passo novo fecha a possibilidade de refazer os anulados —
         // a partir daqui a coreografia seguiu outro caminho.
         setPassosAnulados([]);
@@ -10334,9 +10351,17 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
      dali até ao fim, que é o que se quer para testar uma variante sem
      desfazer o que já está feito.
 
-     `inserirDesde` é o índice do passo (0 = antes do primeiro). A null
-     significa o comportamento normal: só no estado atual. */
-  const [inserirDesde, setInserirDesde] = useState(null);
+     `inserirDesde` é o índice do passo (0 = antes do primeiro). Começa
+     já a apontar para o ÚLTIMO passo existente (não para null) — ao abrir
+     um exercício com animação já feita, colocar ou apagar algo sem tocar
+     em mais nada afeta o passo mais recente por omissão, que é o que
+     interessa na esmagadora maioria das vezes. Cada vez que se grava um
+     passo novo (`Animar`, desfazer, refazer) isto é atualizado sozinho —
+     ver esses três sítios. */
+  const [inserirDesde, setInserirDesde] = useState(() => {
+    const n = (value.sequence || []).length;
+    return n > 0 ? n - 1 : null;
+  });
 
   /* APAGAR TEM DE APAGAR TAMBÉM DOS PASSOS GRAVADOS — MAS SÓ A PARTIR DE
      ONDE SE ESTÁ A EDITAR.
