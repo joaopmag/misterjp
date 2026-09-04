@@ -9719,8 +9719,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       ...value,
       elements: elements.filter(el => remainingIds.has(el.id)),
       arrows: arrows.filter(a => remainingArrowIds.has(a.id)),
-      // Sai também de todos os passos gravados (ver limparDosPassos).
-      sequence: limparDosPassos(value.sequence, apagados),
+      // Sai também de todos os passos gravados (ver limparDosPassos) — ou,
+      // com "desde" escolhido, só a partir desse passo (mantém-se nos
+      // anteriores, tal como um elemento inserido a meio da coreografia).
+      sequence: limparDosPassos(value.sequence, apagados, inserirDesde),
     });
   };
 
@@ -10166,25 +10168,39 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
      significa o comportamento normal: só no estado atual. */
   const [inserirDesde, setInserirDesde] = useState(null);
 
-  /* APAGAR TEM DE APAGAR TAMBÉM DOS PASSOS GRAVADOS.
+  /* APAGAR TEM DE APAGAR TAMBÉM DOS PASSOS GRAVADOS — MAS SÓ A PARTIR DE
+     ONDE SE ESTÁ A EDITAR.
 
      Cada passo da animação guarda uma fotografia do campo. Apagar um
      elemento só do estado atual tirava-o do editor mas deixava-o em todas
      as fotografias — e ao apresentar a animação ele reaparecia, mesmo
-     depois de guardar. Foi o que aconteceu com um item inserido num passo
-     e apagado a seguir.
+     depois de guardar.
 
-     Isto limpa o elemento de toda a coreografia: das fotografias, das
-     setas que ele possuía (uma seta órfã anima o vazio) e dos desenhos
-     fixos de cada passo. */
-  const limparDosPassos = (sequencia, idsApagados) => {
+     Mas apagar de TODAS as fotografias, sempre, também não estava certo:
+     um elemento colocado no "animar 4" e apagado enquanto se editava a
+     partir do "animar 6" tinha de continuar a aparecer nos passos 4 e 5
+     — esteve mesmo lá nessa altura — e só desaparecer a partir do 6. O
+     seletor "desde" (o mesmo que serve para inserir a partir de um passo)
+     é reaproveitado aqui: indica também a partir de onde uma remoção
+     deve valer. Sem ele escolhido, mantém-se o comportamento antigo —
+     apaga-se de toda a coreografia, que é o correto quando não se está a
+     testar uma variante a partir de um ponto concreto. */
+  const limparDosPassos = (sequencia, idsApagados, desde = null) => {
     if (!sequencia || !sequencia.length || !idsApagados.size) return sequencia;
-    return sequencia.map(step => ({
-      ...step,
-      elements: (step.elements || []).filter(el => !idsApagados.has(el.id)),
-      arrows: (step.arrows || []).filter(a => !a.ownerId || !idsApagados.has(a.ownerId)),
-      staticArrows: (step.staticArrows || []).filter(a => !a.ownerId || !idsApagados.has(a.ownerId)),
-    }));
+    return sequencia.map((step, i) => {
+      /* Com "desde" escolhido, um passo ANTERIOR ao ponto de corte fica
+         tal como estava — o elemento continua lá, porque esteve mesmo em
+         campo nessa altura. Só os passos a partir do ponto de corte é que
+         perdem o elemento. Sem "desde" (comportamento antigo), apaga-se de
+         toda a coreografia, do primeiro ao último passo. */
+      if (desde != null && i < desde) return step;
+      return {
+        ...step,
+        elements: (step.elements || []).filter(el => !idsApagados.has(el.id)),
+        arrows: (step.arrows || []).filter(a => !a.ownerId || !idsApagados.has(a.ownerId)),
+        staticArrows: (step.staticArrows || []).filter(a => !a.ownerId || !idsApagados.has(a.ownerId)),
+      };
+    });
   };
 
   /* ELEMENTOS ÓRFÃOS — resíduo de exercícios gravados antes da correção
@@ -10545,7 +10561,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     commit({
       ...value,
       elements: elements.filter(el => el.id !== selectedId),
-      sequence: limparDosPassos(value.sequence, new Set([selectedId])),
+      // Ver limparDosPassos: com "desde" escolhido, mantém-se nos passos
+      // anteriores e só sai a partir desse ponto da animação.
+      sequence: limparDosPassos(value.sequence, new Set([selectedId]), inserirDesde),
     });
     setSelectedId(null);
   };
@@ -10905,19 +10923,25 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             </span>
           )}
 
-          {/* A partir de que passo entra o que se colocar a seguir.
+          {/* A partir de que passo vale o que se fizer a seguir — tanto
+              colocar como apagar.
 
               Sem isto, um elemento acrescentado depois da coreografia
               pronta só existia no fim: ao rever a animação desde o
               princípio, aparecia do nada. Escolher um passo aqui mete-o em
               campo desde esse momento até ao fim, o que permite testar uma
-              variante sem desmanchar o que já está feito. */}
+              variante sem desmanchar o que já está feito.
+
+              O mesmo seletor serve também para apagar: escolhido um
+              passo, apagar um elemento só o tira a partir dali — continua
+              a aparecer nos passos anteriores, onde esteve mesmo em
+              campo. */}
           {(value.sequence || []).length > 0 && (
             <label
               style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: inserirDesde == null ? T.mutedDim : T.gold }}
-              title="O que colocares a seguir passa a existir a partir deste passo da animação, e não só no fim"
+              title="Vale para o que colocares e para o que apagares a seguir: passa a aplicar-se a partir deste passo da animação, não só agora"
             >
-              inserir desde
+              desde
               <Select
                 value={inserirDesde == null ? '' : String(inserirDesde)}
                 onChange={ev => setInserirDesde(ev.target.value === '' ? null : Number(ev.target.value))}
@@ -23128,8 +23152,8 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
                 display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18,
               }}>
                 <button onClick={() => setFolderFilter(null)} style={{
-                  padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
-                  flexShrink: 0, whiteSpace: 'nowrap',
+                  flex: '1 1 100px', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                  whiteSpace: 'nowrap', textAlign: 'center',
                   background: folderFilter === null ? '#B5393F' : 'transparent',
                   color: folderFilter === null ? TEXT_ON_ACCENT : T.muted,
                   border: `1px solid ${folderFilter === null ? '#B5393F' : T.line}`,
@@ -23138,8 +23162,8 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
                   const on = folderFilter === name;
                   return (
                     <button key={name} onClick={() => setFolderFilter(on ? null : name)} style={{
-                      padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
-                      flexShrink: 0, whiteSpace: 'nowrap',
+                      flex: '1 1 100px', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                      whiteSpace: 'nowrap', textAlign: 'center',
                       background: on ? '#B5393F' : 'transparent',
                       color: on ? TEXT_ON_ACCENT : T.muted,
                       border: `1px solid ${on ? '#B5393F' : T.line}`,
@@ -23148,8 +23172,8 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
                 })}
                 {countIn(NO_FOLDER) > 0 && folders.length > 0 && (
                   <button onClick={() => setFolderFilter(folderFilter === NO_FOLDER ? null : NO_FOLDER)} style={{
-                    padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
-                    flexShrink: 0, whiteSpace: 'nowrap',
+                    flex: '1 1 100px', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                    whiteSpace: 'nowrap', textAlign: 'center',
                     background: folderFilter === NO_FOLDER ? '#B5393F' : 'transparent',
                     color: folderFilter === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
                     border: `1px solid ${folderFilter === NO_FOLDER ? '#B5393F' : T.line}`,
@@ -23258,14 +23282,14 @@ function PlayerJogosHome({ code, teamId, onBack }) {
 
       <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Jogos</div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {abas.map(a => {
           const on = subTab === a.id;
           return (
             <button key={a.id} onClick={() => setSubTab(a.id)} style={{
-              padding: '7px 14px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+              flex: 1, padding: '9px 8px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
               background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
-              border: `1px solid ${on ? '#B5393F' : T.line}`,
+              border: `1px solid ${on ? '#B5393F' : T.line}`, whiteSpace: 'nowrap', textAlign: 'center',
             }}>{a.label}</button>
           );
         })}
@@ -26027,6 +26051,46 @@ function detectSocialEmbed(url) {
    deixa de ter cabeçalho/rodapé, ficando o vídeo com o ecrã todo. */
 const TIKTOK_PLAYER_PARAMS = 'rel=0&loop=1&description=0&music_info=0&controls=1&native_context_menu=0';
 
+/* O EMBED DO INSTAGRAM NÃO É RESPONSIVO — desenha-se sempre à mesma
+   largura fixa (~328px), venha o iframe à volta com o tamanho que vier.
+   Num ecrã largo isso já se nota; em telemóvel, onde o cartão do vídeo
+   ocupa a largura toda do ecrã, sobra uma faixa preta bem visível dos
+   dois lados. Como não há forma de pedir ao Instagram para desenhar
+   maior, este componente MEDE o espaço disponível e amplia o iframe
+   inteiro com `transform: scale()` até encher esse espaço — o mesmo
+   truque que se usa para qualquer conteúdo de largura fixa que se
+   precise de esticar. */
+function InstagramEmbedResponsivo({ src, titulo }) {
+  const wrapRef = useRef(null);
+  const [largura, setLargura] = useState(0);
+  useEffect(() => {
+    const medir = () => { if (wrapRef.current) setLargura(wrapRef.current.offsetWidth); };
+    medir();
+    window.addEventListener('resize', medir);
+    return () => window.removeEventListener('resize', medir);
+  }, []);
+  const NATIVO = 328; // largura a que o Instagram desenha o embed, sempre
+  const escala = largura ? largura / NATIVO : 1;
+  const alturaNativa = NATIVO * 1.25;
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%', paddingTop: '125%', background: '#000', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, width: NATIVO, height: alturaNativa, transform: `scale(${escala})`, transformOrigin: 'top left' }}>
+        <iframe
+          src={src}
+          title={titulo || 'media'}
+          style={{ width: NATIVO, height: alturaNativa, border: 'none' }}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          allowFullScreen
+          playsInline
+          scrolling="no"
+          sandbox={INSTAGRAM_SANDBOX}
+          loading="lazy"
+        />
+      </div>
+    </div>
+  );
+}
+
 /* Um item aberto, para a vista em coluna contínua.
 
    Ao contrário do visualizador principal (um ficheiro de cada vez, com
@@ -26058,7 +26122,9 @@ function MediaFeedItem({ item, onOpen }) {
         )}
       </div>
 
-      {fonte ? (
+      {item.social && item.social.platform === 'instagram' ? (
+        <InstagramEmbedResponsivo src={fonte} titulo={item.title} />
+      ) : fonte ? (
         <div style={{
           position: 'relative', width: '100%', background: '#000',
           // O Drive reserva a sua própria barra de controlos (play/pause,
