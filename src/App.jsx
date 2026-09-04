@@ -3114,7 +3114,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
                 <LinhaTarefa
                   key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
                   onAbrir={onVerTarefas}
-                  onAlternar={(x) => setTarefas(tarefas.map(y => {
+                  onAlternar={(x) => setTarefas(prev => prev.map(y => {
                     if (y.id !== x.id) return y;
                     if (y.recorrencia) return { ...y, concluidasEm: [...(y.concluidasEm || []), hoje] };
                     return { ...y, estado: 'feita', feitaEm: new Date().toISOString() };
@@ -17484,7 +17484,7 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
     }
 
     const registo = data.id ? data : { ...data, id: uid() };
-    setClinico(data.id ? clinico.map(o => (o.id === data.id ? data : o)) : [...clinico, registo]);
+    setClinico(prev => (data.id ? prev.map(o => (o.id === data.id ? data : o)) : [...prev, registo]));
     setModal(null);
     // A ocorrência fica guardada de qualquer forma; as presenças só mudam
     // se a resposta for sim.
@@ -24787,8 +24787,8 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
 
   const save = (data) => {
     const isEdicao = !!data.id;
-    if (isEdicao) setScouting(scouting.map(x => x.id === data.id ? data : x));
-    else setScouting([...scouting, { ...data, id: uid() }]);
+    if (isEdicao) setScouting(prev => prev.map(x => x.id === data.id ? data : x));
+    else setScouting(prev => [...prev, { ...data, id: uid() }]);
     // Editar mantém no jogador (volta à ficha, não à lista); só criar de
     // novo é que fecha de vez, porque nunca houve uma ficha para voltar.
     if (isEdicao) trocarJanela(() => setModal(null), () => setViewing(data));
@@ -25125,11 +25125,11 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
 
     const registo = { ...dados, jogadoresChaveIds, quadroTatica, quadroOverrides };
     if (registo.id) {
-      setAdversarios(adversarios.map(a => (a.id === registo.id ? registo : a)));
+      setAdversarios(prev => prev.map(a => (a.id === registo.id ? registo : a)));
       if (viewing && viewing.id === registo.id) setViewing(registo);
     } else {
       registo.id = uid();
-      setAdversarios([...adversarios, registo]);
+      setAdversarios(prev => [...prev, registo]);
     }
     fecharEdicao();
   };
@@ -25170,7 +25170,7 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
           onPrint={() => doPrint(atual)}
           onUpdate={(patch) => {
             const registo = { ...atual, ...patch };
-            setAdversarios(adversarios.map(a => (a.id === atual.id ? registo : a)));
+            setAdversarios(prev => prev.map(a => (a.id === atual.id ? registo : a)));
             setViewing(registo);
           }}
         />
@@ -25196,7 +25196,7 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
                 <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{a.nome}</div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setAdversarios(adversarios.map(x => (x.id === a.id ? { ...x, visivelAtletas: !x.visivelAtletas } : x))); }}
+                    onClick={(e) => { e.stopPropagation(); setAdversarios(prev => prev.map(x => (x.id === a.id ? { ...x, visivelAtletas: !x.visivelAtletas } : x))); }}
                     title={a.visivelAtletas ? 'Visível no Portal do Atleta — clicar para esconder' : 'Tornar visível no Portal do Atleta'}
                     style={{ background: 'none', border: 'none', color: a.visivelAtletas ? T.gold : T.mutedDim, cursor: 'pointer' }}
                   >{a.visivelAtletas ? <Eye size={13} /> : <EyeOff size={13} />}</button>
@@ -29017,8 +29017,8 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const ctx = { sessions, matches, players, monitoring };
 
   const save = (dados) => {
-    if (dados.id) setTarefas(tarefas.map(t => (t.id === dados.id ? dados : t)));
-    else setTarefas([...tarefas, { ...dados, id: uid(), criadoPor: euId, criadoEm: new Date().toISOString() }]);
+    if (dados.id) setTarefas(prev => prev.map(t => (t.id === dados.id ? dados : t)));
+    else setTarefas(prev => [...prev, { ...dados, id: uid(), criadoPor: euId, criadoEm: new Date().toISOString() }]);
     setModal(null);
   };
   const remove = (id) => {
@@ -29035,10 +29035,10 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     if (t.recorrencia) {
       const feitaHoje = tarefaFeitaHoje(t, hoje);
       const lista = feitaHoje ? (t.concluidasEm || []).filter(d => d !== hoje) : [...(t.concluidasEm || []), hoje];
-      setTarefas(tarefas.map(x => (x.id === t.id ? { ...x, concluidasEm: lista } : x)));
+      setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, concluidasEm: lista } : x)));
       return;
     }
-    setTarefas(tarefas.map(x => (x.id === t.id
+    setTarefas(prev => prev.map(x => (x.id === t.id
       ? { ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString() }
       : x)));
   };
@@ -29204,11 +29204,11 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
     if (!f.nota.trim() && !f.attachment) return;
     if (editingId) {
       // Ao editar, o autor original mantém-se; regista-se quem alterou.
-      setDiario(diario.map(n => (n.id === editingId
+      setDiario(prev => prev.map(n => (n.id === editingId
         ? { ...f, id: editingId, autor: n.autor || userEmail, editadoPor: userEmail, editadoEm: new Date().toISOString() }
         : n)));
     } else {
-      setDiario([{ ...f, id: uid(), autor: userEmail, criadoEm: new Date().toISOString() }, ...diario]);
+      setDiario(prev => [{ ...f, id: uid(), autor: userEmail, criadoEm: new Date().toISOString() }, ...prev]);
     }
     closeForm();
   };
