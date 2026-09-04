@@ -812,6 +812,62 @@ function useCollectionSync(table, notifyEdit, teamId) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table, teamId]);
 
+  /* REDE DE SEGURANÇA CONTRA UM WEBSOCKET MORTO EM SILÊNCIO.
+
+     A ligação em tempo real (`.channel(...)` acima) pode cair sem avisar
+     — o telemóvel bloqueia o ecrã, o browser suspende a aba em segundo
+     plano, muda-se de wifi para dados móveis. A aba continua aberta e
+     parece normal, mas deixou de receber ecos de gravações feitas por
+     outras pessoas (ou por um atleta a responder a um questionário) até
+     se recarregar a página à mão.
+
+     Isto foi apanhado como possível causa de "o atleta respondeu, mas o
+     treinador não via como respondido": o treinador tinha o ecrã de
+     Monitorização aberto há horas, a ligação tinha morrido nesse
+     intervalo, e a resposta nova nunca chegou a aparecer sozinha.
+
+     A correção não depende de perceber PORQUE é que o WebSocket caiu —
+     só verifica, sempre que a aba volta a ficar visível (e, por garantia
+     extra, a cada poucos minutos mesmo sem isso), se há alguma coisa mais
+     recente no servidor do que aquilo que já temos, e junta-a. Usa a
+     MESMA regra de "só aceitar o que for mesmo mais recente" que os ecos
+     do Realtime — nunca risco de repor uma edição local por cima. */
+  useEffect(() => {
+    if (!teamId) return undefined;
+    let cancelled = false;
+    const apanharAtraso = async () => {
+      if (!ready || document.visibilityState === 'hidden') return;
+      const { data, error } = await supabase.from(table)
+        .select('id, data, updated_by_email, updated_at')
+        .eq('team_id', teamId);
+      if (cancelled || error) return;
+      (data || []).forEach(row => {
+        if (aGravar.current.has(row.id)) return;
+        const conhecida = ultimaHoraConhecida.current.get(row.id);
+        if (conhecida && row.updated_at && row.updated_at <= conhecida) return;
+        if (row.updated_at) ultimaHoraConhecida.current.set(row.id, row.updated_at);
+        snapshot.current.set(row.id, jsonEstavel(row.data));
+        setItems(prev => {
+          const item = { ...row.data, id: row.id };
+          return prev.some(it => it.id === row.id) ? prev.map(it => it.id === row.id ? item : it) : [...prev, item];
+        });
+        setRecordMeta(prev => ({ ...prev, [row.id]: { email: row.updated_by_email, at: row.updated_at } }));
+      });
+    };
+    document.addEventListener('visibilitychange', apanharAtraso);
+    window.addEventListener('focus', apanharAtraso);
+    // Alguns browsers/webviews não disparam `visibilitychange` de forma
+    // fiável (sobretudo em apps embutidas) — por isso há também esta
+    // verificação periódica, independente de qualquer evento.
+    const intervalo = setInterval(apanharAtraso, 3 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', apanharAtraso);
+      window.removeEventListener('focus', apanharAtraso);
+      clearInterval(intervalo);
+    };
+  }, [table, teamId, ready]);
+
   useEffect(() => {
     if (!ready || !teamId) return;
     if (aEscrever.current) { pedidoPendente.current = true; return; }
