@@ -7709,8 +7709,15 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
    tocar já grava, sem "Guardar" à parte (mesmo padrão do resto da
    app — ver `useCollectionSync`, que grava a cada mudança). */
 function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
+  // `prev =>` em vez de `ideias.map(...)`: aqui o `ideias` (prop) é só o
+  // que se via no último desenho do ecrã — sempre que se grava, chega um
+  // eco do Realtime com a versão confirmada, e um clique logo a seguir
+  // podia ainda estar a olhar para o `ideias` de ANTES desse eco, escrevendo
+  // por cima dele. Com `prev`, o React garante a versão mais recente no
+  // preciso instante em que a atualização é aplicada, nunca uma cópia à
+  // parte que possa ter ficado para trás.
   const toggleCampo = (id, campo) => {
-    setIdeias(ideias.map(x => (x.id === id ? { ...x, [campo]: !x[campo] } : x)));
+    setIdeias(prev => prev.map(x => (x.id === id ? { ...x, [campo]: !x[campo] } : x)));
   };
   const nIdeia = ideias.filter(x => x.visivelAtletas).length;
   const nPlano = ideias.filter(x => x.visivelPlanoJogo).length;
@@ -7728,10 +7735,8 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
   // de uma vez — mas só para "Ideia de Jogo" (o destino mais comum);
   // "Plano de Jogo" fica de escolha fina, uma a uma, para não se marcar
   // sem querer um bloco inteiro de diagramas para os Jogos.
-  const alternarFase = (lista) => {
-    const todasMarcadas = lista.every(i => i.visivelAtletas);
-    const idsDaFase = new Set(lista.map(i => i.id));
-    setIdeias(ideias.map(x => (idsDaFase.has(x.id) ? { ...x, visivelAtletas: !todasMarcadas } : x)));
+  const alternarFase = (idsDaFase, todasMarcadas) => {
+    setIdeias(prev => prev.map(x => (idsDaFase.has(x.id) ? { ...x, visivelAtletas: !todasMarcadas } : x)));
   };
 
   return (
@@ -7756,7 +7761,7 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
         <div key={fase} style={{ marginBottom: 20 }}>
           <button
             type="button"
-            onClick={() => alternarFase(lista)}
+            onClick={() => alternarFase(new Set(lista.map(i => i.id)), lista.every(i => i.visivelAtletas))}
             title="Marcar ou desmarcar este momento todo para Ideia de Jogo"
             style={{
               display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', textAlign: 'left',
