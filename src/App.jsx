@@ -2388,6 +2388,20 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     return window.location.hash.replace('#', '').trim() || 'geral';
   });
   const goTab = (id) => {
+    /* Trocar de separador na barra lateral pode desmontar um ecrã que
+       tinha uma "marca" própria no histórico do browser (Portal do
+       Atleta, um simulador, etc. — ver `useDetailBack`). Ao desmontar,
+       esses ecrãs tentam "limpar" a marca deles chamando
+       `window.history.back()` sozinhos — o que faz sentido quando se
+       fecham por si (o X, ou o próprio botão Voltar deles), mas aqui
+       não: era isso que fazia o clique em "Planeamento" saltar de
+       volta para "Ideia de Jogo" sozinho, porque o retroceder do
+       histórico desfazia a troca de separador que acabou de acontecer.
+       `modalHandoffAtivo` avisa esses ecrãs para não tentarem limpar
+       nada — a navegação está a ser tratada aqui, pela troca de
+       separador em si. */
+    modalHandoffAtivo = true;
+    setTimeout(() => { modalHandoffAtivo = false; }, 0);
     setTabPedida(id);
     if (id === 'videos' || id === 'apresentacoes' || id === 'documentos') setBiblioteca(id);
     setTab(tabValida(id));
