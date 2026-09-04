@@ -7672,10 +7672,11 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
    tocar já grava, sem "Guardar" à parte (mesmo padrão do resto da
    app — ver `useCollectionSync`, que grava a cada mudança). */
 function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
-  const toggle = (id) => {
-    setIdeias(ideias.map(x => (x.id === id ? { ...x, visivelAtletas: !x.visivelAtletas } : x)));
+  const toggleCampo = (id, campo) => {
+    setIdeias(ideias.map(x => (x.id === id ? { ...x, [campo]: !x[campo] } : x)));
   };
-  const nVisiveis = ideias.filter(x => x.visivelAtletas).length;
+  const nIdeia = ideias.filter(x => x.visivelAtletas).length;
+  const nPlano = ideias.filter(x => x.visivelPlanoJogo).length;
 
   // Agrupadas por momento de jogo — mesma divisão do Dossier (`PHASES`,
   // pela mesma ordem), com um balde "Sem fase" no fim para o que não
@@ -7686,6 +7687,10 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
   const semFase = ideias.filter(i => !PHASES.includes(i.phase));
   if (semFase.length) porFase.push({ fase: 'Sem fase', lista: semFase });
 
+  // O botão do cabeçalho de cada fase continua a marcar/desmarcar tudo
+  // de uma vez — mas só para "Ideia de Jogo" (o destino mais comum);
+  // "Plano de Jogo" fica de escolha fina, uma a uma, para não se marcar
+  // sem querer um bloco inteiro de diagramas para os Jogos.
   const alternarFase = (lista) => {
     const todasMarcadas = lista.every(i => i.visivelAtletas);
     const idsDaFase = new Set(lista.map(i => i.id));
@@ -7702,10 +7707,12 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
       </button>
 
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Portal do Atleta</div>
-      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 18 }}>
-        Marca as ideias que queres que os atletas vejam no telemóvel deles. {nVisiveis > 0
-          ? `${nVisiveis} de ${ideias.length} visível${nVisiveis === 1 ? '' : 'eis'}.`
-          : 'Nenhuma partilhada ainda.'}
+      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 6 }}>
+        Marca, ideia a ideia, para onde cada uma vai no Portal — o mesmo diagrama pode ir para os dois sítios, para um só, ou para nenhum.
+      </div>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 18, fontSize: 12 }}>
+        <span style={{ color: T.good }}>● Ideia de Jogo — {nIdeia} de {ideias.length}</span>
+        <span style={{ color: T.gold }}>● Plano de Jogo — {nPlano} de {ideias.length}</span>
       </div>
 
       {porFase.map(({ fase, lista }) => (
@@ -7713,7 +7720,7 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
           <button
             type="button"
             onClick={() => alternarFase(lista)}
-            title="Marcar ou desmarcar este momento todo"
+            title="Marcar ou desmarcar este momento todo para Ideia de Jogo"
             style={{
               display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', textAlign: 'left',
               background: 'none', border: 'none', padding: 0, marginBottom: 8, cursor: 'pointer',
@@ -7726,27 +7733,39 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {lista.map(x => {
-              const marcada = !!x.visivelAtletas;
+              const emIdeia = !!x.visivelAtletas;
+              const emPlano = !!x.visivelPlanoJogo;
+              const marcada = emIdeia || emPlano;
               return (
-                <button
+                <div
                   key={x.id}
-                  onClick={() => toggle(x.id)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
-                    background: marcada ? `${T.good}18` : T.surface, border: `1px solid ${marcada ? T.good : T.line}`,
-                    borderRadius: 10, padding: '12px 14px', cursor: 'pointer', ...body,
+                    display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+                    background: marcada ? `${T.good}12` : T.surface, border: `1px solid ${marcada ? T.good : T.line}`,
+                    borderRadius: 10, padding: '10px 14px', ...body,
                   }}
                 >
-                  <span style={{
-                    width: 22, height: 22, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: marcada ? T.good : 'transparent', border: `1px solid ${marcada ? T.good : T.line}`,
-                  }}>
-                    {marcada && <Check size={14} color="#0d140e" />}
-                  </span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {labelOf(x)}
                   </span>
-                </button>
+                  {/* Dois interruptores independentes, lado a lado — a
+                      mesma ideia pode ir para os dois sítios do Portal,
+                      só para um, ou para nenhum. */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11.5, color: emIdeia ? T.good : T.mutedDim, flexShrink: 0 }}>
+                    <input
+                      type="checkbox" checked={emIdeia} onChange={() => toggleCampo(x.id, 'visivelAtletas')}
+                      style={{ width: 15, height: 15, accentColor: T.good, cursor: 'pointer' }}
+                    />
+                    Ideia de Jogo
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11.5, color: emPlano ? T.gold : T.mutedDim, flexShrink: 0 }}>
+                    <input
+                      type="checkbox" checked={emPlano} onChange={() => toggleCampo(x.id, 'visivelPlanoJogo')}
+                      style={{ width: 15, height: 15, accentColor: T.gold, cursor: 'pointer' }}
+                    />
+                    Plano de Jogo
+                  </label>
+                </div>
               );
             })}
           </div>
