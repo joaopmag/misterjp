@@ -646,6 +646,15 @@ function useCollectionSync(table, notifyEdit, teamId) {
   const pedidoPendente = useRef(false);
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  /* A HORA (`updated_at`) de cada registo é a fonte de verdade mais
+     fiável para saber se um eco do Realtime é mesmo mais recente do
+     que o que já temos — mais fiável do que "vai um tempo desde que
+     gravámos" (a proteção anterior, `aGravar` com um prazo), que podia
+     ainda assim deixar passar um eco atrasado depois de várias
+     gravações seguidas em pouco tempo. Um eco com uma hora IGUAL ou
+     MAIS ANTIGA do que a que já temos localmente nunca é mais recente
+     do que o que já sabemos — é sempre seguro ignorá-lo. */
+  const ultimaHoraConhecida = useRef(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -714,7 +723,11 @@ function useCollectionSync(table, notifyEdit, teamId) {
 
           const snap = new Map();
           const meta = {};
-          rows.forEach(r => { snap.set(r.id, jsonEstavel(r.data)); meta[r.id] = { email: r.updated_by_email, at: r.updated_at }; });
+          rows.forEach(r => {
+            snap.set(r.id, jsonEstavel(r.data));
+            meta[r.id] = { email: r.updated_by_email, at: r.updated_at };
+            if (r.updated_at) ultimaHoraConhecida.current.set(r.id, r.updated_at);
+          });
           snapshot.current = snap;
           setRecordMeta(meta);
           setItems(rows.map(r => ({ ...r.data, id: r.id })));
@@ -776,6 +789,16 @@ function useCollectionSync(table, notifyEdit, teamId) {
 
         function applyRow(row) {
           if (aGravar.current.has(row.id)) return;
+          // Um eco tão antigo (ou mais) do que o que já temos nunca traz
+          // nada de novo — só um risco de repor uma versão ultrapassada
+          // por cima de uma edição local mais recente. Isto substitui a
+          // antiga proteção por tempo fixo (`aGravar` com prazo), que
+          // ainda falhava depois de várias gravações seguidas em pouco
+          // tempo — esta compara mesmo a HORA real de cada registo, não
+          // um relógio à parte.
+          const conhecida = ultimaHoraConhecida.current.get(row.id);
+          if (conhecida && row.updated_at && row.updated_at <= conhecida) return;
+          if (row.updated_at) ultimaHoraConhecida.current.set(row.id, row.updated_at);
           snapshot.current.set(row.id, jsonEstavel(row.data));
           setItems(prev => {
             const item = { ...row.data, id: row.id };
@@ -872,6 +895,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
         }
         (data || []).forEach(r => {
           snapshot.current.set(r.id, jsonEstavel(r.data));
+          if (r.updated_at) ultimaHoraConhecida.current.set(r.id, r.updated_at);
           setRecordMeta(prev => ({ ...prev, [r.id]: { email: r.updated_by_email, at: r.updated_at } }));
         });
       }
