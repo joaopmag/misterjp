@@ -7641,6 +7641,11 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                 {/* Ícones por baixo da imagem, encostados à margem direita
                     do cartão. */}
                 <div style={{ display: 'flex', gap: 16, marginTop: 8, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIdeias(ideias.map(y => (y.id === x.id ? { ...y, visivelAtletas: !y.visivelAtletas } : y))); }}
+                    title={x.visivelAtletas ? 'Visível no Portal → Ideia de Jogo — clicar para esconder' : 'Tornar visível no Portal → Ideia de Jogo'}
+                    style={{ background: 'none', border: 'none', color: x.visivelAtletas ? T.good : T.mutedDim, cursor: 'pointer', padding: 0 }}
+                  >{x.visivelAtletas ? <Eye size={14} /> : <EyeOff size={14} />}</button>
                   <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ideia" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
                   <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
