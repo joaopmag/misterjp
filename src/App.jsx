@@ -9464,21 +9464,29 @@ function clampTextElement(el) {
 
    Filtrar na leitura e não nos dados resolve também os exercícios já
    gravados com o problema, sem lhes tocar. */
-/* Elementos de um passo: a POSIÇÃO vem do passo, o CONTEÚDO vem do campo.
+/* Elementos de um passo: a POSIÇÃO vem do passo, o CONTEÚDO vem do campo
+   — MAS só enquanto o elemento ainda existir no campo agora.
 
    Um passo guarda uma fotografia — mas uma fotografia de ONDE as coisas
    estavam, não do que diziam. O texto de uma caixa, o número de um
    jogador, a cor da equipa, o tamanho: isso é o elemento, e o elemento é
-   um só.
+   um só. Por isso, para quem ainda está em campo, a POSE (posição,
+   rotação, tamanho) vem do passo, mas o CONTEÚDO vem sempre da versão
+   atual — sem isto, escrever numa caixa de texto DEPOIS de ela já estar
+   num passo deixava o passo com a cópia antiga.
 
-   Sem esta distinção, escrever numa caixa de texto DEPOIS de ela já estar
-   num passo deixava o passo com a cópia antiga — a animação mostrava a
-   caixa a dizer "Texto" e só no fim aparecia o que tinha sido escrito.
-   O mesmo valia para mudar um número ou a cor de um jogador.
-
-   Guardam-se do passo apenas os campos que descrevem a POSE: onde está,
-   virado para onde, com que tamanho de zona. Tudo o resto é lido do
-   elemento tal como ele é agora. */
+   Só que nem todo o elemento de um passo ainda está em campo agora — e
+   é aí que está a parte importante: um elemento colocado num passo e
+   apagado só MAIS TARDE (ver `inserirDesde`/"desde") esteve mesmo lá
+   nessa altura, mesmo já não estando no campo hoje. Este código já
+   filtrou esses elementos fora um dia, por uma razão válida na altura
+   (antes de "desde" existir, apagar tirava sempre de toda a coreografia,
+   e um id num passo mas não no campo só podia ser lixo de uma remoção
+   antiga) — mas com "desde" a existir, essa mesma limpeza estava a
+   apagar da apresentação exatamente as caixas de texto que deviam
+   aparecer nos passos anteriores à sua remoção. Agora só se pede o
+   conteúdo atual a quem ainda existe; quem já não existe usa a sua
+   própria cópia gravada nesse passo, tal como estava nessa altura. */
 const CAMPOS_DE_POSE = ['x', 'y', 'rotation', 'w', 'h'];
 
 /* O DESENHO A IMPRIMIR: O PRIMEIRO PASSO, NÃO O ÚLTIMO.
@@ -9509,15 +9517,15 @@ function diagramaParaImpressao(diagram) {
 function stepElements(step, diagram) {
   const doPasso = (step && step.elements) || [];
   const atuais = new Map(((diagram && diagram.elements) || []).map(el => [el.id, el]));
-  if (!atuais.size) return doPasso;
-  return doPasso
-    .filter(el => atuais.has(el.id))
-    .map(el => {
-      const atual = atuais.get(el.id);
-      const pose = {};
-      CAMPOS_DE_POSE.forEach(k => { if (el[k] !== undefined) pose[k] = el[k]; });
-      return { ...atual, ...pose };
-    });
+  return doPasso.map(el => {
+    const atual = atuais.get(el.id);
+    // Já não existe no campo agora — mas existiu neste passo. Mostra-se
+    // tal como foi gravado aqui, em vez de desaparecer.
+    if (!atual) return el;
+    const pose = {};
+    CAMPOS_DE_POSE.forEach(k => { if (el[k] !== undefined) pose[k] = el[k]; });
+    return { ...atual, ...pose };
+  });
 }
 
 function stepStaticArrows(step, diagram) {
