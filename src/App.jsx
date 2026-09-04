@@ -171,7 +171,10 @@ function sincronizarVisivelNoJogo(data, adversario, visivel, matches, setMatches
   if (!setMatches || !matches) return;
   const alvo = matches.find(m => m.date === data && m.opponent === adversario);
   if (alvo && !!alvo.convocatoriaVisivelAtletas !== visivel) {
-    setMatches(matches.map(m => (m.id === alvo.id ? { ...m, convocatoriaVisivelAtletas: visivel } : m)));
+    // `prev =>` e não `matches.map(...)`: `matches` aqui é só a cópia que
+    // chegou por parâmetro, que pode já não ser a mais recente no
+    // preciso instante em que esta gravação se aplica.
+    setMatches(prev => prev.map(m => (m.id === alvo.id ? { ...m, convocatoriaVisivelAtletas: visivel } : m)));
   }
 }
 
@@ -3214,7 +3217,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         <SessionModal
           session={sessionModal} exercises={exercises} players={players}
           onClose={() => setSessionModal(null)}
-          onSave={(data) => { setSessions(sessions.map(x => (x.id === data.id ? data : x))); setSessionModal(null); }}
+          onSave={(data) => { setSessions(prev => prev.map(x => (x.id === data.id ? data : x))); setSessionModal(null); }}
         />
       )}
       {matchModal && (
@@ -3223,7 +3226,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           onClose={() => setMatchModal(null)}
           onSave={(data) => {
             const registo = podarPresencasForaDosConvocados(data);
-            setMatches(matches.map(x => (x.id === registo.id ? registo : x)));
+            setMatches(prev => prev.map(x => (x.id === registo.id ? registo : x)));
             if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
             setMatchModal(null);
           }}
@@ -3267,7 +3270,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           player={playerModal}
           onClose={() => trocarJanela(() => setPlayerModal(null), () => setStatusOpen(true))}
           onSave={(data) => {
-            setPlayers(players.map(x => (x.id === data.id ? data : x)));
+            setPlayers(prev => prev.map(x => (x.id === data.id ? data : x)));
             trocarJanela(() => setPlayerModal(null), () => setStatusOpen(true));
           }}
         />
@@ -4224,12 +4227,16 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) 
     confirmLabel: 'Atualizar códigos',
     destructive: false,
     onConfirm: () => {
-      const used = new Set(players.map(p => p.code).filter(Boolean));
-      setPlayers(players.map(p => {
-        if (!p.code || String(p.code).length >= CHECKIN_CODE_LEN) return p;
-        used.delete(p.code);
-        return { ...p, code: genPlayerCode(used) };
-      }));
+      // `prev =>`: o conjunto de códigos já usados também tem de vir da
+      // versão mais recente, não da que estava no ecrã quando se clicou.
+      setPlayers(prev => {
+        const used = new Set(prev.map(p => p.code).filter(Boolean));
+        return prev.map(p => {
+          if (!p.code || String(p.code).length >= CHECKIN_CODE_LEN) return p;
+          used.delete(p.code);
+          return { ...p, code: genPlayerCode(used) };
+        });
+      });
     },
   });
 
@@ -4243,8 +4250,10 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) 
       confirmLabel: 'Gerar novo código',
       destructive: false,
       onConfirm: () => {
-        const used = new Set(players.filter(p => p.id !== playerId && p.code).map(p => p.code));
-        setPlayers(players.map(p => (p.id === playerId ? { ...p, code: genPlayerCode(used) } : p)));
+        setPlayers(prev => {
+          const used = new Set(prev.filter(p => p.id !== playerId && p.code).map(p => p.code));
+          return prev.map(p => (p.id === playerId ? { ...p, code: genPlayerCode(used) } : p));
+        });
       },
     });
   };
@@ -6424,9 +6433,9 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
   const save = (data) => {
     const isEdicao = !!data.id;
     if (isEdicao) {
-      setPlayers(players.map(p => p.id === data.id ? data : p));
+      setPlayers(prev => prev.map(p => p.id === data.id ? data : p));
     } else {
-      setPlayers([...players, { ...data, id: uid() }]);
+      setPlayers(prev => [...prev, { ...data, id: uid() }]);
     }
     if (isEdicao && modalVoltarPerfil) trocarJanela(() => setModal(null), () => setStatsFor(data));
     else setModal(null);
@@ -7237,8 +7246,8 @@ function Exercicios({ exercises, setExercises, meta }) {
 
   const save = (data) => {
     const isEdicao = !!data.id;
-    if (isEdicao) setExercises(exercises.map(x => x.id === data.id ? data : x));
-    else setExercises([...exercises, { ...data, id: uid() }]);
+    if (isEdicao) setExercises(prev => prev.map(x => x.id === data.id ? data : x));
+    else setExercises(prev => [...prev, { ...data, id: uid() }]);
     if (isEdicao) trocarJanela(() => setModal(null), () => setViewing(data));
     else setModal(null);
   };
@@ -7650,8 +7659,8 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
 
   const save = (data) => {
     const isEdicao = !!data.id;
-    if (isEdicao) setIdeias(ideias.map(x => x.id === data.id ? data : x));
-    else setIdeias([...ideias, { ...data, id: uid() }]);
+    if (isEdicao) setIdeias(prev => prev.map(x => x.id === data.id ? data : x));
+    else setIdeias(prev => [...prev, { ...data, id: uid() }]);
     if (isEdicao) trocarJanela(() => setModal(null), () => setViewing(data));
     else setModal(null);
   };
@@ -7743,7 +7752,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                     do cartão. */}
                 <div style={{ display: 'flex', gap: 16, marginTop: 8, justifyContent: 'flex-end' }}>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setIdeias(ideias.map(y => (y.id === x.id ? { ...y, visivelAtletas: !y.visivelAtletas } : y))); }}
+                    onClick={(e) => { e.stopPropagation(); setIdeias(prev => prev.map(y => (y.id === x.id ? { ...y, visivelAtletas: !y.visivelAtletas } : y))); }}
                     title={x.visivelAtletas ? 'Visível no Portal → Ideia de Jogo — clicar para esconder' : 'Tornar visível no Portal → Ideia de Jogo'}
                     style={{ background: 'none', border: 'none', color: x.visivelAtletas ? T.good : T.mutedDim, cursor: 'pointer', padding: 0 }}
                   >{x.visivelAtletas ? <Eye size={14} /> : <EyeOff size={14} />}</button>
@@ -15780,8 +15789,8 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
 
   const save = (data) => {
     const isEdicao = !!data.id;
-    if (isEdicao) setSessions(sessions.map(s => s.id === data.id ? data : s));
-    else setSessions([...sessions, { ...data, id: uid() }]);
+    if (isEdicao) setSessions(prev => prev.map(s => s.id === data.id ? data : s));
+    else setSessions(prev => [...prev, { ...data, id: uid() }]);
     if (isEdicao && modalVoltarDia) trocarJanela(() => setModal(null), () => setDayModalDate(data.date));
     else setModal(null);
   };
@@ -15790,8 +15799,8 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
   const saveMatch = (data) => {
     const isEdicao = !!data.id;
     const registo = podarPresencasForaDosConvocados(isEdicao ? data : { ...data, id: uid() });
-    if (isEdicao) setMatches(matches.map(m => m.id === data.id ? registo : m));
-    else setMatches([...matches, registo]);
+    if (isEdicao) setMatches(prev => prev.map(m => m.id === data.id ? registo : m));
+    else setMatches(prev => [...prev, registo]);
     if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
     setSessions(prev => ensureFriendlySession(registo, prev));
     if (isEdicao && matchModalVoltarFicha) trocarJanela(() => setMatchModal(null), () => setFicha(registo));
@@ -15978,7 +15987,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                         aparecem se existir essa sessão. */}
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
                       {equipasDoJogo && (
-                        <button onClick={e => { e.stopPropagation(); setSessions(sessions.map(x => (x.id === sessaoJogo.id ? { ...x, equipasSimulador: null } : x))); }} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                        <button onClick={e => { e.stopPropagation(); setSessions(prev => prev.map(x => (x.id === sessaoJogo.id ? { ...x, equipasSimulador: null } : x))); }} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                       )}
                       {sessaoJogo && (
                         <>
@@ -16055,7 +16064,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                     </span>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
                       {temEquipasSessao(s) && (
-                        <button onClick={() => setSessions(sessions.map(x => (x.id === s.id ? { ...x, equipasSimulador: null } : x)))} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                        <button onClick={() => setSessions(prev => prev.map(x => (x.id === s.id ? { ...x, equipasSimulador: null } : x)))} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                       )}
                       {/* O Simulador abre A PARTIR DO DIA, com a data já
                           escolhida. Quando era separador próprio, o dia
@@ -18475,7 +18484,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       const lesionados = (m.lesionados || []).filter(id => id !== playerId);
       const escalao = (m.escalao || []).filter(id => id !== playerId);
       const convocados = base.filter(id => id !== playerId);
-      setMatches(matches.map(x => {
+      setMatches(prev => prev.map(x => {
         if (x.id !== m.id) return x;
         const ratings = { ...(x.ratings || {}) };
         if (proximo !== 'presente') delete ratings[playerId];
@@ -18495,7 +18504,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
     }
 
     const date = day.date;
-    setSessions(sessions.map(s => {
+    setSessions(prev => prev.map(s => {
       if (s.date !== date) return s;
       const ratings = { ...(s.ratings || {}) };
       if (proximo !== 'presente') delete ratings[playerId];
@@ -18517,18 +18526,18 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   // única nota por jogador, por dia.
   const setRating = (day, playerId, val) => {
     if (day.match) {
-      setMatches(matches.map(x => (x.id === day.match.id ? { ...x, ratings: { ...(x.ratings || {}), [playerId]: val } } : x)));
+      setMatches(prev => prev.map(x => (x.id === day.match.id ? { ...x, ratings: { ...(x.ratings || {}), [playerId]: val } } : x)));
       return;
     }
-    setSessions(sessions.map(s => s.date === day.date ? { ...s, ratings: { ...(s.ratings || {}), [playerId]: val } } : s));
+    setSessions(prev => prev.map(s => s.date === day.date ? { ...s, ratings: { ...(s.ratings || {}), [playerId]: val } } : s));
   };
   // Fecha (guarda) ou reabre (editar) o dia.
   const setDayClosed = (day, closed) => {
     if (day.match) {
-      setMatches(matches.map(x => (x.id === day.match.id ? { ...x, attendanceClosed: closed } : x)));
+      setMatches(prev => prev.map(x => (x.id === day.match.id ? { ...x, attendanceClosed: closed } : x)));
       return;
     }
-    setSessions(sessions.map(s => s.date === day.date ? { ...s, attendanceClosed: closed } : s));
+    setSessions(prev => prev.map(s => s.date === day.date ? { ...s, attendanceClosed: closed } : s));
   };
 
   const doExport = () => {
@@ -21134,8 +21143,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   const save = (data) => {
     const isEdicao = !!data.id;
     const registo = podarPresencasForaDosConvocados(isEdicao ? data : { ...data, id: uid() });
-    if (isEdicao) setMatches(matches.map(m => m.id === data.id ? registo : m));
-    else setMatches([...matches, registo]);
+    if (isEdicao) setMatches(prev => prev.map(m => m.id === data.id ? registo : m));
+    else setMatches(prev => [...prev, registo]);
     // Amigável: entra também na agenda como sessão (ver ensureFriendlySession).
     // A Lista do Planeamento esconde o cartão repetido — a sessão continua
     // a existir para a carga de treino e as presenças.
@@ -28231,8 +28240,8 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
 
   const save = (data) => {
     const registo = data.id ? data : { ...data, id: uid() };
-    if (data.id) setConvocatorias(convocatorias.map(c => c.id === data.id ? registo : c));
-    else setConvocatorias([...convocatorias, registo]);
+    if (data.id) setConvocatorias(prev => prev.map(c => c.id === data.id ? registo : c));
+    else setConvocatorias(prev => [...prev, registo]);
     // Cria/atualiza o jogo correspondente, para a convocatória alimentar o
     // Planeamento, os Jogos e a tabela de presenças.
     if (setMatches) setMatches(syncConvocatoriaMatch(registo, matches, players));
@@ -28307,7 +28316,7 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
                       <button
                         onClick={() => {
                           const querido = !c.visivelAtletas;
-                          setConvocatorias(convocatorias.map(x => (x.id === c.id ? { ...x, visivelAtletas: querido } : x)));
+                          setConvocatorias(prev => prev.map(x => (x.id === c.id ? { ...x, visivelAtletas: querido } : x)));
                           sincronizarVisivelNoJogo(c.data, c.adversario, querido, matches, setMatches);
                         }}
                         title={c.visivelAtletas ? 'Visível no Portal do Atleta — clicar para esconder' : 'Tornar visível no Portal do Atleta'}
