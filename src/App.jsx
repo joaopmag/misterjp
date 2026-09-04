@@ -1430,6 +1430,29 @@ function Badge({ number, label }) {
 }
 
 function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'button', disabled }) {
+  /* PROTEÇÃO CONTRA CLIQUE DUPLO, PARA TODOS OS BOTÕES DA APP DE UMA VEZ SÓ.
+
+     Um "Guardar" que cria um registo novo gera um id novo dentro do
+     próprio clique — dois cliques muito seguidos (ecrã lento a reagir,
+     dedo a escorregar, duplo toque por acidente no telemóvel) disparavam
+     o mesmo código duas vezes e criavam dois registos, um por clique. Foi
+     exatamente este tipo de falha que já apanhámos na gravação do
+     questionário (`checkin_save`) — em vez de corrigir dezenas de botões
+     "Guardar" espalhados pela app um a um, a proteção fica aqui, no botão
+     partilhado por todos eles.
+
+     400 ms chega para distinguir um toque duplo por acidente (tipicamente
+     bem abaixo de 300 ms de intervalo) de dois cliques a sério em botões
+     diferentes ou no mesmo botão com intenção — sem se notar como atraso
+     em uso normal, mesmo a navegar depressa (ex.: "Seguinte" numa
+     animação). */
+  const ultimoClique = useRef(0);
+  const handleClick = (e) => {
+    const agora = Date.now();
+    if (agora - ultimoClique.current < 400) return;
+    ultimoClique.current = agora;
+    if (onClick) onClick(e);
+  };
   const base = {
     ...body, fontSize: 13.5, fontWeight: 600, padding: '9px 16px', borderRadius: 7,
     border: '1px solid transparent', cursor: disabled ? 'not-allowed' : 'pointer',
@@ -1442,7 +1465,7 @@ function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'bu
     danger: { background: 'transparent', color: T.bad, border: `1px solid ${T.bad}55` },
   };
   return (
-    <button type={type} disabled={disabled} onClick={onClick} style={{ ...base, ...variants[variant], ...s }}>
+    <button type={type} disabled={disabled} onClick={handleClick} style={{ ...base, ...variants[variant], ...s }}>
       {children}
     </button>
   );
