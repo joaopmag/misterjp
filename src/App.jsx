@@ -9764,6 +9764,18 @@ const LINE_LABELS = {
 };
 
 function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll, onSpaceZonesChange, activeColor, onColorChange }) {
+  /* A APRESENTAÇÃO PODE DEMORAR VÁRIOS SEGUNDOS A CORRER (um passo atrás
+     do outro, com pausas). `runPresentStep` chama-se A SI PRÓPRIA por
+     `setTimeout` para passar ao passo seguinte — e cada uma dessas
+     chamadas futuras fica presa à versão de `value` que existia no
+     preciso render em que foi agendada, não à mais recente. Editar o
+     conteúdo de uma caixa de texto e, JÁ DEPOIS, carregar em "Apresentar
+     tudo" não devia sofrer disto — mas para nunca depender de o React já
+     ter propagado a edição a tempo, `valueRef` dá sempre acesso ao
+     `value` mais recente possível, e é isso que `stepElements` passa a
+     usar dentro da apresentação, em vez do parâmetro fechado na função. */
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
   // Bola Parada trabalha-se dentro da grande área: ícones a 60% (ver
   // iconScaleForPhase). Reage à fase escolhida no formulário, em direto.
   const iconEscala = iconScaleForPhase(exerciseInfo?.phase);
@@ -10276,6 +10288,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const runPresentStep = (idx, seq) => {
     const step = seq[idx];
+    // `valueRef.current`, não o `value` fechado nesta função — ver a nota
+    // ao lado da declaração da ref: uma apresentação com vários passos
+    // corre ao longo de segundos, e cada passo tem de ver sempre o
+    // conteúdo mais recente das caixas de texto, nunca uma versão presa
+    // ao momento em que a apresentação começou.
+    const diagramaAtual = valueRef.current;
     const chains = buildAnimationChains(step.arrows).map(chainArrows => {
       let cursor = 0;
       const segments = chainArrows.map(a => {
@@ -10286,7 +10304,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         return segment;
       });
       const first = chainArrows[0];
-      const elementosDoPasso = stepElements(step, value);
+      const elementosDoPasso = stepElements(step, diagramaAtual);
       let mover = (first.ownerId && elementosDoPasso.find(el => el.id === first.ownerId)) || elementosDoPasso.find(el =>
         (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
         Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
@@ -10299,11 +10317,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       return { id: first.id, segments, mover, isNewBall, totalDuration: cursor };
     });
     const baseElements = [
-      ...stepElements(step, value),
+      ...stepElements(step, diagramaAtual),
       ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
     ];
     setPresentElements(baseElements);
-    setPresentArrows(stepStaticArrows(step, value));
+    setPresentArrows(stepStaticArrows(step, diagramaAtual));
     const maxDuration = Math.max(...chains.map(c => c.totalDuration));
     const start = performance.now();
     const tick = (now) => {
