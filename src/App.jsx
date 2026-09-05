@@ -23985,7 +23985,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
                 const doMomento = dados.ideias.filter(x => x.phase === momento);
                 if (!doMomento.length) return null;
                 return (
-                  <div key={momento} style={{ flex: '0 0 clamp(150px, 46vw, 220px)' }}>
+                  <div key={momento} style={{ width: 'clamp(150px, 46vw, 220px)', flexShrink: 0 }}>
                     <ColunaIdeias titulo={momento} itens={doMomento} onAbrir={setAVer} />
                   </div>
                 );
@@ -23997,7 +23997,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
                 const restantes = dados.ideias.filter(x => !MOMENTOS_JOGO.includes(x.phase));
                 if (!restantes.length) return null;
                 return (
-                  <div style={{ flex: '0 0 clamp(150px, 46vw, 220px)' }}>
+                  <div style={{ width: 'clamp(150px, 46vw, 220px)', flexShrink: 0 }}>
                     <ColunaIdeias titulo="Outras" itens={restantes} onAbrir={setAVer} />
                   </div>
                 );
