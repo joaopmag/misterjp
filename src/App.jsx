@@ -9487,7 +9487,19 @@ function clampTextElement(el) {
    aparecer nos passos anteriores à sua remoção. Agora só se pede o
    conteúdo atual a quem ainda existe; quem já não existe usa a sua
    própria cópia gravada nesse passo, tal como estava nessa altura. */
-const CAMPOS_DE_POSE = ['x', 'y', 'rotation', 'w', 'h'];
+/* O TEXTO TAMBÉM É POSE, NÃO CONTEÚDO SEMPRE-ATUAL.
+
+   Ao contrário do número de um jogador ou da cor de uma equipa — que
+   fazem sentido vir sempre da versão mais recente, porque representam
+   "quem é" o elemento, não "o que dizia nessa altura" — o texto de uma
+   legenda é mais parecido com a posição: o que estava escrito num passo
+   é PARTE DESSE PASSO. Escrever "Pressão alta" numa caixa e, mais tarde,
+   mudar para "Bola parada" não pode reescrever os passos anteriores, que
+   genuinamente diziam a coisa antiga quando foram gravados — só os
+   passos a partir de onde se editou é que devem ficar com o texto novo
+   (ver `changeSelectedText`, que trata a edição de texto com o mesmo
+   "desde" usado para colocar e para apagar). */
+const CAMPOS_DE_POSE = ['x', 'y', 'rotation', 'w', 'h', 'text'];
 
 /* O DESENHO A IMPRIMIR: O PRIMEIRO PASSO, NÃO O ÚLTIMO.
 
@@ -10735,7 +10747,22 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const changeSelectedText = (text) => {
     if (!selectedEl || selectedEl.kind !== 'text') return;
-    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? clampTextElement({ ...el, text }) : el)) });
+    const novoEl = clampTextElement({ ...selectedEl, text });
+    const seq = value.sequence || [];
+    const desde = inserirDesde;
+    /* Mesma lógica de "desde" usada para colocar e para apagar: a
+       edição só vale a partir do passo mais recente (ou do que estiver
+       escolhido à mão) — os passos anteriores mantêm o texto tal como
+       estava quando foram gravados, exatamente como já acontece com a
+       posição. Sem isto, mudar o texto reescrevia sozinho o histórico
+       inteiro da animação. */
+    const sequencia = (desde == null || !seq.length)
+      ? seq
+      : seq.map((step, i) => (i < desde ? step : {
+          ...step,
+          elements: (step.elements || []).map(el => (el.id === selectedEl.id ? { ...el, text: novoEl.text, w: novoEl.w, h: novoEl.h } : el)),
+        }));
+    commit({ ...value, elements: elements.map(el => (el.id === selectedEl.id ? novoEl : el)), sequence: sequencia });
   };
   // Largura da caixa em caracteres por linha: é o que permite ter uma
   // legenda estreita e alta em vez de uma faixa que atravessa o campo.
