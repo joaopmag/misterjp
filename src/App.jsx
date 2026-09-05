@@ -23478,7 +23478,7 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
                 display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18,
               }}>
                 <button onClick={() => setFolderFilter(null)} style={{
-                  flex: '1 1 100px', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                  flex: '0 1 auto', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
                   whiteSpace: 'nowrap', textAlign: 'center',
                   background: folderFilter === null ? '#B5393F' : 'transparent',
                   color: folderFilter === null ? TEXT_ON_ACCENT : T.muted,
@@ -23488,7 +23488,7 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
                   const on = folderFilter === name;
                   return (
                     <button key={name} onClick={() => setFolderFilter(on ? null : name)} style={{
-                      flex: '1 1 100px', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                      flex: '0 1 auto', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
                       whiteSpace: 'nowrap', textAlign: 'center',
                       background: on ? '#B5393F' : 'transparent',
                       color: on ? TEXT_ON_ACCENT : T.muted,
@@ -23498,7 +23498,7 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
                 })}
                 {countIn(NO_FOLDER) > 0 && folders.length > 0 && (
                   <button onClick={() => setFolderFilter(folderFilter === NO_FOLDER ? null : NO_FOLDER)} style={{
-                    flex: '1 1 100px', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                    flex: '0 1 auto', padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
                     whiteSpace: 'nowrap', textAlign: 'center',
                     background: folderFilter === NO_FOLDER ? '#B5393F' : 'transparent',
                     color: folderFilter === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
@@ -23901,6 +23901,7 @@ function PlayerAdversarioTab({ code, teamId }) {
 const MOMENTOS_JOGO = ['Organização Defensiva', 'Transição Ofensiva', 'Organização Ofensiva', 'Transição Defensiva', 'Bola Parada'];
 
 function PlayerIdeiaJogoView({ code, teamId, onBack }) {
+  const isMobilePortal = useIsMobile(700);
   const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
   const [dados, setDados] = useState(null); // { proximoJogo, ideias }
   const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
@@ -23967,11 +23968,26 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
           )}
 
           {dados.ideias && dados.ideias.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 16 }}>
+            <div style={{
+              display: isMobilePortal ? 'flex' : 'grid',
+              gridTemplateColumns: isMobilePortal ? undefined : 'repeat(5, minmax(0, 1fr))',
+              gap: 16,
+              // Em ecrã estreito, 5 colunas de largura igual ficavam finas
+              // demais para se perceber o desenho do campo lá dentro — em
+              // vez disso, cada categoria fica com uma largura decente e
+              // percorre-se de lado, como se fossem separadores.
+              overflowX: isMobilePortal ? 'auto' : 'visible',
+              paddingBottom: isMobilePortal ? 8 : 0,
+              WebkitOverflowScrolling: 'touch',
+            }}>
               {MOMENTOS_JOGO.map(momento => {
                 const doMomento = dados.ideias.filter(x => x.phase === momento);
                 if (!doMomento.length) return null;
-                return <ColunaIdeias key={momento} titulo={momento} itens={doMomento} onAbrir={setAVer} />;
+                return (
+                  <div key={momento} style={isMobilePortal ? { flex: '0 0 240px' } : undefined}>
+                    <ColunaIdeias titulo={momento} itens={doMomento} onAbrir={setAVer} />
+                  </div>
+                );
               })}
               {/* Ideias com uma fase fora das cinco categorias (Preparação
                   Física, Ativação, etc.) continuam a aparecer — só não têm
@@ -23979,7 +23995,11 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
               {(() => {
                 const restantes = dados.ideias.filter(x => !MOMENTOS_JOGO.includes(x.phase));
                 if (!restantes.length) return null;
-                return <ColunaIdeias titulo="Outras" itens={restantes} onAbrir={setAVer} />;
+                return (
+                  <div style={isMobilePortal ? { flex: '0 0 240px' } : undefined}>
+                    <ColunaIdeias titulo="Outras" itens={restantes} onAbrir={setAVer} />
+                  </div>
+                );
               })()}
             </div>
           ) : (
