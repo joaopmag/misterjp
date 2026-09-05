@@ -23901,7 +23901,6 @@ function PlayerAdversarioTab({ code, teamId }) {
 const MOMENTOS_JOGO = ['Organização Defensiva', 'Transição Ofensiva', 'Organização Ofensiva', 'Transição Defensiva', 'Bola Parada'];
 
 function PlayerIdeiaJogoView({ code, teamId, onBack }) {
-  const isMobilePortal = useIsMobile(700);
   const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
   const [dados, setDados] = useState(null); // { proximoJogo, ideias }
   const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
@@ -23969,22 +23968,24 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
 
           {dados.ideias && dados.ideias.length > 0 ? (
             <div style={{
-              display: isMobilePortal ? 'flex' : 'grid',
-              gridTemplateColumns: isMobilePortal ? undefined : 'repeat(5, minmax(0, 1fr))',
-              gap: 16,
-              // Em ecrã estreito, 5 colunas de largura igual ficavam finas
-              // demais para se perceber o desenho do campo lá dentro — em
-              // vez disso, cada categoria fica com uma largura decente e
-              // percorre-se de lado, como se fossem separadores.
-              overflowX: isMobilePortal ? 'auto' : 'visible',
-              paddingBottom: isMobilePortal ? 8 : 0,
+              display: 'flex', flexWrap: 'nowrap', gap: 16, overflowX: 'auto', paddingBottom: 8,
               WebkitOverflowScrolling: 'touch',
             }}>
+              {/* Largura em `vw` (percentagem do ecrã), não em pixels fixos
+                 nem a depender de detetar "é telemóvel" em JavaScript —
+                 isso podia falhar consoante o browser/webview e dava um
+                 cartão largo demais, cortado, sem se perceber que havia
+                 mais ao lado. Em `vw`, o tamanho reflete sempre o ecrã a
+                 sério: no telemóvel fica compacto (perto de meio ecrã,
+                 já mostrando a fatia do cartão seguinte, como pista de
+                 que há mais para o lado); no computador cresce até um
+                 limite razoável (220px), sem ficar minúsculo num ecrã
+                 largo nem gigante num estreito. */}
               {MOMENTOS_JOGO.map(momento => {
                 const doMomento = dados.ideias.filter(x => x.phase === momento);
                 if (!doMomento.length) return null;
                 return (
-                  <div key={momento} style={isMobilePortal ? { flex: '0 0 168px' } : undefined}>
+                  <div key={momento} style={{ flex: '0 0 clamp(150px, 46vw, 220px)' }}>
                     <ColunaIdeias titulo={momento} itens={doMomento} onAbrir={setAVer} />
                   </div>
                 );
@@ -23996,7 +23997,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
                 const restantes = dados.ideias.filter(x => !MOMENTOS_JOGO.includes(x.phase));
                 if (!restantes.length) return null;
                 return (
-                  <div style={isMobilePortal ? { flex: '0 0 168px' } : undefined}>
+                  <div style={{ flex: '0 0 clamp(150px, 46vw, 220px)' }}>
                     <ColunaIdeias titulo="Outras" itens={restantes} onAbrir={setAVer} />
                   </div>
                 );
