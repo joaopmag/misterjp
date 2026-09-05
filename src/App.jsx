@@ -10618,12 +10618,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     } else if (dragId) {
       const p = toPoint(e);
       if (dragStartRef.current && Math.hypot(p.x - dragStartRef.current.x, p.y - dragStartRef.current.y) > 0.6) setDragMoved(true);
-      // Em recuo, a prancheta mostra um passo antigo (`elementosRecuo`),
-      // sem ligação nenhuma ao que se está a gravar em `value.elements`
-      // agora — arrastar continuava a mudar a posição "atual" (invisível
-      // no ecrã, que só mostra o passo antigo), dando a sensação de que
-      // nada acontecia. Sem "recuo" ativo, continua tudo como sempre.
-      if (!emRecuo) onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)) });
+      onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)) });
     } else if (dragHandle) {
       const p = toPoint(e);
       if (dragHandle.which === 'curve') {
@@ -10668,10 +10663,6 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       const dy = ref.orig.dy + (p.y - ref.start.y);
       onChange({ ...value, spaceZones: zones.map(z => (z.id === dragZoneId ? { ...z, dx, dy } : z)), spaceOffset: undefined });
     } else if (goalDrag) {
-      // Mesma razão do arrastar normal (ver a nota ao lado de `dragId`
-      // acima): em recuo, rodar/redimensionar mudava algo que não se via
-      // no ecrã, porque a prancheta mostra um passo antigo.
-      if (emRecuo) return;
       const el = elements.find(x => x.id === goalDrag.id);
       if (!el) return;
       const p = toPoint(e);
@@ -10747,10 +10738,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     // lhe toque — ver o ordenamento usado no desenho, mais abaixo.
     const semEste = elements.filter(el => el.id !== id);
     const este = elements.find(el => el.id === id);
-    // Em recuo, este reordenar não teria efeito nenhum visível (a
-    // prancheta mostra o passo antigo, não `value.elements`) — evita-se
-    // só para não gravar uma alteração sem sentido nenhum.
-    if (este && !emRecuo) onChange({ ...value, elements: [...semEste, este] });
+    if (este) onChange({ ...value, elements: [...semEste, este] });
     try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     dragStartRef.current = toPoint(e);
     setDragMoved(false);
@@ -11166,7 +11154,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {selectedEl && selectedEl.kind !== 'goalmarker' && (
             <circle cx={selectedEl.x} cy={selectedEl.y} r="3.2" fill="none" stroke={T.warn} strokeWidth="0.3" strokeDasharray="0.8,0.6" />
           )}
-          {selectedEl && !emRecuo && selectedEl.kind === 'goalmarker' && (() => {
+          {selectedEl && selectedEl.kind === 'goalmarker' && (() => {
             const w = selectedEl.w != null ? selectedEl.w : 3.6 * (selectedEl.scale || 1);
             const h = selectedEl.h != null ? selectedEl.h : 2.2 * (selectedEl.scale || 1);
             const rotHandle = localToWorld(selectedEl, 0, -h / 2 - 1.5);
@@ -11386,23 +11374,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           não o conteúdo a mandar — é isso que impede o campo de encolher
           quando se seleciona um elemento. */}
       <div style={{ minHeight: isNarrowEditor ? 200 : 92, marginTop: 4 }}>
-      {selectedEl && emRecuo ? (
-        /* Em recuo, editar número, texto, tamanho ou rotação de um
-           elemento não tinha efeito visível nenhum — essas mudanças vão
-           para `value.elements` (o estado atual), mas a prancheta está a
-           mostrar um passo antigo, sem ligação a isso. Em vez de deixar
-           cada botão continuar a "não fazer nada" (a confusão que já
-           aconteceu com a Baliza), o painel inteiro fica substituído por
-           este aviso enquanto se está a ver um passo de trás. */
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
-          background: T.bg, border: `1px solid ${T.line}`, borderRadius: '7px 7px 0 0',
-          color: T.mutedDim, fontSize: 12, ...body, height: 38, boxSizing: 'border-box',
-        }}>
-          <Clock size={13} />
-          Em recuo não se editam propriedades — escolhe "só agora" (ou o último passo) no menu "desde" para voltar a mexer neste elemento.
-        </div>
-      ) : selectedEl && (
+      {selectedEl && (
         <div>
         {/* NUNCA quebra para uma segunda linha (nowrap + scroll horizontal
             em vez de flexWrap).
