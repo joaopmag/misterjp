@@ -23984,7 +23984,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
                 const doMomento = dados.ideias.filter(x => x.phase === momento);
                 if (!doMomento.length) return null;
                 return (
-                  <div key={momento} style={isMobilePortal ? { flex: '0 0 240px' } : undefined}>
+                  <div key={momento} style={isMobilePortal ? { flex: '0 0 168px' } : undefined}>
                     <ColunaIdeias titulo={momento} itens={doMomento} onAbrir={setAVer} />
                   </div>
                 );
@@ -23996,7 +23996,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
                 const restantes = dados.ideias.filter(x => !MOMENTOS_JOGO.includes(x.phase));
                 if (!restantes.length) return null;
                 return (
-                  <div style={isMobilePortal ? { flex: '0 0 240px' } : undefined}>
+                  <div style={isMobilePortal ? { flex: '0 0 168px' } : undefined}>
                     <ColunaIdeias titulo="Outras" itens={restantes} onAbrir={setAVer} />
                   </div>
                 );
