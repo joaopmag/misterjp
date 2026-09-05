@@ -9860,6 +9860,45 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     try { painelSelecaoRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (err) { /* browsers antigos */ }
   }, [selectedId]);
 
+  /* INSERIR UM ELEMENTO A PARTIR DE UM PASSO JÁ GRAVADO.
+
+     Cada passo da animação guarda uma fotografia do campo (`step.elements`).
+     Um elemento colocado depois de a coreografia estar feita só existia no
+     estado final — e ao rever a animação desde o início, aparecia do nada
+     no fim.
+
+     Com `inserirDesde` escolhido, o elemento é escrito também na fotografia
+     desse passo e de todos os seguintes: passa a estar em campo a partir
+     dali até ao fim, que é o que se quer para testar uma variante sem
+     desfazer o que já está feito.
+
+     `inserirDesde` é o índice do passo (0 = antes do primeiro). Começa
+     já a apontar para o ÚLTIMO passo existente (não para null) — ao abrir
+     um exercício com animação já feita, colocar ou apagar algo sem tocar
+     em mais nada afeta o passo mais recente por omissão, que é o que
+     interessa na esmagadora maioria das vezes. Cada vez que se grava um
+     passo novo (`Animar`, desfazer, refazer) isto é atualizado sozinho —
+     ver esses três sítios. */
+  const [inserirDesde, setInserirDesde] = useState(() => {
+    const n = (value.sequence || []).length;
+    return n > 0 ? n - 1 : null;
+  });
+
+  /* RECUAR NO TEMPO: escolher "desde animar N" (com N a meio da
+     coreografia, não o último passo) devolve a prancheta às posições
+     desse passo, para se poder desenhar dali um caminho novo — sem
+     apagar os passos que já vinham a seguir. É o mesmo "desde" que já
+     servia para colocar e apagar elementos; aqui serve também para VER
+     e continuar a animar a partir de um ponto anterior.
+
+     `emRecuo` só é verdade quando o passo escolhido NÃO é o último —
+     escolher o mais recente (o que já acontece sozinho depois de cada
+     "Animar") continua a mostrar a prancheta tal como está agora,
+     sem qualquer recuo visual. */
+  const ultimoIndicePasso = (value.sequence || []).length - 1;
+  const emRecuo = inserirDesde != null && inserirDesde < ultimoIndicePasso;
+  const elementosRecuo = emRecuo ? stepElements(value.sequence[inserirDesde], value) : null;
+
   const elements = value?.elements || [];
   const arrows = value?.arrows || [];
   const selectedEl = elements.find(e => e.id === selectedId) || null;
@@ -10115,8 +10154,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
      centro e a caixa nunca era apanhada — daí o texto não ficar animável.
      Aqui a distância é medida à borda da caixa, não ao seu meio. */
   const nearestElementOfKind = (kinds, x, y, maxDist) => {
+    // Em recuo, procura entre as posições desse passo antigo, não nas
+    // atuais — para o "dono" da seta ser sempre quem está mesmo
+    // desenhado no ecrã naquele momento.
+    const fonte = elementosRecuo || elements;
     let best = null, bestD = Infinity;
-    for (const el of elements) {
+    for (const el of fonte) {
       if (!kinds.includes(el.kind)) continue;
       let d;
       if (el.kind === 'text') {
@@ -10155,6 +10198,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const playAnimation = () => {
     const animArrows = arrows.filter(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
     if (animArrows.length === 0) return;
+    /* Em recuo: o ponto de partida do movimento vem das posições do
+       passo escolhido em "desde" (`elementosRecuo`), não das posições
+       "atuais" — é assim que desenhar um caminho novo a partir do
+       Animar 2, por exemplo, anima a partir de onde as coisas estavam
+       nessa altura, e não de onde acabaram por ficar depois de mais
+       passos terem sido gravados. */
+    const elementosBase = elementosRecuo || elements;
     // Mesma velocidade para o passe e para a corrida do jogador.
     const PASS_SPEED = 26, RUN_SPEED = 26;
     const chains = buildAnimationChains(animArrows).map(chainArrows => {
@@ -10171,7 +10221,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       // Prioriza o dono gravado na própria seta (ver handleBgPointerDown);
       // só recorre à antiga procura por proximidade para setas antigas,
       // guardadas antes desta correção, que não têm essa informação.
-      let mover = first.ownerId ? elements.find(el => el.id === first.ownerId) : null;
+      let mover = first.ownerId ? elementosBase.find(el => el.id === first.ownerId) : null;
       if (!mover) {
         mover = first.type === 'arrow-run'
           ? nearestElementOfKind(['player', 'keeper', 'text'], first.x1, first.y1, 3.2)
@@ -10197,7 +10247,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     // "instantâneo" guardado para a apresentação como o resultado final
     // partem daqui, para não repetir esta lógica duas vezes.
     const baseElements = [
-      ...elements,
+      ...elementosBase,
       ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
     ];
     // Regista este "passo" da sequência de criação (posições antes do
@@ -10377,29 +10427,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     presentTimeoutRef.current = setTimeout(() => runPresentStep(0, seq), 200);
   };
 
-  /* INSERIR UM ELEMENTO A PARTIR DE UM PASSO JÁ GRAVADO.
-
-     Cada passo da animação guarda uma fotografia do campo (`step.elements`).
-     Um elemento colocado depois de a coreografia estar feita só existia no
-     estado final — e ao rever a animação desde o início, aparecia do nada
-     no fim.
-
-     Com `inserirDesde` escolhido, o elemento é escrito também na fotografia
-     desse passo e de todos os seguintes: passa a estar em campo a partir
-     dali até ao fim, que é o que se quer para testar uma variante sem
-     desfazer o que já está feito.
-
-     `inserirDesde` é o índice do passo (0 = antes do primeiro). Começa
-     já a apontar para o ÚLTIMO passo existente (não para null) — ao abrir
-     um exercício com animação já feita, colocar ou apagar algo sem tocar
-     em mais nada afeta o passo mais recente por omissão, que é o que
-     interessa na esmagadora maioria das vezes. Cada vez que se grava um
-     passo novo (`Animar`, desfazer, refazer) isto é atualizado sozinho —
-     ver esses três sítios. */
-  const [inserirDesde, setInserirDesde] = useState(() => {
-    const n = (value.sequence || []).length;
-    return n > 0 ? n - 1 : null;
-  });
+  /* INSERIR UM ELEMENTO A PARTIR DE UM PASSO JÁ GRAVADO. (ver a nota
+     completa mais abaixo, onde `inserirDesde` costumava estar — foi
+     movido para aqui em cima porque `elements`/`playAnimation` também
+     precisam dele, para "recuar no tempo" — ver `emRecuo` a seguir.) */
 
   /* APAGAR TEM DE APAGAR TAMBÉM DOS PASSOS GRAVADOS — MAS SÓ A PARTIR DE
      ONDE SE ESTÁ A EDITAR.
@@ -10992,6 +11023,22 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
       </div>
 
+      {/* Aviso claro de que a prancheta está a mostrar um passo antigo,
+          não o estado mais recente — sem isto, era fácil desenhar uma
+          seta sem perceber de onde ela ia partir de verdade. Desaparece
+          sozinho assim que "desde" voltar a apontar para o último passo
+          (o que acontece sozinho a seguir a um novo "Animar"). */}
+      {emRecuo && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px',
+          borderRadius: 8, background: `${T.gold}22`, border: `1px solid ${T.gold}`, color: T.gold,
+          fontSize: 12, ...body,
+        }}>
+          <Clock size={14} />
+          A ver o Animar {inserirDesde + 1} — o que desenhares agora soma-se ao fim da coreografia, sem apagar os passos seguintes.
+        </div>
+      )}
+
       {/* A largura sai da altura disponível, para a proporção nunca mudar:
           limitar a altura diretamente deixaria o elemento com a largura
           toda e uma forma diferente da declarada — e o desenho esticava. */}
@@ -11066,7 +11113,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             );
           })}
           <DiagramElements
-            elements={(isPresenting ? presentElements || [] : elements).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
+            elements={(isPresenting ? presentElements || [] : (elementosRecuo || elements)).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
             arrows={isPresenting && presentArrows ? presentArrows : arrows}
             iconScale={iconEscala * escalaEcra}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
