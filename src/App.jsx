@@ -10045,6 +10045,16 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     setPast(p => p.slice(0, -1));
     setFuture(f => [...f, value]);
     onChange(previous);
+    /* `commitZones` avisa o formulário (campo "Espaço") sempre que as
+       zonas mudam, para o texto "15×15" acompanhar o desenho — mas
+       "Anular"/"Refazer" trocam o diagrama inteiro de uma vez, por fora
+       do `commitZones`, e esse aviso nunca chegava a sair. O campo
+       "Espaço" ficava com o valor antigo, e como o desenho da zona usa
+       esse campo como reserva quando não há zonas explícitas, uma zona
+       recém-colocada e depois anulada "reaparecia" sozinha — não
+       porque o anular tivesse falhado, mas porque o campo de texto ao
+       lado nunca soube que tinha de mudar também. */
+    if (onSpaceZonesChange) onSpaceZonesChange(previous.spaceZones || []);
     setSelectedId(null);
     setSelectedArrowId(null);
   };
@@ -10054,6 +10064,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     setFuture(f => f.slice(0, -1));
     setPast(p => [...p, value]);
     onChange(next);
+    if (onSpaceZonesChange) onSpaceZonesChange(next.spaceZones || []);
     setSelectedId(null);
     setSelectedArrowId(null);
   };
