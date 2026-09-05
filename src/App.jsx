@@ -9894,10 +9894,30 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
      `emRecuo` só é verdade quando o passo escolhido NÃO é o último —
      escolher o mais recente (o que já acontece sozinho depois de cada
      "Animar") continua a mostrar a prancheta tal como está agora,
-     sem qualquer recuo visual. */
+     sem qualquer recuo visual.
+
+     `inserirDesde` vem de um `useState` que só é inicializado uma vez —
+     se este editor for reaproveitado para outro exercício (ou depois de
+     se apagarem passos), pode ficar a apontar para um índice que já não
+     existe. Sem esta validação, um valor perdido no ar era lido como
+     "estou em recuo" para sempre, e o painel de edição (número, texto,
+     rotação, a baliza) ficava bloqueado sem se perceber porquê — foi
+     isto que aconteceu depois da correção anterior. Um `inserirDesde`
+     fora do intervalo válido conta sempre como "não há recuo nenhum". */
   const ultimoIndicePasso = (value.sequence || []).length - 1;
-  const emRecuo = inserirDesde != null && inserirDesde < ultimoIndicePasso;
-  const elementosRecuo = emRecuo ? stepElements(value.sequence[inserirDesde], value) : null;
+  const desdeValido = inserirDesde != null && inserirDesde >= 0 && inserirDesde <= ultimoIndicePasso ? inserirDesde : null;
+  const emRecuo = desdeValido != null && desdeValido < ultimoIndicePasso;
+  const elementosRecuo = emRecuo ? stepElements(value.sequence[desdeValido], value) : null;
+
+  /* Corrige sozinho um `inserirDesde` que ficou a apontar para um passo
+     que já não existe (ver a nota acima) — sem isto, o valor inválido
+     ficava guardado para sempre no estado, mesmo já não afetando o
+     ecrã (graças a `desdeValido`), e voltava a poder confundir mais
+     tarde se a coreografia voltasse a crescer até esse índice. */
+  useEffect(() => {
+    if (inserirDesde !== desdeValido) setInserirDesde(desdeValido);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inserirDesde, desdeValido]);
 
   const elements = value?.elements || [];
   const arrows = value?.arrows || [];
@@ -9963,7 +9983,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       // Sai também de todos os passos gravados (ver limparDosPassos) — ou,
       // com "desde" escolhido, só a partir desse passo (mantém-se nos
       // anteriores, tal como um elemento inserido a meio da coreografia).
-      sequence: limparDosPassos(value.sequence, apagados, inserirDesde),
+      sequence: limparDosPassos(value.sequence, apagados, desdeValido),
     });
   };
 
@@ -10507,7 +10527,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
 
   const colocarElemento = (novo) => {
     const seq = value.sequence || [];
-    const desde = inserirDesde;
+    const desde = desdeValido;
     const sequencia = (desde == null || !seq.length)
       ? seq
       : seq.map((step, i) => (i < desde ? step : { ...step, elements: [...(step.elements || []), { ...novo }] }));
@@ -10803,7 +10823,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     if (!selectedEl || selectedEl.kind !== 'text') return;
     const novoEl = clampTextElement({ ...selectedEl, text });
     const seq = value.sequence || [];
-    const desde = inserirDesde;
+    const desde = desdeValido;
     /* Mesma lógica de "desde" usada para colocar e para apagar: a
        edição só vale a partir do passo mais recente (ou do que estiver
        escolhido à mão) — os passos anteriores mantêm o texto tal como
@@ -10865,7 +10885,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       elements: elements.filter(el => el.id !== selectedId),
       // Ver limparDosPassos: com "desde" escolhido, mantém-se nos passos
       // anteriores e só sai a partir desse ponto da animação.
-      sequence: limparDosPassos(value.sequence, new Set([selectedId]), inserirDesde),
+      sequence: limparDosPassos(value.sequence, new Set([selectedId]), desdeValido),
     });
     setSelectedId(null);
   };
@@ -11058,7 +11078,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           fontSize: 12, ...body,
         }}>
           <Clock size={14} />
-          A ver o Animar {inserirDesde + 1} — o que desenhares agora soma-se ao fim da coreografia, sem apagar os passos seguintes.
+          A ver o Animar {desdeValido + 1} — o que desenhares agora soma-se ao fim da coreografia, sem apagar os passos seguintes.
         </div>
       )}
 
@@ -11256,12 +11276,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               campo. */}
           {(value.sequence || []).length > 0 && (
             <label
-              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: inserirDesde == null ? T.mutedDim : T.gold }}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: desdeValido == null ? T.mutedDim : T.gold }}
               title="Vale para o que colocares e para o que apagares a seguir: passa a aplicar-se a partir deste passo da animação, não só agora"
             >
               desde
               <Select
-                value={inserirDesde == null ? '' : String(inserirDesde)}
+                value={desdeValido == null ? '' : String(desdeValido)}
                 onChange={ev => setInserirDesde(ev.target.value === '' ? null : Number(ev.target.value))}
                 style={{ width: 92, minWidth: 0, height: 26, lineHeight: '24px', fontSize: 11.5, padding: '0 4px' }}
               >
