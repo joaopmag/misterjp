@@ -10645,12 +10645,47 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
            está a ver até ao fim — a mesma regra "desde" já usada para
            texto, colocar e apagar. Sem isto, a correção só entrava no
            estado atual (invisível, porque a prancheta mostra o passo
-           antigo) e nunca chegava a aparecer nem a valer para nada. */
+           antigo) e nunca chegava a aparecer nem a valer para nada.
+
+           Mas "desde" para a posição não pode ser igual a "desde" para o
+           texto: texto CONGELA no valor novo dali para a frente (faz
+           sentido, uma legenda não "continua a mudar" sozinha). Posição
+           é diferente — se congelasse a mesma posição em todos os passos
+           seguintes, a fotografia de cada passo dizia "ficou aqui
+           parado", mas a seta gravada desse passo continuava a dizer
+           "andou até ali", e a apresentação saltava entre as duas coisas
+           contraditórias (o "flash" reportado).
+
+           A correção certa é DESLOCAR o resto do percurso pela mesma
+           distância, mantendo a forma do movimento já coreografado, só
+           ancorado no novo ponto de partida — em vez de o apagar. */
+        const atualRecuo = (elementosRecuo || []).find(el => el.id === dragId);
+        const dx = atualRecuo ? p.x - atualRecuo.x : 0;
+        const dy = atualRecuo ? p.y - atualRecuo.y : 0;
         const seq = value.sequence || [];
-        const sequencia = seq.map((step, i) => (i < desdeValido ? step : {
-          ...step,
-          elements: (step.elements || []).map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)),
-        }));
+        const sequencia = seq.map((step, i) => {
+          if (i < desdeValido) return step;
+          return {
+            ...step,
+            elements: (step.elements || []).map(el => {
+              if (el.id !== dragId) return el;
+              return i === desdeValido ? { ...el, x: p.x, y: p.y } : { ...el, x: el.x + dx, y: el.y + dy };
+            }),
+            arrows: (step.arrows || []).map(a => {
+              if (a.ownerId !== dragId) return a;
+              /* No próprio passo que se está a corrigir, a seta é a que
+                 TRAZ o jogador até aqui — só o PONTO DE CHEGADA (x2,y2)
+                 acompanha a nova posição; o ponto de partida (x1,y1) fica
+                 tal como estava, porque continua a começar no passo
+                 anterior, que não mudou. Nos passos seguintes, já é o
+                 caminho inteiro que se desloca pelo mesmo tanto, para a
+                 forma do movimento se manter igual, só deslocada. */
+              return i === desdeValido
+                ? { ...a, x2: p.x, y2: p.y, cx: a.cx != null ? a.cx + dx : a.cx, cy: a.cy != null ? a.cy + dy : a.cy }
+                : { ...a, x1: a.x1 + dx, y1: a.y1 + dy, x2: a.x2 + dx, y2: a.y2 + dy, cx: a.cx != null ? a.cx + dx : a.cx, cy: a.cy != null ? a.cy + dy : a.cy };
+            }),
+          };
+        });
         onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)), sequence: sequencia });
       } else {
         onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)) });
