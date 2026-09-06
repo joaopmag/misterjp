@@ -21673,7 +21673,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
   const convocadoPlayers = players.filter(p => f.convocados.includes(p.id));
 
   return (
-    <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide fullPage>
+    <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide xwide fullPage>
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <Field label="Competição">
           <Select value={compAtual} onChange={e => setF({ ...f, competition: e.target.value, opponent: '', jornada: '' })}>
@@ -21824,7 +21824,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
           <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
             Relatório de jogo — titular, capitão, minutos, cartão, golos, assistências, nota
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto', overflowX: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
             {convocadoPlayers.map(p => {
               const r = f.report[p.id] || {};
               const isStarter = f.starters.includes(p.id);
@@ -21832,8 +21832,8 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
               const eSub = f.subcapitao === p.id;
               return (
                 <div key={p.id} style={{
-                  display: 'grid', gridTemplateColumns: '1.3fr auto auto 0.7fr 1fr 0.6fr 0.6fr 0.6fr', gap: 6, alignItems: 'center',
-                  padding: '7px 8px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7, minWidth: 620,
+                  display: 'grid', gridTemplateColumns: '1.4fr auto auto 0.8fr 1.2fr 0.7fr 0.7fr 0.7fr', gap: 10, alignItems: 'center',
+                  padding: '9px 12px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7,
                 }}>
                   <span style={{ fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.number ? `${p.number} ` : ''}{p.name}
