@@ -10344,14 +10344,70 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           if (mover && segments.length) moved.set(mover.id, { x: segments[segments.length - 1].arrow.x2, y: segments[segments.length - 1].arrow.y2 });
         });
         const animatedIds = new Set(animArrows.map(a => a.id));
-        commit({
-          ...value,
-          elements: baseElements.map(el => (moved.has(el.id) ? { ...el, x: moved.get(el.id).x, y: moved.get(el.id).y } : el)),
-          // As setas de passe/corrida usadas na animação desaparecem no final,
-          // já que o movimento que representavam já aconteceu.
-          arrows: arrows.filter(a => !animatedIds.has(a.id)),
-          sequence: [...(value.sequence || []), stepSnapshot],
-        });
+        const elementosFinais = baseElements.map(el => (moved.has(el.id) ? { ...el, x: moved.get(el.id).x, y: moved.get(el.id).y } : el));
+        let indiceGravado;
+        if (emRecuo) {
+          /* Em recuo, desenhar um movimento novo para um jogador que já
+             tinha coreografia gravada mais à frente SUBSTITUI essa
+             coreografia dele dali para a frente — não se soma no fim.
+             "O resto que está feito não mexe": só o(s) elemento(s) que
+             se acabaram de mover é que perdem o que faziam depois; toda
+             a gente e tudo o resto em cada passo seguinte fica tal como
+             estava. É a mesma ideia do "desde" já usada para texto e
+             posição, aplicada agora a uma animação a sério (com seta),
+             não só a uma correção estática. */
+          const moverIds = new Set(chains.map(c => c.mover && c.mover.id).filter(Boolean));
+          const idxNovo = desdeValido + 1;
+          indiceGravado = idxNovo;
+          const seq = value.sequence || [];
+          const passoExistente = seq[idxNovo];
+          const novoPasso = {
+            elements: [
+              ...((passoExistente && passoExistente.elements) || []).filter(el => !moverIds.has(el.id)),
+              ...elementosFinais.filter(el => moverIds.has(el.id)),
+            ],
+            arrows: [
+              ...((passoExistente && passoExistente.arrows) || []).filter(a => !moverIds.has(a.ownerId)),
+              ...animArrows.map(a => ({ ...a })),
+            ],
+            staticArrows: (passoExistente && passoExistente.staticArrows) || stepSnapshot.staticArrows,
+          };
+          const sequencia = seq.slice(0, idxNovo);
+          sequencia.push(novoPasso);
+          // A partir daqui, este(s) elemento(s) desaparecem da coreografia
+          // antiga — a história deles recomeçou no passo que se acabou de
+          // gravar. Os outros elementos de cada passo seguinte continuam
+          // exatamente como estavam.
+          for (let i = idxNovo + 1; i < seq.length; i++) {
+            sequencia.push({
+              ...seq[i],
+              elements: (seq[i].elements || []).filter(el => !moverIds.has(el.id)),
+              arrows: (seq[i].arrows || []).filter(a => !moverIds.has(a.ownerId)),
+            });
+          }
+          /* `value.elements` (a base para o que vier depois de "Animar")
+             só muda se este passo novo for mesmo o último — se ainda
+             houver passos a seguir (não estava no fim da coreografia),
+             o estado "atual" continua a ser o do verdadeiro último
+             passo, que esta edição não tocou. */
+          const ultimoPasso = sequencia[sequencia.length - 1];
+          commit({
+            ...value,
+            elements: idxNovo === sequencia.length - 1 ? elementosFinais : ultimoPasso.elements,
+            arrows: idxNovo === sequencia.length - 1 ? arrows.filter(a => !animatedIds.has(a.id)) : value.arrows,
+            sequence: sequencia,
+          });
+        } else {
+          indiceGravado = (value.sequence || []).length;
+          commit({
+            ...value,
+            elements: elementosFinais,
+            // As setas de passe/corrida usadas na animação desaparecem no final,
+            // já que o movimento que representavam já aconteceu.
+            arrows: arrows.filter(a => !animatedIds.has(a.id)),
+            sequence: [...(value.sequence || []), stepSnapshot],
+          });
+        }
         /* O passo que se acaba de gravar passa a ser a referência por
            omissão de "desde" — sem isto, colocar e apagar usavam um
            ponto de referência DIFERENTE por omissão (colocar entrava só
@@ -10364,7 +10420,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
            esteve, desaparece só a partir de onde se apagou. Continua a
            poder escolher-se outro passo à mão, para os casos em que se
            precisa mesmo de recuar mais no tempo. */
-        setInserirDesde(value.sequence.length);
+        setInserirDesde(indiceGravado);
         // Um passo novo fecha a possibilidade de refazer os anulados —
         // a partir daqui a coreografia seguiu outro caminho.
         setPassosAnulados([]);
