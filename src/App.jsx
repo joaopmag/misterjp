@@ -14466,7 +14466,21 @@ const FAMILIA = {
   // PLANTEL usa MOC. Mesma razão do EX: sem esta entrada o lugar ficava
   // sem família e toda a gente levava a penalização máxima.
   MO: 'MEIO',
+  // AD e AE são os corredores. A família de referência é MEIO (um médio
+  // de ala), mas ver LUGARES_DE_ALA: um lateral ou um extremo também lá
+  // jogam, e `posicaoServe` trata-os como lugar próprio.
+  AD: 'MEIO', AE: 'MEIO',
 };
+
+/* OS ALAS NÃO TÊM UMA FAMÍLIA SÓ.
+
+   Num 3-5-2 ou num 3-4-3 quem joga no corredor tanto pode ser um lateral
+   (DEF) como um extremo (ATA); num 4-4-2 é um médio de ala (MEIO). São
+   os únicos lugares do campo em que as três famílias servem. Fechá-los
+   numa família deixava o corredor EM BRANCO sempre que faltasse gente
+   dessa etiqueta — e o que falta num corredor é um jogador, não uma
+   etiqueta. */
+const LUGARES_DE_ALA = new Set(['AD', 'AE']);
 
 /* O lugar pedido pelo desenho corresponde a este jogador?
 
@@ -14474,12 +14488,18 @@ const FAMILIA = {
    exigir o lado exato faria falhar todos os extremos.
 
    'MO' vale por MOC: é o mesmo jogador com dois nomes — a prancheta
-   escreve MO no ícone 8, o plantel regista MOC. */
+   escreve MO no ícone 8, o plantel regista MOC.
+
+   'AD' e 'AE' valem pelo lateral E pelo extremo do mesmo lado: é o que
+   um ala é. Quem está registado como DD ou ED joga no corredor direito
+   sem se estar a inventar nada. */
 function posicaoServe(pedida, jogador) {
   if (!pedida || !jogador) return false;
   if (jogador.position === pedida) return true;
   if (pedida === 'EX') return jogador.position === 'EE' || jogador.position === 'ED';
   if (pedida === 'MO') return jogador.position === 'MOC';
+  if (pedida === 'AD') return jogador.position === 'DD' || jogador.position === 'ED';
+  if (pedida === 'AE') return jogador.position === 'DE' || jogador.position === 'EE';
   return false;
 }
 const familiaDe = (p) => FAMILIA[p && p.position] || 'MEIO';
@@ -14729,12 +14749,17 @@ const FORMATOS_JOGO = [
   { id: '3x30', label: '3 partes de 30 min', partes: 3, minutos: 30 },
 ];
 
+/* Os corredores chamam-se AD e AE em TODAS as formações, tal como no
+   quadro de posições. Antes o mesmo lugar tinha três nomes conforme a
+   formação — ED/EE no 4-4-2 e no 3-4-3, MD/ME no 3-5-2 — e ficava por
+   perceber se era um extremo, um médio ou um lateral. É sempre a mesma
+   coisa: quem faz o corredor. */
 const FORMACOES = {
   '4-3-3': ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MOC', 'ED', 'PL', 'EE'],
-  '4-4-2': ['GR', 'DD', 'DC', 'DC', 'DE', 'ED', 'MC', 'MC', 'EE', 'PL', 'PL'],
+  '4-4-2': ['GR', 'DD', 'DC', 'DC', 'DE', 'AD', 'MC', 'MC', 'AE', 'PL', 'PL'],
   '4-2-3-1': ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'ED', 'MOC', 'EE', 'PL'],
-  '3-4-3': ['GR', 'DC', 'DC', 'DC', 'ED', 'MC', 'MC', 'EE', 'ED', 'PL', 'EE'],
-  '3-5-2': ['GR', 'DC', 'DC', 'DC', 'MD', 'MC', 'MC', 'MC', 'ME', 'PL', 'PL'],
+  '3-4-3': ['GR', 'DC', 'DC', 'DC', 'AD', 'MC', 'MC', 'AE', 'ED', 'PL', 'EE'],
+  '3-5-2': ['GR', 'DC', 'DC', 'DC', 'AD', 'MC', 'MC', 'MC', 'AE', 'PL', 'PL'],
 };
 
 /* Escolhe o melhor jogador livre para um lugar.
@@ -14767,7 +14792,10 @@ function escolherParaLugar(lugar, fila, usados, minutos) {
   const familiaLugar = FAMILIA[lugar] || 'MEIO';
   const nota = (p) => {
     const base = minutos.get(p.id) || 0;
-    if (p.position === lugar) return base;
+    // `posicaoServe` e não `p.position === lugar`: sem isto um DD ou um ED
+    // colocado num corredor (AD/AE) levava penalização como se estivesse
+    // fora de posição, quando é exatamente ali que joga.
+    if (posicaoServe(lugar, p)) return base;
     if (familiaDe(p) === familiaLugar) return base + PENAL_FAMILIA;
     return base + PENAL_FORA;
   };
@@ -14921,7 +14949,7 @@ const LAYOUT_FORMACAO = {
   //         GR            DD            DC            DC            DE
   '4-4-2': [
     [0.05, 0.50], [0.23, 0.84], [0.20, 0.62], [0.20, 0.38], [0.23, 0.16],
-    //   ED            MC            MC            EE
+    //   AD            MC            MC            AE
     [0.48, 0.86], [0.45, 0.60], [0.45, 0.40], [0.48, 0.14],
     //   PL            PL
     [0.84, 0.60], [0.84, 0.40],
@@ -14939,7 +14967,7 @@ const LAYOUT_FORMACAO = {
   //         GR            DC            DC            DC
   '3-4-3': [
     [0.05, 0.50], [0.20, 0.70], [0.18, 0.50], [0.20, 0.30],
-    //   ED            MC            MC            EE
+    //   AD            MC            MC            AE
     [0.45, 0.88], [0.44, 0.62], [0.44, 0.38], [0.45, 0.12],
     //   ED            PL            EE
     [0.74, 0.80], [0.86, 0.50], [0.74, 0.20],
@@ -14947,7 +14975,7 @@ const LAYOUT_FORMACAO = {
   //         GR            DC            DC            DC
   '3-5-2': [
     [0.05, 0.50], [0.20, 0.70], [0.18, 0.50], [0.20, 0.30],
-    //   MD            MC            MC            MC            ME
+    //   AD            MC            MC            MC            AE
     [0.50, 0.90], [0.42, 0.62], [0.40, 0.50], [0.42, 0.38], [0.50, 0.10],
     //   PL            PL
     [0.84, 0.60], [0.84, 0.40],
@@ -19126,10 +19154,32 @@ function cardBadge(card) {
 function preencherPorFamilia(posicoesAPreencher, pool, colocados) {
   const familiaDoLugar = (lugar) => (lugar === 'GR' ? 'GR' : (FAMILIA[lugar] || 'MEIO'));
 
-  posicoesAPreencher.forEach(({ lugar, i }) => {
+  /* OS CORREDORES SÃO OS ÚLTIMOS A SER PREENCHIDOS.
+
+     Como AD e AE aceitam qualquer jogador de campo, preenchê-los pela
+     ordem da formação deixava-os levar um avançado ou um central que
+     fazia falta ao seu próprio lugar — e esse lugar, esse, é de família
+     fechada e ficava em branco. Preenchidos no fim, ficam com quem
+     sobra, que é exatamente o que um lugar sem família própria deve
+     fazer. A ordem de preenchimento muda; os lugares no campo não. */
+  const ordemDePreenchimento = [
+    ...posicoesAPreencher.filter(({ lugar }) => !LUGARES_DE_ALA.has(lugar)),
+    ...posicoesAPreencher.filter(({ lugar }) => LUGARES_DE_ALA.has(lugar)),
+  ];
+
+  ordemDePreenchimento.forEach(({ lugar, i }) => {
     const familia = familiaDoLugar(lugar);
     const eGR = familia === 'GR';
-    const candidatos = pool.filter(p => (eGR ? ehGuardaRedes(p) : !ehGuardaRedes(p) && familiaDe(p) === familia));
+    /* Exceção dos corredores (ver LUGARES_DE_ALA): AD e AE aceitam
+       qualquer jogador de campo, porque um ala tanto é lateral como
+       extremo como médio. A preferência continua a existir — `nota`
+       coloca primeiro quem `posicaoServe` reconhece para o lado certo. */
+    const candidatos = pool.filter(p => {
+      if (eGR) return ehGuardaRedes(p);
+      if (ehGuardaRedes(p)) return false;
+      if (LUGARES_DE_ALA.has(lugar)) return true;
+      return familiaDe(p) === familia;
+    });
     if (!candidatos.length) return; // sem ninguém da família certa — fica em branco, não se força nada
     const nota = (p) => (posicaoServe(lugar, p) || p.position === lugar ? 0 : 1);
     const escolhido = candidatos.reduce((melhor, p) => (nota(p) < nota(melhor) ? p : melhor), candidatos[0]);
