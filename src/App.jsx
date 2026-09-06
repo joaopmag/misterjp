@@ -20979,7 +20979,32 @@ function StandingsModal({ standings, onClose, onSave }) {
 
   // --- equipas ----------------------------------------------------
   const teamNames = comp.teamNames || [];
-  const setTeamName = (i, name) => patchComp({ teamNames: teamNames.map((t, j) => (j === i ? name : t)) });
+  const setTeamName = (i, name) => {
+    const antigo = (teamNames[i] || '').trim();
+    const novo = (name || '').trim();
+    const patch = { teamNames: teamNames.map((t, j) => (j === i ? name : t)) };
+    /* Renomear uma equipa não pode deixar para trás quem já a usava —
+       os jogos guardam o nome da equipa como TEXTO em cada linha (não
+       uma ligação à lista), e "a minha equipa" também é só um texto.
+       Sem isto, mudar "SC Salgueiros" para outra coisa deixava todos os
+       jogos já marcados a apontar para um nome que já não existe em
+       lado nenhum — ficavam "órfãos", mostrando "— escolher —" em vez
+       da equipa certa. Só se troca quando o nome antigo era mesmo
+       válido (não vazio) e for diferente do novo — nunca ao escrever
+       pela primeira vez numa equipa nova. */
+    if (antigo && novo && antigo !== novo) {
+      if (comp.myTeam === antigo) patch.myTeam = novo;
+      patch.rounds = (comp.rounds || []).map(r => ({
+        ...r,
+        games: (r.games || []).map(g => ({
+          ...g,
+          home: g.home === antigo ? novo : g.home,
+          away: g.away === antigo ? novo : g.away,
+        })),
+      }));
+    }
+    patchComp(patch);
+  };
   const addTeamName = () => patchComp({ teamNames: [...teamNames, ''] });
   const removeTeamName = (i) => patchComp({ teamNames: teamNames.filter((_, j) => j !== i) });
   const validTeams = teamNames.map(t => (t || '').trim()).filter(Boolean);
