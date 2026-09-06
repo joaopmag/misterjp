@@ -21217,16 +21217,19 @@ function StandingsModal({ standings, onClose, onSave }) {
             </p>
           ) : (
             <div style={{ marginBottom: 22 }}>
-              <div style={{ maxWidth: 240, marginBottom: 12 }}>
-                <Field label="Jornada">
-                  <Select value={roundIdx} onChange={e => setRoundIdx(Number(e.target.value))}>
-                    {rounds.map((r, i) => (
-                      <option key={r.id} value={i}>
-                        {r.label}{(r.games || []).length ? ` (${r.games.length})` : ''}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+                <div style={{ maxWidth: 240, flex: 1 }}>
+                  <Field label="Jornada">
+                    <Select value={roundIdx} onChange={e => setRoundIdx(Number(e.target.value))}>
+                      {rounds.map((r, i) => (
+                        <option key={r.id} value={i}>
+                          {r.label}{(r.games || []).length ? ` (${r.games.length})` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+                <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
               </div>
 
               <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
@@ -21265,7 +21268,6 @@ function StandingsModal({ standings, onClose, onSave }) {
                     Escolhe "A minha equipa" na Configuração para os teus jogos entrarem sozinhos na lista de Jogos e na agenda.
                   </div>
                 )}
-                <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
               </div>
             </div>
           )}
