@@ -683,6 +683,13 @@ function useCollectionSync(table, notifyEdit, teamId) {
      paralelo. */
   const aEscrever = useRef(false);
   const pedidoPendente = useRef(false);
+  /* CONTADOR DE ESCRITAS NOSSAS CONFIRMADAS.
+
+     Serve só para a rede de segurança do `apanharAtraso` saber se
+     gravámos alguma coisa ENQUANTO ela estava a ler o servidor. Ver aí o
+     motivo — é o que impede que uma leitura já desatualizada apague do
+     ecrã registos criados no meio dela. */
+  const escritasConfirmadas = useRef(0);
   const itemsRef = useRef(items);
   itemsRef.current = items;
   /* A HORA (`updated_at`) de cada registo é a fonte de verdade mais
@@ -895,6 +902,9 @@ function useCollectionSync(table, notifyEdit, teamId) {
       const agora = Date.now();
       if (!forcar && agora - ultimoFetch < INTERVALO_MINIMO) return;
       ultimoFetch = agora;
+      /* MARCA DE INÍCIO — ver a guarda da remoção, mais abaixo. */
+      const escritasAoComecar = escritasConfirmadas.current;
+      const escreviaAoComecar = aEscrever.current;
       let data, error;
       try {
         data = await fetchAllRows(table, teamId);
@@ -929,7 +939,33 @@ function useCollectionSync(table, notifyEdit, teamId) {
          silenciosamente recusada (RLS, token expirado) — ver o mesmo
          cuidado tomado na leitura inicial, mais acima. Sem esta guarda,
          uma leitura falhada em silêncio apagaria tudo do ecrã por engano. */
-      if ((data || []).length > 0) {
+      /* E SÓ SE NÃO GRAVÁMOS NADA ENQUANTO ESTA LEITURA DECORRIA.
+
+         Foi isto que apagou 15 convocatórias do ecrã de uma só vez, e
+         fez disparar o travão de eliminação em massa na gravação
+         seguinte. A sequência: lançar uma volta inteira de jogos cria
+         dezenas de registos novos, que são gravados UM A UM (de
+         propósito, ver mais acima); o ciclo demora vários segundos. Se
+         uma leitura destas começar a meio, a fotografia que traz é de
+         ANTES desses registos existirem — e `aGravar` só protege o
+         registo que está a ser escrito nesse instante, não os catorze
+         que já foram escritos depois de a leitura ter partido. Os
+         registos desapareciam do ecrã, mas continuavam no `snapshot`,
+         e o ciclo seguinte lia isso como "foram apagados".
+
+         A regra é simples: uma fotografia só serve para decidir quem
+         desapareceu se, entretanto, ninguém tiver mexido no álbum. Se
+         houve escritas nossas durante a leitura, ou se já havia um
+         ciclo de gravação a decorrer quando ela começou, ignora-se a
+         remoção e espera-se pela leitura seguinte — um registo fantasma
+         a mais durante uns minutos é incomparavelmente melhor do que
+         fazer desaparecer trabalho acabado de introduzir.
+
+         A parte de ACRESCENTAR o que veio de novo fica de fora desta
+         guarda: juntar é sempre seguro. */
+      const houveEscritasNossas = escritasConfirmadas.current !== escritasAoComecar
+        || escreviaAoComecar || aEscrever.current;
+      if ((data || []).length > 0 && !houveEscritasNossas) {
         const idsNoServidor = new Set(data.map(r => r.id));
         setItems(prev => {
           const alguemFalta = prev.some(it => !idsNoServidor.has(it.id) && !aGravar.current.has(it.id));
@@ -1042,6 +1078,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
           failed.push(`${nome}: ${motivo}`);
           continue;
         }
+        escritasConfirmadas.current += 1;
         (data || []).forEach(r => {
           snapshot.current.set(r.id, jsonEstavel(r.data));
           if (r.updated_at) ultimaHoraConhecida.current.set(r.id, r.updated_at);
@@ -1084,6 +1121,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
           // Consome a autorização: vale para esta gravação e mais nenhuma.
           remocaoAutorizada.current = false;
           const { error } = await supabase.from(table).delete().in('id', toDelete);
+          escritasConfirmadas.current += 1;
           if (!error) toDelete.forEach(id => snapshot.current.delete(id));
           else { console.error(table, error); reportSyncError(table, error); }
         }
