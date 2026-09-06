@@ -21356,6 +21356,49 @@ function StandingsModal({ standings, onClose, onSave }) {
       }),
     });
   };
+
+  /* UMA JORNADA JOGA-SE QUASE SEMPRE NO MESMO DIA.
+
+     Escrever a mesma data dez vezes seguidas, uma por jogo, é o trabalho
+     mais repetitivo desta página inteira. Ao pôr a data num jogo,
+     pergunta-se se serve para os outros da jornada — e só se pergunta
+     quando há mesmo outros com data diferente, para a caixa não aparecer
+     por nada.
+
+     A pergunta é sobre a jornada ABERTA e só sobre ela: jornadas
+     diferentes jogam-se em fins de semana diferentes.
+
+     O filtro do ano é o que impede o diálogo de saltar a meio da
+     escrita. Um campo de data devolve valores completos mas ainda
+     absurdos enquanto se escreve o ano a tecla a tecla (0002, 0202, e só
+     depois 2026); sem isto a pergunta aparecia antes de a data estar
+     escrita. */
+  const setGameDate = (gi, valor) => {
+    const jogos = (round && round.games) || [];
+    const antes = (jogos[gi] || {}).date || '';
+    updateGame(gi, { date: valor });
+    if (valor === antes) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(valor) || Number(valor.slice(0, 4)) < 1900) return;
+    const porPreencher = jogos.filter((g, j) => j !== gi && (g.date || '') !== valor);
+    if (!porPreencher.length) return;
+    const rotulo = (round && round.label) || `Jornada ${roundIdx + 1}`;
+    askConfirm({
+      title: 'Mesma data para toda a jornada?',
+      label: `${rotulo}: ${porPreencher.length} ${porPreencher.length === 1 ? 'outro jogo fica' : 'outros jogos ficam'} com ${fmtDate(valor)}`,
+      note: porPreencher.some(g => g.date)
+        ? 'As datas diferentes que já lá estejam são substituídas.'
+        : '',
+      confirmLabel: 'Preencher',
+      destructive: false,
+      onConfirm: () => {
+        patchComp({
+          rounds: rounds.map((r, i) => (i === roundIdx
+            ? { ...r, games: (r.games || []).map(g => ({ ...g, id: g.id || uid(), date: valor })) }
+            : r)),
+        });
+      },
+    });
+  };
   // Os golos são introduzidos em dois seletores numéricos; o campo `score`
   // continua a ser gravado ("2-1") porque é dele que a classificação e os
   // registos antigos dependem.
@@ -21583,7 +21626,7 @@ function StandingsModal({ standings, onClose, onSave }) {
                           <option value="">— escolher —</option>
                           {validTeams.map(t => <option key={t} value={t}>{t}</option>)}
                         </Select>
-                        <Input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(g.date || '') ? g.date : ''} onChange={e => updateGame(gi, { date: e.target.value })} style={{ padding: '0 6px' }} />
+                        <Input type="date" value={/^\d{4}-\d{2}-\d{2}$/.test(g.date || '') ? g.date : ''} onChange={e => setGameDate(gi, e.target.value)} style={{ padding: '0 6px' }} />
                         <button onClick={() => removeGame(gi)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
                       </div>
                     );
