@@ -21138,10 +21138,7 @@ function competitionGameDate(comp, roundLabel, opponent) {
 }
 
 const emptyCompetition = (name = '') => ({
-  // `segundaVoltaDe`: quantas jornadas existiam quando a segunda volta foi
-  // gerada; 0 significa que ainda não foi. Declarado aqui para o campo ser
-  // visível em vez de aparecer do nada num patch.
-  id: uid(), name, teamNames: [], rounds: [], auto: true, teams: [], segundaVoltaDe: 0,
+  id: uid(), name, teamNames: [], rounds: [], auto: true, teams: [],
 });
 
 function StandingsModal({ standings, onClose, onSave }) {
@@ -21262,96 +21259,76 @@ function StandingsModal({ standings, onClose, onSave }) {
      Salgueiros vs Nogueirense. Escrever isso à mão são 170 linhas em 17
      jornadas de 10 jogos, todas elas já escritas uma vez.
 
-     O QUE SE COPIA: as equipas e a ordem dos jogos dentro de cada
-     jornada. O QUE NÃO SE COPIA: resultados, datas e ids. A segunda
-     volta ainda não se jogou, e um id repetido ligaria dois encontros da
-     competição ao MESMO jogo da lista de Jogos (ver
-     syncCompetitionMatches) — a data em branco também é o que impede
-     estes jogos de irem já para a agenda antes de estarem marcados.
-
      Jogos sem as duas equipas escolhidas ficam de fora: uma linha vazia
      não tem lado nenhum para trocar. */
-  const jogosParaEspelhar = rounds.reduce(
+
+  /* A SEGUNDA VOLTA PREENCHE JORNADAS QUE JÁ EXISTEM — NÃO CRIA NENHUMA.
+
+     O calendário costuma ser criado inteiro de uma vez na Configuração
+     (34 jornadas), e só a primeira volta é que está escrita. O que falta
+     não são jornadas, são os jogos dentro das que já lá estão vazias.
+
+     Como se lê o calendário:
+       · a PRIMEIRA VOLTA vai do início até à última jornada com jogos —
+         uma jornada vazia pelo meio não a corta ao meio, fica só sem
+         espelho (uma jornada vazia espelha-se numa jornada vazia);
+       · as jornadas a seguir a essa estão todas vazias, por definição,
+         e são elas que recebem o espelho, pela mesma ordem.
+
+     Nada é criado e nada é escrito por cima: se não houver jornadas
+     vazias a seguir, o botão fica desligado. É isso que torna dispensável
+     qualquer marca de "já foi gerada" — correr outra vez não tem onde
+     escrever, porque as jornadas de destino já deixaram de estar vazias. */
+  const ultimaComJogos = rounds.reduce((ultimo, r, i) => ((r.games || []).length ? i : ultimo), -1);
+  const jornadasPrimeiraVolta = ultimaComJogos + 1;
+  const jornadasVazias = rounds.length - jornadasPrimeiraVolta;
+  const jornadasAPreencher = Math.max(0, Math.min(jornadasPrimeiraVolta, jornadasVazias));
+  const jogosParaEspelhar = rounds.slice(0, jornadasAPreencher).reduce(
     (n, r) => n + (r.games || []).filter(g => g.home && g.away).length, 0,
   );
-
-  /* `segundaVoltaDe` GUARDA QUANTAS JORNADAS EXISTIAM QUANDO SE GEROU.
-
-     Sem esta marca, carregar duas vezes no botão dava 68 jornadas em vez
-     de 34, e não havia como distinguir uma segunda volta legítima de uma
-     repetição — as jornadas 18 a 34 são indistinguíveis de umas jornadas
-     18 a 34 criadas outra vez por cima.
-
-     Guarda-se o NÚMERO e não um simples `true` porque é ele que diz onde
-     começa a parte gerada: é o que permite anulá-la (abaixo) e é o que
-     faz a marca deixar de bloquear sozinha se essas jornadas
-     desaparecerem por outro caminho. Competições criadas antes desta
-     marca existir não têm o campo, e continuam a poder gerar. */
-  const segundaVoltaDe = Number(comp.segundaVoltaDe) || 0;
-  const segundaVoltaJaGerada = segundaVoltaDe > 0 && rounds.length > segundaVoltaDe;
-  const podeGerarSegundaVolta = rounds.length > 0 && jogosParaEspelhar > 0 && !segundaVoltaJaGerada;
+  const podeGerarSegundaVolta = jornadasAPreencher > 0 && jogosParaEspelhar > 0;
+  // Quando as vazias não chegam para toda a primeira volta, diz-se quantas
+  // faltam em vez de se inventarem jornadas que o treinador não pediu.
+  const jornadasEmFalta = Math.max(0, jornadasPrimeiraVolta - jornadasVazias);
 
   const gerarSegundaVolta = () => {
     if (!podeGerarSegundaVolta) return;
-    const total = rounds.length;
-    // Mesmo tecto do contador de jornadas da Configuração.
-    if (total * 2 > 60) {
-      setNotice(`São ${total} jornadas: a segunda volta daria ${total * 2}, acima do limite de 60.`);
-      return;
-    }
+    const inicio = jornadasPrimeiraVolta;
+    const fim = inicio + jornadasAPreencher;
+    const nome = (i) => (rounds[i] && rounds[i].label) || `Jornada ${i + 1}`;
     askConfirm({
-      title: 'Criar a segunda volta?',
-      label: `Jornadas ${total + 1} a ${total * 2} de "${comp.name || 'sem nome'}"`,
-      note: `${jogosParaEspelhar} ${jogosParaEspelhar === 1 ? 'jogo copiado' : 'jogos copiados'} das primeiras ${total} jornadas, pela mesma ordem e com casa e fora trocados. Sem resultados nem datas. As jornadas que já existem não são tocadas.`,
-      confirmLabel: 'Criar',
+      title: 'Preencher a segunda volta?',
+      label: `${nome(inicio)} a ${nome(fim - 1)} de "${comp.name || 'sem nome'}"`,
+      note: [
+        `${jogosParaEspelhar} ${jogosParaEspelhar === 1 ? 'jogo copiado' : 'jogos copiados'} de ${nome(0)} a ${nome(jornadasAPreencher - 1)}, pela mesma ordem e com casa e fora trocados. Sem resultados nem datas.`,
+        jornadasEmFalta
+          ? `Não há jornadas vazias que cheguem: ficam ${jornadasEmFalta} por espelhar. Aumenta o número de jornadas na Configuração se quiseres a volta completa.`
+          : '',
+      ].filter(Boolean).join(' '),
+      confirmLabel: 'Preencher',
       destructive: false,
       onConfirm: () => {
-        const volta = rounds.map((r, i) => ({
-          id: uid(),
-          label: `Jornada ${total + i + 1}`,
-          games: (r.games || [])
-            .filter(g => g.home && g.away)
-            .map(g => ({
-              id: uid(),
-              home: g.away, away: g.home,
-              homeGoals: '', awayGoals: '', score: '', date: '',
-            })),
-        }));
-        patchComp({ rounds: [...rounds, ...volta], segundaVoltaDe: total });
-        setNotice(`Segunda volta criada: jornadas ${total + 1} a ${total * 2}.`);
-        setRoundIdx(total);
-      },
-    });
-  };
+        /* O id e o rótulo da jornada de destino MANTÊM-SE: ela já existe,
+           já pode ter sido renomeada, e trocar-lhe o id desligava-a de
+           tudo o que lhe aponte. Só os jogos é que entram.
 
-  /* ANULAR A SEGUNDA VOLTA.
-
-     O botão bloqueado precisa de uma saída, ou um engano fica lá para
-     sempre: o contador de jornadas da Configuração só apaga jornadas
-     VAZIAS do fim, e as da segunda volta têm jogos — ninguém as tirava
-     sem apagar dezenas de linhas à mão.
-
-     Apaga tudo o que está DEPOIS da marca, e por isso leva também
-     qualquer jornada acrescentada a seguir. É o que se diz na
-     confirmação, com a conta dos resultados que se perdem. Os jogos que
-     já tenham entrado na lista de Jogos não são apagados aqui — como em
-     'apagar competição', ficam lá para se removerem de propósito. */
-  const anularSegundaVolta = () => {
-    if (!segundaVoltaJaGerada) return;
-    const aRemover = rounds.slice(segundaVoltaDe);
-    const comResultado = aRemover.reduce(
-      (n, r) => n + (r.games || []).filter(g => parseScore(g.score)).length, 0,
-    );
-    askConfirm({
-      label: `Jornadas ${segundaVoltaDe + 1} a ${rounds.length} de "${comp.name || 'sem nome'}"`,
-      note: comResultado
-        ? `São ${aRemover.length} ${aRemover.length === 1 ? 'jornada' : 'jornadas'}, e ${comResultado} ${comResultado === 1 ? 'jogo já tem resultado' : 'jogos já têm resultado'}. Esses resultados perdem-se e a classificação muda.`
-        : `São ${aRemover.length} ${aRemover.length === 1 ? 'jornada' : 'jornadas'}, ainda sem resultados. Os jogos já criados na lista de Jogos não são apagados.`,
-      confirmText: comResultado ? 'APAGAR' : '',
-      onConfirm: () => {
-        patchComp({ rounds: rounds.slice(0, segundaVoltaDe), segundaVoltaDe: 0 });
-        setNotice(`Segunda volta anulada: ficaram ${segundaVoltaDe} jornadas.`);
-        setRoundIdx(i => Math.max(0, Math.min(i, segundaVoltaDe - 1)));
+           Ids de jogo novos, e sem resultado nem data: a segunda volta
+           ainda não se jogou, e um id repetido ligava dois encontros ao
+           mesmo jogo da lista de Jogos (ver syncCompetitionMatches). */
+        const espelhar = (jogos) => (jogos || [])
+          .filter(g => g.home && g.away)
+          .map(g => ({
+            id: uid(),
+            home: g.away, away: g.home,
+            homeGoals: '', awayGoals: '', score: '', date: '',
+          }));
+        patchComp({
+          rounds: rounds.map((r, i) => (
+            i >= inicio && i < fim ? { ...r, games: espelhar(rounds[i - inicio].games) } : r
+          )),
+        });
+        setNotice(`Segunda volta preenchida: ${nome(inicio)} a ${nome(fim - 1)}.`);
+        setRoundIdx(inicio);
       },
     });
   };
@@ -21566,41 +21543,24 @@ function StandingsModal({ standings, onClose, onSave }) {
                   </Field>
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {/* Fica à vista mesmo quando bloqueado: um botão que
+                  {/* Fica à vista mesmo quando desligado: um botão que
                       desaparece deixa quem procura a funcionalidade a
-                      pensar que ela não existe. A linha por baixo diz
-                      porquê e dá a saída. */}
+                      pensar que ela não existe. O `title` diz porquê. */}
                   <Btn
                     variant="ghost"
                     onClick={gerarSegundaVolta}
                     disabled={!podeGerarSegundaVolta}
-                    title={segundaVoltaJaGerada
-                      ? `A segunda volta já foi gerada a partir das primeiras ${segundaVoltaDe} jornadas`
-                      : podeGerarSegundaVolta
-                        ? `Cria as jornadas ${rounds.length + 1} a ${rounds.length * 2} com as equipas trocadas`
+                    title={podeGerarSegundaVolta
+                      ? `Preenche ${jornadasAPreencher} ${jornadasAPreencher === 1 ? 'jornada vazia' : 'jornadas vazias'} com os jogos da primeira volta, com as equipas trocadas`
+                      : jornadasVazias === 0
+                        ? 'Não há jornadas vazias para preencher. Aumenta o número de jornadas na Configuração.'
                         : 'Preenche primeiro os jogos da primeira volta'}
                   >
-                    <RefreshCw size={13} /> Gerar segunda volta
+                    <RefreshCw size={13} /> Preencher segunda volta
                   </Btn>
                   <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
                 </div>
               </div>
-
-              {segundaVoltaJaGerada && (
-                <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: -4, marginBottom: 12, lineHeight: 1.6 }}>
-                  A segunda volta já foi gerada a partir das primeiras {segundaVoltaDe} jornadas.{' '}
-                  <button
-                    type="button"
-                    onClick={anularSegundaVolta}
-                    style={{
-                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                      color: T.bad, fontSize: 11.5, textDecoration: 'underline', ...body,
-                    }}
-                  >
-                    Anular segunda volta
-                  </button>
-                </div>
-              )}
 
               <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: colunasJogo, gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 2px 6px' }}>
