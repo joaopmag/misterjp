@@ -1451,7 +1451,7 @@ function Badge({ number, label }) {
   );
 }
 
-function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'button', disabled }) {
+function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'button', disabled, title }) {
   /* PROTEÇÃO CONTRA CLIQUE DUPLO, PARA TODOS OS BOTÕES DA APP DE UMA VEZ SÓ.
 
      Um "Guardar" que cria um registo novo gera um id novo dentro do
@@ -1487,7 +1487,7 @@ function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'bu
     danger: { background: 'transparent', color: T.bad, border: `1px solid ${T.bad}55` },
   };
   return (
-    <button type={type} disabled={disabled} onClick={handleClick} style={{ ...base, ...variants[variant], ...s }}>
+    <button type={type} disabled={disabled} title={title} onClick={handleClick} style={{ ...base, ...variants[variant], ...s }}>
       {children}
     </button>
   );
@@ -21138,7 +21138,10 @@ function competitionGameDate(comp, roundLabel, opponent) {
 }
 
 const emptyCompetition = (name = '') => ({
-  id: uid(), name, teamNames: [], rounds: [], auto: true, teams: [],
+  // `segundaVoltaDe`: quantas jornadas existiam quando a segunda volta foi
+  // gerada; 0 significa que ainda não foi. Declarado aqui para o campo ser
+  // visível em vez de aparecer do nada num patch.
+  id: uid(), name, teamNames: [], rounds: [], auto: true, teams: [], segundaVoltaDe: 0,
 });
 
 function StandingsModal({ standings, onClose, onSave }) {
@@ -21252,6 +21255,107 @@ function StandingsModal({ standings, onClose, onSave }) {
         : r)),
     });
   };
+  /* SEGUNDA VOLTA — as mesmas jornadas outra vez, com as equipas trocadas.
+
+     Num campeonato de duas voltas a segunda metade é a primeira ao
+     espelho: se a jornada 1 foi Nogueirense vs Salgueiros, a 18 é
+     Salgueiros vs Nogueirense. Escrever isso à mão são 170 linhas em 17
+     jornadas de 10 jogos, todas elas já escritas uma vez.
+
+     O QUE SE COPIA: as equipas e a ordem dos jogos dentro de cada
+     jornada. O QUE NÃO SE COPIA: resultados, datas e ids. A segunda
+     volta ainda não se jogou, e um id repetido ligaria dois encontros da
+     competição ao MESMO jogo da lista de Jogos (ver
+     syncCompetitionMatches) — a data em branco também é o que impede
+     estes jogos de irem já para a agenda antes de estarem marcados.
+
+     Jogos sem as duas equipas escolhidas ficam de fora: uma linha vazia
+     não tem lado nenhum para trocar. */
+  const jogosParaEspelhar = rounds.reduce(
+    (n, r) => n + (r.games || []).filter(g => g.home && g.away).length, 0,
+  );
+
+  /* `segundaVoltaDe` GUARDA QUANTAS JORNADAS EXISTIAM QUANDO SE GEROU.
+
+     Sem esta marca, carregar duas vezes no botão dava 68 jornadas em vez
+     de 34, e não havia como distinguir uma segunda volta legítima de uma
+     repetição — as jornadas 18 a 34 são indistinguíveis de umas jornadas
+     18 a 34 criadas outra vez por cima.
+
+     Guarda-se o NÚMERO e não um simples `true` porque é ele que diz onde
+     começa a parte gerada: é o que permite anulá-la (abaixo) e é o que
+     faz a marca deixar de bloquear sozinha se essas jornadas
+     desaparecerem por outro caminho. Competições criadas antes desta
+     marca existir não têm o campo, e continuam a poder gerar. */
+  const segundaVoltaDe = Number(comp.segundaVoltaDe) || 0;
+  const segundaVoltaJaGerada = segundaVoltaDe > 0 && rounds.length > segundaVoltaDe;
+  const podeGerarSegundaVolta = rounds.length > 0 && jogosParaEspelhar > 0 && !segundaVoltaJaGerada;
+
+  const gerarSegundaVolta = () => {
+    if (!podeGerarSegundaVolta) return;
+    const total = rounds.length;
+    // Mesmo tecto do contador de jornadas da Configuração.
+    if (total * 2 > 60) {
+      setNotice(`São ${total} jornadas: a segunda volta daria ${total * 2}, acima do limite de 60.`);
+      return;
+    }
+    askConfirm({
+      title: 'Criar a segunda volta?',
+      label: `Jornadas ${total + 1} a ${total * 2} de "${comp.name || 'sem nome'}"`,
+      note: `${jogosParaEspelhar} ${jogosParaEspelhar === 1 ? 'jogo copiado' : 'jogos copiados'} das primeiras ${total} jornadas, pela mesma ordem e com casa e fora trocados. Sem resultados nem datas. As jornadas que já existem não são tocadas.`,
+      confirmLabel: 'Criar',
+      destructive: false,
+      onConfirm: () => {
+        const volta = rounds.map((r, i) => ({
+          id: uid(),
+          label: `Jornada ${total + i + 1}`,
+          games: (r.games || [])
+            .filter(g => g.home && g.away)
+            .map(g => ({
+              id: uid(),
+              home: g.away, away: g.home,
+              homeGoals: '', awayGoals: '', score: '', date: '',
+            })),
+        }));
+        patchComp({ rounds: [...rounds, ...volta], segundaVoltaDe: total });
+        setNotice(`Segunda volta criada: jornadas ${total + 1} a ${total * 2}.`);
+        setRoundIdx(total);
+      },
+    });
+  };
+
+  /* ANULAR A SEGUNDA VOLTA.
+
+     O botão bloqueado precisa de uma saída, ou um engano fica lá para
+     sempre: o contador de jornadas da Configuração só apaga jornadas
+     VAZIAS do fim, e as da segunda volta têm jogos — ninguém as tirava
+     sem apagar dezenas de linhas à mão.
+
+     Apaga tudo o que está DEPOIS da marca, e por isso leva também
+     qualquer jornada acrescentada a seguir. É o que se diz na
+     confirmação, com a conta dos resultados que se perdem. Os jogos que
+     já tenham entrado na lista de Jogos não são apagados aqui — como em
+     'apagar competição', ficam lá para se removerem de propósito. */
+  const anularSegundaVolta = () => {
+    if (!segundaVoltaJaGerada) return;
+    const aRemover = rounds.slice(segundaVoltaDe);
+    const comResultado = aRemover.reduce(
+      (n, r) => n + (r.games || []).filter(g => parseScore(g.score)).length, 0,
+    );
+    askConfirm({
+      label: `Jornadas ${segundaVoltaDe + 1} a ${rounds.length} de "${comp.name || 'sem nome'}"`,
+      note: comResultado
+        ? `São ${aRemover.length} ${aRemover.length === 1 ? 'jornada' : 'jornadas'}, e ${comResultado} ${comResultado === 1 ? 'jogo já tem resultado' : 'jogos já têm resultado'}. Esses resultados perdem-se e a classificação muda.`
+        : `São ${aRemover.length} ${aRemover.length === 1 ? 'jornada' : 'jornadas'}, ainda sem resultados. Os jogos já criados na lista de Jogos não são apagados.`,
+      confirmText: comResultado ? 'APAGAR' : '',
+      onConfirm: () => {
+        patchComp({ rounds: rounds.slice(0, segundaVoltaDe), segundaVoltaDe: 0 });
+        setNotice(`Segunda volta anulada: ficaram ${segundaVoltaDe} jornadas.`);
+        setRoundIdx(i => Math.max(0, Math.min(i, segundaVoltaDe - 1)));
+      },
+    });
+  };
+
   /* Sem data, um jogo fica sempre no fim (pela ordem em que foi criado);
      com data, ordena cronologicamente. */
   const compararJogosPorData = (a, b) => {
@@ -21461,8 +21565,42 @@ function StandingsModal({ standings, onClose, onSave }) {
                     </Select>
                   </Field>
                 </div>
-                <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {/* Fica à vista mesmo quando bloqueado: um botão que
+                      desaparece deixa quem procura a funcionalidade a
+                      pensar que ela não existe. A linha por baixo diz
+                      porquê e dá a saída. */}
+                  <Btn
+                    variant="ghost"
+                    onClick={gerarSegundaVolta}
+                    disabled={!podeGerarSegundaVolta}
+                    title={segundaVoltaJaGerada
+                      ? `A segunda volta já foi gerada a partir das primeiras ${segundaVoltaDe} jornadas`
+                      : podeGerarSegundaVolta
+                        ? `Cria as jornadas ${rounds.length + 1} a ${rounds.length * 2} com as equipas trocadas`
+                        : 'Preenche primeiro os jogos da primeira volta'}
+                  >
+                    <RefreshCw size={13} /> Gerar segunda volta
+                  </Btn>
+                  <Btn variant="ghost" onClick={addGame}><Plus size={13} /> Adicionar jogo</Btn>
+                </div>
               </div>
+
+              {segundaVoltaJaGerada && (
+                <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: -4, marginBottom: 12, lineHeight: 1.6 }}>
+                  A segunda volta já foi gerada a partir das primeiras {segundaVoltaDe} jornadas.{' '}
+                  <button
+                    type="button"
+                    onClick={anularSegundaVolta}
+                    style={{
+                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      color: T.bad, fontSize: 11.5, textDecoration: 'underline', ...body,
+                    }}
+                  >
+                    Anular segunda volta
+                  </button>
+                </div>
+              )}
 
               <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: colunasJogo, gap: 6, fontSize: 10.5, color: T.mutedDim, ...mono, padding: '0 2px 6px' }}>
