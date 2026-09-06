@@ -5877,17 +5877,27 @@ const TATICAS = {
      4-3-3 com o 6 mais recuado, os extremos do 4-2-3-1 abertos na linha
      dos três, e os corredores do 4-4-2 e do 3-5-2 subidos e encostados à
      lateral, que é onde jogam. */
+  /* OS RÓTULOS SÃO OS DO QUADRO, OS `de` SÃO OS DO PLANTEL.
+
+     São dois vocabulários diferentes e é de propósito. O quadro escreve
+     o que o treinador desenha (EX para extremo sem lado, MD para
+     trinco, AD/AE para alas); o plantel regista cada jogador na sua
+     posição de sempre (ED, EE, MOC, DD, DE). O `de` é a ponte entre os
+     dois — mudar um rótulo NÃO obriga a mudar o `de`, e trocá-los põe
+     jogadores em lugares errados. */
   '4-3-3': [
     { id: 'GR', rotulo: 'GR', ponto: [0.06, 0.50], de: ['GR'] },
     { id: 'DD', rotulo: 'DD', ponto: [0.26, 0.96], de: ['DD'] },
     { id: 'DC1', rotulo: 'DC', ponto: [0.15, 0.65], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.15, 0.35], de: ['DC'] },
     { id: 'DE', rotulo: 'DE', ponto: [0.26, 0.04], de: ['DE'] },
-    { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC', 'MD'] },
+    // O 6, recuado e ao centro: MD é MÉDIO DEFENSIVO, não médio direito.
+    { id: 'MC2', rotulo: 'MD', ponto: [0.34, 0.50], de: ['MD', 'MC'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.50, 0.68], de: ['MC'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.50, 0.32], de: ['MC', 'MOC'] },
-    { id: 'ED', rotulo: 'ED', ponto: [0.74, 0.96], de: ['ED'] },
-    { id: 'EE', rotulo: 'EE', ponto: [0.74, 0.04], de: ['EE'] },
+    // EX nos dois lados: o quadro não distingue o lado, o `de` sim.
+    { id: 'ED', rotulo: 'EX', ponto: [0.74, 0.96], de: ['ED'] },
+    { id: 'EE', rotulo: 'EX', ponto: [0.74, 0.04], de: ['EE'] },
     { id: 'PL', rotulo: 'PL', ponto: [0.90, 0.50], de: ['PL'] },
   ],
   '4-4-2': [
@@ -5896,10 +5906,13 @@ const TATICAS = {
     { id: 'DC1', rotulo: 'DC', ponto: [0.15, 0.65], de: ['DC'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.15, 0.35], de: ['DC'] },
     { id: 'DE', rotulo: 'DE', ponto: [0.26, 0.04], de: ['DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.62, 0.96], de: ['MD', 'ED'] },
+    // Corredores do 4-4-2: AD/AE, como no 3-5-2 e no 3-4-3. São médios de
+    // ala, por isso recebem os extremos do plantel; o MD (trinco) fica no
+    // miolo, com o MC2.
+    { id: 'MD', rotulo: 'AD', ponto: [0.62, 0.96], de: ['ED'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.44, 0.62], de: ['MC', 'MOC'] },
-    { id: 'MC2', rotulo: 'MC', ponto: [0.44, 0.38], de: ['MC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.62, 0.04], de: ['EE'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.44, 0.38], de: ['MC', 'MD'] },
+    { id: 'ME', rotulo: 'AE', ponto: [0.62, 0.04], de: ['EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
@@ -5911,9 +5924,9 @@ const TATICAS = {
     { id: 'DE', rotulo: 'DE', ponto: [0.26, 0.04], de: ['DE'] },
     { id: 'MC1', rotulo: 'MC', ponto: [0.36, 0.62], de: ['MC'] },
     { id: 'MC2', rotulo: 'MC', ponto: [0.36, 0.38], de: ['MC', 'MD'] },
-    { id: 'MOC1', rotulo: 'ED', ponto: [0.60, 0.96], de: ['ED'] },
-    { id: 'MOC2', rotulo: 'MOC', ponto: [0.60, 0.50], de: ['MOC'] },
-    { id: 'MOC3', rotulo: 'EE', ponto: [0.60, 0.04], de: ['EE'] },
+    { id: 'MOC1', rotulo: 'EX', ponto: [0.60, 0.96], de: ['ED'] },
+    { id: 'MOC2', rotulo: 'MO', ponto: [0.60, 0.50], de: ['MOC'] },
+    { id: 'MOC3', rotulo: 'EX', ponto: [0.60, 0.04], de: ['EE'] },
     { id: 'PL', rotulo: 'PL', ponto: [0.90, 0.50], de: ['PL'] },
   ],
   '3-5-2': [
@@ -5921,11 +5934,13 @@ const TATICAS = {
     { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.74], de: ['DC', 'DD'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.50], de: ['DC'] },
     { id: 'DC3', rotulo: 'DC', ponto: [0.19, 0.26], de: ['DC', 'DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.64, 0.90], de: ['DD', 'ED', 'MD'] },
-    { id: 'MC2', rotulo: 'MC', ponto: [0.34, 0.50], de: ['MC'] },
-    { id: 'MC1', rotulo: 'MC', ponto: [0.46, 0.64], de: ['MC', 'MD'] },
+    // Alas (AD/AE): laterais subidos, é a eles que cabem os corredores.
+    { id: 'MD', rotulo: 'AD', ponto: [0.64, 0.90], de: ['DD', 'ED'] },
+    // O trinco fica recuado e ao centro, com os dois interiores à frente.
+    { id: 'MC2', rotulo: 'MD', ponto: [0.34, 0.50], de: ['MD', 'MC'] },
+    { id: 'MC1', rotulo: 'MC', ponto: [0.46, 0.64], de: ['MC'] },
     { id: 'MC3', rotulo: 'MC', ponto: [0.46, 0.36], de: ['MC', 'MOC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.64, 0.10], de: ['DE', 'EE'] },
+    { id: 'ME', rotulo: 'AE', ponto: [0.64, 0.10], de: ['DE', 'EE'] },
     { id: 'PL1', rotulo: 'PL', ponto: [0.84, 0.60], de: ['PL'] },
     { id: 'PL2', rotulo: 'PL', ponto: [0.84, 0.40], de: ['PL', 'MOC'] },
   ],
@@ -5934,13 +5949,17 @@ const TATICAS = {
     { id: 'DC1', rotulo: 'DC', ponto: [0.19, 0.74], de: ['DC', 'DD'] },
     { id: 'DC2', rotulo: 'DC', ponto: [0.20, 0.50], de: ['DC'] },
     { id: 'DC3', rotulo: 'DC', ponto: [0.19, 0.26], de: ['DC', 'DE'] },
-    { id: 'MD', rotulo: 'MD', ponto: [0.50, 0.90], de: ['DD', 'ED', 'MD'] },
-    { id: 'MC1', rotulo: 'MC', ponto: [0.42, 0.62], de: ['MC'] },
-    { id: 'MC2', rotulo: 'MC', ponto: [0.42, 0.38], de: ['MC'] },
-    { id: 'ME', rotulo: 'ME', ponto: [0.50, 0.10], de: ['DE', 'EE'] },
-    { id: 'ED', rotulo: 'ED', ponto: [0.84, 0.85], de: ['ED', 'PL'] },
+    // Alas (AD/AE): laterais subidos nos corredores do meio-campo a 4.
+    { id: 'MD', rotulo: 'AD', ponto: [0.50, 0.90], de: ['DD', 'ED'] },
+    // O 3-4-3 não tem lugar de trinco nem de 10: são os dois MC que
+    // recebem o MD e o MOC do plantel. Sem isto, um MOC não encontrava
+    // lugar nenhum nesta tática e caía sempre para "Sem lugar".
+    { id: 'MC1', rotulo: 'MC', ponto: [0.42, 0.62], de: ['MC', 'MD'] },
+    { id: 'MC2', rotulo: 'MC', ponto: [0.42, 0.38], de: ['MC', 'MOC'] },
+    { id: 'ME', rotulo: 'AE', ponto: [0.50, 0.10], de: ['DE', 'EE'] },
+    { id: 'ED', rotulo: 'EX', ponto: [0.84, 0.85], de: ['ED', 'PL'] },
     { id: 'PL', rotulo: 'PL', ponto: [0.90, 0.50], de: ['PL'] },
-    { id: 'EE', rotulo: 'EE', ponto: [0.84, 0.15], de: ['EE', 'PL'] },
+    { id: 'EE', rotulo: 'EX', ponto: [0.84, 0.15], de: ['EE', 'PL'] },
   ],
 };
 const TATICA_OMISSAO = '4-3-3';
@@ -8590,8 +8609,15 @@ function nextKeeperNumber(elements, team) {
 }
 
 // Em vez do número, as bolas mostram a letra da posição:
-// 2-DD 3-DC 4-DC 5-DE 6-MD 7-MC 8-MC 9-EX 10-EX 11-PL — GR para guarda-redes.
-const POSITION_LABELS = { 2: 'DD', 3: 'DC', 4: 'DC', 5: 'DE', 6: 'MD', 7: 'MC', 8: 'MC', 9: 'EX', 10: 'EX', 11: 'PL' };
+// 2-DD 3-DC 4-DC 5-DE 6-MD 7-MC 8-MO 9-EX 10-EX 11-PL — GR para guarda-redes.
+/* O 8 É MÉDIO OFENSIVO (MO), NÃO UM SEGUNDO MC.
+
+   Com 7 e 8 a escreverem os dois "MC", o desenho ficava com dois médios
+   centrais iguais lado a lado e não se via quem fica e quem sobe. A
+   convenção do quadro passa a ser a mesma de um meio-campo a sério:
+   6 = MD (médio defensivo, o trinco), 7 = MC (interior),
+   8 = MO (médio ofensivo, o que joga entre linhas). */
+const POSITION_LABELS = { 2: 'DD', 3: 'DC', 4: 'DC', 5: 'DE', 6: 'MD', 7: 'MC', 8: 'MO', 9: 'EX', 10: 'EX', 11: 'PL' };
 /* Parte o texto em linhas: primeiro pelos Enter escritos à mão, depois
    pelo limite de caracteres. Palavras maiores do que o limite não são
    cortadas a meio — ficam sozinhas na linha, que é o mal menor. */
@@ -14436,16 +14462,24 @@ const FAMILIA = {
   // qualquer jogador levava a penalização máxima — era por isso que
   // apareciam extremos onde o desenho não os pedia.
   EX: 'ATA',
+  // 'MO' é o que a PRANCHETA escreve no ícone 8 (médio ofensivo). O
+  // PLANTEL usa MOC. Mesma razão do EX: sem esta entrada o lugar ficava
+  // sem família e toda a gente levava a penalização máxima.
+  MO: 'MEIO',
 };
 
 /* O lugar pedido pelo desenho corresponde a este jogador?
 
    'EX' vale por EE e ED: na prancheta o ícone não distingue o lado, e
-   exigir o lado exato faria falhar todos os extremos. */
+   exigir o lado exato faria falhar todos os extremos.
+
+   'MO' vale por MOC: é o mesmo jogador com dois nomes — a prancheta
+   escreve MO no ícone 8, o plantel regista MOC. */
 function posicaoServe(pedida, jogador) {
   if (!pedida || !jogador) return false;
   if (jogador.position === pedida) return true;
   if (pedida === 'EX') return jogador.position === 'EE' || jogador.position === 'ED';
+  if (pedida === 'MO') return jogador.position === 'MOC';
   return false;
 }
 const familiaDe = (p) => FAMILIA[p && p.position] || 'MEIO';
