@@ -2439,7 +2439,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const apresentacoesRef = useRef(null);
   const documentosRef = useRef(null);
   const [apresentacoes, setApresentacoes, apresentacoesReady, apresentacoesMeta] = useCollectionSync('apresentacoes', notifyEdit, teamId);
-  const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta] = useCollectionSync('convocatorias', notifyEdit, teamId);
+  const [convocatorias, setConvocatorias, convocatoriasReady, convocatoriasMeta, autorizarLimparConvocatorias] = useCollectionSync('convocatorias', notifyEdit, teamId);
   const [diario, setDiario, diarioReady, diarioMeta] = useCollectionSync('diario', notifyEdit, teamId);
   /* Uma ocorrência por registo — poucos campos, poucos bytes. Atenção:
      é preciso criar as políticas RLS da tabela `clinico` no Supabase, ou
@@ -3033,7 +3033,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
@@ -21759,7 +21759,7 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, clinico, abaInicial }) {
+function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial }) {
   /* Convocatórias deixaram de ter separador próprio e vivem aqui: nascem
      com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
      jornada sincronizados), por isso eram já a outra vista da mesma
@@ -21850,6 +21850,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
       <div>
         <Convocatorias
           convocatorias={convocatorias} setConvocatorias={setConvocatorias}
+          autorizarLimparConvocatorias={autorizarLimparConvocatorias}
           players={players} season={season} standings={standings}
           matches={matches} setMatches={setMatches} clinico={clinico}
           subTabs={(
@@ -28918,7 +28919,7 @@ function syncMatchConvocatoria(match, convocatorias, season) {
   });
 }
 
-function Convocatorias({ convocatorias, setConvocatorias, players, season, standings, matches, setMatches, clinico, subTabs }) {
+function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvocatorias, players, season, standings, matches, setMatches, clinico, subTabs }) {
   const [modal, setModal] = useState(null);
   const [printConvocatoria, setPrintConvocatoria] = useState(null);
 
@@ -28956,6 +28957,67 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
 
   const list = [...convocatorias].sort((a, b) => new Date(a.data || 0) - new Date(b.data || 0));
 
+  /* CONVOCATÓRIAS REPETIDAS — o mesmo jogo com duas fichas.
+
+     Aconteceu uma vez e a causa está corrigida na sincronização (ver a
+     guarda da remoção de fantasmas em `apanharAtraso`): registos criados
+     em bloco chegaram a desaparecer do ecrã enquanto ainda estavam a ser
+     gravados, e a gravação seguinte, a olhar para uma lista já sem eles,
+     criou-os outra vez com ids novos. Ao recarregar a página, voltaram os
+     dois conjuntos.
+
+     Corrigir a causa não desfaz o que já ficou feito, e apagar quinze
+     linhas à mão numa tabela é o tipo de trabalho que se faz mal. Daí
+     esta limpeza.
+
+     A REGRA É CONSERVADORA. Duas convocatórias são a mesma quando têm a
+     mesma DATA, o mesmo ADVERSÁRIO e a mesma JORNADA. De cada grupo fica
+     a que tem mais gente convocada — e só se apagam as que estão
+     VAZIAS. Uma cópia onde alguém já escolheu jogadores não é lixo, é
+     trabalho: fica, e a linha por baixo do botão diz que ficou. */
+  const grupoDeConvocatoria = (c) => [
+    (c.data || '').trim(),
+    (c.adversario || '').trim().toLowerCase(),
+    (c.jornada || '').trim().toLowerCase(),
+  ].join('|');
+  const pessoasEm = (c) => (c.convocados || []).length + convidadosDe(c).length;
+  const repetidas = (() => {
+    const porGrupo = new Map();
+    convocatorias.forEach(c => {
+      if (!(c.data || '').trim()) return; // sem data não há grupo fiável
+      const k = grupoDeConvocatoria(c);
+      if (!porGrupo.has(k)) porGrupo.set(k, []);
+      porGrupo.get(k).push(c);
+    });
+    const aApagar = [];
+    let porDecidir = 0;
+    porGrupo.forEach(grupo => {
+      if (grupo.length < 2) return;
+      const ordenado = [...grupo].sort((a, b) => pessoasEm(b) - pessoasEm(a));
+      ordenado.slice(1).forEach(c => {
+        if (pessoasEm(c) === 0) aApagar.push(c.id);
+        else porDecidir += 1;
+      });
+    });
+    return { aApagar, porDecidir };
+  })();
+
+  const limparRepetidas = () => {
+    if (!repetidas.aApagar.length) return;
+    askConfirm({
+      label: `${repetidas.aApagar.length} ${repetidas.aApagar.length === 1 ? 'convocatória repetida' : 'convocatórias repetidas'}, todas sem ninguém convocado`,
+      note: 'De cada jogo fica uma. Os jogos, as presenças e os relatórios não são tocados.',
+      onConfirm: () => {
+        // Apagar em bloco é exatamente o que o travão de segurança da
+        // sincronização trava por omissão. Aqui a remoção É intencional,
+        // por isso abre-se a porta para esta gravação e só para esta.
+        if (autorizarLimparConvocatorias) autorizarLimparConvocatorias();
+        const fora = new Set(repetidas.aApagar);
+        setConvocatorias(prev => prev.filter(c => !fora.has(c.id)));
+      },
+    });
+  };
+
   const th = { textAlign: 'left', padding: '10px 12px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}` };
   const td = { padding: '10px 12px', fontSize: 13, color: T.mutedDim };
 
@@ -28964,6 +29026,32 @@ function Convocatorias({ convocatorias, setConvocatorias, players, season, stand
       <SectionHeader title="Convocatórias" subtitle={`U19 - ${season?.name || ''}`}
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Nova convocatória</Btn>} />
       {subTabs}
+
+      {/* Só aparece quando há mesmo o que limpar — não é uma ferramenta
+          de manutenção permanente, é a resposta a um estranho. */}
+      {(repetidas.aApagar.length > 0 || repetidas.porDecidir > 0) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          background: T.surface, border: `1px solid ${T.warn}55`, borderRadius: 8,
+          padding: '10px 14px', marginBottom: 16,
+        }}>
+          <div style={{ fontSize: 12.5, color: T.cream, ...body, flex: 1, minWidth: 220, lineHeight: 1.5 }}>
+            {repetidas.aApagar.length > 0 && (
+              <>Há {repetidas.aApagar.length} {repetidas.aApagar.length === 1 ? 'convocatória repetida' : 'convocatórias repetidas'} para jogos que já têm outra.{' '}</>
+            )}
+            {repetidas.porDecidir > 0 && (
+              <span style={{ color: T.mutedDim }}>
+                {repetidas.porDecidir} {repetidas.porDecidir === 1 ? 'repetida tem' : 'repetidas têm'} jogadores convocados e {repetidas.porDecidir === 1 ? 'fica' : 'ficam'} como {repetidas.porDecidir === 1 ? 'está' : 'estão'} — apaga à mão a que não quiseres.
+              </span>
+            )}
+          </div>
+          {repetidas.aApagar.length > 0 && (
+            <Btn variant="ghost" onClick={limparRepetidas}>
+              <Trash2 size={13} /> Limpar {repetidas.aApagar.length}
+            </Btn>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 24, marginBottom: 18, borderBottom: `1px solid ${T.line}` }}>
         <span style={{
