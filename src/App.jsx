@@ -10640,7 +10640,21 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     } else if (dragId) {
       const p = toPoint(e);
       if (dragStartRef.current && Math.hypot(p.x - dragStartRef.current.x, p.y - dragStartRef.current.y) > 0.6) setDragMoved(true);
-      onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)) });
+      if (emRecuo) {
+        /* Em recuo, arrastar corrige a posição a partir do passo que se
+           está a ver até ao fim — a mesma regra "desde" já usada para
+           texto, colocar e apagar. Sem isto, a correção só entrava no
+           estado atual (invisível, porque a prancheta mostra o passo
+           antigo) e nunca chegava a aparecer nem a valer para nada. */
+        const seq = value.sequence || [];
+        const sequencia = seq.map((step, i) => (i < desdeValido ? step : {
+          ...step,
+          elements: (step.elements || []).map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)),
+        }));
+        onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)), sequence: sequencia });
+      } else {
+        onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)) });
+      }
     } else if (dragHandle) {
       const p = toPoint(e);
       if (dragHandle.which === 'curve') {
@@ -10685,15 +10699,33 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       const dy = ref.orig.dy + (p.y - ref.start.y);
       onChange({ ...value, spaceZones: zones.map(z => (z.id === dragZoneId ? { ...z, dx, dy } : z)), spaceOffset: undefined });
     } else if (goalDrag) {
-      const el = elements.find(x => x.id === goalDrag.id);
+      const el = (elementosRecuo || elements).find(x => x.id === goalDrag.id);
       if (!el) return;
       const p = toPoint(e);
       const dx = p.x - el.x, dy = p.y - el.y;
+      // Em recuo, a correção aplica-se do passo em vista até ao fim —
+      // mesma regra "desde" já usada para arrastar, texto, colocar e
+      // apagar (ver a nota junto do arrastar normal, mais acima). Recebe
+      // um objeto com todos os campos de uma vez (não um a um), para
+      // rodar/redimensionar nunca ter duas gravações seguidas a
+      // pisarem-se uma à outra.
+      const aplicar = (campos) => {
+        if (emRecuo) {
+          const seq = value.sequence || [];
+          const sequencia = seq.map((step, i) => (i < desdeValido ? step : {
+            ...step,
+            elements: (step.elements || []).map(x => (x.id === el.id ? { ...x, ...campos } : x)),
+          }));
+          onChange({ ...value, elements: elements.map(x => x.id === el.id ? { ...x, ...campos } : x), sequence: sequencia });
+        } else {
+          onChange({ ...value, elements: elements.map(x => x.id === el.id ? { ...x, ...campos } : x) });
+        }
+      };
       if (goalDrag.mode === 'rotate') {
         // 0° = manípulo diretamente acima da baliza; roda livremente 0-360°
         let deg = Math.atan2(dx, -dy) * 180 / Math.PI;
         deg = Math.round((deg + 360) % 360);
-        onChange({ ...value, elements: elements.map(x => x.id === el.id ? { ...x, rotation: deg } : x) });
+        aplicar({ rotation: deg });
       } else if (goalDrag.mode === 'resize') {
         // Traduz o ponteiro para o referencial local da baliza (des-roda),
         // para que arrastar o canto redimensione largura/altura de forma
@@ -10703,7 +10735,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         const localY = -dx * Math.sin(rad) + dy * Math.cos(rad);
         const w = Math.max(1.4, Math.min(16, +(Math.abs(localX) * 2).toFixed(2)));
         const h = Math.max(0.9, Math.min(11, +(Math.abs(localY) * 2).toFixed(2)));
-        onChange({ ...value, elements: elements.map(x => x.id === el.id ? { ...x, w, h } : x) });
+        aplicar({ w, h });
       }
     }
   };
