@@ -880,8 +880,21 @@ function useCollectionSync(table, notifyEdit, teamId) {
   useEffect(() => {
     if (!teamId) return undefined;
     let cancelled = false;
-    const apanharAtraso = async () => {
+    /* Não repetir uma leitura completa se a anterior foi há poucochíssimo
+       tempo — sem isto, trocar de aba várias vezes seguidas (ou o foco a
+       disparar por qualquer motivo do browser) multiplicava leituras
+       completas da tabela toda, cada uma a contar para o limite de dados
+       transferidos (Egress) do Supabase. Um minuto de intervalo mínimo
+       chega para cobrir esses casos sem atrasar a deteção de algo novo a
+       sério — ninguém troca de aba com intenção duas vezes no mesmo
+       minuto à espera de ver uma resposta diferente. */
+    let ultimoFetch = 0;
+    const INTERVALO_MINIMO = 60 * 1000;
+    const apanharAtraso = async (forcar = false) => {
       if (!ready || document.visibilityState === 'hidden') return;
+      const agora = Date.now();
+      if (!forcar && agora - ultimoFetch < INTERVALO_MINIMO) return;
+      ultimoFetch = agora;
       let data, error;
       try {
         data = await fetchAllRows(table, teamId);
@@ -925,16 +938,25 @@ function useCollectionSync(table, notifyEdit, teamId) {
         });
       }
     };
-    document.addEventListener('visibilitychange', apanharAtraso);
-    window.addEventListener('focus', apanharAtraso);
-    // Alguns browsers/webviews não disparam `visibilitychange` de forma
-    // fiável (sobretudo em apps embutidas) — por isso há também esta
-    // verificação periódica, independente de qualquer evento.
-    const intervalo = setInterval(apanharAtraso, 3 * 60 * 1000);
+    const aoFocar = () => apanharAtraso(false);
+    document.addEventListener('visibilitychange', aoFocar);
+    window.addEventListener('focus', aoFocar);
+    /* Alguns browsers/webviews não disparam `visibilitychange` de forma
+       fiável (sobretudo em apps embutidas) — por isso há também esta
+       verificação periódica, independente de qualquer evento. Mas não
+       precisa de ser frequente: é só uma rede de segurança para quando o
+       WebSocket morre e ninguém troca de aba durante muito tempo (ex.: um
+       ecrã de Monitorização deixado aberto o dia inteiro, sem ninguém a
+       tocar-lhe). 20 minutos continua a apanhar isso bem a tempo, e reduz
+       para uma fração o consumo de dados (Egress) desta rede de
+       segurança em 16 coleções × todas as pessoas com a app aberta ao
+       mesmo tempo, que era o que estava a esgotar a quota gratuita do
+       Supabase. */
+    const intervalo = setInterval(() => apanharAtraso(true), 20 * 60 * 1000);
     return () => {
       cancelled = true;
-      document.removeEventListener('visibilitychange', apanharAtraso);
-      window.removeEventListener('focus', apanharAtraso);
+      document.removeEventListener('visibilitychange', aoFocar);
+      window.removeEventListener('focus', aoFocar);
       clearInterval(intervalo);
     };
   }, [table, teamId, ready]);
