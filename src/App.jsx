@@ -21598,6 +21598,10 @@ function withConvocadosInAttendance(f) {
 }
 
 function MatchModal({ match, players, standings, season, onClose, onSave, clinico, onIntegrarConvidado }) {
+  // Só para o Relatório de jogo: no telemóvel, 8 colunas espremidas ficam
+  // ilegíveis (nomes cortados, campos com um dígito de largura) — ver a
+  // nota junto da tabela, mais abaixo.
+  const isNarrowReport = useIsMobile(700);
   /* Os campos de lista têm de existir SEMPRE, mesmo ao abrir um jogo
      gravado antes de eles existirem. Sem isto, `f.report[p.id]` e
      `f.starters.includes(...)` rebentam ao editar um jogo antigo — e o
@@ -21846,7 +21850,14 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
           <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
             Relatório de jogo — titular, capitão, minutos, cartão, golos, assistências, nota
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
+          <div style={{
+            display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto',
+            // No telemóvel, a tabela volta a ter uma largura mínima por
+            // linha e desliza para o lado — 8 colunas a espremer no ecrã
+            // todo (a versão só de grelha, boa no computador) ficava com
+            // nomes cortados a meio e caixas de um dígito de largura.
+            overflowX: isNarrowReport ? 'auto' : 'visible',
+          }}>
             {convocadoPlayers.map(p => {
               const r = f.report[p.id] || {};
               const isStarter = f.starters.includes(p.id);
@@ -21856,6 +21867,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
                 <div key={p.id} style={{
                   display: 'grid', gridTemplateColumns: '1.4fr auto auto 0.8fr 1.2fr 0.7fr 0.7fr 0.7fr', gap: 10, alignItems: 'center',
                   padding: '9px 12px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7,
+                  minWidth: isNarrowReport ? 620 : undefined,
                 }}>
                   <span style={{ fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.number ? `${p.number} ` : ''}{p.name}
