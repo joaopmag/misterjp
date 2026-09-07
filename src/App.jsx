@@ -14791,14 +14791,31 @@ const FORMATOS_JOGO = [
    quadro de posições. Antes o mesmo lugar tinha três nomes conforme a
    formação — ED/EE no 4-4-2 e no 3-4-3, MD/ME no 3-5-2 — e ficava por
    perceber se era um extremo, um médio ou um lateral. É sempre a mesma
-   coisa: quem faz o corredor. */
+   coisa: quem faz o corredor.
+
+   ED, EE e MOC CONTINUAM AQUI DE PROPÓSITO, e são ESCRITOS como EX e MO
+   (ver `rotuloDoLugar`, logo abaixo). O quadro não distingue o lado de
+   um extremo, mas o preenchimento automático precisa de o distinguir:
+   se os dois lugares de ala se chamassem os dois 'EX', o primeiro a ser
+   preenchido levava o primeiro extremo da lista — e o extremo esquerdo
+   ia parar à direita. Guardar o lado e escrever a sigla curta dá as duas
+   coisas ao mesmo tempo. */
 const FORMACOES = {
-  '4-3-3': ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MOC', 'ED', 'PL', 'EE'],
+  '4-3-3': ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MC', 'ED', 'PL', 'EE'],
   '4-4-2': ['GR', 'DD', 'DC', 'DC', 'DE', 'AD', 'MC', 'MC', 'AE', 'PL', 'PL'],
-  '4-2-3-1': ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'ED', 'MOC', 'EE', 'PL'],
+  '4-2-3-1': ['GR', 'DD', 'DC', 'DC', 'DE', 'MC', 'MC', 'ED', 'MOC', 'EE', 'PL'],
   '3-4-3': ['GR', 'DC', 'DC', 'DC', 'AD', 'MC', 'MC', 'AE', 'ED', 'PL', 'EE'],
-  '3-5-2': ['GR', 'DC', 'DC', 'DC', 'AD', 'MC', 'MC', 'MC', 'AE', 'PL', 'PL'],
+  '3-5-2': ['GR', 'DC', 'DC', 'DC', 'AD', 'MC', 'MD', 'MC', 'AE', 'PL', 'PL'],
 };
+
+/* O QUE SE ESCREVE NO LUGAR, que nem sempre é o nome do lugar.
+
+   O onze do jogo passa a falar a mesma língua do quadro de posições: EX
+   para extremo (sem dizer o lado) e MO para médio ofensivo. Por baixo, o
+   lugar continua a chamar-se ED, EE ou MOC, que é o que faz o jogador
+   certo cair no sítio certo (ver a nota em FORMACOES). */
+const ROTULO_DO_LUGAR = { ED: 'EX', EE: 'EX', MOC: 'MO' };
+const rotuloDoLugar = (lugar) => ROTULO_DO_LUGAR[lugar] || lugar || '';
 
 /* Escolhe o melhor jogador livre para um lugar.
 
@@ -14979,9 +14996,9 @@ const LAYOUT_FORMACAO = {
   //         GR            DD            DC            DC            DE
   '4-3-3': [
     [0.05, 0.50], [0.23, 0.84], [0.20, 0.62], [0.20, 0.38], [0.23, 0.16],
-    //   MD (trinco)   MC            MOC
+    //   MD (trinco)   MC            MC
     [0.38, 0.50], [0.53, 0.34], [0.53, 0.66],
-    //   ED            PL            EE
+    //   EX (dir.)     PL            EX (esq.)
     [0.74, 0.84], [0.86, 0.50], [0.74, 0.16],
   ],
   //         GR            DD            DC            DC            DE
@@ -14995,9 +15012,9 @@ const LAYOUT_FORMACAO = {
   //         GR            DD            DC            DC            DE
   '4-2-3-1': [
     [0.05, 0.50], [0.23, 0.84], [0.20, 0.62], [0.20, 0.38], [0.23, 0.16],
-    //   MD            MC
+    //   MC            MC
     [0.38, 0.60], [0.38, 0.40],
-    //   ED            MOC           EE
+    //   EX (dir.)     MO            EX (esq.)
     [0.60, 0.82], [0.60, 0.50], [0.60, 0.18],
     //   PL
     [0.86, 0.50],
@@ -15007,14 +15024,16 @@ const LAYOUT_FORMACAO = {
     [0.05, 0.50], [0.20, 0.70], [0.18, 0.50], [0.20, 0.30],
     //   AD            MC            MC            AE
     [0.45, 0.88], [0.44, 0.62], [0.44, 0.38], [0.45, 0.12],
-    //   ED            PL            EE
+    //   EX (dir.)     PL            EX (esq.)
     [0.74, 0.80], [0.86, 0.50], [0.74, 0.20],
   ],
   //         GR            DC            DC            DC
   '3-5-2': [
     [0.05, 0.50], [0.20, 0.70], [0.18, 0.50], [0.20, 0.30],
-    //   AD            MC            MC            MC            AE
-    [0.50, 0.90], [0.42, 0.62], [0.40, 0.50], [0.42, 0.38], [0.50, 0.10],
+    //   AD            MC            MD (trinco)   MC            AE
+    // O trinco recua para trás dos interiores, como no quadro de posições:
+    // três médios em linha não é um 3-5-2, é uma fila.
+    [0.50, 0.90], [0.48, 0.62], [0.36, 0.50], [0.48, 0.38], [0.50, 0.10],
     //   PL            PL
     [0.84, 0.60], [0.84, 0.40],
   ],
@@ -15059,7 +15078,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
             data-slot={i}
             onPointerDown={l.jogador ? arrasto.onPointerDown(String(i)) : undefined}
             onClick={() => onTrocar(i)}
-            title={l.jogador ? `${l.lugar} · ${l.jogador.name} — arrasta para trocar, ou toca para trocar de jogador` : `${l.lugar} — por preencher`}
+            title={l.jogador ? `${rotuloDoLugar(l.lugar)} · ${l.jogador.name} — arrasta para trocar, ou toca para trocar de jogador` : `${rotuloDoLugar(l.lugar)} — por preencher`}
             style={{
               position: 'absolute', left: `${fx * 100}%`, top: `${fy * 100}%`,
               // Só translateX centra na horizontal — na vertical o ponto de
@@ -15081,7 +15100,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
               background: l.jogador ? T.corEquipa : '#00000055',
               color: l.jogador ? '#fff' : T.mutedDim,
               border: `1px solid ${l.jogador ? T.corEquipa : T.line}`,
-            }}>{l.jogador ? (l.jogador.number || l.lugar) : l.lugar}</span>
+            }}>{l.jogador ? (l.jogador.number || rotuloDoLugar(l.lugar)) : rotuloDoLugar(l.lugar)}</span>
             {l.jogador && (
               <span style={{
                 fontSize: 10.5, fontWeight: 600, color: TEXT_ON_ACCENT,
@@ -16003,7 +16022,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
           FichaJogo ("Formação") — é a mesma ação (escolher quem ocupa um
           lugar do onze), só que aqui o jogo é simulado, não real. */}
       {trocar && jogo && (
-        <Modal title="Formação" subtitle={`${jogo.periodos[trocar.periodo].onze[trocar.indice].lugar} · ${jogo.periodos[trocar.periodo].numero}ª parte`} onClose={() => setTrocar(null)}>
+        <Modal title="Formação" subtitle={`${rotuloDoLugar(jogo.periodos[trocar.periodo].onze[trocar.indice].lugar)} · ${jogo.periodos[trocar.periodo].numero}ª parte`} onClose={() => setTrocar(null)}>
           <p style={{ color: T.mutedDim, fontSize: 12.5, margin: '0 0 12px' }}>
             Se escolheres alguém que já está em campo, os dois trocam de lugar.
           </p>
@@ -17476,7 +17495,7 @@ function campoDaEquipaHtml({ lugares, formacao }) {
     const [fx, fy] = layout[i] || [0.5, 0.5];
     const x = fx * 105;
     const y = fy * 68;
-    const lugar = escapeHtmlText(l.lugar || '');
+    const lugar = escapeHtmlText(rotuloDoLugar(l.lugar));
     const nome = escapeHtmlText(l.nome || '—');
     return `<text x="${x.toFixed(2)}" y="${(y - 1.4).toFixed(2)}" text-anchor="middle" font-size="2.1" fill="#ffffff88">${lugar}</text>`
       + `<text x="${x.toFixed(2)}" y="${(y + 1.6).toFixed(2)}" text-anchor="middle" font-size="2.7" font-weight="600" fill="${l.nome ? '#F0E7D6' : '#ffffff55'}">${nome}</text>`;
@@ -17569,7 +17588,7 @@ function PrintOnzeAmigavel({ session, jogo, players, ideias }) {
               position: 'absolute', ...posCampoPrint(fx, fy),
               transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '20%',
             }}>
-              <div style={{ fontSize: 8.5, color: '#888' }}>{l.lugar}</div>
+              <div style={{ fontSize: 8.5, color: '#888' }}>{rotuloDoLugar(l.lugar)}</div>
               <div style={{
                 fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, whiteSpace: 'nowrap',
                 overflow: 'hidden', textOverflow: 'ellipsis', color: l.nome ? '#111' : '#bbb',
@@ -19639,7 +19658,7 @@ function PrintFichaJogo({ match, players, season }) {
               position: 'absolute', ...posCampoPrint(fx, fy),
               transform: 'translate(-50%, -50%)', textAlign: 'center', maxWidth: '20%',
             }}>
-              <div style={{ fontSize: 8.5, color: '#888' }}>{l.lugar}</div>
+              <div style={{ fontSize: 8.5, color: '#888' }}>{rotuloDoLugar(l.lugar)}</div>
               <div style={{
                 fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, whiteSpace: 'nowrap',
                 overflow: 'hidden', textOverflow: 'ellipsis', color: l.nome ? '#111' : '#bbb',
