@@ -13708,7 +13708,8 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   // espaço vazio à direita), e no telemóvel cabem vários por linha em
   // vez de um pill gigante por linha.
   const FAMILIAS_JOGADOR = [
-    { id: 'gr_def', posicoes: ['GR', 'DD', 'DC', 'DE'] },
+    { id: 'gr', posicoes: ['GR'] },
+    { id: 'def', posicoes: ['DD', 'DC', 'DE'] },
     { id: 'meio', posicoes: ['MD', 'MC', 'MOC'] },
     { id: 'avancado', posicoes: ['EE', 'ED', 'PL'] },
   ];
@@ -13722,22 +13723,17 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   const cabecalhoJogador = (
     <div style={{ marginBottom: 14 }}>
       {linhasCabecalho.map((linha, i) => (
-        <div key={i} style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(auto-fit, minmax(${isNarrow ? 92 : 120}px, 1fr))`,
-          gap: 8,
-          marginBottom: 8,
-        }}>
+        <div key={i} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
           {linha.map(p => {
             const on = jogadorId === p.id;
             const est = diEstado(diRegisto(registos, p.id));
             return (
               <button key={p.id} onClick={() => setJogadorId(p.id)} style={{
-                padding: '6px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
+                padding: '6px 11px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
                 background: on ? '#B5393F' : 'transparent',
                 color: on ? TEXT_ON_ACCENT : T.muted,
                 border: `1px solid ${on ? '#B5393F' : T.line}`,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center',
+                whiteSpace: 'nowrap', textAlign: 'left',
               }}>
                 <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span>{' '}
                 {shortPlayerName(p, players)}
