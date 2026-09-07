@@ -13409,7 +13409,7 @@ function DiBarra({ valor, largura = 78 }) {
    a dizer 34/40 para sempre — errado de uma forma que ninguém repara.
  Serve o staff (com N/A) e, quando o
    treinador regista a autoavaliação à mão, também o jogador (sem N/A). */
-function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, permitirNA, onChange, onComentario, onClose, onGuardar }) {
+function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, permitirNA, onChange, onComentario, onClose, onGuardar, onSubmeter, podeSubmeter, aSubmeter }) {
   const [dimAberta, setDimAberta] = useState(DI_DIMENSOES[0].id);
   const respondidos = diRespondido(respostas);
   const topoRef = useRef(null);
@@ -13554,12 +13554,17 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
         {onGuardar && <Btn onClick={onGuardar}><Check size={15} /> Guardar</Btn>}
         {proximaDim && (
           <Btn onClick={irParaProximaSeccao}>
             {proximaDim.label.split(' ')[0]} <ChevronRight size={15} />
+          </Btn>
+        )}
+        {onSubmeter && (
+          <Btn onClick={onSubmeter} disabled={!podeSubmeter || aSubmeter}>
+            <Check size={15} /> {aSubmeter ? 'A submeter…' : 'Submeter'}
           </Btn>
         )}
       </div>
@@ -24079,6 +24084,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return <PlayerCompeticaoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
   }
 
+  if (activeType === 'desenvolvimento') {
+    return <PlayerDesenvolvimentoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+  }
+
   if (activeType === 'portal') {
     return (
       <PlayerPortalHome
@@ -24088,6 +24097,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         onOpenBiblioteca={() => setActiveType('biblioteca')}
         onOpenJogos={() => setActiveType('jogos')}
         onOpenCompeticao={() => setActiveType('competicao')}
+        onOpenDesenvolvimento={() => setActiveType('desenvolvimento')}
       />
     );
   }
@@ -24386,7 +24396,7 @@ function TemaCirculo({ Icon, label, onClick }) {
   );
 }
 
-function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca, onOpenJogos, onOpenCompeticao }) {
+function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca, onOpenJogos, onOpenCompeticao, onOpenDesenvolvimento }) {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
@@ -24411,6 +24421,7 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBibliot
         <TemaCirculo Icon={Tv} label="Biblioteca" onClick={onOpenBiblioteca} />
         <TemaCirculo Icon={Trophy} label="Jogos" onClick={onOpenJogos} />
         <TemaCirculo Icon={ListOrdered} label="Competição" onClick={onOpenCompeticao} />
+        <TemaCirculo Icon={TrendingUp} label="Desenvolvimento" onClick={onOpenDesenvolvimento} />
       </div>
     </div>
   );
@@ -24690,6 +24701,164 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* DESENVOLVIMENTO, DO LADO DO ATLETA — a autoavaliação do Desenvolvimento
+   Individual (as mesmas 30 perguntas, os mesmos 6 blocos, a mesma escala
+   1-5, reutilizando o `DiQuestionario` já existente do lado do staff).
+
+   Regras deste ecrã:
+   · Mostra sempre o momento de avaliação mais recente que tenha uma linha
+     de registo para este atleta (a função do servidor já filtra isso).
+   · Cada resposta grava-se sozinha, assim que é dada — nada fica só na
+     memória do telemóvel à espera de um "Guardar" no fim.
+   · Só depois de as 30 estarem respondidas aparece o botão "Submeter",
+     com uma confirmação a avisar que deixa de poder editar.
+   · Depois de submetido (`enviado`), fica um ecrã de agradecimento — a
+     pergunta não volta a aparecer aqui. Quando o staff cria um NOVO
+     momento, esse é que passa a ser "o mais recente com registo", e a
+     pergunta volta a aparecer, para esse momento.
+   · O bloqueio depois de submetido é IMPOSTO NO SERVIDOR (a função
+     `checkin_desenvolvimento_responder` recusa qualquer escrita depois
+     de `enviado = true`), não só escondido na interface — para não
+     bastar reabrir a página antiga para voltar a editar. */
+function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
+  const [estado, dados] = usePortalFetch('checkin_desenvolvimento', code, teamId);
+  const [auto, setAuto] = useState(null);
+  const [enviado, setEnviado] = useState(null);
+  const [confirmar, setConfirmar] = useState(false);
+  const [aSubmeter, setASubmeter] = useState(false);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if (dados && dados.registoId && auto === null) {
+      setAuto(dados.auto || {});
+      setEnviado(!!dados.enviado);
+    }
+  }, [dados, auto]);
+
+  const voltar = (
+    <button onClick={onBack} style={{
+      display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+      borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+    }}>
+      <ChevronLeft size={15} /> Voltar
+    </button>
+  );
+
+  if (estado === 'a-carregar') {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar}
+        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+      </div>
+    );
+  }
+  if (estado === 'erro') {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar}
+        <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>
+      </div>
+    );
+  }
+
+  if (!dados || !dados.momento || !dados.registoId) {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar}
+        <EmptyState text="Ainda não há nenhuma autoavaliação para responderes. Quando a equipa técnica criar um momento de avaliação, aparece aqui." />
+      </div>
+    );
+  }
+
+  if (enviado) {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar}
+        <EmptyState text={`Obrigado! Já respondeste à autoavaliação de "${dados.momento.nome}".`} />
+      </div>
+    );
+  }
+
+  const gravarResposta = async (indId, valor) => {
+    const anterior = auto || {};
+    const novo = { ...anterior, [indId]: valor === undefined ? null : valor };
+    setAuto(novo); // otimista — a resposta muda de cor já, sem esperar pela rede
+    setErro('');
+    try {
+      const { data, error } = await supabase.rpc('checkin_desenvolvimento_responder', {
+        p_code: code, p_team: teamId, p_registo_id: dados.registoId,
+        p_auto: { [indId]: valor === undefined ? null : valor }, p_submeter: false,
+      });
+      if (error || !(data && data.ok)) throw (error || new Error('recusado'));
+    } catch (e) {
+      setAuto(anterior); // não ficou guardado — não se finge que ficou
+      setErro('Essa resposta não ficou guardada. Tenta outra vez.');
+    }
+  };
+
+  const confirmarSubmissao = async () => {
+    setASubmeter(true);
+    setErro('');
+    try {
+      const { data, error } = await supabase.rpc('checkin_desenvolvimento_responder', {
+        p_code: code, p_team: teamId, p_registo_id: dados.registoId,
+        p_auto: {}, p_submeter: true,
+      });
+      if (error || !(data && data.ok)) throw (error || new Error('recusado'));
+      setEnviado(true);
+      setConfirmar(false);
+    } catch (e) {
+      setErro('Não foi possível submeter. Tenta outra vez.');
+    } finally {
+      setASubmeter(false);
+    }
+  };
+
+  const respondidos = diRespondido(auto);
+  const podeSubmeter = respondidos === DI_INDICADORES.length;
+
+  return (
+    <>
+      <DiQuestionario
+        titulo="Autoavaliação"
+        subtitulo={dados.momento.nome}
+        posicao={dados.posicao}
+        respostas={auto}
+        permitirNA={false}
+        onChange={gravarResposta}
+        onClose={onBack}
+        onSubmeter={() => setConfirmar(true)}
+        podeSubmeter={podeSubmeter}
+        aSubmeter={aSubmeter}
+      />
+      {erro && (
+        <div style={{
+          position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 70,
+          background: T.surfaceRaise, border: `1px solid ${T.bad}`, color: T.bad, borderRadius: 8,
+          padding: '9px 16px', fontSize: 12.5, ...body,
+        }}>{erro}</div>
+      )}
+      {confirmar && (
+        <div style={{
+          position: 'fixed', inset: 0, background: '#000000aa', zIndex: 60,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div style={{ background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20, maxWidth: 380, width: '100%' }}>
+            <div style={{ ...display, fontSize: 16, color: T.cream, marginBottom: 8 }}>Submeter respostas?</div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 18, lineHeight: 1.5 }}>
+              Depois de submeteres não podes voltar a editar nenhuma resposta desta autoavaliação.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <Btn variant="ghost" onClick={() => setConfirmar(false)} disabled={aSubmeter}>Cancelar</Btn>
+              <Btn onClick={confirmarSubmissao} disabled={aSubmeter}>{aSubmeter ? 'A submeter…' : 'Confirmar'}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
