@@ -13708,27 +13708,44 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   // espaço vazio à direita), e no telemóvel cabem vários por linha em
   // vez de um pill gigante por linha.
   const FAMILIAS_JOGADOR = [
-    { id: 'gr', posicoes: ['GR'] },
-    { id: 'def', posicoes: ['DD', 'DC', 'DE'] },
-    { id: 'meio', posicoes: ['MD', 'MC', 'MOC'] },
-    { id: 'avancado', posicoes: ['EE', 'ED', 'PL'] },
+    { id: 'gr', label: 'Guarda-redes', posicoes: ['GR'] },
+    { id: 'def', label: 'Defesas', posicoes: ['DD', 'DC', 'DE'] },
+    { id: 'meio', label: 'Médios', posicoes: ['MD', 'MC', 'MOC'] },
+    { id: 'avancado', label: 'Avançados', posicoes: ['EE', 'ED', 'PL'] },
   ];
   const familiaDaPosicao = (pos) => FAMILIAS_JOGADOR.find(f => f.posicoes.includes(pos))?.id || 'outros';
 
   const jogadoresParaCabecalho = jogadoresOrdenados.filter(p => registos.size === 0 || registos.has(p.id));
-  const linhasCabecalho = [...FAMILIAS_JOGADOR.map(f => f.id), 'outros']
-    .map(fid => jogadoresParaCabecalho.filter(p => familiaDaPosicao(p.position) === fid))
-    .filter(linha => linha.length > 0);
+  const linhasCabecalho = [...FAMILIAS_JOGADOR, { id: 'outros', label: 'Outros' }]
+    .map(f => ({ ...f, jogadores: jogadoresParaCabecalho.filter(p => familiaDaPosicao(p.position) === f.id) }))
+    .filter(f => f.jogadores.length > 0);
 
-  const cabecalhoJogador = (
+  // No telemóvel, uma droplist por posição em vez da grelha de pills —
+  // é mais rápido de percorrer com o polegar do que ir a scroll por
+  // 4 blocos de botões, e o texto nunca corta.
+  const cabecalhoJogador = isNarrow ? (
     <div style={{ marginBottom: 14 }}>
-      {linhasCabecalho.map((linha, i) => (
-        <div key={i} style={{
-          display: isNarrow ? 'grid' : 'flex',
-          gridTemplateColumns: isNarrow ? 'repeat(2, 1fr)' : undefined,
-          gap: 8, flexWrap: isNarrow ? undefined : 'wrap', marginBottom: 8,
-        }}>
-          {linha.map(p => {
+      <Select value={jogadorId || ''} onChange={e => setJogadorId(e.target.value)}>
+        <option value="" disabled>Escolhe um jogador…</option>
+        {linhasCabecalho.map(f => (
+          <optgroup key={f.id} label={f.label}>
+            {f.jogadores.map(p => {
+              const est = diEstado(diRegisto(registos, p.id));
+              return (
+                <option key={p.id} value={p.id}>
+                  {p.position || '--'} · {shortPlayerName(p, players)}{est !== 'pendente' ? ' ·' : ''}
+                </option>
+              );
+            })}
+          </optgroup>
+        ))}
+      </Select>
+    </div>
+  ) : (
+    <div style={{ marginBottom: 14 }}>
+      {linhasCabecalho.map(f => (
+        <div key={f.id} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+          {f.jogadores.map(p => {
             const on = jogadorId === p.id;
             const est = diEstado(diRegisto(registos, p.id));
             return (
@@ -13738,8 +13755,6 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                 color: on ? TEXT_ON_ACCENT : T.muted,
                 border: `1px solid ${on ? '#B5393F' : T.line}`,
                 whiteSpace: 'nowrap', textAlign: 'left',
-                overflow: isNarrow ? 'hidden' : 'visible',
-                textOverflow: isNarrow ? 'ellipsis' : 'clip',
               }}>
                 <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span>{' '}
                 {shortPlayerName(p, players)}
