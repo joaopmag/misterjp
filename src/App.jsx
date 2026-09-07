@@ -24628,7 +24628,12 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
       {!est || est.jogos === 0 ? (
         <EmptyState text="Ainda sem jogos de competição registados." />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 10, maxWidth: 720 }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isNarrow ? 'repeat(auto-fill, minmax(96px, 1fr))' : 'repeat(8, 1fr)',
+          gap: 10,
+          maxWidth: isNarrow ? 720 : '100%',
+        }}>
           {tileEstat(est.jogos, 'Convocatórias')}
           {tileEstat(est.titular, 'Titular')}
           {tileEstat(est.suplenteUtilizado, 'Suplente uti', 'Jogos em que entrou vindo do banco')}
