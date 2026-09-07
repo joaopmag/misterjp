@@ -14,7 +14,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper
+  HeartPulse, Flame, PartyPopper, ListOrdered
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -24031,6 +24031,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return <PlayerJogosHome code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
   }
 
+  if (activeType === 'competicao') {
+    return <PlayerCompeticaoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+  }
+
   if (activeType === 'portal') {
     return (
       <PlayerPortalHome
@@ -24039,6 +24043,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         onOpenTreino={() => setActiveType('treino')}
         onOpenBiblioteca={() => setActiveType('biblioteca')}
         onOpenJogos={() => setActiveType('jogos')}
+        onOpenCompeticao={() => setActiveType('competicao')}
       />
     );
   }
@@ -24337,7 +24342,7 @@ function TemaCirculo({ Icon, label, onClick }) {
   );
 }
 
-function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca, onOpenJogos }) {
+function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca, onOpenJogos, onOpenCompeticao }) {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
@@ -24361,6 +24366,7 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBibliot
         <TemaCirculo Icon={CalendarDays} label="Treino" onClick={onOpenTreino} />
         <TemaCirculo Icon={Tv} label="Biblioteca" onClick={onOpenBiblioteca} />
         <TemaCirculo Icon={Trophy} label="Jogos" onClick={onOpenJogos} />
+        <TemaCirculo Icon={ListOrdered} label="Competição" onClick={onOpenCompeticao} />
       </div>
     </div>
   );
@@ -24405,6 +24411,235 @@ function PlayerJogosHome({ code, teamId, onBack }) {
       {subTab === 'convocatorias' && <PlayerConvocatoriasTab code={code} teamId={teamId} />}
       {subTab === 'planoJogo' && <PlayerPlanoJogoTab code={code} teamId={teamId} />}
       {subTab === 'adversario' && <PlayerAdversarioTab code={code} teamId={teamId} />}
+    </div>
+  );
+}
+
+/* COMPETIÇÃO, DO LADO DO ATLETA — classificação + jornadas da competição
+   (mesma tabela que o staff configura em Jogos › Competições e
+   jornadas), mais as PRÓPRIAS estatísticas de competição do atleta.
+
+   Só consulta, nunca edição — tal como o resto do Portal. A função do
+   servidor (`checkin_competicao`) já devolve as estatísticas calculadas
+   e reduzidas ao próprio atleta: nunca chega ao browser o relatório de
+   outro colega, mesmo que ele apareça na mesma lista de convocados —
+   foi escolha explícita não comparar atletas entre si aqui, ao
+   contrário do "Estatísticas" que o staff vê no separador Jogos, que é
+   do plantel todo. */
+function PlayerCompeticaoView({ code, teamId, onBack }) {
+  const [estado, dados] = usePortalFetch('checkin_competicao', code, teamId);
+  const isNarrow = useIsMobile(560);
+  const [viewId, setViewId] = useState(null);
+  const [roundIdx, setRoundIdx] = useState(0);
+
+  const { competitions } = normalizeStandings(dados && dados.standings);
+  const comp = competitions.find(c => c.id === viewId) || activeCompetitionOf(dados && dados.standings);
+  const teams = competitionTable(comp);
+  const rounds = (comp && comp.rounds) || [];
+  const round = rounds[roundIdx];
+  const nossoClube = (dados && dados.clube) || '';
+  const est = (dados && dados.estatisticas) || null;
+
+  useEffect(() => { setRoundIdx(0); }, [comp && comp.id]);
+  useEffect(() => {
+    if (roundIdx >= rounds.length && rounds.length > 0) setRoundIdx(rounds.length - 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rounds.length]);
+
+  const isUs = (t) => {
+    if (!nossoClube || !t || !t.name) return false;
+    const a = String(t.name).toLowerCase(), b = nossoClube.toLowerCase();
+    return a === b || a.includes(b) || b.includes(a);
+  };
+
+  const voltar = (
+    <button onClick={onBack} style={{
+      display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+      borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+    }}>
+      <ChevronLeft size={15} /> Voltar
+    </button>
+  );
+
+  if (estado === 'a-carregar') {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar}
+        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+      </div>
+    );
+  }
+  if (estado === 'erro') {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar}
+        <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>
+      </div>
+    );
+  }
+
+  const nome = splitCompetitionName((comp && comp.name) || 'Competição');
+  const hasData = teams.length > 0 || rounds.length > 0;
+
+  const dataCurta = (d) => (d
+    ? (/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d)
+    : '');
+
+  const tileEstat = (value, label, help) => (
+    <div title={help} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '14px 10px', textAlign: 'center' }}>
+      <div style={{ ...display, fontSize: 22, color: T.warn, fontWeight: 600, lineHeight: 1 }}>{value}</div>
+      <div style={{ fontSize: 10.5, color: T.mutedDim, marginTop: 5, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+      {voltar}
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>{nome.title || 'Competição'}</div>
+      {nome.subtitle && <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 20 }}>{nome.subtitle}</div>}
+      {!nome.subtitle && <div style={{ marginBottom: 20 }} />}
+
+      {competitions.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 18 }}>
+          {competitions.map(c => (
+            <button key={c.id} type="button" onClick={() => setViewId(c.id)} style={{
+              padding: '5px 11px', borderRadius: 16, fontSize: 12, cursor: 'pointer', ...body,
+              background: comp && c.id === comp.id ? '#B5393F' : 'transparent',
+              color: comp && c.id === comp.id ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${comp && c.id === comp.id ? '#B5393F' : T.line}`,
+            }}>{c.name || 'Sem nome'}</button>
+          ))}
+        </div>
+      )}
+
+      {!hasData ? (
+        <EmptyState text="Ainda sem competição partilhada. Fala com a equipa técnica." />
+      ) : (
+        <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, marginBottom: 28 }}>
+          {rounds.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 10 }}>
+                <button onClick={() => setRoundIdx(i => Math.max(0, i - 1))} disabled={roundIdx === 0}
+                  style={{ background: 'none', border: 'none', color: roundIdx === 0 ? T.mutedDim : T.cream, cursor: roundIdx === 0 ? 'default' : 'pointer' }}>
+                  <ChevronLeft size={18} />
+                </button>
+                <span style={{ ...display, fontSize: 14, color: T.cream, textTransform: 'uppercase', letterSpacing: '.06em' }}>{round?.label || `Jornada ${roundIdx + 1}`}</span>
+                <button onClick={() => setRoundIdx(i => Math.min(rounds.length - 1, i + 1))} disabled={roundIdx === rounds.length - 1}
+                  style={{ background: 'none', border: 'none', color: roundIdx === rounds.length - 1 ? T.mutedDim : T.cream, cursor: roundIdx === rounds.length - 1 ? 'default' : 'pointer' }}>
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {(round?.games || []).map((g, i, jogos) => {
+                  const mostraData = i === 0 || g.date !== jogos[i - 1].date;
+                  const nomeEquipa = (nomeTxt, lado) => (
+                    <span style={{
+                      minWidth: 0, textAlign: lado, color: T.cream,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }} title={nomeTxt}>{nomeTxt}</span>
+                  );
+                  const confronto = (
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
+                      columnGap: 8, width: '100%', maxWidth: 420, margin: '0 auto',
+                    }}>
+                      {nomeEquipa(g.home, 'right')}
+                      <span style={{ ...mono, color: T.gold, flexShrink: 0 }}>{g.score || 'vs'}</span>
+                      {nomeEquipa(g.away, 'left')}
+                    </div>
+                  );
+                  return (
+                    <div key={g.id || i}>
+                      {isNarrow && mostraData && dataCurta(g.date) && (
+                        <div style={{ ...mono, fontSize: 11, color: T.mutedDim, textAlign: 'center', margin: '8px 0 2px' }}>
+                          {dataCurta(g.date)}
+                        </div>
+                      )}
+                      {isNarrow ? (
+                        <div style={{ padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}` }}>
+                          {confronto}
+                        </div>
+                      ) : (
+                        <div style={{
+                          display: 'grid', gridTemplateColumns: '40px 1fr 40px', alignItems: 'center',
+                          gap: 10, padding: '6px 10px', fontSize: 13, borderBottom: `1px solid ${T.line}`,
+                        }}>
+                          <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>
+                            {mostraData ? dataCurta(g.date) : ''}
+                          </span>
+                          {confronto}
+                          <span aria-hidden="true" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {teams.length > 0 && (
+            <div className="mjp-scroll-fino" style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, tableLayout: 'fixed', minWidth: 460 }}>
+                <thead>
+                  <tr style={{ color: T.mutedDim, ...mono, fontSize: 11 }}>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', width: 30 }}>#</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px' }}>Equipa</th>
+                    {['P', 'J', 'V', 'E', 'D', 'GM', 'GS', 'DG'].map(h => (
+                      <th key={h} style={{ padding: '4px 6px', width: 34 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {teams.map((t, i) => {
+                    const nossa = isUs(t);
+                    return (
+                      <tr key={t.id} style={{ color: nossa ? T.gold : T.cream, background: nossa ? `${T.crimson}22` : 'transparent', borderTop: `1px solid ${T.line}` }}>
+                        <td style={{ padding: '5px 6px', ...mono }}>{i + 1}</td>
+                        <td
+                          title={t.name}
+                          style={{
+                            padding: '5px 6px', fontWeight: nossa ? 600 : 400,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 0,
+                          }}
+                        >{t.name}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono, fontWeight: 600 }}>{t.P}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.J}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.V}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.E}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.D}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.GM}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.GS}</td>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', ...mono }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>
+        As tuas estatísticas na competição
+      </div>
+      {!est || est.jogos === 0 ? (
+        <EmptyState text="Ainda sem jogos de competição registados." />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 10, maxWidth: 720 }}>
+          {tileEstat(est.jogos, 'Convocatórias')}
+          {tileEstat(est.titular, 'Titular')}
+          {tileEstat(est.suplenteUtilizado, 'Suplente uti', 'Jogos em que entrou vindo do banco')}
+          {tileEstat(est.minutos, 'Minutos')}
+          {tileEstat(est.golos, 'Golos')}
+          {tileEstat(est.assistencias, 'Assistências')}
+          {tileEstat(est.amarelos, 'Amarelos')}
+          {tileEstat(est.vermelhos, 'Vermelhos')}
+          {tileEstat(est.notaMedia ?? '—', 'Nota média')}
+        </div>
+      )}
     </div>
   );
 }
