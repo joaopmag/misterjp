@@ -13700,26 +13700,53 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   };
 
   // ---------------------------------------------------------------
+  // Agrupado por família de posição — a mesma lógica de 3 blocos da
+  // ficha impressa (GR+Defesas / Médios / Avançados), só que aqui
+  // juntamos GR à linha das defesas, como foi pedido. Cada linha é uma
+  // grid que ocupa sempre a largura toda disponível: os pills esticam-se
+  // para preencher a linha (em vez de ficarem encostados à esquerda com
+  // espaço vazio à direita), e no telemóvel cabem vários por linha em
+  // vez de um pill gigante por linha.
+  const FAMILIAS_JOGADOR = [
+    { id: 'gr_def', posicoes: ['GR', 'DD', 'DC', 'DE'] },
+    { id: 'meio', posicoes: ['MD', 'MC', 'MOC'] },
+    { id: 'avancado', posicoes: ['EE', 'ED', 'PL'] },
+  ];
+  const familiaDaPosicao = (pos) => FAMILIAS_JOGADOR.find(f => f.posicoes.includes(pos))?.id || 'outros';
+
+  const jogadoresParaCabecalho = jogadoresOrdenados.filter(p => registos.size === 0 || registos.has(p.id));
+  const linhasCabecalho = [...FAMILIAS_JOGADOR.map(f => f.id), 'outros']
+    .map(fid => jogadoresParaCabecalho.filter(p => familiaDaPosicao(p.position) === fid))
+    .filter(linha => linha.length > 0);
+
   const cabecalhoJogador = (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-      {jogadoresOrdenados
-        .filter(p => registos.size === 0 || registos.has(p.id))
-        .map(p => {
-          const on = jogadorId === p.id;
-          const est = diEstado(diRegisto(registos, p.id));
-          return (
-            <button key={p.id} onClick={() => setJogadorId(p.id)} style={{
-              padding: '6px 11px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
-              background: on ? '#B5393F' : 'transparent',
-              color: on ? TEXT_ON_ACCENT : T.muted,
-              border: `1px solid ${on ? '#B5393F' : T.line}`,
-            }}>
-              <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span>{' '}
-              {shortPlayerName(p, players)}
-              {est !== 'pendente' && <span style={{ color: on ? TEXT_ON_ACCENT : T.warn }}> ·</span>}
-            </button>
-          );
-        })}
+    <div style={{ marginBottom: 14 }}>
+      {linhasCabecalho.map((linha, i) => (
+        <div key={i} style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(auto-fit, minmax(${isNarrow ? 92 : 120}px, 1fr))`,
+          gap: 8,
+          marginBottom: 8,
+        }}>
+          {linha.map(p => {
+            const on = jogadorId === p.id;
+            const est = diEstado(diRegisto(registos, p.id));
+            return (
+              <button key={p.id} onClick={() => setJogadorId(p.id)} style={{
+                padding: '6px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
+                background: on ? '#B5393F' : 'transparent',
+                color: on ? TEXT_ON_ACCENT : T.muted,
+                border: `1px solid ${on ? '#B5393F' : T.line}`,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center',
+              }}>
+                <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span>{' '}
+                {shortPlayerName(p, players)}
+                {est !== 'pendente' && <span style={{ color: on ? TEXT_ON_ACCENT : T.warn }}> ·</span>}
+              </button>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 
