@@ -13488,7 +13488,7 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
           const feitos = diIndicadoresDa(d.id).filter(i => respostas && respostas[i.id] != null).length;
           const on = dimAberta === d.id;
           return (
-            <button key={d.id} onClick={() => setDimAberta(d.id)} style={{
+            <button key={d.id} onClick={(ev) => { setDimAberta(d.id); ev.currentTarget.blur(); }} style={{
               padding: '7px 10px', borderRadius: 20, fontSize: 11.5, cursor: 'pointer', ...body,
               background: on ? '#B5393F' : 'transparent',
               color: on ? TEXT_ON_ACCENT : (feitos === total ? T.good : T.muted),
@@ -13513,7 +13513,7 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
                 {DI_ESCALA.map(e => (
                   <button
                     key={e.valor}
-                    onClick={() => onChange(ind.id, atual === e.valor ? undefined : e.valor)}
+                    onClick={(ev) => { onChange(ind.id, atual === e.valor ? undefined : e.valor); ev.currentTarget.blur(); }}
                     title={e.desc}
                     style={{
                       padding: '5px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', ...body,
@@ -13525,7 +13525,7 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
                 ))}
                 {permitirNA && (
                   <button
-                    onClick={() => onChange(ind.id, atual === 'na' ? undefined : 'na')}
+                    onClick={(ev) => { onChange(ind.id, atual === 'na' ? undefined : 'na'); ev.currentTarget.blur(); }}
                     title="Não observado — não entra nas médias nem prejudica o jogador"
                     style={{
                       padding: '5px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', ...body,
@@ -24769,6 +24769,21 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
         {voltar}
         <EmptyState text="Ainda não há nenhuma autoavaliação para responderes. Quando a equipa técnica criar um momento de avaliação, aparece aqui." />
+      </div>
+    );
+  }
+
+  // Os dados já chegaram (estado === 'pronto'), mas `auto`/`enviado` só
+  // ficam preenchidos no efeito a seguir a este render — sem esta
+  // guarda, havia um instante em que se tentava mostrar o questionário
+  // com `respostas={null}` (0 de 30, tudo por responder) antes de saber
+  // que afinal já tinha sido submetido. Era esse instante a mais que se
+  // via como um "piscar" ao entrar de novo neste ecrã.
+  if (auto === null) {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar}
+        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
       </div>
     );
   }
