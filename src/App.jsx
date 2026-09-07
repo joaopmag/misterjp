@@ -13426,7 +13426,6 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
   const irParaProximaSeccao = () => {
     if (!proximaDim) return;
     setDimAberta(proximaDim.id);
-    if (topoRef.current) topoRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
