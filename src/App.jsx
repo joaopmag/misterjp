@@ -13723,7 +13723,11 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   const cabecalhoJogador = (
     <div style={{ marginBottom: 14 }}>
       {linhasCabecalho.map((linha, i) => (
-        <div key={i} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div key={i} style={{
+          display: isNarrow ? 'grid' : 'flex',
+          gridTemplateColumns: isNarrow ? 'repeat(2, 1fr)' : undefined,
+          gap: 8, flexWrap: isNarrow ? undefined : 'wrap', marginBottom: 8,
+        }}>
           {linha.map(p => {
             const on = jogadorId === p.id;
             const est = diEstado(diRegisto(registos, p.id));
@@ -13734,6 +13738,8 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                 color: on ? TEXT_ON_ACCENT : T.muted,
                 border: `1px solid ${on ? '#B5393F' : T.line}`,
                 whiteSpace: 'nowrap', textAlign: 'left',
+                overflow: isNarrow ? 'hidden' : 'visible',
+                textOverflow: isNarrow ? 'ellipsis' : 'clip',
               }}>
                 <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span>{' '}
                 {shortPlayerName(p, players)}
