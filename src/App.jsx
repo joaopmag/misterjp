@@ -24486,9 +24486,9 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
     : '');
 
   const tileEstat = (value, label, help) => (
-    <div title={help} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '14px 10px', textAlign: 'center' }}>
+    <div title={help} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: isNarrow ? '14px 10px' : '14px 6px', textAlign: 'center' }}>
       <div style={{ ...display, fontSize: 22, color: T.warn, fontWeight: 600, lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 10.5, color: T.mutedDim, marginTop: 5, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 10, color: T.mutedDim, marginTop: 5, textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
     </div>
   );
 
@@ -24630,7 +24630,7 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: isNarrow ? 'repeat(auto-fill, minmax(96px, 1fr))' : 'repeat(8, 1fr)',
+          gridTemplateColumns: isNarrow ? 'repeat(auto-fill, minmax(96px, 1fr))' : 'repeat(9, 1fr)',
           gap: 10,
           maxWidth: isNarrow ? 720 : '100%',
         }}>
