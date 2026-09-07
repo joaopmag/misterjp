@@ -24791,7 +24791,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
     return (
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
         {voltar}
-        <EmptyState text={`Obrigado! Já respondeste à autoavaliação de "${dados.momento.nome}".`} />
+        <EmptyState text="Obrigado! Já respondeste a este momento de avaliação." />
       </div>
     );
   }
