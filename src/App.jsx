@@ -17941,10 +17941,15 @@ function PrintExerciseBlock({ e, ex, index, equipas }) {
         <img
           src={ex.attachment.dataUrl}
           alt={ex.attachment.name}
-          style={{ width: '100%', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
+          style={{ width: '82%', display: 'block', margin: '0 auto', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
         />
       ) : (ex.attachment && ex.attachment.type === 'pdf') ? null : (
-        <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+        // Só aqui, na ficha do treino — reduzido de 100% para 82% da
+        // largura para caber mais exercícios por folha, sem ficarem
+        // pequenos demais para se perceber o desenho. Os outros sítios
+        // que usam este mesmo diagrama (Ficha de Jogador, Prancheta)
+        // ficam exatamente como estavam.
+        <svg viewBox={PITCH_VIEWBOX} style={{ width: '82%', aspectRatio: PITCH_ASPECT, display: 'block', margin: '0 auto', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
           <PitchMarkings printMode />
           <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
           {(() => {
