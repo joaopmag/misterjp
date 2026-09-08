@@ -14,7 +14,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered
+  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -15465,16 +15465,24 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
      Quem vai para cada equipa continua a decidir-se como sempre: pelo
      "Distribuir"/"Baralhar de novo", ou à mão, equipa a equipa, com o
      lápis que já existe (ver `editarEquipa` mais abaixo) — não faz
-     sentido duplicar essa parte, que já funciona bem. */
-  const [perguntarManual, setPerguntarManual] = useState(null); // exercício pendente de resposta
-  const [construirEquipas, setConstruirEquipas] = useState(null); // { exercicio, equipas: [n, n, ...] }
+     sentido duplicar essa parte, que já funciona bem.
 
-  const adicionarExercicio = (x, playersCountOverride) => setEscolhidos(prev => (
+     TROCAS — pares "este sai, este entra", definidos já aqui, ANTES de
+     se saber quem fica em cada equipa (o treinador escolhe os nomes de
+     quem está presente, não de quem já está numa equipa em concreto —
+     essa parte só se decide a seguir). Ficam guardadas no próprio
+     exercício (`escolhidos`), e aparecem no plano ao vivo por baixo das
+     equipas desse exercício. */
+  const [perguntarManual, setPerguntarManual] = useState(null); // exercício pendente de resposta
+  const [construirEquipas, setConstruirEquipas] = useState(null); // { exercicio, equipas: [n, n, ...], trocas: [{sai, entra}] }
+
+  const adicionarExercicio = (x, playersCountOverride, trocas) => setEscolhidos(prev => (
     prev.some(e => e.id === x.id) ? prev : [...prev, {
       id: x.id,
       minutos: Number(duracaoNoTreino.get(x.id)) || Number(x.defaultDuration) || 15,
       maxSimultaneo: 1, grupo: '',
       playersCount: playersCountOverride !== undefined ? playersCountOverride : (x.playersCount || ''),
+      trocas: trocas || [],
     }]
   ));
 
@@ -15543,6 +15551,10 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     const alvo = encontrarSessaoAlvo();
     if (!alvo) return;
     const equipas = [];
+    // Trocas ("este sai, este entra"), por exercício — nomes em texto
+    // corrido, tal como o resto do que se grava aqui, para a ficha
+    // impressa poder ler isto sem precisar de saber ids de jogadores.
+    const trocas = [];
     if (modo === 'treino') {
       plano.plano.forEach(bloco => bloco.partes.forEach((parte, pi) => parte.exercicios.forEach(ex => {
         ex.equipas.forEach(eq => {
@@ -15556,6 +15568,13 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
             guardaRedes: !!eq.isKeeper,
             jogadores: eq.jogadores.map(j => j.name),
           });
+        });
+        const config = escolhidos.find(e => e.id === ex.exercise.id);
+        (config && config.trocas || []).forEach(t => {
+          const sai = presentes.find(p => p.id === t.sai);
+          const entra = presentes.find(p => p.id === t.entra);
+          if (!sai || !entra) return;
+          trocas.push({ exercicio: ex.exercise.name, sai: sai.name, entra: entra.name });
         });
       })));
     } else {
@@ -15589,6 +15608,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     const registo = {
       geradoEm: new Date().toISOString(),
       equipas,
+      trocas,
       ...(modo === 'amigavel' ? { onzeAmigavel: { formacao: jogo.formacao, onze: onzeAmigavel, suplentes: suplentesAmigavel } } : {}),
     };
     setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: registo } : x)));
@@ -16025,6 +16045,19 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                             </button>
                           )}
                         </label>
+                        {/* Reabre o construtor de equipas só para mexer nas
+                            trocas deste exercício — não é preciso ter
+                            passado pelo "Manual" na primeira vez; dá para
+                            adicionar trocas depois, a qualquer momento. */}
+                        <button
+                          onClick={() => setConstruirEquipas({ exercicio: x, equipas: [], trocas: e.trocas || [], soTrocas: true })}
+                          title="Definir trocas (quem sai, quem entra)"
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 4, background: 'none',
+                            border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px',
+                            color: (e.trocas || []).length > 0 ? T.gold : T.mutedDim, cursor: 'pointer', fontSize: 11, ...body,
+                          }}
+                        ><Shuffle size={12} /> Trocas{(e.trocas || []).length > 0 ? ` (${e.trocas.length})` : ''}</button>
                         {/* Quantas cópias PODEM decorrer ao mesmo tempo. O
                             treinador dá o teto (o campo tem tantas secções);
                             o simulador decide quantas usar. */}
@@ -16278,6 +16311,27 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                             </div>
                           );
                         })}
+                        {(() => {
+                          const config = escolhidos.find(e => e.id === ex.exercise.id);
+                          const trocas = (config && config.trocas) || [];
+                          if (!trocas.length) return null;
+                          return (
+                            <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px dashed ${T.line}` }}>
+                              <div style={{ fontSize: 9.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Trocas</div>
+                              {trocas.map((t, ti) => {
+                                const sai = presentes.find(p => p.id === t.sai);
+                                const entra = presentes.find(p => p.id === t.entra);
+                                return (
+                                  <div key={ti} style={{ fontSize: 10.5, color: T.cream, display: 'flex', alignItems: 'center', gap: 4, lineHeight: 1.6 }}>
+                                    <span>{sai ? shortPlayerName(sai, presentes) : '—'}</span>
+                                    <ArrowRight size={10} color={T.mutedDim} />
+                                    <span>{entra ? shortPlayerName(entra, presentes) : '—'}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>
@@ -16466,50 +16520,116 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
             </Btn>
             <Btn onClick={() => trocarJanela(
               () => setPerguntarManual(null),
-              () => setConstruirEquipas({ exercicio: perguntarManual, equipas: [tamanhoEquipa, tamanhoEquipa] }),
+              () => setConstruirEquipas({ exercicio: perguntarManual, equipas: [tamanhoEquipa, tamanhoEquipa], trocas: [] }),
             )}>Manual</Btn>
           </div>
         </Modal>
       )}
 
       {construirEquipas && (
-        <Modal title={`Equipas — ${construirEquipas.exercicio.name}`} onClose={() => setConstruirEquipas(null)}>
-          <p style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 16, lineHeight: 1.5 }}>
-            Define quantas equipas há e quantos jogadores em cada uma. Quem fica em cada equipa continua a
-            escolher-se a seguir, com "Distribuir" ou à mão, equipa a equipa.
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-            {construirEquipas.equipas.map((n, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 13, color: T.cream, width: 76, flexShrink: 0 }}>Equipa {i + 1}</span>
-                <Input
-                  type="number" min={1} max={30} value={n}
-                  onChange={e => {
-                    const v = Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 1));
-                    setConstruirEquipas(prev => ({ ...prev, equipas: prev.equipas.map((x, xi) => (xi === i ? v : x)) }));
-                  }}
-                  style={{ width: 74 }}
-                />
-                <span style={{ fontSize: 12, color: T.mutedDim }}>jogadores</span>
-                {construirEquipas.equipas.length > 1 && (
-                  <button
-                    onClick={() => setConstruirEquipas(prev => ({ ...prev, equipas: prev.equipas.filter((_, xi) => xi !== i) }))}
-                    title="Remover esta equipa"
-                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.bad, cursor: 'pointer', display: 'flex' }}
-                  ><Trash2 size={15} /></button>
-                )}
+        <Modal title={`${construirEquipas.soTrocas ? 'Trocas' : 'Equipas'} — ${construirEquipas.exercicio.name}`} onClose={() => setConstruirEquipas(null)}>
+          {!construirEquipas.soTrocas && (
+            <>
+              <p style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 16, lineHeight: 1.5 }}>
+                Define quantas equipas há e quantos jogadores em cada uma. Quem fica em cada equipa continua a
+                escolher-se a seguir, com "Distribuir" ou à mão, equipa a equipa.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                {construirEquipas.equipas.map((n, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 13, color: T.cream, width: 76, flexShrink: 0 }}>Equipa {i + 1}</span>
+                    <Input
+                      type="number" min={1} max={30} value={n}
+                      onChange={e => {
+                        const v = Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 1));
+                        setConstruirEquipas(prev => ({ ...prev, equipas: prev.equipas.map((x, xi) => (xi === i ? v : x)) }));
+                      }}
+                      style={{ width: 74 }}
+                    />
+                    <span style={{ fontSize: 12, color: T.mutedDim }}>jogadores</span>
+                    {construirEquipas.equipas.length > 1 && (
+                      <button
+                        onClick={() => setConstruirEquipas(prev => ({ ...prev, equipas: prev.equipas.filter((_, xi) => xi !== i) }))}
+                        title="Remover esta equipa"
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.bad, cursor: 'pointer', display: 'flex' }}
+                      ><Trash2 size={15} /></button>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
+              <Btn
+                variant="ghost"
+                onClick={() => setConstruirEquipas(prev => ({ ...prev, equipas: [...prev.equipas, tamanhoEquipa] }))}
+                style={{ marginBottom: 18 }}
+              ><Plus size={15} /> Adicionar equipa</Btn>
+            </>
+          )}
+
+          {/* TROCAS — pares "este sai, este entra", escolhidos já aqui de
+              entre todos os presentes. Não é preciso saber ainda em que
+              equipa cada um vai ficar — isso decide-se a seguir, com
+              "Distribuir" ou à mão. */}
+          <div style={{ borderTop: `1px solid ${T.line}`, paddingTop: 16, marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>
+              Trocas
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+              {construirEquipas.trocas.map((t, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <Select
+                    value={t.sai}
+                    onChange={e => setConstruirEquipas(prev => ({
+                      ...prev, trocas: prev.trocas.map((x, xi) => (xi === i ? { ...x, sai: e.target.value } : x)),
+                    }))}
+                    style={{ flex: 1, minWidth: 140 }}
+                  >
+                    <option value="">Sai…</option>
+                    {sortByPosition(presentes).map(p => (
+                      <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, presentes)}</option>
+                    ))}
+                  </Select>
+                  <ArrowRight size={14} color={T.mutedDim} style={{ flexShrink: 0 }} />
+                  <Select
+                    value={t.entra}
+                    onChange={e => setConstruirEquipas(prev => ({
+                      ...prev, trocas: prev.trocas.map((x, xi) => (xi === i ? { ...x, entra: e.target.value } : x)),
+                    }))}
+                    style={{ flex: 1, minWidth: 140 }}
+                  >
+                    <option value="">Entra…</option>
+                    {sortByPosition(presentes).map(p => (
+                      <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, presentes)}</option>
+                    ))}
+                  </Select>
+                  <button
+                    onClick={() => setConstruirEquipas(prev => ({ ...prev, trocas: prev.trocas.filter((_, xi) => xi !== i) }))}
+                    title="Remover esta troca"
+                    style={{ background: 'none', border: 'none', color: T.bad, cursor: 'pointer', display: 'flex', flexShrink: 0 }}
+                  ><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+            <Btn
+              variant="ghost"
+              onClick={() => setConstruirEquipas(prev => ({ ...prev, trocas: [...prev.trocas, { sai: '', entra: '' }] }))}
+              style={{ marginBottom: 18 }}
+            ><Plus size={15} /> Adicionar troca</Btn>
           </div>
-          <Btn
-            variant="ghost"
-            onClick={() => setConstruirEquipas(prev => ({ ...prev, equipas: [...prev.equipas, tamanhoEquipa] }))}
-            style={{ marginBottom: 18 }}
-          ><Plus size={15} /> Adicionar equipa</Btn>
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <Btn variant="ghost" onClick={() => setConstruirEquipas(null)}>Cancelar</Btn>
             <Btn onClick={() => {
-              adicionarExercicio(construirEquipas.exercicio, construirEquipas.equipas.join('x'));
+              const trocasValidas = construirEquipas.trocas.filter(t => t.sai && t.entra && t.sai !== t.entra);
+              if (construirEquipas.soTrocas) {
+                // Só mexe nas trocas — nunca reescreve o nº de jogadores,
+                // para não arriscar perder notação como "+1gr" que o
+                // treinador já tivesse posto à mão.
+                patchExercicio(construirEquipas.exercicio.id, { trocas: trocasValidas });
+              } else if (escolhidos.some(x => x.id === construirEquipas.exercicio.id)) {
+                patchExercicio(construirEquipas.exercicio.id, { playersCount: construirEquipas.equipas.join('x'), trocas: trocasValidas });
+              } else {
+                adicionarExercicio(construirEquipas.exercicio, construirEquipas.equipas.join('x'), trocasValidas);
+              }
               setConstruirEquipas(null);
             }}><Check size={15} /> Guardar</Btn>
           </div>
@@ -17416,6 +17536,10 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                     (printSession.equipasSimulador || {}).equipas,
                     exercises.find(x => x.id === e.exId),
                   )}
+                  trocas={((printSession.equipasSimulador || {}).trocas || []).filter(t => {
+                    const ex = exercises.find(x => x.id === e.exId);
+                    return ex && t.exercicio === ex.name;
+                  })}
                 />
               ))}
               {/* As equipas do Simulador saem aqui E também na Prancheta
@@ -17905,7 +18029,7 @@ function PrintEquipasBlock({ equipas }) {
   );
 }
 
-function PrintExerciseBlock({ e, ex, index, equipas }) {
+function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
   if (!ex) return <p style={{ fontSize: 13, margin: '0 0 14px' }}>{index + 1}. —</p>;
   return (
     <div style={{ margin: '0 0 20px', pageBreakInside: 'avoid' }}>
@@ -17985,6 +18109,14 @@ function PrintExerciseBlock({ e, ex, index, equipas }) {
           problema de antes (uma lista corrida onde era preciso ler o
           nome do exercício em cada linha para saber quem fazia o quê). */}
       <PrintEquipasBlock equipas={equipas} />
+      {trocas && trocas.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 3 }}>Trocas</div>
+          {trocas.map((t, i) => (
+            <div key={i} style={{ fontSize: 10.5, color: '#333' }}>{t.sai} → {t.entra}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
