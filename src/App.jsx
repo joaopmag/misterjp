@@ -2503,11 +2503,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      grande ali em cima).
 
      "AUTÓNOMO E DENTRO DO HORÁRIO": um dia só conta se houver Wellness E
-     PSE desse dia, e se NINGUÉM da equipa técnica lá tiver tocado. O
-     quiosque (`?checkin=1`) já só aceita responder no PRÓPRIO dia e
+     PSE desse dia, mas só o WELLNESS precisa de ser autónomo — o PSE às
+     vezes é preenchido em grupo, junto da equipa técnica (ex.: no fim do
+     treino), e isso não deve partir a sequência (ver `diaAutonomoCompleto`).
+     O quiosque (`?checkin=1`) já só aceita responder no PRÓPRIO dia e
      dentro da janela horária (ver CHECKIN_WINDOWS/CHECKIN_ALLOW_BACKFILL)
-     — por isso um registo feito por ali já é, por definição, autónomo e
-     a horas. O que falta filtrar é só o oposto: um registo que o staff
+     — por isso um Wellness feito por ali já é, por definição, autónomo e
+     a horas. O que falta filtrar é só o oposto: um Wellness que o staff
      tenha preenchido à mão em Monitorização.
 
      Para saber quem gravou cada registo, existe `updated_by_email` —
@@ -17487,20 +17489,22 @@ function addDays(dateStr, n) {
 
 /* PRÉMIO DOS 30 DIAS SEGUIDOS — ver o comentário grande junto do efeito
    que usa isto, em `App`. Aqui ficam só as duas funções puras: uma que
-   diz se UM dia contou (Wellness + PSE, sem ser o staff a inserir), e
-   outra que conta quantos desses dias seguidos há, a partir de hoje
-   (ou de ontem, se hoje ainda não estiver completo — mesma ideia do
-   `sequenciaWellness` do cartão do quiosque, só que aqui exige os dois
-   questionários e exige que tenha sido o próprio atleta). */
+   diz se UM dia contou, outra que conta quantos desses dias seguidos há,
+   a partir de hoje (ou de ontem, se hoje ainda não estiver completo —
+   mesma ideia do `sequenciaWellness` do cartão do quiosque).
+
+   O dia continua a exigir os DOIS questionários (Wellness e PSE), mas só
+   o WELLNESS precisa de ser autónomo — o PSE às vezes é preenchido junto
+   da equipa técnica (ex.: em grupo, no fim do treino, com o preparador
+   físico a ajudar), e isso não deve partir a sequência do atleta. */
 function diaAutonomoCompleto(playerId, date, monitoring, monitoringMeta) {
   const registos = (monitoring || []).filter(m => m.playerId === playerId && m.date === date);
   if (registos.length === 0) return false;
-  const temWellness = registos.some(m => typeof m.sono === 'number');
+  const registosWellness = registos.filter(m => typeof m.sono === 'number');
   const temPse = registos.some(m => typeof m.pse === 'number');
-  if (!temWellness || !temPse) return false;
-  // Um único toque do staff nesse dia (em qualquer dos dois registos) já
-  // tira o dia da conta — não basta a maior parte ter sido autónoma.
-  return registos.every(m => {
+  if (registosWellness.length === 0 || !temPse) return false;
+  // Só os registos de Wellness precisam de estar vazios em updated_by_email.
+  return registosWellness.every(m => {
     const meta = (monitoringMeta || {})[m.id];
     return !meta || !meta.email;
   });
