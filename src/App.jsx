@@ -15804,6 +15804,27 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     : exerciciosDoDia.filter(x => x.phase === filtroFase);
   const fases = ['Todas', ...Array.from(new Set(exerciciosDoDia.map(x => x.phase).filter(Boolean)))];
 
+  /* Traz sozinho para o Simulador quem já foi marcado como "à
+     experiência" a sério, na sessão desse dia (em Planeamento/Presenças
+     — ver `ConvidadosEditor`). Sem isto, o treinador tinha de escrever o
+     mesmo nome duas vezes: uma na ficha da sessão, outra aqui. Só
+     ACRESCENTA — tirar alguém aqui não mexe na sessão gravada, e reabrir
+     o Simulador volta a trazê-lo (evita perdê-lo por engano a meio de um
+     treino). */
+  const convidadosDaSessao = sessoesDoDia.flatMap(s => convidadosDe(s));
+  const chaveConvidadosSessao = convidadosDaSessao.map(c => c.id).join(',');
+  useEffect(() => {
+    if (!convidadosDaSessao.length) return;
+    setConvidados(prev => {
+      const idsAtuais = new Set(prev.map(c => c.id));
+      const novos = convidadosDaSessao
+        .filter(c => !idsAtuais.has(c.id))
+        .map(c => ({ id: c.id, name: c.nome, position: c.position || '', convidado: true }));
+      return novos.length ? [...prev, ...novos] : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveConvidadosSessao]);
+
   /* O plano que se vê = distribuição crua + equipas fixadas por cima.
      Derivado e não guardado em estado: fixar ou soltar uma equipa
      recalcula-o de imediato, sem ter de voltar a baralhar. */
@@ -16396,7 +16417,13 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
             Uma equipa escolhida à mão fica fixa: o "Baralhar de novo" muda tudo à volta e não lhe toca.
           </p>
           <PlayerChipList
-            players={editarEquipa.isKeeper ? presentes.filter(ehGuardaRedes) : presentes.filter(x => !ehGuardaRedes(x))}
+            // Um grupo SÓ de guarda-redes (a notação "N Gr") continua a
+            // mostrar só guarda-redes — faz sentido, é para escolher qual
+            // deles fica em qual cor. Mas numa equipa normal, incluindo
+            // as montadas à mão em "Escolhe as equipas", os guarda-redes
+            // também têm de poder entrar — não fazia sentido escondê-los
+            // logo à partida quando o treinador está a decidir tudo ele.
+            players={editarEquipa.isKeeper ? presentes.filter(ehGuardaRedes) : presentes}
             allPlayers={players}
             isOn={pl => editarEquipa.atuais.includes(pl.id)}
             onToggle={pl => setEditarEquipa(prev => ({
