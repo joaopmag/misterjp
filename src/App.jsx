@@ -2484,6 +2484,59 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarefasReady, teamId]);
 
+  /* PRÉMIO DOS 30 DIAS SEGUIDOS — mesmo mecanismo do aniversário: a app
+     garante sozinha que a tarefa existe, sem ninguém ter de a criar à
+     mão, e escreve DIRETO no Supabase pela mesma razão (ver o comentário
+     grande ali em cima).
+
+     "AUTÓNOMO E DENTRO DO HORÁRIO": um dia só conta se houver Wellness E
+     PSE desse dia, e se NINGUÉM da equipa técnica lá tiver tocado. O
+     quiosque (`?checkin=1`) já só aceita responder no PRÓPRIO dia e
+     dentro da janela horária (ver CHECKIN_WINDOWS/CHECKIN_ALLOW_BACKFILL)
+     — por isso um registo feito por ali já é, por definição, autónomo e
+     a horas. O que falta filtrar é só o oposto: um registo que o staff
+     tenha preenchido à mão em Monitorização.
+
+     Para saber quem gravou cada registo, existe `updated_by_email` — mas
+     REPARA que nenhum sítio desta app o escreve explicitamente (procura
+     por "updated_by_email:" no ficheiro todo). Isso só pode quer dizer
+     uma coisa: é a base de dados a preenchê-lo sozinha a partir de quem
+     estiver autenticado (um trigger com `auth.email()`, provavelmente).
+     O quiosque não tem sessão nenhuma — por isso um registo do quiosque
+     fica com esse campo vazio, e só tem email quando é staff autenticado
+     a gravar. CONFIRMA ISTO nos teus dados reais antes de confiar: abre
+     a tabela `monitoring` no Supabase, encontra um dia que sabes que foi
+     o próprio atleta a responder no telemóvel dele, e vê se a coluna
+     `updated_by_email` vem mesmo vazia nessa linha. Se não vier — avisa-
+     me, que a condição abaixo (`!meta.email`) tem de mudar. */
+  useEffect(() => {
+    if (!tarefasReady || !monitoringReady || !playersReady || !teamId) return;
+    (players || []).forEach(p => {
+      const { dias, inicio } = sequenciaAutonomaCompleta(p.id, monitoring, monitoringMeta);
+      if (dias < 30) return;
+      // A mesma sequência (mesmo dia de início) só cria a tarefa uma vez.
+      // Se a sequência quebrar e o atleta chegar aos 30 outra vez mais
+      // tarde, é uma sequência nova (início diferente) e ganha outra
+      // tarefa — é um novo feito, não o mesmo por acabar.
+      const jaExiste = (tarefas || []).some(t => t.marco === 'streak30' && t.playerId === p.id && t.streakInicio === inicio);
+      if (jaExiste) return;
+      const registo = {
+        titulo: 'O jogador chegou aos 30 dias seguidos a responder aos questionários. Tem de ser premiado',
+        notas: `${p.name} respondeu sozinho, dentro do horário, ao Wellness e ao PSE durante ${dias} dias seguidos.`,
+        responsavel: '',
+        estado: 'aberta',
+        marco: 'streak30',
+        playerId: p.id,
+        jogadorNome: p.name,
+        streakInicio: inicio,
+        criadoEm: new Date().toISOString(),
+      };
+      supabase.from('tarefas').insert([{ id: uid(), data: registo, team_id: teamId }])
+        .then(({ error }) => { if (error) console.error('tarefas (auto streak30)', error); });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarefasReady, monitoringReady, playersReady, teamId, monitoring, tarefas, players]);
+
   // Momentos de avaliação do Desenvolvimento Individual. Guarda os
   // momentos e, dentro de cada um, um registo por jogador — não duplica o
   // plantel, referencia-o pelo id.
@@ -17412,6 +17465,39 @@ function addDays(dateStr, n) {
   return toLocalISODate(d);
 }
 
+/* PRÉMIO DOS 30 DIAS SEGUIDOS — ver o comentário grande junto do efeito
+   que usa isto, em `App`. Aqui ficam só as duas funções puras: uma que
+   diz se UM dia contou (Wellness + PSE, sem ser o staff a inserir), e
+   outra que conta quantos desses dias seguidos há, a partir de hoje
+   (ou de ontem, se hoje ainda não estiver completo — mesma ideia do
+   `sequenciaWellness` do cartão do quiosque, só que aqui exige os dois
+   questionários e exige que tenha sido o próprio atleta). */
+function diaAutonomoCompleto(playerId, date, monitoring, monitoringMeta) {
+  const registos = (monitoring || []).filter(m => m.playerId === playerId && m.date === date);
+  if (registos.length === 0) return false;
+  const temWellness = registos.some(m => typeof m.sono === 'number');
+  const temPse = registos.some(m => typeof m.pse === 'number');
+  if (!temWellness || !temPse) return false;
+  // Um único toque do staff nesse dia (em qualquer dos dois registos) já
+  // tira o dia da conta — não basta a maior parte ter sido autónoma.
+  return registos.every(m => {
+    const meta = (monitoringMeta || {})[m.id];
+    return !meta || !meta.email;
+  });
+}
+
+function sequenciaAutonomaCompleta(playerId, monitoring, monitoringMeta, hoje) {
+  hoje = hoje || todayStr();
+  const comecaEm = diaAutonomoCompleto(playerId, hoje, monitoring, monitoringMeta) ? hoje : addDays(hoje, -1);
+  let dias = 0;
+  let d = comecaEm;
+  while (diaAutonomoCompleto(playerId, d, monitoring, monitoringMeta)) {
+    dias++;
+    d = addDays(d, -1);
+  }
+  return { dias, inicio: dias > 0 ? addDays(comecaEm, -(dias - 1)) : null, fim: dias > 0 ? comecaEm : null };
+}
+
 const WEEKDAY_ABBR = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 function weekdayAbbr(dateStr) {
   return WEEKDAY_ABBR[new Date(dateStr + 'T00:00:00').getDay()];
@@ -30547,6 +30633,12 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
         {aniversariantes.length > 0 && (
           <div style={{ fontSize: 11.5, color: T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
             <PartyPopper size={12} /> {aniversariantes.map(p => p.name).join(', ')}
+          </div>
+        )}
+
+        {tarefa.marco === 'streak30' && tarefa.jogadorNome && (
+          <div style={{ fontSize: 11.5, color: T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Flame size={12} /> {tarefa.jogadorNome}
           </div>
         )}
 
