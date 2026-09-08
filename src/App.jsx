@@ -16419,7 +16419,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       )}
 
       {perguntarManual && (
-        <Modal title="Montar equipas à mão?" onClose={() => setPerguntarManual(null)}>
+        <Modal title="Escolhe as equipas" onClose={() => setPerguntarManual(null)}>
           <p style={{ color: T.muted, fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
             Para "<strong style={{ color: T.cream }}>{perguntarManual.name}</strong>", queres definir tu quantas equipas
             há e quantos jogadores em cada, ou deixar a distribuição automática de sempre
@@ -16429,10 +16429,10 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
             <Btn variant="ghost" onClick={() => { adicionarExercicio(perguntarManual); setPerguntarManual(null); }}>
               Automática
             </Btn>
-            <Btn onClick={() => {
-              setConstruirEquipas({ exercicio: perguntarManual, equipas: [tamanhoEquipa, tamanhoEquipa] });
-              setPerguntarManual(null);
-            }}>À mão</Btn>
+            <Btn onClick={() => trocarJanela(
+              () => setPerguntarManual(null),
+              () => setConstruirEquipas({ exercicio: perguntarManual, equipas: [tamanhoEquipa, tamanhoEquipa] }),
+            )}>Manual</Btn>
           </div>
         </Modal>
       )}
