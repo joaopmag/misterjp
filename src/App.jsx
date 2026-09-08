@@ -24071,6 +24071,19 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   const loggedPlayerId = player && player.id;
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
   const [selectedDate, setSelectedDate] = useState(todayStr());
+  // Quando a notificação do ecrã inicial é tocada, guarda aqui a tarefa a
+  // abrir de imediato — o PlayerTarefasView lê isto e já entra direto no
+  // detalhe, em vez de mostrar primeiro a lista.
+  const [tarefaParaAbrir, setTarefaParaAbrir] = useState(null);
+
+  // Pedido às tarefas atribuídas a este atleta, feito aqui em cima (e não
+  // só dentro de PlayerTarefasView) porque a notificação no ecrã inicial
+  // (PlayerKioskHome) também precisa de saber quantas há por fazer — sem
+  // isto, o atleta só saberia que tem uma tarefa depois de já ter entrado
+  // no Portal, o que não serve de notificação nenhuma.
+  const [estadoTarefas, dadosTarefas] = usePortalFetch('checkin_tarefas', code, teamId);
+  const listaTarefas = (dadosTarefas && dadosTarefas.tarefas) || [];
+  const tarefasPorFazer = listaTarefas.filter(t => t.estado !== 'feita');
 
   // Relógio interno: as janelas horárias abrem/fecham sozinhas sem o atleta
   // ter de recarregar a página (ex.: está no ecrã às 12:59 e às 13:00 o
@@ -24196,6 +24209,16 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return <PlayerDesenvolvimentoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
   }
 
+  if (activeType === 'tarefas') {
+    return (
+      <PlayerTarefasView
+        code={code} teamId={teamId} onBack={() => setActiveType('portal')}
+        tarefas={listaTarefas} estado={estadoTarefas}
+        tarefaAbrirId={tarefaParaAbrir} onTarefaAberta={() => setTarefaParaAbrir(null)}
+      />
+    );
+  }
+
   if (activeType === 'portal') {
     return (
       <PlayerPortalHome
@@ -24206,6 +24229,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         onOpenJogos={() => setActiveType('jogos')}
         onOpenCompeticao={() => setActiveType('competicao')}
         onOpenDesenvolvimento={() => setActiveType('desenvolvimento')}
+        onOpenTarefas={() => setActiveType('tarefas')}
+        tarefasPendentes={tarefasPorFazer.length}
       />
     );
   }
@@ -24221,6 +24246,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       onOpenRpe={() => { if (rpeWindow.open) setActiveType('rpe'); }}
       onOpenPortal={() => setActiveType('portal')}
       onLogout={onLogout}
+      tarefasPendentes={tarefasPorFazer}
+      onAbrirTarefa={(t) => { setTarefaParaAbrir(t.id); setActiveType('tarefas'); }}
     />
   );
 }
@@ -24487,24 +24514,33 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
    quando o ícone principal, por si só, não deixaria isso óbvio, como
    um cérebro). `tonsDeCinza` tira a cor ao ícone principal (usado no
    cérebro, para não ficar rosa). */
-function TemaCirculo({ Icon, label, onClick }) {
+function TemaCirculo({ Icon, label, onClick, badge }) {
   return (
     <button onClick={onClick} style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
       background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
     }}>
-      <span style={{
-        width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Icon size={38} color={T.gold} strokeWidth={1.6} />
+      <span style={{ position: 'relative' }}>
+        <span style={{
+          width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon size={38} color={T.gold} strokeWidth={1.6} />
+        </span>
+        {badge > 0 && (
+          <span style={{
+            position: 'absolute', top: 2, right: 2, minWidth: 22, height: 22, borderRadius: 11, padding: '0 5px',
+            background: T.crimsonBright, color: TEXT_ON_ACCENT, ...mono, fontSize: 11.5,
+            display: 'grid', placeItems: 'center', border: `2px solid ${T.bg}`,
+          }}>{badge}</span>
+        )}
       </span>
       <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>{label}</span>
     </button>
   );
 }
 
-function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca, onOpenJogos, onOpenCompeticao, onOpenDesenvolvimento }) {
+function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca, onOpenJogos, onOpenCompeticao, onOpenDesenvolvimento, onOpenTarefas, tarefasPendentes }) {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       <button onClick={onBack} style={{
@@ -24530,6 +24566,7 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBibliot
         <TemaCirculo Icon={Trophy} label="Jogos" onClick={onOpenJogos} />
         <TemaCirculo Icon={ListOrdered} label="Competição" onClick={onOpenCompeticao} />
         <TemaCirculo Icon={TrendingUp} label="Desenvolvimento" onClick={onOpenDesenvolvimento} />
+        <TemaCirculo Icon={ClipboardList} label="Tarefas" onClick={onOpenTarefas} badge={tarefasPendentes} />
       </div>
     </div>
   );
@@ -24982,6 +25019,161 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
         </div>
       )}
     </>
+  );
+}
+
+/* TAREFAS, DO LADO DO ATLETA — as tarefas que a equipa técnica lhe
+   atribuiu (campo `jogadorId`, à parte do "Responsável", que é sempre
+   alguém do staff). O atleta só consulta e pode escrever uma nota;
+   nunca muda o estado, o prazo, nem apaga — isso continua a ser só do
+   staff, em Tarefas.
+
+   A lista já vem pronta do `CheckinKiosk` (o mesmo pedido serve para a
+   notificação do ecrã inicial e para este ecrã — não faz sentido pedir
+   duas vezes a mesma coisa). Aqui só se guarda localmente a nota que
+   vai sendo escrita, otimista, e grava-se ao perder o foco do campo. */
+function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirId, onTarefaAberta }) {
+  const [abertaId, setAbertaId] = useState(null);
+  const [notas, setNotas] = useState({}); // id -> texto local (por cima do que veio do servidor)
+  const [aGravar, setAGravar] = useState({});
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    if (tarefaAbrirId) {
+      setAbertaId(tarefaAbrirId);
+      if (onTarefaAberta) onTarefaAberta();
+    }
+  }, [tarefaAbrirId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const voltar = (label, onClick) => (
+    <button onClick={onClick} style={{
+      display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+      borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+    }}>
+      <ChevronLeft size={15} /> {label}
+    </button>
+  );
+
+  if (estado === 'a-carregar') {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar('Voltar', onBack)}
+        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+      </div>
+    );
+  }
+  if (estado === 'erro') {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar('Voltar', onBack)}
+        <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>
+      </div>
+    );
+  }
+
+  const lista = tarefas || [];
+  const aberta = lista.find(t => t.id === abertaId);
+
+  const gravarNota = async (tarefaId, texto) => {
+    setAGravar(prev => ({ ...prev, [tarefaId]: true }));
+    setErro('');
+    try {
+      const { data, error } = await supabase.rpc('checkin_tarefa_nota', {
+        p_code: code, p_team: teamId, p_tarefa_id: tarefaId, p_nota: texto,
+      });
+      if (error || !(data && data.ok)) throw (error || new Error('recusado'));
+    } catch (e) {
+      setErro('A nota não ficou guardada. Tenta outra vez.');
+    } finally {
+      setAGravar(prev => ({ ...prev, [tarefaId]: false }));
+    }
+  };
+
+  if (aberta) {
+    const notaAtual = notas[aberta.id] !== undefined ? notas[aberta.id] : (aberta.notaAtleta || '');
+    return (
+      <div style={{ maxWidth: 700, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar('Tarefas', () => setAbertaId(null))}
+        <div style={{ ...display, fontSize: 19, color: T.cream, marginBottom: 4 }}>{aberta.titulo}</div>
+        {aberta.prazo && (
+          <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 16 }}>Prazo: {fmtDate(aberta.prazo)}</div>
+        )}
+        {!aberta.prazo && <div style={{ marginBottom: 16 }} />}
+
+        {aberta.notas && (
+          <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, marginBottom: 18 }}>
+            <div style={{ fontSize: 11, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>
+              Notas da equipa técnica
+            </div>
+            <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{aberta.notas}</div>
+          </div>
+        )}
+
+        <Field label="A tua nota" solto>
+          <TextArea
+            value={notaAtual}
+            onChange={e => setNotas(prev => ({ ...prev, [aberta.id]: e.target.value }))}
+            onBlur={() => gravarNota(aberta.id, notaAtual)}
+            placeholder="Escreve aqui o que quiseres dizer sobre esta tarefa."
+            style={{ minHeight: 120 }}
+          />
+        </Field>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <span style={{ fontSize: 11.5, color: T.mutedDim }}>
+            {aGravar[aberta.id] ? 'A guardar…' : 'Guarda-se sozinho ao saíres do campo.'}
+          </span>
+          <Btn onClick={() => gravarNota(aberta.id, notaAtual)} disabled={aGravar[aberta.id]}>
+            <Check size={15} /> Guardar
+          </Btn>
+        </div>
+        {erro && <div style={{ fontSize: 12.5, color: T.bad, marginTop: 10 }}>{erro}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+      {voltar('Voltar', onBack)}
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Tarefas</div>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 22 }}>Tarefas que a equipa técnica te atribuiu.</div>
+
+      {lista.length === 0 ? (
+        <EmptyState text="Ainda não tens nenhuma tarefa atribuída." />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {lista.map(t => {
+            const feita = t.estado === 'feita';
+            return (
+              <button key={t.id} onClick={() => setAbertaId(t.id)} style={{
+                display: 'flex', alignItems: 'flex-start', gap: 11, textAlign: 'left', width: '100%',
+                padding: '12px 14px', background: T.surface, borderRadius: 10, border: `1px solid ${T.line}`, cursor: 'pointer', ...body,
+              }}>
+                <span style={{
+                  width: 17, height: 17, borderRadius: 5, flexShrink: 0, marginTop: 2,
+                  background: feita ? T.good : 'transparent', border: `1.5px solid ${feita ? T.good : T.line}`,
+                  display: 'grid', placeItems: 'center',
+                }}>{feita && <Check size={11} style={{ color: '#0d140e' }} />}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{
+                    fontSize: 13.5, color: feita ? T.mutedDim : T.cream, lineHeight: 1.45, display: 'block',
+                    textDecoration: feita ? 'line-through' : 'none',
+                  }}>{t.titulo}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
+                    {t.prazo && <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{fmtDate(t.prazo)}</span>}
+                    {t.notaAtleta && (
+                      <span style={{ fontSize: 11, color: T.gold, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <FileText size={11} /> já escreveste uma nota
+                      </span>
+                    )}
+                  </span>
+                </span>
+                <ChevronRight size={16} color={T.mutedDim} style={{ flexShrink: 0, marginTop: 2 }} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -25590,7 +25782,7 @@ function StreakCard({ recentDates, dayStatus }) {
   );
 }
 
-function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenPortal, onLogout }) {
+function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenPortal, onLogout, tarefasPendentes, onAbrirTarefa }) {
   const isToday = selectedDate === todayStr();
   const isRestDay = session && session.phase === 'Descanso';
   const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : `Sem sessão definida para ${isToday ? 'hoje' : 'este dia'}`;
@@ -25646,6 +25838,36 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
             Parabéns, {player.name.split(' ')[0]}! Toda a equipa técnica deseja-te um ótimo dia. 🎉
           </span>
         </div>
+      )}
+
+      {/* NOTIFICAÇÃO DE TAREFA — mesma ideia do badge do lado do staff
+          (bolinha vermelha, ver `tarefasAMinhaPorta`), só que aqui logo
+          no primeiro ecrã que o atleta vê ao entrar, e a tocar-lhe leva
+          direto à tarefa (não só à lista de Tarefas). */}
+      {tarefasPendentes && tarefasPendentes.length > 0 && (
+        <button onClick={() => onAbrirTarefa(tarefasPendentes[0])} style={{
+          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22, width: '100%', textAlign: 'left',
+          background: T.surface, border: `1px solid ${T.crimsonBright}`, borderRadius: 12, padding: '14px 16px',
+          cursor: 'pointer', ...body,
+        }}>
+          <span style={{ position: 'relative', flexShrink: 0, display: 'flex' }}>
+            <ClipboardList size={26} color={T.cream} strokeWidth={1.6} />
+            <span style={{
+              position: 'absolute', top: -4, right: -4, width: 11, height: 11, borderRadius: '50%',
+              background: T.crimsonBright, border: `2px solid ${T.surface}`,
+            }} />
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: 13.5, color: T.cream, fontWeight: 600, display: 'block' }}>
+              {tarefasPendentes.length === 1 ? 'Tens uma tarefa nova' : `Tens ${tarefasPendentes.length} tarefas novas`}
+            </span>
+            <span style={{
+              fontSize: 12, color: T.mutedDim, display: 'block', marginTop: 2,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{tarefasPendentes[0].titulo}</span>
+          </span>
+          <ChevronRight size={18} color={T.mutedDim} style={{ flexShrink: 0 }} />
+        </button>
       )}
 
       {recentDates && (
@@ -30499,12 +30721,13 @@ function tarefasAMinhaPorta(tarefas, euId, ctx) {
   }).length;
 }
 
-function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
+function TarefaModal({ tarefa, membros, players, euId, onClose, onSave, onRemove }) {
   const [f, setF] = useState(tarefa || {
-    titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null,
+    titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null, jogadorId: '',
   });
   const valido = String(f.titulo || '').trim().length > 0;
   const repete = !!f.recorrencia;
+  const jogadoresOrdenados = sortByPosition(players || []);
 
   return (
     <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} wide>
@@ -30541,6 +30764,22 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
             <option value="aberta">Por fazer</option>
             <option value="curso">Iniciada</option>
             <option value="feita">Concluída</option>
+          </Select>
+        </Field>
+      </div>
+
+      {/* ATRIBUIR A UM JOGADOR — de propósito, num campo à parte do
+          "Responsável" (que é sempre alguém da equipa técnica). Uma
+          tarefa pode ter as duas coisas ao mesmo tempo: um membro do
+          staff responsável por acompanhar, e um jogador a quem a
+          tarefa diz respeito e que a vai ver no Portal do Atleta. */}
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Atribuir a um jogador (aparece no Portal do Atleta)" solto>
+          <Select value={f.jogadorId || ''} onChange={e => setF({ ...f, jogadorId: e.target.value })}>
+            <option value="">Nenhum — só uma tarefa interna</option>
+            {jogadoresOrdenados.map(p => (
+              <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, players)}</option>
+            ))}
           </Select>
         </Field>
       </div>
@@ -30606,6 +30845,20 @@ function TarefaModal({ tarefa, membros, euId, onClose, onSave, onRemove }) {
         </Field>
       </div>
 
+      {/* NOTA DO JOGADOR — só leitura aqui do lado do staff. É o atleta
+          quem escreve isto no Portal; aqui serve só para veres o que ele
+          respondeu, sem correres o risco de sobrescrever por engano. */}
+      {f.jogadorId && f.notaAtleta && (
+        <div style={{ marginBottom: 16 }}>
+          <Field label={`Nota de ${shortPlayerName((players || []).find(p => p.id === f.jogadorId) || {}, players)}`} solto>
+            <div style={{
+              background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px',
+              fontSize: 13, color: T.cream, whiteSpace: 'pre-wrap', lineHeight: 1.5,
+            }}>{f.notaAtleta}</div>
+          </Field>
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
         {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> Apagar</Btn>}
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
@@ -30628,6 +30881,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
   const aniversariantes = tarefa.recorrencia && tarefa.recorrencia.tipo === 'aniversario'
     ? aniversariantesEm(players, hoje)
     : [];
+  const jogadorAtribuido = tarefa.jogadorId ? (players || []).find(p => p.id === tarefa.jogadorId) : null;
 
   return (
     <div style={{
@@ -30662,6 +30916,13 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
         {tarefa.marco === 'streak30' && tarefa.jogadorNome && (
           <div style={{ fontSize: 11.5, color: T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
             <Flame size={12} /> {tarefa.jogadorNome}
+          </div>
+        )}
+
+        {jogadorAtribuido && (
+          <div style={{ fontSize: 11.5, color: T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <UserCheck size={12} /> {shortPlayerName(jogadorAtribuido, players)}
+            {tarefa.notaAtleta && <FileText size={11} style={{ color: T.mutedDim, marginLeft: 2 }} />}
           </div>
         )}
 
@@ -30847,6 +31108,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         <TarefaModal
           tarefa={modal === 'new' ? null : modal}
           membros={membros}
+          players={players}
           euId={euId}
           onClose={() => setModal(null)}
           onSave={save}
