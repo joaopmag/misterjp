@@ -25036,6 +25036,9 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
   const [abertaId, setAbertaId] = useState(null);
   const [notas, setNotas] = useState({}); // id -> texto local (por cima do que veio do servidor)
   const [aGravar, setAGravar] = useState({});
+  const [submetidas, setSubmetidas] = useState({}); // id -> true, depois de submetida nesta sessão
+  const [confirmar, setConfirmar] = useState(false);
+  const [aSubmeter, setASubmeter] = useState(false);
   const [erro, setErro] = useState('');
 
   useEffect(() => {
@@ -25079,7 +25082,7 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
     setErro('');
     try {
       const { data, error } = await supabase.rpc('checkin_tarefa_nota', {
-        p_code: code, p_team: teamId, p_tarefa_id: tarefaId, p_nota: texto,
+        p_code: code, p_team: teamId, p_tarefa_id: tarefaId, p_nota: texto, p_submeter: false,
       });
       if (error || !(data && data.ok)) throw (error || new Error('recusado'));
     } catch (e) {
@@ -25091,12 +25094,34 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
 
   if (aberta) {
     const notaAtual = notas[aberta.id] !== undefined ? notas[aberta.id] : (aberta.notaAtleta || '');
+    const submetida = submetidas[aberta.id] !== undefined ? submetidas[aberta.id] : !!aberta.notaSubmetida;
+    const podeSubmeter = notaAtual.trim().length > 0;
+
+    const confirmarSubmissao = async () => {
+      setASubmeter(true);
+      setErro('');
+      try {
+        const { data, error } = await supabase.rpc('checkin_tarefa_nota', {
+          p_code: code, p_team: teamId, p_tarefa_id: aberta.id, p_nota: notaAtual, p_submeter: true,
+        });
+        if (error || !(data && data.ok)) throw (error || new Error('recusado'));
+        setSubmetidas(prev => ({ ...prev, [aberta.id]: true }));
+        setConfirmar(false);
+      } catch (e) {
+        setErro('Não foi possível submeter. Tenta outra vez.');
+      } finally {
+        setASubmeter(false);
+      }
+    };
+
     return (
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '28px 24px 60px' }}>
         {voltar('Tarefas', () => setAbertaId(null))}
         <div style={{ ...display, fontSize: 19, color: T.cream, marginBottom: 4 }}>{aberta.titulo}</div>
         {aberta.prazo && (
-          <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 16 }}>Prazo: {fmtDate(aberta.prazo)}</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 16 }}>
+            {submetida ? 'Prazo: ' : 'Tens até '}{fmtDate(aberta.prazo)}{!submetida && ' para submeter a tua nota.'}
+          </div>
         )}
         {!aberta.prazo && <div style={{ marginBottom: 16 }} />}
 
@@ -25109,24 +25134,63 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
           </div>
         )}
 
-        <Field label="A tua nota" solto>
-          <TextArea
-            value={notaAtual}
-            onChange={e => setNotas(prev => ({ ...prev, [aberta.id]: e.target.value }))}
-            onBlur={() => gravarNota(aberta.id, notaAtual)}
-            placeholder="Escreve aqui o que quiseres dizer sobre esta tarefa."
-            style={{ minHeight: 120 }}
-          />
-        </Field>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-          <span style={{ fontSize: 11.5, color: T.mutedDim }}>
-            {aGravar[aberta.id] ? 'A guardar…' : 'Guarda-se sozinho ao saíres do campo.'}
-          </span>
-          <Btn onClick={() => gravarNota(aberta.id, notaAtual)} disabled={aGravar[aberta.id]}>
-            <Check size={15} /> Guardar
-          </Btn>
-        </div>
+        {submetida ? (
+          <>
+            <Field label="A tua nota" solto>
+              <div style={{
+                background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px',
+                fontSize: 13.5, color: T.cream, whiteSpace: 'pre-wrap', lineHeight: 1.5, minHeight: 60,
+              }}>{notaAtual || '—'}</div>
+            </Field>
+            <div style={{ fontSize: 11.5, color: T.good, marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Check size={13} /> Já submetida — não podes voltar a editar.
+            </div>
+          </>
+        ) : (
+          <>
+            <Field label="A tua nota" solto>
+              <TextArea
+                value={notaAtual}
+                onChange={e => setNotas(prev => ({ ...prev, [aberta.id]: e.target.value }))}
+                onBlur={() => gravarNota(aberta.id, notaAtual)}
+                placeholder="Escreve aqui o que quiseres dizer sobre esta tarefa."
+                style={{ minHeight: 120 }}
+              />
+            </Field>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
+              <span style={{ fontSize: 11.5, color: T.mutedDim }}>
+                {aGravar[aberta.id] ? 'A guardar…' : 'Guarda-se sozinho ao saíres do campo — podes continuar mais tarde.'}
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn variant="ghost" onClick={() => gravarNota(aberta.id, notaAtual)} disabled={aGravar[aberta.id]}>
+                  Guardar
+                </Btn>
+                <Btn onClick={() => setConfirmar(true)} disabled={!podeSubmeter}>
+                  <Check size={15} /> Submeter
+                </Btn>
+              </div>
+            </div>
+          </>
+        )}
         {erro && <div style={{ fontSize: 12.5, color: T.bad, marginTop: 10 }}>{erro}</div>}
+
+        {confirmar && (
+          <div style={{
+            position: 'fixed', inset: 0, background: '#000000aa', zIndex: 60,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}>
+            <div style={{ background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20, maxWidth: 380, width: '100%' }}>
+              <div style={{ ...display, fontSize: 16, color: T.cream, marginBottom: 8 }}>Submeter a nota?</div>
+              <div style={{ fontSize: 13, color: T.muted, marginBottom: 18, lineHeight: 1.5 }}>
+                Depois de submeteres não podes voltar a editar esta nota. A equipa técnica vai poder lê-la.
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <Btn variant="ghost" onClick={() => setConfirmar(false)} disabled={aSubmeter}>Cancelar</Btn>
+                <Btn onClick={confirmarSubmissao} disabled={aSubmeter}>{aSubmeter ? 'A submeter…' : 'Confirmar'}</Btn>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -25160,9 +25224,13 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
                   }}>{t.titulo}</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
                     {t.prazo && <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{fmtDate(t.prazo)}</span>}
-                    {t.notaAtleta && (
+                    {t.notaSubmetida ? (
+                      <span style={{ fontSize: 11, color: T.good, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Check size={11} /> nota submetida
+                      </span>
+                    ) : t.notaAtleta && (
                       <span style={{ fontSize: 11, color: T.gold, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <FileText size={11} /> já escreveste uma nota
+                        <FileText size={11} /> rascunho por submeter
                       </span>
                     )}
                   </span>
@@ -30711,10 +30779,17 @@ function prazoTexto(prazo, hoje) {
    desaparece quando a marco como concluída — não quando o prazo passa
    nem por eu simplesmente ter reparado nela. Prazos distantes ou sem
    prazo continuam a contar, ao contrário do resumo "As minhas tarefas"
-   da página principal, que esse sim só mostra o que é urgente. */
+   da página principal, que esse sim só mostra o que é urgente.
+
+   TAMBÉM CONTA as tarefas que EU criei, atribuídas a um jogador, cuja
+   nota já foi submetida e que ainda não abri para ler (`notaRevista`) —
+   é o aviso de "o atleta já respondeu, vai ver o que ele escreveu". Só
+   conta para quem criou a tarefa (não faz sentido notificar quem só é
+   o responsável por a acompanhar). */
 function tarefasAMinhaPorta(tarefas, euId, ctx) {
   const hoje = todayStr();
   return (tarefas || []).filter(t => {
+    if (t.jogadorId && t.notaSubmetida && !t.notaRevista && t.criadoPor === euId) return true;
     if (t.responsavel !== euId && t.responsavel) return false;
     if (t.recorrencia) return tarefaAtivaHoje(t, hoje, ctx || {}) && !tarefaFeitaHoje(t, hoje);
     return t.estado !== 'feita';
@@ -30852,10 +30927,13 @@ function TarefaModal({ tarefa, membros, players, euId, onClose, onSave, onRemove
         <div style={{ marginBottom: 16 }}>
           <Field label={`Nota de ${shortPlayerName((players || []).find(p => p.id === f.jogadorId) || {}, players)}`} solto>
             <div style={{
-              background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px',
+              background: T.bg, border: `1px solid ${f.notaSubmetida ? T.good : T.line}`, borderRadius: 8, padding: '10px 12px',
               fontSize: 13, color: T.cream, whiteSpace: 'pre-wrap', lineHeight: 1.5,
             }}>{f.notaAtleta}</div>
           </Field>
+          <div style={{ fontSize: 11.5, color: f.notaSubmetida ? T.good : T.mutedDim, marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+            {f.notaSubmetida ? <><Check size={12} /> Submetida{f.notaSubmetidaEm ? ` em ${fmtDate(f.notaSubmetidaEm.slice(0, 10))}` : ''} — o jogador já não a pode editar.</> : 'Ainda por submeter — o jogador pode continuar a editar.'}
+          </div>
         </div>
       )}
 
@@ -30882,12 +30960,13 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
     ? aniversariantesEm(players, hoje)
     : [];
   const jogadorAtribuido = tarefa.jogadorId ? (players || []).find(p => p.id === tarefa.jogadorId) : null;
+  const porRever = tarefa.jogadorId && tarefa.notaSubmetida && !tarefa.notaRevista && tarefa.criadoPor === euId;
 
   return (
     <div style={{
       display: 'flex', gap: 11, alignItems: 'flex-start',
       padding: '11px 13px', background: T.bg, borderRadius: 9,
-      border: `1px solid ${T.line}`, marginBottom: 8,
+      border: `1px solid ${porRever ? T.crimsonBright : T.line}`, marginBottom: 8,
     }}>
       <button
         onClick={() => onAlternar(tarefa)}
@@ -30920,9 +30999,13 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
         )}
 
         {jogadorAtribuido && (
-          <div style={{ fontSize: 11.5, color: T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ fontSize: 11.5, color: porRever ? T.crimsonBright : T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, fontWeight: porRever ? 600 : 400 }}>
             <UserCheck size={12} /> {shortPlayerName(jogadorAtribuido, players)}
-            {tarefa.notaAtleta && <FileText size={11} style={{ color: T.mutedDim, marginLeft: 2 }} />}
+            {tarefa.notaSubmetida ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 2 }}>
+                <Check size={11} /> {porRever ? 'nota nova — ver' : 'nota submetida'}
+              </span>
+            ) : tarefa.notaAtleta && <FileText size={11} style={{ color: T.mutedDim, marginLeft: 2 }} />}
           </div>
         )}
 
@@ -30973,6 +31056,15 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     const t = tarefas.find(x => x.id === id);
     removeWithUndo(tarefas, setTarefas, id, t ? t.titulo : 'Tarefa');
     setModal(null);
+  };
+  /* Abrir uma tarefa cuja nota está por rever marca-a logo como revista
+     — é a forma mais natural de "marcar como lida": basta abrir para ver
+     o que o atleta escreveu, sem precisar de mais nenhum clique. */
+  const abrir = (t) => {
+    if (t.jogadorId && t.notaSubmetida && !t.notaRevista && t.criadoPor === euId) {
+      setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, notaRevista: true } : x)));
+    }
+    setModal(t);
   };
   /* Numa recorrente, "concluir" marca só o DIA DE HOJE
      (`concluidasEm`) — nunca o estado geral da tarefa, que fica sempre
@@ -31078,7 +31170,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
               ) : g.lista.map(t => (
                 <LinhaTarefa
                   key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
-                  onAbrir={setModal} onAlternar={alternar}
+                  onAbrir={abrir} onAlternar={alternar}
                 />
               ))}
             </div>
@@ -31099,7 +31191,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         ) : feitas.map(t => (
           <LinhaTarefa
             key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
-            onAbrir={setModal} onAlternar={alternar}
+            onAbrir={abrir} onAlternar={alternar}
           />
         ))}
       </Panel>
