@@ -15448,16 +15448,35 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     prev.includes(p.id) ? prev.filter(id => id !== p.id) : [...prev, p.id]
   ));
 
-  const toggleExercicio = (x) => setEscolhidos(prev => (
-    prev.some(e => e.id === x.id)
-      ? prev.filter(e => e.id !== x.id)
-      // A duração vem do treino planeado; a do exercício é só o recurso.
-      /* `playersCount` entra aqui com o valor do exercício, mas é uma
-         CÓPIA que se pode mexer só para este treino. Mudar o exercício
-         na biblioteca por causa de um dia em que apareceram menos
-         miúdos estragava-o para sempre. */
-      : [...prev, { id: x.id, minutos: Number(duracaoNoTreino.get(x.id)) || Number(x.defaultDuration) || 15, maxSimultaneo: 1, grupo: '', playersCount: x.playersCount || '' }]
+  /* MONTAR EQUIPAS À MÃO — ao ligar um exercício, pergunta-se primeiro se
+     é para distribuir automaticamente (como sempre foi) ou se o
+     treinador quer definir ele mesmo quantas equipas há e quantos
+     jogadores em cada. A resposta só define a ESTRUTURA (nº de equipas e
+     tamanhos) — compõe-se na mesma notação de sempre ("7x7x8"), e cai
+     direto no campo "Nº de jogadores só neste treino" que já existe.
+     Quem vai para cada equipa continua a decidir-se como sempre: pelo
+     "Distribuir"/"Baralhar de novo", ou à mão, equipa a equipa, com o
+     lápis que já existe (ver `editarEquipa` mais abaixo) — não faz
+     sentido duplicar essa parte, que já funciona bem. */
+  const [perguntarManual, setPerguntarManual] = useState(null); // exercício pendente de resposta
+  const [construirEquipas, setConstruirEquipas] = useState(null); // { exercicio, equipas: [n, n, ...] }
+
+  const adicionarExercicio = (x, playersCountOverride) => setEscolhidos(prev => (
+    prev.some(e => e.id === x.id) ? prev : [...prev, {
+      id: x.id,
+      minutos: Number(duracaoNoTreino.get(x.id)) || Number(x.defaultDuration) || 15,
+      maxSimultaneo: 1, grupo: '',
+      playersCount: playersCountOverride !== undefined ? playersCountOverride : (x.playersCount || ''),
+    }]
   ));
+
+  const toggleExercicio = (x) => {
+    if (escolhidos.some(e => e.id === x.id)) {
+      setEscolhidos(prev => prev.filter(e => e.id !== x.id));
+      return;
+    }
+    setPerguntarManual(x);
+  };
   const patchExercicio = (id, patch) => setEscolhidos(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
   const moverExercicio = (id, delta) => setEscolhidos(prev => {
     const i = prev.findIndex(e => e.id === id);
@@ -16395,6 +16414,69 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
               fixarEquipa(editarEquipa.chave, editarEquipa.atuais);
               setEditarEquipa(null);
             }}><Check size={15} /> Fixar esta equipa</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {perguntarManual && (
+        <Modal title="Montar equipas à mão?" onClose={() => setPerguntarManual(null)}>
+          <p style={{ color: T.muted, fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
+            Para "<strong style={{ color: T.cream }}>{perguntarManual.name}</strong>", queres definir tu quantas equipas
+            há e quantos jogadores em cada, ou deixar a distribuição automática de sempre
+            {perguntarManual.playersCount ? ` (${perguntarManual.playersCount})` : ''}?
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <Btn variant="ghost" onClick={() => { adicionarExercicio(perguntarManual); setPerguntarManual(null); }}>
+              Automática
+            </Btn>
+            <Btn onClick={() => {
+              setConstruirEquipas({ exercicio: perguntarManual, equipas: [tamanhoEquipa, tamanhoEquipa] });
+              setPerguntarManual(null);
+            }}>À mão</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {construirEquipas && (
+        <Modal title={`Equipas — ${construirEquipas.exercicio.name}`} onClose={() => setConstruirEquipas(null)}>
+          <p style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 16, lineHeight: 1.5 }}>
+            Define quantas equipas há e quantos jogadores em cada uma. Quem fica em cada equipa continua a
+            escolher-se a seguir, com "Distribuir" ou à mão, equipa a equipa.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+            {construirEquipas.equipas.map((n, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 13, color: T.cream, width: 76, flexShrink: 0 }}>Equipa {i + 1}</span>
+                <Input
+                  type="number" min={1} max={30} value={n}
+                  onChange={e => {
+                    const v = Math.max(1, Math.min(30, parseInt(e.target.value, 10) || 1));
+                    setConstruirEquipas(prev => ({ ...prev, equipas: prev.equipas.map((x, xi) => (xi === i ? v : x)) }));
+                  }}
+                  style={{ width: 74 }}
+                />
+                <span style={{ fontSize: 12, color: T.mutedDim }}>jogadores</span>
+                {construirEquipas.equipas.length > 1 && (
+                  <button
+                    onClick={() => setConstruirEquipas(prev => ({ ...prev, equipas: prev.equipas.filter((_, xi) => xi !== i) }))}
+                    title="Remover esta equipa"
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.bad, cursor: 'pointer', display: 'flex' }}
+                  ><Trash2 size={15} /></button>
+                )}
+              </div>
+            ))}
+          </div>
+          <Btn
+            variant="ghost"
+            onClick={() => setConstruirEquipas(prev => ({ ...prev, equipas: [...prev.equipas, tamanhoEquipa] }))}
+            style={{ marginBottom: 18 }}
+          ><Plus size={15} /> Adicionar equipa</Btn>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <Btn variant="ghost" onClick={() => setConstruirEquipas(null)}>Cancelar</Btn>
+            <Btn onClick={() => {
+              adicionarExercicio(construirEquipas.exercicio, construirEquipas.equipas.join('x'));
+              setConstruirEquipas(null);
+            }}><Check size={15} /> Guardar</Btn>
           </div>
         </Modal>
       )}
