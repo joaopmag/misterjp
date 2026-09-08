@@ -2484,6 +2484,19 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarefasReady, teamId]);
 
+  /* PONTO DE PARTIDA DA CONTAGEM DOS 30 DIAS — "a partir de agora", não
+     desde sempre. Guardado em `season.streakDesde` (mais um campo na
+     Época, que já é um singleton por equipa — não precisa de tabela
+     nova). Só se define UMA vez, na primeira vez que a equipa abre a
+     app depois desta funcionalidade existir; a partir daí só muda
+     quando alguém bate a marca (ver o efeito seguinte), nunca sozinho. */
+  useEffect(() => {
+    if (!seasonReady) return;
+    if (season.streakDesde) return;
+    setSeason(prev => ({ ...prev, streakDesde: todayStr() }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seasonReady]);
+
   /* PRÉMIO DOS 30 DIAS SEGUIDOS — mesmo mecanismo do aniversário: a app
      garante sozinha que a tarefa existe, sem ninguém ter de a criar à
      mão, e escreve DIRETO no Supabase pela mesma razão (ver o comentário
@@ -2497,22 +2510,25 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      a horas. O que falta filtrar é só o oposto: um registo que o staff
      tenha preenchido à mão em Monitorização.
 
-     Para saber quem gravou cada registo, existe `updated_by_email` — mas
-     REPARA que nenhum sítio desta app o escreve explicitamente (procura
-     por "updated_by_email:" no ficheiro todo). Isso só pode quer dizer
-     uma coisa: é a base de dados a preenchê-lo sozinha a partir de quem
-     estiver autenticado (um trigger com `auth.email()`, provavelmente).
-     O quiosque não tem sessão nenhuma — por isso um registo do quiosque
-     fica com esse campo vazio, e só tem email quando é staff autenticado
-     a gravar. CONFIRMA ISTO nos teus dados reais antes de confiar: abre
-     a tabela `monitoring` no Supabase, encontra um dia que sabes que foi
-     o próprio atleta a responder no telemóvel dele, e vê se a coluna
-     `updated_by_email` vem mesmo vazia nessa linha. Se não vier — avisa-
-     me, que a condição abaixo (`!meta.email`) tem de mudar. */
+     Para saber quem gravou cada registo, existe `updated_by_email` —
+     confirmado nos dados reais desta equipa: fica vazio quando é o
+     quiosque a gravar (sem sessão autenticada) e só tem email quando é
+     staff autenticado.
+
+     "RECOMEÇA DO ZERO PARA TODOS QUANDO ALGUÉM CHEGA AOS 30": a
+     contagem de cada jogador nunca olha para trás de `season.streakDesde`
+     — e assim que um jogador bate a marca, essa data avança para o dia
+     seguinte ao fim da sequência dele, para toda a equipa. Não é só ELE
+     a recomeçar: É A RONDA INTEIRA. Dentro do mesmo ciclo do efeito
+     (antes de a gravação no servidor voltar), `desdeNestaPassagem`
+     guarda esse avanço em memória — para dois jogadores que batam a
+     marca no mesmíssimo dia não abrirem duas tarefas com dois pontos de
+     partida diferentes. */
   useEffect(() => {
-    if (!tarefasReady || !monitoringReady || !playersReady || !teamId) return;
+    if (!tarefasReady || !monitoringReady || !playersReady || !seasonReady || !teamId) return;
+    let desdeNestaPassagem = season.streakDesde || todayStr();
     (players || []).forEach(p => {
-      const { dias, inicio } = sequenciaAutonomaCompleta(p.id, monitoring, monitoringMeta);
+      const { dias, inicio, fim } = sequenciaAutonomaCompleta(p.id, monitoring, monitoringMeta, null, desdeNestaPassagem);
       if (dias < 30) return;
       // A mesma sequência (mesmo dia de início) só cria a tarefa uma vez.
       // Se a sequência quebrar e o atleta chegar aos 30 outra vez mais
@@ -2533,9 +2549,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       };
       supabase.from('tarefas').insert([{ id: uid(), data: registo, team_id: teamId }])
         .then(({ error }) => { if (error) console.error('tarefas (auto streak30)', error); });
+      // Reinicia a ronda para toda a equipa a partir do dia seguinte.
+      const novoDesde = addDays(fim, 1);
+      desdeNestaPassagem = novoDesde;
+      setSeason(prev => (prev.streakDesde === novoDesde ? prev : { ...prev, streakDesde: novoDesde }));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tarefasReady, monitoringReady, playersReady, teamId, monitoring, tarefas, players]);
+  }, [tarefasReady, monitoringReady, playersReady, seasonReady, teamId, monitoring, tarefas, players, season.streakDesde]);
 
   // Momentos de avaliação do Desenvolvimento Individual. Guarda os
   // momentos e, dentro de cada um, um registo por jogador — não duplica o
@@ -17486,12 +17506,15 @@ function diaAutonomoCompleto(playerId, date, monitoring, monitoringMeta) {
   });
 }
 
-function sequenciaAutonomaCompleta(playerId, monitoring, monitoringMeta, hoje) {
+function sequenciaAutonomaCompleta(playerId, monitoring, monitoringMeta, hoje, desde) {
   hoje = hoje || todayStr();
   const comecaEm = diaAutonomoCompleto(playerId, hoje, monitoring, monitoringMeta) ? hoje : addDays(hoje, -1);
   let dias = 0;
   let d = comecaEm;
-  while (diaAutonomoCompleto(playerId, d, monitoring, monitoringMeta)) {
+  // Nunca conta para trás de `desde` — é o que garante que uma sequência
+  // antiga (de antes desta funcionalidade existir, ou de antes da ronda
+  // anterior ter sido premiada) não continua a valer para sempre.
+  while ((!desde || d >= desde) && diaAutonomoCompleto(playerId, d, monitoring, monitoringMeta)) {
     dias++;
     d = addDays(d, -1);
   }
