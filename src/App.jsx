@@ -2904,15 +2904,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             width: 100%; max-width: 172mm; padding: 0; margin: 0;
             color: #111; background: #fff;
           }
-          .print-sheet h2, .print-sheet h3 {
-            font-family: 'Oswald', sans-serif;
-            /* Nunca deixar um título sozinho no fim de uma folha, com o
-               que vem a seguir só a começar na folha seguinte — a app
-               tem 14 fichas diferentes para imprimir, e esta regra
-               resolve-o em todas de uma vez, em vez de repetir isto
-               exercício a exercício, ficha a ficha. */
-            break-after: avoid-page; page-break-after: avoid;
-          }
+          /* Cheguei a pôr aqui um "break-after: avoid" nos títulos, para
+             nenhum ficar sozinho no fim de uma folha. Revertido: quando o
+             que vem a seguir ao título é grande (um exercício com
+             diagrama, por exemplo) e não cabe no resto da folha, o
+             browser em vez de só empurrar esse conteúdo, empurra o
+             TÍTULO JUNTO — e por vezes isso deixa uma folha praticamente
+             em branco, o que é bem pior do que um título sozinho de vez
+             em quando. */
+          .print-sheet h2, .print-sheet h3 { font-family: 'Oswald', sans-serif; }
           .print-sheet svg { break-inside: avoid; page-break-inside: avoid; }
           /* Nada gera quebra de página por si só; só o conteúdo é que decide. */
           .print-sheet > *:last-child { page-break-after: auto; break-after: auto; }
@@ -17405,12 +17405,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             <PrintOnzeAmigavel session={printSession} jogo={jogoDaSessao(printSession)} players={players} ideias={ideiasDaSessao(printSession)} />
           ) : (
             <>
-              {/* Sem isto, o título podia ficar sozinho no fim de uma
-                  folha, com o primeiro exercício a começar só na folha
-                  seguinte — exatamente o que já está protegido, exercício
-                  a exercício, com `pageBreakInside: 'avoid'` ali em baixo,
-                  mas faltava aqui no título. */}
-              <h3 style={{ fontSize: 15, margin: '0 0 8px', pageBreakAfter: 'avoid', breakAfter: 'avoid-page' }}>Exercícios</h3>
+              <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Exercícios</h3>
               {(printSession.exerciseIds || []).map((e, i) => (
                 <PrintExerciseBlock
                   key={e.exId}
