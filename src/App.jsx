@@ -24091,6 +24091,12 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     .map(t => (tarefasAjustes[t.id] ? { ...t, ...tarefasAjustes[t.id] } : t));
   const tarefasPorFazer = listaTarefas.filter(t => t.estado !== 'feita');
 
+  // Sequência do cartão da chama, calculada no servidor (a mesma regra
+  // da tarefa dos 30 dias: Wellness + PSE, autónomo, com o mesmo
+  // reinício) — ver o comentário grande junto de `checkin_sequencia_wellness_pse.sql`.
+  const [, dadosSequencia] = usePortalFetch('checkin_sequencia_wellness_pse', code, teamId);
+  const diasSequenciaChama = (dadosSequencia && dadosSequencia.dias) || 0;
+
   // Relógio interno: as janelas horárias abrem/fecham sozinhas sem o atleta
   // ter de recarregar a página (ex.: está no ecrã às 12:59 e às 13:00 o
   // Wellness fecha e o PSE passa a estar disponível às 13:10).
@@ -24255,6 +24261,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       onLogout={onLogout}
       tarefasPendentes={tarefasPorFazer}
       onAbrirTarefa={(t) => { setTarefaParaAbrir(t.id); setActiveType('tarefas'); }}
+      diasSequenciaChama={diasSequenciaChama}
     />
   );
 }
@@ -25834,6 +25841,12 @@ function CheckinLogin({ onSubmit, equipa }) {
 
    Limitada aos mesmos `CHECKIN_DAYS_BACK` dias que a app já trazia
    para o histórico — não é preciso pedir mais nada ao servidor. */
+/* `sequenciaWellness` deixou de ser usada pelo StreakCard — a chama
+   passou a seguir a mesma regra (Wellness + PSE, autónomo, com o mesmo
+   reinício) que a tarefa dos 30 dias, calculada no servidor por
+   `checkin_sequencia_wellness_pse` (o "autónomo" depende de
+   updated_by_email, que o quiosque não recebe). Fica cá só por se
+   algures ainda for útil um dia — não faz mal nenhum ficar sem uso. */
 function sequenciaWellness(recentDates, dayStatus) {
   const hoje = todayStr();
   let i = recentDates.length - 1;
@@ -25846,11 +25859,11 @@ function sequenciaWellness(recentDates, dayStatus) {
   return count;
 }
 
-function StreakCard({ recentDates, dayStatus }) {
-  const dias = sequenciaWellness(recentDates, dayStatus);
+function StreakCard({ dias }) {
+  dias = dias || 0;
   const texto = dias === 0
     ? 'Acende a chama — começa hoje a tua sequência.'
-    : `${dias} ${dias === 1 ? 'dia seguido' : 'dias seguidos'} a responder ao Wellness.`;
+    : `${dias} ${dias === 1 ? 'dia seguido' : 'dias seguidos'} a responder ao Wellness e ao PSE.`;
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22,
@@ -25862,7 +25875,7 @@ function StreakCard({ recentDates, dayStatus }) {
   );
 }
 
-function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenPortal, onLogout, tarefasPendentes, onAbrirTarefa }) {
+function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenPortal, onLogout, tarefasPendentes, onAbrirTarefa, diasSequenciaChama }) {
   const isToday = selectedDate === todayStr();
   const isRestDay = session && session.phase === 'Descanso';
   const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : `Sem sessão definida para ${isToday ? 'hoje' : 'este dia'}`;
@@ -25951,7 +25964,7 @@ function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate
       )}
 
       {recentDates && (
-        <StreakCard recentDates={recentDates} dayStatus={dayStatus} />
+        <StreakCard dias={diasSequenciaChama} />
       )}
 
       {!isToday && (
