@@ -24082,7 +24082,13 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // isto, o atleta só saberia que tem uma tarefa depois de já ter entrado
   // no Portal, o que não serve de notificação nenhuma.
   const [estadoTarefas, dadosTarefas] = usePortalFetch('checkin_tarefas', code, teamId);
-  const listaTarefas = (dadosTarefas && dadosTarefas.tarefas) || [];
+  // Ajustes feitos DEPOIS deste pedido (rascunhos gravados, submissões)
+  // ficam aqui por cima — sem isto, sair de Tarefas e voltar a entrar
+  // mostrava outra vez os dados de quando o quiosque abriu, como se a
+  // nota nunca tivesse sido gravada (o pedido não se repete sozinho).
+  const [tarefasAjustes, setTarefasAjustes] = useState({});
+  const listaTarefas = ((dadosTarefas && dadosTarefas.tarefas) || [])
+    .map(t => (tarefasAjustes[t.id] ? { ...t, ...tarefasAjustes[t.id] } : t));
   const tarefasPorFazer = listaTarefas.filter(t => t.estado !== 'feita');
 
   // Relógio interno: as janelas horárias abrem/fecham sozinhas sem o atleta
@@ -24215,6 +24221,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         code={code} teamId={teamId} onBack={() => setActiveType('portal')}
         tarefas={listaTarefas} estado={estadoTarefas}
         tarefaAbrirId={tarefaParaAbrir} onTarefaAberta={() => setTarefaParaAbrir(null)}
+        onNotaGravada={(id, patch) => setTarefasAjustes(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
       />
     );
   }
@@ -25032,7 +25039,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
    notificação do ecrã inicial e para este ecrã — não faz sentido pedir
    duas vezes a mesma coisa). Aqui só se guarda localmente a nota que
    vai sendo escrita, otimista, e grava-se ao perder o foco do campo. */
-function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirId, onTarefaAberta }) {
+function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirId, onTarefaAberta, onNotaGravada }) {
   const [abertaId, setAbertaId] = useState(null);
   const [notas, setNotas] = useState({}); // id -> texto local (por cima do que veio do servidor)
   const [aGravar, setAGravar] = useState({});
@@ -25085,6 +25092,10 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
         p_code: code, p_team: teamId, p_tarefa_id: tarefaId, p_nota: texto, p_submeter: false,
       });
       if (error || !(data && data.ok)) throw (error || new Error('recusado'));
+      // Sem isto, sair de Tarefas e voltar a entrar mostrava outra vez a
+      // nota antiga — o pedido ao servidor só acontece uma vez, quando o
+      // quiosque abre, e não se repete sozinho.
+      if (onNotaGravada) onNotaGravada(tarefaId, { notaAtleta: texto });
     } catch (e) {
       setErro('A nota não ficou guardada. Tenta outra vez.');
     } finally {
@@ -25106,6 +25117,7 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
         });
         if (error || !(data && data.ok)) throw (error || new Error('recusado'));
         setSubmetidas(prev => ({ ...prev, [aberta.id]: true }));
+        if (onNotaGravada) onNotaGravada(aberta.id, { notaAtleta: notaAtual, notaSubmetida: true });
         setConfirmar(false);
       } catch (e) {
         setErro('Não foi possível submeter. Tenta outra vez.');
@@ -25162,10 +25174,10 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
                 {aGravar[aberta.id] ? 'A guardar…' : 'Guarda-se sozinho ao saíres do campo — podes continuar mais tarde.'}
               </span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <Btn variant="ghost" onClick={() => gravarNota(aberta.id, notaAtual)} disabled={aGravar[aberta.id]}>
+                <Btn variant="ghost" onClick={(ev) => { gravarNota(aberta.id, notaAtual); ev.currentTarget.blur(); }} disabled={aGravar[aberta.id]}>
                   Guardar
                 </Btn>
-                <Btn onClick={() => setConfirmar(true)} disabled={!podeSubmeter}>
+                <Btn onClick={(ev) => { setConfirmar(true); ev.currentTarget.blur(); }} disabled={!podeSubmeter}>
                   <Check size={15} /> Submeter
                 </Btn>
               </div>
@@ -25185,7 +25197,7 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
                 Depois de submeteres não podes voltar a editar esta nota. A equipa técnica vai poder lê-la.
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <Btn variant="ghost" onClick={() => setConfirmar(false)} disabled={aSubmeter}>Cancelar</Btn>
+                <Btn variant="ghost" onClick={(ev) => { setConfirmar(false); ev.currentTarget.blur(); }} disabled={aSubmeter}>Cancelar</Btn>
                 <Btn onClick={confirmarSubmissao} disabled={aSubmeter}>{aSubmeter ? 'A submeter…' : 'Confirmar'}</Btn>
               </div>
             </div>
@@ -30781,15 +30793,16 @@ function prazoTexto(prazo, hoje) {
    prazo continuam a contar, ao contrário do resumo "As minhas tarefas"
    da página principal, que esse sim só mostra o que é urgente.
 
-   TAMBÉM CONTA as tarefas que EU criei, atribuídas a um jogador, cuja
-   nota já foi submetida e que ainda não abri para ler (`notaRevista`) —
-   é o aviso de "o atleta já respondeu, vai ver o que ele escreveu". Só
-   conta para quem criou a tarefa (não faz sentido notificar quem só é
-   o responsável por a acompanhar). */
+   UMA TAREFA ATRIBUÍDA A UM JOGADOR é um caso à parte, de propósito:
+   NUNCA conta por estar "por fazer" ou por eu ser o Responsável (o
+   formulário põe-me como Responsável por defeito, mesmo numa tarefa
+   destinada só a um atleta — isso não é motivo de notificação). Só
+   conta quando o atleta já submeteu a nota e eu ainda não a li
+   (`notaSubmetida && !notaRevista`), e só para quem criou a tarefa. */
 function tarefasAMinhaPorta(tarefas, euId, ctx) {
   const hoje = todayStr();
   return (tarefas || []).filter(t => {
-    if (t.jogadorId && t.notaSubmetida && !t.notaRevista && t.criadoPor === euId) return true;
+    if (t.jogadorId) return t.notaSubmetida && !t.notaRevista && t.criadoPor === euId;
     if (t.responsavel !== euId && t.responsavel) return false;
     if (t.recorrencia) return tarefaAtivaHoje(t, hoje, ctx || {}) && !tarefaFeitaHoje(t, hoje);
     return t.estado !== 'feita';
