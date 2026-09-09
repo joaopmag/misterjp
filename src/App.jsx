@@ -16956,6 +16956,11 @@ function MinutosPorJogador({ presentes, minutos, players, isNarrow }) {
 }
 
 function Planeamento({ sessions, setSessions, exercises, players, setPlayers, matches, setMatches, standings, season, clinico, convocatorias, setConvocatorias }) {
+  const isMobile = useIsMobile(700);
+  // Ecrã inteiro do Simulador tem scroll próprio (é um overlay `position:
+  // fixed`, não faz parte do <main> normal) — precisa da sua própria
+  // referência para o botão "voltar ao topo" saber o que rolar.
+  const simuladorScrollRef = useRef(null);
   const [modal, setModal] = useState(null); // null | 'new' | {presetDate} | session object
   const [modalVoltarDia, setModalVoltarDia] = useState(false); // true só quando abriu a partir da janela do dia
   const [matchModal, setMatchModal] = useState(null); // null | jogo a editar (a partir da agenda)
@@ -17435,7 +17440,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           relação ao separador que era é só o caminho: abre-se de um dia
           concreto e fecha-se de volta para ele. */}
       {simuladorDia && (
-        <div style={{
+        <div ref={simuladorScrollRef} style={{
           position: 'fixed', inset: 0, zIndex: 60, background: T.bg,
           overflowY: 'auto', WebkitOverflowScrolling: 'touch',
         }}>
@@ -17455,6 +17460,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               diaInicial={simuladorDia}
             />
           </div>
+          <BotaoTopo alvoRef={simuladorScrollRef} isMobile={isMobile} />
         </div>
       )}
 
