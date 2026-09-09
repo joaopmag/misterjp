@@ -15662,12 +15662,27 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
      de ideias depois de já ter guardado. Alterar não precisa de botão
      próprio: baralhar de novo e voltar a "Guardar" já substitui o registo
      (ver `guardarNoTreino` acima); só faltava mesmo a forma de o remover
-     por completo, sem deixar lá umas equipas antigas por engano. */
+     por completo, sem deixar lá umas equipas antigas por engano.
+
+     Apaga a sério: tira também `simuladorConfig` (não só `equipasSimulador`
+     — sem isto, a configuração completa continuava gravada e reabria na
+     mesma da próxima vez, como se nada tivesse sido apagado) E repõe o
+     ecrã a zero — presenças, exercícios, equipas fixadas, trocas e o
+     resultado. Sem isto, o ecrã continuava a mostrar tudo o que lá
+     estava, como se o "Apagar" não tivesse feito nada — só desaparecia
+     mesmo da sessão, não do que se via no simulador. */
   const apagarDoTreino = () => {
     if (!setSessions) return;
     const alvo = encontrarSessaoAlvo();
     if (!alvo) return;
-    setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: null } : x)));
+    setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: null, simuladorConfig: null } : x)));
+    setPresentIds([]);
+    setConvidados([]);
+    setEscolhidos([]);
+    setEquipasFixas({});
+    setTrocasPorOcorrencia({});
+    setPlanoBase(null);
+    setJogo(null);
   };
 
   const gerarJogo = () => {
