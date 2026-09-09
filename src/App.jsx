@@ -15750,12 +15750,23 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     ED: [0.74, 0.84], EE: [0.74, 0.16], PL: [0.86, 0.50],
   };
   const LUGARES_QUE_SE_PODEM_JUNTAR = ['GR', 'DD', 'DC', 'DE', 'AD', 'AE', 'MD', 'MC', 'MOC', 'ED', 'EE', 'PL'];
-  const pontoLivre = (lugar, onze) => {
+  // No máximo 4 por posição — nem se tenta arranjar espaço para um 5º, o
+  // "+ juntar lugar" nem chega a mostrar a opção (ver `contarLugar`, onde
+  // isto é usado para filtrar a lista).
+  const MAX_POR_LUGAR = 4;
+  const contarLugar = (onze, lugar) => onze.filter(l => l.lugar === lugar).length;
+  const pontoLivre = (lugar, onze, formacaoAtual) => {
     const [bx, by] = PONTO_BASE_DO_LUGAR[lugar] || [0.50, 0.50];
-    const ocupado = (x, y) => onze.some(l => {
-      const p = l.ponto;
-      return p && Math.abs(p[0] - x) < 0.06 && Math.abs(p[1] - y) < 0.09;
-    });
+    // Um titular (do onze inicial) não tem `ponto` próprio — a posição
+    // dele vem da formação (`layout[i]`, pelo índice), exatamente como o
+    // desenho lê ao mostrar o campo. Sem isto, um lugar novo não via os
+    // titulares como "ocupado" e nascia mesmo em cima deles — era essa a
+    // sobreposição que ainda aparecia com os DC's. Agora calcula-se o
+    // ponto EFETIVO de cada lugar do onze, titular ou não, da mesma forma
+    // que o desenho o calcula.
+    const layoutAtual = LAYOUT_FORMACAO[formacaoAtual] || LAYOUT_FORMACAO['4-3-3'];
+    const pontosOcupados = onze.map((l, i) => l.ponto || layoutAtual[i] || [0.5, 0.5]);
+    const ocupado = (x, y) => pontosOcupados.some(([px, py]) => Math.abs(px - x) < 0.06 && Math.abs(py - y) < 0.09);
     if (!ocupado(bx, by)) return [bx, by];
     if (lugar === 'GR') {
       // O guarda-redes fica como sempre esteve — encostado à própria
@@ -15768,27 +15779,18 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       }
       return [bx, by];
     }
-    // Até 4 jogadores na mesma posição empilham-se para trás, na mesma
-    // faixa (mais perto da própria baliza) — nunca acima/abaixo, que
-    // empurrava o círculo para cima da posição vizinha. A partir do 5º,
-    // abre-se uma SEGUNDA faixa ao lado (acima, depois abaixo), e volta a
-    // empilhar para trás nela — "duas posições com 4 cada" em vez de
-    // continuar a espremer tudo numa fila só, que era o que ainda estava
-    // a sobrepor com muitos jogadores juntos na mesma posição.
-    const POR_FAIXA = 4;
-    for (let faixa = 0; faixa < 4; faixa++) {
-      const sentido = faixa % 2 === 1 ? 1 : -1;
-      const deslocamentoY = faixa === 0 ? 0 : sentido * Math.ceil(faixa / 2) * 0.13;
-      const y = Math.min(0.95, Math.max(0.05, by + deslocamentoY));
-      for (let passo = 0; passo < POR_FAIXA; passo++) {
-        const x = Math.max(0.05, bx - passo * 0.07);
-        if (!ocupado(x, y)) return [x, y];
-      }
+    // Até 4 (o máximo) empilham-se para trás, na mesma faixa — nunca
+    // acima/abaixo, que empurrava o círculo para cima da posição vizinha.
+    // Como agora há um limite rígido de 4 (ver `contarLugar`), nunca é
+    // preciso uma segunda faixa: o 4º cabe sempre nesta única fila.
+    for (let passo = 1; passo < MAX_POR_LUGAR; passo++) {
+      const x = Math.max(0.05, bx - passo * 0.07);
+      if (!ocupado(x, by)) return [x, by];
     }
     return [bx, by];
   };
   const juntarLugar = (pi, lugar) => mexerNoPeriodo(pi, (onze) => (
-    [...onze, { lugar, ponto: pontoLivre(lugar, onze), jogador: null }]
+    contarLugar(onze, lugar) >= MAX_POR_LUGAR ? onze : [...onze, { lugar, ponto: pontoLivre(lugar, onze, formacao), jogador: null }]
   ));
   const tirarLugar = (pi, indice) => {
     mexerNoPeriodo(pi, (onze) => onze.filter((_, i) => i !== indice));
@@ -16524,7 +16526,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                     title="Juntar um lugar a esta parte"
                   >
                     <option value="">+ juntar lugar</option>
-                    {LUGARES_QUE_SE_PODEM_JUNTAR.map(l => (
+                    {LUGARES_QUE_SE_PODEM_JUNTAR.filter(l => contarLugar(per.onze, l) < MAX_POR_LUGAR).map(l => (
                       <option key={l} value={l}>{rotuloDoLugar(l)}</option>
                     ))}
                   </Select>
