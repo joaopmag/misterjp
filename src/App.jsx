@@ -15378,6 +15378,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
      ser por turno, não só por exercício. */
   const [trocasPorOcorrencia, setTrocasPorOcorrencia] = useState({});
   const chaveOcorrencia = (bi, pi, xi) => `${bi}|${pi}|${xi}`;
+  const chavePeriodo = (pi) => `amigavel|${pi}`;
   const [editarTrocas, setEditarTrocas] = useState(null);
 
   const fixarEquipa = (chave, ids) => setEquipasFixas(prev => ({ ...prev, [chave]: ids }));
@@ -15589,7 +15590,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
         });
       })));
     } else {
-      jogo.periodos.forEach(per => {
+      jogo.periodos.forEach((per, pi) => {
         const titulares = per.onze.filter(l => l.jogador).map(l => l.jogador.name);
         if (!titulares.length) return;
         equipas.push({
@@ -15600,6 +15601,17 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
           equipa: 'Onze titular',
           guardaRedes: false,
           jogadores: titulares,
+        });
+        (trocasPorOcorrencia[chavePeriodo(pi)] || []).forEach(t => {
+          const sai = presentes.find(p => p.id === t.sai);
+          const entra = presentes.find(p => p.id === t.entra);
+          if (!sai || !entra) return;
+          trocas.push({
+            exercicio: `Jogo amigável · ${jogo.formacao}`,
+            turno: jogo.periodos.length > 1 ? per.numero : null,
+            sai: sai.name,
+            entra: entra.name,
+          });
         });
       });
     }
@@ -15709,12 +15721,24 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       return p && Math.abs(p[0] - x) < 0.06 && Math.abs(p[1] - y) < 0.09;
     });
     if (!ocupado(bx, by)) return [bx, by];
-    // Afasta-se em altura, para cima e para baixo à vez, até haver espaço.
-    for (let passo = 1; passo <= 5; passo++) {
-      for (const sentido of [1, -1]) {
-        const y = Math.min(0.95, Math.max(0.05, by + sentido * passo * 0.11));
-        if (!ocupado(bx, y)) return [bx, y];
+    if (lugar === 'GR') {
+      // O guarda-redes fica como sempre esteve — encostado à própria
+      // baliza, não há "atrás" para onde o empurrar.
+      for (let passo = 1; passo <= 5; passo++) {
+        for (const sentido of [1, -1]) {
+          const y = Math.min(0.95, Math.max(0.05, by + sentido * passo * 0.11));
+          if (!ocupado(bx, y)) return [bx, y];
+        }
       }
+      return [bx, by];
+    }
+    // Um lugar a mais na mesma posição nasce ATRÁS de quem já lá está
+    // (mais perto da própria baliza), na mesma faixa — nunca acima ou
+    // abaixo, que empurrava o círculo para cima da posição vizinha
+    // (era o que acontecia: um DE a mais nascia em cima do MOC).
+    for (let passo = 1; passo <= 6; passo++) {
+      const x = Math.max(0.05, bx - passo * 0.07);
+      if (!ocupado(x, by)) return [x, by];
     }
     return [bx, by];
   };
@@ -16477,6 +16501,45 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                   ))}
                 </div>
               </div>
+
+              {/* Trocas previstas para esta parte — mesma ideia do
+                  treino: pares "sai/entra", escolhidos de entre quem está
+                  no onze ou nos suplentes desta parte. */}
+              {(() => {
+                const chaveP = chavePeriodo(pi);
+                const trocasDaParte = trocasPorOcorrencia[chaveP] || [];
+                const noOnze = per.onze.filter(l => l.jogador).map(l => l.jogador);
+                const todosNaParte = [...noOnze, ...per.suplentes];
+                return (
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px dashed ${T.line}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: trocasDaParte.length ? 6 : 0 }}>
+                      <span style={{ fontSize: 11, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em' }}>Trocas previstas</span>
+                      <button
+                        onClick={() => setEditarTrocas({
+                          chave: chaveP,
+                          titulo: `${per.numero}ª parte`,
+                          opcoesSai: todosNaParte,
+                          opcoesEntra: todosNaParte,
+                          atuais: trocasDaParte,
+                        })}
+                        title="Definir quem sai e quem entra"
+                        style={{ background: 'none', border: 'none', color: trocasDaParte.length ? T.gold : T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}
+                      ><Pencil size={11} /></button>
+                    </div>
+                    {trocasDaParte.map((t, ti) => {
+                      const sai = presentes.find(p => p.id === t.sai);
+                      const entra = presentes.find(p => p.id === t.entra);
+                      return (
+                        <div key={ti} style={{ fontSize: 11.5, color: T.cream, display: 'flex', alignItems: 'center', gap: 5, lineHeight: 1.7 }}>
+                          <span>{sai ? shortPlayerName(sai, presentes) : '—'}</span>
+                          <ArrowRight size={11} color={T.mutedDim} />
+                          <span>{entra ? shortPlayerName(entra, presentes) : '—'}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           ))}
           <MinutosPorJogador presentes={presentes} minutos={jogo.minutosPorJogador} players={players} isNarrow={isNarrow} />
