@@ -15646,12 +15646,21 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
        mesmo escolhendo tudo igual, carregar em "Distribuir" voltava a
        baralhar quem não tivesse sido fixado à mão. `equipasSimulador`
        (acima) é só o retrato em texto para a ficha impressa; isto aqui é
-       o estado vivo para reconstruir o simulador tal e qual. */
+       o estado vivo para reconstruir o simulador tal e qual.
+
+       `minutosPorJogador` (dentro de `planoBase`/`jogo`) é um Map — e um
+       Map não sobrevive a ser gravado como JSON (a base de dados guarda
+       JSON a sério, não objetos de JavaScript): volta um objeto normal,
+       sem `.get`/`.values`, e a app rebentava ao tentar usá-lo como Map
+       outra vez. `serializarResultado` troca-o por um objeto simples
+       antes de gravar; `desserializarResultado` (mais abaixo, onde se
+       carrega) faz o caminho inverso. */
+    const serializarResultado = (r) => (r ? { ...r, minutosPorJogador: Object.fromEntries(r.minutosPorJogador || []) } : r);
     const configSimulador = {
       modo, presentIds, convidados, escolhidos, equipasFixas, trocasPorOcorrencia,
       formato, formacao, janelas, substituirAMeio,
-      planoBase: modo === 'treino' ? planoBase : null,
-      jogo: modo === 'amigavel' ? jogo : null,
+      planoBase: modo === 'treino' ? serializarResultado(planoBase) : null,
+      jogo: modo === 'amigavel' ? serializarResultado(jogo) : null,
     };
     setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: registo, simuladorConfig: configSimulador } : x)));
     setGuardado(true);
@@ -15964,8 +15973,13 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     // aqui — nunca se chama "Distribuir" outra vez sozinho. Se se
     // chamasse, qualquer equipa que não tivesse sido fixada à mão
     // baralhava-se de novo, o que já não era "tal e qual ficou".
-    if (c.planoBase) setPlanoBase(c.planoBase);
-    if (c.jogo) setJogo(c.jogo);
+    // `desserializarResultado` desfaz o que `serializarResultado` fez ao
+    // gravar — sem isto, `minutosPorJogador` chegava aqui como um objeto
+    // normal em vez de Map, e a app rebentava ("t.values is not a
+    // function") ao tentar desenhar "Minutos por jogador".
+    const desserializarResultado = (r) => (r ? { ...r, minutosPorJogador: new Map(Object.entries(r.minutosPorJogador || {})) } : r);
+    if (c.planoBase) setPlanoBase(desserializarResultado(c.planoBase));
+    if (c.jogo) setJogo(desserializarResultado(c.jogo));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dia]);
 
