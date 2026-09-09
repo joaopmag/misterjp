@@ -24365,7 +24365,12 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   const [tarefasAjustes, setTarefasAjustes] = useState({});
   const listaTarefas = ((dadosTarefas && dadosTarefas.tarefas) || [])
     .map(t => (tarefasAjustes[t.id] ? { ...t, ...tarefasAjustes[t.id] } : t));
-  const tarefasPorFazer = listaTarefas.filter(t => t.estado !== 'feita');
+  // Notificação (bolinha vermelha + banner do ecrã inicial): desliga-se
+  // assim que o atleta SUBMETE a nota, mesmo que o staff ainda não tenha
+  // marcado a tarefa como concluída — do lado do atleta, a parte dele
+  // está feita, não faz sentido continuar a incomodá-lo por causa de uma
+  // tarefa que já respondeu.
+  const tarefasPorFazer = listaTarefas.filter(t => t.estado !== 'feita' && !t.notaSubmetida);
 
   // Sequência do cartão da chama, calculada no servidor (a mesma regra
   // da tarefa dos 30 dias: Wellness + PSE, autónomo, com o mesmo
@@ -26135,18 +26140,88 @@ function sequenciaWellness(recentDates, dayStatus) {
   return count;
 }
 
+/* Frases motivacionais do cartão da chama — uma por dia, escolhida de
+   forma determinística a partir da data (mesmo texto o dia inteiro,
+   muda sozinho à meia-noite). Não precisa de nada guardado na base de
+   dados: cada telemóvel calcula a mesma conta a partir da mesma data e
+   chega sempre à mesma frase. */
+const CHAMA_MENSAGENS = [
+  'Não deixes a chama apagar hoje!',
+  'Um dia de cada vez, a chama continua acesa.',
+  'Protege a tua sequência a todo o custo.',
+  'O esforço de hoje garante a chama de amanhã.',
+  'A chama não se acende sozinha, precisa da tua ação.',
+  'Disciplina é manter o fogo aceso mesmo quando não apetece.',
+  'Não quebres a corrente. Tu consegues.',
+  'A consistência é o que transforma uma faísca numa fogueira.',
+  'O teu futuro agradece o esforço que fazes hoje.',
+  'Pequenos passos diários criam grandes mudanças.',
+  'A chama brilha mais forte a cada dia que vences.',
+  'Chama acesa, foco no treino. Só faltas tu responder.',
+  'Mantém a corrente. O teu recorde continua hoje.',
+  'Minuto 90: Última oportunidade para manter a chama viva!',
+  'Atleta de elite não falha a rotina. Mantém o teu fogo aceso.',
+  'O teu rendimento começa aqui. Atualiza o teu estado físico.',
+  'Evita lesões, joga sempre. Responde ao questionário do dia.',
+  'Consistência no telemóvel, consistência no relvado. Segue a sequência.',
+  'Mostra a tua disciplina. Alimenta a chama do teu progresso.',
+  'Capitão da consistência: mantém a tua chama ao mais alto nível.',
+  'A equipa não falha. Garante os teus 3 pontos de hoje no questionário.',
+  'Quem tem a chama mais forte no balneário? Não deixes a tua apagar.',
+  'Treino invisível: é muito importante para a tua evolução.',
+  'Rumo ao topo. Cada dia respondido é uma vitória na tua rotina.',
+  'Como acordou o craque? Alimenta a tua chama e avalia o teu sono!',
+  'Check-in matinal: diz-nos como te sentes e garante mais um dia rumo ao teu objetivo.',
+  'Corpo descansado, chama acesa. Responde ao questionário de hoje.',
+  'Mantém o foco: falta pouco para desbloqueares o teu prémio!',
+  'A caminho do bónus! Mantém a chama acesa hoje e protege o teu recorde.',
+  'Disciplina de elite: quem for mais consistente, vai ter sucesso!',
+  'O teu corpo é a tua ferramenta de trabalho. Cuida dele hoje.',
+  'Craque não falha nos pormenores. Faz o teu check-in diário.',
+  'Dormir bem e recuperar também é treinar.',
+  'O profissionalismo mede-se nas pequenas rotinas diárias.',
+  'Quem quer jogar ao mais alto nível, não facilita no descanso.',
+  'Monitorizar o corpo é o primeiro passo para evitar a bancada.',
+  'Não fiques para trás. O balneário já está todo focado!',
+  'Ganha a titularidade na disciplina. Alimenta a chama hoje.',
+  'No relvado dás tudo, no telemóvel não podes falhar.',
+  'Deixas a chama apagar ou vais aguentar a pressão?',
+  'Menos desculpas, mais consistência. Responde ao questionário.',
+  'Mostra a raça de campeão também fora das quatro linhas.',
+  'O esforço de ontem determina a recuperação de hoje. Diz-nos como estás.',
+  'Escuta o teu corpo antes que ele te obrigue a parar.',
+  'Sentes dores ou cansaço? O mister precisa de saber para te proteger.',
+  'Ajustar a carga de treino hoje é garantir o teu golo no fim de semana.',
+  'Como está o motor hoje? Regista o teu nível de energia.',
+  'A chama continua a arder e o prémio está cada vez mais perto!',
+  'Só os mais disciplinados vão receber o prémio final. Vais ser um deles?',
+];
+
+function mensagemChamaDoDia(hoje) {
+  // Hash simples e estável (não precisa de ser criptográfico, só de dar
+  // sempre o mesmo número para a mesma data em qualquer telemóvel).
+  let h = 0;
+  for (let i = 0; i < hoje.length; i++) h = (h * 31 + hoje.charCodeAt(i)) >>> 0;
+  return CHAMA_MENSAGENS[h % CHAMA_MENSAGENS.length];
+}
+
 function StreakCard({ dias }) {
   dias = dias || 0;
-  const texto = dias === 0
-    ? 'Acende a chama — começa hoje a tua sequência.'
-    : `${dias} ${dias === 1 ? 'dia seguido' : 'dias seguidos'} a responder ao Wellness e ao PSE.`;
+  const mensagem = mensagemChamaDoDia(todayStr());
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22,
       background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '14px 16px',
     }}>
       <Flame size={26} color={dias > 0 ? T.gold : T.mutedDim} strokeWidth={1.6} style={{ flexShrink: 0 }} />
-      <span style={{ fontSize: 13, color: T.cream, lineHeight: 1.4 }}>{texto}</span>
+      <span>
+        <span style={{ display: 'block', fontSize: 13, color: T.cream, lineHeight: 1.4 }}>{mensagem}</span>
+        {dias > 0 && (
+          <span style={{ display: 'block', fontSize: 11, color: T.mutedDim, marginTop: 3 }}>
+            {dias} {dias === 1 ? 'dia seguido' : 'dias seguidos'} a responder ao Wellness e ao PSE.
+          </span>
+        )}
+      </span>
     </div>
   );
 }
