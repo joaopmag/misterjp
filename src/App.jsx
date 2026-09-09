@@ -15692,6 +15692,12 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     setTrocasPorOcorrencia({});
     setPlanoBase(null);
     setJogo(null);
+    // Sem isto, se o simulador não desmontar de verdade entre um fecho e
+    // uma reabertura (ex.: fica só escondido, não sai da árvore de
+    // componentes), a marca de "já carreguei esta sessão" continuava
+    // como estava — e como o dia não muda, o efeito de carregar nunca
+    // corria outra vez para reparar que agora está tudo a null.
+    configJaCarregadaRef.current = null;
   };
 
   const gerarJogo = () => {
