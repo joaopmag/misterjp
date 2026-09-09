@@ -15622,7 +15622,20 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       trocas,
       ...(modo === 'amigavel' ? { onzeAmigavel: { formacao: jogo.formacao, onze: onzeAmigavel, suplentes: suplentesAmigavel } } : {}),
     };
-    setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: registo } : x)));
+    /* Configuração completa do simulador — quem estava presente, que
+       exercícios foram escolhidos (com os ajustes de cada um: minutos,
+       nº de jogadores, cópias em simultâneo), as equipas fixadas à mão e
+       as trocas. É isto que permite reabrir o simulador neste mesmo dia
+       mais tarde e encontrar tudo tal como ficou — sem isto, cada vez
+       que se reabria era preciso escolher presenças e exercícios outra
+       vez do zero. `equipasSimulador` (acima) é só o retrato para a
+       ficha impressa; isto aqui é o estado vivo para reconstruir o
+       simulador. */
+    const configSimulador = {
+      modo, presentIds, convidados, escolhidos, equipasFixas, trocasPorOcorrencia,
+      formato, formacao, janelas, substituirAMeio,
+    };
+    setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: registo, simuladorConfig: configSimulador } : x)));
     setGuardado(true);
     setTimeout(() => setGuardado(false), 2500);
   };
@@ -15863,6 +15876,37 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chaveConvidadosSessao]);
+
+  /* CARREGAR A CONFIGURAÇÃO GUARDADA — se este dia já tiver equipas
+     guardadas (`simuladorConfig`, escrito em `guardarNoTreino`), o
+     simulador abre com tudo tal como ficou: presenças, exercícios
+     escolhidos (com os ajustes de cada um), equipas fixadas e trocas —
+     não obriga a escolher tudo outra vez do zero.
+
+     Só carrega UMA VEZ por dia/sessão (o `configJaCarregadaRef` guarda
+     o id da sessão já carregada) — sem isto, qualquer alteração feita a
+     seguir (baralhar, fixar uma equipa, etc.) fazia este efeito disparar
+     de novo e apagava as edições em curso, voltando sempre à última
+     versão guardada. */
+  const configJaCarregadaRef = useRef(null);
+  useEffect(() => {
+    const sessaoComConfig = sessoesDoDia.find(s => s.simuladorConfig);
+    if (!sessaoComConfig) return;
+    if (configJaCarregadaRef.current === sessaoComConfig.id) return;
+    configJaCarregadaRef.current = sessaoComConfig.id;
+    const c = sessaoComConfig.simuladorConfig;
+    if (c.modo) setModo(c.modo);
+    if (c.presentIds) setPresentIds(c.presentIds);
+    if (c.convidados) setConvidados(c.convidados);
+    if (c.escolhidos) setEscolhidos(c.escolhidos);
+    if (c.equipasFixas) setEquipasFixas(c.equipasFixas);
+    if (c.trocasPorOcorrencia) setTrocasPorOcorrencia(c.trocasPorOcorrencia);
+    if (c.formato) setFormato(c.formato);
+    if (c.formacao) setFormacao(c.formacao);
+    if (c.janelas) setJanelas(c.janelas);
+    if (typeof c.substituirAMeio === 'boolean') setSubstituirAMeio(c.substituirAMeio);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dia]);
 
   /* O plano que se vê = distribuição crua + equipas fixadas por cima.
      Derivado e não guardado em estado: fixar ou soltar uma equipa
@@ -16313,6 +16357,12 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                           const chaveOc = chaveOcorrencia(bi, pi, xi);
                           const trocas = trocasPorOcorrencia[chaveOc] || [];
                           const emCampo = ex.equipas.flatMap(eq => eq.jogadores);
+                          // Sai/Entra têm as mesmas opções: qualquer um
+                          // presente neste exercício — já esteja numa
+                          // equipa ou a descansar. Uma troca pode ser
+                          // "tira do banco, põe na equipa" tanto como
+                          // "troca de equipa entre dois que já jogam".
+                          const todosNoExercicio = [...emCampo, ...parte.descanso];
                           return (
                             <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px dashed ${T.line}` }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: trocas.length ? 3 : 0 }}>
@@ -16321,8 +16371,8 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                                   onClick={() => setEditarTrocas({
                                     chave: chaveOc,
                                     titulo: `${ex.exercise.name}${bloco.partes.length > 1 ? ` · Turno ${pi + 1}` : ''}`,
-                                    opcoesSai: emCampo,
-                                    opcoesEntra: parte.descanso,
+                                    opcoesSai: todosNoExercicio,
+                                    opcoesEntra: todosNoExercicio,
                                     atuais: trocas,
                                   })}
                                   title="Definir quem sai e quem entra"
@@ -16521,12 +16571,12 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       {editarTrocas && (
         <Modal title={`Trocas — ${editarTrocas.titulo}`} onClose={() => setEditarTrocas(null)}>
           <p style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 16, lineHeight: 1.5 }}>
-            Escolhe pares "sai / entra" para este exercício. "Sai" é quem já está numa equipa;
-            "entra" é quem está a descansar neste turno.
+            Escolhe pares "sai / entra" para este exercício, de entre todos os que estão nele — já numa
+            equipa ou a descansar neste turno.
           </p>
           {editarTrocas.opcoesEntra.length === 0 ? (
             <p style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 16 }}>
-              Ninguém fica de fora neste turno — não há de onde tirar um suplente para trocar.
+              Não há ninguém neste exercício para trocar.
             </p>
           ) : (
             <>
@@ -16587,9 +16637,8 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       {perguntarManual && (
         <Modal title="Escolhe as equipas" onClose={() => setPerguntarManual(null)}>
           <p style={{ color: T.muted, fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
-            Para "<strong style={{ color: T.cream }}>{perguntarManual.name}</strong>", queres definir tu quantas equipas
-            há e quantos jogadores em cada, ou deixar a distribuição automática de sempre
-            {perguntarManual.playersCount ? ` (${perguntarManual.playersCount})` : ''}?
+            Para "<strong style={{ color: T.cream }}>{perguntarManual.name}</strong>", queres definir as equipas
+            ou distribuir automaticamente?
           </p>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
             <Btn variant="ghost" onClick={() => { adicionarExercicio(perguntarManual); setPerguntarManual(null); }}>
