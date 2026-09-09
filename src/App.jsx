@@ -25526,7 +25526,7 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
                     {t.prazo && <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{fmtDate(t.prazo)}</span>}
                     {t.notaSubmetida ? (
                       <span style={{ fontSize: 11, color: T.good, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <Check size={11} /> nota submetida
+                        <Check size={11} /> concluído
                       </span>
                     ) : t.notaAtleta && (
                       <span style={{ fontSize: 11, color: T.gold, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
