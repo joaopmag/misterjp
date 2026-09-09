@@ -15738,13 +15738,22 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       }
       return [bx, by];
     }
-    // Um lugar a mais na mesma posição nasce ATRÁS de quem já lá está
-    // (mais perto da própria baliza), na mesma faixa — nunca acima ou
-    // abaixo, que empurrava o círculo para cima da posição vizinha
-    // (era o que acontecia: um DE a mais nascia em cima do MOC).
-    for (let passo = 1; passo <= 6; passo++) {
-      const x = Math.max(0.05, bx - passo * 0.07);
-      if (!ocupado(x, by)) return [x, by];
+    // Até 4 jogadores na mesma posição empilham-se para trás, na mesma
+    // faixa (mais perto da própria baliza) — nunca acima/abaixo, que
+    // empurrava o círculo para cima da posição vizinha. A partir do 5º,
+    // abre-se uma SEGUNDA faixa ao lado (acima, depois abaixo), e volta a
+    // empilhar para trás nela — "duas posições com 4 cada" em vez de
+    // continuar a espremer tudo numa fila só, que era o que ainda estava
+    // a sobrepor com muitos jogadores juntos na mesma posição.
+    const POR_FAIXA = 4;
+    for (let faixa = 0; faixa < 4; faixa++) {
+      const sentido = faixa % 2 === 1 ? 1 : -1;
+      const deslocamentoY = faixa === 0 ? 0 : sentido * Math.ceil(faixa / 2) * 0.13;
+      const y = Math.min(0.95, Math.max(0.05, by + deslocamentoY));
+      for (let passo = 0; passo < POR_FAIXA; passo++) {
+        const x = Math.max(0.05, bx - passo * 0.07);
+        if (!ocupado(x, y)) return [x, y];
+      }
     }
     return [bx, by];
   };
