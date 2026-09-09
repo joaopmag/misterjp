@@ -15370,6 +15370,16 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
   const [editarEquipa, setEditarEquipa] = useState(null);
   const chaveEquipa = (bi, pi, xi, k) => `${bi}|${pi}|${xi}|${k}`;
 
+  /* TROCAS — "este sai, este entra", definidas já com as equipas
+     verdadeiras à vista (depois de "Distribuir"), nunca antes. A chave é
+     ao nível do EXERCÍCIO dentro do turno (sem o `k` da equipa, que é só
+     para `equipasFixas`) — o mesmo exercício pode ter turnos diferentes,
+     com jogadores diferentes em cada, por isso as trocas também têm de
+     ser por turno, não só por exercício. */
+  const [trocasPorOcorrencia, setTrocasPorOcorrencia] = useState({});
+  const chaveOcorrencia = (bi, pi, xi) => `${bi}|${pi}|${xi}`;
+  const [editarTrocas, setEditarTrocas] = useState(null);
+
   const fixarEquipa = (chave, ids) => setEquipasFixas(prev => ({ ...prev, [chave]: ids }));
   const soltarEquipa = (chave) => setEquipasFixas(prev => {
     const next = { ...prev };
@@ -15467,22 +15477,19 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
      lápis que já existe (ver `editarEquipa` mais abaixo) — não faz
      sentido duplicar essa parte, que já funciona bem.
 
-     TROCAS — pares "este sai, este entra", definidos já aqui, ANTES de
-     se saber quem fica em cada equipa (o treinador escolhe os nomes de
-     quem está presente, não de quem já está numa equipa em concreto —
-     essa parte só se decide a seguir). Ficam guardadas no próprio
-     exercício (`escolhidos`), e aparecem no plano ao vivo por baixo das
-     equipas desse exercício. */
+     TROCAS — isso é um passo à parte, DEPOIS de já se saber quem está em
+     cada equipa (ver `editarTrocas`, mais abaixo, junto do plano ao
+     vivo) — só faz sentido escolher quem sai/quem entra depois de haver
+     equipas de verdade para tirar e pôr gente. */
   const [perguntarManual, setPerguntarManual] = useState(null); // exercício pendente de resposta
-  const [construirEquipas, setConstruirEquipas] = useState(null); // { exercicio, equipas: [n, n, ...], trocas: [{sai, entra}] }
+  const [construirEquipas, setConstruirEquipas] = useState(null); // { exercicio, equipas: [n, n, ...] }
 
-  const adicionarExercicio = (x, playersCountOverride, trocas) => setEscolhidos(prev => (
+  const adicionarExercicio = (x, playersCountOverride) => setEscolhidos(prev => (
     prev.some(e => e.id === x.id) ? prev : [...prev, {
       id: x.id,
       minutos: Number(duracaoNoTreino.get(x.id)) || Number(x.defaultDuration) || 15,
       maxSimultaneo: 1, grupo: '',
       playersCount: playersCountOverride !== undefined ? playersCountOverride : (x.playersCount || ''),
-      trocas: trocas || [],
     }]
   ));
 
@@ -15556,7 +15563,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     // impressa poder ler isto sem precisar de saber ids de jogadores.
     const trocas = [];
     if (modo === 'treino') {
-      plano.plano.forEach(bloco => bloco.partes.forEach((parte, pi) => parte.exercicios.forEach(ex => {
+      plano.plano.forEach((bloco, bi) => bloco.partes.forEach((parte, pi) => parte.exercicios.forEach((ex, xi) => {
         ex.equipas.forEach(eq => {
           if (!eq.jogadores.length) return;
           equipas.push({
@@ -15569,12 +15576,16 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
             jogadores: eq.jogadores.map(j => j.name),
           });
         });
-        const config = escolhidos.find(e => e.id === ex.exercise.id);
-        (config && config.trocas || []).forEach(t => {
+        (trocasPorOcorrencia[chaveOcorrencia(bi, pi, xi)] || []).forEach(t => {
           const sai = presentes.find(p => p.id === t.sai);
           const entra = presentes.find(p => p.id === t.entra);
           if (!sai || !entra) return;
-          trocas.push({ exercicio: ex.exercise.name, sai: sai.name, entra: entra.name });
+          trocas.push({
+            exercicio: ex.exercise.name,
+            turno: bloco.partes.length > 1 ? pi + 1 : null,
+            sai: sai.name,
+            entra: entra.name,
+          });
         });
       })));
     } else {
@@ -16045,19 +16056,6 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                             </button>
                           )}
                         </label>
-                        {/* Reabre o construtor de equipas só para mexer nas
-                            trocas deste exercício — não é preciso ter
-                            passado pelo "Manual" na primeira vez; dá para
-                            adicionar trocas depois, a qualquer momento. */}
-                        <button
-                          onClick={() => setConstruirEquipas({ exercicio: x, equipas: [], trocas: e.trocas || [], soTrocas: true })}
-                          title="Definir trocas (quem sai, quem entra)"
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 4, background: 'none',
-                            border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px',
-                            color: (e.trocas || []).length > 0 ? T.gold : T.mutedDim, cursor: 'pointer', fontSize: 11, ...body,
-                          }}
-                        ><Shuffle size={12} /> Trocas{(e.trocas || []).length > 0 ? ` (${e.trocas.length})` : ''}</button>
                         {/* Quantas cópias PODEM decorrer ao mesmo tempo. O
                             treinador dá o teto (o campo tem tantas secções);
                             o simulador decide quantas usar. */}
@@ -16312,12 +16310,25 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
                           );
                         })}
                         {(() => {
-                          const config = escolhidos.find(e => e.id === ex.exercise.id);
-                          const trocas = (config && config.trocas) || [];
-                          if (!trocas.length) return null;
+                          const chaveOc = chaveOcorrencia(bi, pi, xi);
+                          const trocas = trocasPorOcorrencia[chaveOc] || [];
+                          const emCampo = ex.equipas.flatMap(eq => eq.jogadores);
                           return (
                             <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px dashed ${T.line}` }}>
-                              <div style={{ fontSize: 9.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Trocas</div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: trocas.length ? 3 : 0 }}>
+                                <span style={{ fontSize: 9.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em' }}>Trocas</span>
+                                <button
+                                  onClick={() => setEditarTrocas({
+                                    chave: chaveOc,
+                                    titulo: `${ex.exercise.name}${bloco.partes.length > 1 ? ` · Turno ${pi + 1}` : ''}`,
+                                    opcoesSai: emCampo,
+                                    opcoesEntra: parte.descanso,
+                                    atuais: trocas,
+                                  })}
+                                  title="Definir quem sai e quem entra"
+                                  style={{ background: 'none', border: 'none', color: trocas.length ? T.gold : T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex', marginLeft: 'auto' }}
+                                ><Pencil size={10} /></button>
+                              </div>
                               {trocas.map((t, ti) => {
                                 const sai = presentes.find(p => p.id === t.sai);
                                 const entra = presentes.find(p => p.id === t.entra);
@@ -16507,6 +16518,72 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
         </Modal>
       )}
 
+      {editarTrocas && (
+        <Modal title={`Trocas — ${editarTrocas.titulo}`} onClose={() => setEditarTrocas(null)}>
+          <p style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 16, lineHeight: 1.5 }}>
+            Escolhe pares "sai / entra" para este exercício. "Sai" é quem já está numa equipa;
+            "entra" é quem está a descansar neste turno.
+          </p>
+          {editarTrocas.opcoesEntra.length === 0 ? (
+            <p style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 16 }}>
+              Ninguém fica de fora neste turno — não há de onde tirar um suplente para trocar.
+            </p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+                {editarTrocas.atuais.map((t, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Select
+                      value={t.sai}
+                      onChange={e => setEditarTrocas(prev => ({
+                        ...prev, atuais: prev.atuais.map((x, xi) => (xi === i ? { ...x, sai: e.target.value } : x)),
+                      }))}
+                      style={{ flex: 1, minWidth: 140 }}
+                    >
+                      <option value="">Sai…</option>
+                      {sortByPosition(editarTrocas.opcoesSai).map(p => (
+                        <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, presentes)}</option>
+                      ))}
+                    </Select>
+                    <ArrowRight size={14} color={T.mutedDim} style={{ flexShrink: 0 }} />
+                    <Select
+                      value={t.entra}
+                      onChange={e => setEditarTrocas(prev => ({
+                        ...prev, atuais: prev.atuais.map((x, xi) => (xi === i ? { ...x, entra: e.target.value } : x)),
+                      }))}
+                      style={{ flex: 1, minWidth: 140 }}
+                    >
+                      <option value="">Entra…</option>
+                      {sortByPosition(editarTrocas.opcoesEntra).map(p => (
+                        <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, presentes)}</option>
+                      ))}
+                    </Select>
+                    <button
+                      onClick={() => setEditarTrocas(prev => ({ ...prev, atuais: prev.atuais.filter((_, xi) => xi !== i) }))}
+                      title="Remover esta troca"
+                      style={{ background: 'none', border: 'none', color: T.bad, cursor: 'pointer', display: 'flex', flexShrink: 0 }}
+                    ><Trash2 size={15} /></button>
+                  </div>
+                ))}
+              </div>
+              <Btn
+                variant="ghost"
+                onClick={() => setEditarTrocas(prev => ({ ...prev, atuais: [...prev.atuais, { sai: '', entra: '' }] }))}
+                style={{ marginBottom: 4 }}
+              ><Plus size={15} /> Adicionar troca</Btn>
+            </>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+            <Btn variant="ghost" onClick={() => setEditarTrocas(null)}>Cancelar</Btn>
+            <Btn onClick={() => {
+              const validas = editarTrocas.atuais.filter(t => t.sai && t.entra);
+              setTrocasPorOcorrencia(prev => ({ ...prev, [editarTrocas.chave]: validas }));
+              setEditarTrocas(null);
+            }}><Check size={15} /> Guardar</Btn>
+          </div>
+        </Modal>
+      )}
+
       {perguntarManual && (
         <Modal title="Escolhe as equipas" onClose={() => setPerguntarManual(null)}>
           <p style={{ color: T.muted, fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
@@ -16520,7 +16597,7 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
             </Btn>
             <Btn onClick={() => trocarJanela(
               () => setPerguntarManual(null),
-              () => setConstruirEquipas({ exercicio: perguntarManual, equipas: [tamanhoEquipa, tamanhoEquipa], trocas: [] }),
+              () => setConstruirEquipas({ exercicio: perguntarManual, equipas: [tamanhoEquipa, tamanhoEquipa] }),
             )}>Manual</Btn>
           </div>
         </Modal>
@@ -16565,71 +16642,10 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
             </>
           )}
 
-          {/* TROCAS — pares "este sai, este entra", escolhidos já aqui de
-              entre todos os presentes. Não é preciso saber ainda em que
-              equipa cada um vai ficar — isso decide-se a seguir, com
-              "Distribuir" ou à mão. */}
-          <div style={{ borderTop: `1px solid ${T.line}`, paddingTop: 16, marginBottom: 4 }}>
-            <div style={{ fontSize: 11, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>
-              Trocas
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-              {construirEquipas.trocas.map((t, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <Select
-                    value={t.sai}
-                    onChange={e => setConstruirEquipas(prev => ({
-                      ...prev, trocas: prev.trocas.map((x, xi) => (xi === i ? { ...x, sai: e.target.value } : x)),
-                    }))}
-                    style={{ flex: 1, minWidth: 140 }}
-                  >
-                    <option value="">Sai…</option>
-                    {sortByPosition(presentes).map(p => (
-                      <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, presentes)}</option>
-                    ))}
-                  </Select>
-                  <ArrowRight size={14} color={T.mutedDim} style={{ flexShrink: 0 }} />
-                  <Select
-                    value={t.entra}
-                    onChange={e => setConstruirEquipas(prev => ({
-                      ...prev, trocas: prev.trocas.map((x, xi) => (xi === i ? { ...x, entra: e.target.value } : x)),
-                    }))}
-                    style={{ flex: 1, minWidth: 140 }}
-                  >
-                    <option value="">Entra…</option>
-                    {sortByPosition(presentes).map(p => (
-                      <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, presentes)}</option>
-                    ))}
-                  </Select>
-                  <button
-                    onClick={() => setConstruirEquipas(prev => ({ ...prev, trocas: prev.trocas.filter((_, xi) => xi !== i) }))}
-                    title="Remover esta troca"
-                    style={{ background: 'none', border: 'none', color: T.bad, cursor: 'pointer', display: 'flex', flexShrink: 0 }}
-                  ><Trash2 size={15} /></button>
-                </div>
-              ))}
-            </div>
-            <Btn
-              variant="ghost"
-              onClick={() => setConstruirEquipas(prev => ({ ...prev, trocas: [...prev.trocas, { sai: '', entra: '' }] }))}
-              style={{ marginBottom: 18 }}
-            ><Plus size={15} /> Adicionar troca</Btn>
-          </div>
-
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <Btn variant="ghost" onClick={() => setConstruirEquipas(null)}>Cancelar</Btn>
             <Btn onClick={() => {
-              const trocasValidas = construirEquipas.trocas.filter(t => t.sai && t.entra && t.sai !== t.entra);
-              if (construirEquipas.soTrocas) {
-                // Só mexe nas trocas — nunca reescreve o nº de jogadores,
-                // para não arriscar perder notação como "+1gr" que o
-                // treinador já tivesse posto à mão.
-                patchExercicio(construirEquipas.exercicio.id, { trocas: trocasValidas });
-              } else if (escolhidos.some(x => x.id === construirEquipas.exercicio.id)) {
-                patchExercicio(construirEquipas.exercicio.id, { playersCount: construirEquipas.equipas.join('x'), trocas: trocasValidas });
-              } else {
-                adicionarExercicio(construirEquipas.exercicio, construirEquipas.equipas.join('x'), trocasValidas);
-              }
+              adicionarExercicio(construirEquipas.exercicio, construirEquipas.equipas.join('x'));
               setConstruirEquipas(null);
             }}><Check size={15} /> Guardar</Btn>
           </div>
@@ -18113,7 +18129,9 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 3 }}>Trocas</div>
           {trocas.map((t, i) => (
-            <div key={i} style={{ fontSize: 10.5, color: '#333' }}>{t.sai} → {t.entra}</div>
+            <div key={i} style={{ fontSize: 10.5, color: '#333' }}>
+              {t.turno ? `Turno ${t.turno}: ` : ''}{t.sai} → {t.entra}
+            </div>
           ))}
         </div>
       )}
