@@ -17326,7 +17326,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                         aparecem se existir essa sessão. */}
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
                       {equipasDoJogo && (
-                        <button onClick={e => { e.stopPropagation(); setSessions(prev => prev.map(x => (x.id === sessaoJogo.id ? { ...x, equipasSimulador: null } : x))); }} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                        <button onClick={e => { e.stopPropagation(); setSessions(prev => prev.map(x => (x.id === sessaoJogo.id ? { ...x, equipasSimulador: null, simuladorConfig: null } : x))); }} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                       )}
                       {sessaoJogo && (
                         <>
@@ -17403,7 +17403,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                     </span>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
                       {temEquipasSessao(s) && (
-                        <button onClick={() => setSessions(prev => prev.map(x => (x.id === s.id ? { ...x, equipasSimulador: null } : x)))} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                        <button onClick={() => setSessions(prev => prev.map(x => (x.id === s.id ? { ...x, equipasSimulador: null, simuladorConfig: null } : x)))} title="Apagar equipas guardadas" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
                       )}
                       {/* O Simulador abre A PARTIR DO DIA, com a data já
                           escolhida. Quando era separador próprio, o dia
