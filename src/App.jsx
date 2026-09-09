@@ -15636,16 +15636,22 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     };
     /* Configuração completa do simulador — quem estava presente, que
        exercícios foram escolhidos (com os ajustes de cada um: minutos,
-       nº de jogadores, cópias em simultâneo), as equipas fixadas à mão e
-       as trocas. É isto que permite reabrir o simulador neste mesmo dia
-       mais tarde e encontrar tudo tal como ficou — sem isto, cada vez
-       que se reabria era preciso escolher presenças e exercícios outra
-       vez do zero. `equipasSimulador` (acima) é só o retrato para a
-       ficha impressa; isto aqui é o estado vivo para reconstruir o
-       simulador. */
+       nº de jogadores, cópias em simultâneo), as equipas fixadas à mão,
+       as trocas, e o RESULTADO em si (`planoBase`/`jogo`) — as equipas
+       que saíram da distribuição, exatamente como ficaram, e não só as
+       que foram fixadas à mão. É isto que permite reabrir o simulador
+       neste mesmo dia mais tarde e encontrar tudo tal como ficou, já com
+       o menu de editar disponível — sem isto, cada vez que se reabria
+       era preciso escolher presenças e exercícios outra vez do zero, e
+       mesmo escolhendo tudo igual, carregar em "Distribuir" voltava a
+       baralhar quem não tivesse sido fixado à mão. `equipasSimulador`
+       (acima) é só o retrato em texto para a ficha impressa; isto aqui é
+       o estado vivo para reconstruir o simulador tal e qual. */
     const configSimulador = {
       modo, presentIds, convidados, escolhidos, equipasFixas, trocasPorOcorrencia,
       formato, formacao, janelas, substituirAMeio,
+      planoBase: modo === 'treino' ? planoBase : null,
+      jogo: modo === 'amigavel' ? jogo : null,
     };
     setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: registo, simuladorConfig: configSimulador } : x)));
     setGuardado(true);
@@ -15929,6 +15935,13 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
     if (c.formacao) setFormacao(c.formacao);
     if (c.janelas) setJanelas(c.janelas);
     if (typeof c.substituirAMeio === 'boolean') setSubstituirAMeio(c.substituirAMeio);
+    // O RESULTADO em si (`planoBase`/`jogo`) fica guardado à parte
+    // (ver `configSimulador` em `guardarNoTreino`) e repõe-se direto
+    // aqui — nunca se chama "Distribuir" outra vez sozinho. Se se
+    // chamasse, qualquer equipa que não tivesse sido fixada à mão
+    // baralhava-se de novo, o que já não era "tal e qual ficou".
+    if (c.planoBase) setPlanoBase(c.planoBase);
+    if (c.jogo) setJogo(c.jogo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dia]);
 
@@ -18459,6 +18472,17 @@ function PrintOnzeAmigavel({ session, jogo, players, ideias }) {
         })}
       </div>
       <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} />
+
+      {(session.equipasSimulador && session.equipasSimulador.trocas || []).length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>Trocas previstas</div>
+          {session.equipasSimulador.trocas.map((t, i) => (
+            <div key={i} style={{ fontSize: 10.5, color: '#333' }}>
+              {t.turno ? `${t.turno}ª parte: ` : ''}{t.sai} → {t.entra}
+            </div>
+          ))}
+        </div>
+      )}
 
       {convidados.length > 0 && (
         <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>
