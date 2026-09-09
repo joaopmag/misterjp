@@ -25720,7 +25720,7 @@ function PlayerAdversarioTab({ code, teamId }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
         <div>
           <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Estrutura habitual</div>
-          {chave.length === 0 ? (
+          {!a.quadroTatica ? (
             <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem estrutura marcada para este adversário.</div>
           ) : (
             <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
@@ -27498,7 +27498,7 @@ function FolhaImpressaoAdversario({ adversario: printAdversario, chave: chaveDe 
       <p style={{ margin: '0 0 16px', fontSize: 12.5 }}>
         {[printAdversario.escalao, printAdversario.prova, printAdversario.quadroTatica].filter(Boolean).join(' · ')}
       </p>
-      {chaveDe.length > 0 && (
+      {printAdversario.quadroTatica && (
         <>
           <h3 style={{ fontSize: 14, margin: '0 0 8px', borderTop: '1px solid #ccc', paddingTop: 8 }}>Estrutura habitual</h3>
           <div style={{ marginBottom: 14 }}>
@@ -27602,9 +27602,9 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
             do resto da página escura. */}
         <div>
           <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Estrutura habitual</div>
-          {chave.length === 0 ? (
+          {!a.quadroTatica ? (
             <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-              Marca jogadores-chave para veres aqui a estrutura provável.
+              Escolhe uma formação para veres aqui a estrutura provável.
             </div>
           ) : (
             <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
