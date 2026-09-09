@@ -15779,13 +15779,16 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       }
       return [bx, by];
     }
-    // Até 4 (o máximo) empilham-se para trás, na mesma faixa — nunca
-    // acima/abaixo, que empurrava o círculo para cima da posição vizinha.
-    // Como agora há um limite rígido de 4 (ver `contarLugar`), nunca é
-    // preciso uma segunda faixa: o 4º cabe sempre nesta única fila.
-    for (let passo = 1; passo < MAX_POR_LUGAR; passo++) {
-      const x = Math.max(0.05, bx - passo * 0.07);
-      if (!ocupado(x, by)) return [x, by];
+    // Os até 4 extra ficam À VOLTA da posição base — atrás, à frente,
+    // acima e abaixo — em vez de só numa fila reta atrás, com espaço de
+    // sobra entre cada um para nunca se tocarem.
+    const ANEL_A_VOLTA = [
+      [-0.09, 0], [0.09, 0], [0, -0.13], [0, 0.13],
+    ];
+    for (const [dx, dy] of ANEL_A_VOLTA) {
+      const x = Math.min(0.95, Math.max(0.05, bx + dx));
+      const y = Math.min(0.95, Math.max(0.05, by + dy));
+      if (!ocupado(x, y)) return [x, y];
     }
     return [bx, by];
   };
