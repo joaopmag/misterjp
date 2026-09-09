@@ -31380,7 +31380,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             <UserCheck size={12} /> {shortPlayerName(jogadorAtribuido, players)}
             {tarefa.notaSubmetida ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 2 }}>
-                <Check size={11} /> {porRever ? 'nota nova — ver' : 'nota submetida'}
+                <Check size={11} /> {porRever ? 'nota nova — ver' : 'concluído'}
               </span>
             ) : tarefa.notaAtleta && <FileText size={11} style={{ color: T.mutedDim, marginLeft: 2 }} />}
           </div>
