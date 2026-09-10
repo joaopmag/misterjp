@@ -9193,7 +9193,13 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   // em cima/baixo (ecrã mais alto), consoante o aparelho. Sem contar
   // com essa faixa, um toque perto da borda calculava a posição errada
   // no campo — cada vez mais errada quanto mais perto da borda.
-  const VB_X = -4, VB_Y = -3, VB_W = 115, VB_H = 84;
+  // Moldura mais apertada do que o resto da app (`PITCH_VIEWBOX`
+  // partilhado) — só aqui, para o relvado preencher mais o ecrã. Ainda
+  // dá espaço às bandeirolas de canto (chegam a ~0.3/106.7) e aos
+  // abrigos por baixo da baliza (chegam a ~80) — só corta a margem a
+  // mais que sobrava à volta.
+  const VB_X = -1.6, VB_Y = -1.2, VB_W = 109.8, VB_H = 82;
+  const QUADRO_VIEWBOX = `${VB_X} ${VB_Y} ${VB_W} ${VB_H}`;
   const pontoDoEvento = (e) => {
     const el = campoRef.current;
     if (!el) return [0, 0];
@@ -9224,7 +9230,12 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const iniciarNovaBola = (corId) => (e) => {
     e.preventDefault();
     const [x, y] = pontoDoEvento(e);
-    setEmCurso({ tipo: 'novaBola', cor: corId, x, y });
+    // A paleta fica colada ao fundo do campo — sem isto, um simples
+    // toque (sem arrastar) criava a bola exatamente ali, escondida
+    // atrás da própria paleta. Nasce sempre bem dentro das 4 linhas;
+    // arrastar a seguir continua a funcionar normalmente, para qualquer
+    // sítio, incluindo perto do fundo se for mesmo essa a intenção.
+    setEmCurso({ tipo: 'novaBola', cor: corId, x, y: Math.min(y, 55) });
   };
 
   // Zona vazia do relvado: apaga (se a borracha estiver ativa) ou
@@ -9327,7 +9338,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     <div ref={quadroRootRef} style={{ position: 'fixed', inset: 0, zIndex: 70, background: '#1E3A24', ...body }}>
       <div ref={campoRef} style={{ width: '100%', height: '100%', touchAction: 'none', position: 'relative' }}>
         <svg
-          viewBox={PITCH_VIEWBOX}
+          viewBox={QUADRO_VIEWBOX}
           onPointerDown={aoPressionarCampo}
           preserveAspectRatio="xMidYMid meet"
           style={{ width: '100%', height: '100%', display: 'block', background: '#1E3A24', cursor: apagando ? 'crosshair' : 'crosshair' }}
@@ -9342,7 +9353,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           </marker>
 
           {tracos.map(t => (
-            <path key={t.id} d={pathDoTraco(t.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.5" strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
+            <path key={t.id} d={pathDoTraco(t.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.3" strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
           ))}
           {linhas.map(l => {
             const comSeta = l.tipo === 'passe' || l.tipo === 'corrida';
@@ -9355,7 +9366,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             );
           })}
           {emCurso && emCurso.tipo === 'traco' && (
-            <path d={pathDoTraco(emCurso.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.5" strokeLinecap="round" strokeLinejoin="round" opacity={0.65} />
+            <path d={pathDoTraco(emCurso.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.3" strokeLinecap="round" strokeLinejoin="round" opacity={0.65} />
           )}
 
           {elementos.map(el => {
@@ -9409,26 +9420,30 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
         </div>
 
         {/* BORRACHA + LIMPAR — só ícones, canto inferior direito, junto
-            do banco. */}
-        <div style={{ position: 'absolute', right: '2%', bottom: '2%', display: 'flex', gap: 6 }}>
+            do banco. Maiores do que o resto (tipo "botão flutuante"),
+            de propósito — são os dois que é preciso acertar depressa a
+            meio de uma explicação, sem ter de mirar com cuidado. */}
+        <div style={{ position: 'absolute', right: '2%', bottom: '2%', display: 'flex', gap: 10 }}>
           <button
             onClick={() => setApagando(v => !v)}
             title="Borracha — arrasta para apagar"
             style={{
-              width: isMobile ? 30 : 34, height: isMobile ? 30 : 34, borderRadius: '50%',
-              background: apagando ? '#B5393F' : '#00000066', border: `1px solid ${apagando ? '#B5393F' : T.line}`,
-              color: T.cream, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+              width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
+              background: apagando ? '#B5393F' : '#2B402D', border: `2px solid ${apagando ? '#D14056' : T.gold}`,
+              color: apagando ? TEXT_ON_ACCENT : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
             }}
-          ><Eraser size={15} /></button>
+          ><Eraser size={isMobile ? 21 : 25} /></button>
           <button
             onClick={() => setConfirmarLimpar(true)}
             title="Limpar tudo"
             style={{
-              width: isMobile ? 30 : 34, height: isMobile ? 30 : 34, borderRadius: '50%',
-              background: '#00000066', border: `1px solid ${T.line}`, color: T.cream,
+              width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
+              background: '#2B402D', border: `2px solid ${T.bad}`, color: T.bad,
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+              boxShadow: '0 3px 10px #00000066',
             }}
-          ><Trash2 size={15} /></button>
+          ><Trash2 size={isMobile ? 21 : 25} /></button>
         </div>
       </div>
 
