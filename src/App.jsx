@@ -9148,7 +9148,7 @@ function BenchesAndTechnicalArea({ printMode }) {
    o X, canto superior. */
 const SEQUENCIA_POSICOES = ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MO', 'EX', 'EX', 'PL'];
 const RAIO_BOLA_QUADRO = 1.35;
-const RAIO_BORRACHA_QUADRO = 2.6;
+const RAIO_BORRACHA_QUADRO = 4.2;
 
 /* Ao tocar numa cor SEM arrastar, a bola tem de nascer num sítio certo
    e sempre DENTRO das 4 linhas — sem isto, toques seguidos na mesma (ou
@@ -9194,32 +9194,44 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
 
   /* Contador de quantas bolas de cada cor já existem — usado só para
      decidir a posição de partida de um TOQUE simples (ver
-     `iniciarNovaBola`). É uma ref, não deriva de `quadro.elementos` a
-     cada toque: se derivasse, toques rápidos seguidos liam a contagem
-     ANTES de React ter tido tempo de aplicar o toque anterior, e todos
-     calculavam a MESMA posição — era essa a causa real do empilhamento
-     (não o cálculo da posição em si, que já estava certo). Incrementa
-     na hora, de forma síncrona, por isso nunca erra a conta mesmo com
-     vários toques seguidos muito depressa. Só é preciso inicializar uma
-     vez, a partir do que já estava gravado, quando os dados chegam. */
+     `iniciarNovaBola`). É uma ref, para incrementar na hora, de forma
+     síncrona: toques rápidos seguidos avançam o contador ANTES de o
+     anterior sequer ter sido gravado, o que evita todos calcularem a
+     MESMA posição (era essa a causa real do empilhamento). Mas nunca
+     confia cegamente só nela — em `iniciarNovaBola`, confirma sempre
+     com quantas bolas dessa cor estão mesmo gravadas no quadro nesse
+     momento, e usa o maior dos dois valores. Sem essa confirmação, se a
+     ref ficasse desatualizada por qualquer motivo (reabrir o quadro,
+     etc.), continuava presa a um valor errado para sempre. */
   const contadorPorCor = useRef({ A: 0, B: 0, C: 0, D: 0 });
-  const contadorPronto = useRef(false);
-  useEffect(() => {
-    if (!quadroReady || contadorPronto.current) return;
-    const c = { A: 0, B: 0, C: 0, D: 0 };
-    (quadro.elementos || []).forEach(el => { if (c[el.cor] !== undefined) c[el.cor] += 1; });
-    contadorPorCor.current = c;
-    contadorPronto.current = true;
-  }, [quadroReady, quadro]);
 
   useEffect(() => {
     const el = quadroRootRef.current;
     if (el && el.requestFullscreen) {
       el.requestFullscreen().catch(() => { /* browser recusou — continua na mesma, só sem esconder a barra */ });
     }
-    const aoSairDoFullscreen = () => { if (!document.fullscreenElement) onClose(); };
+    // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
+    // puxar uma cor do banco) fazem o ecrã piscar por uma fração de
+    // segundo para fora do modo de ecrã inteiro, sem ser o utilizador a
+    // pedir isso — sem esta espera, esse pisco sozinho já fechava e
+    // reabria o quadro todo, o que reiniciava tudo (a caneta voltava ao
+    // que era por omissão, o contador das posições perdia o sítio onde
+    // ia). Só fecha a sério se continuar fora do ecrã inteiro passado
+    // um bocadinho — um pisco momentâneo já não chega para isso.
+    let temporizador = null;
+    const aoSairDoFullscreen = () => {
+      if (document.fullscreenElement) {
+        if (temporizador) { clearTimeout(temporizador); temporizador = null; }
+        return;
+      }
+      if (temporizador) clearTimeout(temporizador);
+      temporizador = setTimeout(() => {
+        if (!document.fullscreenElement) onClose();
+      }, 400);
+    };
     document.addEventListener('fullscreenchange', aoSairDoFullscreen);
     return () => {
+      if (temporizador) clearTimeout(temporizador);
       document.removeEventListener('fullscreenchange', aoSairDoFullscreen);
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     };
@@ -9299,7 +9311,15 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
 
   const iniciarNovaBola = (corId) => (e) => {
     e.preventDefault();
-    const indice = contadorPorCor.current[corId] || 0;
+    // O contador da ref sozinho podia desalinhar-se da realidade (ex:
+    // depois de reabrir o quadro, ou de qualquer outra coisa acontecer
+    // entretanto) — confirma sempre com o que está mesmo gravado no
+    // quadro, e usa o maior dos dois. Continua a proteger contra toques
+    // muito rápidos seguidos (a ref avança na hora, antes de o anterior
+    // sequer ter sido gravado), mas já não fica preso a um valor
+    // desatualizado se a realidade tiver avançado por outro caminho.
+    const contagemReal = (quadroRef.current.elementos || []).filter(el => el.cor === corId).length;
+    const indice = Math.max(contadorPorCor.current[corId] || 0, contagemReal);
     contadorPorCor.current[corId] = indice + 1;
     const filas = FILAS_POR_COR[corId] || FILAS_POR_COR.A;
     const volta = Math.floor(indice / filas.length);
@@ -9468,7 +9488,12 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             const tm = teamInfo(el.cor);
             const ehGR = el.label === 'GR';
             return (
-              <g key={el.id} onPointerDown={aoPressionarElemento(el)} style={{ cursor: modo === 'borracha' ? 'crosshair' : 'grab' }}>
+              <g
+                key={el.id}
+                onPointerDown={aoPressionarElemento(el)}
+                onDragStart={(ev) => ev.preventDefault()}
+                style={{ cursor: modo === 'borracha' ? 'crosshair' : 'grab', touchAction: 'none', userSelect: 'none' }}
+              >
                 {/* Guarda-redes em quadrado (arredondado), tal como no
                     editor 2D — distingue-se das bolas redondas dos
                     demais jogadores, à mesma escala reduzida deste
@@ -9516,10 +9541,12 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             <button
               key={t.id}
               title={t.label}
+              draggable={false}
+              onDragStart={(ev) => ev.preventDefault()}
               onPointerDown={iniciarNovaBola(t.id)}
               style={{
                 width: isMobile ? 26 : 30, height: isMobile ? 26 : 30, borderRadius: '50%', background: t.fill,
-                border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0,
+                border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
               }}
             />
           ))}
