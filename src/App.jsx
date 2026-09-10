@@ -9147,7 +9147,7 @@ function BenchesAndTechnicalArea({ printMode }) {
    confirmação, para não se apagar sem querer com um toque). Sair é só
    o X, canto superior. */
 const SEQUENCIA_POSICOES = ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MO', 'EX', 'EX', 'PL'];
-const RAIO_BOLA_QUADRO = 1.35;
+const RAIO_BOLA_QUADRO = 1.65;
 const RAIO_BORRACHA_QUADRO = 1.8;
 
 /* Ao tocar numa cor SEM arrastar, a bola tem de nascer num sítio certo
@@ -9527,7 +9527,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                 {el.label && (
                   <text
                     x={x} y={y} fontSize={el.label.length > 2 ? 0.95 : 1.3} fontWeight="700" fill={tm.text}
-                    textAnchor="middle" dominantBaseline="central" transform={`rotate(90 ${x} ${y})`}
+                    textAnchor="middle" dominantBaseline="central" transform={`rotate(-90 ${x} ${y})`}
                     style={{ pointerEvents: 'none', fontFamily: "'Oswald', sans-serif" }}
                   >
                     {el.label}
