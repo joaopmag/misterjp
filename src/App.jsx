@@ -9192,18 +9192,24 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const quadroRootRef = useRef(null);
   const isMobile = useIsMobile(760);
 
-  /* Contador de quantas bolas de cada cor já existem — usado só para
-     decidir a posição de partida de um TOQUE simples (ver
-     `iniciarNovaBola`). É uma ref, para incrementar na hora, de forma
-     síncrona: toques rápidos seguidos avançam o contador ANTES de o
-     anterior sequer ter sido gravado, o que evita todos calcularem a
-     MESMA posição (era essa a causa real do empilhamento). Mas nunca
-     confia cegamente só nela — em `iniciarNovaBola`, confirma sempre
-     com quantas bolas dessa cor estão mesmo gravadas no quadro nesse
-     momento, e usa o maior dos dois valores. Sem essa confirmação, se a
-     ref ficasse desatualizada por qualquer motivo (reabrir o quadro,
-     etc.), continuava presa a um valor errado para sempre. */
-  const contadorPorCor = useRef({ A: 0, B: 0, C: 0, D: 0 });
+  /* Cada bola guarda o seu PRÓPRIO lugar (`slot`, um número: 0=GR,
+     1=DD... 10=PL, 11=GR outra volta, etc.) — não é só uma contagem.
+     Ao criar uma bola nova, procura-se o primeiro lugar dessa cor que
+     ainda não está ocupado por NENHUMA bola real e mais nenhum gesto a
+     decorrer nesse preciso instante:
+     - Se apagares uma bola do meio (ex: um EX), esse lugar fica livre
+       — a próxima bola dessa cor cai exatamente aí, não avança para a
+       frente cegamente.
+     - Se todos os 11 lugares estiverem ocupados, o primeiro livre já é
+       o 12º — recomeça a sequência do zero, só que numa fila nova (ver
+       `volta`, mais abaixo).
+     `slotsPendentes` é só para toques muito rápidos seguidos: reserva o
+     lugar assim que o gesto começa (antes de a gravação sequer ter
+     acontecido), para dois toques seguidos nunca escolherem o mesmo —
+     sem isto, ambos viam o quadro tal como estava ANTES do primeiro
+     toque, e caíam os dois no mesmo sítio. Liberta-se sempre no fim do
+     gesto (ver `largar`), gravado ou não. */
+  const slotsPendentes = useRef({ A: new Set(), B: new Set(), C: new Set(), D: new Set() });
 
   useEffect(() => {
     const el = quadroRootRef.current;
@@ -9311,24 +9317,21 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
 
   const iniciarNovaBola = (corId) => (e) => {
     e.preventDefault();
-    // O contador da ref sozinho podia desalinhar-se da realidade (ex:
-    // depois de reabrir o quadro, ou de qualquer outra coisa acontecer
-    // entretanto) — confirma sempre com o que está mesmo gravado no
-    // quadro, e usa o maior dos dois. Continua a proteger contra toques
-    // muito rápidos seguidos (a ref avança na hora, antes de o anterior
-    // sequer ter sido gravado), mas já não fica preso a um valor
-    // desatualizado se a realidade tiver avançado por outro caminho.
-    const contagemReal = (quadroRef.current.elementos || []).filter(el => el.cor === corId).length;
-    const indice = Math.max(contadorPorCor.current[corId] || 0, contagemReal);
-    contadorPorCor.current[corId] = indice + 1;
+    // Primeiro lugar livre desta cor — nem em cima de uma bola real,
+    // nem em cima de um gesto ainda a decorrer (ver o comentário grande
+    // do `slotsPendentes`, mais acima).
+    const ocupados = new Set((quadroRef.current.elementos || []).filter(el => el.cor === corId).map(el => el.slot));
+    const pendentes = slotsPendentes.current[corId];
+    let slot = 0;
+    while (ocupados.has(slot) || pendentes.has(slot)) slot += 1;
+    pendentes.add(slot);
     const filas = FILAS_POR_COR[corId] || FILAS_POR_COR.A;
-    const volta = Math.floor(indice / filas.length);
-    const dentroDaVolta = indice % filas.length;
+    const volta = Math.floor(slot / filas.length);
+    const dentroDaVolta = slot % filas.length;
     const q = QUADRANTES_POR_COR[corId] || QUADRANTES_POR_COR.A;
     // Cada volta completa pela sequência desloca a fila para o lado
     // (mais para fora do meio-campo) — sem isto, ao fim de 11 bolas da
-    // mesma cor, a 12ª caía exatamente em cima da 1ª (o ciclo `% 11`
-    // voltava ao início sem deslocar nada).
+    // mesma cor, a 12ª caía exatamente em cima da 1ª.
     const xSugerido = q.x + (q.x > 53 ? 1 : -1) * volta * 5;
     const ySugerido = filas[dentroDaVolta];
     // A bola em pré-visualização segue o dedo/rato desde o primeiro
@@ -9338,7 +9341,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     // um erro. `xSugerido`/`ySugerido` só se usam no fim (ver `largar`),
     // e só se o gesto for mesmo um toque simples, sem arrastar a sério.
     const [x, y] = pontoDoEvento(e);
-    setEmCurso({ tipo: 'novaBola', cor: corId, x, y, xInicial: x, yInicial: y, xSugerido, ySugerido, indice });
+    setEmCurso({ tipo: 'novaBola', cor: corId, x, y, xInicial: x, yInicial: y, xSugerido, ySugerido, slot });
   };
 
   // Zona vazia do relvado: apaga (modo borracha) ou risca à mão (modo
@@ -9386,6 +9389,9 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           setQuadro(prev => ({ ...prev, tracos: [...(prev.tracos || []), { id: uid(), pontos: atual.pontos }] }));
         }
       } else if (atual.tipo === 'novaBola') {
+        // Liberta já a reserva deste lugar — quer a bola acabe por ser
+        // criada quer não (ex: largou fora do campo), o gesto acabou.
+        slotsPendentes.current[atual.cor].delete(atual.slot);
         // Só conta como "arrastado a sério" se saiu mais de ~2 unidades
         // do ponto onde o dedo tocou primeiro — um toque simples, por
         // pequeno que seja o tremor do dedo, ainda usa a posição
@@ -9394,14 +9400,14 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
         const xFinal = arrastou ? atual.x : atual.xSugerido;
         const yFinal = arrastou ? atual.y : atual.ySugerido;
         if (xFinal >= -6 && xFinal <= 113 && yFinal >= -5 && yFinal <= 83) {
-          // Usa o MESMO índice calculado ao iniciar o gesto (`indice`,
-          // guardado em `atual`) — não recalcula aqui a partir de
-          // `quadroRef`, que era exatamente a fonte da condição de
-          // corrida com toques rápidos seguidos.
-          const label = SEQUENCIA_POSICOES[atual.indice % SEQUENCIA_POSICOES.length];
+          // O `slot` (guardado em `atual`) é o que decide a sigla — o
+          // mesmo lugar dá sempre a mesma sigla, esteja ele a ser
+          // ocupado pela primeira vez ou a voltar a ser preenchido
+          // depois de se ter apagado a bola que lá estava.
+          const label = SEQUENCIA_POSICOES[atual.slot % SEQUENCIA_POSICOES.length];
           setQuadro(prev => ({
             ...prev,
-            elementos: [...(prev.elementos || []), { id: uid(), tipo: 'equipa', cor: atual.cor, label, x: xFinal, y: yFinal }],
+            elementos: [...(prev.elementos || []), { id: uid(), tipo: 'equipa', cor: atual.cor, label, slot: atual.slot, x: xFinal, y: yFinal }],
           }));
         }
       } else if (atual.tipo === 'mover') {
@@ -9413,8 +9419,13 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             elementos: (prev.elementos || []).map(el => (el.id === atual.id ? { ...el, x: atual.x, y: atual.y } : el)),
           }));
         } else if (existente) {
-          const novo = window.prompt('Texto dentro (deixa vazio para tirar):', existente.label || '');
-          if (novo !== null) {
+          // A bola mantém sempre uma sigla — deixar o campo em branco
+          // (por engano, ou porque se apagou o texto todo sem querer)
+          // não a esvazia, mantém a que já lá estava. Cancelar (Esc/
+          // Cancelar na caixa) também não muda nada, como seria de
+          // esperar.
+          const novo = window.prompt('Texto dentro da bola:', existente.label || '');
+          if (novo !== null && novo.trim()) {
             setQuadro(prev => ({
               ...prev,
               elementos: (prev.elementos || []).map(el => (el.id === atual.id ? { ...el, label: novo.trim().slice(0, 6) } : el)),
