@@ -9148,7 +9148,7 @@ function BenchesAndTechnicalArea({ printMode }) {
    o X, canto superior. */
 const SEQUENCIA_POSICOES = ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MO', 'EX', 'EX', 'PL'];
 const RAIO_BOLA_QUADRO = 1.35;
-const RAIO_BORRACHA_QUADRO = 4.2;
+const RAIO_BORRACHA_QUADRO = 1.8;
 
 /* Ao tocar numa cor SEM arrastar, a bola tem de nascer num sítio certo
    e sempre DENTRO das 4 linhas — sem isto, toques seguidos na mesma (ou
@@ -9185,7 +9185,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   // "caneta" (é o que se usa mais tempo, a explicar um lance); trocar
   // para "borracha" fica assim até se voltar a carregar na caneta —
   // não desliga sozinho ao voltar a tocar no mesmo ícone.
-  const [modo, setModo] = useState('caneta'); // 'caneta' | 'borracha'
+  const [modo, setModo] = useState('caneta'); // 'caneta' | 'borracha' | 'mover' (mover liga-se sozinho ao agarrar numa bola)
   const [rascunhoApagar, setRascunhoApagar] = useState(null);
   const [confirmarLimpar, setConfirmarLimpar] = useState(false);
   const campoRef = useRef(null);
@@ -9214,7 +9214,19 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   useEffect(() => {
     const el = quadroRootRef.current;
     if (el && el.requestFullscreen) {
-      el.requestFullscreen().catch(() => { /* browser recusou — continua na mesma, só sem esconder a barra */ });
+      el.requestFullscreen()
+        .then(() => {
+          // Bloquear a orientação só costuma ser possível DEPOIS de
+          // entrar em ecrã inteiro, e só em alguns browsers (ex: falha
+          // sempre no Safari/iOS — não há forma de contornar isso a
+          // partir daqui, é uma limitação do próprio aparelho). Onde
+          // funcionar, o ecrã já não roda sozinho ao virar o
+          // telemóvel/tablet.
+          if (screen.orientation && screen.orientation.lock) {
+            screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
+          }
+        })
+        .catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
     }
     // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
     // puxar uma cor do banco) fazem o ecrã piscar por uma fração de
@@ -9239,6 +9251,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     return () => {
       if (temporizador) clearTimeout(temporizador);
       document.removeEventListener('fullscreenchange', aoSairDoFullscreen);
+      if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -9344,14 +9357,15 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     setEmCurso({ tipo: 'novaBola', cor: corId, x, y, xInicial: x, yInicial: y, xSugerido, ySugerido, slot });
   };
 
-  // Zona vazia do relvado: apaga (modo borracha) ou risca à mão (modo
-  // caneta) — um dos dois está sempre ativo.
+  // Zona vazia do relvado: apaga (modo borracha), risca à mão (modo
+  // caneta), ou nada (modo "mover", que só existe enquanto se está a
+  // agarrar numa bola — tocar fora dela não faz nada nesse estado).
   const aoPressionarCampo = (e) => {
     const [x, y] = pontoDoEvento(e);
     if (modo === 'borracha') {
       setRascunhoApagar(apagarPertoDe(quadroRef.current, x, y));
       setEmCurso({ tipo: 'apagar' });
-    } else {
+    } else if (modo === 'caneta') {
       setEmCurso({ tipo: 'traco', pontos: [[x, y]] });
     }
   };
@@ -9359,6 +9373,11 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const aoPressionarElemento = (elemento) => (e) => {
     if (modo === 'borracha') return; // deixa passar para o campo — a borracha trata disto de forma unificada
     e.stopPropagation();
+    // Agarrar numa bola já colocada tira a seleção da Caneta (ou da
+    // Borracha, mas essa já saiu pelo `return` acima) — fica claro que
+    // agora é para MOVER, não para desenhar, sem ser preciso tocar em
+    // mais nenhum ícone.
+    setModo('mover');
     const [x, y] = pontoDoEvento(e);
     setEmCurso({ tipo: 'mover', id: elemento.id, x, y });
   };
@@ -9411,27 +9430,13 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           }));
         }
       } else if (atual.tipo === 'mover') {
-        const existente = (quadroRef.current.elementos || []).find(el => el.id === atual.id);
-        const moveu = existente && (Math.abs(atual.x - existente.x) > 1 || Math.abs(atual.y - existente.y) > 1);
-        if (moveu) {
-          setQuadro(prev => ({
-            ...prev,
-            elementos: (prev.elementos || []).map(el => (el.id === atual.id ? { ...el, x: atual.x, y: atual.y } : el)),
-          }));
-        } else if (existente) {
-          // A bola mantém sempre uma sigla — deixar o campo em branco
-          // (por engano, ou porque se apagou o texto todo sem querer)
-          // não a esvazia, mantém a que já lá estava. Cancelar (Esc/
-          // Cancelar na caixa) também não muda nada, como seria de
-          // esperar.
-          const novo = window.prompt('Texto dentro da bola:', existente.label || '');
-          if (novo !== null && novo.trim()) {
-            setQuadro(prev => ({
-              ...prev,
-              elementos: (prev.elementos || []).map(el => (el.id === atual.id ? { ...el, label: novo.trim().slice(0, 6) } : el)),
-            }));
-          }
-        }
+        // Um toque simples (sem arrastar) numa bola já não faz nada —
+        // a sigla nunca é editável, só o "slot" (ver `iniciarNovaBola`)
+        // decide qual é.
+        setQuadro(prev => ({
+          ...prev,
+          elementos: (prev.elementos || []).map(el => (el.id === atual.id ? { ...el, x: atual.x, y: atual.y } : el)),
+        }));
       }
       setEmCurso(null);
     };
@@ -9520,7 +9525,11 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                   <circle cx={x} cy={y} r={RAIO_BOLA_QUADRO} fill={tm.fill} stroke="#00000055" strokeWidth="0.18" />
                 )}
                 {el.label && (
-                  <text x={x} y={y} fontSize={el.label.length > 2 ? 0.95 : 1.3} fontWeight="700" fill={tm.text} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none', fontFamily: "'Oswald', sans-serif" }}>
+                  <text
+                    x={x} y={y} fontSize={el.label.length > 2 ? 0.95 : 1.3} fontWeight="700" fill={tm.text}
+                    textAnchor="middle" dominantBaseline="central" transform={`rotate(90 ${x} ${y})`}
+                    style={{ pointerEvents: 'none', fontFamily: "'Oswald', sans-serif" }}
+                  >
                     {el.label}
                   </text>
                 )}
