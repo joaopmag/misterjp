@@ -638,6 +638,19 @@ async function fetchAllRows(table, teamId) {
 }
 
 function useCollectionSync(table, notifyEdit, teamId) {
+  /* `exercises` e `players` são, de longe, as coleções mais pesadas da
+     app (fotografias de jogadores, diagramas/anexos de exercícios) —
+     quase 5 MB combinadas, contra menos de 600 KB somando TODAS as
+     outras. Isso não muda de 5 em 5 minutos, por isso não faz sentido
+     recarregá-las por inteiro com a mesma frequência da rede de
+     segurança normal (ver `INTERVALO_MINIMO`/o `setInterval` de 20 min,
+     mais abaixo) — cada vez que alguém desbloqueava o telemóvel, estas
+     duas tabelas sozinhas já pesavam mais do que as outras 11 juntas.
+     Uma mudança a sério (nova foto, novo exercício) continua a chegar na
+     hora a quem está a ver o ecrã, através do Realtime — isto só atrasa
+     a REDE DE SEGURANÇA contra uma ligação morta, não o normal. */
+  const COLECOES_PESADAS = { exercises: true, players: true };
+  const ehPesada = !!COLECOES_PESADAS[table];
   const [items, setItems] = useState([]);
   /* Autorização de UMA remoção em massa (ver o travão de segurança mais
      abaixo). Fica num ref e não no estado porque não afeta o que se vê e
@@ -901,7 +914,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
        repete a leitura toda de 16 tabelas cada vez que alguém desbloqueia
        o telemóvel várias vezes seguidas. */
     let ultimoFetch = 0;
-    const INTERVALO_MINIMO = 5 * 60 * 1000;
+    const INTERVALO_MINIMO = (ehPesada ? 60 : 5) * 60 * 1000;
     const apanharAtraso = async (forcar = false) => {
       if (!ready || document.visibilityState === 'hidden') return;
       const agora = Date.now();
@@ -993,7 +1006,7 @@ function useCollectionSync(table, notifyEdit, teamId) {
        segurança em 16 coleções × todas as pessoas com a app aberta ao
        mesmo tempo, que era o que estava a esgotar a quota gratuita do
        Supabase. */
-    const intervalo = setInterval(() => apanharAtraso(true), 20 * 60 * 1000);
+    const intervalo = setInterval(() => apanharAtraso(true), (ehPesada ? 60 : 20) * 60 * 1000);
     return () => {
       cancelled = true;
       document.removeEventListener('visibilitychange', aoFocar);
