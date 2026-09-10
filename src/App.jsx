@@ -9150,12 +9150,26 @@ const SEQUENCIA_POSICOES = ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MO', 'EX'
 const RAIO_BOLA_QUADRO = 1.35;
 const RAIO_BORRACHA_QUADRO = 2.6;
 
+/* Ao tocar numa cor SEM arrastar, a bola tem de nascer num sítio certo
+   — sem isto, toques seguidos na mesma (ou noutra) cor nasciam todos
+   quase no mesmo ponto, empilhados uns em cima dos outros. Cada cor
+   forma a sua própria coluna vertical, em forma de cruz: vermelho e
+   azul do lado direito do campo, dourado e branco do lado esquerdo —
+   cada bola nova ocupa a fila a seguir na coluna da sua cor, na mesma
+   ordem de GR a PL (`SEQUENCIA_POSICOES`), sem nunca cair em cima de
+   outra. Arrastar do banco continua a pôr onde se quiser, sem passar
+   por isto — isto só serve de posição de partida sensata para um
+   toque simples. */
+const COLUNA_X_POR_COR = { A: 90, B: 74, C: 33, D: 17 };
+const FILAS_Y = [6, 12.5, 19, 25.5, 32, 38.5, 45, 51.5, 58, 64.5, 71];
+
 function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const [quadro, setQuadro] = useSingletonSync(
     'quadro_tatico', { elementos: [], linhas: [], tracos: [] }, notifyEdit, teamId,
   );
   const [emCurso, setEmCurso] = useState(null);
   const [apagando, setApagando] = useState(false);
+  const [desenhando, setDesenhando] = useState(false);
   const [rascunhoApagar, setRascunhoApagar] = useState(null);
   const [confirmarLimpar, setConfirmarLimpar] = useState(false);
   const campoRef = useRef(null);
@@ -9229,24 +9243,26 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
 
   const iniciarNovaBola = (corId) => (e) => {
     e.preventDefault();
-    const [x, y] = pontoDoEvento(e);
-    // A paleta fica colada ao fundo do campo — sem isto, um simples
-    // toque (sem arrastar) criava a bola exatamente ali, escondida
-    // atrás da própria paleta. Nasce sempre bem dentro das 4 linhas;
-    // arrastar a seguir continua a funcionar normalmente, para qualquer
-    // sítio, incluindo perto do fundo se for mesmo essa a intenção.
-    setEmCurso({ tipo: 'novaBola', cor: corId, x, y: Math.min(y, 55) });
+    // Ponto de partida sensato para um TOQUE simples (sem arrastar): a
+    // fila a seguir na coluna desta cor, em cruz — nunca em cima de
+    // outra bola. Se se ARRASTAR a seguir, o ponto de partida deixa de
+    // interessar, o movimento normal já trata de pôr onde se largar.
+    const jaExistentes = (quadroRef.current.elementos || []).filter(el => el.cor === corId).length;
+    const x = COLUNA_X_POR_COR[corId] || 50;
+    const y = FILAS_Y[jaExistentes % FILAS_Y.length];
+    setEmCurso({ tipo: 'novaBola', cor: corId, x, y });
   };
 
-  // Zona vazia do relvado: apaga (se a borracha estiver ativa) ou
-  // começa logo um traço à mão livre — é o comportamento por omissão,
-  // sem precisar de escolher nenhuma ferramenta primeiro.
+  // Zona vazia do relvado: apaga (borracha ativa) ou risca à mão
+  // (caneta ativa) — agora os dois precisam de ser ligados de propósito
+  // pelos ícones; sem nenhum dos dois ativo, tocar numa zona vazia não
+  // faz nada (só arrastar bolas continua sempre disponível).
   const aoPressionarCampo = (e) => {
     const [x, y] = pontoDoEvento(e);
     if (apagando) {
       setRascunhoApagar(apagarPertoDe(quadroRef.current, x, y));
       setEmCurso({ tipo: 'apagar' });
-    } else {
+    } else if (desenhando) {
       setEmCurso({ tipo: 'traco', pontos: [[x, y]] });
     }
   };
@@ -9374,9 +9390,23 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             const x = emMovimento ? emCurso.x : el.x;
             const y = emMovimento ? emCurso.y : el.y;
             const tm = teamInfo(el.cor);
+            const ehGR = el.label === 'GR';
             return (
               <g key={el.id} onPointerDown={aoPressionarElemento(el)} style={{ cursor: apagando ? 'crosshair' : 'grab' }}>
-                <circle cx={x} cy={y} r={RAIO_BOLA_QUADRO} fill={tm.fill} stroke="#00000055" strokeWidth="0.18" />
+                {/* Guarda-redes em quadrado (arredondado), tal como no
+                    editor 2D — distingue-se das bolas redondas dos
+                    demais jogadores, à mesma escala reduzida deste
+                    quadro (a proporção largura/curvatura mantém-se
+                    igual à do editor, só encolhida). */}
+                {ehGR ? (
+                  <rect
+                    x={x - RAIO_BOLA_QUADRO} y={y - RAIO_BOLA_QUADRO}
+                    width={RAIO_BOLA_QUADRO * 2} height={RAIO_BOLA_QUADRO * 2} rx={RAIO_BOLA_QUADRO * 0.41}
+                    fill={tm.fill} stroke="#00000055" strokeWidth="0.18"
+                  />
+                ) : (
+                  <circle cx={x} cy={y} r={RAIO_BOLA_QUADRO} fill={tm.fill} stroke="#00000055" strokeWidth="0.18" />
+                )}
                 {el.label && (
                   <text x={x} y={y} fontSize={el.label.length > 2 ? 0.95 : 1.3} fontWeight="700" fill={tm.text} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none', fontFamily: "'Oswald', sans-serif" }}>
                     {el.label}
@@ -9401,10 +9431,10 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           }}
         ><X size={17} /></button>
 
-        {/* EQUIPAS — encostadas à área técnica/banco de suplentes. */}
+        {/* EQUIPAS — do lado esquerdo, perto do banco. */}
         <div style={{
-          position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: '2%',
-          display: 'flex', gap: 7, background: '#00000066', padding: '5px 9px', borderRadius: 20,
+          position: 'absolute', left: '2%', bottom: '3%',
+          display: 'flex', gap: 9, background: '#00000066', padding: '7px 11px', borderRadius: 22,
         }}>
           {TEAMS.map(t => (
             <button
@@ -9412,20 +9442,32 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
               title={t.label}
               onPointerDown={iniciarNovaBola(t.id)}
               style={{
-                width: isMobile ? 18 : 22, height: isMobile ? 18 : 22, borderRadius: '50%', background: t.fill,
-                border: `1.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0,
+                width: isMobile ? 26 : 30, height: isMobile ? 26 : 30, borderRadius: '50%', background: t.fill,
+                border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0,
               }}
             />
           ))}
         </div>
 
-        {/* BORRACHA + LIMPAR — só ícones, canto inferior direito, junto
-            do banco. Maiores do que o resto (tipo "botão flutuante"),
-            de propósito — são os dois que é preciso acertar depressa a
-            meio de uma explicação, sem ter de mirar com cuidado. */}
+        {/* CANETA + BORRACHA + LIMPAR — só ícones, canto inferior
+            direito, junto do banco. Maiores do que o resto (tipo "botão
+            flutuante"), de propósito — são os que é preciso acertar
+            depressa a meio de uma explicação, sem ter de mirar com
+            cuidado. Ativar a caneta desliga a borracha e vice-versa —
+            não fazem sentido os dois ligados ao mesmo tempo. */}
         <div style={{ position: 'absolute', right: '2%', bottom: '2%', display: 'flex', gap: 10 }}>
           <button
-            onClick={() => setApagando(v => !v)}
+            onClick={() => { setDesenhando(v => !v); setApagando(false); }}
+            title="Caneta — risca à mão livre"
+            style={{
+              width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
+              background: desenhando ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+              color: desenhando ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
+            }}
+          ><PenTool size={isMobile ? 21 : 25} /></button>
+          <button
+            onClick={() => { setApagando(v => !v); setDesenhando(false); }}
             title="Borracha — arrasta para apagar"
             style={{
               width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
