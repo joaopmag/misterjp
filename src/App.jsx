@@ -9123,77 +9123,46 @@ function BenchesAndTechnicalArea({ printMode }) {
 }
 
 /* QUADRO TÁTICO LIVRE — quadro branco tátil, em ecrã inteiro A SÉRIO
-   (API de Fullscreen do próprio browser — esconde a barra de endereços,
-   separadores, e até a barra de tarefas do sistema, não só o "encher o
-   ecrã" por CSS). Guarda só a ÚLTIMA coisa desenhada (um registo único
-   por equipa, como a Época ou a Classificação) — não é uma biblioteca
-   de quadros guardados, é mais parecido com apagar e voltar a desenhar
-   no mesmo quadro físico.
+   (API de Fullscreen do browser). Guarda só a ÚLTIMA coisa desenhada
+   (registo único por equipa, como a Época ou a Classificação).
 
-   FERRAMENTAS — as MESMAS do editor de exercícios já existente
-   (`BASE_TOOLS`/`TEAMS`, mais acima), para não inventar um vocabulário
-   visual novo: Jogador, Guarda-redes, Treinador, Cone, Baliza, Estaca,
-   Bola, Passe, Corrida, Linha contínua, Linha tracejada, Apagar — e as
-   4 cores de equipa (vermelho/azul/dourado/branco). A ÚNICA acrescentada
-   a mais é "Livre" (traço à mão, qualquer forma), que o editor de
-   exercícios não tem — foi pedida de propósito para este quadro.
+   Versão simplificada, de propósito: SEM barra de ferramentas — só as
+   4 bolas de equipa (as mesmas 4 cores do resto da app), pequenas, do
+   tamanho que os jogadores já têm no editor 2D de exercícios (raio
+   1.9, não um raio inventado maior). Arrastar uma bola do banco para o
+   campo cria uma bola nova dessa cor, já com a posição a seguir na
+   sequência (ver `SEQUENCIA_POSICOES`) — a primeira de cada cor sai
+   sempre GR, a segunda DD, e por aí fora, recomeçando do início se
+   passar de 11. Tocar (sem arrastar) numa bola já colocada deixa
+   escrever outro texto por cima, se for preciso.
 
-   AINDA NÃO incluídos desta vez (para não crescer isto ainda mais):
-   Texto (precisa de um painel de escrita à parte) e Zona/quadrado
-   (precisa de pegas de redimensionar). Undo/redo também fica de fora.
-   Se fizerem falta, digam-me que acrescento a seguir.
-
-   DISPOSIÇÃO — pedida explicitamente: a barra de ferramentas genérica
-   fica em cima, encostada à linha lateral de cima do campo; as 4 cores
-   de equipa ficam em baixo, coladas à área técnica/banco de suplentes.
-
-   TUDO por eventos de ponteiro (Pointer Events), não HTML5
-   drag-and-drop — o d&d nativo do browser tem suporte fraco a toque, e
-   isto tem de funcionar bem com o dedo e com caneta. */
-const QUADRO_FERRAMENTAS = [
-  { id: 'mover', label: 'Mover' },
-  { id: 'jogador', label: 'Jogador' },
-  { id: 'guarda-redes', label: 'Guarda-redes' },
-  { id: 'coach', label: 'T', title: 'Treinador' },
-  { id: 'cone', label: 'Cone' },
-  { id: 'baliza', label: 'Baliza' },
-  { id: 'estaca', label: 'Estaca' },
-  { id: 'bola', label: 'Bola' },
-  { id: 'passe', label: 'Passe' },
-  { id: 'corrida', label: 'Corrida' },
-  { id: 'linha-solida', label: '—', title: 'Linha contínua' },
-  { id: 'linha-pontilhada', label: '⋯', title: 'Linha tracejada' },
-  { id: 'livre', label: 'Livre', title: 'Traço à mão, qualquer forma' },
-  { id: 'apagar', label: 'Apagar' },
-];
-const QUADRO_FERRAMENTAS_COLOCAM_ELEMENTO = ['jogador', 'guarda-redes', 'coach', 'cone', 'baliza', 'estaca', 'bola'];
-const QUADRO_FERRAMENTAS_LINHA = ['passe', 'corrida', 'linha-solida', 'linha-pontilhada'];
+   BORRACHA — em modo arrasto a sério, não clique a clique: enquanto se
+   arrasta o dedo/rato com a borracha ativa, tudo o que ficar por baixo
+   desaparece na hora. Só grava (uma vez só) no fim do gesto — gravar a
+   cada milímetro arrastado ia mandar centenas de escritas por segundo
+   para a base de dados. */
+const SEQUENCIA_POSICOES = ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MO', 'EX', 'EX', 'PL'];
+const RAIO_BOLA_QUADRO = 1.9;
+const RAIO_BORRACHA_QUADRO = 3;
 
 function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const [quadro, setQuadro] = useSingletonSync(
     'quadro_tatico', { elementos: [], linhas: [], tracos: [] }, notifyEdit, teamId,
   );
-  const [ferramenta, setFerramenta] = useState('mover');
   const [emCurso, setEmCurso] = useState(null);
+  const [apagando, setApagando] = useState(false);
+  const [rascunhoApagar, setRascunhoApagar] = useState(null);
   const [confirmarLimpar, setConfirmarLimpar] = useState(false);
   const campoRef = useRef(null);
   const quadroRootRef = useRef(null);
   const isMobile = useIsMobile(760);
 
-  /* FULLSCREEN A SÉRIO — pede ao próprio browser para ocupar o ecrã
-     inteiro (esconde barra de endereços, separadores, barra de tarefas),
-     não só um `position: fixed` que só enche a janela do browser. Sai
-     do fullscreen sozinho ao fechar, e também se for o UTILIZADOR a
-     sair (ex: tecla Esc) — nesse caso `onClose` corre da mesma forma,
-     para o resto da app saber que este ecrã já não está aberto. */
   useEffect(() => {
     const el = quadroRootRef.current;
     if (el && el.requestFullscreen) {
       el.requestFullscreen().catch(() => { /* browser recusou — continua na mesma, só sem esconder a barra */ });
     }
-    const aoSairDoFullscreen = () => {
-      if (!document.fullscreenElement) onClose();
-    };
+    const aoSairDoFullscreen = () => { if (!document.fullscreenElement) onClose(); };
     document.addEventListener('fullscreenchange', aoSairDoFullscreen);
     return () => {
       document.removeEventListener('fullscreenchange', aoSairDoFullscreen);
@@ -9210,6 +9179,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   useEffect(() => { emCursoRef.current = emCurso; }, [emCurso]);
   const quadroRef = useRef(quadro);
   useEffect(() => { quadroRef.current = quadro; }, [quadro]);
+  const rascunhoApagarRef = useRef(null);
+  useEffect(() => { rascunhoApagarRef.current = rascunhoApagar; }, [rascunhoApagar]);
 
   const pontoDoEvento = (e) => {
     const el = campoRef.current;
@@ -9220,79 +9191,63 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     return [-4 + relX * 115, -3 + relY * 84];
   };
 
-  const iniciarNovoElemento = (tipo, cor) => (e) => {
+  const distSegmento = (px, py, x1, y1, x2, y2) => {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  };
+  const apagarPertoDe = (base, x, y) => ({
+    elementos: (base.elementos || []).filter(el => Math.hypot(el.x - x, el.y - y) > RAIO_BORRACHA_QUADRO),
+    linhas: (base.linhas || []).filter(l => distSegmento(x, y, l.x1, l.y1, l.x2, l.y2) > RAIO_BORRACHA_QUADRO),
+    tracos: (base.tracos || []).filter(t => !t.pontos.some(p => Math.hypot(p[0] - x, p[1] - y) < RAIO_BORRACHA_QUADRO)),
+  });
+
+  const iniciarNovaBola = (corId) => (e) => {
     e.preventDefault();
     const [x, y] = pontoDoEvento(e);
-    setEmCurso({ tipo: 'novoElemento', tipoElemento: tipo, cor, x, y });
+    setEmCurso({ tipo: 'novaBola', cor: corId, x, y });
   };
 
   const aoPressionarCampo = (e) => {
-    if (ferramenta === 'livre') {
-      const [x, y] = pontoDoEvento(e);
-      setEmCurso({ tipo: 'traco', pontos: [[x, y]] });
-    } else if (QUADRO_FERRAMENTAS_LINHA.includes(ferramenta)) {
-      const [x, y] = pontoDoEvento(e);
-      setEmCurso({ tipo: 'linha', subtipo: ferramenta, x1: x, y1: y, x2: x, y2: y });
-    } else if (QUADRO_FERRAMENTAS_COLOCAM_ELEMENTO.includes(ferramenta)) {
-      const [x, y] = pontoDoEvento(e);
-      setEmCurso({ tipo: 'novoElemento', tipoElemento: ferramenta, cor: null, x, y });
-    }
+    if (!apagando) return;
+    const [x, y] = pontoDoEvento(e);
+    setRascunhoApagar(apagarPertoDe(quadroRef.current, x, y));
+    setEmCurso({ tipo: 'apagar' });
   };
 
   const aoPressionarElemento = (elemento) => (e) => {
+    if (apagando) return; // deixa passar para o campo — a borracha trata disto de forma unificada
     e.stopPropagation();
-    if (ferramenta === 'apagar') {
-      setQuadro(prev => ({ ...prev, elementos: (prev.elementos || []).filter(el => el.id !== elemento.id) }));
-      return;
-    }
-    if (ferramenta !== 'mover') return;
     const [x, y] = pontoDoEvento(e);
     setEmCurso({ tipo: 'mover', id: elemento.id, x, y });
-  };
-
-  const apagarLinha = (id) => (e) => {
-    e.stopPropagation();
-    if (ferramenta !== 'apagar') return;
-    setQuadro(prev => ({ ...prev, linhas: (prev.linhas || []).filter(l => l.id !== id) }));
-  };
-
-  const apagarTraco = (id) => (e) => {
-    e.stopPropagation();
-    if (ferramenta !== 'apagar') return;
-    setQuadro(prev => ({ ...prev, tracos: (prev.tracos || []).filter(t => t.id !== id) }));
   };
 
   useEffect(() => {
     if (!emCurso) return undefined;
     const mover = (e) => {
       const [x, y] = pontoDoEvento(e);
-      setEmCurso(prev => {
-        if (!prev) return prev;
-        if (prev.tipo === 'traco') return { ...prev, pontos: [...prev.pontos, [x, y]] };
-        if (prev.tipo === 'linha') return { ...prev, x2: x, y2: y };
-        return { ...prev, x, y };
-      });
+      if (emCursoRef.current && emCursoRef.current.tipo === 'apagar') {
+        setRascunhoApagar(r => apagarPertoDe(r || quadroRef.current, x, y));
+        return;
+      }
+      setEmCurso(prev => (prev ? { ...prev, x, y } : prev));
     };
     const largar = () => {
       const atual = emCursoRef.current;
       if (!atual) return;
-      if (atual.tipo === 'traco') {
-        if (atual.pontos.length > 1) {
-          setQuadro(prev => ({ ...prev, tracos: [...(prev.tracos || []), { id: uid(), pontos: atual.pontos }] }));
-        }
-      } else if (atual.tipo === 'linha') {
-        const dist = Math.hypot(atual.x2 - atual.x1, atual.y2 - atual.y1);
-        if (dist > 2) {
-          setQuadro(prev => ({
-            ...prev,
-            linhas: [...(prev.linhas || []), { id: uid(), tipo: atual.subtipo, x1: atual.x1, y1: atual.y1, x2: atual.x2, y2: atual.y2 }],
-          }));
-        }
-      } else if (atual.tipo === 'novoElemento') {
+      if (atual.tipo === 'apagar') {
+        if (rascunhoApagarRef.current) setQuadro(rascunhoApagarRef.current);
+        setRascunhoApagar(null);
+      } else if (atual.tipo === 'novaBola') {
         if (atual.x >= -6 && atual.x <= 113 && atual.y >= -5 && atual.y <= 83) {
+          const jaExistentes = (quadroRef.current.elementos || []).filter(el => el.cor === atual.cor).length;
+          const label = SEQUENCIA_POSICOES[jaExistentes % SEQUENCIA_POSICOES.length];
           setQuadro(prev => ({
             ...prev,
-            elementos: [...(prev.elementos || []), { id: uid(), tipo: atual.tipoElemento, cor: atual.cor, label: '', x: atual.x, y: atual.y }],
+            elementos: [...(prev.elementos || []), { id: uid(), tipo: 'equipa', cor: atual.cor, label, x: atual.x, y: atual.y }],
           }));
         }
       } else if (atual.tipo === 'mover') {
@@ -9331,167 +9286,107 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     setConfirmarLimpar(false);
   };
 
-  const elementos = quadro.elementos || [];
-  const linhas = quadro.linhas || [];
-  const tracos = quadro.tracos || [];
+  const fonte = rascunhoApagar || quadro;
+  const elementos = fonte.elementos || [];
+  const linhas = fonte.linhas || [];
+  const tracos = fonte.tracos || [];
   const pathDoTraco = (pontos) => pontos.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]},${p[1]}`).join(' ');
-
-  /* Desenho de cada tipo de marcador — formas simples, mas distintas o
-     suficiente para se reconhecerem de relance, sem pesos pesados como
-     pegas de rotação/redimensionar (isso fica para depois, se precisar). */
-  const Marcador = ({ el, x, y }) => {
-    const equipa = el.cor ? teamInfo(el.cor) : null;
-    if (el.tipo === 'bola') {
-      return <circle cx={x} cy={y} r="1.4" fill="#F0E7D6" stroke="#2A2A2A" strokeWidth="0.15" />;
-    }
-    if (el.tipo === 'cone') {
-      return <path d={`M ${x} ${y - 2} L ${x + 1.7} ${y + 1.6} L ${x - 1.7} ${y + 1.6} Z`} fill="#E07B39" stroke="#2A2A2A" strokeWidth="0.15" />;
-    }
-    if (el.tipo === 'estaca') {
-      return <rect x={x - 0.5} y={y - 2.3} width="1" height="4.6" rx="0.4" fill="#D9A72E" stroke="#2A2A2A" strokeWidth="0.15" />;
-    }
-    if (el.tipo === 'baliza') {
-      return <rect x={x - 3.2} y={y - 1.1} width="6.4" height="2.2" fill="none" stroke="#F0E7D6" strokeWidth="0.5" />;
-    }
-    if (el.tipo === 'coach') {
-      return (
-        <>
-          <circle cx={x} cy={y} r="3.2" fill="#333" stroke={T.gold} strokeWidth="0.35" />
-          <text x={x} y={y} fontSize="3" fill={T.gold} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none', fontWeight: 700 }}>T</text>
-        </>
-      );
-    }
-    // equipa (bola colorida) | jogador | guarda-redes
-    const fill = equipa ? equipa.fill : (el.tipo === 'guarda-redes' ? '#2A2A2A' : T.surfaceRaise);
-    const stroke = el.tipo === 'guarda-redes' ? T.gold : (equipa ? '#00000055' : T.mutedDim);
-    const corTexto = equipa ? equipa.text : '#fff';
-    return (
-      <>
-        <circle cx={x} cy={y} r="3.2" fill={fill} stroke={stroke} strokeWidth="0.3" />
-        {el.label && (
-          <text x={x} y={y} fontSize="2.6" fill={corTexto} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none', fontWeight: 700 }}>
-            {el.label}
-          </text>
-        )}
-      </>
-    );
-  };
-
-  const botaoFerramenta = (f) => (
-    <button
-      key={f.id}
-      title={f.title || f.label}
-      onClick={QUADRO_FERRAMENTAS_COLOCAM_ELEMENTO.includes(f.id) ? undefined : () => setFerramenta(f.id)}
-      onPointerDown={QUADRO_FERRAMENTAS_COLOCAM_ELEMENTO.includes(f.id) ? iniciarNovoElemento(f.id, null) : undefined}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 5, padding: isMobile ? '6px 8px' : '6px 10px', borderRadius: 7,
-        background: ferramenta === f.id ? '#B5393F' : 'transparent',
-        color: ferramenta === f.id ? TEXT_ON_ACCENT : T.cream,
-        border: `1px solid ${ferramenta === f.id ? '#B5393F' : T.line}`,
-        cursor: QUADRO_FERRAMENTAS_COLOCAM_ELEMENTO.includes(f.id) ? 'grab' : 'pointer',
-        fontSize: 11.5, ...body, whiteSpace: 'nowrap', touchAction: 'none',
-      }}
-    >{f.label}</button>
-  );
 
   return (
     <div ref={quadroRootRef} style={{ position: 'fixed', inset: 0, zIndex: 70, background: T.bg, display: 'flex', flexDirection: 'column', ...body }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
         <div style={{ ...display, fontSize: 15, color: T.cream }}>Quadro Tático</div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => setApagando(v => !v)}
+            title="Borracha — arrasta para apagar"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 7,
+              background: apagando ? '#B5393F' : 'transparent', color: apagando ? TEXT_ON_ACCENT : T.cream,
+              border: `1px solid ${apagando ? '#B5393F' : T.line}`, cursor: 'pointer', fontSize: 13, ...body,
+            }}
+          ><Eraser size={14} /> {!isMobile && 'Borracha'}</button>
           <Btn variant="ghost" onClick={() => setConfirmarLimpar(true)}><Trash2 size={14} /> {!isMobile && 'Limpar tudo'}</Btn>
           <Btn variant="ghost" onClick={fechar}><X size={15} /> {!isMobile && 'Fechar'}</Btn>
         </div>
       </div>
 
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 10, minHeight: 0, minWidth: 0 }}>
-        <div style={{ width: '100%', height: '100%', maxWidth: 1500, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-          {/* FERRAMENTAS GENÉRICAS — encostadas à linha lateral de cima. */}
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'center' }}>
-            {QUADRO_FERRAMENTAS.map(botaoFerramenta)}
-          </div>
+        <div ref={campoRef} style={{
+          width: 'auto', height: '100%', maxWidth: '100%', maxHeight: '100%',
+          aspectRatio: '115 / 84', touchAction: 'none', position: 'relative',
+        }}>
+          <svg
+            viewBox={PITCH_VIEWBOX}
+            onPointerDown={aoPressionarCampo}
+            style={{
+              width: '100%', height: '100%', display: 'block', background: '#1E3A24', borderRadius: 10,
+              border: `1px solid ${T.line}`, cursor: apagando ? 'crosshair' : 'default',
+            }}
+          >
+            <PitchMarkings />
+            {/* Só fica aqui para setas ANTIGAS (passe/corrida), gravadas
+                antes desta simplificação sem barra de ferramentas — a
+                marca da ponta da seta ainda é precisa para as desenhar
+                corretamente; não há forma nova de criar mais nenhuma. */}
+            <marker id="qt-arrow" markerWidth="4.5" markerHeight="4.5" refX="4" refY="2.25" orient="auto">
+              <path d="M0,0 L4.5,2.25 L0,4.5 Z" fill="#F0E7D6" />
+            </marker>
 
-          <div ref={campoRef} style={{
-            width: 'auto', height: '100%', maxWidth: '100%', maxHeight: '100%',
-            aspectRatio: '115 / 84', touchAction: 'none', position: 'relative',
-          }}>
-            <svg
-              viewBox={PITCH_VIEWBOX}
-              onPointerDown={aoPressionarCampo}
-              style={{ width: '100%', height: '100%', display: 'block', background: '#1E3A24', borderRadius: 10, border: `1px solid ${T.line}` }}
-            >
-              <PitchMarkings />
-              <marker id="qt-arrow" markerWidth="4.5" markerHeight="4.5" refX="4" refY="2.25" orient="auto">
-                <path d="M0,0 L4.5,2.25 L0,4.5 Z" fill="#F0E7D6" />
-              </marker>
-
-              {tracos.map(t => (
-                <path
-                  key={t.id} d={pathDoTraco(t.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.6"
-                  strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
-                  onPointerDown={apagarTraco(t.id)} style={{ cursor: ferramenta === 'apagar' ? 'pointer' : 'default' }}
-                />
-              ))}
-
-              {linhas.map(l => {
-                const comSeta = l.tipo === 'passe' || l.tipo === 'corrida';
-                const tracejado = l.tipo === 'corrida' ? '2,1.4' : (l.tipo === 'linha-pontilhada' ? '0.15,1.4' : undefined);
-                return (
-                  <line
-                    key={l.id} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#F0E7D6" strokeWidth="0.6"
-                    strokeLinecap={l.tipo === 'linha-pontilhada' ? 'round' : undefined}
-                    strokeDasharray={tracejado} markerEnd={comSeta ? 'url(#qt-arrow)' : undefined}
-                    onPointerDown={apagarLinha(l.id)} style={{ cursor: ferramenta === 'apagar' ? 'pointer' : 'default' }}
-                  />
-                );
-              })}
-
-              {emCurso && emCurso.tipo === 'traco' && (
-                <path d={pathDoTraco(emCurso.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.6" strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
-              )}
-              {emCurso && emCurso.tipo === 'linha' && (
+            {tracos.map(t => (
+              <path key={t.id} d={pathDoTraco(t.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.6" strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
+            ))}
+            {linhas.map(l => {
+              const comSeta = l.tipo === 'passe' || l.tipo === 'corrida';
+              return (
                 <line
-                  x1={emCurso.x1} y1={emCurso.y1} x2={emCurso.x2} y2={emCurso.y2} stroke="#F0E7D6" strokeWidth="0.6"
-                  strokeDasharray={emCurso.subtipo === 'corrida' ? '2,1.4' : (emCurso.subtipo === 'linha-pontilhada' ? '0.15,1.4' : undefined)}
-                  markerEnd={(emCurso.subtipo === 'passe' || emCurso.subtipo === 'corrida') ? 'url(#qt-arrow)' : undefined} opacity={0.6}
+                  key={l.id} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#F0E7D6" strokeWidth="0.6"
+                  strokeDasharray={l.tipo === 'corrida' ? '2,1.4' : (l.tipo === 'linha-pontilhada' ? '0.15,1.4' : undefined)}
+                  markerEnd={comSeta ? 'url(#qt-arrow)' : undefined}
                 />
-              )}
+              );
+            })}
 
-              {elementos.map(el => {
-                const emMovimento = emCurso && emCurso.tipo === 'mover' && emCurso.id === el.id;
-                const x = emMovimento ? emCurso.x : el.x;
-                const y = emMovimento ? emCurso.y : el.y;
-                return (
-                  <g key={el.id} onPointerDown={aoPressionarElemento(el)} style={{ cursor: ferramenta === 'apagar' ? 'pointer' : 'grab' }}>
-                    <Marcador el={el} x={x} y={y} />
-                  </g>
-                );
-              })}
-              {emCurso && emCurso.tipo === 'novoElemento' && (
-                <Marcador el={{ tipo: emCurso.tipoElemento, cor: emCurso.cor }} x={emCurso.x} y={emCurso.y} />
-              )}
-            </svg>
+            {elementos.map(el => {
+              const emMovimento = emCurso && emCurso.tipo === 'mover' && emCurso.id === el.id;
+              const x = emMovimento ? emCurso.x : el.x;
+              const y = emMovimento ? emCurso.y : el.y;
+              const tm = teamInfo(el.cor);
+              return (
+                <g key={el.id} onPointerDown={aoPressionarElemento(el)} style={{ cursor: apagando ? 'crosshair' : 'grab' }}>
+                  <circle cx={x} cy={y} r={RAIO_BOLA_QUADRO} fill={tm.fill} stroke="#00000055" strokeWidth="0.25" />
+                  {el.label && (
+                    <text x={x} y={y} fontSize={el.label.length > 2 ? 1.35 : 1.9} fontWeight="700" fill={tm.text} textAnchor="middle" dominantBaseline="central" style={{ pointerEvents: 'none', fontFamily: "'Oswald', sans-serif" }}>
+                      {el.label}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+            {emCurso && emCurso.tipo === 'novaBola' && (
+              <circle cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_QUADRO} fill={teamInfo(emCurso.cor).fill} opacity={0.75} />
+            )}
+          </svg>
 
-            {/* EQUIPAS — encostadas à área técnica/banco de suplentes, em
-                baixo. Fica por cima do campo (não no viewBox do SVG),
-                para não ter de converter coordenadas de pitch para uma
-                barra que não faz parte do jogo em si. */}
-            <div style={{
-              position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: '2%',
-              display: 'flex', gap: 8, background: '#00000066', padding: '6px 10px', borderRadius: 20,
-            }}>
-              {TEAMS.map(t => (
-                <button
-                  key={t.id}
-                  title={t.label}
-                  onPointerDown={iniciarNovoElemento('equipa', t.id)}
-                  style={{
-                    width: isMobile ? 28 : 34, height: isMobile ? 28 : 34, borderRadius: '50%', background: t.fill,
-                    border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0,
-                  }}
-                />
-              ))}
-            </div>
+          {/* EQUIPAS — encostadas à área técnica/banco de suplentes, em
+              baixo. Fica por cima do campo, não dentro do SVG — mais
+              simples do que converter estas coordenadas para o viewBox
+              do relvado. */}
+          <div style={{
+            position: 'absolute', left: '50%', transform: 'translateX(-50%)', bottom: '2%',
+            display: 'flex', gap: 8, background: '#00000066', padding: '5px 9px', borderRadius: 20,
+          }}>
+            {TEAMS.map(t => (
+              <button
+                key={t.id}
+                title={t.label}
+                onPointerDown={iniciarNovaBola(t.id)}
+                style={{
+                  width: isMobile ? 20 : 24, height: isMobile ? 20 : 24, borderRadius: '50%', background: t.fill,
+                  border: `1.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0,
+                }}
+              />
+            ))}
           </div>
         </div>
       </div>
@@ -9501,7 +9396,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           <div style={{ background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20, maxWidth: 360, width: '100%' }}>
             <div style={{ ...display, fontSize: 16, color: T.cream, marginBottom: 8 }}>Limpar o quadro todo?</div>
             <div style={{ fontSize: 13, color: T.muted, marginBottom: 18, lineHeight: 1.5 }}>
-              Apaga todos os jogadores, linhas e traços — não dá para desfazer.
+              Apaga tudo o que está colocado — não dá para desfazer.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <Btn variant="ghost" onClick={() => setConfirmarLimpar(false)}>Cancelar</Btn>
