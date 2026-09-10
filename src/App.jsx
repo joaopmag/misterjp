@@ -887,16 +887,21 @@ function useCollectionSync(table, notifyEdit, teamId) {
   useEffect(() => {
     if (!teamId) return undefined;
     let cancelled = false;
-    /* Não repetir uma leitura completa se a anterior foi há poucochíssimo
-       tempo — sem isto, trocar de aba várias vezes seguidas (ou o foco a
+    /* Não repetir uma leitura completa se a anterior foi há pouco tempo
+       — sem isto, trocar de aba várias vezes seguidas (ou o foco a
        disparar por qualquer motivo do browser) multiplicava leituras
        completas da tabela toda, cada uma a contar para o limite de dados
-       transferidos (Egress) do Supabase. Um minuto de intervalo mínimo
-       chega para cobrir esses casos sem atrasar a deteção de algo novo a
-       sério — ninguém troca de aba com intenção duas vezes no mesmo
-       minuto à espera de ver uma resposta diferente. */
+       transferidos (Egress) do Supabase. Isto acontece em cada uma das
+       ~16-17 coleções da app AO MESMO TEMPO sempre que o telemóvel volta
+       ao ecrã (desbloquear, trocar de app e voltar) — por isso um
+       intervalo curto custava caro, multiplicado por essa quantidade de
+       tabelas e por todos os telemóveis/tablets com a app aberta. 5
+       minutos continua a apanhar uma ligação morta a tempo (é só uma
+       rede de segurança, o Realtime já trata do normal), mas já não
+       repete a leitura toda de 16 tabelas cada vez que alguém desbloqueia
+       o telemóvel várias vezes seguidas. */
     let ultimoFetch = 0;
-    const INTERVALO_MINIMO = 60 * 1000;
+    const INTERVALO_MINIMO = 5 * 60 * 1000;
     const apanharAtraso = async (forcar = false) => {
       if (!ready || document.visibilityState === 'hidden') return;
       const agora = Date.now();
