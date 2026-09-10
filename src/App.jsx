@@ -9271,26 +9271,54 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     t = Math.max(0, Math.min(1, t));
     return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
   };
-  const apagarPertoDe = (base, x, y) => ({
-    elementos: (base.elementos || []).filter(el => Math.hypot(el.x - x, el.y - y) > RAIO_BORRACHA_QUADRO),
-    linhas: (base.linhas || []).filter(l => distSegmento(x, y, l.x1, l.y1, l.x2, l.y2) > RAIO_BORRACHA_QUADRO),
-    tracos: (base.tracos || []).filter(t => !t.pontos.some(p => Math.hypot(p[0] - x, p[1] - y) < RAIO_BORRACHA_QUADRO)),
-  });
+  const apagarPertoDe = (base, x, y) => {
+    // Um traço NÃO desaparece inteiro só porque um ponto dele ficou
+    // perto da borracha — corta-se só esse troço, e o resto do
+    // traço fica dividido em pedaços separados, exatamente como uma
+    // borracha a sério apaga só onde passa por cima.
+    const novosTracos = [];
+    (base.tracos || []).forEach(t => {
+      let atual = [];
+      t.pontos.forEach(p => {
+        const perto = Math.hypot(p[0] - x, p[1] - y) < RAIO_BORRACHA_QUADRO;
+        if (perto) {
+          if (atual.length > 1) novosTracos.push({ id: uid(), pontos: atual });
+          atual = [];
+        } else {
+          atual.push(p);
+        }
+      });
+      if (atual.length > 1) novosTracos.push({ id: uid(), pontos: atual });
+    });
+    return {
+      elementos: (base.elementos || []).filter(el => Math.hypot(el.x - x, el.y - y) > RAIO_BORRACHA_QUADRO),
+      linhas: (base.linhas || []).filter(l => distSegmento(x, y, l.x1, l.y1, l.x2, l.y2) > RAIO_BORRACHA_QUADRO),
+      tracos: novosTracos,
+    };
+  };
 
   const iniciarNovaBola = (corId) => (e) => {
     e.preventDefault();
-    // Ponto de partida sensato para um TOQUE simples (sem arrastar): a
-    // fila a seguir no quadrante desta cor — nunca em cima de outra
-    // bola, mesmo com vários toques seguidos muito depressa (ver o
-    // comentário do `contadorPorCor`, mais acima). Se se ARRASTAR a
-    // seguir, o ponto de partida deixa de interessar, o movimento
-    // normal já trata de pôr onde se largar.
     const indice = contadorPorCor.current[corId] || 0;
     contadorPorCor.current[corId] = indice + 1;
     const filas = FILAS_POR_COR[corId] || FILAS_POR_COR.A;
-    const x = (QUADRANTES_POR_COR[corId] || QUADRANTES_POR_COR.A).x;
-    const y = filas[indice % filas.length];
-    setEmCurso({ tipo: 'novaBola', cor: corId, x, y, indice });
+    const volta = Math.floor(indice / filas.length);
+    const dentroDaVolta = indice % filas.length;
+    const q = QUADRANTES_POR_COR[corId] || QUADRANTES_POR_COR.A;
+    // Cada volta completa pela sequência desloca a fila para o lado
+    // (mais para fora do meio-campo) — sem isto, ao fim de 11 bolas da
+    // mesma cor, a 12ª caía exatamente em cima da 1ª (o ciclo `% 11`
+    // voltava ao início sem deslocar nada).
+    const xSugerido = q.x + (q.x > 53 ? 1 : -1) * volta * 5;
+    const ySugerido = filas[dentroDaVolta];
+    // A bola em pré-visualização segue o dedo/rato desde o primeiro
+    // instante, mesmo que comece em cima da paleta (fora do campo) —
+    // sem isto, tocar numa cor fazia "aparecer" uma bola já dentro do
+    // campo antes de sequer se ter começado a arrastar, o que parecia
+    // um erro. `xSugerido`/`ySugerido` só se usam no fim (ver `largar`),
+    // e só se o gesto for mesmo um toque simples, sem arrastar a sério.
+    const [x, y] = pontoDoEvento(e);
+    setEmCurso({ tipo: 'novaBola', cor: corId, x, y, xInicial: x, yInicial: y, xSugerido, ySugerido, indice });
   };
 
   // Zona vazia do relvado: apaga (modo borracha) ou risca à mão (modo
@@ -9338,7 +9366,14 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           setQuadro(prev => ({ ...prev, tracos: [...(prev.tracos || []), { id: uid(), pontos: atual.pontos }] }));
         }
       } else if (atual.tipo === 'novaBola') {
-        if (atual.x >= -6 && atual.x <= 113 && atual.y >= -5 && atual.y <= 83) {
+        // Só conta como "arrastado a sério" se saiu mais de ~2 unidades
+        // do ponto onde o dedo tocou primeiro — um toque simples, por
+        // pequeno que seja o tremor do dedo, ainda usa a posição
+        // sugerida (o quadrante), não o ponto exato onde a paleta está.
+        const arrastou = Math.hypot(atual.x - atual.xInicial, atual.y - atual.yInicial) > 2;
+        const xFinal = arrastou ? atual.x : atual.xSugerido;
+        const yFinal = arrastou ? atual.y : atual.ySugerido;
+        if (xFinal >= -6 && xFinal <= 113 && yFinal >= -5 && yFinal <= 83) {
           // Usa o MESMO índice calculado ao iniciar o gesto (`indice`,
           // guardado em `atual`) — não recalcula aqui a partir de
           // `quadroRef`, que era exatamente a fonte da condição de
@@ -9346,7 +9381,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           const label = SEQUENCIA_POSICOES[atual.indice % SEQUENCIA_POSICOES.length];
           setQuadro(prev => ({
             ...prev,
-            elementos: [...(prev.elementos || []), { id: uid(), tipo: 'equipa', cor: atual.cor, label, x: atual.x, y: atual.y }],
+            elementos: [...(prev.elementos || []), { id: uid(), tipo: 'equipa', cor: atual.cor, label, x: xFinal, y: yFinal }],
           }));
         }
       } else if (atual.tipo === 'mover') {
