@@ -9151,30 +9151,66 @@ const RAIO_BOLA_QUADRO = 1.35;
 const RAIO_BORRACHA_QUADRO = 2.6;
 
 /* Ao tocar numa cor SEM arrastar, a bola tem de nascer num sítio certo
-   — sem isto, toques seguidos na mesma (ou noutra) cor nasciam todos
-   quase no mesmo ponto, empilhados uns em cima dos outros. Cada cor
-   forma a sua própria coluna vertical, em forma de cruz: vermelho e
-   azul do lado direito do campo, dourado e branco do lado esquerdo —
-   cada bola nova ocupa a fila a seguir na coluna da sua cor, na mesma
-   ordem de GR a PL (`SEQUENCIA_POSICOES`), sem nunca cair em cima de
+   e sempre DENTRO das 4 linhas — sem isto, toques seguidos na mesma (ou
+   noutra) cor nasciam todos quase no mesmo ponto, empilhados uns em
+   cima dos outros. O campo divide-se em cruz, 4 quadrantes: vermelho
+   (cima-direita) e azul (baixo-direita) partilham o meio-campo direito;
+   dourado (cima-esquerda) e branco (baixo-esquerda) partilham o outro.
+   Cada bola nova ocupa a fila a seguir no quadrante da sua cor, na
+   mesma ordem de GR a PL (`SEQUENCIA_POSICOES`) — nunca cai em cima de
    outra. Arrastar do banco continua a pôr onde se quiser, sem passar
    por isto — isto só serve de posição de partida sensata para um
-   toque simples. */
-const COLUNA_X_POR_COR = { A: 90, B: 74, C: 33, D: 17 };
-const FILAS_Y = [6, 12.5, 19, 25.5, 32, 38.5, 45, 51.5, 58, 64.5, 71];
+   toque simples.
+
+   As 4 linhas verdadeiras do campo (não a moldura à volta, que inclui
+   bandeirolas/abrigos) vão de x=1 a x=106 e y=1 a y=69 — os quadrantes
+   ficam bem dentro dessa caixa, nunca a tocar na borda. */
+const QUADRANTES_POR_COR = {
+  A: { x: 82, yBase: 4, yTopo: 32 },   // vermelho — cima-direita
+  B: { x: 82, yBase: 37, yTopo: 65 },  // azul — baixo-direita
+  C: { x: 25, yBase: 4, yTopo: 32 },   // dourado — cima-esquerda
+  D: { x: 25, yBase: 37, yTopo: 65 },  // branco — baixo-esquerda
+};
+const FILAS_POR_COR = Object.fromEntries(Object.entries(QUADRANTES_POR_COR).map(([cor, q]) => {
+  const passo = (q.yTopo - q.yBase) / (SEQUENCIA_POSICOES.length - 1);
+  return [cor, SEQUENCIA_POSICOES.map((_, i) => q.yBase + passo * i)];
+}));
 
 function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
-  const [quadro, setQuadro] = useSingletonSync(
+  const [quadro, setQuadro, quadroReady] = useSingletonSync(
     'quadro_tatico', { elementos: [], linhas: [], tracos: [] }, notifyEdit, teamId,
   );
   const [emCurso, setEmCurso] = useState(null);
-  const [apagando, setApagando] = useState(false);
-  const [desenhando, setDesenhando] = useState(false);
+  // Um dos dois está sempre ativo — nunca os dois nem nenhum. Começa em
+  // "caneta" (é o que se usa mais tempo, a explicar um lance); trocar
+  // para "borracha" fica assim até se voltar a carregar na caneta —
+  // não desliga sozinho ao voltar a tocar no mesmo ícone.
+  const [modo, setModo] = useState('caneta'); // 'caneta' | 'borracha'
   const [rascunhoApagar, setRascunhoApagar] = useState(null);
   const [confirmarLimpar, setConfirmarLimpar] = useState(false);
   const campoRef = useRef(null);
   const quadroRootRef = useRef(null);
   const isMobile = useIsMobile(760);
+
+  /* Contador de quantas bolas de cada cor já existem — usado só para
+     decidir a posição de partida de um TOQUE simples (ver
+     `iniciarNovaBola`). É uma ref, não deriva de `quadro.elementos` a
+     cada toque: se derivasse, toques rápidos seguidos liam a contagem
+     ANTES de React ter tido tempo de aplicar o toque anterior, e todos
+     calculavam a MESMA posição — era essa a causa real do empilhamento
+     (não o cálculo da posição em si, que já estava certo). Incrementa
+     na hora, de forma síncrona, por isso nunca erra a conta mesmo com
+     vários toques seguidos muito depressa. Só é preciso inicializar uma
+     vez, a partir do que já estava gravado, quando os dados chegam. */
+  const contadorPorCor = useRef({ A: 0, B: 0, C: 0, D: 0 });
+  const contadorPronto = useRef(false);
+  useEffect(() => {
+    if (!quadroReady || contadorPronto.current) return;
+    const c = { A: 0, B: 0, C: 0, D: 0 };
+    (quadro.elementos || []).forEach(el => { if (c[el.cor] !== undefined) c[el.cor] += 1; });
+    contadorPorCor.current = c;
+    contadorPronto.current = true;
+  }, [quadroReady, quadro]);
 
   useEffect(() => {
     const el = quadroRootRef.current;
@@ -9244,31 +9280,33 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const iniciarNovaBola = (corId) => (e) => {
     e.preventDefault();
     // Ponto de partida sensato para um TOQUE simples (sem arrastar): a
-    // fila a seguir na coluna desta cor, em cruz — nunca em cima de
-    // outra bola. Se se ARRASTAR a seguir, o ponto de partida deixa de
-    // interessar, o movimento normal já trata de pôr onde se largar.
-    const jaExistentes = (quadroRef.current.elementos || []).filter(el => el.cor === corId).length;
-    const x = COLUNA_X_POR_COR[corId] || 50;
-    const y = FILAS_Y[jaExistentes % FILAS_Y.length];
-    setEmCurso({ tipo: 'novaBola', cor: corId, x, y });
+    // fila a seguir no quadrante desta cor — nunca em cima de outra
+    // bola, mesmo com vários toques seguidos muito depressa (ver o
+    // comentário do `contadorPorCor`, mais acima). Se se ARRASTAR a
+    // seguir, o ponto de partida deixa de interessar, o movimento
+    // normal já trata de pôr onde se largar.
+    const indice = contadorPorCor.current[corId] || 0;
+    contadorPorCor.current[corId] = indice + 1;
+    const filas = FILAS_POR_COR[corId] || FILAS_POR_COR.A;
+    const x = (QUADRANTES_POR_COR[corId] || QUADRANTES_POR_COR.A).x;
+    const y = filas[indice % filas.length];
+    setEmCurso({ tipo: 'novaBola', cor: corId, x, y, indice });
   };
 
-  // Zona vazia do relvado: apaga (borracha ativa) ou risca à mão
-  // (caneta ativa) — agora os dois precisam de ser ligados de propósito
-  // pelos ícones; sem nenhum dos dois ativo, tocar numa zona vazia não
-  // faz nada (só arrastar bolas continua sempre disponível).
+  // Zona vazia do relvado: apaga (modo borracha) ou risca à mão (modo
+  // caneta) — um dos dois está sempre ativo.
   const aoPressionarCampo = (e) => {
     const [x, y] = pontoDoEvento(e);
-    if (apagando) {
+    if (modo === 'borracha') {
       setRascunhoApagar(apagarPertoDe(quadroRef.current, x, y));
       setEmCurso({ tipo: 'apagar' });
-    } else if (desenhando) {
+    } else {
       setEmCurso({ tipo: 'traco', pontos: [[x, y]] });
     }
   };
 
   const aoPressionarElemento = (elemento) => (e) => {
-    if (apagando) return; // deixa passar para o campo — a borracha trata disto de forma unificada
+    if (modo === 'borracha') return; // deixa passar para o campo — a borracha trata disto de forma unificada
     e.stopPropagation();
     const [x, y] = pontoDoEvento(e);
     setEmCurso({ tipo: 'mover', id: elemento.id, x, y });
@@ -9301,8 +9339,11 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
         }
       } else if (atual.tipo === 'novaBola') {
         if (atual.x >= -6 && atual.x <= 113 && atual.y >= -5 && atual.y <= 83) {
-          const jaExistentes = (quadroRef.current.elementos || []).filter(el => el.cor === atual.cor).length;
-          const label = SEQUENCIA_POSICOES[jaExistentes % SEQUENCIA_POSICOES.length];
+          // Usa o MESMO índice calculado ao iniciar o gesto (`indice`,
+          // guardado em `atual`) — não recalcula aqui a partir de
+          // `quadroRef`, que era exatamente a fonte da condição de
+          // corrida com toques rápidos seguidos.
+          const label = SEQUENCIA_POSICOES[atual.indice % SEQUENCIA_POSICOES.length];
           setQuadro(prev => ({
             ...prev,
             elementos: [...(prev.elementos || []), { id: uid(), tipo: 'equipa', cor: atual.cor, label, x: atual.x, y: atual.y }],
@@ -9357,7 +9398,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           viewBox={QUADRO_VIEWBOX}
           onPointerDown={aoPressionarCampo}
           preserveAspectRatio="xMidYMid meet"
-          style={{ width: '100%', height: '100%', display: 'block', background: '#1E3A24', cursor: apagando ? 'crosshair' : 'crosshair' }}
+          style={{ width: '100%', height: '100%', display: 'block', background: '#1E3A24', cursor: 'crosshair' }}
         >
           <PitchMarkings />
           {/* Só fica aqui para setas ANTIGAS (passe/corrida), gravadas
@@ -9392,7 +9433,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             const tm = teamInfo(el.cor);
             const ehGR = el.label === 'GR';
             return (
-              <g key={el.id} onPointerDown={aoPressionarElemento(el)} style={{ cursor: apagando ? 'crosshair' : 'grab' }}>
+              <g key={el.id} onPointerDown={aoPressionarElemento(el)} style={{ cursor: modo === 'borracha' ? 'crosshair' : 'grab' }}>
                 {/* Guarda-redes em quadrado (arredondado), tal como no
                     editor 2D — distingue-se das bolas redondas dos
                     demais jogadores, à mesma escala reduzida deste
@@ -9453,26 +9494,29 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             direito, junto do banco. Maiores do que o resto (tipo "botão
             flutuante"), de propósito — são os que é preciso acertar
             depressa a meio de uma explicação, sem ter de mirar com
-            cuidado. Ativar a caneta desliga a borracha e vice-versa —
-            não fazem sentido os dois ligados ao mesmo tempo. */}
+            cuidado. Caneta e Borracha são um MODO exclusivo — um dos
+            dois está sempre ativo (começa em Caneta), nunca os dois
+            nem nenhum; trocar para Borracha fica assim até se voltar a
+            carregar na Caneta, não desliga sozinho ao tocar de novo no
+            mesmo ícone. */}
         <div style={{ position: 'absolute', right: '2%', bottom: '2%', display: 'flex', gap: 10 }}>
           <button
-            onClick={() => { setDesenhando(v => !v); setApagando(false); }}
+            onClick={() => setModo('caneta')}
             title="Caneta — risca à mão livre"
             style={{
               width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
-              background: desenhando ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
-              color: desenhando ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: modo === 'caneta' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+              color: modo === 'caneta' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
             }}
-          ><PenTool size={isMobile ? 21 : 25} /></button>
+          ><Pencil size={isMobile ? 21 : 25} /></button>
           <button
-            onClick={() => { setApagando(v => !v); setDesenhando(false); }}
+            onClick={() => setModo('borracha')}
             title="Borracha — arrasta para apagar"
             style={{
               width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
-              background: apagando ? '#B5393F' : '#2B402D', border: `2px solid ${apagando ? '#D14056' : T.gold}`,
-              color: apagando ? TEXT_ON_ACCENT : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: modo === 'borracha' ? '#B5393F' : '#2B402D', border: `2px solid ${modo === 'borracha' ? '#D14056' : T.gold}`,
+              color: modo === 'borracha' ? TEXT_ON_ACCENT : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
             }}
           ><Eraser size={isMobile ? 21 : 25} /></button>
