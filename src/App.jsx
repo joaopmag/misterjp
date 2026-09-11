@@ -14,7 +14,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move
+  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -9147,7 +9147,7 @@ function BenchesAndTechnicalArea({ printMode }) {
    confirmação, para não se apagar sem querer com um toque). Sair é só
    o X, canto superior. */
 const SEQUENCIA_POSICOES = ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MO', 'EX', 'EX', 'PL'];
-const RAIO_BOLA_QUADRO = 1.65;
+const RAIO_BOLA_QUADRO = 1.85;
 const RAIO_BORRACHA_QUADRO = 1.8;
 
 /* Ao tocar numa cor SEM arrastar, a bola tem de nascer num sítio certo
@@ -9185,7 +9185,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   // "caneta" (é o que se usa mais tempo, a explicar um lance); trocar
   // para "borracha" fica assim até se voltar a carregar na caneta —
   // não desliga sozinho ao voltar a tocar no mesmo ícone.
-  const [modo, setModo] = useState('caneta'); // 'caneta' | 'borracha' | 'mover' (mover liga-se sozinho ao agarrar numa bola)
+  const [modo, setModo] = useState('caneta'); // 'caneta' | 'borracha' | 'mao' (mão — só esta move bolas; escolhe-se sempre à mão, nunca liga sozinha)
   const [rascunhoApagar, setRascunhoApagar] = useState(null);
   const [confirmarLimpar, setConfirmarLimpar] = useState(false);
   const campoRef = useRef(null);
@@ -9371,13 +9371,13 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   };
 
   const aoPressionarElemento = (elemento) => (e) => {
-    if (modo === 'borracha') return; // deixa passar para o campo — a borracha trata disto de forma unificada
+    // Só move mesmo se a Mãozinha estiver ativa — com a Caneta ou a
+    // Borracha ligadas, tocar em cima de uma bola respeita SEMPRE essa
+    // ferramenta (risca por cima, ou apaga), nunca move sozinho. Deixa
+    // passar para o campo nesses casos — é lá que a Caneta/Borracha
+    // tratam disto.
+    if (modo !== 'mao') return;
     e.stopPropagation();
-    // Agarrar numa bola já colocada tira a seleção da Caneta (ou da
-    // Borracha, mas essa já saiu pelo `return` acima) — fica claro que
-    // agora é para MOVER, não para desenhar, sem ser preciso tocar em
-    // mais nenhum ícone.
-    setModo('mover');
     const [x, y] = pontoDoEvento(e);
     setEmCurso({ tipo: 'mover', id: elemento.id, x, y });
   };
@@ -9508,7 +9508,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                 key={el.id}
                 onPointerDown={aoPressionarElemento(el)}
                 onDragStart={(ev) => ev.preventDefault()}
-                style={{ cursor: modo === 'borracha' ? 'crosshair' : 'grab', touchAction: 'none', userSelect: 'none' }}
+                style={{ cursor: modo === 'mao' ? 'grab' : 'crosshair', touchAction: 'none', userSelect: 'none' }}
               >
                 {/* Guarda-redes em quadrado (arredondado), tal como no
                     editor 2D — distingue-se das bolas redondas dos
@@ -9555,7 +9555,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
         {/* EQUIPAS — do lado esquerdo, perto do banco. */}
         <div style={{
           position: 'absolute', left: '2%', bottom: '3%',
-          display: 'flex', gap: 9, background: '#00000066', padding: '7px 11px', borderRadius: 22,
+          display: 'flex', gap: 12, background: '#00000066', padding: '10px 14px', borderRadius: 28,
         }}>
           {TEAMS.map(t => (
             <button
@@ -9565,23 +9565,35 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
               onDragStart={(ev) => ev.preventDefault()}
               onPointerDown={iniciarNovaBola(t.id)}
               style={{
-                width: isMobile ? 26 : 30, height: isMobile ? 26 : 30, borderRadius: '50%', background: t.fill,
-                border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
+                width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: '50%', background: t.fill,
+                border: `2.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
               }}
             />
           ))}
         </div>
 
-        {/* CANETA + BORRACHA + LIMPAR — só ícones, canto inferior
+        {/* MÃO + CANETA + BORRACHA + LIMPAR — só ícones, canto inferior
             direito, junto do banco. Maiores do que o resto (tipo "botão
             flutuante"), de propósito — são os que é preciso acertar
             depressa a meio de uma explicação, sem ter de mirar com
-            cuidado. Caneta e Borracha são um MODO exclusivo — um dos
-            dois está sempre ativo (começa em Caneta), nunca os dois
-            nem nenhum; trocar para Borracha fica assim até se voltar a
-            carregar na Caneta, não desliga sozinho ao tocar de novo no
-            mesmo ícone. */}
+            cuidado. Mão/Caneta/Borracha são um MODO exclusivo — um dos
+            três está sempre ativo (começa em Caneta), nunca dois nem
+            nenhum; trocar fica assim até se voltar a carregar noutro
+            ícone, nunca desliga sozinho. Só com a Mão ativa é que tocar
+            numa bola a move — com a Caneta ou a Borracha, tocar em cima
+            de uma bola respeita sempre essa ferramenta (risca por cima,
+            ou apaga-a), nunca a move sem se ter pedido isso. */}
         <div style={{ position: 'absolute', right: '2%', bottom: '2%', display: 'flex', gap: 10 }}>
+          <button
+            onClick={() => setModo('mao')}
+            title="Mão — arrasta as bolas para mover"
+            style={{
+              width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
+              background: modo === 'mao' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+              color: modo === 'mao' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
+            }}
+          ><Hand size={isMobile ? 21 : 25} /></button>
           <button
             onClick={() => setModo('caneta')}
             title="Caneta — risca à mão livre"
