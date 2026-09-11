@@ -9689,12 +9689,19 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
               o ecrã — a barra acabava longe do campo, ou até por cima
               dele consoante a proporção. Assim, a barra fica sempre
               mesmo a seguir ao campo, seja qual for o formato do ecrã. */}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 6 }}>
             <div ref={campoRef} style={{
               width: 'auto', height: '100%', maxWidth: '100%', maxHeight: '100%',
               aspectRatio: vertical ? `${VB_H} / ${VB_W}` : `${VB_W} / ${VB_H}`,
               touchAction: 'none', position: 'relative', overflow: 'hidden',
             }}>
+              {/* Em modo vertical, só desenha depois de saber o tamanho
+                  real da caixa (`campoTamanho`) — sem isto, o primeiro
+                  instante (antes de o ResizeObserver medir pela
+                  primeira vez) desenhava o campo com as proporções
+                  erradas, esticado/deformado, e nalguns aparelhos essa
+                  imagem chegava a ficar presa assim. */}
+              {(!vertical || (campoTamanho.w > 0 && campoTamanho.h > 0)) && (
               <svg
                 viewBox={QUADRO_VIEWBOX}
                 onPointerDown={aoPressionarCampo}
@@ -9706,7 +9713,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                   // exatamente na caixa (que já está no formato
                   // vertical certo, via `aspectRatio` acima).
                   position: 'absolute', top: '50%', left: '50%',
-                  width: campoTamanho.h || '100%', height: campoTamanho.w || '100%',
+                  width: campoTamanho.h, height: campoTamanho.w,
                   transform: 'translate(-50%, -50%) rotate(90deg)',
                   display: 'block', background: '#1E3A24', cursor: 'crosshair',
                 } : { width: '100%', height: '100%', display: 'block', background: '#1E3A24', cursor: 'crosshair' }}
@@ -9799,6 +9806,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                   <g opacity={0.75}><TriondaBall cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_FUTEBOL_QUADRO} /></g>
                 )}
               </svg>
+              )}
 
               {/* No DESKTOP, a paleta/bola/ferramentas ficam sobrepostas
                   aos cantos do campo, como sempre estiveram — só em
@@ -9899,10 +9907,10 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
               precisar de nenhuma lógica extra para isso. */}
           <div style={{
             flexShrink: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center',
-            gap: 14, rowGap: 10, padding: '8px 14px 12px',
+            gap: 10, rowGap: 6, padding: compacto ? '4px 10px 6px' : '8px 14px 12px',
           }}>
             {/* EQUIPAS */}
-            <div style={{ display: 'flex', gap: 12, background: '#00000066', padding: '10px 14px', borderRadius: 28 }}>
+            <div style={{ display: 'flex', gap: compacto ? 8 : 12, background: '#00000066', padding: compacto ? '6px 9px' : '10px 14px', borderRadius: 28 }}>
               {TEAMS.map(t => (
                 <button
                   key={t.id}
@@ -9911,7 +9919,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                   onDragStart={(ev) => ev.preventDefault()}
                   onPointerDown={iniciarNovaBola(t.id)}
                   style={{
-                    width: compacto ? 34 : 44, height: compacto ? 34 : 44, borderRadius: '50%', background: t.fill,
+                    width: compacto ? 26 : 44, height: compacto ? 26 : 44, borderRadius: '50%', background: t.fill,
                     border: `2.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
                   }}
                 />
@@ -9928,7 +9936,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
               onDragStart={(ev) => ev.preventDefault()}
               onPointerDown={iniciarBola}
               style={{
-                width: 34, height: 34, borderRadius: '50%',
+                width: compacto ? 26 : 34, height: compacto ? 26 : 34, borderRadius: '50%',
                 border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none', overflow: 'hidden',
                 background: '#00000066', flexShrink: 0,
               }}
@@ -9944,51 +9952,51 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                 — com a Caneta ou a Borracha, tocar em cima de uma bola
                 respeita sempre essa ferramenta (risca por cima, ou
                 apaga-a), nunca a move sem se ter pedido isso. */}
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: compacto ? 7 : 10 }}>
               <button
                 onClick={() => setModo('mao')}
                 title="Mão — arrasta as bolas para mover"
                 style={{
-                  width: compacto ? 42 : 54, height: compacto ? 42 : 54, borderRadius: '50%',
+                  width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
                   background: modo === 'mao' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
                   color: modo === 'mao' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                 }}
-              ><Hand size={compacto ? 19 : 25} /></button>
+              ><Hand size={compacto ? 15 : 25} /></button>
               <button
                 onClick={() => setModo('caneta')}
                 title="Caneta — risca à mão livre"
                 style={{
-                  width: compacto ? 42 : 54, height: compacto ? 42 : 54, borderRadius: '50%',
+                  width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
                   background: modo === 'caneta' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
                   color: modo === 'caneta' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                 }}
-              ><Pencil size={compacto ? 19 : 25} /></button>
+              ><Pencil size={compacto ? 15 : 25} /></button>
               <button
                 onClick={() => setModo('borracha')}
                 title="Borracha — arrasta para apagar"
                 style={{
-                  width: compacto ? 42 : 54, height: compacto ? 42 : 54, borderRadius: '50%',
+                  width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
                   background: modo === 'borracha' ? '#B5393F' : '#2B402D', border: `2px solid ${modo === 'borracha' ? '#D14056' : T.gold}`,
                   color: modo === 'borracha' ? TEXT_ON_ACCENT : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                 }}
-              ><Eraser size={compacto ? 19 : 25} /></button>
+              ><Eraser size={compacto ? 15 : 25} /></button>
               <button
                 ref={lixoRef}
                 onClick={() => setConfirmarLimpar(true)}
                 title="Limpar tudo — arrasta uma bola até aqui para apagar só essa"
                 style={{
-                  width: sobreLixo ? (compacto ? 52 : 66) : (compacto ? 42 : 54),
-                  height: sobreLixo ? (compacto ? 52 : 66) : (compacto ? 42 : 54),
+                  width: sobreLixo ? (compacto ? 42 : 66) : (compacto ? 34 : 54),
+                  height: sobreLixo ? (compacto ? 42 : 66) : (compacto ? 34 : 54),
                   borderRadius: '50%', transition: 'width .12s, height .12s',
                   background: sobreLixo ? T.bad : '#2B402D', border: `2px solid ${T.bad}`,
                   color: sobreLixo ? TEXT_ON_ACCENT : T.bad,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
                   boxShadow: '0 3px 10px #00000066',
                 }}
-              ><Trash2 size={compacto ? 19 : 25} /></button>
+              ><Trash2 size={compacto ? 15 : 25} /></button>
             </div>
           </div>
           </>
