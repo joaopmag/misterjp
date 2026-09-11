@@ -31666,14 +31666,20 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
             );
 
             // Folha para afixar: só os nomes, sem revelar o onze.
+            // Ordenados por posição (GR, depois defesas, médios,
+            // avançados) — sem isto, saía pela ordem em que foram
+            // adicionados à convocatória, sem critério nenhum à vista.
             if (printConvocatoria.__tipo !== 'ficha') {
+              const idsOrdenados = sortByPosition(
+                ids.map(pid => players.find(pl => pl.id === pid)).filter(Boolean),
+              ).map(p => p.id);
               return (
                 <>
                   <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Convocados {(ids.length + experiencia.length) ? `(${ids.length + experiencia.length})` : ''}</h3>
                   <div style={{
                     fontSize: 12.5, marginBottom: 16, lineHeight: 1.65,
                   }}>
-                    {ids.map((pid) => { const n = nome(pid); return n ? <div key={pid}>{n}</div> : null; })}
+                    {idsOrdenados.map((pid) => { const n = nome(pid); return n ? <div key={pid}>{n}</div> : null; })}
                     {experiencia.map((n, i) => <div key={`x-${i}`}>{n} (exp)</div>)}
                   </div>
                 </>
