@@ -3105,13 +3105,12 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 color: T.gold, cursor: 'pointer', padding: 0,
               }}
             >
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke={T.gold} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M7 7l3 3M10 7l-3 3" />
-                <path d="M14 14l3 3M17 14l-3 3" />
-                <circle cx="7" cy="15.5" r="1.3" />
-                <path d="M8.5 14.3c2-1.7 3.5-4 5-7.3" />
-                <path d="M12 6.2l1.8-.4.4 1.9" />
+              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke={T.gold} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4.5 5.5l4 4M8.5 5.5l-4 4" />
+                <path d="M15.5 15l4 4M19.5 15l-4 4" />
+                <circle cx="5.5" cy="18" r="1.6" />
+                <path d="M7.3 16.6c2.5-2 4.3-4.8 6.2-8.9" />
+                <path d="M11.9 6.3l2.1-.5.5 2.3" />
               </svg>
             </button>
           </div>
@@ -9224,6 +9223,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const [confirmarLimpar, setConfirmarLimpar] = useState(false);
   const campoRef = useRef(null);
   const quadroRootRef = useRef(null);
+  const lixoRef = useRef(null);
+  const [sobreLixo, setSobreLixo] = useState(false);
   const isMobile = useIsMobile(760);
 
   /* Cada bola guarda o seu PRÓPRIO lugar (`slot`, um número: 0=GR,
@@ -9418,6 +9419,12 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
 
   useEffect(() => {
     if (!emCurso) return undefined;
+    const dentroDoLixo = (clientX, clientY) => {
+      const el = lixoRef.current;
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    };
     const mover = (e) => {
       const [x, y] = pontoDoEvento(e);
       const tipoAtual = emCursoRef.current && emCursoRef.current.tipo;
@@ -9425,15 +9432,17 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
         setRascunhoApagar(r => apagarPertoDe(r || quadroRef.current, x, y));
         return;
       }
+      if (tipoAtual === 'mover') setSobreLixo(dentroDoLixo(e.clientX, e.clientY));
       setEmCurso(prev => {
         if (!prev) return prev;
         if (prev.tipo === 'traco') return { ...prev, pontos: [...prev.pontos, [x, y]] };
-        return { ...prev, x, y };
+        return { ...prev, x, y, clientX: e.clientX, clientY: e.clientY };
       });
     };
     const largar = () => {
       const atual = emCursoRef.current;
       if (!atual) return;
+      setSobreLixo(false);
       if (atual.tipo === 'apagar') {
         if (rascunhoApagarRef.current) setQuadro(rascunhoApagarRef.current);
         setRascunhoApagar(null);
@@ -9464,13 +9473,21 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           }));
         }
       } else if (atual.tipo === 'mover') {
-        // Um toque simples (sem arrastar) numa bola já não faz nada —
-        // a sigla nunca é editável, só o "slot" (ver `iniciarNovaBola`)
-        // decide qual é.
-        setQuadro(prev => ({
-          ...prev,
-          elementos: (prev.elementos || []).map(el => (el.id === atual.id ? { ...el, x: atual.x, y: atual.y } : el)),
-        }));
+        // Largar em cima do caixote apaga só esta bola — sem precisar
+        // de trocar para a Borracha para tirar uma só. `atual.clientX`/
+        // `clientY` são coordenadas do ecrã (não do relvado), o mesmo
+        // sistema que o `lixoRef.getBoundingClientRect()` usa.
+        if (dentroDoLixo(atual.clientX, atual.clientY)) {
+          setQuadro(prev => ({ ...prev, elementos: (prev.elementos || []).filter(el => el.id !== atual.id) }));
+        } else {
+          // Um toque simples (sem arrastar) numa bola já não faz nada —
+          // a sigla nunca é editável, só o "slot" (ver `iniciarNovaBola`)
+          // decide qual é.
+          setQuadro(prev => ({
+            ...prev,
+            elementos: (prev.elementos || []).map(el => (el.id === atual.id ? { ...el, x: atual.x, y: atual.y } : el)),
+          }));
+        }
       }
       setEmCurso(null);
     };
@@ -9515,7 +9532,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           </marker>
 
           {tracos.map(t => (
-            <path key={t.id} d={pathDoTraco(t.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.3" strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
+            <path key={t.id} d={pathDoTraco(t.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.2" strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
           ))}
           {linhas.map(l => {
             const comSeta = l.tipo === 'passe' || l.tipo === 'corrida';
@@ -9528,7 +9545,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             );
           })}
           {emCurso && emCurso.tipo === 'traco' && (
-            <path d={pathDoTraco(emCurso.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.3" strokeLinecap="round" strokeLinejoin="round" opacity={0.65} />
+            <path d={pathDoTraco(emCurso.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.2" strokeLinecap="round" strokeLinejoin="round" opacity={0.65} />
           )}
 
           {elementos.map(el => {
@@ -9649,11 +9666,15 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             }}
           ><Eraser size={isMobile ? 21 : 25} /></button>
           <button
+            ref={lixoRef}
             onClick={() => setConfirmarLimpar(true)}
-            title="Limpar tudo"
+            title="Limpar tudo — arrasta uma bola até aqui para apagar só essa"
             style={{
-              width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
-              background: '#2B402D', border: `2px solid ${T.bad}`, color: T.bad,
+              width: sobreLixo ? (isMobile ? 58 : 66) : (isMobile ? 46 : 54),
+              height: sobreLixo ? (isMobile ? 58 : 66) : (isMobile ? 46 : 54),
+              borderRadius: '50%', transition: 'width .12s, height .12s',
+              background: sobreLixo ? T.bad : '#2B402D', border: `2px solid ${T.bad}`,
+              color: sobreLixo ? TEXT_ON_ACCENT : T.bad,
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
               boxShadow: '0 3px 10px #00000066',
             }}
