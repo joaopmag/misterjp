@@ -9240,6 +9240,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const [modo, setModo] = useState('mao'); // 'caneta' | 'borracha' | 'mao' (mão — só esta move bolas; escolhe-se sempre à mão, nunca liga sozinha)
   const [rascunhoApagar, setRascunhoApagar] = useState(null);
   const [confirmarLimpar, setConfirmarLimpar] = useState(false);
+  const [fechando, setFechando] = useState(false);
   const campoRef = useRef(null);
   const quadroRootRef = useRef(null);
   const lixoRef = useRef(null);
@@ -9335,11 +9336,22 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     // desenhava-se já no tamanho normal ENQUANTO o ecrã ainda estava em
     // fullscreen — e só depois é que encolhia, dando esse ar de
     // "arrasto"/instável ao fechar.
-    if (document.fullscreenElement) {
-      document.exitFullscreen().then(onClose).catch(onClose);
-    } else {
-      onClose();
-    }
+    //
+    // `fechando` esconde já o conteúdo (bolas, campo, tudo) antes
+    // sequer de pedir a saída — fica só o fundo escuro. Alguns
+    // browsers "congelam" a última imagem vista mesmo antes da
+    // transição de ecrã inteiro, e é essa imagem congelada (com a bola
+    // lá no meio) que ficava presa por cima do ecrã seguinte por um
+    // instante. Sem nada de especial nessa última imagem (só o fundo
+    // escuro), não fica nada de marcante para prender.
+    setFechando(true);
+    requestAnimationFrame(() => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().then(onClose).catch(onClose);
+      } else {
+        onClose();
+      }
+    });
   };
 
   const emCursoRef = useRef(null);
@@ -9595,6 +9607,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
       ref={quadroRootRef}
       style={{ position: 'fixed', inset: 0, zIndex: 70, background: '#1E3A24', ...body }}
     >
+      {!fechando && (
       <div ref={campoRef} style={{ width: '100%', height: '100%', touchAction: 'none', position: 'relative' }}>
         <svg
           viewBox={QUADRO_VIEWBOX}
@@ -9800,6 +9813,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           ><Trash2 size={isMobile ? 21 : 25} /></button>
         </div>
       </div>
+      )}
 
       {confirmarLimpar && (
         <div style={{ position: 'fixed', inset: 0, background: '#000000aa', zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
