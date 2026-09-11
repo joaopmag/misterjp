@@ -26345,7 +26345,11 @@ function PlayerConvocatoriasTab({ code, teamId }) {
         });
         return (
           <div key={c.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: T.gold, marginBottom: 4 }}>Excelente! Foste convocado.</div>
+            <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.4, color: c.convocado ? T.gold : T.mutedDim, marginBottom: 8 }}>
+              {c.convocado
+                ? 'Parabéns estás convocado. Estar convocado é o primeiro passo; o foco agora é a vitória da equipa.'
+                : 'Desta vez não estás na lista de convocados. Levanta a cabeça e foca-te no próximo treino.'}
+            </div>
             <div style={{ fontSize: 13.5, color: T.cream, marginBottom: 4 }}>
               {c.casaFora === 'Fora' ? `${c.adversario} vs ${nossoClube}` : `${nossoClube} vs ${c.adversario}`}
             </div>
