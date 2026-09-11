@@ -9605,214 +9605,233 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   return (
     <div
       ref={quadroRootRef}
-      style={{ position: 'fixed', inset: 0, zIndex: 70, background: '#1E3A24', ...body }}
+      style={{ position: 'fixed', inset: 0, zIndex: 70, background: '#1E3A24', display: 'flex', flexDirection: 'column', ...body }}
     >
       {!fechando && (
-      <div ref={campoRef} style={{ width: '100%', height: '100%', touchAction: 'none', position: 'relative' }}>
-        <svg
-          viewBox={QUADRO_VIEWBOX}
-          onPointerDown={aoPressionarCampo}
-          preserveAspectRatio="xMidYMid meet"
-          style={{ width: '100%', height: '100%', display: 'block', background: '#1E3A24', cursor: 'crosshair' }}
-        >
-          <PitchMarkings />
-          {/* Só fica aqui para setas ANTIGAS (passe/corrida), gravadas
-              antes desta simplificação sem barra de ferramentas — a
-              marca da ponta da seta ainda é precisa para as desenhar
-              corretamente; não há forma nova de criar mais nenhuma. */}
-          <marker id="qt-arrow" markerWidth="4.5" markerHeight="4.5" refX="4" refY="2.25" orient="auto">
-            <path d="M0,0 L4.5,2.25 L0,4.5 Z" fill="#F0E7D6" />
-          </marker>
+        <>
+          {/* SAIR — só o X, canto superior. Fixo ao ecrã todo, fora da
+              coluna do campo+barra, para nunca se mexer consoante o
+              tamanho do campo. */}
+          <button
+            onClick={fechar}
+            title="Fechar"
+            style={{
+              position: 'absolute', top: 10, right: 10, zIndex: 5, width: 34, height: 34, borderRadius: '50%',
+              background: '#00000066', border: `1px solid ${T.line}`, color: T.cream,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+            }}
+          ><X size={17} /></button>
 
-          {tracos.map(t => (
-            <path key={t.id} d={pathDoTraco(t.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.2" strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
-          ))}
-          {linhas.map(l => {
-            const comSeta = l.tipo === 'passe' || l.tipo === 'corrida';
-            return (
-              <line
-                key={l.id} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#F0E7D6" strokeWidth="0.5"
-                strokeDasharray={l.tipo === 'corrida' ? '2,1.4' : (l.tipo === 'linha-pontilhada' ? '0.15,1.4' : undefined)}
-                markerEnd={comSeta ? 'url(#qt-arrow)' : undefined}
-              />
-            );
-          })}
-          {emCurso && emCurso.tipo === 'traco' && (
-            <path d={pathDoTraco(emCurso.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.2" strokeLinecap="round" strokeLinejoin="round" opacity={0.65} />
-          )}
-
-          {elementos.map(el => {
-            const emMovimento = emCurso && emCurso.tipo === 'mover' && emCurso.id === el.id;
-            const x = emMovimento ? emCurso.x : el.x;
-            const y = emMovimento ? emCurso.y : el.y;
-            if (el.tipo === 'bola') {
-              return (
-                <g
-                  key={el.id}
-                  onPointerDown={aoPressionarElemento(el)}
-                  onDragStart={(ev) => ev.preventDefault()}
-                  style={{ cursor: modo === 'mao' ? 'grab' : 'crosshair', touchAction: 'none', userSelect: 'none' }}
-                >
-                  {/* Área de toque maior do que o desenho — a bola em si
-                      é pequena de propósito (do tamanho do editor 2D),
-                      mas continua a dar para agarrar bem com o dedo. */}
-                  <circle cx={x} cy={y} r={Math.max(RAIO_BOLA_FUTEBOL_QUADRO * 1.8, 1.6)} fill="transparent" />
-                  <TriondaBall cx={x} cy={y} r={RAIO_BOLA_FUTEBOL_QUADRO} />
-                </g>
-              );
-            }
-            const tm = teamInfo(el.cor);
-            const ehGR = el.label === 'GR';
-            return (
-              <g
-                key={el.id}
-                onPointerDown={aoPressionarElemento(el)}
-                onDragStart={(ev) => ev.preventDefault()}
-                style={{ cursor: modo === 'mao' ? 'grab' : 'crosshair', touchAction: 'none', userSelect: 'none' }}
+          {/* CAMPO — ocupa o espaço disponível a mais (`flex: 1`), a
+              barra de baixo fica sempre no fluxo normal, logo a seguir,
+              nunca por cima. Isto é o que estava mal antes: a barra
+              usava posições em percentagem do ECRÃ TODO, e um campo
+              vertical (telemóvel na vertical) é muito mais curto do que
+              o ecrã — a barra acabava longe do campo, ou até por cima
+              dele consoante a proporção. Assim, a barra fica sempre
+              mesmo a seguir ao campo, seja qual for o formato do ecrã. */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+            <div ref={campoRef} style={{
+              width: 'auto', height: '100%', maxWidth: '100%', maxHeight: '100%',
+              aspectRatio: `${VB_W} / ${VB_H}`, touchAction: 'none',
+            }}>
+              <svg
+                viewBox={QUADRO_VIEWBOX}
+                onPointerDown={aoPressionarCampo}
+                preserveAspectRatio="xMidYMid meet"
+                style={{ width: '100%', height: '100%', display: 'block', background: '#1E3A24', cursor: 'crosshair' }}
               >
-                {/* Guarda-redes em quadrado (arredondado), tal como no
-                    editor 2D — distingue-se das bolas redondas dos
-                    demais jogadores, à mesma escala reduzida deste
-                    quadro (a proporção largura/curvatura mantém-se
-                    igual à do editor, só encolhida). */}
-                {ehGR ? (
-                  <rect
-                    x={x - RAIO_BOLA_QUADRO} y={y - RAIO_BOLA_QUADRO}
-                    width={RAIO_BOLA_QUADRO * 2} height={RAIO_BOLA_QUADRO * 2} rx={RAIO_BOLA_QUADRO * 0.41}
-                    fill={tm.fill} stroke="#00000055" strokeWidth="0.18"
-                  />
-                ) : (
-                  <circle cx={x} cy={y} r={RAIO_BOLA_QUADRO} fill={tm.fill} stroke="#00000055" strokeWidth="0.18" />
-                )}
-                {el.label && (
-                  <text
-                    x={x} y={y} fontSize={el.label.length > 2 ? 0.95 : 1.3} fontWeight="700" fill={tm.text}
-                    textAnchor="middle" dominantBaseline="central" transform={`rotate(-90 ${x} ${y})`}
-                    style={{ pointerEvents: 'none', fontFamily: "'Oswald', sans-serif" }}
-                  >
-                    {el.label}
-                  </text>
-                )}
-              </g>
-            );
-          })}
-          {emCurso && emCurso.tipo === 'novaBola' && (
-            <circle cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_QUADRO} fill={teamInfo(emCurso.cor).fill} opacity={0.75} />
-          )}
-          {emCurso && emCurso.tipo === 'novaBolaFutebol' && (
-            <g opacity={0.75}><TriondaBall cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_FUTEBOL_QUADRO} /></g>
-          )}
-        </svg>
+                <PitchMarkings />
+                {/* Só fica aqui para setas ANTIGAS (passe/corrida), gravadas
+                    antes desta simplificação sem barra de ferramentas — a
+                    marca da ponta da seta ainda é precisa para as desenhar
+                    corretamente; não há forma nova de criar mais nenhuma. */}
+                <marker id="qt-arrow" markerWidth="4.5" markerHeight="4.5" refX="4" refY="2.25" orient="auto">
+                  <path d="M0,0 L4.5,2.25 L0,4.5 Z" fill="#F0E7D6" />
+                </marker>
 
-        {/* SAIR — só o X, canto superior. */}
-        <button
-          onClick={fechar}
-          title="Fechar"
-          style={{
-            position: 'absolute', top: 10, right: 10, width: 34, height: 34, borderRadius: '50%',
-            background: '#00000066', border: `1px solid ${T.line}`, color: T.cream,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
-          }}
-        ><X size={17} /></button>
+                {tracos.map(t => (
+                  <path key={t.id} d={pathDoTraco(t.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.2" strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />
+                ))}
+                {linhas.map(l => {
+                  const comSeta = l.tipo === 'passe' || l.tipo === 'corrida';
+                  return (
+                    <line
+                      key={l.id} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#F0E7D6" strokeWidth="0.5"
+                      strokeDasharray={l.tipo === 'corrida' ? '2,1.4' : (l.tipo === 'linha-pontilhada' ? '0.15,1.4' : undefined)}
+                      markerEnd={comSeta ? 'url(#qt-arrow)' : undefined}
+                    />
+                  );
+                })}
+                {emCurso && emCurso.tipo === 'traco' && (
+                  <path d={pathDoTraco(emCurso.pontos)} fill="none" stroke="#F0E7D6" strokeWidth="0.2" strokeLinecap="round" strokeLinejoin="round" opacity={0.65} />
+                )}
 
-        {/* EQUIPAS — do lado esquerdo, perto do banco. */}
-        <div style={{
-          position: 'absolute', left: '4%', bottom: '3%',
-          display: 'flex', gap: 12, background: '#00000066', padding: '10px 14px', borderRadius: 28,
-        }}>
-          {TEAMS.map(t => (
+                {elementos.map(el => {
+                  const emMovimento = emCurso && emCurso.tipo === 'mover' && emCurso.id === el.id;
+                  const x = emMovimento ? emCurso.x : el.x;
+                  const y = emMovimento ? emCurso.y : el.y;
+                  if (el.tipo === 'bola') {
+                    return (
+                      <g
+                        key={el.id}
+                        onPointerDown={aoPressionarElemento(el)}
+                        onDragStart={(ev) => ev.preventDefault()}
+                        style={{ cursor: modo === 'mao' ? 'grab' : 'crosshair', touchAction: 'none', userSelect: 'none' }}
+                      >
+                        {/* Área de toque maior do que o desenho — a bola em si
+                            é pequena de propósito (do tamanho do editor 2D),
+                            mas continua a dar para agarrar bem com o dedo. */}
+                        <circle cx={x} cy={y} r={Math.max(RAIO_BOLA_FUTEBOL_QUADRO * 1.8, 1.6)} fill="transparent" />
+                        <TriondaBall cx={x} cy={y} r={RAIO_BOLA_FUTEBOL_QUADRO} />
+                      </g>
+                    );
+                  }
+                  const tm = teamInfo(el.cor);
+                  const ehGR = el.label === 'GR';
+                  return (
+                    <g
+                      key={el.id}
+                      onPointerDown={aoPressionarElemento(el)}
+                      onDragStart={(ev) => ev.preventDefault()}
+                      style={{ cursor: modo === 'mao' ? 'grab' : 'crosshair', touchAction: 'none', userSelect: 'none' }}
+                    >
+                      {/* Guarda-redes em quadrado (arredondado), tal como no
+                          editor 2D — distingue-se das bolas redondas dos
+                          demais jogadores, à mesma escala reduzida deste
+                          quadro (a proporção largura/curvatura mantém-se
+                          igual à do editor, só encolhida). */}
+                      {ehGR ? (
+                        <rect
+                          x={x - RAIO_BOLA_QUADRO} y={y - RAIO_BOLA_QUADRO}
+                          width={RAIO_BOLA_QUADRO * 2} height={RAIO_BOLA_QUADRO * 2} rx={RAIO_BOLA_QUADRO * 0.41}
+                          fill={tm.fill} stroke="#00000055" strokeWidth="0.18"
+                        />
+                      ) : (
+                        <circle cx={x} cy={y} r={RAIO_BOLA_QUADRO} fill={tm.fill} stroke="#00000055" strokeWidth="0.18" />
+                      )}
+                      {el.label && (
+                        <text
+                          x={x} y={y} fontSize={el.label.length > 2 ? 0.95 : 1.3} fontWeight="700" fill={tm.text}
+                          textAnchor="middle" dominantBaseline="central" transform={`rotate(-90 ${x} ${y})`}
+                          style={{ pointerEvents: 'none', fontFamily: "'Oswald', sans-serif" }}
+                        >
+                          {el.label}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
+                {emCurso && emCurso.tipo === 'novaBola' && (
+                  <circle cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_QUADRO} fill={teamInfo(emCurso.cor).fill} opacity={0.75} />
+                )}
+                {emCurso && emCurso.tipo === 'novaBolaFutebol' && (
+                  <g opacity={0.75}><TriondaBall cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_FUTEBOL_QUADRO} /></g>
+                )}
+              </svg>
+            </div>
+          </div>
+
+          {/* BARRA DE BAIXO — palete, bola e ferramentas, tudo no fluxo
+              normal, mesmo a seguir ao campo (nunca por cima, nunca
+              longe). `flexWrap` deixa passar para uma segunda linha
+              sozinho em ecrãs estreitos (telemóvel na vertical), sem
+              precisar de nenhuma lógica extra para isso. */}
+          <div style={{
+            flexShrink: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center',
+            gap: 14, rowGap: 10, padding: '8px 14px 12px',
+          }}>
+            {/* EQUIPAS */}
+            <div style={{ display: 'flex', gap: 12, background: '#00000066', padding: '10px 14px', borderRadius: 28 }}>
+              {TEAMS.map(t => (
+                <button
+                  key={t.id}
+                  title={t.label}
+                  draggable={false}
+                  onDragStart={(ev) => ev.preventDefault()}
+                  onPointerDown={iniciarNovaBola(t.id)}
+                  style={{
+                    width: isMobile ? 34 : 44, height: isMobile ? 34 : 44, borderRadius: '50%', background: t.fill,
+                    border: `2.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* BOLA — igual à do editor 2D (`TriondaBall`), mas isolada,
+                não faz parte da paleta de cores. Só pode existir UMA no
+                quadro (ver `iniciarBola`): tocar ou arrastar esta
+                sempre substitui a anterior, nunca cria uma segunda. */}
             <button
-              key={t.id}
-              title={t.label}
+              title="Bola"
               draggable={false}
               onDragStart={(ev) => ev.preventDefault()}
-              onPointerDown={iniciarNovaBola(t.id)}
+              onPointerDown={iniciarBola}
               style={{
-                width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: '50%', background: t.fill,
-                border: `2.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
+                width: 34, height: 34, borderRadius: '50%',
+                border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none', overflow: 'hidden',
+                background: '#00000066', flexShrink: 0,
               }}
-            />
-          ))}
-        </div>
+            >
+              <svg viewBox="0 0 10 10" width="100%" height="100%"><TriondaBall cx={5} cy={5} r={4.2} /></svg>
+            </button>
 
-        {/* BOLA — igual à do editor 2D (`TriondaBall`), mas isolada no
-            meio, entre os dois bancos — não faz parte da paleta de
-            cores. Só pode existir UMA no quadro (ver `iniciarBola`):
-            tocar ou arrastar esta sempre substitui a anterior, nunca
-            cria uma segunda. */}
-        <button
-          title="Bola"
-          draggable={false}
-          onDragStart={(ev) => ev.preventDefault()}
-          onPointerDown={iniciarBola}
-          style={{
-            position: 'absolute', left: '50%', bottom: '3%', transform: 'translateX(-50%)',
-            width: 34, height: 34, borderRadius: '50%',
-            border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none', overflow: 'hidden',
-            background: '#00000066',
-          }}
-        >
-          <svg viewBox="0 0 10 10" width="100%" height="100%"><TriondaBall cx={5} cy={5} r={4.2} /></svg>
-        </button>
-
-        {/* MÃO + CANETA + BORRACHA + LIMPAR — só ícones, canto inferior
-            direito, junto do banco. Maiores do que o resto (tipo "botão
-            flutuante"), de propósito — são os que é preciso acertar
-            depressa a meio de uma explicação, sem ter de mirar com
-            cuidado. Mão/Caneta/Borracha são um MODO exclusivo — um dos
-            três está sempre ativo (começa em Caneta), nunca dois nem
-            nenhum; trocar fica assim até se voltar a carregar noutro
-            ícone, nunca desliga sozinho. Só com a Mão ativa é que tocar
-            numa bola a move — com a Caneta ou a Borracha, tocar em cima
-            de uma bola respeita sempre essa ferramenta (risca por cima,
-            ou apaga-a), nunca a move sem se ter pedido isso. */}
-        <div style={{ position: 'absolute', right: '4%', bottom: '2%', display: 'flex', gap: 10 }}>
-          <button
-            onClick={() => setModo('mao')}
-            title="Mão — arrasta as bolas para mover"
-            style={{
-              width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
-              background: modo === 'mao' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
-              color: modo === 'mao' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
-            }}
-          ><Hand size={isMobile ? 21 : 25} /></button>
-          <button
-            onClick={() => setModo('caneta')}
-            title="Caneta — risca à mão livre"
-            style={{
-              width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
-              background: modo === 'caneta' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
-              color: modo === 'caneta' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
-            }}
-          ><Pencil size={isMobile ? 21 : 25} /></button>
-          <button
-            onClick={() => setModo('borracha')}
-            title="Borracha — arrasta para apagar"
-            style={{
-              width: isMobile ? 46 : 54, height: isMobile ? 46 : 54, borderRadius: '50%',
-              background: modo === 'borracha' ? '#B5393F' : '#2B402D', border: `2px solid ${modo === 'borracha' ? '#D14056' : T.gold}`,
-              color: modo === 'borracha' ? TEXT_ON_ACCENT : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
-            }}
-          ><Eraser size={isMobile ? 21 : 25} /></button>
-          <button
-            ref={lixoRef}
-            onClick={() => setConfirmarLimpar(true)}
-            title="Limpar tudo — arrasta uma bola até aqui para apagar só essa"
-            style={{
-              width: sobreLixo ? (isMobile ? 58 : 66) : (isMobile ? 46 : 54),
-              height: sobreLixo ? (isMobile ? 58 : 66) : (isMobile ? 46 : 54),
-              borderRadius: '50%', transition: 'width .12s, height .12s',
-              background: sobreLixo ? T.bad : '#2B402D', border: `2px solid ${T.bad}`,
-              color: sobreLixo ? TEXT_ON_ACCENT : T.bad,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
-              boxShadow: '0 3px 10px #00000066',
-            }}
-          ><Trash2 size={isMobile ? 21 : 25} /></button>
-        </div>
-      </div>
+            {/* MÃO + CANETA + BORRACHA + LIMPAR. Mão/Caneta/Borracha são
+                um MODO exclusivo — um dos três está sempre ativo (começa
+                em Caneta), nunca dois nem nenhum; trocar fica assim até
+                se voltar a carregar noutro ícone, nunca desliga
+                sozinho. Só com a Mão ativa é que tocar numa bola a move
+                — com a Caneta ou a Borracha, tocar em cima de uma bola
+                respeita sempre essa ferramenta (risca por cima, ou
+                apaga-a), nunca a move sem se ter pedido isso. */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setModo('mao')}
+                title="Mão — arrasta as bolas para mover"
+                style={{
+                  width: isMobile ? 42 : 54, height: isMobile ? 42 : 54, borderRadius: '50%',
+                  background: modo === 'mao' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+                  color: modo === 'mao' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
+                }}
+              ><Hand size={isMobile ? 19 : 25} /></button>
+              <button
+                onClick={() => setModo('caneta')}
+                title="Caneta — risca à mão livre"
+                style={{
+                  width: isMobile ? 42 : 54, height: isMobile ? 42 : 54, borderRadius: '50%',
+                  background: modo === 'caneta' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+                  color: modo === 'caneta' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
+                }}
+              ><Pencil size={isMobile ? 19 : 25} /></button>
+              <button
+                onClick={() => setModo('borracha')}
+                title="Borracha — arrasta para apagar"
+                style={{
+                  width: isMobile ? 42 : 54, height: isMobile ? 42 : 54, borderRadius: '50%',
+                  background: modo === 'borracha' ? '#B5393F' : '#2B402D', border: `2px solid ${modo === 'borracha' ? '#D14056' : T.gold}`,
+                  color: modo === 'borracha' ? TEXT_ON_ACCENT : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
+                }}
+              ><Eraser size={isMobile ? 19 : 25} /></button>
+              <button
+                ref={lixoRef}
+                onClick={() => setConfirmarLimpar(true)}
+                title="Limpar tudo — arrasta uma bola até aqui para apagar só essa"
+                style={{
+                  width: sobreLixo ? (isMobile ? 52 : 66) : (isMobile ? 42 : 54),
+                  height: sobreLixo ? (isMobile ? 52 : 66) : (isMobile ? 42 : 54),
+                  borderRadius: '50%', transition: 'width .12s, height .12s',
+                  background: sobreLixo ? T.bad : '#2B402D', border: `2px solid ${T.bad}`,
+                  color: sobreLixo ? TEXT_ON_ACCENT : T.bad,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+                  boxShadow: '0 3px 10px #00000066',
+                }}
+              ><Trash2 size={isMobile ? 19 : 25} /></button>
+            </div>
+          </div>
+        </>
       )}
 
       {confirmarLimpar && (
