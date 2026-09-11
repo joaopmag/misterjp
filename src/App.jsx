@@ -9328,8 +9328,18 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const fechar = () => {
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    onClose();
+    // A mesma ideia da abertura, mas ao contrário: só se muda de ecrã
+    // DEPOIS de o browser ter mesmo terminado de sair do ecrã inteiro —
+    // não ao mesmo tempo. Antes, `onClose()` corria logo a seguir a
+    // pedir a saída (que é assíncrona), por isso o resto da app
+    // desenhava-se já no tamanho normal ENQUANTO o ecrã ainda estava em
+    // fullscreen — e só depois é que encolhia, dando esse ar de
+    // "arrasto"/instável ao fechar.
+    if (document.fullscreenElement) {
+      document.exitFullscreen().then(onClose).catch(onClose);
+    } else {
+      onClose();
+    }
   };
 
   const emCursoRef = useRef(null);
