@@ -26352,10 +26352,7 @@ function PlayerConvocatoriasTab({ code, teamId }) {
                   <div style={{ marginTop: 6 }}>Estar convocado é o primeiro passo; o foco agora é a vitória da equipa.</div>
                 </>
               ) : (
-                <>
-                  <div>Desta vez não estás na lista de convocados.</div>
-                  <div style={{ marginTop: 6 }}>Levanta a cabeça e foca-te no próximo treino.</div>
-                </>
+                'Desta vez não estás na lista de convocados. Levanta a cabeça e foca-te no próximo treino.'
               )}
             </div>
             <div style={{ fontSize: 13.5, color: T.cream, marginBottom: 4 }}>
@@ -31477,7 +31474,6 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
             margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0',
           }}>
             {printConvocatoria.data && <div><strong>Data:</strong> {fmtDate(printConvocatoria.data)}</div>}
-            {printConvocatoria.casaFora && <div><strong>Casa / Fora:</strong> {printConvocatoria.casaFora}</div>}
             {printConvocatoria.horaJogo && <div><strong>Hora do jogo:</strong> {printConvocatoria.horaJogo}</div>}
             {printConvocatoria.localJogo && <div><strong>Local do jogo:</strong> {printConvocatoria.localJogo}</div>}
             {printConvocatoria.horaConcentracao && <div><strong>Hora de concentração:</strong> {printConvocatoria.horaConcentracao}</div>}
@@ -31512,8 +31508,8 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
                   <div style={{
                     fontSize: 12.5, marginBottom: 16, lineHeight: 1.65,
                   }}>
-                    {ids.map((pid, i) => { const n = nome(pid); return n ? <div key={pid}>{i + 1}. {n}</div> : null; })}
-                    {experiencia.map((n, i) => <div key={`x-${i}`}>{ids.length + i + 1}. {n} (exp)</div>)}
+                    {ids.map((pid) => { const n = nome(pid); return n ? <div key={pid}>{n}</div> : null; })}
+                    {experiencia.map((n, i) => <div key={`x-${i}`}>{n} (exp)</div>)}
                   </div>
                 </>
               );
@@ -31535,7 +31531,7 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
                     Vinte nomes numa coluna cabem folgadamente numa A4. */}
                 <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Onze inicial ({onze.length})</h3>
                 <div style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.65 }}>
-                  {onze.map((pid, i) => { const n = nome(pid); return n ? <div key={pid}>{i + 1}. {n}{bracadeira(pid)}</div> : null; })}
+                  {onze.map((pid) => { const n = nome(pid); return n ? <div key={pid}>{n}{bracadeira(pid)}</div> : null; })}
                 </div>
 
                 <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Suplentes ({banco.length + experiencia.length})</h3>
