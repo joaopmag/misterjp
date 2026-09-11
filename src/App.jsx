@@ -2745,7 +2745,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     { id: 'biblioteca', label: 'Biblioteca', icon: Presentation },
     { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, badge: tarefasAMinhaPorta(tarefas, euId, { sessions, matches, players, monitoring }) },
     { id: 'diario', label: 'Diário', icon: BookOpen },
-    { id: 'quadrotatico', label: 'Quadro Tático', icon: PenTool },
   ];
 
 
@@ -2892,6 +2891,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         * { box-sizing: border-box; }
         ::selection { background: ${T.gold}55; }
         .navbtn:hover { background: ${T.surfaceRaise}; }
+        @keyframes brilhoQuadroTatico {
+          0%, 100% { box-shadow: 0 4px 14px rgba(0,0,0,0.45), 0 0 0 0 ${T.gold}55; }
+          50% { box-shadow: 0 4px 14px rgba(0,0,0,0.45), 0 0 0 7px ${T.gold}00; }
+        }
+        .botao-quadro-tatico { animation: brilhoQuadroTatico 2.6s ease-in-out infinite; }
         /* Painel de edição do elemento selecionado (Baliza, Texto, etc.):
            rola na horizontal mas NUNCA cresce na vertical por causa disso.
            Sem isto, quando o conteúdo era mais largo que o ecrã (caso da
@@ -3240,6 +3244,26 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         </div>
         </main>
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
+        {/* QUADRO TÁTICO — em vez de mais um item na barra lateral (que
+            já vai longa), fica como um botão flutuante próprio, sempre
+            à mão em qualquer ecrã da app — canto oposto ao "voltar ao
+            topo", para nunca se sobreporem. Um brilho suave à volta,
+            que pulsa devagar, chama a atenção sem ser irritante — é
+            uma ferramenta usada ao vivo, num team talk, por isso vale
+            a pena destacá-la um pouco mais do que um botão normal. */}
+        <button
+          onClick={() => setTab('quadrotatico')}
+          aria-label="Abrir o Quadro Tático"
+          title="Quadro Tático"
+          className="botao-quadro-tatico"
+          style={{
+            position: 'fixed', left: 16, bottom: isMobile ? 78 : 24, zIndex: 40,
+            width: isMobile ? 50 : 46, height: isMobile ? 50 : 46, borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: '#2B402D', border: `2px solid ${T.gold}`,
+            color: T.gold, cursor: 'pointer',
+          }}
+        ><PenTool size={isMobile ? 22 : 20} /></button>
       </div>
       {/* Dupla rede contra eliminações acidentais, uma só para toda a
           aplicação: primeiro pergunta, depois deixa anular. */}
