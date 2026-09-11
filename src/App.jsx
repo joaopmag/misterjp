@@ -3107,7 +3107,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               quadro, não é um ícone genérico da lib. Um brilho suave
               que pulsa devagar chama a atenção sem ser irritante — é
               uma ferramenta usada ao vivo, num team talk. */}
-          <div style={{ padding: '20px 20px 10px', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ padding: '20px 20px 10px', display: 'flex', justifyContent: 'flex-end' }}>
             <button
               onClick={abrirQuadroTatico}
               aria-label="Abrir o Quadro Tático"
