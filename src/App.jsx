@@ -2808,7 +2808,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              classificação) têm o seu próprio overflow-x:auto e
              continuam a funcionar, porque o corte é só ao nível da
              página. */
-          html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; }
+          html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; background: ${T.bg}; }
           /* Reserva sempre o espaço da barra de scroll vertical — ver o
              mesmo comentário em CheckinApp/moldura. Sem isto, trocar de
              ecrã aqui na pré-visualização (Pré-visualizar, no separador
