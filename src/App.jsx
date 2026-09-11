@@ -9258,34 +9258,34 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
      é sempre mais largo do que alto; num ecrã em pé, sem rodar, ficava
      pequeno e sobrava imenso verde vazio em cima e em baixo. Rodado,
      passa a ocupar o ecrã quase todo. */
+  /* `vertical` decide por CSS (matchMedia), não por medir pixels em
+     JavaScript — medir em JS já tinha dado problemas: no instante em
+     que este ecrã abre, o browser pode ainda estar a meio da transição
+     para ecrã inteiro, e o que se lia era o tamanho da janela ANTIGA,
+     antes da transição terminar. `matchMedia('orientation: portrait')`
+     não tem esse problema — é o próprio motor do browser a decidir a
+     orientação, sempre atualizado, sem depender de medir na hora certa
+     nem de ouvir os eventos certos (`resize`/`orientationchange`
+     nalguns aparelhos disparam tarde, ou não disparam de todo, à volta
+     de mudanças de ecrã inteiro). */
+  const [vertical, setVertical] = useState(() => window.matchMedia('(orientation: portrait)').matches);
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
+    const mq = window.matchMedia('(orientation: portrait)');
+    const aoMudarOrientacao = () => setVertical(mq.matches);
+    // Alguns browsers só têm `addListener` (a forma antiga); os mais
+    // recentes preferem `addEventListener('change', ...)` — tenta os
+    // dois, para funcionar em qualquer um.
+    if (mq.addEventListener) mq.addEventListener('change', aoMudarOrientacao);
+    else if (mq.addListener) mq.addListener(aoMudarOrientacao);
     const aoRedimensionar = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', aoRedimensionar);
-    window.addEventListener('orientationchange', aoRedimensionar);
-    // A medida inicial (lá em cima, no `useState`) é tirada mesmo ao
-    // abrir este ecrã — o que pode acontecer ANTES de o pedido de ecrã
-    // inteiro ter terminado mesmo a transição. Nesse caso, o que se
-    // media era ainda o tamanho da janela ANTIGA (antes de passar a
-    // ecrã inteiro), que podia perfeitamente ser mais alta do que
-    // larga mesmo num telemóvel deitado — daí a barra de baixo teimar
-    // em aparecer mesmo em paisagem. `fullscreenchange` avisa quando a
-    // transição termina a sério; é aí que se mede de novo, já com o
-    // tamanho final certo.
-    window.addEventListener('fullscreenchange', aoRedimensionar);
-    // E mais uma rede de segurança, para aparelhos que não disparem
-    // `fullscreenchange` a tempo (ou nada de especial mudar) — mede-se
-    // outra vez pouco depois de abrir, sem custar nada se já estiver
-    // certo.
-    const t = setTimeout(aoRedimensionar, 300);
     return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', aoMudarOrientacao);
+      else if (mq.removeListener) mq.removeListener(aoMudarOrientacao);
       window.removeEventListener('resize', aoRedimensionar);
-      window.removeEventListener('orientationchange', aoRedimensionar);
-      window.removeEventListener('fullscreenchange', aoRedimensionar);
-      clearTimeout(t);
     };
   }, []);
-  const vertical = viewport.h > viewport.w;
   /* `compacto` só decide o TAMANHO dos ícones (pequenos ou grandes) —
      nunca onde ficam. Onde ficam é só uma pergunta: o ecrã é vertical
      ou não. Em PAISAGEM (mesmo num telemóvel, não só em desktop), os
@@ -29609,7 +29609,7 @@ const TIKTOK_PLAYER_PARAMS = 'rel=0&loop=1&description=0&music_info=0&controls=1
    inteiro com `transform: scale()` até encher esse espaço — o mesmo
    truque que se usa para qualquer conteúdo de largura fixa que se
    precise de esticar. */
-function InstagramEmbedResponsivo({ src, titulo }) {
+function InstagramEmbedResponsivo({ src, titulo, tipo }) {
   const wrapRef = useRef(null);
   const [largura, setLargura] = useState(0);
   useEffect(() => {
@@ -29620,9 +29620,17 @@ function InstagramEmbedResponsivo({ src, titulo }) {
   }, []);
   const NATIVO = 328; // largura a que o Instagram desenha o embed, sempre
   const escala = largura ? largura / NATIVO : 1;
-  const alturaNativa = NATIVO * 1.25;
+  // Reels e IGTV são vídeos verticais (perto de 9:16) — bem mais altos
+  // do que uma publicação normal (perto de 4:5/1:1). Sem distinguir os
+  // dois, a "janela" calculada para um Reel ficava curta de mais, e o
+  // que devia ficar escondido por baixo da borda (a legenda "Ver mais
+  // no Instagram") acabava a aparecer a meio do vídeo, em vez de fora
+  // da vista.
+  const ehVertical = tipo === 'reel' || tipo === 'reels' || tipo === 'tv';
+  const proporcao = ehVertical ? 1.78 : 1.25;
+  const alturaNativa = NATIVO * proporcao;
   return (
-    <div ref={wrapRef} style={{ position: 'relative', width: '100%', paddingTop: '125%', background: '#000', overflow: 'hidden' }}>
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%', paddingTop: `${proporcao * 100}%`, background: '#000', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, width: NATIVO, height: alturaNativa, transform: `scale(${escala})`, transformOrigin: 'top left' }}>
         <iframe
           src={src}
@@ -29672,7 +29680,7 @@ function MediaFeedItem({ item, onOpen }) {
       </div>
 
       {item.social && item.social.platform === 'instagram' ? (
-        <InstagramEmbedResponsivo src={fonte} titulo={item.title} />
+        <InstagramEmbedResponsivo src={fonte} titulo={item.title} tipo={item.social.tipo} />
       ) : fonte ? (
         <div style={{
           position: 'relative', width: '100%', background: '#000',
