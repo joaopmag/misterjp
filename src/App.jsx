@@ -3099,7 +3099,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               title="Quadro Tático"
               className="botao-quadro-tatico"
               style={{
-                width: 52, height: 52, borderRadius: 10,
+                width: 40, height: 50, borderRadius: 8,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: '#2B402D', border: `2px solid ${T.gold}`,
                 color: T.gold, cursor: 'pointer', padding: 0,
@@ -3108,7 +3108,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               {/* viewBox mais apertado (à volta do próprio desenho, não
                   do quadrado 24x24 inteiro) — o mesmo desenho, mas a
                   "zoom" dentro do ícone, para ocupar mais espaço. */}
-              <svg viewBox="2.5 3.5 19 17" width="40" height="40" fill="none" stroke={T.gold} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="2.5 3.5 19 17" width="30" height="30" fill="none" stroke={T.gold} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4.5 5.5l4 4M8.5 5.5l-4 4" />
                 <path d="M15.5 15l4 4M19.5 15l-4 4" />
                 <circle cx="5.5" cy="18" r="1.6" />
