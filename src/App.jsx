@@ -3246,24 +3246,36 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
         {/* QUADRO TÁTICO — em vez de mais um item na barra lateral (que
             já vai longa), fica como um botão flutuante próprio, sempre
-            à mão em qualquer ecrã da app — canto oposto ao "voltar ao
-            topo", para nunca se sobreporem. Um brilho suave à volta,
-            que pulsa devagar, chama a atenção sem ser irritante — é
-            uma ferramenta usada ao vivo, num team talk, por isso vale
-            a pena destacá-la um pouco mais do que um botão normal. */}
+            à mão em qualquer ecrã da app. Canto superior direito — o
+            inferior esquerdo tapava outra coisa. Ícone próprio (prancheta
+            táctica: X's, seta e bola), em vez de um genérico da lib de
+            ícones, com as cores da app; forma retangular, como o
+            próprio quadro, em vez de um círculo. Um brilho suave à
+            volta, que pulsa devagar, chama a atenção sem ser irritante
+            — é uma ferramenta usada ao vivo, num team talk. */}
         <button
           onClick={() => setTab('quadrotatico')}
           aria-label="Abrir o Quadro Tático"
           title="Quadro Tático"
           className="botao-quadro-tatico"
           style={{
-            position: 'fixed', left: 16, bottom: isMobile ? 78 : 24, zIndex: 40,
-            width: isMobile ? 50 : 46, height: isMobile ? 50 : 46, borderRadius: '50%',
+            position: 'fixed', right: 16, top: 16, zIndex: 40,
+            width: isMobile ? 46 : 42, height: isMobile ? 54 : 50, borderRadius: 9,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: '#2B402D', border: `2px solid ${T.gold}`,
-            color: T.gold, cursor: 'pointer',
+            color: T.gold, cursor: 'pointer', padding: 0,
           }}
-        ><PenTool size={isMobile ? 22 : 20} /></button>
+        >
+          <svg viewBox="0 0 24 24" width={isMobile ? 24 : 22} height={isMobile ? 24 : 22} fill="none" stroke={T.gold} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4.5" y="4" width="15" height="17.5" rx="1.6" />
+            <path d="M9.2 4c0-1.1.9-2 2-2h1.6c1.1 0 2 .9 2 2" />
+            <path d="M7 9.2l2.4 2.4M9.4 9.2L7 11.6" />
+            <path d="M13.6 15.6l2.4 2.4M16 15.6l-2.4 2.4" />
+            <circle cx="7.6" cy="16.8" r="1.15" />
+            <path d="M8.9 15.9c2-1.6 3-3.6 4-6.2" />
+            <path d="M11.6 8.7l1.6-.4.4 1.7" />
+          </svg>
+        </button>
       </div>
       {/* Dupla rede contra eliminações acidentais, uma só para toda a
           aplicação: primeiro pergunta, depois deixa anular. */}
