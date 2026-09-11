@@ -3107,14 +3107,14 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               quadro, não é um ícone genérico da lib. Um brilho suave
               que pulsa devagar chama a atenção sem ser irritante — é
               uma ferramenta usada ao vivo, num team talk. */}
-          <div style={{ padding: '10px 20px' }}>
+          <div style={{ padding: '20px 20px 10px', display: 'flex', justifyContent: 'center' }}>
             <button
               onClick={abrirQuadroTatico}
               aria-label="Abrir o Quadro Tático"
               title="Quadro Tático"
               className="botao-quadro-tatico"
               style={{
-                width: 40, height: 50, borderRadius: 8,
+                width: 84, height: 96, borderRadius: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: '#2B402D', border: `2px solid ${T.gold}`,
                 color: T.gold, cursor: 'pointer', padding: 0,
@@ -3123,7 +3123,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               {/* viewBox mais apertado (à volta do próprio desenho, não
                   do quadrado 24x24 inteiro) — o mesmo desenho, mas a
                   "zoom" dentro do ícone, para ocupar mais espaço. */}
-              <svg viewBox="2.5 3.5 19 17" width="30" height="30" fill="none" stroke={T.gold} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="2.5 3.5 19 17" width="56" height="56" fill="none" stroke={T.gold} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4.5 5.5l4 4M8.5 5.5l-4 4" />
                 <path d="M15.5 15l4 4M19.5 15l-4 4" />
                 <circle cx="5.5" cy="18" r="1.6" />
