@@ -9281,9 +9281,16 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
       // Safari/iOS — não há forma de contornar isso a partir daqui, é
       // uma limitação do próprio aparelho). Onde funcionar, o ecrã já
       // não roda sozinho ao virar o telemóvel/tablet.
-      if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
-      }
+      //
+      // Um pequeno atraso (só um instante, não dá para reparar) separa
+      // isto do próprio pedido de ecrã inteiro — pedir os dois colados
+      // um ao outro somava duas transições do browser seguidas, o que
+      // se via como um "flash".
+      setTimeout(() => {
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
+        }
+      }, 250);
     };
     if (jaEmFullscreen) {
       pedirBloqueioOrientacao();
@@ -9576,16 +9583,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   return (
     <div
       ref={quadroRootRef}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 70, background: '#1E3A24', ...body,
-        // Um desvanecer rápido, só para disfarçar qualquer reorganização
-        // residual do browser ao entrar em ecrã inteiro (mudar o
-        // tamanho da janela é sempre um bocadinho abrupto) — sem
-        // atrasar a abertura em si, só suaviza o que se vê.
-        animation: 'quadroTaticoEntrada .18s ease-out',
-      }}
+      style={{ position: 'fixed', inset: 0, zIndex: 70, background: '#1E3A24', ...body }}
     >
-      <style>{`@keyframes quadroTaticoEntrada { from { opacity: 0; } to { opacity: 1; } }`}</style>
       <div ref={campoRef} style={{ width: '100%', height: '100%', touchAction: 'none', position: 'relative' }}>
         <svg
           viewBox={QUADRO_VIEWBOX}
