@@ -3099,13 +3099,16 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               title="Quadro Tático"
               className="botao-quadro-tatico"
               style={{
-                width: 46, height: 46, borderRadius: 9,
+                width: 52, height: 52, borderRadius: 10,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: '#2B402D', border: `2px solid ${T.gold}`,
                 color: T.gold, cursor: 'pointer', padding: 0,
               }}
             >
-              <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke={T.gold} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              {/* viewBox mais apertado (à volta do próprio desenho, não
+                  do quadrado 24x24 inteiro) — o mesmo desenho, mas a
+                  "zoom" dentro do ícone, para ocupar mais espaço. */}
+              <svg viewBox="2.5 3.5 19 17" width="40" height="40" fill="none" stroke={T.gold} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4.5 5.5l4 4M8.5 5.5l-4 4" />
                 <path d="M15.5 15l4 4M19.5 15l-4 4" />
                 <circle cx="5.5" cy="18" r="1.6" />
@@ -9392,6 +9395,19 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     setEmCurso({ tipo: 'novaBola', cor: corId, x, y, xInicial: x, yInicial: y, xSugerido, ySugerido, slot });
   };
 
+  // A BOLA DE FUTEBOL — só uma no quadro todo. Um toque simples põe-na
+  // no centro do campo; arrastar põe onde se largar. Se já existir uma
+  // (de uma vez anterior), esta substitui-a — nunca cria uma segunda.
+  const iniciarBola = (e) => {
+    e.preventDefault();
+    const existente = (quadroRef.current.elementos || []).find(el => el.tipo === 'bola');
+    const [x, y] = pontoDoEvento(e);
+    setEmCurso({
+      tipo: 'novaBolaFutebol', x, y, xInicial: x, yInicial: y,
+      idExistente: existente ? existente.id : null,
+    });
+  };
+
   // Zona vazia do relvado: apaga (modo borracha), risca à mão (modo
   // caneta), ou nada (modo "mover", que só existe enquanto se está a
   // agarrar numa bola — tocar fora dela não faz nada nesse estado).
@@ -9471,6 +9487,24 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             ...prev,
             elementos: [...(prev.elementos || []), { id: uid(), tipo: 'equipa', cor: atual.cor, label, slot: atual.slot, x: xFinal, y: yFinal }],
           }));
+        }
+      } else if (atual.tipo === 'novaBolaFutebol') {
+        // Toque simples → centro do campo (metade de 1 a 106 em x, de 1
+        // a 69 em y, os limites verdadeiros das 4 linhas). Arrastar →
+        // onde se largar.
+        const arrastou = Math.hypot(atual.x - atual.xInicial, atual.y - atual.yInicial) > 2;
+        const xFinal = arrastou ? atual.x : 53.5;
+        const yFinal = arrastou ? atual.y : 35;
+        if (xFinal >= -6 && xFinal <= 113 && yFinal >= -5 && yFinal <= 83) {
+          setQuadro(prev => {
+            // Nunca mais do que uma — se já havia, esta substitui-a (usa
+            // o MESMO id, para não deixar duas por engano).
+            const outros = (prev.elementos || []).filter(el => el.tipo !== 'bola');
+            return {
+              ...prev,
+              elementos: [...outros, { id: atual.idExistente || uid(), tipo: 'bola', x: xFinal, y: yFinal }],
+            };
+          });
         }
       } else if (atual.tipo === 'mover') {
         // Largar em cima do caixote apaga só esta bola — sem precisar
@@ -9552,6 +9586,18 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             const emMovimento = emCurso && emCurso.tipo === 'mover' && emCurso.id === el.id;
             const x = emMovimento ? emCurso.x : el.x;
             const y = emMovimento ? emCurso.y : el.y;
+            if (el.tipo === 'bola') {
+              return (
+                <g
+                  key={el.id}
+                  onPointerDown={aoPressionarElemento(el)}
+                  onDragStart={(ev) => ev.preventDefault()}
+                  style={{ cursor: modo === 'mao' ? 'grab' : 'crosshair', touchAction: 'none', userSelect: 'none' }}
+                >
+                  <TriondaBall cx={x} cy={y} r={RAIO_BOLA_QUADRO} />
+                </g>
+              );
+            }
             const tm = teamInfo(el.cor);
             const ehGR = el.label === 'GR';
             return (
@@ -9590,6 +9636,9 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
           {emCurso && emCurso.tipo === 'novaBola' && (
             <circle cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_QUADRO} fill={teamInfo(emCurso.cor).fill} opacity={0.75} />
           )}
+          {emCurso && emCurso.tipo === 'novaBolaFutebol' && (
+            <g opacity={0.75}><TriondaBall cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_QUADRO} /></g>
+          )}
         </svg>
 
         {/* SAIR — só o X, canto superior. */}
@@ -9605,7 +9654,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
 
         {/* EQUIPAS — do lado esquerdo, perto do banco. */}
         <div style={{
-          position: 'absolute', left: '2%', bottom: '3%',
+          position: 'absolute', left: '18%', bottom: '3%',
           display: 'flex', gap: 12, background: '#00000066', padding: '10px 14px', borderRadius: 28,
         }}>
           {TEAMS.map(t => (
@@ -9621,6 +9670,22 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
               }}
             />
           ))}
+          {/* BOLA — igual à do editor 2D (`TriondaBall`), à parte das
+              cores de equipa. Só pode existir UMA no quadro (ver
+              `iniciarBola`): tocar ou arrastar esta sempre substitui a
+              anterior, nunca cria uma segunda. */}
+          <button
+            title="Bola"
+            draggable={false}
+            onDragStart={(ev) => ev.preventDefault()}
+            onPointerDown={iniciarBola}
+            style={{
+              width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: '50%',
+              border: `2.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none', overflow: 'hidden',
+            }}
+          >
+            <svg viewBox="0 0 10 10" width="100%" height="100%"><TriondaBall cx={5} cy={5} r={4.5} /></svg>
+          </button>
         </div>
 
         {/* MÃO + CANETA + BORRACHA + LIMPAR — só ícones, canto inferior
@@ -9634,7 +9699,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             numa bola a move — com a Caneta ou a Borracha, tocar em cima
             de uma bola respeita sempre essa ferramenta (risca por cima,
             ou apaga-a), nunca a move sem se ter pedido isso. */}
-        <div style={{ position: 'absolute', right: '2%', bottom: '2%', display: 'flex', gap: 10 }}>
+        <div style={{ position: 'absolute', right: '18%', bottom: '2%', display: 'flex', gap: 10 }}>
           <button
             onClick={() => setModo('mao')}
             title="Mão — arrasta as bolas para mover"
