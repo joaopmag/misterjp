@@ -9263,9 +9263,26 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     const aoRedimensionar = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', aoRedimensionar);
     window.addEventListener('orientationchange', aoRedimensionar);
+    // A medida inicial (lá em cima, no `useState`) é tirada mesmo ao
+    // abrir este ecrã — o que pode acontecer ANTES de o pedido de ecrã
+    // inteiro ter terminado mesmo a transição. Nesse caso, o que se
+    // media era ainda o tamanho da janela ANTIGA (antes de passar a
+    // ecrã inteiro), que podia perfeitamente ser mais alta do que
+    // larga mesmo num telemóvel deitado — daí a barra de baixo teimar
+    // em aparecer mesmo em paisagem. `fullscreenchange` avisa quando a
+    // transição termina a sério; é aí que se mede de novo, já com o
+    // tamanho final certo.
+    window.addEventListener('fullscreenchange', aoRedimensionar);
+    // E mais uma rede de segurança, para aparelhos que não disparem
+    // `fullscreenchange` a tempo (ou nada de especial mudar) — mede-se
+    // outra vez pouco depois de abrir, sem custar nada se já estiver
+    // certo.
+    const t = setTimeout(aoRedimensionar, 300);
     return () => {
       window.removeEventListener('resize', aoRedimensionar);
       window.removeEventListener('orientationchange', aoRedimensionar);
+      window.removeEventListener('fullscreenchange', aoRedimensionar);
+      clearTimeout(t);
     };
   }, []);
   const vertical = viewport.h > viewport.w;
