@@ -9451,23 +9451,36 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     return [VB_X + localX / escala, VB_Y + localY / escala];
   };
 
-  /* Tamanho real da caixa do campo, medido — só é preciso quando o
-     campo está rodado 90º (`vertical`): o SVG lá dentro precisa de
-     nascer com a largura e a altura TROCADAS entre si (a largura da
-     caixa vira a altura do desenho, antes de rodar) para, depois de
-     rodado, encher a caixa toda. Não há forma de o CSS sozinho dizer
-     "a minha largura é a altura do meu pai" — por isso mede-se. */
-  const [campoTamanho, setCampoTamanho] = useState({ w: 0, h: 0 });
+  /* Tamanho do espaço disponível para o campo, medido a sério em
+     pixels — não se deixa ao CSS (aspect-ratio + max-width/max-height)
+     calcular isto sozinho. Em vários aparelhos isso não se estava a
+     comportar como seria de esperar (o campo ficava com folgas dos
+     lados nem sempre justificadas pelo espaço real disponível) — medir
+     a sério e calcular o tamanho à mão tira essa incerteza toda: o
+     tamanho final do campo passa a ser sempre exatamente o maior
+     possível dentro do espaço medido, sem surpresas de motor de CSS. */
+  const areaRef = useRef(null);
+  const [areaTamanho, setAreaTamanho] = useState({ w: 0, h: 0 });
   useEffect(() => {
-    const el = campoRef.current;
+    const el = areaRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const obs = new ResizeObserver((entries) => {
       const { width, height } = entries[0].contentRect;
-      setCampoTamanho({ w: width, h: height });
+      setAreaTamanho({ w: width, h: height });
     });
     obs.observe(el);
     return () => obs.disconnect();
-  }, [vertical]);
+  }, []);
+  // Sem rodar: a caixa do campo é VB_W×VB_H. Rodado 90º (vertical): a
+  // caixa final é VB_H×VB_W (trocado) — o campo em pé ocupa o espaço
+  // disponível na vertical, e o desenho lá dentro é que roda para caber.
+  const largoBase = vertical ? VB_H : VB_W;
+  const altoBase = vertical ? VB_W : VB_H;
+  const escalaCampo = areaTamanho.w > 0 && areaTamanho.h > 0
+    ? Math.min(areaTamanho.w / largoBase, areaTamanho.h / altoBase)
+    : 0;
+  const campoLargura = largoBase * escalaCampo;
+  const campoAltura = altoBase * escalaCampo;
 
   const distSegmento = (px, py, x1, y1, x2, y2) => {
     const dx = x2 - x1, dy = y2 - y1;
@@ -9712,31 +9725,24 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
               o ecrã — a barra acabava longe do campo, ou até por cima
               dele consoante a proporção. Assim, a barra fica sempre
               mesmo a seguir ao campo, seja qual for o formato do ecrã. */}
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: vertical ? 3 : 6 }}>
+          <div ref={areaRef} style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: vertical ? 3 : 6, overflow: 'hidden' }}>
             <div ref={campoRef} style={{
-              width: 'auto', height: '100%', maxWidth: '100%', maxHeight: '100%',
-              aspectRatio: vertical ? `${VB_H} / ${VB_W}` : `${VB_W} / ${VB_H}`,
+              width: campoLargura || undefined, height: campoAltura || undefined,
               touchAction: 'none', position: 'relative', overflow: 'hidden',
+              visibility: escalaCampo > 0 ? 'visible' : 'hidden',
             }}>
-              {/* Em modo vertical, só desenha depois de saber o tamanho
-                  real da caixa (`campoTamanho`) — sem isto, o primeiro
-                  instante (antes de o ResizeObserver medir pela
-                  primeira vez) desenhava o campo com as proporções
-                  erradas, esticado/deformado, e nalguns aparelhos essa
-                  imagem chegava a ficar presa assim. */}
-              {(!vertical || (campoTamanho.w > 0 && campoTamanho.h > 0)) && (
+              {/* Sem rodar: o SVG só precisa de encher a caixa (que já
+                  tem as dimensões certas, calculadas em pixels acima).
+                  Rodado (`vertical`): nasce com a largura/altura
+                  trocadas em relação à caixa, à volta do centro; depois
+                  de rodar, encaixa exatamente nela. */}
               <svg
                 viewBox={QUADRO_VIEWBOX}
                 onPointerDown={aoPressionarCampo}
                 preserveAspectRatio="xMidYMid meet"
                 style={vertical ? {
-                  // Rodado 90º — nasce com a largura/altura trocadas em
-                  // relação à caixa (medidas por `campoTamanho`), à
-                  // volta do centro; depois de rodar, encaixa
-                  // exatamente na caixa (que já está no formato
-                  // vertical certo, via `aspectRatio` acima).
                   position: 'absolute', top: '50%', left: '50%',
-                  width: campoTamanho.h, height: campoTamanho.w,
+                  width: campoAltura, height: campoLargura,
                   transform: 'translate(-50%, -50%) rotate(90deg)',
                   display: 'block', background: '#1E3A24', cursor: 'crosshair',
                 } : { width: '100%', height: '100%', display: 'block', background: '#1E3A24', cursor: 'crosshair' }}
@@ -9829,7 +9835,6 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                   <g opacity={0.75}><TriondaBall cx={emCurso.x} cy={emCurso.y} r={RAIO_BOLA_FUTEBOL_QUADRO} /></g>
                 )}
               </svg>
-              )}
 
               {/* No DESKTOP, a paleta/bola/ferramentas ficam sobrepostas
                   aos cantos do campo, como sempre estiveram — só em
