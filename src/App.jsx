@@ -2884,6 +2884,21 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     );
   }
 
+  /* Pede o ecrã inteiro JÁ AQUI, no próprio clique — antes de sequer
+     mudar de separador. Se se deixasse para dentro do QuadroTaticoLivre
+     (só depois de montar), o ecrã desenhava-se primeiro no tamanho
+     normal e só DEPOIS saltava para ecrã inteiro — daí a instabilidade
+     ao entrar. Pedir aqui, de forma síncrona dentro do próprio clique
+     (o browser só aceita pedidos de ecrã inteiro assim, em resposta
+     direta a um gesto do utilizador), evita esse salto: já entra
+     diretamente no tamanho final. */
+  const abrirQuadroTatico = () => {
+    if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    setTab('quadrotatico');
+  };
+
   return (
     <div style={{ background: T.bg, minHeight: '100vh', ...body }}>
       <style>{`
@@ -3094,7 +3109,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               uma ferramenta usada ao vivo, num team talk. */}
           <div style={{ padding: '10px 20px' }}>
             <button
-              onClick={() => setTab('quadrotatico')}
+              onClick={abrirQuadroTatico}
               aria-label="Abrir o Quadro Tático"
               title="Quadro Tático"
               className="botao-quadro-tatico"
@@ -9251,20 +9266,30 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const slotsPendentes = useRef({ A: new Set(), B: new Set(), C: new Set(), D: new Set() });
 
   useEffect(() => {
+    // Se já se entrou em ecrã inteiro no próprio clique que abriu este
+    // ecrã (ver `abrirQuadroTatico`, no componente App), não se pede
+    // outra vez — pedir duas vezes seguidas (uma no clique, outra aqui
+    // ao montar) podia competir uma com a outra e, nalguns browsers,
+    // fazer o próprio ecrã inteiro pestanejar ao entrar. Só pede aqui
+    // como rede de segurança, se por algum motivo ainda não estiver
+    // ativo (ex: este ecrã abriu de outro sítio, sem passar por lá).
+    const jaEmFullscreen = !!document.fullscreenElement;
     const el = quadroRootRef.current;
-    if (el && el.requestFullscreen) {
+    const pedirBloqueioOrientacao = () => {
+      // Bloquear a orientação só costuma ser possível DEPOIS de entrar
+      // em ecrã inteiro, e só em alguns browsers (ex: falha sempre no
+      // Safari/iOS — não há forma de contornar isso a partir daqui, é
+      // uma limitação do próprio aparelho). Onde funcionar, o ecrã já
+      // não roda sozinho ao virar o telemóvel/tablet.
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
+      }
+    };
+    if (jaEmFullscreen) {
+      pedirBloqueioOrientacao();
+    } else if (el && el.requestFullscreen) {
       el.requestFullscreen()
-        .then(() => {
-          // Bloquear a orientação só costuma ser possível DEPOIS de
-          // entrar em ecrã inteiro, e só em alguns browsers (ex: falha
-          // sempre no Safari/iOS — não há forma de contornar isso a
-          // partir daqui, é uma limitação do próprio aparelho). Onde
-          // funcionar, o ecrã já não roda sozinho ao virar o
-          // telemóvel/tablet.
-          if (screen.orientation && screen.orientation.lock) {
-            screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
-          }
-        })
+        .then(pedirBloqueioOrientacao)
         .catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
     }
     // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
@@ -9549,7 +9574,18 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const pathDoTraco = (pontos) => pontos.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]},${p[1]}`).join(' ');
 
   return (
-    <div ref={quadroRootRef} style={{ position: 'fixed', inset: 0, zIndex: 70, background: '#1E3A24', ...body }}>
+    <div
+      ref={quadroRootRef}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 70, background: '#1E3A24', ...body,
+        // Um desvanecer rápido, só para disfarçar qualquer reorganização
+        // residual do browser ao entrar em ecrã inteiro (mudar o
+        // tamanho da janela é sempre um bocadinho abrupto) — sem
+        // atrasar a abertura em si, só suaviza o que se vê.
+        animation: 'quadroTaticoEntrada .18s ease-out',
+      }}
+    >
+      <style>{`@keyframes quadroTaticoEntrada { from { opacity: 0; } to { opacity: 1; } }`}</style>
       <div ref={campoRef} style={{ width: '100%', height: '100%', touchAction: 'none', position: 'relative' }}>
         <svg
           viewBox={QUADRO_VIEWBOX}
