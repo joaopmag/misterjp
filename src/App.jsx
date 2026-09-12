@@ -3070,7 +3070,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               }}><X size={16} /></button>
             )}
           </div>
-          <nav style={{ padding: '10px 0', flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+          <nav className="mjp-scroll-fino" style={{ padding: '10px 0', flex: 1, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
             {NAV.map(n => (
               <button
                 key={n.id}
