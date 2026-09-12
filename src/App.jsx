@@ -29844,10 +29844,15 @@ function socialCropMetrics(platform, boxSize, zoom, barH) {
   return { c, avail, w, mediaH, clipH: Math.min(avail, mediaH) };
 }
 
-// Medidas da "janela" de recorte: fora do ecrã inteiro ocupa tudo (como
-// antes); em ecrã inteiro mostra só a zona do vídeo, centrada.
+// Medidas da "janela" de recorte: SEMPRE ativa, dentro e fora do ecrã
+// inteiro — mostra só a zona do vídeo, centrada.
+//
+// Antes só se aplicava em ecrã inteiro; fora dele o iframe era esticado a
+// 100%×100% da caixa, sem recorte nenhum, e era aí que o rodapé branco do
+// Instagram ("Ver mais no Instagram") aparecia a meio do vídeo — a caixa
+// normal (560px) nunca bate certo com a altura real do cartão do Instagram,
+// por isso o rodapé calha algures no meio em vez de ficar fora da vista.
 function socialClipStyle(platform, isFullscreen, boxSize, zoom, barH) {
-  if (!isFullscreen) return { position: 'relative', width: '100%', height: '100%', overflow: 'hidden' };
   const { w, clipH } = socialCropMetrics(platform, boxSize, zoom, barH);
   return { position: 'relative', width: w, height: clipH, overflow: 'hidden', flexShrink: 0 };
 }
@@ -29855,7 +29860,6 @@ function socialClipStyle(platform, isFullscreen, boxSize, zoom, barH) {
 // O iframe é maior do que a janela e fica deslocado para cima, para o
 // cabeçalho da plataforma cair fora do recorte. O rodapé fica abaixo.
 function socialInnerStyle(platform, isFullscreen, boxSize, zoom, barH, offset) {
-  if (!isFullscreen) return { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' };
   const { c, mediaH } = socialCropMetrics(platform, boxSize, zoom, barH);
   return {
     position: 'absolute', left: 0, top: -(c.headerPx + offset),
@@ -30429,7 +30433,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         height: 40, boxSizing: 'border-box',
                         padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
                       }}>
-                        {isSocialFullscreen && (() => {
+                        {(() => {
                           const ctrlStyle = { width: 24, height: 24, borderRadius: 6, border: '1px solid #333', background: '#1b1b1b', color: '#fff', cursor: 'pointer', fontSize: 13, lineHeight: 1 };
                           const hasChrome = (SOCIAL_CROP[active.social.platform] || {}).headerPx > 0;
                           return (
