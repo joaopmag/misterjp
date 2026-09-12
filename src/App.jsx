@@ -19491,7 +19491,7 @@ function PrintOnzeAmigavel({ session, jogo, players, ideias }) {
           );
         })}
       </div>
-      <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} />
+      <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} capitaoId={jogo && jogo.capitao} subcapitaoId={jogo && jogo.subcapitao} />
 
       {(session.equipasSimulador && session.equipasSimulador.trocas || []).length > 0 && (
         <div style={{ marginBottom: 14 }}>
@@ -21414,7 +21414,7 @@ function IconeCartaoPrint({ card, size = 11 }) {
    direita, o que lhe aconteceu no jogo. Os símbolos ficam todos na mesma
    coluna, encostados à direita, para a lista se ler na vertical sem os
    olhos andarem à procura. */
-function LinhaJogadorPrint({ x, nome }) {
+function LinhaJogadorPrint({ x, nome, capitaoId, subcapitaoId }) {
   /* Sem dados de jogo (equipa vinda do Simulador, que só guarda nomes)
      resta o nome — mas na MESMA linha, com a mesma altura e o mesmo
      traço em baixo, para as duas folhas não parecerem duas folhas. */
@@ -21431,6 +21431,9 @@ function LinhaJogadorPrint({ x, nome }) {
   }
   const golos = Math.min(x.golos, 3);
   const minuto = x.saiuAo != null ? x.saiuAo : x.entrouAo;
+  // (C)/(SC) a seguir ao nome — o mesmo texto simples já usado na folha
+  // de convocatória, em vez de um símbolo novo só para esta folha.
+  const marca = capitaoId === x.player.id ? ' (C)' : (subcapitaoId === x.player.id ? ' (SC)' : '');
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 5, padding: '2.5px 0',
@@ -21444,7 +21447,7 @@ function LinhaJogadorPrint({ x, nome }) {
         {x.player.number != null && x.player.number !== '' ? x.player.number : '—'}
       </span>
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {x.player.name}
+        {x.player.name}{marca}
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
         {Array.from({ length: golos }).map((_, i) => <IconeGoloPrint key={`g${i}`} />)}
@@ -21479,7 +21482,7 @@ function LinhaJogadorPrint({ x, nome }) {
    A legenda só aparece quando há símbolos para legendar: numa equipa
    vinda do Simulador (só nomes, sem golos nem minutos) seria uma legenda
    a explicar coisas que não estão na folha. */
-function EquipaEmColunasPrint({ titulares, suplentes }) {
+function EquipaEmColunasPrint({ titulares, suplentes, capitaoId, subcapitaoId }) {
   const tituloColuna = { fontSize: 12, fontWeight: 700, borderBottom: '1.5px solid #111', paddingBottom: 3, marginBottom: 3 };
   const vazio = <div style={{ fontSize: 11, color: '#999', paddingTop: 4 }}>—</div>;
   const comSimbolos = [...titulares, ...suplentes].some(l => l && l.x);
@@ -21488,7 +21491,12 @@ function EquipaEmColunasPrint({ titulares, suplentes }) {
     <div>
       <div style={tituloColuna}>{titulo} ({lista.length})</div>
       {lista.length
-        ? lista.map((l, i) => <LinhaJogadorPrint key={(l.x && l.x.player.id) || `${l.nome}-${i}`} x={l.x} nome={l.nome} />)
+        ? lista.map((l, i) => (
+          <LinhaJogadorPrint
+            key={(l.x && l.x.player.id) || `${l.nome}-${i}`}
+            x={l.x} nome={l.nome} capitaoId={capitaoId} subcapitaoId={subcapitaoId}
+          />
+        ))
         : vazio}
     </div>
   );
@@ -21581,7 +21589,7 @@ function PrintFichaJogo({ match, players, season }) {
         })}
       </div>
 
-      <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} />
+      <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} capitaoId={match.capitao} subcapitaoId={match.subcapitao} />
 
       {nomesDosConvidados(match).length > 0 && (
         <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>
@@ -31924,9 +31932,22 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
             // convocados (ou dos suplentes, na ficha técnica), nunca
             // misturados na ordem de quem já tem número.
             const experiencia = nomesDosConvidados(printConvocatoria);
-            const nome = (pid) => {
+            // Uma linha alinhada a sério — número numa coluna própria,
+            // de largura fixa, e o nome sempre a começar no mesmo sítio.
+            // Antes, número e nome saíam no mesmo texto corrido
+            // ("27 · Nome"), e um "1" ao lado de um "27" desalinhava
+            // tudo o que vinha a seguir — a numeração em si não muda,
+            // só passa a ter o seu próprio espaço reservado.
+            const linha = (numero, texto, key) => (
+              <div key={key} style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                <span style={{ width: 20, flexShrink: 0, textAlign: 'right', color: '#888' }}>{numero || ''}</span>
+                <span>{numero ? '·' : ''}</span>
+                <span>{texto}</span>
+              </div>
+            );
+            const nome = (pid, sufixo) => {
               const p = players.find(pl => pl.id === pid);
-              return p ? `${p.number ? `${p.number} · ` : ''}${p.name}` : null;
+              return p ? linha(p.number, `${p.name}${sufixo || ''}`, pid) : null;
             };
             const bracadeira = (pid) => (
               printConvocatoria.capitao === pid ? ' (C)'
@@ -31947,8 +31968,8 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
                   <div style={{
                     fontSize: 12.5, marginBottom: 16, lineHeight: 1.65,
                   }}>
-                    {idsOrdenados.map((pid) => { const n = nome(pid); return n ? <div key={pid}>{n}</div> : null; })}
-                    {experiencia.map((n, i) => <div key={`x-${i}`}>{n} (exp)</div>)}
+                    {idsOrdenados.map((pid) => nome(pid))}
+                    {experiencia.map((n, i) => linha(null, `${n} (exp)`, `x-${i}`))}
                   </div>
                 </>
               );
@@ -31970,13 +31991,13 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
                     Vinte nomes numa coluna cabem folgadamente numa A4. */}
                 <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Onze inicial ({onze.length})</h3>
                 <div style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.65 }}>
-                  {onze.map((pid) => { const n = nome(pid); return n ? <div key={pid}>{n}{bracadeira(pid)}</div> : null; })}
+                  {onze.map((pid) => nome(pid, bracadeira(pid)))}
                 </div>
 
                 <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Suplentes ({banco.length + experiencia.length})</h3>
                 <div style={{ fontSize: 12.5, marginBottom: 14, lineHeight: 1.65 }}>
-                  {banco.map(pid => { const n = nome(pid); return n ? <div key={pid}>{n}{bracadeira(pid)}</div> : null; })}
-                  {experiencia.map((n, i) => <div key={`x-${i}`}>{n} (exp)</div>)}
+                  {banco.map(pid => nome(pid, bracadeira(pid)))}
+                  {experiencia.map((n, i) => linha(null, `${n} (exp)`, `x-${i}`))}
                 </div>
 
                 <div style={{ fontSize: 12.5, marginBottom: 14 }}>
