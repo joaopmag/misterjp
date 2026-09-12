@@ -32963,8 +32963,21 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
         <Btn variant="ghost" onClick={() => setSearch(query)}>Pesquisar</Btn>
       </div>
 
-      {sorted.length === 0 ? (
-        <EmptyState text="Ainda sem notas. Escreve a primeira." />
+      {filtered.length === 0 ? (
+        /* Só é "sem notas" a sério quando não há nenhuma a corresponder —
+           nem sequer às antigas. Antes disto, uma equipa sem notas na
+           última semana (mas com histórico) via a mesma mensagem de "ainda
+           sem notas", como se o diário estivesse vazio — quando só estava
+           escondido pelo filtro por omissão. */
+        <EmptyState text={search ? 'Nenhuma nota encontrada.' : 'Ainda sem notas. Escreve a primeira.'} />
+      ) : sorted.length === 0 ? (
+        <div style={{ padding: '18px 4px' }}>
+          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10 }}>Sem notas na última semana.</div>
+          <button
+            onClick={() => setVerTudo(true)}
+            style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}
+          >Ver todas ({antigas} notas mais antigas)</button>
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* Escape para o resto do diário, só quando há resto. */}
