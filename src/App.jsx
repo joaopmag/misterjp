@@ -3528,6 +3528,12 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
               // Cada jogo nosso lançado na tabela ganha a sua convocatória,
               // já com a moldura preenchida e os nomes por escolher.
               if (setConvocatorias) setConvocatorias(prev => syncCompetitionConvocatorias(jogos, prev, season));
+              // E a sua sessão em Planeamento (ver ensureMatchSession) — sem
+              // isto, um jogo que entra sozinho a partir da jornada nunca
+              // tinha sessão associada, e o PSE do dia não aparecia no
+              // check-in dos atletas a menos que o treinador criasse a
+              // sessão à mão.
+              if (setSessions) setSessions(prev => jogos.reduce((acc, j) => ensureMatchSession(j, acc), prev));
             }
             trocarJanela(() => setStandingsEdit(false), () => setStandingsOpen(true));
           }}
@@ -22316,7 +22322,7 @@ function sortStandings(teams) {
     .sort((a, b) => b.P - a.P || b.DG - a.DG || b.GM - a.GM || a.name.localeCompare(b.name));
 }
 
-function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches, season, convocatorias, setConvocatorias }) {
+function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches, season, convocatorias, setConvocatorias, sessions, setSessions }) {
   const [editing, setEditing] = useState(false);
   const [roundIdx, setRoundIdx] = useState(0);
   const isNarrow = useIsMobile(560);
@@ -22539,6 +22545,12 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
               // Cada jogo nosso lançado na tabela ganha a sua convocatória,
               // já com a moldura preenchida e os nomes por escolher.
               if (setConvocatorias) setConvocatorias(prev => syncCompetitionConvocatorias(jogos, prev, season));
+              // E a sua sessão em Planeamento (ver ensureMatchSession) — sem
+              // isto, um jogo que entra sozinho a partir da jornada nunca
+              // tinha sessão associada, e o PSE do dia não aparecia no
+              // check-in dos atletas a menos que o treinador criasse a
+              // sessão à mão.
+              if (setSessions) setSessions(prev => jogos.reduce((acc, j) => ensureMatchSession(j, acc), prev));
             }
             setEditing(false);
           }}
@@ -23825,7 +23837,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
       />
 
       <div style={{ marginBottom: 20 }}>
-        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />
+        <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} sessions={sessions} setSessions={setSessions} />
       </div>
       <div style={{ marginBottom: 20 }}>
         <MatchDashboard players={players} matches={matches} />
