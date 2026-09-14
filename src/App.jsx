@@ -14,7 +14,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand
+  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -29725,7 +29725,7 @@ function InstagramEmbedResponsivo({ src, titulo, tipo }) {
    há o botão que abre o item no visualizador completo. */
 function MediaFeedItem({ item, onOpen }) {
   const fonte = item.youtubeId
-    ? `https://www.youtube.com/embed/${item.youtubeId}?rel=0&playsinline=1`
+    ? youtubeEmbedSrc(item)
     : item.social
       ? socialEmbedSrc(item.social)
       : (item.kind === 'drive' && item.drive) ? driveEmbedSrc(item.drive) : null;
@@ -29808,6 +29808,25 @@ function socialExternalUrl(social) {
   }
   if (social.platform === 'tiktok') return `https://www.tiktok.com/@_/video/${social.id}`;
   return null;
+}
+
+// Constrói o src do embed do YouTube — junta start/end quando o item é um
+// CLIPE (ver `clipInicio`/`clipFim`, criados em "Criar clipe" na Biblioteca),
+// para o próprio YouTube cortar a reprodução nesses pontos, sem precisar de
+// nenhuma lógica extra no lado do leitor.
+function youtubeEmbedSrc(item, extra) {
+  if (!item || !item.youtubeId) return '';
+  const bits = ['rel=0', 'playsinline=1'];
+  if (typeof item.clipInicio === 'number') bits.push(`start=${Math.max(0, Math.floor(item.clipInicio))}`);
+  if (typeof item.clipFim === 'number') bits.push(`end=${Math.max(0, Math.floor(item.clipFim))}`);
+  if (extra) bits.push(extra);
+  return `https://www.youtube.com/embed/${item.youtubeId}?${bits.join('&')}`;
+}
+
+// mm:ss a partir de segundos — só para os marcadores de "Criar clipe".
+function fmtMMSS(seg) {
+  const s = Math.max(0, Math.round(seg || 0));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function socialEmbedSrc(social) {
@@ -29955,6 +29974,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [blockedIds, setBlockedIds] = useState({});
   const isNarrow = useIsMobile(760);
 
+  // CRIAR CLIPE — marca início/fim enquanto o vídeo do YouTube toca, e
+  // grava um novo item na Biblioteca que reproduz só esse troço (via
+  // start/end no embed, ver `youtubeEmbedSrc`). `clipMarcas` só existe
+  // fora de null enquanto o modo está ativo; `tituloClipe` é preenchido
+  // ao gravar.
+  const [clipMode, setClipMode] = useState(false);
+  const [clipMarcas, setClipMarcas] = useState({ inicio: null, fim: null });
+  const [tituloClipe, setTituloClipe] = useState('');
+  const sairDoModoClipe = () => { setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe(''); };
+
   const iframeRef = React.useRef(null);
   const inlineIframeRef = React.useRef(null);
   const activeYoutubeIdRef = React.useRef(null);
@@ -30016,6 +30045,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // no src e um "handshake" inicial (evento 'listening'), o próprio player
   // do YouTube passa a enviar-nos eventos — incluindo onError — por
   // postMessage, sem precisar de nenhum script adicional.
+  //
+  // O mesmo handshake também faz o player começar a mandar 'infoDelivery'
+  // sozinho, com o tempo de reprodução atual lá dentro (info.currentTime) —
+  // é esse tempo que os botões "Marcar início"/"Marcar fim" do Criar
+  // clipe usam. Guarda-se em ref, não em state: chegam vários por segundo
+  // enquanto o vídeo toca, e não há razão para voltar a desenhar o ecrã
+  // a cada um — só interessa o valor no instante em que se clica.
+  const currentTimeRef = React.useRef(0);
   useEffect(() => {
     const onMessage = (event) => {
       if (!event.origin || !event.origin.includes('youtube.com')) return;
@@ -30025,6 +30062,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         const code = data.info;
         const reason = (code === 101 || code === 150) ? 'embed_disabled' : 'unavailable';
         setBlockedIds(prev => ({ ...prev, [activeYoutubeIdRef.current]: reason }));
+      }
+      if (data && data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number') {
+        currentTimeRef.current = data.info.currentTime;
       }
     };
     window.addEventListener('message', onMessage);
@@ -30250,6 +30290,37 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // inteiro que atua sobre o MESMO leitor já em reprodução.
   const canEnlarge = active && active.youtubeId;
 
+  // Trocar de vídeo a meio de uma marcação não faz sentido — os
+  // marcadores são segundos DENTRO do vídeo que estava a tocar.
+  useEffect(() => { sairDoModoClipe(); }, [activeId]);
+
+  const marcarInicio = () => setClipMarcas(prev => ({ ...prev, inicio: currentTimeRef.current }));
+  const marcarFim = () => setClipMarcas(prev => ({ ...prev, fim: currentTimeRef.current }));
+
+  const guardarClipe = () => {
+    if (!active || !active.youtubeId || clipMarcas.inicio == null || clipMarcas.fim == null) return;
+    const inicio = Math.min(clipMarcas.inicio, clipMarcas.fim);
+    const fim = Math.max(clipMarcas.inicio, clipMarcas.fim);
+    if (fim - inicio < 1) return;
+    const novo = {
+      id: uid(),
+      title: tituloClipe.trim() || `${active.title || 'Vídeo'} — corte`,
+      pasta: 'Cortes',
+      jornada: active.jornada || '',
+      youtubeId: active.youtubeId,
+      clipInicio: inicio,
+      clipFim: fim,
+      // Se o vídeo de origem já era, ele próprio, um clipe, aponta sempre
+      // para o vídeo completo original — nunca um clipe de um clipe.
+      clipOrigemId: active.clipOrigemId || active.id,
+      clipOrigemTitulo: active.clipOrigemTitulo || active.title || '',
+    };
+    setItems(prev => [novo, ...prev]);
+    setActiveId(novo.id);
+    setFolderFilter('Cortes');
+    sairDoModoClipe();
+  };
+
   return (
     <div>
       {!semBotaoTopo && (
@@ -30376,6 +30447,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   // ampliada — essa janela continua disponível através do
                   // botão "Ecrã inteiro" abaixo, para quem quiser um ecrã
                   // maior, mas já não é preciso para simplesmente ver o vídeo.
+                  <>
                   <div style={{ borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ position: 'relative', paddingTop: '56.25%' }}>
                       {isBlocked ? (
@@ -30401,7 +30473,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           key={active.id}
                           ref={inlineIframeRef}
                           onLoad={handleIframeLoad(inlineIframeRef)}
-                          src={`https://www.youtube.com/embed/${active.youtubeId}?rel=0&playsinline=1&enablejsapi=1`}
+                          src={youtubeEmbedSrc(active, 'enablejsapi=1')}
                           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                           allowFullScreen
@@ -30422,18 +30494,66 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         >
                           <ExternalLink size={13} /> Abrir no YouTube
                         </a>
-                        <button
-                          onClick={() => setLightboxOpen(true)}
-                          style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
-                            background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
-                          }}
-                        >
-                          <Maximize2 size={14} /> Ecrã inteiro
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                          <button
+                            onClick={() => (clipMode ? sairDoModoClipe() : setClipMode(true))}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
+                              color: clipMode ? T.warn : '#fff',
+                              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                            }}
+                          >
+                            <Scissors size={13} /> {clipMode ? 'Cancelar clipe' : 'Criar clipe'}
+                          </button>
+                          <button
+                            onClick={() => setLightboxOpen(true)}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
+                              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                            }}
+                          >
+                            <Maximize2 size={14} /> Ecrã inteiro
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
+                  {clipMode && !isBlocked && (
+                    <div style={{
+                      marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+                      padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+                    }}>
+                      <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+                        Deixa o vídeo a tocar e marca onde o corte começa e acaba — depois dá-lhe um nome
+                        e o clipe fica gravado à parte, na pasta "Cortes", pronto a rever mais tarde.
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
+                        <div style={{ fontSize: 13, color: T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
+                        <div style={{ color: T.mutedDim, fontSize: 12 }}>até</div>
+                        <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
+                        <div style={{ fontSize: 13, color: T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
+                      </div>
+                      {clipMarcas.inicio != null && clipMarcas.fim != null && (
+                        Math.abs(clipMarcas.fim - clipMarcas.inicio) < 1 ? (
+                          <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto — marca o fim um pouco mais à frente.</div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                            <input
+                              value={tituloClipe} onChange={e => setTituloClipe(e.target.value)}
+                              placeholder="Nome do clipe (ex.: Saída de bola sob pressão)"
+                              style={{
+                                flex: 1, minWidth: 200, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+                                padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
+                              }}
+                            />
+                            <Btn onClick={guardarClipe}><Scissors size={14} /> Guardar clipe</Btn>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
+                  </>
                 ) : active.social ? (
                   <div style={{ maxWidth: isSocialFullscreen ? 'none' : 320, margin: '0 auto' }}>
                     <div
@@ -30555,6 +30675,25 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 )}
                 <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500 }}>{active.title}</div>
                 {active.jornada && <div style={{ color: T.mutedDim, fontSize: 12.5 }}>{active.jornada}</div>}
+                {typeof active.clipInicio === 'number' && typeof active.clipFim === 'number' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12.5, color: T.mutedDim }}>
+                    <Scissors size={12} />
+                    <span>Corte {fmtMMSS(active.clipInicio)}–{fmtMMSS(active.clipFim)}</span>
+                    {active.clipOrigemTitulo && (
+                      <>
+                        <span>·</span>
+                        {items.some(v => v.id === active.clipOrigemId) ? (
+                          <button
+                            onClick={() => { setFolderFilter(null); setActiveId(active.clipOrigemId); }}
+                            style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', padding: 0, fontSize: 12.5, ...body }}
+                          >{active.clipOrigemTitulo}</button>
+                        ) : (
+                          <span>{active.clipOrigemTitulo}</span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -30671,7 +30810,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   key={active.id}
                   ref={iframeRef}
                   onLoad={handleIframeLoad(iframeRef)}
-                  src={`https://www.youtube.com/embed/${active.youtubeId}?autoplay=1&rel=0&playsinline=1&enablejsapi=1`}
+                  src={youtubeEmbedSrc(active, 'autoplay=1&enablejsapi=1')}
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                   allowFullScreen
