@@ -29999,6 +29999,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [modoAnotar, setModoAnotar] = useState(false);
   const [anotacaoMarcas, setAnotacaoMarcas] = useState([]);
   const sairDoModoAnotar = () => { setModoAnotar(false); setAnotacaoMarcas([]); };
+  // Velocidade do vídeo ENQUANTO se arrasta — mais lento dá muito mais
+  // tempo real para seguir o jogador com precisão, sem mexer no tempo
+  // que fica gravado (o `tempo` de cada marca continua a vir do próprio
+  // YouTube, em segundos REAIS de vídeo, não do relógio do ecrã — por
+  // isso a lentidão não desalinha nada, só dá mais folga à mão).
+  const [velocidadeArrasto, setVelocidadeArrasto] = useState(0.25);
 
   // Enquanto se marca uma anotação, os controlos do próprio YouTube ficam
   // tapados pela camada transparente que apanha o clique — por isso há
@@ -30019,41 +30025,49 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   /* TRAÇAR COM O DEDO/CANETA/RATO, EM VEZ DE CLICAR PONTO A PONTO.
      Pointer Events tratam dedo, caneta e rato da mesma forma — um só
      código para os três. Ao pressionar sobre o vídeo, este começa a
-     tocar sozinho e, enquanto o dedo/caneta/rato se mantiver pressionado
-     e a mover-se por cima do jogador, vai-se amostrando a posição a um
-     ritmo fixo (a cada ~100 ms de tempo real, não de vídeo — chega para
-     o círculo, mais tarde, deslizar suave). Levantar o dedo pausa o
-     vídeo, para se poder avaliar o resultado antes de continuar ou
-     gravar. Pode repetir-se o gesto várias vezes — cada arrasto novo
-     ACRESCENTA marcas às já existentes, nunca as substitui (só
-     "Recomeçar" limpa tudo), para dar para continuar depois de uma
-     pausa a meio.  */
+     tocar sozinho, EM CÂMARA LENTA (ver `velocidadeArrasto` — é o que
+     torna isto possível de fazer com precisão: perseguir um jogador a
+     tocar à velocidade normal é fisicamente difícil, mas a 25% da
+     velocidade há quatro vezes mais tempo real para acompanhar o mesmo
+     segundo de jogo). Enquanto o dedo/caneta/rato se mantiver
+     pressionado e a mover-se por cima do jogador, vai-se amostrando a
+     posição a um ritmo fixo (a cada ~100 ms de tempo real, não de vídeo
+     — chega para o círculo, mais tarde, deslizar suave). Levantar o
+     dedo pausa o vídeo e devolve a velocidade ao normal, para se poder
+     avaliar o resultado antes de continuar ou gravar. Pode repetir-se o
+     gesto várias vezes — cada arrasto novo ACRESCENTA marcas às já
+     existentes, nunca as substitui (só "Recomeçar" limpa tudo), para
+     dar para continuar depois de uma pausa a meio.  */
   const arrastandoRef = React.useRef(false);
-  const ultimaAmostraRef = React.useRef(0);
+  const ultimoTempoAmostradoRef = React.useRef(-1);
   const registarMarca = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    ultimoTempoAmostradoRef.current = currentTimeRef.current;
     setAnotacaoMarcas(prev => [...prev, { tempo: currentTimeRef.current, x, y }]);
   };
   const iniciarArrasto = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     arrastandoRef.current = true;
-    ultimaAmostraRef.current = Date.now();
+    ultimoTempoAmostradoRef.current = -1;
+    enviarComandoYoutube('setPlaybackRate', [velocidadeArrasto]);
     enviarComandoYoutube('playVideo');
     registarMarca(e);
   };
   const moverArrasto = (e) => {
     if (!arrastandoRef.current) return;
-    const agora = Date.now();
-    if (agora - ultimaAmostraRef.current < 100) return;
-    ultimaAmostraRef.current = agora;
+    // Segundos de VÍDEO desde a última marca, não tempo real do gesto —
+    // assim a câmara lenta dá mais tempo para acompanhar sem multiplicar
+    // o número de pontos gravados por cada segundo de jogo.
+    if (currentTimeRef.current - ultimoTempoAmostradoRef.current < 0.15) return;
     registarMarca(e);
   };
   const terminarArrasto = () => {
     if (!arrastandoRef.current) return;
     arrastandoRef.current = false;
     enviarComandoYoutube('pauseVideo');
+    enviarComandoYoutube('setPlaybackRate', [1]);
   };
 
   const guardarAnotacao = () => {
@@ -30753,9 +30767,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     }}>
                       <div style={{ fontSize: 12.5, color: T.mutedDim }}>
                         Carrega sobre o jogador e arrasta o dedo, a caneta ou o rato a acompanhá-lo — o
-                        vídeo começa a tocar sozinho enquanto arrastas, e a posição fica a marcar-se
-                        automaticamente. Larga para pausar. Podes repetir o gesto várias vezes; só
-                        "Recomeçar" apaga tudo.
+                        vídeo começa a tocar sozinho, em câmara lenta, enquanto arrastas, e a posição
+                        fica a marcar-se automaticamente. Larga para pausar. Podes repetir o gesto
+                        várias vezes; só "Recomeçar" apaga tudo.
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: T.mutedDim }}>Velocidade ao arrastar:</span>
+                        {[0.25, 0.5, 1].map(v => (
+                          <button key={v} onClick={() => setVelocidadeArrasto(v)} style={{
+                            fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
+                            background: velocidadeArrasto === v ? T.warn : 'transparent',
+                            color: velocidadeArrasto === v ? '#000' : T.cream,
+                            border: `1px solid ${velocidadeArrasto === v ? T.warn : T.line}`,
+                          }}>{v === 1 ? 'Normal' : `${v * 100}%`}</button>
+                        ))}
                       </div>
                       <div style={{ fontSize: 13, color: T.cream }}>
                         {anotacaoMarcas.length === 0
@@ -31160,9 +31185,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               }}>
                 <div style={{ fontSize: 12.5, color: T.mutedDim }}>
                   Carrega sobre o jogador e arrasta o dedo, a caneta ou o rato a acompanhá-lo — o
-                  vídeo começa a tocar sozinho enquanto arrastas, e a posição fica a marcar-se
-                  automaticamente. Larga para pausar. Podes repetir o gesto várias vezes; só
-                  "Recomeçar" apaga tudo.
+                  vídeo começa a tocar sozinho, em câmara lenta, enquanto arrastas, e a posição
+                  fica a marcar-se automaticamente. Larga para pausar. Podes repetir o gesto
+                  várias vezes; só "Recomeçar" apaga tudo.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: T.mutedDim }}>Velocidade ao arrastar:</span>
+                  {[0.25, 0.5, 1].map(v => (
+                    <button key={v} onClick={() => setVelocidadeArrasto(v)} style={{
+                      fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
+                      background: velocidadeArrasto === v ? T.warn : 'transparent',
+                      color: velocidadeArrasto === v ? '#000' : T.cream,
+                      border: `1px solid ${velocidadeArrasto === v ? T.warn : T.line}`,
+                    }}>{v === 1 ? 'Normal' : `${v * 100}%`}</button>
+                  ))}
                 </div>
                 <div style={{ fontSize: 13, color: T.cream }}>
                   {anotacaoMarcas.length === 0
