@@ -30007,7 +30007,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // precisar de carregar o script oficial da API — ver comentário mais
   // acima sobre CSP).
   const enviarComandoYoutube = (func, args) => {
-    const win = inlineIframeRef.current && inlineIframeRef.current.contentWindow;
+    // O comando vai para o leitor que está mesmo visível — em ecrã
+    // inteiro (lightbox) é um iframe diferente do da caixa normal.
+    const targetRef = lightboxOpen ? iframeRef : inlineIframeRef;
+    const win = targetRef.current && targetRef.current.contentWindow;
     if (!win) return;
     win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
   };
@@ -30118,16 +30121,27 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // animar (a marcar uma anotação nova, ou o vídeo ativo já tem
   // anotações a desenhar) — nos restantes vídeos, `currentTimeRef` continua
   // a atualizar-se sozinho (para o Criar clipe), sem pedir novo desenho do
-  // ecrã a cada mensagem.
+  // ecrã a cada mensagem. O efeito que mantém isto atualizado vive mais
+  // abaixo, depois de `active` estar definido — precisa de o ler.
   const precisaTempoAoVivoRef = React.useRef(false);
   const [liveTime, setLiveTime] = useState(0);
-  useEffect(() => {
-    precisaTempoAoVivoRef.current = modoAnotar || !!(active && active.anotacoes && active.anotacoes.length);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modoAnotar, active && active.id, active && active.anotacoes]);
+  // Enquanto o ecrã inteiro (lightbox) está aberto, a caixa normal por
+  // trás pode continuar montada — dois iframes do YouTube ao mesmo tempo,
+  // cada um a mandar as suas próprias mensagens. Sem filtrar por origem,
+  // `currentTimeRef` ia saltando entre os dois tempos, tornando a
+  // marcação (Criar clipe/anotação) imprevisível assim que se abrisse o
+  // ecrã inteiro. `lightboxOpenRef` diz qual dos dois iframes é "o que
+  // interessa" agora, para o handler (que só é criado uma vez, ver
+  // `useEffect(..., [])` abaixo) saber sempre o valor atual.
+  const lightboxOpenRef = React.useRef(false);
+  useEffect(() => { lightboxOpenRef.current = lightboxOpen; }, [lightboxOpen]);
   useEffect(() => {
     const onMessage = (event) => {
       if (!event.origin || !event.origin.includes('youtube.com')) return;
+      const janelaRelevante = lightboxOpenRef.current
+        ? (iframeRef.current && iframeRef.current.contentWindow)
+        : (inlineIframeRef.current && inlineIframeRef.current.contentWindow);
+      if (janelaRelevante && event.source !== janelaRelevante) return;
       let data = event.data;
       try { data = typeof data === 'string' ? JSON.parse(data) : data; } catch { return; }
       if (data && data.event === 'onError' && activeYoutubeIdRef.current) {
@@ -30254,6 +30268,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   }, [items, folderFilter]);
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
+
+  // Só liga os re-renders de tempo ao vivo (ver `precisaTempoAoVivoRef`
+  // mais acima) quando há mesmo alguma coisa a animar.
+  useEffect(() => {
+    precisaTempoAoVivoRef.current = modoAnotar || !!(active && active.anotacoes && active.anotacoes.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoAnotar, active && active.id, active && active.anotacoes]);
 
   /* Uma linha da lista. Extraída para poder ser usada tanto na lista
      corrida (dentro de uma pasta) como dentro de cada pasta fechada. */
@@ -30988,7 +31009,142 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   title={active.title}
                 />
               )}
+              {!isBlocked && !modoAnotar && (active.anotacoes || []).map(an => {
+                const pos = posicaoAnotacao(an, liveTime);
+                if (!pos) return null;
+                return (
+                  <div key={an.id} style={{
+                    position: 'absolute', left: `${pos.x * 100}%`, top: `${pos.y * 100}%`,
+                    width: 46, height: 46, marginLeft: -23, marginTop: -23,
+                    borderRadius: '50%', border: `3px solid ${T.warn}`,
+                    boxShadow: '0 0 0 2px rgba(0,0,0,.5)', pointerEvents: 'none',
+                    transition: 'left .18s linear, top .18s linear',
+                  }} />
+                );
+              })}
+              {!isBlocked && modoAnotar && (
+                <div
+                  onClick={marcarPosicaoNoVideo}
+                  title="Clica onde está o jogador"
+                  style={{ position: 'absolute', inset: 0, cursor: 'crosshair' }}
+                >
+                  {anotacaoMarcas.map((m, i) => (
+                    <div key={i} style={{
+                      position: 'absolute', left: `${m.x * 100}%`, top: `${m.y * 100}%`,
+                      width: 14, height: 14, marginLeft: -7, marginTop: -7,
+                      borderRadius: '50%', background: T.warn, border: '2px solid #000',
+                    }} title={fmtMMSS(m.tempo)} />
+                  ))}
+                </div>
+              )}
             </div>
+            {!isBlocked && modoAnotar && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                marginTop: 8, padding: '6px 10px', background: '#111', borderRadius: 8,
+              }}>
+                <button onClick={() => enviarComandoYoutube('playVideo')} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>▶ Reproduzir</button>
+                <button onClick={() => enviarComandoYoutube('pauseVideo')} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>❚❚ Pausar</button>
+                <button onClick={() => avancarTempo(-1)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>-1s</button>
+                <button onClick={() => avancarTempo(-0.25)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>-¼s</button>
+                <span style={{ fontSize: 12, color: '#fff', ...mono }}>{fmtMMSS(liveTime)}</span>
+                <button onClick={() => avancarTempo(0.25)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>+¼s</button>
+                <button onClick={() => avancarTempo(1)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>+1s</button>
+              </div>
+            )}
+            {!isBlocked && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
+                <button
+                  onClick={() => (clipMode ? sairDoModoClipe() : (sairDoModoAnotar(), setClipMode(true)))}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5,
+                    color: clipMode ? T.warn : '#fff',
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                  }}
+                >
+                  <Scissors size={13} /> {clipMode ? 'Cancelar clipe' : 'Criar clipe'}
+                </button>
+                <button
+                  onClick={() => (modoAnotar ? sairDoModoAnotar() : (sairDoModoClipe(), setModoAnotar(true)))}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5,
+                    color: modoAnotar ? T.warn : '#fff',
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                  }}
+                >
+                  <Circle size={13} /> {modoAnotar ? 'Cancelar anotação' : 'Adicionar anotação'}
+                </button>
+              </div>
+            )}
+            {clipMode && !isBlocked && (
+              <div style={{
+                marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+                padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+              }}>
+                <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+                  Deixa o vídeo a tocar e marca onde o corte começa e acaba — depois dá-lhe um nome
+                  e o clipe fica gravado à parte, na pasta "Cortes", pronto a rever mais tarde.
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
+                  <div style={{ fontSize: 13, color: T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
+                  <div style={{ color: T.mutedDim, fontSize: 12 }}>até</div>
+                  <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
+                  <div style={{ fontSize: 13, color: T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
+                </div>
+                {clipMarcas.inicio != null && clipMarcas.fim != null && (
+                  Math.abs(clipMarcas.fim - clipMarcas.inicio) < 1 ? (
+                    <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto — marca o fim um pouco mais à frente.</div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <input
+                        value={tituloClipe} onChange={e => setTituloClipe(e.target.value)}
+                        placeholder="Nome do clipe (ex.: Saída de bola sob pressão)"
+                        style={{
+                          flex: 1, minWidth: 200, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+                          padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
+                        }}
+                      />
+                      <Btn onClick={guardarClipe}><Scissors size={14} /> Guardar clipe</Btn>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+            {modoAnotar && !isBlocked && (
+              <div style={{
+                marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+                padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+              }}>
+                <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+                  Usa os controlos por cima do vídeo para avançar aos poucos e clica sobre o jogador
+                  em cada momento — quantas mais marcas, mais suave fica o círculo a segui-lo.
+                </div>
+                <div style={{ fontSize: 13, color: T.cream }}>
+                  {anotacaoMarcas.length === 0
+                    ? 'Ainda sem marcas.'
+                    : `${anotacaoMarcas.length} ${anotacaoMarcas.length === 1 ? 'marca' : 'marcas'}: ${anotacaoMarcas.map(m => fmtMMSS(m.tempo)).join(', ')}`}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <Btn variant="ghost" disabled={!anotacaoMarcas.length} onClick={() => setAnotacaoMarcas(prev => prev.slice(0, -1))}>Apagar última marca</Btn>
+                  <Btn disabled={!anotacaoMarcas.length} onClick={guardarAnotacao}><Circle size={14} /> Guardar anotação</Btn>
+                </div>
+              </div>
+            )}
+            {!modoAnotar && !clipMode && (active.anotacoes || []).length > 0 && (
+              <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {active.anotacoes.map((an, i) => (
+                  <div key={an.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#ffffffaa',
+                    border: `1px solid ${T.line}`, borderRadius: 20, padding: '4px 10px',
+                  }}>
+                    <Circle size={11} color={T.warn} />
+                    Anotação {i + 1} ({an.marcas.length} {an.marcas.length === 1 ? 'marca' : 'marcas'})
+                    <button onClick={() => removerAnotacao(an.id)} style={{ background: 'none', border: 'none', color: '#ffffffaa', cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ marginTop: 10, color: '#fff', fontSize: 15, fontWeight: 500 }}>{active.title}</div>
             {active.jornada && <div style={{ color: '#ffffffaa', fontSize: 12.5 }}>{active.jornada}</div>}
           </div>
