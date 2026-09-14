@@ -30332,27 +30332,48 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoAnotar, active && active.id, active && active.anotacoes]);
 
-  /* MANTER UM CLIPE DENTRO DO SEU PRÓPRIO INTERVALO — E VOLTAR AO
-     INÍCIO SOZINHO QUANDO CHEGA AO FIM.
+  /* MANTER O CORTE A FUNCIONAR COMO CORTE — SEM LUTAR CONTRA QUEM ARRASTA
+     A BARRA À VONTADE.
 
      Sem `end=` no embed (ver `youtubeEmbedSrc`), quem manda no fim do
-     corte é este efeito: assim que o tempo ao vivo alcança `clipFim`,
-     salta logo de volta para `clipInicio` e manda continuar a tocar —
-     um ciclo contínuo do corte, como pedido, em vez de parar. Do lado
-     de baixo, se alguém arrastar a barra de progresso do YouTube para
-     trás do início do corte (o vídeo por trás continua a ser o
-     original inteiro), também salta de volta — aí com uma margem de
-     ~1.5s, para não disparar por causa de pequenas variações normais do
-     próprio YouTube perto da fronteira (do lado do fim isso não faz
-     falta: o cruzamento só acontece uma vez, a avançar, nunca por
-     engano). */
+     corte é este efeito: ao alcançar `clipFim` A TOCAR NORMALMENTE, salta
+     de volta para `clipInicio` e manda continuar — um ciclo contínuo,
+     como pedido.
+
+     A primeira versão disto reagia a QUALQUER leitura de tempo fora da
+     margem, incluindo as leituras intermédias que o próprio YouTube manda
+     enquanto se está a ARRASTAR a barra — por isso um arrasto normal
+     ficava sempre a ser puxado de volta a meio do gesto, sem deixar
+     chegar aonde se queria. A correção: comparar cada leitura com a
+     anterior. Um salto GRANDE de um instante para o outro (mais de 2s) só
+     acontece por arrasto manual — nesse caso, nunca se mexe, fica-se
+     exatamente onde a pessoa arrastou, seja onde for. Só o cruzamento
+     GRADUAL do fim (a tocar normalmente, sem arrastar nada) é que
+     dispara o salto de volta ao início.
+
+     A única exceção — continua a proteger-se — é um salto grande que
+     aterre perto do zero: é a assinatura exata do "repetir" nativo do
+     YouTube, que reinicia o vídeo ORIGINAL do zero, não o corte. Um
+     arrasto genuíno da pessoa para essa zona é indistinguível disto, mas
+     como o vídeo original todo nunca é o que se quer ver aqui, mantém-se
+     a proteção só neste caso específico. */
+  const tempoAnteriorClipeRef = React.useRef(null);
   useEffect(() => {
-    if (!active || typeof active.clipInicio !== 'number') return;
-    if (liveTime < active.clipInicio - 1.5) {
-      enviarComandoYoutube('seekTo', [active.clipInicio, true]);
-    } else if (typeof active.clipFim === 'number' && liveTime >= active.clipFim) {
+    if (!active || typeof active.clipInicio !== 'number') { tempoAnteriorClipeRef.current = null; return; }
+    const anterior = tempoAnteriorClipeRef.current;
+    tempoAnteriorClipeRef.current = liveTime;
+    if (anterior == null) return; // primeira leitura deste corte — sem nada para comparar ainda
+
+    const salto = Math.abs(liveTime - anterior);
+    const aTocarNormalmente = salto < 2;
+
+    if (aTocarNormalmente && typeof active.clipFim === 'number' && liveTime >= active.clipFim) {
       enviarComandoYoutube('seekTo', [active.clipInicio, true]);
       enviarComandoYoutube('playVideo');
+      tempoAnteriorClipeRef.current = active.clipInicio;
+    } else if (!aTocarNormalmente && liveTime < 2 && active.clipInicio > 5) {
+      enviarComandoYoutube('seekTo', [active.clipInicio, true]);
+      tempoAnteriorClipeRef.current = active.clipInicio;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveTime, active && active.id]);
