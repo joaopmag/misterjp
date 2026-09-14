@@ -29818,7 +29818,12 @@ function youtubeEmbedSrc(item, extra) {
   if (!item || !item.youtubeId) return '';
   const bits = ['rel=0', 'playsinline=1'];
   if (typeof item.clipInicio === 'number') bits.push(`start=${Math.max(0, Math.floor(item.clipInicio))}`);
-  if (typeof item.clipFim === 'number') bits.push(`end=${Math.max(0, Math.floor(item.clipFim))}`);
+  // Sem `end=`, de propósito: esse parâmetro do próprio YouTube tem um
+  // problema conhecido de gaguejar/repetir o último segundo em vez de
+  // simplesmente parar. O fim do corte é vigiado à parte (ver o efeito
+  // logo abaixo de `active`, que faz o salto de volta ao início) —
+  // dá mais controlo e é o que permite o corte VOLTAR ao início sozinho
+  // em vez de só parar.
   if (extra) bits.push(extra);
   return `https://www.youtube.com/embed/${item.youtubeId}?${bits.join('&')}`;
 }
@@ -30327,24 +30332,27 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoAnotar, active && active.id, active && active.anotacoes]);
 
-  /* MANTER UM CLIPE DENTRO DO SEU PRÓPRIO INTERVALO.
+  /* MANTER UM CLIPE DENTRO DO SEU PRÓPRIO INTERVALO — E VOLTAR AO
+     INÍCIO SOZINHO QUANDO CHEGA AO FIM.
 
-     `start`/`end` no embed (ver `youtubeEmbedSrc`) só valem para o
-     carregamento inicial — o vídeo por trás continua a ser o original
-     inteiro. Se alguém arrastar a barra de progresso do YouTube para
-     trás do início do corte, ou usar o "repetir" que o próprio YouTube
-     mostra quando o vídeo chega ao fim (que reinicia do zero, não do
-     `start`), o corte deixa de ser um corte — passa a mostrar o vídeo
-     todo. Esta rede de segurança lê o tempo ao vivo e, se sair da
-     margem do clipe para qualquer um dos lados, salta logo de volta
-     para dentro dela. A margem de ~1.5s evita disparar por causa de
-     pequenas variações normais do próprio YouTube perto da fronteira. */
+     Sem `end=` no embed (ver `youtubeEmbedSrc`), quem manda no fim do
+     corte é este efeito: assim que o tempo ao vivo alcança `clipFim`,
+     salta logo de volta para `clipInicio` e manda continuar a tocar —
+     um ciclo contínuo do corte, como pedido, em vez de parar. Do lado
+     de baixo, se alguém arrastar a barra de progresso do YouTube para
+     trás do início do corte (o vídeo por trás continua a ser o
+     original inteiro), também salta de volta — aí com uma margem de
+     ~1.5s, para não disparar por causa de pequenas variações normais do
+     próprio YouTube perto da fronteira (do lado do fim isso não faz
+     falta: o cruzamento só acontece uma vez, a avançar, nunca por
+     engano). */
   useEffect(() => {
     if (!active || typeof active.clipInicio !== 'number') return;
     if (liveTime < active.clipInicio - 1.5) {
       enviarComandoYoutube('seekTo', [active.clipInicio, true]);
-    } else if (typeof active.clipFim === 'number' && liveTime > active.clipFim + 1.5) {
-      enviarComandoYoutube('seekTo', [active.clipFim, true]);
+    } else if (typeof active.clipFim === 'number' && liveTime >= active.clipFim) {
+      enviarComandoYoutube('seekTo', [active.clipInicio, true]);
+      enviarComandoYoutube('playVideo');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveTime, active && active.id]);
