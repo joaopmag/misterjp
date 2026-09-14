@@ -2614,6 +2614,33 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     }
   }, [matchesReady, matches, setMatches, autorizarLimparJogos]);
 
+  /* SESSÕES DE JOGO EM FALTA — MESMA IDEIA DA LIMPEZA ALI EM CIMA, AGORA
+     PARA SESSÕES.
+
+     `ensureMatchSession` só corre quando um jogo é gravado a partir de
+     Jogos ou de Planeamento. Um jogo que entra sozinho a partir das
+     jornadas da competição (`syncCompetitionMatches`, ao gravar a
+     Classificação) nunca passava por ali — ficava sem sessão associada,
+     e sem sessão o PSE do dia não aparece no check-in dos atletas
+     (mesmo já se corrigindo isso nesses dois sítios, os jogos criados
+     ANTES da correção continuavam por sarar).
+
+     Corre uma vez, assim que jogos e sessões estão carregados, e cobre
+     TODOS os jogos já existentes de uma vez — não só os que vierem a
+     ser gravados a partir de agora. `sessoesDeJogoGarantidas` garante
+     que não volta a correr em cadeia a cada gravação. */
+  const sessoesDeJogoGarantidas = useRef(false);
+  useEffect(() => {
+    if (sessoesDeJogoGarantidas.current || !matchesReady || !sessionsReady) return;
+    sessoesDeJogoGarantidas.current = true;
+    const antes = sessions || [];
+    const depois = (matches || []).reduce((acc, m) => ensureMatchSession(m, acc), antes);
+    if (depois.length !== antes.length) {
+      console.warn(`Sessões de jogo criadas em falta: ${depois.length - antes.length}`);
+      setSessions(depois);
+    }
+  }, [matchesReady, sessionsReady, matches, sessions, setSessions]);
+
   const loading = !seasonReady || !playersReady || !exercisesReady || !ideiasReady || !sessionsReady || !monitoringReady
     || !matchesReady || !scoutingReady || !adversariosReady || !videosReady || !apresentacoesReady || !convocatoriasReady || !diarioReady
     || !desenvolvimentoReady || !standingsReady || !clinicoReady || !tarefasReady || !documentosReady;
