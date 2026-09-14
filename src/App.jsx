@@ -14,7 +14,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors
+  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -29984,6 +29984,67 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [tituloClipe, setTituloClipe] = useState('');
   const sairDoModoClipe = () => { setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe(''); };
 
+  /* ANOTAÇÃO — CÍRCULO QUE "SEGUE" O JOGADOR.
+     Não há visão computacional nenhuma aqui: o treinador é que marca, com
+     um clique sobre o vídeo, onde o jogador está em alguns momentos —
+     cada clique fica uma marca (tempo + posição x/y, em fração da caixa
+     do vídeo, 0 a 1). Na reprodução normal, o círculo desliza por
+     interpolação linear entre as marcas mais próximas do tempo atual —
+     é essa interpolação que dá a sensação de "seguir" o jogador, com
+     marcas suficientes. Guardado em `item.anotacoes`, um array de
+     `{ id, marcas: [{ tempo, x, y }] }` (só um tipo por agora: círculo).
+
+     Modo mutuamente exclusivo com o Criar clipe — os dois usam a mesma
+     barra de ferramentas e não faz sentido misturar. */
+  const [modoAnotar, setModoAnotar] = useState(false);
+  const [anotacaoMarcas, setAnotacaoMarcas] = useState([]);
+  const sairDoModoAnotar = () => { setModoAnotar(false); setAnotacaoMarcas([]); };
+
+  // Enquanto se marca uma anotação, os controlos do próprio YouTube ficam
+  // tapados pela camada transparente que apanha o clique — por isso há
+  // botões próprios de play/pausa/avançar, enviados por postMessage "cru"
+  // (o mesmo protocolo já usado para o handshake 'listening', sem
+  // precisar de carregar o script oficial da API — ver comentário mais
+  // acima sobre CSP).
+  const enviarComandoYoutube = (func, args) => {
+    const win = inlineIframeRef.current && inlineIframeRef.current.contentWindow;
+    if (!win) return;
+    win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
+  };
+  const avancarTempo = (delta) => enviarComandoYoutube('seekTo', [Math.max(0, currentTimeRef.current + delta), true]);
+
+  const marcarPosicaoNoVideo = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    setAnotacaoMarcas(prev => [...prev, { tempo: currentTimeRef.current, x, y }].sort((a, b) => a.tempo - b.tempo));
+  };
+
+  const guardarAnotacao = () => {
+    if (!active || anotacaoMarcas.length === 0) return;
+    const nova = { id: uid(), marcas: anotacaoMarcas };
+    setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoes: [...(v.anotacoes || []), nova] } : v)));
+    sairDoModoAnotar();
+  };
+  const removerAnotacao = (id) => {
+    if (!active) return;
+    setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoes: (v.anotacoes || []).filter(a => a.id !== id) } : v)));
+  };
+
+  // Posição interpolada de uma anotação num instante — sustém a posição
+  // da marca mais próxima antes/depois de quem estiver fora do intervalo
+  // marcado, em vez de desaparecer ou saltar.
+  const posicaoAnotacao = (anotacao, tempo) => {
+    const marcas = anotacao.marcas;
+    if (!marcas || !marcas.length) return null;
+    if (marcas.length === 1 || tempo <= marcas[0].tempo) return marcas[0];
+    if (tempo >= marcas[marcas.length - 1].tempo) return marcas[marcas.length - 1];
+    const depois = marcas.findIndex(m => m.tempo > tempo);
+    const antes = marcas[depois - 1], prox = marcas[depois];
+    const f = (tempo - antes.tempo) / (prox.tempo - antes.tempo || 1);
+    return { x: antes.x + (prox.x - antes.x) * f, y: antes.y + (prox.y - antes.y) * f };
+  };
+
   const iframeRef = React.useRef(null);
   const inlineIframeRef = React.useRef(null);
   const activeYoutubeIdRef = React.useRef(null);
@@ -30053,6 +30114,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // enquanto o vídeo toca, e não há razão para voltar a desenhar o ecrã
   // a cada um — só interessa o valor no instante em que se clica.
   const currentTimeRef = React.useRef(0);
+  // Só liga os re-renders de tempo ao vivo quando há mesmo alguma coisa a
+  // animar (a marcar uma anotação nova, ou o vídeo ativo já tem
+  // anotações a desenhar) — nos restantes vídeos, `currentTimeRef` continua
+  // a atualizar-se sozinho (para o Criar clipe), sem pedir novo desenho do
+  // ecrã a cada mensagem.
+  const precisaTempoAoVivoRef = React.useRef(false);
+  const [liveTime, setLiveTime] = useState(0);
+  useEffect(() => {
+    precisaTempoAoVivoRef.current = modoAnotar || !!(active && active.anotacoes && active.anotacoes.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoAnotar, active && active.id, active && active.anotacoes]);
   useEffect(() => {
     const onMessage = (event) => {
       if (!event.origin || !event.origin.includes('youtube.com')) return;
@@ -30065,6 +30137,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       }
       if (data && data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number') {
         currentTimeRef.current = data.info.currentTime;
+        if (precisaTempoAoVivoRef.current) setLiveTime(data.info.currentTime);
       }
     };
     window.addEventListener('message', onMessage);
@@ -30292,7 +30365,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
   // Trocar de vídeo a meio de uma marcação não faz sentido — os
   // marcadores são segundos DENTRO do vídeo que estava a tocar.
-  useEffect(() => { sairDoModoClipe(); }, [activeId]);
+  useEffect(() => { sairDoModoClipe(); sairDoModoAnotar(); }, [activeId]);
 
   const marcarInicio = () => setClipMarcas(prev => ({ ...prev, inicio: currentTimeRef.current }));
   const marcarFim = () => setClipMarcas(prev => ({ ...prev, fim: currentTimeRef.current }));
@@ -30481,7 +30554,59 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           title={active.title}
                         />
                       )}
+                      {/* CÍRCULO(S) DE ANOTAÇÃO — só desenha, nunca captura
+                          cliques (pointerEvents: 'none'), para os controlos
+                          do próprio YouTube continuarem a funcionar por
+                          baixo durante a reprodução normal. */}
+                      {!isBlocked && !modoAnotar && (active.anotacoes || []).map(an => {
+                        const pos = posicaoAnotacao(an, liveTime);
+                        if (!pos) return null;
+                        return (
+                          <div key={an.id} style={{
+                            position: 'absolute', left: `${pos.x * 100}%`, top: `${pos.y * 100}%`,
+                            width: 46, height: 46, marginLeft: -23, marginTop: -23,
+                            borderRadius: '50%', border: `3px solid ${T.warn}`,
+                            boxShadow: '0 0 0 2px rgba(0,0,0,.5)', pointerEvents: 'none',
+                            transition: 'left .18s linear, top .18s linear',
+                          }} />
+                        );
+                      })}
+                      {/* CAMADA DE MARCAÇÃO — cobre o vídeo inteiro para
+                          apanhar o clique com "onde está o jogador"; por
+                          tapar tudo, os controlos nativos do YouTube ficam
+                          inacessíveis enquanto isto está ativo — daí os
+                          botões de play/pausa/avançar próprios na barra
+                          abaixo. */}
+                      {!isBlocked && modoAnotar && (
+                        <div
+                          onClick={marcarPosicaoNoVideo}
+                          title="Clica onde está o jogador"
+                          style={{ position: 'absolute', inset: 0, cursor: 'crosshair' }}
+                        >
+                          {anotacaoMarcas.map((m, i) => (
+                            <div key={i} style={{
+                              position: 'absolute', left: `${m.x * 100}%`, top: `${m.y * 100}%`,
+                              width: 14, height: 14, marginLeft: -7, marginTop: -7,
+                              borderRadius: '50%', background: T.warn, border: '2px solid #000',
+                            }} title={fmtMMSS(m.tempo)} />
+                          ))}
+                        </div>
+                      )}
                     </div>
+                    {!isBlocked && modoAnotar && (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                        padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+                      }}>
+                        <button onClick={() => enviarComandoYoutube('playVideo')} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>▶ Reproduzir</button>
+                        <button onClick={() => enviarComandoYoutube('pauseVideo')} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>❚❚ Pausar</button>
+                        <button onClick={() => avancarTempo(-1)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>-1s</button>
+                        <button onClick={() => avancarTempo(-0.25)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>-¼s</button>
+                        <span style={{ fontSize: 12, color: '#fff', ...mono }}>{fmtMMSS(liveTime)}</span>
+                        <button onClick={() => avancarTempo(0.25)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>+¼s</button>
+                        <button onClick={() => avancarTempo(1)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>+1s</button>
+                      </div>
+                    )}
                     {!isBlocked && (
                       <div style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
@@ -30496,7 +30621,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         </a>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                           <button
-                            onClick={() => (clipMode ? sairDoModoClipe() : setClipMode(true))}
+                            onClick={() => (clipMode ? sairDoModoClipe() : (sairDoModoAnotar(), setClipMode(true)))}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
                               color: clipMode ? T.warn : '#fff',
@@ -30504,6 +30629,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             }}
                           >
                             <Scissors size={13} /> {clipMode ? 'Cancelar clipe' : 'Criar clipe'}
+                          </button>
+                          <button
+                            onClick={() => (modoAnotar ? sairDoModoAnotar() : (sairDoModoClipe(), setModoAnotar(true)))}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
+                              color: modoAnotar ? T.warn : '#fff',
+                              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                            }}
+                          >
+                            <Circle size={13} /> {modoAnotar ? 'Cancelar anotação' : 'Adicionar anotação'}
                           </button>
                           <button
                             onClick={() => setLightboxOpen(true)}
@@ -30551,6 +30686,41 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           </div>
                         )
                       )}
+                    </div>
+                  )}
+                  {modoAnotar && !isBlocked && (
+                    <div style={{
+                      marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+                      padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+                    }}>
+                      <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+                        Usa os controlos por cima do vídeo para avançar aos poucos e clica sobre o jogador
+                        em cada momento — quantas mais marcas, mais suave fica o círculo a segui-lo. Uma
+                        marca a cada segundo ou dois já costuma chegar.
+                      </div>
+                      <div style={{ fontSize: 13, color: T.cream }}>
+                        {anotacaoMarcas.length === 0
+                          ? 'Ainda sem marcas.'
+                          : `${anotacaoMarcas.length} ${anotacaoMarcas.length === 1 ? 'marca' : 'marcas'}: ${anotacaoMarcas.map(m => fmtMMSS(m.tempo)).join(', ')}`}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <Btn variant="ghost" disabled={!anotacaoMarcas.length} onClick={() => setAnotacaoMarcas(prev => prev.slice(0, -1))}>Apagar última marca</Btn>
+                        <Btn disabled={!anotacaoMarcas.length} onClick={guardarAnotacao}><Circle size={14} /> Guardar anotação</Btn>
+                      </div>
+                    </div>
+                  )}
+                  {!modoAnotar && !clipMode && (active.anotacoes || []).length > 0 && (
+                    <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {active.anotacoes.map((an, i) => (
+                        <div key={an.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.mutedDim,
+                          border: `1px solid ${T.line}`, borderRadius: 20, padding: '4px 10px',
+                        }}>
+                          <Circle size={11} color={T.warn} />
+                          Anotação {i + 1} ({an.marcas.length} {an.marcas.length === 1 ? 'marca' : 'marcas'})
+                          <button onClick={() => removerAnotacao(an.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={12} /></button>
+                        </div>
+                      ))}
                     </div>
                   )}
                   </>
