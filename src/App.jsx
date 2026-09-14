@@ -18116,7 +18116,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
     if (isEdicao) setMatches(prev => prev.map(m => m.id === data.id ? registo : m));
     else setMatches(prev => [...prev, registo]);
     if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
-    setSessions(prev => ensureFriendlySession(registo, prev));
+    setSessions(prev => ensureMatchSession(registo, prev));
     if (isEdicao && matchModalVoltarFicha) trocarJanela(() => setMatchModal(null), () => setFicha(registo));
     else setMatchModal(null);
   };
@@ -18129,13 +18129,13 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
     .filter(m => m.date)
     .map(m => ({ ...m, __match: true }));
   const grouped = groupByWeek([...sessions, ...matchItems]);
-  /* A sessão que um amigável cria automaticamente (ver ensureFriendlySession)
-     continua a contar para a carga da semana — por isso entra em `grouped`
-     tal e qual. Mas na Lista o jogo já tem o seu próprio cartão (com
-     troféu, adversário e resultado); mostrar também a sessão dava duas
-     linhas para o mesmo dia. `idsDeJogos` identifica essas sessões pelo
-     `sourceMatchId` para esconder só o cartão a mais, sem tocar nos dados
-     nem no resumo semanal. */
+  /* A sessão que qualquer jogo cria automaticamente (ver ensureMatchSession,
+     amigável ou oficial) continua a contar para a carga da semana — por
+     isso entra em `grouped` tal e qual. Mas na Lista o jogo já tem o seu
+     próprio cartão (com troféu, adversário e resultado); mostrar também a
+     sessão dava duas linhas para o mesmo dia. `idsDeJogos` identifica
+     essas sessões pelo `sourceMatchId` para esconder só o cartão a mais,
+     sem tocar nos dados nem no resumo semanal. */
   const idsDeJogos = new Set((matches || []).map(m => m.id));
 
   // Segunda-feira de cada semana já agrupada, para decidir por omissão
@@ -18164,10 +18164,11 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
     }
   }, [view, targetWeekKey]);
 
-  /* O caminho inverso de `sessaoDoJogo`: dada a sessão de um amigável,
-     qual é o jogo que lhe deu origem. É de lá que vêm as "Ideias para o
-     jogo" para a ficha impressa — a sessão não as tem. Sessões antigas,
-     criadas antes de existir `sourceMatchId`, ainda se apanham pela data. */
+  /* O caminho inverso de `sessaoDoJogo`: dada a sessão de um jogo
+     (amigável ou oficial), qual é o jogo que lhe deu origem. É de lá que
+     vêm as "Ideias para o jogo" para a ficha impressa — a sessão não as
+     tem. Sessões antigas, ou criadas à mão antes de existir
+     `sourceMatchId`, ainda se apanham pela data. */
   const jogoDaSessao = (s) => jogoRealDaSessao(s, matches);
   const ideiasDaSessao = (s) => { const m = jogoDaSessao(s); return m ? m.ideias : ''; };
 
@@ -18310,8 +18311,9 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                           <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
                         </>
                       )}
-                      {/* Jogos oficiais não têm sessão de treino associada
-                          (só os amigáveis têm, ver `ensureFriendlySession`)
+                      {/* Jogos gravados antes de `ensureMatchSession` passar
+                          a cobrir também os oficiais (ou sem `setSessions`
+                          disponível) podem ainda não ter sessão associada
                           — por isso ficavam sem nenhum ícone de partilhar
                           ou imprimir aqui. `doShareMatch`/`doPrintMatch` já
                           existiam (usados pela janela de leitura do jogo);
@@ -20705,14 +20707,14 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   // (ex: uma por exercício), conta e edita-se como um único dia de treino.
   // Dias de folga (fase "Descanso") não entram na assiduidade — não há
   // presenças nem notas a registar num dia sem treino.
-  /* AS SESSÕES CRIADAS A PARTIR DE UM AMIGÁVEL NÃO CONTAM AQUI.
+  /* AS SESSÕES CRIADAS A PARTIR DE UM JOGO NÃO CONTAM AQUI.
 
-     Um amigável cria uma sessão no Planeamento (ver ensureFriendlySession)
-     para aparecer na agenda da semana e entrar na carga de treino. Mas o
-     jogo JÁ tem a sua própria coluna de presenças nesta tabela — a que
-     diz "amigável". Deixar a sessão entrar também dava duas colunas para
-     o mesmo dia: uma "treino" e outra "amigável", com as presenças a
-     serem marcadas em duplicado.
+     Qualquer jogo — amigável ou oficial — cria uma sessão no Planeamento
+     (ver ensureMatchSession) para aparecer na agenda da semana e entrar na
+     carga de treino. Mas o jogo JÁ tem a sua própria coluna de presenças
+     nesta tabela — a que diz "amigável" ou o nome da competição. Deixar a
+     sessão entrar também dava duas colunas para o mesmo dia: uma "treino"
+     e outra do jogo, com as presenças a serem marcadas em duplicado.
 
      A sessão é reconhecida pelo `sourceMatchId`, que guarda o jogo que a
      originou. Só se esconde se esse jogo ainda existir: se o jogo for
@@ -23013,15 +23015,23 @@ function isFriendlyMatch(match) {
   return competitionLabel(match && match.competition) === FRIENDLY;
 }
 
-/* Um amigável é, para efeitos de planeamento, uma sessão de trabalho: fica
+/* Todo o jogo é, para efeitos de planeamento, uma sessão de trabalho: fica
    na agenda com fase "Jogo", intensidade alta e formato 11x11, para
-   aparecer no Planeamento e entrar nas presenças como qualquer treino.
+   aparecer no Planeamento, entrar na carga de treino e — o que importa
+   para o Wellness/PSE do dia — dar ao check-in uma sessão a que associar
+   a resposta. Sem sessão no dia, o PSE não tem a que se ligar e o
+   check-in não o oferece (ver "Sessão de hoje" no Overview).
+
+   Antes só os amigáveis criavam esta sessão sozinhos; um jogo oficial de
+   competição ficava sem nenhuma, e o treinador tinha de criar a sessão à
+   mão em Planeamento só para o PSE aparecer no check-in dos atletas.
+   Agora vale para qualquer jogo — amigável ou oficial.
 
    Só se cria se ainda não houver sessão nesse dia — nunca se sobrepõe a
    um treino que o treinador já tenha planeado. */
-function ensureFriendlySession(match, sessions) {
+function ensureMatchSession(match, sessions) {
   const lista = sessions || [];
-  if (!match || !match.date || !isFriendlyMatch(match)) return lista;
+  if (!match || !match.date) return lista;
   if (lista.some(x => x.date === match.date)) return lista;
   return [...lista, {
     id: uid(),
@@ -23051,7 +23061,7 @@ function jogoRealDaSessao(s, matches) {
   if (!s || s.phase !== 'Jogo') return null;
   const lista = matches || [];
   return lista.find(m => m.id === s.sourceMatchId)
-    || lista.find(m => m.date === s.date && isFriendlyMatch(m))
+    || lista.find(m => m.date === s.date)
     || null;
 }
 
@@ -23726,10 +23736,13 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
     const registo = podarPresencasForaDosConvocados(isEdicao ? data : { ...data, id: uid() });
     if (isEdicao) setMatches(prev => prev.map(m => m.id === data.id ? registo : m));
     else setMatches(prev => [...prev, registo]);
-    // Amigável: entra também na agenda como sessão (ver ensureFriendlySession).
-    // A Lista do Planeamento esconde o cartão repetido — a sessão continua
-    // a existir para a carga de treino e as presenças.
-    if (setSessions) setSessions(prev => ensureFriendlySession(registo, prev));
+    // Todo o jogo entra também na agenda como sessão, amigável ou oficial
+    // (ver ensureMatchSession) — é o que faz o PSE aparecer sozinho no
+    // check-in no dia do jogo, sem o treinador ter de criar a sessão à
+    // mão em Planeamento. A Lista do Planeamento esconde o cartão
+    // repetido — a sessão continua a existir para a carga de treino e as
+    // presenças.
+    if (setSessions) setSessions(prev => ensureMatchSession(registo, prev));
     // Jogo oficial com convocados: gera/atualiza a convocatória.
     if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
     /* O encontro entra na jornada da competição, se ela existir, E o jogo
