@@ -30317,11 +30317,37 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
 
   // Só liga os re-renders de tempo ao vivo (ver `precisaTempoAoVivoRef`
-  // mais acima) quando há mesmo alguma coisa a animar.
+  // mais acima) quando há mesmo alguma coisa a animar OU a vigiar — um
+  // clipe a reproduzir também entra aqui, para o efeito logo abaixo
+  // conseguir saber se saiu do intervalo do corte.
   useEffect(() => {
-    precisaTempoAoVivoRef.current = modoAnotar || !!(active && active.anotacoes && active.anotacoes.length);
+    precisaTempoAoVivoRef.current = modoAnotar
+      || !!(active && active.anotacoes && active.anotacoes.length)
+      || !!(active && typeof active.clipInicio === 'number');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoAnotar, active && active.id, active && active.anotacoes]);
+
+  /* MANTER UM CLIPE DENTRO DO SEU PRÓPRIO INTERVALO.
+
+     `start`/`end` no embed (ver `youtubeEmbedSrc`) só valem para o
+     carregamento inicial — o vídeo por trás continua a ser o original
+     inteiro. Se alguém arrastar a barra de progresso do YouTube para
+     trás do início do corte, ou usar o "repetir" que o próprio YouTube
+     mostra quando o vídeo chega ao fim (que reinicia do zero, não do
+     `start`), o corte deixa de ser um corte — passa a mostrar o vídeo
+     todo. Esta rede de segurança lê o tempo ao vivo e, se sair da
+     margem do clipe para qualquer um dos lados, salta logo de volta
+     para dentro dela. A margem de ~1.5s evita disparar por causa de
+     pequenas variações normais do próprio YouTube perto da fronteira. */
+  useEffect(() => {
+    if (!active || typeof active.clipInicio !== 'number') return;
+    if (liveTime < active.clipInicio - 1.5) {
+      enviarComandoYoutube('seekTo', [active.clipInicio, true]);
+    } else if (typeof active.clipFim === 'number' && liveTime > active.clipFim + 1.5) {
+      enviarComandoYoutube('seekTo', [active.clipFim, true]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTime, active && active.id]);
 
   /* Uma linha da lista. Extraída para poder ser usada tanto na lista
      corrida (dentro de uma pasta) como dentro de cada pasta fechada. */
