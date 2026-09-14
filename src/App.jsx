@@ -14,7 +14,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle
+  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -29989,21 +29989,25 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [tituloClipe, setTituloClipe] = useState('');
   const sairDoModoClipe = () => { setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe(''); };
 
-  /* ANOTAÇÃO — CÍRCULO QUE "SEGUE" O JOGADOR.
+  /* ANOTAÇÃO — CÍRCULO OU CAIXA DE TEXTO QUE "SEGUEM" O JOGADOR.
      Não há visão computacional nenhuma aqui: o treinador é que marca, com
-     um clique sobre o vídeo, onde o jogador está em alguns momentos —
-     cada clique fica uma marca (tempo + posição x/y, em fração da caixa
-     do vídeo, 0 a 1). Na reprodução normal, o círculo desliza por
+     um arrasto sobre o vídeo, onde o jogador está em cada momento —
+     cada amostra fica uma marca (tempo + posição x/y, em fração da caixa
+     do vídeo, 0 a 1). Na reprodução normal, a forma desliza por
      interpolação linear entre as marcas mais próximas do tempo atual —
      é essa interpolação que dá a sensação de "seguir" o jogador, com
      marcas suficientes. Guardado em `item.anotacoes`, um array de
-     `{ id, marcas: [{ tempo, x, y }] }` (só um tipo por agora: círculo).
+     `{ id, tipo: 'circulo'|'texto', texto?, marcas: [{ tempo, x, y }] }`
+     — `texto` só existe nas do tipo caixa de texto; anotações antigas,
+     gravadas antes de existir `tipo`, tratam-se sempre como círculo.
 
      Modo mutuamente exclusivo com o Criar clipe — os dois usam a mesma
      barra de ferramentas e não faz sentido misturar. */
   const [modoAnotar, setModoAnotar] = useState(false);
+  const [tipoAnotacao, setTipoAnotacao] = useState('circulo');
+  const [textoAnotacao, setTextoAnotacao] = useState('');
   const [anotacaoMarcas, setAnotacaoMarcas] = useState([]);
-  const sairDoModoAnotar = () => { setModoAnotar(false); setAnotacaoMarcas([]); };
+  const sairDoModoAnotar = () => { setModoAnotar(false); setAnotacaoMarcas([]); setTipoAnotacao('circulo'); setTextoAnotacao(''); };
   // Velocidade do vídeo ENQUANTO se arrasta — mais lento dá muito mais
   // tempo real para seguir o jogador com precisão, sem mexer no tempo
   // que fica gravado (o `tempo` de cada marca continua a vir do próprio
@@ -30077,7 +30081,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
   const guardarAnotacao = () => {
     if (!active || anotacaoMarcas.length === 0) return;
-    const nova = { id: uid(), marcas: [...anotacaoMarcas].sort((a, b) => a.tempo - b.tempo) };
+    if (tipoAnotacao === 'texto' && !textoAnotacao.trim()) return;
+    const nova = {
+      id: uid(),
+      tipo: tipoAnotacao,
+      marcas: [...anotacaoMarcas].sort((a, b) => a.tempo - b.tempo),
+      ...(tipoAnotacao === 'texto' ? { texto: textoAnotacao.trim() } : {}),
+    };
     setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoes: [...(v.anotacoes || []), nova] } : v)));
     sairDoModoAnotar();
   };
@@ -30098,6 +30108,34 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const antes = marcas[depois - 1], prox = marcas[depois];
     const f = (tempo - antes.tempo) / (prox.tempo - antes.tempo || 1);
     return { x: antes.x + (prox.x - antes.x) * f, y: antes.y + (prox.y - antes.y) * f };
+  };
+
+  // Desenha UMA anotação (círculo ou caixa de texto) na sua posição
+  // interpolada — partilhado entre a caixa normal e o ecrã inteiro, para
+  // as duas nunca poderem divergir na forma como desenham a mesma coisa.
+  const renderAnotacao = (an) => {
+    const pos = posicaoAnotacao(an, liveTime);
+    if (!pos) return null;
+    if (an.tipo === 'texto') {
+      return (
+        <div key={an.id} style={{
+          position: 'absolute', left: `${pos.x * 100}%`, top: `${pos.y * 100}%`,
+          transform: 'translate(-50%, -50%)', pointerEvents: 'none',
+          background: 'rgba(0,0,0,.72)', border: `1.5px solid ${T.warn}`, borderRadius: 6,
+          padding: '3px 8px', color: T.warn, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+          transition: 'left .18s linear, top .18s linear',
+        }}>{an.texto}</div>
+      );
+    }
+    return (
+      <div key={an.id} style={{
+        position: 'absolute', left: `${pos.x * 100}%`, top: `${pos.y * 100}%`,
+        width: 46, height: 46, marginLeft: -23, marginTop: -23,
+        borderRadius: '50%', border: `3px solid ${T.warn}`,
+        boxShadow: '0 0 0 2px rgba(0,0,0,.5)', pointerEvents: 'none',
+        transition: 'left .18s linear, top .18s linear',
+      }} />
+    );
   };
 
   const iframeRef = React.useRef(null);
@@ -30677,23 +30715,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           title={active.title}
                         />
                       )}
-                      {/* CÍRCULO(S) DE ANOTAÇÃO — só desenha, nunca captura
-                          cliques (pointerEvents: 'none'), para os controlos
-                          do próprio YouTube continuarem a funcionar por
-                          baixo durante a reprodução normal. */}
-                      {!isBlocked && !modoAnotar && (active.anotacoes || []).map(an => {
-                        const pos = posicaoAnotacao(an, liveTime);
-                        if (!pos) return null;
-                        return (
-                          <div key={an.id} style={{
-                            position: 'absolute', left: `${pos.x * 100}%`, top: `${pos.y * 100}%`,
-                            width: 46, height: 46, marginLeft: -23, marginTop: -23,
-                            borderRadius: '50%', border: `3px solid ${T.warn}`,
-                            boxShadow: '0 0 0 2px rgba(0,0,0,.5)', pointerEvents: 'none',
-                            transition: 'left .18s linear, top .18s linear',
-                          }} />
-                        );
-                      })}
+                      {/* ANOTAÇÕES (círculo ou caixa de texto) — só
+                          desenham, nunca capturam cliques (pointerEvents:
+                          'none'), para os controlos do próprio YouTube
+                          continuarem a funcionar por baixo durante a
+                          reprodução normal. */}
+                      {!isBlocked && !modoAnotar && (active.anotacoes || []).map(renderAnotacao)}
                       {/* CAMADA DE MARCAÇÃO — cobre o vídeo inteiro para
                           apanhar o traço do dedo/caneta/rato sobre o
                           jogador; por tapar tudo, os controlos nativos do
@@ -30820,6 +30847,31 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
                       padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
                     }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: T.mutedDim }}>Forma:</span>
+                        <button onClick={() => setTipoAnotacao('circulo')} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
+                          background: tipoAnotacao === 'circulo' ? T.warn : 'transparent',
+                          color: tipoAnotacao === 'circulo' ? '#000' : T.cream,
+                          border: `1px solid ${tipoAnotacao === 'circulo' ? T.warn : T.line}`,
+                        }}><Circle size={11} /> Círculo</button>
+                        <button onClick={() => setTipoAnotacao('texto')} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
+                          background: tipoAnotacao === 'texto' ? T.warn : 'transparent',
+                          color: tipoAnotacao === 'texto' ? '#000' : T.cream,
+                          border: `1px solid ${tipoAnotacao === 'texto' ? T.warn : T.line}`,
+                        }}><Type size={11} /> Caixa de texto</button>
+                      </div>
+                      {tipoAnotacao === 'texto' && (
+                        <input
+                          value={textoAnotacao} onChange={e => setTextoAnotacao(e.target.value)}
+                          placeholder="Texto a mostrar (ex.: nome do jogador, uma indicação)"
+                          style={{
+                            background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+                            padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
+                          }}
+                        />
+                      )}
                       <div style={{ fontSize: 12.5, color: T.mutedDim }}>
                         Carrega sobre o jogador e arrasta o dedo, a caneta ou o rato a acompanhá-lo — o
                         vídeo começa a tocar sozinho, em câmara lenta, enquanto arrastas, e a posição
@@ -30844,7 +30896,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                         <Btn variant="ghost" disabled={!anotacaoMarcas.length} onClick={() => setAnotacaoMarcas([])}>Recomeçar</Btn>
-                        <Btn disabled={!anotacaoMarcas.length} onClick={guardarAnotacao}><Circle size={14} /> Guardar anotação</Btn>
+                        <Btn disabled={!anotacaoMarcas.length || (tipoAnotacao === 'texto' && !textoAnotacao.trim())} onClick={guardarAnotacao}>
+                          {tipoAnotacao === 'texto' ? <Type size={14} /> : <Circle size={14} />} Guardar anotação
+                        </Btn>
                       </div>
                     </div>
                   )}
@@ -30855,8 +30909,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.mutedDim,
                           border: `1px solid ${T.line}`, borderRadius: 20, padding: '4px 10px',
                         }}>
-                          <Circle size={11} color={T.warn} />
-                          Anotação {i + 1} ({an.marcas.length} {an.marcas.length === 1 ? 'marca' : 'marcas'})
+                          {an.tipo === 'texto' ? <Type size={11} color={T.warn} /> : <Circle size={11} color={T.warn} />}
+                          {an.tipo === 'texto' ? `"${an.texto}"` : `Anotação ${i + 1}`} ({an.marcas.length} {an.marcas.length === 1 ? 'marca' : 'marcas'})
                           <button onClick={() => removerAnotacao(an.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={12} /></button>
                         </div>
                       ))}
@@ -31127,19 +31181,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   title={active.title}
                 />
               )}
-              {!isBlocked && !modoAnotar && (active.anotacoes || []).map(an => {
-                const pos = posicaoAnotacao(an, liveTime);
-                if (!pos) return null;
-                return (
-                  <div key={an.id} style={{
-                    position: 'absolute', left: `${pos.x * 100}%`, top: `${pos.y * 100}%`,
-                    width: 46, height: 46, marginLeft: -23, marginTop: -23,
-                    borderRadius: '50%', border: `3px solid ${T.warn}`,
-                    boxShadow: '0 0 0 2px rgba(0,0,0,.5)', pointerEvents: 'none',
-                    transition: 'left .18s linear, top .18s linear',
-                  }} />
-                );
-              })}
+              {!isBlocked && !modoAnotar && (active.anotacoes || []).map(renderAnotacao)}
               {!isBlocked && modoAnotar && (
                 <div
                   onPointerDown={iniciarArrasto}
@@ -31238,6 +31280,31 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
                 padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
               }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: T.mutedDim }}>Forma:</span>
+                  <button onClick={() => setTipoAnotacao('circulo')} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
+                    background: tipoAnotacao === 'circulo' ? T.warn : 'transparent',
+                    color: tipoAnotacao === 'circulo' ? '#000' : T.cream,
+                    border: `1px solid ${tipoAnotacao === 'circulo' ? T.warn : T.line}`,
+                  }}><Circle size={11} /> Círculo</button>
+                  <button onClick={() => setTipoAnotacao('texto')} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
+                    background: tipoAnotacao === 'texto' ? T.warn : 'transparent',
+                    color: tipoAnotacao === 'texto' ? '#000' : T.cream,
+                    border: `1px solid ${tipoAnotacao === 'texto' ? T.warn : T.line}`,
+                  }}><Type size={11} /> Caixa de texto</button>
+                </div>
+                {tipoAnotacao === 'texto' && (
+                  <input
+                    value={textoAnotacao} onChange={e => setTextoAnotacao(e.target.value)}
+                    placeholder="Texto a mostrar (ex.: nome do jogador, uma indicação)"
+                    style={{
+                      background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+                      padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
+                    }}
+                  />
+                )}
                 <div style={{ fontSize: 12.5, color: T.mutedDim }}>
                   Carrega sobre o jogador e arrasta o dedo, a caneta ou o rato a acompanhá-lo — o
                   vídeo começa a tocar sozinho, em câmara lenta, enquanto arrastas, e a posição
@@ -31262,7 +31329,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <Btn variant="ghost" disabled={!anotacaoMarcas.length} onClick={() => setAnotacaoMarcas([])}>Recomeçar</Btn>
-                  <Btn disabled={!anotacaoMarcas.length} onClick={guardarAnotacao}><Circle size={14} /> Guardar anotação</Btn>
+                  <Btn disabled={!anotacaoMarcas.length || (tipoAnotacao === 'texto' && !textoAnotacao.trim())} onClick={guardarAnotacao}>
+                    {tipoAnotacao === 'texto' ? <Type size={14} /> : <Circle size={14} />} Guardar anotação
+                  </Btn>
                 </div>
               </div>
             )}
@@ -31273,8 +31342,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#ffffffaa',
                     border: `1px solid ${T.line}`, borderRadius: 20, padding: '4px 10px',
                   }}>
-                    <Circle size={11} color={T.warn} />
-                    Anotação {i + 1} ({an.marcas.length} {an.marcas.length === 1 ? 'marca' : 'marcas'})
+                    {an.tipo === 'texto' ? <Type size={11} color={T.warn} /> : <Circle size={11} color={T.warn} />}
+                    {an.tipo === 'texto' ? `"${an.texto}"` : `Anotação ${i + 1}`} ({an.marcas.length} {an.marcas.length === 1 ? 'marca' : 'marcas'})
                     <button onClick={() => removerAnotacao(an.id)} style={{ background: 'none', border: 'none', color: '#ffffffaa', cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={12} /></button>
                   </div>
                 ))}
