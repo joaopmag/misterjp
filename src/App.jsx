@@ -30006,12 +30006,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [modoAnotar, setModoAnotar] = useState(false);
   const [tipoAnotacao, setTipoAnotacao] = useState('circulo');
   const [textoAnotacao, setTextoAnotacao] = useState('');
-  // Só para caixas de texto: quanto tempo, depois da última marca, o
-  // texto continua visível antes de desaparecer sozinho — ao contrário
-  // do círculo, uma caixa de texto não deve ficar para sempre no ecrã.
-  const [duracaoTexto, setDuracaoTexto] = useState(4);
+  // Quanto tempo, depois da última marca, a anotação continua visível
+  // antes de desaparecer sozinha — vale para as duas formas: uma bola ou
+  // uma caixa de texto perdidas no meio do vídeo até ao fim, sem
+  // desaparecerem nunca, não fazem sentido nenhum como sinalização
+  // pontual de um momento.
+  const [duracaoAnotacao, setDuracaoAnotacao] = useState(4);
   const [anotacaoMarcas, setAnotacaoMarcas] = useState([]);
-  const sairDoModoAnotar = () => { setModoAnotar(false); setAnotacaoMarcas([]); setTipoAnotacao('circulo'); setTextoAnotacao(''); setDuracaoTexto(4); };
+  const sairDoModoAnotar = () => { setModoAnotar(false); setAnotacaoMarcas([]); setTipoAnotacao('circulo'); setTextoAnotacao(''); setDuracaoAnotacao(4); };
   // Velocidade do vídeo ENQUANTO se arrasta — mais lento dá muito mais
   // tempo real para seguir o jogador com precisão, sem mexer no tempo
   // que fica gravado (o `tempo` de cada marca continua a vir do próprio
@@ -30103,7 +30105,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       id: uid(),
       tipo: tipoAnotacao,
       marcas: [...anotacaoMarcas].sort((a, b) => a.tempo - b.tempo),
-      ...(tipoAnotacao === 'texto' ? { texto: textoAnotacao.trim(), duracao: Math.max(1, Number(duracaoTexto) || 4) } : {}),
+      duracao: Math.max(1, Number(duracaoAnotacao) || 4),
+      ...(tipoAnotacao === 'texto' ? { texto: textoAnotacao.trim() } : {}),
     };
     setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoes: [...(v.anotacoes || []), nova] } : v)));
     sairDoModoAnotar();
@@ -30133,14 +30136,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const renderAnotacao = (an) => {
     const marcas = an.marcas;
     if (!marcas || !marcas.length) return null;
-    // Só a caixa de texto tem prazo de validade — o círculo continua a
-    // acompanhar o jogador do início ao fim do vídeo, como sempre. A
-    // margem de 0.5s absorve a diferença entre o instante exato (com
-    // decimais) em que a marca ficou gravada e o sítio onde se aterra
-    // ao arrastar a barra de volta para lá — sem ela, a caixa parecia
-    // ter desaparecido de vez quando só estava fora da janela por uma
-    // fração de segundo (continuava gravada, só não se desenhava).
-    if (an.tipo === 'texto' && typeof an.duracao === 'number') {
+    // A margem de 0.5s absorve a diferença entre o instante exato (com
+    // decimais) em que a marca ficou gravada e o sítio onde se aterra ao
+    // arrastar a barra de volta para lá — sem ela, a anotação parecia ter
+    // desaparecido de vez quando só estava fora da janela por uma fração
+    // de segundo (continuava gravada, só não se desenhava). Anotações
+    // antigas, gravadas antes de existir `duracao`, continuam a
+    // comportar-se como antes — visíveis do início ao fim do vídeo.
+    if (typeof an.duracao === 'number') {
       const fimVisivel = marcas[marcas.length - 1].tempo + an.duracao;
       if (liveTime < marcas[0].tempo - 0.5 || liveTime > fimVisivel + 0.5) return null;
     }
@@ -30894,34 +30897,32 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         }}><Type size={11} /> Caixa de texto</button>
                       </div>
                       {tipoAnotacao === 'texto' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          <input
-                            value={textoAnotacao} onChange={e => setTextoAnotacao(e.target.value)}
-                            placeholder="Texto a mostrar (ex.: nome do jogador, uma indicação)"
-                            style={{
-                              background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-                              padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
-                            }}
-                          />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 12, color: T.mutedDim }}>Fica visível durante</span>
-                            <input
-                              type="number" min={1} max={30} value={duracaoTexto}
-                              onChange={e => setDuracaoTexto(e.target.value)}
-                              style={{
-                                width: 52, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6,
-                                padding: '4px 6px', color: T.cream, fontSize: 13, ...body,
-                              }}
-                            />
-                            <span style={{ fontSize: 12, color: T.mutedDim }}>segundos depois da última marca, depois apaga-se sozinha.</span>
-                          </div>
-                        </div>
+                        <input
+                          value={textoAnotacao} onChange={e => setTextoAnotacao(e.target.value)}
+                          placeholder="Texto a mostrar (ex.: nome do jogador, uma indicação)"
+                          style={{
+                            background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+                            padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
+                          }}
+                        />
                       )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, color: T.mutedDim }}>Fica visível durante</span>
+                        <input
+                          type="number" min={1} max={30} value={duracaoAnotacao}
+                          onChange={e => setDuracaoAnotacao(e.target.value)}
+                          style={{
+                            width: 52, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6,
+                            padding: '4px 6px', color: T.cream, fontSize: 13, ...body,
+                          }}
+                        />
+                        <span style={{ fontSize: 12, color: T.mutedDim }}>segundos depois da última marca, depois apaga-se sozinha.</span>
+                      </div>
                       {tipoAnotacao === 'circulo' ? (
                         <div style={{ fontSize: 12.5, color: T.mutedDim }}>
                           Toca no vídeo no sítio exato onde queres colocar o círculo — fica ali, fixo,
-                          do início ao fim do vídeo. Podes tocar outra vez para corrigir o sítio antes
-                          de gravar.
+                          só pelo tempo definido acima. Podes tocar outra vez para corrigir o sítio
+                          antes de gravar.
                         </div>
                       ) : (
                         <>
@@ -31354,34 +31355,32 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   }}><Type size={11} /> Caixa de texto</button>
                 </div>
                 {tipoAnotacao === 'texto' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <input
-                      value={textoAnotacao} onChange={e => setTextoAnotacao(e.target.value)}
-                      placeholder="Texto a mostrar (ex.: nome do jogador, uma indicação)"
-                      style={{
-                        background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-                        padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
-                      }}
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 12, color: T.mutedDim }}>Fica visível durante</span>
-                      <input
-                        type="number" min={1} max={30} value={duracaoTexto}
-                        onChange={e => setDuracaoTexto(e.target.value)}
-                        style={{
-                          width: 52, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6,
-                          padding: '4px 6px', color: T.cream, fontSize: 13, ...body,
-                        }}
-                      />
-                      <span style={{ fontSize: 12, color: T.mutedDim }}>segundos depois da última marca, depois apaga-se sozinha.</span>
-                    </div>
-                  </div>
+                  <input
+                    value={textoAnotacao} onChange={e => setTextoAnotacao(e.target.value)}
+                    placeholder="Texto a mostrar (ex.: nome do jogador, uma indicação)"
+                    style={{
+                      background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+                      padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
+                    }}
+                  />
                 )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: T.mutedDim }}>Fica visível durante</span>
+                  <input
+                    type="number" min={1} max={30} value={duracaoAnotacao}
+                    onChange={e => setDuracaoAnotacao(e.target.value)}
+                    style={{
+                      width: 52, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6,
+                      padding: '4px 6px', color: T.cream, fontSize: 13, ...body,
+                    }}
+                  />
+                  <span style={{ fontSize: 12, color: T.mutedDim }}>segundos depois da última marca, depois apaga-se sozinha.</span>
+                </div>
                 {tipoAnotacao === 'circulo' ? (
                   <div style={{ fontSize: 12.5, color: T.mutedDim }}>
                     Toca no vídeo no sítio exato onde queres colocar o círculo — fica ali, fixo,
-                    do início ao fim do vídeo. Podes tocar outra vez para corrigir o sítio antes
-                    de gravar.
+                    só pelo tempo definido acima. Podes tocar outra vez para corrigir o sítio
+                    antes de gravar.
                   </div>
                 ) : (
                   <>
