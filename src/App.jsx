@@ -30134,10 +30134,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const marcas = an.marcas;
     if (!marcas || !marcas.length) return null;
     // Só a caixa de texto tem prazo de validade — o círculo continua a
-    // acompanhar o jogador do início ao fim do vídeo, como sempre.
+    // acompanhar o jogador do início ao fim do vídeo, como sempre. A
+    // margem de 0.5s absorve a diferença entre o instante exato (com
+    // decimais) em que a marca ficou gravada e o sítio onde se aterra
+    // ao arrastar a barra de volta para lá — sem ela, a caixa parecia
+    // ter desaparecido de vez quando só estava fora da janela por uma
+    // fração de segundo (continuava gravada, só não se desenhava).
     if (an.tipo === 'texto' && typeof an.duracao === 'number') {
       const fimVisivel = marcas[marcas.length - 1].tempo + an.duracao;
-      if (liveTime < marcas[0].tempo || liveTime > fimVisivel) return null;
+      if (liveTime < marcas[0].tempo - 0.5 || liveTime > fimVisivel + 0.5) return null;
     }
     const pos = posicaoAnotacao(an, liveTime);
     if (!pos) return null;
