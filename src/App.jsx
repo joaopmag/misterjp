@@ -30511,7 +30511,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
   // Trocar de vídeo a meio de uma marcação não faz sentido — os
   // marcadores são segundos DENTRO do vídeo que estava a tocar.
-  useEffect(() => { sairDoModoClipe(); sairDoModoAnotar(); }, [activeId]);
+  useEffect(() => {
+    sairDoModoClipe();
+    sairDoModoAnotar();
+    // Sem isto, o tempo ficava agarrado ao último valor do vídeo
+    // anterior até chegar a primeira atualização do novo — e uma
+    // anotação colocada nesse intervalo ficava gravada com o tempo
+    // errado (do vídeo de antes, não deste).
+    currentTimeRef.current = 0;
+    setLiveTime(0);
+  }, [activeId]);
 
   const marcarInicio = () => setClipMarcas(prev => ({ ...prev, inicio: currentTimeRef.current }));
   const marcarFim = () => setClipMarcas(prev => ({ ...prev, fim: currentTimeRef.current }));
