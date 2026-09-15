@@ -30014,19 +30014,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [duracaoAnotacao, setDuracaoAnotacao] = useState(4);
   const [anotacaoMarcas, setAnotacaoMarcas] = useState([]);
   const sairDoModoAnotar = () => { setModoAnotar(false); setAnotacaoMarcas([]); setTipoAnotacao('circulo'); setTextoAnotacao(''); setDuracaoAnotacao(4); };
-  // Velocidade do vídeo ENQUANTO se arrasta — mais lento dá muito mais
-  // tempo real para seguir o jogador com precisão, sem mexer no tempo
-  // que fica gravado (o `tempo` de cada marca continua a vir do próprio
-  // YouTube, em segundos REAIS de vídeo, não do relógio do ecrã — por
-  // isso a lentidão não desalinha nada, só dá mais folga à mão).
-  const [velocidadeArrasto, setVelocidadeArrasto] = useState(0.25);
 
   // Enquanto se marca uma anotação, os controlos do próprio YouTube ficam
   // tapados pela camada transparente que apanha o clique — por isso há
   // botões próprios de play/pausa/avançar, enviados por postMessage "cru"
   // (o mesmo protocolo já usado para o handshake 'listening', sem
   // precisar de carregar o script oficial da API — ver comentário mais
-  // acima sobre CSP).
+  // acima sobre CSP). Servem para pousar o vídeo no fotograma exato antes
+  // de tocar.
   const enviarComandoYoutube = (func, args) => {
     // O comando vai para o leitor que está mesmo visível — em ecrã
     // inteiro (lightbox) é um iframe diferente do da caixa normal.
@@ -30037,61 +30032,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
   const avancarTempo = (delta) => enviarComandoYoutube('seekTo', [Math.max(0, currentTimeRef.current + delta), true]);
 
-  /* TRAÇAR COM O DEDO/CANETA/RATO, EM VEZ DE CLICAR PONTO A PONTO.
-     Pointer Events tratam dedo, caneta e rato da mesma forma — um só
-     código para os três. Ao pressionar sobre o vídeo, este começa a
-     tocar sozinho, EM CÂMARA LENTA (ver `velocidadeArrasto` — é o que
-     torna isto possível de fazer com precisão: perseguir um jogador a
-     tocar à velocidade normal é fisicamente difícil, mas a 25% da
-     velocidade há quatro vezes mais tempo real para acompanhar o mesmo
-     segundo de jogo). Enquanto o dedo/caneta/rato se mantiver
-     pressionado e a mover-se por cima do jogador, vai-se amostrando a
-     posição a um ritmo fixo (a cada ~100 ms de tempo real, não de vídeo
-     — chega para o círculo, mais tarde, deslizar suave). Levantar o
-     dedo pausa o vídeo e devolve a velocidade ao normal, para se poder
-     avaliar o resultado antes de continuar ou gravar. Pode repetir-se o
-     gesto várias vezes — cada arrasto novo ACRESCENTA marcas às já
-     existentes, nunca as substitui (só "Recomeçar" limpa tudo), para
-     dar para continuar depois de uma pausa a meio.  */
-  const arrastandoRef = React.useRef(false);
-  const ultimoTempoAmostradoRef = React.useRef(-1);
-  const registarMarca = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
-    ultimoTempoAmostradoRef.current = currentTimeRef.current;
-    setAnotacaoMarcas(prev => [...prev, { tempo: currentTimeRef.current, x, y }]);
-  };
-  const iniciarArrasto = (e) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    arrastandoRef.current = true;
-    ultimoTempoAmostradoRef.current = -1;
-    enviarComandoYoutube('setPlaybackRate', [velocidadeArrasto]);
-    enviarComandoYoutube('playVideo');
-    registarMarca(e);
-  };
-  const moverArrasto = (e) => {
-    if (!arrastandoRef.current) return;
-    // Segundos de VÍDEO desde a última marca, não tempo real do gesto —
-    // assim a câmara lenta dá mais tempo para acompanhar sem multiplicar
-    // o número de pontos gravados por cada segundo de jogo.
-    if (currentTimeRef.current - ultimoTempoAmostradoRef.current < 0.15) return;
-    registarMarca(e);
-  };
-  const terminarArrasto = () => {
-    if (!arrastandoRef.current) return;
-    arrastandoRef.current = false;
-    enviarComandoYoutube('pauseVideo');
-    enviarComandoYoutube('setPlaybackRate', [1]);
-  };
+  /* ANOTAÇÃO NUM SÍTIO FIXO — um clique/toque só, para qualquer uma das
+     formas. Substitui sempre a marca anterior (nunca acrescenta) — uma
+     vez colocada, fica sempre no mesmo sítio (só desaparece ao fim do
+     tempo definido, nunca se desloca sozinha). Como só existe essa
+     marca, `posicaoAnotacao` já sabe mostrá-la parada, sem precisar de
+     mais nenhuma lógica.
 
-  /* CÍRCULO NUM SÍTIO FIXO — um clique/toque só, sem arrastar nem seguir
-     o jogador. Substitui sempre a marca anterior (nunca acrescenta) —
-     "só uma vez, num sítio fixo" é literal: há sempre exatamente UMA
-     posição, a última em que se tocou. Como só existe essa marca,
-     `posicaoAnotacao` já sabe mostrá-la do início ao fim do vídeo,
-     parada, sem precisar de mais nenhuma lógica. */
-  const colocarCirculoFixo = (e) => {
+     (Já existiu aqui uma versão por arrasto contínuo, para o círculo ou
+     o texto "seguirem" o jogador — foi pedido para trás: uma vez
+     colocada, a anotação deve ficar sempre no mesmo sítio, nunca em
+     movimento.) */
+  const colocarAnotacaoFixa = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
@@ -30755,21 +30707,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           reprodução normal. */}
                       {!isBlocked && !modoAnotar && (active.anotacoes || []).map(renderAnotacao)}
                       {/* CAMADA DE MARCAÇÃO — cobre o vídeo inteiro para
-                          apanhar o traço do dedo/caneta/rato sobre o
-                          jogador; por tapar tudo, os controlos nativos do
-                          YouTube ficam inacessíveis enquanto isto está
-                          ativo — daí os botões de play/pausa/avançar
-                          próprios na barra abaixo. */}
+                          apanhar o toque no sítio exato da anotação;
+                          por tapar tudo, os controlos nativos do YouTube
+                          ficam inacessíveis enquanto isto está ativo —
+                          daí os botões de play/pausa/avançar próprios na
+                          barra abaixo, para pousar o vídeo no fotograma
+                          certo antes de tocar. */}
                       {!isBlocked && modoAnotar && (
                         <div
-                          onClick={tipoAnotacao === 'circulo' ? colocarCirculoFixo : undefined}
-                          onPointerDown={tipoAnotacao === 'texto' ? iniciarArrasto : undefined}
-                          onPointerMove={tipoAnotacao === 'texto' ? moverArrasto : undefined}
-                          onPointerUp={tipoAnotacao === 'texto' ? terminarArrasto : undefined}
-                          onPointerLeave={tipoAnotacao === 'texto' ? terminarArrasto : undefined}
-                          onPointerCancel={tipoAnotacao === 'texto' ? terminarArrasto : undefined}
-                          title={tipoAnotacao === 'circulo' ? 'Toca onde queres colocar o círculo' : 'Carrega e arrasta por cima do jogador'}
-                          style={{ position: 'absolute', inset: 0, cursor: 'crosshair', touchAction: 'none' }}
+                          onClick={colocarAnotacaoFixa}
+                          title="Toca onde queres colocar a anotação"
+                          style={{ position: 'absolute', inset: 0, cursor: 'crosshair' }}
                         >
                           {anotacaoMarcas.map((m, i) => (
                             <div key={i} style={{
@@ -30918,39 +30866,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         />
                         <span style={{ fontSize: 12, color: T.mutedDim }}>segundos depois da última marca, depois apaga-se sozinha.</span>
                       </div>
-                      {tipoAnotacao === 'circulo' ? (
-                        <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-                          Toca no vídeo no sítio exato onde queres colocar o círculo — fica ali, fixo,
-                          só pelo tempo definido acima. Podes tocar outra vez para corrigir o sítio
-                          antes de gravar.
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-                            Carrega sobre o jogador e arrasta o dedo, a caneta ou o rato a acompanhá-lo — o
-                            vídeo começa a tocar sozinho, em câmara lenta, enquanto arrastas, e a posição
-                            fica a marcar-se automaticamente. Larga para pausar. Podes repetir o gesto
-                            várias vezes; só "Recomeçar" apaga tudo.
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 12, color: T.mutedDim }}>Velocidade ao arrastar:</span>
-                            {[0.25, 0.5, 1].map(v => (
-                              <button key={v} onClick={() => setVelocidadeArrasto(v)} style={{
-                                fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
-                                background: velocidadeArrasto === v ? T.warn : 'transparent',
-                                color: velocidadeArrasto === v ? '#000' : T.cream,
-                                border: `1px solid ${velocidadeArrasto === v ? T.warn : T.line}`,
-                              }}>{v === 1 ? 'Normal' : `${v * 100}%`}</button>
-                            ))}
-                          </div>
-                        </>
-                      )}
+                      <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+                        Toca no vídeo no sítio exato onde queres colocar a anotação — fica ali, fixa,
+                        só pelo tempo definido acima, sem se deslocar. Podes tocar outra vez para
+                        corrigir o sítio antes de gravar.
+                      </div>
                       <div style={{ fontSize: 13, color: T.cream }}>
-                        {tipoAnotacao === 'circulo'
-                          ? (anotacaoMarcas.length === 0 ? 'Ainda sem posição — toca no vídeo.' : 'Posição escolhida.')
-                          : (anotacaoMarcas.length === 0
-                            ? 'Ainda sem marcas — carrega e arrasta sobre o vídeo.'
-                            : `${anotacaoMarcas.length} ${anotacaoMarcas.length === 1 ? 'marca' : 'marcas'}, de ${fmtMMSS(anotacaoMarcas[0].tempo)} a ${fmtMMSS(anotacaoMarcas[anotacaoMarcas.length - 1].tempo)}.`)}
+                        {anotacaoMarcas.length === 0 ? 'Ainda sem posição — toca no vídeo.' : 'Posição escolhida.'}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                         <Btn variant="ghost" disabled={!anotacaoMarcas.length} onClick={() => setAnotacaoMarcas([])}>Recomeçar</Btn>
@@ -31242,14 +31164,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               {!isBlocked && !modoAnotar && (active.anotacoes || []).map(renderAnotacao)}
               {!isBlocked && modoAnotar && (
                 <div
-                  onClick={tipoAnotacao === 'circulo' ? colocarCirculoFixo : undefined}
-                  onPointerDown={tipoAnotacao === 'texto' ? iniciarArrasto : undefined}
-                  onPointerMove={tipoAnotacao === 'texto' ? moverArrasto : undefined}
-                  onPointerUp={tipoAnotacao === 'texto' ? terminarArrasto : undefined}
-                  onPointerLeave={tipoAnotacao === 'texto' ? terminarArrasto : undefined}
-                  onPointerCancel={tipoAnotacao === 'texto' ? terminarArrasto : undefined}
-                  title={tipoAnotacao === 'circulo' ? 'Toca onde queres colocar o círculo' : 'Carrega e arrasta por cima do jogador'}
-                  style={{ position: 'absolute', inset: 0, cursor: 'crosshair', touchAction: 'none' }}
+                  onClick={colocarAnotacaoFixa}
+                  title="Toca onde queres colocar a anotação"
+                  style={{ position: 'absolute', inset: 0, cursor: 'crosshair' }}
                 >
                   {anotacaoMarcas.map((m, i) => (
                     <div key={i} style={{
@@ -31376,39 +31293,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   />
                   <span style={{ fontSize: 12, color: T.mutedDim }}>segundos depois da última marca, depois apaga-se sozinha.</span>
                 </div>
-                {tipoAnotacao === 'circulo' ? (
-                  <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-                    Toca no vídeo no sítio exato onde queres colocar o círculo — fica ali, fixo,
-                    só pelo tempo definido acima. Podes tocar outra vez para corrigir o sítio
-                    antes de gravar.
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-                      Carrega sobre o jogador e arrasta o dedo, a caneta ou o rato a acompanhá-lo — o
-                      vídeo começa a tocar sozinho, em câmara lenta, enquanto arrastas, e a posição
-                      fica a marcar-se automaticamente. Larga para pausar. Podes repetir o gesto
-                      várias vezes; só "Recomeçar" apaga tudo.
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 12, color: T.mutedDim }}>Velocidade ao arrastar:</span>
-                      {[0.25, 0.5, 1].map(v => (
-                        <button key={v} onClick={() => setVelocidadeArrasto(v)} style={{
-                          fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
-                          background: velocidadeArrasto === v ? T.warn : 'transparent',
-                          color: velocidadeArrasto === v ? '#000' : T.cream,
-                          border: `1px solid ${velocidadeArrasto === v ? T.warn : T.line}`,
-                        }}>{v === 1 ? 'Normal' : `${v * 100}%`}</button>
-                      ))}
-                    </div>
-                  </>
-                )}
+                <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+                  Toca no vídeo no sítio exato onde queres colocar a anotação — fica ali, fixa,
+                  só pelo tempo definido acima, sem se deslocar. Podes tocar outra vez para
+                  corrigir o sítio antes de gravar.
+                </div>
                 <div style={{ fontSize: 13, color: T.cream }}>
-                  {tipoAnotacao === 'circulo'
-                    ? (anotacaoMarcas.length === 0 ? 'Ainda sem posição — toca no vídeo.' : 'Posição escolhida.')
-                    : (anotacaoMarcas.length === 0
-                      ? 'Ainda sem marcas — carrega e arrasta sobre o vídeo.'
-                      : `${anotacaoMarcas.length} ${anotacaoMarcas.length === 1 ? 'marca' : 'marcas'}, de ${fmtMMSS(anotacaoMarcas[0].tempo)} a ${fmtMMSS(anotacaoMarcas[anotacaoMarcas.length - 1].tempo)}.`)}
+                  {anotacaoMarcas.length === 0 ? 'Ainda sem posição — toca no vídeo.' : 'Posição escolhida.'}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <Btn variant="ghost" disabled={!anotacaoMarcas.length} onClick={() => setAnotacaoMarcas([])}>Recomeçar</Btn>
