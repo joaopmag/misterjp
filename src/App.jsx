@@ -2298,21 +2298,26 @@ function BotaoTopo({ alvoRef, isMobile }) {
 
     /* QUEM É QUE ROLA?
 
-       Em desktop é o <main>, que tem altura fixa e overflow próprio. No
-       TELEMÓVEL é a janela — o <main> fica com a altura do conteúdo e
-       nunca se mexe.
-
-       A primeira versão lia sempre o <main>: no telemóvel dava scrollTop 0
-       para sempre e o botão nunca aparecia. Agora confirma-se qual dos
-       dois rola mesmo, em vez de assumir. */
+       Em vez de decidir uma única vez, ao arrancar, qual dos dois rola
+       (o <main> ou a janela) — o que corria mal se a página ainda não
+       tivesse estabilizado nesse instante (ex.: dados ainda a carregar)
+       e deixava o botão "surdo" para o resto da sessão — agora ouvem-se
+       os dois em simultâneo. Em desktop só o <main> mexe; em telemóvel
+       só a janela mexe; o outro fica só a ouvir sem nunca disparar. */
     const el = (alvoRef && alvoRef.current) || null;
-    const elRola = !!el && el.scrollHeight > el.clientHeight + 4;
-    const ler = () => (elRola ? el.scrollTop : (window.scrollY || document.documentElement.scrollTop || 0));
+    const ler = () => {
+      const elY = el ? el.scrollTop : 0;
+      const winY = window.scrollY || document.documentElement.scrollTop || 0;
+      return Math.max(elY, winY);
+    };
     const aoRolar = () => setVisivel(ler() > window.innerHeight * 0.9);
-    const fonte = elRola ? el : window;
     aoRolar();
-    fonte.addEventListener('scroll', aoRolar, { passive: true });
-    return () => fonte.removeEventListener('scroll', aoRolar);
+    window.addEventListener('scroll', aoRolar, { passive: true });
+    if (el) el.addEventListener('scroll', aoRolar, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', aoRolar);
+      if (el) el.removeEventListener('scroll', aoRolar);
+    };
   }, [alvoRef]);
 
   if (!visivel) return null;
