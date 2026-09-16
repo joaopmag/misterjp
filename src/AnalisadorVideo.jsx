@@ -133,11 +133,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const markOut = () => { setOutPoint(current); if (inPoint == null) setInPoint(Math.max(0, current - 8)); };
   const limparMarcas = () => { setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); };
 
-  /* ---- Upload do vídeo original ---- */
+  /* ---- Upload do vídeo original ----
+     O Supabase Storage recusa acentos e espaços no caminho do
+     ficheiro ("Invalid key"). O NOME que se vê na app (`titulo`)
+     continua com o nome original, sem alterações — só o caminho
+     usado por baixo, no storage, é que fica limpo. */
   const carregarOriginal = async (file) => {
     setErro(''); setACarregar(true);
     try {
-      const caminho = `${teamId}/${uid()}-${file.name}`;
+      const nomeLimpo = file.name
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+        .replace(/[^a-zA-Z0-9.\-]/g, '_');                // troca o resto por _
+      const caminho = `${teamId}/${uid()}-${nomeLimpo}`;
       const { error } = await supabase.storage.from('videos-originais').upload(caminho, file, { upsert: false });
       if (error) throw error;
       const novo = { id: uid(), storagePath: caminho, titulo: file.name.replace(/\.[^.]+$/, ''), tamanho: file.size, criadoEm: new Date().toISOString() };
