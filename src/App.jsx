@@ -6,6 +6,7 @@ import ReactDOMServer from 'react-dom/server';
 // de uma célula sem reescrever — e sem estragar — o ficheiro inteiro
 // (cores, brasões, estilos). Precisa de `npm install jszip`.
 import JSZip from 'jszip';
+import AnalisadorVideo from './AnalisadorVideo';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
@@ -14,7 +15,8 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type
+  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type,
+  Video
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -2447,6 +2449,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [adversarios, setAdversarios, adversariosReady] = useCollectionSync('adversarios', notifyEdit, teamId);
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
   const [documentos, setDocumentos, documentosReady] = useCollectionSync('documentos', notifyEdit, teamId);
+  const [videosOriginais, setVideosOriginais] = useCollectionSync('video_originais', notifyEdit, teamId);
+  const [clipes, setClipes] = useCollectionSync('video_clips', notifyEdit, teamId);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
   // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
   const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId);
@@ -2766,6 +2770,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     { id: 'presencas', label: 'Presenças', icon: UserCheck },
     { id: 'clinico', label: 'Boletim Clínico', icon: Stethoscope },
     { id: 'jogos', label: 'Jogos', icon: Trophy },
+    { id: 'analise', label: 'Análise de Vídeo', icon: Video },
     { id: 'monitorizacao', label: 'Monitorização', icon: Activity },
     { id: 'desenvolvimento', label: 'Desenvolvimento', icon: TrendingUp },
     { id: 'scouting', label: 'Scouting', icon: Search },
@@ -3230,6 +3235,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
+          {tab === 'analise' && <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
