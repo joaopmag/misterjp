@@ -51,6 +51,13 @@ export const config = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido' });
 
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('cortar-clipe: faltam variáveis de ambiente', {
+      temUrl: !!process.env.SUPABASE_URL, temChave: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    });
+    return res.status(500).json({ error: 'Configuração em falta no servidor: SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não estão definidas no Vercel.' });
+  }
+
   const { teamId, storagePath, start, end } = req.body || {};
   if (!teamId || !storagePath || start == null || end == null || end <= start) {
     return res.status(400).json({ error: 'Parâmetros em falta ou inválidos' });
@@ -67,7 +74,10 @@ export default async function handler(req, res) {
     const { data: signed, error: signErr } = await supabaseAdmin
       .storage.from('videos-originais')
       .createSignedUrl(storagePath, 300);
-    if (signErr) throw signErr;
+    if (signErr) {
+      console.error('cortar-clipe: falhou createSignedUrl', { storagePath, teamId, signErr });
+      throw signErr;
+    }
 
     const nomeSaida = `${teamId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
     const caminhoTemp = path.join(os.tmpdir(), `clip-${Date.now()}.mp4`);
