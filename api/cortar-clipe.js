@@ -38,7 +38,10 @@ import path from 'path';
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+function extrairOrigem(bruto) {
+  try { return new URL(bruto).origin; } catch { return (bruto || '').replace(/\/+$/, ''); }
+}
+const SUPABASE_URL = extrairOrigem(process.env.SUPABASE_URL);
 const supabaseAdmin = createClient(
   SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
