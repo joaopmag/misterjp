@@ -218,11 +218,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setShapes(s => [...s.filter(x => x !== st), { ...st }]);
   };
   const endDraw = () => {
-    if (!drawState.current) return;
-    setShapes(s => [...s.filter(x => x !== drawState.current), { ...drawState.current }]);
+    const st = drawState.current;
+    if (!st) return;
+    setShapes(s => [...s.filter(x => x !== st), { ...st }]);
     drawState.current = null;
   };
   const renderShape = (sh, i) => {
+    if (!sh || !sh.points || sh.points.length === 0) return null;
     const [a, b] = sh.points;
     if (!a) return null;
     if (sh.tool === 'livre') {
