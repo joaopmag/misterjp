@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import * as tus from 'tus-js-client';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
@@ -63,15 +62,13 @@ function Btn({ children, onClick, variant = 'ghost', active, disabled, style, ti
    teamId, videosOriginais, setVideosOriginais, clipes, setClipes
    (os dois últimos pares vêm de `useCollectionSync('video_originais', …)`
    e `useCollectionSync('video_clips', …)` no App principal). */
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const [originalAtivoId, setOriginalAtivoId] = useState(null);
   const [signedUrl, setSignedUrl] = useState(null);
-  const [aCarregar, setACarregar] = useState(false);
-  const [progressoUpload, setProgressoUpload] = useState(0);
   const [erro, setErro] = useState('');
 
   const [playing, setPlaying] = useState(false);
@@ -136,58 +133,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const markOut = () => { setOutPoint(current); if (inPoint == null) setInPoint(Math.max(0, current - 8)); };
   const limparMarcas = () => { setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); };
 
-  /* ---- Upload do vídeo original ----
-     O Supabase Storage recusa acentos e espaços no caminho do
-     ficheiro ("Invalid key"). O NOME que se vê na app (`titulo`)
-     continua com o nome original, sem alterações — só o caminho
-     usado por baixo, no storage, é que fica limpo. */
-  const carregarOriginal = async (file) => {
-    setErro(''); setACarregar(true); setProgressoUpload(0);
-    try {
-      const nomeLimpo = file.name
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
-        .replace(/[^a-zA-Z0-9.\-]/g, '_');                // troca o resto por _
-      const caminho = `${teamId}/${uid()}-${nomeLimpo}`;
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Sessão expirada — sai e entra na app outra vez.');
-
-      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-      await new Promise((resolve, reject) => {
-        const upload = new tus.Upload(file, {
-          endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
-          retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000], // aguenta ~3 min de rede instável antes de desistir
-          headers: { authorization: `Bearer ${session.access_token}`, 'x-upsert': 'false' },
-          uploadDataDuringCreation: true,
-          removeFingerprintOnSuccess: true,
-          metadata: {
-            bucketName: 'videos-originais',
-            objectName: caminho,
-            contentType: file.type || 'video/mp4',
-            cacheControl: '3600',
-          },
-          chunkSize: 6 * 1024 * 1024, // 6MB — valor fixo exigido pelo Supabase
-          onError: (err) => reject(err),
-          onProgress: (enviados, total) => setProgressoUpload(Math.round((enviados / total) * 100)),
-          onSuccess: () => resolve(),
-        });
-        // Se já havia um carregamento deste ficheiro a meio (ex.: a app fechou-se
-        // a meio da ligação), retoma dali em vez de recomeçar do zero.
-        upload.findPreviousUploads().then((anteriores) => {
-          if (anteriores.length) upload.resumeFromPreviousUpload(anteriores[0]);
-          upload.start();
-        });
-      });
-
-      const novo = { id: uid(), storagePath: caminho, titulo: file.name.replace(/\.[^.]+$/, ''), tamanho: file.size, criadoEm: new Date().toISOString() };
-      setVideosOriginais(prev => [...(prev || []), novo]);
-      setOriginalAtivoId(novo.id);
-    } catch (e) {
-      setErro(`Não consegui carregar o vídeo: ${e.message || e}. Se a ligação for instável, tenta outra vez — o carregamento continua de onde ficou.`);
-    } finally {
-      setACarregar(false);
+  // Seleciona automaticamente o vídeo assim que o upload (gerido lá em
+  // cima, no App, para sobreviver à troca de separador) terminar com êxito.
+  const aCarregarAntesRef = useRef(uploadVideoEstado?.ativo);
+  useEffect(() => {
+    if (aCarregarAntesRef.current && !uploadVideoEstado?.ativo && !uploadVideoEstado?.erro) {
+      const ultimo = videosOriginais[videosOriginais.length - 1];
+      if (ultimo) setOriginalAtivoId(ultimo.id);
     }
-  };
+    aCarregarAntesRef.current = uploadVideoEstado?.ativo;
+  }, [uploadVideoEstado?.ativo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const apagarOriginal = async (video) => {
     if (!window.confirm(`Apagar o vídeo "${video.titulo}"? Os clipes já cortados dele mantêm-se — só o vídeo completo desaparece.`)) return;
@@ -286,9 +241,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   return (
     <div>
       <input ref={fileInputRef} type="file" accept="video/*" style={{ display: 'none' }}
-        onChange={e => { const f = e.target.files[0]; if (f) carregarOriginal(f); e.target.value = ''; }} />
+        onChange={e => { const f = e.target.files[0]; if (f) iniciarUploadVideo(f); e.target.value = ''; }} />
 
-      {erro && <div style={{ background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 8, padding: 10, marginBottom: 12, color: T.cream, fontSize: 13 }}>{erro}</div>}
+      {(erro || uploadVideoEstado?.erro) && <div style={{ background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 8, padding: 10, marginBottom: 12, color: T.cream, fontSize: 13 }}>{erro || uploadVideoEstado.erro}</div>}
 
       {/* Vídeos originais carregados (temporários) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
@@ -303,10 +258,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             <X size={12} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
           </button>
         ))}
-        <Btn variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={aCarregar}>
-          {aCarregar ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {aCarregar ? `A carregar… ${progressoUpload}%` : 'Carregar vídeo'}
+        <Btn variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo}>
+          {uploadVideoEstado?.ativo ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {uploadVideoEstado?.ativo ? `A carregar… ${uploadVideoEstado.progresso}%` : 'Carregar vídeo'}
         </Btn>
       </div>
+
+      {uploadVideoEstado?.ativo && (
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: -10, marginBottom: 14 }}>
+          Podes navegar para outro separador — o carregamento continua em segundo plano.
+        </div>
+      )}
 
       {!originalAtivo && (
         <div style={{ color: T.mutedDim, fontSize: 13, padding: '30px 0', textAlign: 'center' }}>

@@ -6,6 +6,7 @@ import ReactDOMServer from 'react-dom/server';
 // de uma célula sem reescrever — e sem estragar — o ficheiro inteiro
 // (cores, brasões, estilos). Precisa de `npm install jszip`.
 import JSZip from 'jszip';
+import * as tus from 'tus-js-client';
 import AnalisadorVideo from './AnalisadorVideo';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -2451,6 +2452,47 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [documentos, setDocumentos, documentosReady] = useCollectionSync('documentos', notifyEdit, teamId);
   const [videosOriginais, setVideosOriginais] = useCollectionSync('video_originais', notifyEdit, teamId);
   const [clipes, setClipes] = useCollectionSync('video_clips', notifyEdit, teamId);
+
+  // Upload de vídeo definido aqui (não dentro de AnalisadorVideo) de propósito:
+  // este componente nunca desmonta ao trocar de separador, por isso o
+  // carregamento continua em segundo plano mesmo que o treinador vá ver
+  // outra parte da app enquanto espera.
+  const [uploadVideoEstado, setUploadVideoEstado] = useState({ ativo: false, progresso: 0, erro: '' });
+  const iniciarUploadVideo = useCallback(async (file) => {
+    setUploadVideoEstado({ ativo: true, progresso: 0, erro: '' });
+    try {
+      const nomeLimpo = file.name
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9.\-]/g, '_');
+      const caminho = `${teamId}/${uid()}-${nomeLimpo}`;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirada — sai e entra na app outra vez.');
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      await new Promise((resolve, reject) => {
+        const upload = new tus.Upload(file, {
+          endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
+          retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000],
+          headers: { authorization: `Bearer ${session.access_token}`, 'x-upsert': 'false' },
+          uploadDataDuringCreation: true,
+          removeFingerprintOnSuccess: true,
+          metadata: { bucketName: 'videos-originais', objectName: caminho, contentType: file.type || 'video/mp4', cacheControl: '3600' },
+          chunkSize: 6 * 1024 * 1024,
+          onError: (err) => reject(err),
+          onProgress: (enviados, total) => setUploadVideoEstado(s => ({ ...s, progresso: Math.round((enviados / total) * 100) })),
+          onSuccess: () => resolve(),
+        });
+        upload.findPreviousUploads().then((anteriores) => {
+          if (anteriores.length) upload.resumeFromPreviousUpload(anteriores[0]);
+          upload.start();
+        });
+      });
+      const novo = { id: uid(), storagePath: caminho, titulo: file.name.replace(/\.[^.]+$/, ''), tamanho: file.size, criadoEm: new Date().toISOString() };
+      setVideosOriginais(prev => [...(prev || []), novo]);
+      setUploadVideoEstado({ ativo: false, progresso: 100, erro: '' });
+    } catch (e) {
+      setUploadVideoEstado({ ativo: false, progresso: 0, erro: `Não consegui carregar o vídeo: ${e.message || e}` });
+    }
+  }, [teamId, setVideosOriginais]);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
   // (Scouting) ficam de fora daqui, sem se perderem: ver `useSubColecao`.
   const [videosGerais, setVideosGerais] = useSubColecao(videos, setVideos, v => !v.adversarioId && !v.scoutId);
@@ -3235,7 +3277,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
-          {tab === 'analise' && <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} />}
+          {tab === 'analise' && <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} />}
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
