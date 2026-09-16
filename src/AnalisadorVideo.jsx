@@ -156,7 +156,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       await new Promise((resolve, reject) => {
         const upload = new tus.Upload(file, {
           endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
-          retryDelays: [0, 3000, 5000, 10000, 20000], // tenta outra vez sozinho se a rede falhar
+          retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000], // aguenta ~3 min de rede instável antes de desistir
           headers: { authorization: `Bearer ${session.access_token}`, 'x-upsert': 'false' },
           uploadDataDuringCreation: true,
           removeFingerprintOnSuccess: true,
