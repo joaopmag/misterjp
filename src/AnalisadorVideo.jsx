@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import * as tus from 'tus-js-client';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
@@ -70,6 +71,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [originalAtivoId, setOriginalAtivoId] = useState(null);
   const [signedUrl, setSignedUrl] = useState(null);
   const [aCarregar, setACarregar] = useState(false);
+  const [progressoUpload, setProgressoUpload] = useState(0);
   const [erro, setErro] = useState('');
 
   const [playing, setPlaying] = useState(false);
@@ -140,19 +142,48 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      continua com o nome original, sem alterações — só o caminho
      usado por baixo, no storage, é que fica limpo. */
   const carregarOriginal = async (file) => {
-    setErro(''); setACarregar(true);
+    setErro(''); setACarregar(true); setProgressoUpload(0);
     try {
       const nomeLimpo = file.name
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
         .replace(/[^a-zA-Z0-9.\-]/g, '_');                // troca o resto por _
       const caminho = `${teamId}/${uid()}-${nomeLimpo}`;
-      const { error } = await supabase.storage.from('videos-originais').upload(caminho, file, { upsert: false });
-      if (error) throw error;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sessão expirada — sai e entra na app outra vez.');
+
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      await new Promise((resolve, reject) => {
+        const upload = new tus.Upload(file, {
+          endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
+          retryDelays: [0, 3000, 5000, 10000, 20000], // tenta outra vez sozinho se a rede falhar
+          headers: { authorization: `Bearer ${session.access_token}`, 'x-upsert': 'false' },
+          uploadDataDuringCreation: true,
+          removeFingerprintOnSuccess: true,
+          metadata: {
+            bucketName: 'videos-originais',
+            objectName: caminho,
+            contentType: file.type || 'video/mp4',
+            cacheControl: '3600',
+          },
+          chunkSize: 6 * 1024 * 1024, // 6MB — valor fixo exigido pelo Supabase
+          onError: (err) => reject(err),
+          onProgress: (enviados, total) => setProgressoUpload(Math.round((enviados / total) * 100)),
+          onSuccess: () => resolve(),
+        });
+        // Se já havia um carregamento deste ficheiro a meio (ex.: a app fechou-se
+        // a meio da ligação), retoma dali em vez de recomeçar do zero.
+        upload.findPreviousUploads().then((anteriores) => {
+          if (anteriores.length) upload.resumeFromPreviousUpload(anteriores[0]);
+          upload.start();
+        });
+      });
+
       const novo = { id: uid(), storagePath: caminho, titulo: file.name.replace(/\.[^.]+$/, ''), tamanho: file.size, criadoEm: new Date().toISOString() };
       setVideosOriginais(prev => [...(prev || []), novo]);
       setOriginalAtivoId(novo.id);
     } catch (e) {
-      setErro(`Não consegui carregar o vídeo: ${e.message || e}. Confirma que o balde "videos-originais" existe no Supabase Storage.`);
+      setErro(`Não consegui carregar o vídeo: ${e.message || e}. Se a ligação for instável, tenta outra vez — o carregamento continua de onde ficou.`);
     } finally {
       setACarregar(false);
     }
@@ -273,7 +304,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </button>
         ))}
         <Btn variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={aCarregar}>
-          {aCarregar ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {aCarregar ? 'A carregar… pode demorar alguns minutos' : 'Carregar vídeo'}
+          {aCarregar ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {aCarregar ? `A carregar… ${progressoUpload}%` : 'Carregar vídeo'}
         </Btn>
       </div>
 
