@@ -234,18 +234,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (!sh || !sh.points || sh.points.length === 0) return null;
     const [a, b] = sh.points;
     if (!a) return null;
+    const cor = { stroke: sh.color, fill: 'none' };
     if (sh.tool === 'livre') {
       const d = sh.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-      return <path key={i} d={d} stroke={sh.color} strokeWidth={0.6} fill="none" strokeLinecap="round" />;
+      return <path key={i} d={d} style={cor} strokeWidth={0.6} strokeLinecap="round" />;
     }
     if (!b) return null;
-    if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} stroke={sh.color} strokeWidth={0.6} fill="none" />;
-    if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={sh.color} strokeWidth={0.6} />;
+    if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} style={cor} strokeWidth={0.6} />;
+    if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />;
     const angle = Math.atan2(b.y - a.y, b.x - a.x); const ah = 2.2;
     const p1 = { x: b.x - ah * Math.cos(angle - 0.4), y: b.y - ah * Math.sin(angle - 0.4) };
     const p2 = { x: b.x - ah * Math.cos(angle + 0.4), y: b.y - ah * Math.sin(angle + 0.4) };
-    return <g key={i}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={sh.color} strokeWidth={0.6} />
-      <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} M ${b.x} ${b.y} L ${p2.x} ${p2.y}`} stroke={sh.color} strokeWidth={0.6} fill="none" strokeLinecap="round" /></g>;
+    return <g key={i}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />
+      <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} M ${b.x} ${b.y} L ${p2.x} ${p2.y}`} style={cor} strokeWidth={0.6} strokeLinecap="round" /></g>;
   };
 
   const pct = (t) => (duration ? (t / duration) * 100 : 0);
