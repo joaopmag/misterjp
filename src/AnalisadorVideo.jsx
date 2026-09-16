@@ -82,7 +82,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [note, setNote] = useState('');
   const [aGuardarClipe, setAGuardarClipe] = useState(false);
 
-  const [drawing, setDrawing] = useState(false);
+  const [modoDesenho, setModoDesenho] = useState(false);
   const [tool, setTool] = useState('seta');
   const [shapes, setShapes] = useState([]);
   const drawState = useRef(null);
@@ -208,11 +208,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const getPoint = (e) => {
     const rect = canvasWrapRef.current.getBoundingClientRect();
     const p = e.touches ? e.touches[0] : e;
-    return { x: ((p.clientX - rect.left) / rect.width) * 100, y: ((p.clientY - rect.top) / rect.height) * 100 };
+    // x vai de 0 a 100, y vai de 0 a 56.25 — tem de bater certo com o
+    // viewBox do SVG ali em baixo (que usa esses números para manter a
+    // proporção 16:9 sem esticar os desenhos). Antes isto devolvia y
+    // também em 0-100, por isso o traço aparecia sempre deslocado.
+    return { x: ((p.clientX - rect.left) / rect.width) * 100, y: ((p.clientY - rect.top) / rect.height) * 56.25 };
   };
-  const startDraw = (e) => { if (!drawing) return; videoRef.current?.pause(); drawState.current = { tool, color: T.crimsonBright, points: [getPoint(e)] }; };
+  const abrirDesenho = () => { videoRef.current?.pause(); setModoDesenho(true); };
+  const fecharDesenho = () => setModoDesenho(false);
+
+  const startDraw = (e) => { if (!modoDesenho) return; videoRef.current?.pause(); drawState.current = { tool, color: T.crimsonBright, points: [getPoint(e)] }; };
   const moveDraw = (e) => {
-    if (!drawing || !drawState.current) return;
+    if (!modoDesenho || !drawState.current) return;
     const pt = getPoint(e); const st = drawState.current;
     if (st.tool === 'livre') st.points.push(pt); else st.points[1] = pt;
     setShapes(s => [...s.filter(x => x !== st), { ...st }]);
@@ -264,7 +271,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </button>
         ))}
         <Btn variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={aCarregar}>
-          {aCarregar ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} Carregar vídeo
+          {aCarregar ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {aCarregar ? 'A carregar… pode demorar alguns minutos' : 'Carregar vídeo'}
         </Btn>
       </div>
 
@@ -276,75 +283,89 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
       {originalAtivo && (
         <div style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, overflow: 'hidden' }}>
-          <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: '16/9', width: '100%' }}
-            onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
-            onTouchStart={startDraw} onTouchMove={moveDraw} onTouchEnd={endDraw}>
-            {signedUrl ? (
-              <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block' }} playsInline />
-            ) : (
-              <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted }}><Loader2 size={20} className="spin" /></div>
-            )}
-            <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: drawing ? 'auto' : 'none', cursor: drawing ? 'crosshair' : 'default' }}>
-              {shapes.map(renderShape)}
-            </svg>
-          </div>
-
-          <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Btn variant="ghost" onClick={togglePlay} style={{ padding: 8 }}>{playing ? <Pause size={16} /> : <Play size={16} />}</Btn>
-            <span style={{ fontSize: 12, color: T.muted, ...mono, minWidth: 44 }}>{fmt(current)}</span>
-            <div onClick={onScrubClick} style={{ flex: 1, height: 22, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-              <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: T.line, borderRadius: 3 }} />
-              <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: T.crimson, borderRadius: 3 }} />
-              {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: T.good }} />}
-              {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: T.bad }} />}
+          {modoDesenho && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise }}>
+              <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
+              <Btn variant="solid" onClick={fecharDesenho}><Check size={14} /> Concluído</Btn>
             </div>
-            <span style={{ fontSize: 12, color: T.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
-          </div>
+          )}
 
-          <div style={{ padding: '8px 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: `1px solid ${T.line}` }}>
-            <Btn variant="ghost" onClick={markIn}><Flag size={14} color={T.good} /> Marcar início ({fmt(inPoint ?? 0)})</Btn>
-            <Btn variant="ghost" onClick={markOut}><Flag size={14} color={T.bad} /> Marcar fim ({fmt(outPoint ?? 0)})</Btn>
-            <Btn variant="ghost" onClick={limparMarcas} disabled={inPoint == null && outPoint == null}><RotateCcw size={14} /> Limpar</Btn>
-            <div style={{ width: 1, background: T.line, margin: '0 4px' }} />
-            <Btn variant={drawing ? 'solid' : 'ghost'} onClick={() => setDrawing(d => !d)}><Scissors size={14} /> Desenhar</Btn>
-            {drawing && (
-              <>
+          <div style={{ display: 'flex' }}>
+            {modoDesenho && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}` }}>
                 {[['seta', ArrowUpRight], ['circulo', Circle], ['linha', Minus]].map(([id, Icon]) => (
-                  <Btn key={id} variant="ghost" active={tool === id} onClick={() => setTool(id)}><Icon size={14} /></Btn>
+                  <Btn key={id} variant="ghost" active={tool === id} onClick={() => setTool(id)} style={{ padding: 10 }} title={id}><Icon size={18} /></Btn>
                 ))}
-                <Btn variant="ghost" active={tool === 'livre'} onClick={() => setTool('livre')}>Livre</Btn>
-                <Btn variant="plain" onClick={() => setShapes([])}><Eraser size={14} /></Btn>
-              </>
+                <Btn variant="ghost" active={tool === 'livre'} onClick={() => setTool('livre')} style={{ padding: 10 }} title="livre">Livre</Btn>
+                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <Btn variant="plain" onClick={() => setShapes([])} style={{ padding: 10 }} title="apagar tudo"><Eraser size={18} /></Btn>
+              </div>
             )}
-          </div>
-
-          <div style={{ padding: '12px 14px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {TAGS.map(tag => (
-              <button key={tag.id} onClick={() => setPendingTag(tag.id)}
-                style={{
-                  padding: '7px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', ...body,
-                  border: `1px solid ${tag.color}`, background: pendingTag === tag.id ? tag.color : 'transparent',
-                  color: pendingTag === tag.id ? TEXT_ON_ACCENT : tag.color,
-                }}>
-                {tag.label}
-              </button>
-            ))}
-          </div>
-
-          {inPoint != null && outPoint != null && outPoint > inPoint && (
-            <div style={{ margin: '0 14px 16px', background: T.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${T.line}` }}>
-              <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 8, ...mono }}>
-                Novo clipe · {fmt(inPoint)} – {fmt(outPoint)} ({Math.round(outPoint - inPoint)}s) {shapes.length > 0 && `· ${shapes.length} desenho(s)`}
-              </div>
-              <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…"
-                style={{ width: '100%', minHeight: 54, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 7, color: T.cream, padding: 8, fontSize: 13, resize: 'vertical', ...body }} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe}>
-                  {aGuardarClipe ? <Loader2 size={14} className="spin" /> : <Check size={14} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
-                </Btn>
-                <Btn variant="plain" onClick={limparMarcas} disabled={aGuardarClipe}><X size={14} /> Descartar</Btn>
-              </div>
+            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: '16/9', width: '100%' }}
+              onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
+              onTouchStart={startDraw} onTouchMove={moveDraw} onTouchEnd={endDraw}>
+              {signedUrl ? (
+                <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block' }} playsInline />
+              ) : (
+                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted }}><Loader2 size={20} className="spin" /></div>
+              )}
+              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? 'crosshair' : 'default' }}>
+                {shapes.map(renderShape)}
+              </svg>
             </div>
+          </div>
+
+          {!modoDesenho && (
+            <>
+              <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Btn variant="ghost" onClick={togglePlay} style={{ padding: 8 }}>{playing ? <Pause size={16} /> : <Play size={16} />}</Btn>
+                <span style={{ fontSize: 12, color: T.muted, ...mono, minWidth: 44 }}>{fmt(current)}</span>
+                <div onClick={onScrubClick} style={{ flex: 1, height: 22, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                  <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: T.line, borderRadius: 3 }} />
+                  <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: T.crimson, borderRadius: 3 }} />
+                  {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: T.good }} />}
+                  {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: T.bad }} />}
+                </div>
+                <span style={{ fontSize: 12, color: T.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
+              </div>
+
+              <div style={{ padding: '8px 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: `1px solid ${T.line}` }}>
+                <Btn variant="ghost" onClick={markIn}><Flag size={14} color={T.good} /> Marcar início ({fmt(inPoint ?? 0)})</Btn>
+                <Btn variant="ghost" onClick={markOut}><Flag size={14} color={T.bad} /> Marcar fim ({fmt(outPoint ?? 0)})</Btn>
+                <Btn variant="ghost" onClick={limparMarcas} disabled={inPoint == null && outPoint == null}><RotateCcw size={14} /> Limpar</Btn>
+                <div style={{ width: 1, background: T.line, margin: '0 4px' }} />
+                <Btn variant="ghost" onClick={abrirDesenho}><Scissors size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}</Btn>
+              </div>
+
+              <div style={{ padding: '12px 14px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {TAGS.map(tag => (
+                  <button key={tag.id} onClick={() => setPendingTag(tag.id)}
+                    style={{
+                      padding: '7px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', ...body,
+                      border: `1px solid ${tag.color}`, background: pendingTag === tag.id ? tag.color : 'transparent',
+                      color: pendingTag === tag.id ? TEXT_ON_ACCENT : tag.color,
+                    }}>
+                    {tag.label}
+                  </button>
+                ))}
+              </div>
+
+              {inPoint != null && outPoint != null && outPoint > inPoint && (
+                <div style={{ margin: '0 14px 16px', background: T.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${T.line}` }}>
+                  <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 8, ...mono }}>
+                    Novo clipe · {fmt(inPoint)} – {fmt(outPoint)} ({Math.round(outPoint - inPoint)}s) {shapes.length > 0 && `· ${shapes.length} desenho(s)`}
+                  </div>
+                  <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…"
+                    style={{ width: '100%', minHeight: 54, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 7, color: T.cream, padding: 8, fontSize: 13, resize: 'vertical', ...body }} />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe}>
+                      {aGuardarClipe ? <Loader2 size={14} className="spin" /> : <Check size={14} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
+                    </Btn>
+                    <Btn variant="plain" onClick={limparMarcas} disabled={aGuardarClipe}><X size={14} /> Descartar</Btn>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
