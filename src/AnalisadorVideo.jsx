@@ -88,6 +88,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const drawState = useRef(null);
 
   const [copiedId, setCopiedId] = useState(null);
+  const [clipeAReproduzir, setClipeAReproduzir] = useState(null);
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
 
@@ -389,7 +390,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <span style={{ fontSize: 11.5, color: T.mutedDim }}>{clip.originalTitulo}</span>
                 {clip.note && <span style={{ fontSize: 12.5, color: T.cream, flex: '1 1 200px' }}>{clip.note}</span>}
                 <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-                  <a href={clip.publicUrl} target="_blank" rel="noreferrer"><Btn variant="ghost" style={{ padding: '6px 10px' }}><Play size={12} /></Btn></a>
+                  <Btn variant="ghost" onClick={() => setClipeAReproduzir(clip)} style={{ padding: '6px 10px' }}><Play size={12} /></Btn>
                   <Btn variant="ghost" onClick={() => copiarLink(clip)} style={{ padding: '6px 10px' }}>
                     {copiedId === clip.id ? <Check size={12} color={T.good} /> : <Link2 size={12} />}
                   </Btn>
@@ -400,6 +401,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           })}
         </div>
       </div>
+
+      {clipeAReproduzir && (
+        <div onClick={() => setClipeAReproduzir(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
+              <span style={{ fontSize: 12.5, color: T.muted, ...body }}>{TAGS.find(t => t.id === clipeAReproduzir.tagId)?.label} · {Math.round(clipeAReproduzir.duracao)}s</span>
+              <Btn variant="plain" onClick={() => setClipeAReproduzir(null)}><X size={16} /></Btn>
+            </div>
+            <video src={clipeAReproduzir.publicUrl} controls autoPlay style={{ width: '100%', display: 'block', background: '#000' }} />
+            {clipeAReproduzir.note && <div style={{ padding: 12, fontSize: 13, color: T.cream }}>{clipeAReproduzir.note}</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
