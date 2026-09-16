@@ -69,6 +69,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const [originalAtivoId, setOriginalAtivoId] = useState(null);
   const [signedUrl, setSignedUrl] = useState(null);
+  const [videoPronto, setVideoPronto] = useState(false);
   const [erro, setErro] = useState('');
 
   const [playing, setPlaying] = useState(false);
@@ -307,7 +308,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
               onTouchStart={startDraw} onTouchMove={moveDraw} onTouchEnd={endDraw}>
               {signedUrl ? (
-                <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block' }} playsInline />
+                <>
+                  <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block' }} playsInline
+                    onLoadStart={() => setVideoPronto(false)} onCanPlay={() => setVideoPronto(true)} />
+                  {!videoPronto && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: T.muted, pointerEvents: 'none' }}>
+                      <Loader2 size={20} className="spin" />
+                      <span style={{ fontSize: 12, ...body }}>A preparar o vídeo… ficheiros grandes demoram mais a arrancar</span>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted }}><Loader2 size={20} className="spin" /></div>
               )}
