@@ -98,8 +98,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setSignedUrl(null);
     if (!originalAtivo) return;
     let cancelado = false;
-    supabase.storage.from('videos-originais').createSignedUrl(originalAtivo.storagePath, 3600)
-      .then(({ data, error }) => { if (!cancelado && !error) setSignedUrl(data.signedUrl); });
+    const tentar = async () => {
+      for (let tentativa = 0; tentativa < 5 && !cancelado; tentativa++) {
+        const { data, error } = await supabase.storage.from('videos-originais').createSignedUrl(originalAtivo.storagePath, 3600);
+        if (cancelado) return;
+        if (!error) { setSignedUrl(data.signedUrl); return; }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      if (!cancelado) setErro('Este vídeo ainda não está disponível no servidor. Espera um pouco e volta a escolhê-lo na lista.');
+    };
+    tentar();
     return () => { cancelado = true; };
   }, [originalAtivo?.id]);
 
@@ -259,7 +267,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </button>
         ))}
         <Btn variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo}>
-          {uploadVideoEstado?.ativo ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {uploadVideoEstado?.ativo ? `A carregar… ${uploadVideoEstado.progresso}%` : 'Carregar vídeo'}
+          {uploadVideoEstado?.ativo ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar no servidor…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
         </Btn>
       </div>
 

@@ -2462,9 +2462,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // este componente nunca desmonta ao trocar de separador, por isso o
   // carregamento continua em segundo plano mesmo que o treinador vá ver
   // outra parte da app enquanto espera.
-  const [uploadVideoEstado, setUploadVideoEstado] = useState({ ativo: false, progresso: 0, erro: '' });
+  const [uploadVideoEstado, setUploadVideoEstado] = useState({ ativo: false, progresso: 0, finalizando: false, erro: '' });
   const iniciarUploadVideo = useCallback(async (file) => {
-    setUploadVideoEstado({ ativo: true, progresso: 0, erro: '' });
+    setUploadVideoEstado({ ativo: true, progresso: 0, finalizando: false, erro: '' });
     try {
       const nomeLimpo = file.name
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -2491,11 +2491,26 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           upload.start();
         });
       });
+
+      // O tus dá o envio por terminado assim que o último byte chega, mas
+      // para ficheiros grandes o Supabase ainda demora um pouco a "arrumar"
+      // isso como um objeto pronto a servir. Confirma-se aqui antes de
+      // mostrar o vídeo como disponível, em vez de arriscar um "Object not
+      // found" logo a seguir.
+      setUploadVideoEstado(s => ({ ...s, finalizando: true }));
+      let pronto = false;
+      for (let tentativa = 0; tentativa < 15 && !pronto; tentativa++) {
+        const { error: erroSign } = await supabase.storage.from('videos-originais').createSignedUrl(caminho, 60);
+        if (!erroSign) { pronto = true; break; }
+        await new Promise(r => setTimeout(r, 4000));
+      }
+      if (!pronto) throw new Error('O vídeo foi enviado, mas o Supabase ainda não o disponibilizou. Espera um minuto e recarrega a página — costuma aparecer sozinho.');
+
       const novo = { id: uid(), storagePath: caminho, titulo: file.name.replace(/\.[^.]+$/, ''), tamanho: file.size, criadoEm: new Date().toISOString() };
       setVideosOriginais(prev => [...(prev || []), novo]);
-      setUploadVideoEstado({ ativo: false, progresso: 100, erro: '' });
+      setUploadVideoEstado({ ativo: false, progresso: 100, finalizando: false, erro: '' });
     } catch (e) {
-      setUploadVideoEstado({ ativo: false, progresso: 0, erro: `Não consegui carregar o vídeo: ${e.message || e}` });
+      setUploadVideoEstado({ ativo: false, progresso: 0, finalizando: false, erro: `Não consegui carregar o vídeo: ${e.message || e}` });
     }
   }, [teamId, setVideosOriginais]);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
