@@ -38,8 +38,9 @@ import path from 'path';
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
+  SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
@@ -51,12 +52,13 @@ export const config = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método não permitido' });
 
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (!SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.error('cortar-clipe: faltam variáveis de ambiente', {
-      temUrl: !!process.env.SUPABASE_URL, temChave: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      temUrl: !!SUPABASE_URL, temChave: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
     });
     return res.status(500).json({ error: 'Configuração em falta no servidor: SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não estão definidas no Vercel.' });
   }
+  console.log('cortar-clipe: a usar SUPABASE_URL =', SUPABASE_URL);
 
   const { teamId, storagePath, start, end } = req.body || {};
   if (!teamId || !storagePath || start == null || end == null || end <= start) {
