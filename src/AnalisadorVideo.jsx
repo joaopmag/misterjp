@@ -331,11 +331,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   /* ---- Telestração ---- */
   const getPoint = (e) => {
     const rect = canvasWrapRef.current.getBoundingClientRect();
-    const p = e.touches ? e.touches[0] : e;
     // x vai de 0 a 100, y vai de 0 a 56.25 — tem de bater certo com o
     // viewBox do SVG ali em baixo (que usa esses números para manter a
     // proporção 16:9 sem esticar os desenhos).
-    return { x: ((p.clientX - rect.left) / rect.width) * 100, y: ((p.clientY - rect.top) / rect.height) * 56.25 };
+    return { x: ((e.clientX - rect.left) / rect.width) * 100, y: ((e.clientY - rect.top) / rect.height) * 56.25 };
   };
   const abrirDesenho = () => { videoRef.current?.pause(); setModoDesenho(true); };
   const fecharDesenho = () => { setModoDesenho(false); setTextoPendente(null); setEditandoDuracaoIndex(null); };
@@ -385,8 +384,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     if (tool === 'texto') {
       const rect = canvasWrapRef.current.getBoundingClientRect();
-      const p = e.touches ? e.touches[0] : e;
-      setTextoPendente({ pt, xPix: p.clientX - rect.left, yPix: p.clientY - rect.top, valor: '' });
+      setTextoPendente({ pt, xPix: e.clientX - rect.left, yPix: e.clientY - rect.top, valor: '' });
       return;
     }
     // Antes de desenhar algo novo, vê-se se o toque caiu em cima de um
@@ -498,10 +496,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               </div>
             )}
             <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: fullscreen ? undefined : '16/9', flex: fullscreen ? 1 : undefined, width: '100%', touchAction: modoDesenho ? 'none' : 'auto' }}
-              onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
-              onTouchStart={e => { if (modoDesenho) e.preventDefault(); startDraw(e); }}
-              onTouchMove={e => { if (modoDesenho) e.preventDefault(); moveDraw(e); }}
-              onTouchEnd={e => { if (modoDesenho) e.preventDefault(); endDraw(e); }}>
+              onPointerDown={startDraw} onPointerMove={moveDraw} onPointerUp={endDraw} onPointerLeave={endDraw} onPointerCancel={endDraw}>
               {originalAtivo?.pronto === false ? (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted, gap: 8, textAlign: 'center', padding: 20 }}>
                   <Loader2 size={20} className="spin" />
@@ -527,7 +522,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {shapesVisiveis.map(renderShape)}
               </svg>
               {textoPendente && (
-                <div onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}
+                <div onPointerDown={e => e.stopPropagation()}
                   style={{ position: 'absolute', left: textoPendente.xPix, top: textoPendente.yPix, transform: 'translate(-4px,-50%)', display: 'flex', gap: 4, zIndex: 5 }}>
                   <input
                     autoFocus
@@ -545,7 +540,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
               )}
               {editandoDuracaoIndex != null && (
-                <div onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}
+                <div onPointerDown={e => e.stopPropagation()}
                   style={{
                     position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
                     background: 'rgba(0,0,0,0.88)', border: `1px solid ${COR_DESENHO}`, borderRadius: 8,
