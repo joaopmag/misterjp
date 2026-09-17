@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type, Move,
+  Maximize2, Minimize2, Square, Type,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -340,11 +340,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const abrirDesenho = () => { videoRef.current?.pause(); setModoDesenho(true); };
   const fecharDesenho = () => { setModoDesenho(false); setTextoPendente(null); setEditandoDuracaoIndex(null); };
 
-  // Depois de qualquer desenho terminar, pergunta-se até quando deve
-  // ficar visível — em vez de uma regra igual para todos os desenhos.
+  // Abre-se ao clicar (sem arrastar) num desenho já existente, para
+  // definir ou ajustar até quando fica visível.
   const abrirPopupDuracao = (index) => {
     setEditandoDuracaoIndex(index);
-    setDuracaoInputTexto(fmt(current + 3));
+    const atual = shapes[index]?.mostrarAte;
+    setDuracaoInputTexto(fmt(atual != null ? atual : current + 3));
   };
   const confirmarDuracaoShape = () => {
     const seg = parseMMSS(duracaoInputTexto);
@@ -364,11 +365,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const confirmarTexto = () => {
     setTextoPendente(t => {
       if (t && t.valor.trim()) {
-        setShapes(s => {
-          const novaLista = [...s, { tool: 'texto', color: COR_DESENHO, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }];
-          abrirPopupDuracao(novaLista.length - 1);
-          return novaLista;
-        });
+        setShapes(s => [...s, { tool: 'texto', color: COR_DESENHO, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }]);
       }
       return null;
     });
@@ -386,26 +383,31 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
       return;
     }
-    if (tool === 'mover') {
-      let melhorI = -1, melhorD = 6;
-      shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
-      if (melhorI >= 0) dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })) };
-      return;
-    }
     if (tool === 'texto') {
       const rect = canvasWrapRef.current.getBoundingClientRect();
       const p = e.touches ? e.touches[0] : e;
       setTextoPendente({ pt, xPix: p.clientX - rect.left, yPix: p.clientY - rect.top, valor: '' });
       return;
     }
+    // Antes de desenhar algo novo, vê-se se o toque caiu em cima de um
+    // desenho já existente — nesse caso é para mexer nele (arrastando) ou
+    // para o selecionar (um toque simples, sem arrastar), em vez de criar
+    // um desenho novo por cima. Funciona com qualquer ferramenta ativa.
+    let melhorI = -1, melhorD = 6;
+    shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
+    if (melhorI >= 0) {
+      dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })), moveu: false };
+      return;
+    }
     drawState.current = { tool, color: COR_DESENHO, points: [pt], criadoEmTempo: current, mostrarAte: null };
   };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
-    if (tool === 'mover' && dragState.current) {
+    if (dragState.current) {
       const pt = getPoint(e);
       const { index, inicio, pontosIniciais } = dragState.current;
       const dx = pt.x - inicio.x, dy = pt.y - inicio.y;
+      if (Math.hypot(dx, dy) > 0.5) dragState.current.moveu = true;
       setShapes(s => s.map((sh, i) => (i === index ? { ...sh, points: pontosIniciais.map(p => ({ x: p.x + dx, y: p.y + dy })) } : sh)));
       return;
     }
@@ -415,14 +417,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setShapes(s => [...s.filter(x => x !== st), { ...st }]);
   };
   const endDraw = () => {
-    if (tool === 'mover') { dragState.current = null; return; }
+    if (dragState.current) {
+      const { index, moveu } = dragState.current;
+      dragState.current = null;
+      if (!moveu) abrirPopupDuracao(index); // foi um toque simples, sem arrastar — abre o tempo desse desenho
+      return;
+    }
     const st = drawState.current;
     if (!st) return;
-    setShapes(s => {
-      const novaLista = [...s.filter(x => x !== st), { ...st }];
-      abrirPopupDuracao(novaLista.length - 1);
-      return novaLista;
-    });
+    setShapes(s => [...s.filter(x => x !== st), { ...st }]);
     drawState.current = null;
   };
 
@@ -490,7 +493,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <Btn variant="ghost" active={tool === 'livre'} onClick={() => setTool('livre')} style={{ padding: 10, fontSize: 11 }} title="Traço livre">Livre</Btn>
                 <Btn variant="ghost" active={tool === 'texto'} onClick={() => setTool('texto')} style={{ padding: 10 }} title="Texto"><Type size={18} /></Btn>
                 <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                <Btn variant="ghost" active={tool === 'mover'} onClick={() => setTool('mover')} style={{ padding: 10 }} title="Mover um desenho (arrasta-o)"><Move size={18} /></Btn>
                 <Btn variant="ghost" active={tool === 'apagar'} onClick={() => setTool('apagar')} style={{ padding: 10 }} title="Apagar um desenho (clica nele)"><Eraser size={18} /></Btn>
                 <Btn variant="plain" onClick={() => setShapes([])} style={{ padding: 10 }} title="Apagar tudo"><Trash2 size={18} /></Btn>
               </div>
@@ -519,7 +521,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               ) : (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted }}><Loader2 size={20} className="spin" /></div>
               )}
-              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? 'not-allowed' : tool === 'mover' ? 'grab' : 'crosshair') : 'default' }}>
+              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? 'not-allowed' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
               </svg>
               {textoPendente && (
