@@ -640,6 +640,66 @@ async function fetchAllRows(table, teamId) {
   return todas;
 }
 
+/* Guarda um rascunho da edição em curso no localStorage deste dispositivo,
+   para não se perder trabalho se saíres da página a meio (troca de
+   separador, botão de retroceder do browser, fechar sem querer). Usado nos
+   três sítios que usam o editor tático 2D: Exercícios, Ideia de Jogo, e as
+   dinâmicas do Scouting.
+
+   Isto é só local ao dispositivo (localStorage) — não sincroniza com o
+   Supabase nem aparece para outras pessoas da equipa; é só uma rede de
+   segurança para ti, neste computador. */
+function useRascunho(chave, f, setF, ativo = true) {
+  const [rascunhoEncontrado, setRascunhoEncontrado] = useState(null);
+  const jaVerificou = useRef(false);
+
+  useEffect(() => {
+    if (!ativo || jaVerificou.current) return;
+    jaVerificou.current = true;
+    try {
+      const bruto = localStorage.getItem(chave);
+      if (bruto) {
+        const guardado = JSON.parse(bruto);
+        if (guardado && guardado.f) setRascunhoEncontrado(guardado);
+      }
+    } catch (e) { /* rascunho corrompido — ignora, como se não existisse */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chave, ativo]);
+
+  useEffect(() => {
+    if (!ativo) return;
+    const t = setTimeout(() => {
+      try { localStorage.setItem(chave, JSON.stringify({ f, guardadoEm: Date.now() })); } catch (e) { /* ex.: localStorage cheio — sem drama, só não fica rascunho desta vez */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [chave, f, ativo]);
+
+  const limpar = () => { try { localStorage.removeItem(chave); } catch (e) {} };
+  const restaurar = () => { if (rascunhoEncontrado) { setF(rascunhoEncontrado.f); setRascunhoEncontrado(null); } };
+  const descartar = () => { limpar(); setRascunhoEncontrado(null); };
+
+  return { rascunhoEncontrado, restaurar, descartar, limpar };
+}
+
+// Banner mostrado quando se encontra um rascunho não guardado ao abrir um
+// destes editores.
+function BannerRascunho({ rascunho, onRestaurar, onDescartar }) {
+  if (!rascunho) return null;
+  const minutos = Math.max(1, Math.round((Date.now() - (rascunho.guardadoEm || Date.now())) / 60000));
+  const quando = minutos < 60 ? `há ${minutos} min` : `há ${Math.round(minutos / 60)}h`;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+      background: `${T.gold}22`, border: `1px solid ${T.gold}`, borderRadius: 8,
+      padding: '10px 12px', marginBottom: 14, fontSize: 13, color: T.cream, ...body,
+    }}>
+      <span style={{ flex: 1, minWidth: 200 }}>Encontrámos uma edição não guardada, de {quando}. Continuar dela ou começar do zero?</span>
+      <Btn variant="solid" onClick={onRestaurar} style={{ padding: '6px 12px', fontSize: 12.5 }}>Continuar rascunho</Btn>
+      <Btn variant="ghost" onClick={onDescartar} style={{ padding: '6px 12px', fontSize: 12.5 }}>Começar do zero</Btn>
+    </div>
+  );
+}
+
 function useCollectionSync(table, notifyEdit, teamId) {
   /* `exercises` e `players` são, de longe, as coleções mais pesadas da
      app (fotografias de jogadores, diagramas/anexos de exercícios) —
@@ -8466,6 +8526,7 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
 
 function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
   const [f, setF] = useState(ideia || { name: '', phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_ideia_${ideia?.id || 'novo'}`, f, setF);
   // Tal como no ExerciseModal, a cor ativa do editor vive aqui (no modal) e
   // não dentro do DiagramEditor, para não poder ser reposta a meio.
   const [diagramColor, setDiagramColor] = useState('A');
@@ -8509,6 +8570,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
 
   return (
     <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide fullPage>
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ marginBottom: 12 }}>
         <Field label="Nome"><Input value={f.name || ''} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Construção a 3 com médio a cair" /></Field>
       </div>
@@ -8620,7 +8682,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.name || !f.name.trim()} onClick={() => onSave(f)}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.name || !f.name.trim()} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar</Btn>
       </div>
     </Modal>
   );
@@ -13158,6 +13220,7 @@ function TempoInput({ value, onChange, placeholder }) {
 
 function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
   const [f, setF] = useState(exercise || { name: '', phase: PHASES[0], description: '', space: '', playersCount: '', material: '', defaultDuration: 15, diagram: { elements: [], arrows: [] }, attachment: null });
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_exercicio_${exercise?.id || 'novo'}`, f, setF);
   // A cor ativa do editor tático vive aqui (no modal, que não é recriado
   // durante a edição) e não dentro do DiagramEditor, para nunca poder ser
   // reposta para o valor por omissão a meio da colocação de jogadores.
@@ -13325,6 +13388,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
 
   return (
     <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide fullPage>
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <div style={FIELD_FULL}>
           <Field label="Nome"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Jogo posicional 5v5+3" /></Field>
@@ -13468,7 +13532,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.name} onClick={() => onSave(f)}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.name} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar</Btn>
       </div>
     </Modal>
   );
@@ -29053,9 +29117,11 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
 function TaticaAdversarioModal({ tatica, onClose, onSave }) {
   const [f, setF] = useState(tatica || { nome: '', phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
   const [diagramColor, setDiagramColor] = useState('A');
+  const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_dinamica_${tatica?.id || 'novo'}`, f, setF);
 
   return (
     <Modal title={tatica ? 'Editar dinâmica' : 'Nova dinâmica'} onClose={onClose} wide xwide fullPage>
+      <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ marginBottom: 12 }}>
         <Field label="Nome"><Input value={f.nome || ''} onChange={e => setF({ ...f, nome: e.target.value })} placeholder="Ex: Saída de bola a 3, pressing alto" /></Field>
       </div>
@@ -29079,7 +29145,7 @@ function TaticaAdversarioModal({ tatica, onClose, onSave }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => onSave(f)}>Guardar</Btn>
+        <Btn onClick={() => { limpar(); onSave(f); }}>Guardar</Btn>
       </div>
     </Modal>
   );
