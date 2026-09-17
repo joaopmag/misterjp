@@ -2506,9 +2506,29 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       }
       if (!pronto) throw new Error('O vídeo foi enviado, mas o Supabase ainda não o disponibilizou. Espera um minuto e recarrega a página — costuma aparecer sozinho.');
 
-      const novo = { id: uid(), storagePath: caminho, titulo: file.name.replace(/\.[^.]+$/, ''), tamanho: file.size, criadoEm: new Date().toISOString() };
+      const novo = {
+        id: uid(), storagePath: caminho, titulo: file.name.replace(/\.[^.]+$/, ''),
+        tamanho: file.size, criadoEm: new Date().toISOString(),
+        // pronto:false até o video-worker (serviço à parte) confirmar que já
+        // reorganizou o ficheiro para arrancar depressa. Chega sozinho via
+        // Realtime quando o worker atualizar este registo — não é preciso
+        // ir consultar nada aqui.
+        pronto: false,
+      };
       setVideosOriginais(prev => [...(prev || []), novo]);
       setUploadVideoEstado({ ativo: false, progresso: 100, finalizando: false, erro: '' });
+
+      const VIDEO_WORKER_URL = import.meta.env.VITE_VIDEO_WORKER_URL;
+      if (VIDEO_WORKER_URL) {
+        // Fogo-e-esquece: não se espera pela resposta (pode demorar minutos).
+        // Se isto falhar (rede, worker em baixo), o vídeo fica disponível
+        // na mesma, só sem o arranque rápido — não bloqueia o treinador.
+        fetch(`${VIDEO_WORKER_URL}/processar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ teamId, storagePath: caminho, id: novo.id }),
+        }).catch(() => {});
+      }
     } catch (e) {
       setUploadVideoEstado({ ativo: false, progresso: 0, finalizando: false, erro: `Não consegui carregar o vídeo: ${e.message || e}` });
     }
