@@ -523,7 +523,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {shapesVisiveis.map(renderShape)}
               </svg>
               {textoPendente && (
-                <div style={{ position: 'absolute', left: textoPendente.xPix, top: textoPendente.yPix, transform: 'translate(-4px,-50%)', display: 'flex', gap: 4, zIndex: 5 }}>
+                <div onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}
+                  style={{ position: 'absolute', left: textoPendente.xPix, top: textoPendente.yPix, transform: 'translate(-4px,-50%)', display: 'flex', gap: 4, zIndex: 5 }}>
                   <input
                     autoFocus
                     value={textoPendente.valor}
@@ -540,11 +541,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
               )}
               {editandoDuracaoIndex != null && (
-                <div style={{
-                  position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
-                  background: 'rgba(0,0,0,0.88)', border: `1px solid ${COR_DESENHO}`, borderRadius: 8,
-                  padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, zIndex: 6, flexWrap: 'wrap', justifyContent: 'center',
-                }}>
+                <div onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()}
+                  style={{
+                    position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
+                    background: 'rgba(0,0,0,0.88)', border: `1px solid ${COR_DESENHO}`, borderRadius: 8,
+                    padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, zIndex: 6, flexWrap: 'wrap', justifyContent: 'center',
+                  }}>
                   <span style={{ fontSize: 12, color: '#fff', ...body }}>Visível até ao minuto:</span>
                   <Btn variant="ghost" onClick={usarTempoAtualComoLimite} style={{ padding: '5px 8px', fontSize: 12 }} title="Dá play, pausa no momento certo, e usa esse ponto">
                     {playing ? <Pause size={13} /> : <Play size={13} />} Usar este momento
