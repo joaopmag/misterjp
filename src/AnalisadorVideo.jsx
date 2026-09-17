@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
+  Maximize2, Minimize2, Square, Type,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -16,6 +17,7 @@ const T = {
   teamB: '#3A6FC4', teamC: '#D9A72E', teamD: '#8C3F9E',
 };
 const TEXT_ON_ACCENT = '#FBF3F0';
+const COR_DESENHO = '#FFFFFF'; // branco — antes era vermelho por omissão
 const display = { fontFamily: "'Oswald', sans-serif" };
 const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
@@ -30,6 +32,8 @@ const TAGS = [
   { id: 'individual', label: 'Ação Individual', color: T.teamC },
   { id: 'erro', label: 'Erro', color: T.bad },
 ];
+
+const DURACOES = [2, 3, 5, 'sempre'];
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 function fmt(t) {
@@ -57,6 +61,102 @@ function Btn({ children, onClick, variant = 'ghost', active, disabled, style, ti
   );
 }
 
+/* ---- Geometria para a borracha parcial (distância de um ponto a uma forma) ---- */
+function distPontoSegmento(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const px = a.x + t * dx, py = a.y + t * dy;
+  return Math.hypot(p.x - px, p.y - py);
+}
+function distanciaShape(sh, p) {
+  const pts = sh.points || [];
+  const [a, b] = pts;
+  if (!a) return Infinity;
+  if (sh.tool === 'texto') return Math.hypot(p.x - a.x, p.y - a.y);
+  if (sh.tool === 'circulo' && b) return Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - Math.hypot(p.x - a.x, p.y - a.y));
+  if (sh.tool === 'retangulo' && b) {
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+    const c = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    return Math.min(distPontoSegmento(p, c[0], c[1]), distPontoSegmento(p, c[1], c[2]), distPontoSegmento(p, c[2], c[3]), distPontoSegmento(p, c[3], c[0]));
+  }
+  if (sh.tool === 'livre') {
+    let min = Infinity;
+    for (let k = 0; k < pts.length - 1; k++) min = Math.min(min, distPontoSegmento(p, pts[k], pts[k + 1]));
+    return min;
+  }
+  if (b) return distPontoSegmento(p, a, b);
+  return Infinity;
+}
+
+/* Desenha uma forma no SVG — usado tanto no editor como na reprodução do
+   clipe já guardado (por isso vive fora do componente principal). */
+function renderShape(sh, i) {
+  if (!sh || !sh.points || sh.points.length === 0) return null;
+  const [a, b] = sh.points;
+  if (!a) return null;
+  const cor = { stroke: sh.color || COR_DESENHO, fill: 'none' };
+  if (sh.tool === 'texto') {
+    return <text key={i} x={a.x} y={a.y} fill={sh.color || COR_DESENHO} fontSize={3.4} fontWeight={700} style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#00000099', strokeWidth: 0.5 }}>{sh.texto}</text>;
+  }
+  if (sh.tool === 'livre') {
+    const d = sh.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    return <path key={i} d={d} style={cor} strokeWidth={0.6} strokeLinecap="round" />;
+  }
+  if (!b) return null;
+  if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} style={cor} strokeWidth={0.6} />;
+  if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />;
+  if (sh.tool === 'retangulo') {
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+    const clipId = `clip-${i}-${x.toFixed(1)}-${y.toFixed(1)}`;
+    const linhas = [];
+    const passo = 3;
+    for (let d = -h; d < w + h; d += passo) linhas.push(<line key={d} x1={x + d} y1={y + h} x2={x + d + h} y2={y} />);
+    return (
+      <g key={i}>
+        <clipPath id={clipId}><rect x={x} y={y} width={w} height={h} /></clipPath>
+        <g clipPath={`url(#${clipId})`} style={{ stroke: sh.color || COR_DESENHO, strokeWidth: 0.3, opacity: 0.55 }}>{linhas}</g>
+        <rect x={x} y={y} width={w} height={h} style={cor} strokeWidth={0.6} />
+      </g>
+    );
+  }
+  const angle = Math.atan2(b.y - a.y, b.x - a.x); const ah = 2.2;
+  const p1 = { x: b.x - ah * Math.cos(angle - 0.4), y: b.y - ah * Math.sin(angle - 0.4) };
+  const p2 = { x: b.x - ah * Math.cos(angle + 0.4), y: b.y - ah * Math.sin(angle + 0.4) };
+  return <g key={i}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />
+    <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} M ${b.x} ${b.y} L ${p2.x} ${p2.y}`} style={cor} strokeWidth={0.6} strokeLinecap="round" /></g>;
+}
+
+function shapeVisivelEm(sh, tempo) {
+  return sh.duracao == null || (tempo >= sh.criadoEmTempo && tempo <= sh.criadoEmTempo + sh.duracao);
+}
+
+/* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
+   desaparecerem no tempo certo, tal como foram marcados. ---- */
+function ClipPlayerModal({ clip, tag, onClose }) {
+  const [t, setT] = useState(0);
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
+          <span style={{ fontSize: 12.5, color: T.muted, ...body }}>{tag?.label} · {Math.round(clip.duracao)}s</span>
+          <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
+        </div>
+        <div style={{ position: 'relative' }}>
+          <video src={clip.publicUrl} controls autoPlay onTimeUpdate={e => setT(e.currentTarget.currentTime)}
+            style={{ width: '100%', display: 'block', background: '#000' }} />
+          <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+            {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(renderShape)}
+          </svg>
+        </div>
+        {clip.note && <div style={{ padding: 12, fontSize: 13, color: T.cream }}>{clip.note}</div>}
+      </div>
+    </div>
+  );
+}
+
 /* PROPS ESPERADAS — passadas do App principal, tal como `documentos`/
    `setDocumentos` já são passadas ao `DocumentosApp`:
    teamId, videosOriginais, setVideosOriginais, clipes, setClipes
@@ -65,6 +165,7 @@ function Btn({ children, onClick, variant = 'ghost', active, disabled, style, ti
 export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
+  const containerRef = useRef(null);
   const fileInputRef = useRef(null);
 
   const [originalAtivoId, setOriginalAtivoId] = useState(null);
@@ -84,20 +185,33 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const [modoDesenho, setModoDesenho] = useState(false);
   const [tool, setTool] = useState('seta');
+  const [duracaoDesenho, setDuracaoDesenho] = useState(3);
   const [shapes, setShapes] = useState([]);
+  const [textoPendente, setTextoPendente] = useState(null);
   const drawState = useRef(null);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const [copiedId, setCopiedId] = useState(null);
   const [clipeAReproduzir, setClipeAReproduzir] = useState(null);
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
 
+  useEffect(() => {
+    const aoMudar = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', aoMudar);
+    return () => document.removeEventListener('fullscreenchange', aoMudar);
+  }, []);
+  const alternarEcraInteiro = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else containerRef.current?.requestFullscreen?.().catch(() => {});
+  };
+
   // Assim que se escolhe um vídeo original, gera-se um signed URL —
   // o bucket `videos-originais` é privado, o browser precisa de um
   // link temporário para o poder reproduzir.
   useEffect(() => {
     setSignedUrl(null);
-    if (!originalAtivo) return;
+    if (!originalAtivo || originalAtivo.pronto === false) return;
     let cancelado = false;
     const tentar = async () => {
       for (let tentativa = 0; tentativa < 5 && !cancelado; tentativa++) {
@@ -110,7 +224,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     };
     tentar();
     return () => { cancelado = true; };
-  }, [originalAtivo?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originalAtivo?.id, originalAtivo?.pronto]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -140,7 +255,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const markIn = () => { setInPoint(current); if (outPoint != null && outPoint < current) setOutPoint(null); };
   const markOut = () => { setOutPoint(current); if (inPoint == null) setInPoint(Math.max(0, current - 8)); };
-  const limparMarcas = () => { setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); };
+  const limparMarcas = () => { setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); setTextoPendente(null); };
 
   // Seleciona automaticamente o vídeo assim que o upload (gerido lá em
   // cima, no App, para sobreviver à troca de separador) terminar com êxito.
@@ -177,7 +292,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       const novoClipe = {
         id: uid(), tagId: tag.id, storagePath: json.storagePath, publicUrl: json.publicUrl,
         origemInicio: inPoint, origemFim: outPoint, duracao: outPoint - inPoint,
-        note, shapes, originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
+        note,
+        // Os tempos dos desenhos foram marcados relativamente ao vídeo
+        // ORIGINAL (0 = início do jogo todo) — o clipe cortado começa
+        // sempre em 0, por isso passam a ser relativos ao início do clipe.
+        shapes: shapes.map(s => ({ ...s, criadoEmTempo: s.criadoEmTempo == null ? null : Math.max(0, s.criadoEmTempo - inPoint) })),
+        originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
       };
       setClipes(prev => [novoClipe, ...(prev || [])]);
       limparMarcas();
@@ -206,14 +326,42 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     const p = e.touches ? e.touches[0] : e;
     // x vai de 0 a 100, y vai de 0 a 56.25 — tem de bater certo com o
     // viewBox do SVG ali em baixo (que usa esses números para manter a
-    // proporção 16:9 sem esticar os desenhos). Antes isto devolvia y
-    // também em 0-100, por isso o traço aparecia sempre deslocado.
+    // proporção 16:9 sem esticar os desenhos).
     return { x: ((p.clientX - rect.left) / rect.width) * 100, y: ((p.clientY - rect.top) / rect.height) * 56.25 };
   };
   const abrirDesenho = () => { videoRef.current?.pause(); setModoDesenho(true); };
-  const fecharDesenho = () => setModoDesenho(false);
+  const fecharDesenho = () => { setModoDesenho(false); setTextoPendente(null); };
 
-  const startDraw = (e) => { if (!modoDesenho) return; videoRef.current?.pause(); drawState.current = { tool, color: T.crimsonBright, points: [getPoint(e)] }; };
+  const novaDuracao = () => (duracaoDesenho === 'sempre' ? null : duracaoDesenho);
+
+  const confirmarTexto = () => {
+    setTextoPendente(t => {
+      if (t && t.valor.trim()) {
+        setShapes(s => [...s, { tool: 'texto', color: COR_DESENHO, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, duracao: novaDuracao() }]);
+      }
+      return null;
+    });
+  };
+
+  const startDraw = (e) => {
+    if (!modoDesenho) return;
+    if (textoPendente) { confirmarTexto(); return; }
+    videoRef.current?.pause();
+    const pt = getPoint(e);
+    if (tool === 'apagar') {
+      let melhorI = -1, melhorD = 4;
+      shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
+      if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
+      return;
+    }
+    if (tool === 'texto') {
+      const rect = canvasWrapRef.current.getBoundingClientRect();
+      const p = e.touches ? e.touches[0] : e;
+      setTextoPendente({ pt, xPix: p.clientX - rect.left, yPix: p.clientY - rect.top, valor: '' });
+      return;
+    }
+    drawState.current = { tool, color: COR_DESENHO, points: [pt], criadoEmTempo: current, duracao: novaDuracao() };
+  };
   const moveDraw = (e) => {
     if (!modoDesenho || !drawState.current) return;
     const pt = getPoint(e); const st = drawState.current;
@@ -226,26 +374,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setShapes(s => [...s.filter(x => x !== st), { ...st }]);
     drawState.current = null;
   };
-  const renderShape = (sh, i) => {
-    if (!sh || !sh.points || sh.points.length === 0) return null;
-    const [a, b] = sh.points;
-    if (!a) return null;
-    const cor = { stroke: sh.color, fill: 'none' };
-    if (sh.tool === 'livre') {
-      const d = sh.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-      return <path key={i} d={d} style={cor} strokeWidth={0.6} strokeLinecap="round" />;
-    }
-    if (!b) return null;
-    if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} style={cor} strokeWidth={0.6} />;
-    if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />;
-    const angle = Math.atan2(b.y - a.y, b.x - a.x); const ah = 2.2;
-    const p1 = { x: b.x - ah * Math.cos(angle - 0.4), y: b.y - ah * Math.sin(angle - 0.4) };
-    const p2 = { x: b.x - ah * Math.cos(angle + 0.4), y: b.y - ah * Math.sin(angle + 0.4) };
-    return <g key={i}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />
-      <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} M ${b.x} ${b.y} L ${p2.x} ${p2.y}`} style={cor} strokeWidth={0.6} strokeLinecap="round" /></g>;
-  };
 
   const pct = (t) => (duration ? (t / duration) * 100 : 0);
+  const shapesVisiveis = modoDesenho ? shapes : shapes.filter(sh => shapeVisivelEm(sh, current));
+
+  const FERRAMENTAS = [['seta', ArrowUpRight, 'Seta'], ['circulo', Circle, 'Círculo'], ['linha', Minus, 'Linha'], ['retangulo', Square, 'Retângulo']];
 
   return (
     <div>
@@ -264,6 +397,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               background: v.id === originalAtivoId ? T.surfaceRaise : 'transparent', color: T.cream,
             }}>
             <Film size={12} color={T.muted} /> {v.titulo}
+            {v.pronto === false && <Loader2 size={11} className="spin" color={T.warn} title="A preparar…" />}
             <X size={12} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
           </button>
         ))}
@@ -285,45 +419,80 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       )}
 
       {originalAtivo && (
-        <div style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, overflow: 'hidden' }}>
-          {modoDesenho && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise }}>
-              <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
-              <Btn variant="solid" onClick={fecharDesenho}><Check size={14} /> Concluído</Btn>
+        <div ref={containerRef} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, overflow: 'hidden', ...(fullscreen ? { display: 'flex', flexDirection: 'column', height: '100vh' } : {}) }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: modoDesenho ? T.surfaceRaise : 'transparent' }}>
+            <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>{modoDesenho ? 'Modo de desenho — vídeo em pausa' : ''}</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Btn variant="ghost" onClick={alternarEcraInteiro} style={{ padding: 8 }} title="Ecrã inteiro">
+                {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </Btn>
+              {modoDesenho && <Btn variant="solid" onClick={fecharDesenho}><Check size={14} /> Concluído</Btn>}
             </div>
-          )}
+          </div>
 
-          <div style={{ display: 'flex' }}>
+          <div style={{ display: 'flex', flex: fullscreen ? 1 : undefined, minHeight: 0 }}>
             {modoDesenho && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}` }}>
-                {[['seta', ArrowUpRight], ['circulo', Circle], ['linha', Minus]].map(([id, Icon]) => (
-                  <Btn key={id} variant="ghost" active={tool === id} onClick={() => setTool(id)} style={{ padding: 10 }} title={id}><Icon size={18} /></Btn>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto' }}>
+                {FERRAMENTAS.map(([id, Icon, titulo]) => (
+                  <Btn key={id} variant="ghost" active={tool === id} onClick={() => setTool(id)} style={{ padding: 10 }} title={titulo}><Icon size={18} /></Btn>
                 ))}
-                <Btn variant="ghost" active={tool === 'livre'} onClick={() => setTool('livre')} style={{ padding: 10 }} title="livre">Livre</Btn>
+                <Btn variant="ghost" active={tool === 'livre'} onClick={() => setTool('livre')} style={{ padding: 10, fontSize: 11 }} title="Traço livre">Livre</Btn>
+                <Btn variant="ghost" active={tool === 'texto'} onClick={() => setTool('texto')} style={{ padding: 10 }} title="Texto"><Type size={18} /></Btn>
                 <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                <Btn variant="plain" onClick={() => setShapes([])} style={{ padding: 10 }} title="apagar tudo"><Eraser size={18} /></Btn>
+                <Btn variant="ghost" active={tool === 'apagar'} onClick={() => setTool('apagar')} style={{ padding: 10 }} title="Apagar um desenho (clica nele)"><Eraser size={18} /></Btn>
+                <Btn variant="plain" onClick={() => setShapes([])} style={{ padding: 10 }} title="Apagar tudo"><Trash2 size={18} /></Btn>
+                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <span style={{ fontSize: 10, color: T.mutedDim, textAlign: 'center', ...body }}>Duração</span>
+                {DURACOES.map(d => (
+                  <Btn key={d} variant="ghost" active={duracaoDesenho === d} onClick={() => setDuracaoDesenho(d)} style={{ padding: '6px 8px', fontSize: 11 }}>
+                    {d === 'sempre' ? 'Sempre' : `${d}s`}
+                  </Btn>
+                ))}
               </div>
             )}
-            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: '16/9', width: '100%' }}
+            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: fullscreen ? undefined : '16/9', flex: fullscreen ? 1 : undefined, width: '100%' }}
               onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
               onTouchStart={startDraw} onTouchMove={moveDraw} onTouchEnd={endDraw}>
-              {signedUrl ? (
+              {originalAtivo?.pronto === false ? (
+                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted, gap: 8, textAlign: 'center', padding: 20 }}>
+                  <Loader2 size={20} className="spin" />
+                  <span style={{ fontSize: 12.5, ...body }}>
+                    A preparar este vídeo para arrancar depressa (só acontece uma vez) — pode demorar alguns minutos, dependendo do tamanho.
+                  </span>
+                </div>
+              ) : signedUrl ? (
                 <>
-                  <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block' }} playsInline
+                  <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block', objectFit: fullscreen ? 'contain' : 'fill' }} playsInline
                     onLoadStart={() => setVideoPronto(false)} onCanPlay={() => setVideoPronto(true)} />
                   {!videoPronto && (
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: T.muted, pointerEvents: 'none' }}>
                       <Loader2 size={20} className="spin" />
-                      <span style={{ fontSize: 12, ...body }}>A preparar o vídeo… ficheiros grandes demoram mais a arrancar</span>
+                      <span style={{ fontSize: 12, ...body }}>A carregar o vídeo…</span>
                     </div>
                   )}
                 </>
               ) : (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted }}><Loader2 size={20} className="spin" /></div>
               )}
-              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? 'crosshair' : 'default' }}>
-                {shapes.map(renderShape)}
+              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? 'not-allowed' : 'crosshair') : 'default' }}>
+                {shapesVisiveis.map(renderShape)}
               </svg>
+              {textoPendente && (
+                <input
+                  autoFocus
+                  value={textoPendente.valor}
+                  onChange={e => setTextoPendente(t => ({ ...t, valor: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmarTexto(); if (e.key === 'Escape') setTextoPendente(null); }}
+                  onBlur={confirmarTexto}
+                  placeholder="Escreve e Enter…"
+                  style={{
+                    position: 'absolute', left: textoPendente.xPix, top: textoPendente.yPix,
+                    transform: 'translate(-4px,-50%)', background: 'rgba(0,0,0,0.75)', color: '#fff',
+                    border: `1px solid ${COR_DESENHO}`, borderRadius: 4, padding: '3px 7px', fontSize: 14,
+                    minWidth: 90, outline: 'none', zIndex: 5, ...body,
+                  }}
+                />
+              )}
             </div>
           </div>
 
@@ -413,17 +582,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       </div>
 
       {clipeAReproduzir && (
-        <div onClick={() => setClipeAReproduzir(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
-              <span style={{ fontSize: 12.5, color: T.muted, ...body }}>{TAGS.find(t => t.id === clipeAReproduzir.tagId)?.label} · {Math.round(clipeAReproduzir.duracao)}s</span>
-              <Btn variant="plain" onClick={() => setClipeAReproduzir(null)}><X size={16} /></Btn>
-            </div>
-            <video src={clipeAReproduzir.publicUrl} controls autoPlay style={{ width: '100%', display: 'block', background: '#000' }} />
-            {clipeAReproduzir.note && <div style={{ padding: 12, fontSize: 13, color: T.cream }}>{clipeAReproduzir.note}</div>}
-          </div>
-        </div>
+        <ClipPlayerModal clip={clipeAReproduzir} tag={TAGS.find(t => t.id === clipeAReproduzir.tagId)} onClose={() => setClipeAReproduzir(null)} />
       )}
     </div>
   );
