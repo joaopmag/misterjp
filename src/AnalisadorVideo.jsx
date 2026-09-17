@@ -497,9 +497,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <Btn variant="plain" onClick={() => setShapes([])} style={{ padding: 10 }} title="Apagar tudo"><Trash2 size={18} /></Btn>
               </div>
             )}
-            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: fullscreen ? undefined : '16/9', flex: fullscreen ? 1 : undefined, width: '100%' }}
+            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: fullscreen ? undefined : '16/9', flex: fullscreen ? 1 : undefined, width: '100%', touchAction: modoDesenho ? 'none' : 'auto' }}
               onMouseDown={startDraw} onMouseMove={moveDraw} onMouseUp={endDraw} onMouseLeave={endDraw}
-              onTouchStart={startDraw} onTouchMove={moveDraw} onTouchEnd={endDraw}>
+              onTouchStart={e => { if (modoDesenho) e.preventDefault(); startDraw(e); }}
+              onTouchMove={e => { if (modoDesenho) e.preventDefault(); moveDraw(e); }}
+              onTouchEnd={e => { if (modoDesenho) e.preventDefault(); endDraw(e); }}>
               {originalAtivo?.pronto === false ? (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted, gap: 8, textAlign: 'center', padding: 20 }}>
                   <Loader2 size={20} className="spin" />
