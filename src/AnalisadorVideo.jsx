@@ -78,9 +78,14 @@ function distanciaShape(sh, p) {
   const [a, b] = pts;
   if (!a) return Infinity;
   if (sh.tool === 'texto') return Math.hypot(p.x - a.x, p.y - a.y);
-  if (sh.tool === 'circulo' && b) return Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - Math.hypot(p.x - a.x, p.y - a.y));
+  if (sh.tool === 'circulo' && b) {
+    const r = Math.hypot(b.x - a.x, b.y - a.y);
+    const dCentro = Math.hypot(p.x - a.x, p.y - a.y);
+    return dCentro <= r ? 0 : dCentro - r; // dentro do círculo conta sempre como acerto
+  }
   if (sh.tool === 'retangulo' && b) {
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+    if (p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h) return 0; // dentro da zona conta sempre como acerto
     const c = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
     return Math.min(distPontoSegmento(p, c[0], c[1]), distPontoSegmento(p, c[1], c[2]), distPontoSegmento(p, c[2], c[3]), distPontoSegmento(p, c[3], c[0]));
   }
@@ -352,6 +357,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (editandoDuracaoIndex != null) setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: null } : sh)));
     setEditandoDuracaoIndex(null);
   };
+  // Dá para dar play, deixar correr até ao ponto certo, pausar, e usar esse
+  // momento exato — em vez de teres de escrever o minuto de cabeça.
+  const usarTempoAtualComoLimite = () => setDuracaoInputTexto(fmt(current));
 
   const confirmarTexto = () => {
     setTextoPendente(t => {
@@ -538,6 +546,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, zIndex: 6, flexWrap: 'wrap', justifyContent: 'center',
                 }}>
                   <span style={{ fontSize: 12, color: '#fff', ...body }}>Visível até ao minuto:</span>
+                  <Btn variant="ghost" onClick={usarTempoAtualComoLimite} style={{ padding: '5px 8px', fontSize: 12 }} title="Dá play, pausa no momento certo, e usa esse ponto">
+                    {playing ? <Pause size={13} /> : <Play size={13} />} Usar este momento
+                  </Btn>
                   <input
                     autoFocus
                     value={duracaoInputTexto}
@@ -553,20 +564,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             </div>
           </div>
 
+          <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Btn variant="ghost" onClick={togglePlay} style={{ padding: 8 }}>{playing ? <Pause size={16} /> : <Play size={16} />}</Btn>
+            <span style={{ fontSize: 12, color: T.muted, ...mono, minWidth: 44 }}>{fmt(current)}</span>
+            <div onClick={onScrubClick} style={{ flex: 1, height: 22, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+              <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: T.line, borderRadius: 3 }} />
+              <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: T.crimson, borderRadius: 3 }} />
+              {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: T.good }} />}
+              {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: T.bad }} />}
+            </div>
+            <span style={{ fontSize: 12, color: T.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
+          </div>
+
           {!modoDesenho && (
             <>
-              <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Btn variant="ghost" onClick={togglePlay} style={{ padding: 8 }}>{playing ? <Pause size={16} /> : <Play size={16} />}</Btn>
-                <span style={{ fontSize: 12, color: T.muted, ...mono, minWidth: 44 }}>{fmt(current)}</span>
-                <div onClick={onScrubClick} style={{ flex: 1, height: 22, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                  <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: T.line, borderRadius: 3 }} />
-                  <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: T.crimson, borderRadius: 3 }} />
-                  {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: T.good }} />}
-                  {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: T.bad }} />}
-                </div>
-                <span style={{ fontSize: 12, color: T.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
-              </div>
-
               <div style={{ padding: '8px 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: `1px solid ${T.line}` }}>
                 <Btn variant="ghost" onClick={markIn}><Flag size={14} color={T.good} /> Marcar início ({fmt(inPoint ?? 0)})</Btn>
                 <Btn variant="ghost" onClick={markOut}><Flag size={14} color={T.bad} /> Marcar fim ({fmt(outPoint ?? 0)})</Btn>
