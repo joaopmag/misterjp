@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type,
+  Maximize2, Minimize2, Square, Type, Move,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -33,14 +33,17 @@ const TAGS = [
   { id: 'erro', label: 'Erro', color: T.bad },
 ];
 
-const DURACOES = [2, 3, 5, 'sempre'];
-
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 function fmt(t) {
   if (!Number.isFinite(t)) return '00:00';
   const m = Math.floor(t / 60).toString().padStart(2, '0');
   const s = Math.floor(t % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
+}
+function parseMMSS(str) {
+  const m = /^(\d{1,3}):([0-5]?\d)$/.exec((str || '').trim());
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
 }
 
 function Btn({ children, onClick, variant = 'ghost', active, disabled, style, title }) {
@@ -109,17 +112,7 @@ function renderShape(sh, i) {
   if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />;
   if (sh.tool === 'retangulo') {
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-    const clipId = `clip-${i}-${x.toFixed(1)}-${y.toFixed(1)}`;
-    const linhas = [];
-    const passo = 3;
-    for (let d = -h; d < w + h; d += passo) linhas.push(<line key={d} x1={x + d} y1={y + h} x2={x + d + h} y2={y} />);
-    return (
-      <g key={i}>
-        <clipPath id={clipId}><rect x={x} y={y} width={w} height={h} /></clipPath>
-        <g clipPath={`url(#${clipId})`} style={{ stroke: sh.color || COR_DESENHO, strokeWidth: 0.3, opacity: 0.55 }}>{linhas}</g>
-        <rect x={x} y={y} width={w} height={h} style={cor} strokeWidth={0.6} />
-      </g>
-    );
+    return <rect key={i} x={x} y={y} width={w} height={h} fill={sh.color || COR_DESENHO} fillOpacity={0.22} stroke={sh.color || COR_DESENHO} strokeWidth={0.6} />;
   }
   const angle = Math.atan2(b.y - a.y, b.x - a.x); const ah = 2.2;
   const p1 = { x: b.x - ah * Math.cos(angle - 0.4), y: b.y - ah * Math.sin(angle - 0.4) };
@@ -129,7 +122,11 @@ function renderShape(sh, i) {
 }
 
 function shapeVisivelEm(sh, tempo) {
-  return sh.duracao == null || (tempo >= sh.criadoEmTempo && tempo <= sh.criadoEmTempo + sh.duracao);
+  const inicio = sh.criadoEmTempo ?? 0;
+  if (tempo < inicio) return false;
+  if (sh.mostrarAte != null) return tempo <= sh.mostrarAte;
+  if (sh.duracao != null) return tempo <= inicio + sh.duracao; // compatibilidade com clipes guardados antes desta alteração
+  return true; // sem limite definido = sempre visível
 }
 
 /* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
@@ -185,10 +182,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const [modoDesenho, setModoDesenho] = useState(false);
   const [tool, setTool] = useState('seta');
-  const [duracaoDesenho, setDuracaoDesenho] = useState(3);
   const [shapes, setShapes] = useState([]);
   const [textoPendente, setTextoPendente] = useState(null);
+  const [editandoDuracaoIndex, setEditandoDuracaoIndex] = useState(null);
+  const [duracaoInputTexto, setDuracaoInputTexto] = useState('');
   const drawState = useRef(null);
+  const dragState = useRef(null);
   const [fullscreen, setFullscreen] = useState(false);
 
   const [copiedId, setCopiedId] = useState(null);
@@ -296,7 +295,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         // Os tempos dos desenhos foram marcados relativamente ao vídeo
         // ORIGINAL (0 = início do jogo todo) — o clipe cortado começa
         // sempre em 0, por isso passam a ser relativos ao início do clipe.
-        shapes: shapes.map(s => ({ ...s, criadoEmTempo: s.criadoEmTempo == null ? null : Math.max(0, s.criadoEmTempo - inPoint) })),
+        shapes: shapes.map(s => ({
+          ...s,
+          criadoEmTempo: s.criadoEmTempo == null ? null : Math.max(0, s.criadoEmTempo - inPoint),
+          mostrarAte: s.mostrarAte == null ? null : Math.max(0, s.mostrarAte - inPoint),
+        })),
         originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
       };
       setClipes(prev => [novoClipe, ...(prev || [])]);
@@ -330,14 +333,34 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return { x: ((p.clientX - rect.left) / rect.width) * 100, y: ((p.clientY - rect.top) / rect.height) * 56.25 };
   };
   const abrirDesenho = () => { videoRef.current?.pause(); setModoDesenho(true); };
-  const fecharDesenho = () => { setModoDesenho(false); setTextoPendente(null); };
+  const fecharDesenho = () => { setModoDesenho(false); setTextoPendente(null); setEditandoDuracaoIndex(null); };
 
-  const novaDuracao = () => (duracaoDesenho === 'sempre' ? null : duracaoDesenho);
+  // Depois de qualquer desenho terminar, pergunta-se até quando deve
+  // ficar visível — em vez de uma regra igual para todos os desenhos.
+  const abrirPopupDuracao = (index) => {
+    setEditandoDuracaoIndex(index);
+    setDuracaoInputTexto(fmt(current + 3));
+  };
+  const confirmarDuracaoShape = () => {
+    const seg = parseMMSS(duracaoInputTexto);
+    if (seg != null && editandoDuracaoIndex != null) {
+      setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: seg } : sh)));
+    }
+    setEditandoDuracaoIndex(null);
+  };
+  const marcarSempreVisivelShape = () => {
+    if (editandoDuracaoIndex != null) setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: null } : sh)));
+    setEditandoDuracaoIndex(null);
+  };
 
   const confirmarTexto = () => {
     setTextoPendente(t => {
       if (t && t.valor.trim()) {
-        setShapes(s => [...s, { tool: 'texto', color: COR_DESENHO, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, duracao: novaDuracao() }]);
+        setShapes(s => {
+          const novaLista = [...s, { tool: 'texto', color: COR_DESENHO, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }];
+          abrirPopupDuracao(novaLista.length - 1);
+          return novaLista;
+        });
       }
       return null;
     });
@@ -345,13 +368,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const startDraw = (e) => {
     if (!modoDesenho) return;
+    if (editandoDuracaoIndex != null) setEditandoDuracaoIndex(null); // fecha um popup pendente antes de continuar
     if (textoPendente) { confirmarTexto(); return; }
     videoRef.current?.pause();
     const pt = getPoint(e);
     if (tool === 'apagar') {
-      let melhorI = -1, melhorD = 4;
+      let melhorI = -1, melhorD = 6;
       shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
       if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
+      return;
+    }
+    if (tool === 'mover') {
+      let melhorI = -1, melhorD = 6;
+      shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
+      if (melhorI >= 0) dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })) };
       return;
     }
     if (tool === 'texto') {
@@ -360,18 +390,31 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       setTextoPendente({ pt, xPix: p.clientX - rect.left, yPix: p.clientY - rect.top, valor: '' });
       return;
     }
-    drawState.current = { tool, color: COR_DESENHO, points: [pt], criadoEmTempo: current, duracao: novaDuracao() };
+    drawState.current = { tool, color: COR_DESENHO, points: [pt], criadoEmTempo: current, mostrarAte: null };
   };
   const moveDraw = (e) => {
-    if (!modoDesenho || !drawState.current) return;
+    if (!modoDesenho) return;
+    if (tool === 'mover' && dragState.current) {
+      const pt = getPoint(e);
+      const { index, inicio, pontosIniciais } = dragState.current;
+      const dx = pt.x - inicio.x, dy = pt.y - inicio.y;
+      setShapes(s => s.map((sh, i) => (i === index ? { ...sh, points: pontosIniciais.map(p => ({ x: p.x + dx, y: p.y + dy })) } : sh)));
+      return;
+    }
+    if (!drawState.current) return;
     const pt = getPoint(e); const st = drawState.current;
     if (st.tool === 'livre') st.points.push(pt); else st.points[1] = pt;
     setShapes(s => [...s.filter(x => x !== st), { ...st }]);
   };
   const endDraw = () => {
+    if (tool === 'mover') { dragState.current = null; return; }
     const st = drawState.current;
     if (!st) return;
-    setShapes(s => [...s.filter(x => x !== st), { ...st }]);
+    setShapes(s => {
+      const novaLista = [...s.filter(x => x !== st), { ...st }];
+      abrirPopupDuracao(novaLista.length - 1);
+      return novaLista;
+    });
     drawState.current = null;
   };
 
@@ -439,15 +482,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <Btn variant="ghost" active={tool === 'livre'} onClick={() => setTool('livre')} style={{ padding: 10, fontSize: 11 }} title="Traço livre">Livre</Btn>
                 <Btn variant="ghost" active={tool === 'texto'} onClick={() => setTool('texto')} style={{ padding: 10 }} title="Texto"><Type size={18} /></Btn>
                 <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <Btn variant="ghost" active={tool === 'mover'} onClick={() => setTool('mover')} style={{ padding: 10 }} title="Mover um desenho (arrasta-o)"><Move size={18} /></Btn>
                 <Btn variant="ghost" active={tool === 'apagar'} onClick={() => setTool('apagar')} style={{ padding: 10 }} title="Apagar um desenho (clica nele)"><Eraser size={18} /></Btn>
                 <Btn variant="plain" onClick={() => setShapes([])} style={{ padding: 10 }} title="Apagar tudo"><Trash2 size={18} /></Btn>
-                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                <span style={{ fontSize: 10, color: T.mutedDim, textAlign: 'center', ...body }}>Duração</span>
-                {DURACOES.map(d => (
-                  <Btn key={d} variant="ghost" active={duracaoDesenho === d} onClick={() => setDuracaoDesenho(d)} style={{ padding: '6px 8px', fontSize: 11 }}>
-                    {d === 'sempre' ? 'Sempre' : `${d}s`}
-                  </Btn>
-                ))}
               </div>
             )}
             <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: fullscreen ? undefined : '16/9', flex: fullscreen ? 1 : undefined, width: '100%' }}
@@ -474,24 +511,44 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               ) : (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted }}><Loader2 size={20} className="spin" /></div>
               )}
-              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? 'not-allowed' : 'crosshair') : 'default' }}>
+              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? 'not-allowed' : tool === 'mover' ? 'grab' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
               </svg>
               {textoPendente && (
-                <input
-                  autoFocus
-                  value={textoPendente.valor}
-                  onChange={e => setTextoPendente(t => ({ ...t, valor: e.target.value }))}
-                  onKeyDown={e => { if (e.key === 'Enter') confirmarTexto(); if (e.key === 'Escape') setTextoPendente(null); }}
-                  onBlur={confirmarTexto}
-                  placeholder="Escreve e Enter…"
-                  style={{
-                    position: 'absolute', left: textoPendente.xPix, top: textoPendente.yPix,
-                    transform: 'translate(-4px,-50%)', background: 'rgba(0,0,0,0.75)', color: '#fff',
-                    border: `1px solid ${COR_DESENHO}`, borderRadius: 4, padding: '3px 7px', fontSize: 14,
-                    minWidth: 90, outline: 'none', zIndex: 5, ...body,
-                  }}
-                />
+                <div style={{ position: 'absolute', left: textoPendente.xPix, top: textoPendente.yPix, transform: 'translate(-4px,-50%)', display: 'flex', gap: 4, zIndex: 5 }}>
+                  <input
+                    autoFocus
+                    value={textoPendente.valor}
+                    onChange={e => setTextoPendente(t => ({ ...t, valor: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') confirmarTexto(); if (e.key === 'Escape') setTextoPendente(null); }}
+                    placeholder="Escreve o texto…"
+                    style={{
+                      background: 'rgba(0,0,0,0.85)', color: '#fff',
+                      border: `1px solid ${COR_DESENHO}`, borderRadius: 4, padding: '3px 7px', fontSize: 14,
+                      minWidth: 100, outline: 'none', ...body,
+                    }}
+                  />
+                  <Btn variant="solid" onClick={confirmarTexto} style={{ padding: '4px 8px', fontSize: 12 }}>OK</Btn>
+                </div>
+              )}
+              {editandoDuracaoIndex != null && (
+                <div style={{
+                  position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)',
+                  background: 'rgba(0,0,0,0.88)', border: `1px solid ${COR_DESENHO}`, borderRadius: 8,
+                  padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, zIndex: 6, flexWrap: 'wrap', justifyContent: 'center',
+                }}>
+                  <span style={{ fontSize: 12, color: '#fff', ...body }}>Visível até ao minuto:</span>
+                  <input
+                    autoFocus
+                    value={duracaoInputTexto}
+                    onChange={e => setDuracaoInputTexto(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') confirmarDuracaoShape(); }}
+                    placeholder="mm:ss"
+                    style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 13, textAlign: 'center', ...mono }}
+                  />
+                  <Btn variant="solid" onClick={confirmarDuracaoShape} style={{ padding: '5px 10px', fontSize: 12 }}>OK</Btn>
+                  <Btn variant="ghost" onClick={marcarSempreVisivelShape} style={{ padding: '5px 10px', fontSize: 12 }}>Sempre visível</Btn>
+                </div>
               )}
             </div>
           </div>
