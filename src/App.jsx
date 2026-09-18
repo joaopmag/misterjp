@@ -9443,40 +9443,18 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
      nem de ouvir os eventos certos (`resize`/`orientationchange`
      nalguns aparelhos disparam tarde, ou não disparam de todo, à volta
      de mudanças de ecrã inteiro). */
-  // "Vertical" só deve significar telemóvel/tablet de pé — por isso exige
-  // também um ecrã de toque (`pointer: coarse`), não só a janela ser mais
-  // alta do que larga. Sem isso, uma janela de computador redimensionada
-  // (ou o ecrã inteiro nalgumas configurações) também batia como
-  // "portrait" e ativava sem querer o layout de telemóvel no desktop.
-  // "Vertical" só deve significar telemóvel/tablet de pé — por isso exige
-  // também que o aparelho SEJA um telemóvel/tablet a sério (Android,
-  // iPhone, iPad), não só a janela ser mais alta do que larga. Chegou a
-  // usar-se `pointer: coarse` e depois a largura da janela para essa
-  // segunda condição, mas nenhum dos dois é fiável em portáteis 2-em-1
-  // com ecrã tátil: respondem "coarse" como um telemóvel, e a escala do
-  // Windows (150%/200%) pode fazer o browser reportar uma janela mais
-  // estreita do que o ecrã é na realidade, mesmo sendo um ecrã grande.
-  // Perguntar ao sistema que tipo de aparelho é, em vez de adivinhar
-  // pelo tamanho ou pelo tipo de toque, resolve os dois casos.
-  const ehDispositivoMovel = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const ehVerticalAgora = () => ehDispositivoMovel() && window.matchMedia('(orientation: portrait)').matches;
-  const [vertical, setVertical] = useState(ehVerticalAgora);
+  // O quadro fica sempre na disposição horizontal — de propósito, sem
+  // nenhuma adaptação à orientação do ecrã. Já se tentou fazer isto
+  // adaptar-se sozinho a telemóvel na vertical, mas em aparelhos 2-em-1
+  // com ecrã tátil isso confundia-se com o próprio computador a ser
+  // rodado/mexido, o que não fazia sentido nenhum aqui — mais vale ficar
+  // sempre fixo do que tentar adivinhar mal.
+  const vertical = false;
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
-    const mq = window.matchMedia('(orientation: portrait)');
-    const aoMudarOrientacao = () => setVertical(ehVerticalAgora());
-    // Alguns browsers só têm `addListener` (a forma antiga); os mais
-    // recentes preferem `addEventListener('change', ...)` — tenta os
-    // dois, para funcionar em qualquer um.
-    if (mq.addEventListener) mq.addEventListener('change', aoMudarOrientacao);
-    else if (mq.addListener) mq.addListener(aoMudarOrientacao);
-    const aoRedimensionar = () => { setViewport({ w: window.innerWidth, h: window.innerHeight }); setVertical(ehVerticalAgora()); };
+    const aoRedimensionar = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', aoRedimensionar);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener('change', aoMudarOrientacao);
-      else if (mq.removeListener) mq.removeListener(aoMudarOrientacao);
-      window.removeEventListener('resize', aoRedimensionar);
-    };
+    return () => window.removeEventListener('resize', aoRedimensionar);
   }, []);
   /* `compacto` só decide o TAMANHO dos ícones (pequenos ou grandes) —
      nunca onde ficam. Onde ficam é só uma pergunta: o ecrã é vertical
@@ -9518,12 +9496,14 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     if (!jaEmFullscreen && el && el.requestFullscreen) {
       el.requestFullscreen().catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
     }
-    // Nalguns aparelhos (sobretudo 2-em-1 com ecrã tátil), rodar ou mexer
-    // no ecrã faz o próprio Windows/browser sair do ecrã inteiro sozinho,
-    // sem ser o utilizador a pedir isso — não é um gesto de fechar, é o
-    // sistema a reagir à mudança de ecrã. Nesses casos, tenta voltar-se
-    // logo a ecrã inteiro sozinho; só se isso falhar (ou o utilizador
-    // tiver mesmo saído de propósito) é que o quadro fecha a sério.
+    // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
+    // puxar uma cor do banco) fazem o ecrã piscar por uma fração de
+    // segundo para fora do modo de ecrã inteiro, sem ser o utilizador a
+    // pedir isso — sem esta espera, esse pisco sozinho já fechava e
+    // reabria o quadro todo, o que reiniciava tudo (a caneta voltava ao
+    // que era por omissão, o contador das posições perdia o sítio onde
+    // ia). Só fecha a sério se continuar fora do ecrã inteiro passado
+    // um bocadinho — um pisco momentâneo já não chega para isso.
     let temporizador = null;
     const aoSairDoFullscreen = () => {
       if (document.fullscreenElement) {
@@ -9531,13 +9511,9 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
         return;
       }
       if (temporizador) clearTimeout(temporizador);
-      const elAtual = quadroRootRef.current;
-      if (elAtual && elAtual.requestFullscreen) {
-        elAtual.requestFullscreen().catch(() => { /* não conseguiu — segue para o temporizador de fecho, abaixo */ });
-      }
       temporizador = setTimeout(() => {
         if (!document.fullscreenElement) onClose();
-      }, 700);
+      }, 400);
     };
     document.addEventListener('fullscreenchange', aoSairDoFullscreen);
     return () => {
