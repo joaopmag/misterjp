@@ -9518,14 +9518,12 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     if (!jaEmFullscreen && el && el.requestFullscreen) {
       el.requestFullscreen().catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
     }
-    // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
-    // puxar uma cor do banco) fazem o ecrã piscar por uma fração de
-    // segundo para fora do modo de ecrã inteiro, sem ser o utilizador a
-    // pedir isso — sem esta espera, esse pisco sozinho já fechava e
-    // reabria o quadro todo, o que reiniciava tudo (a caneta voltava ao
-    // que era por omissão, o contador das posições perdia o sítio onde
-    // ia). Só fecha a sério se continuar fora do ecrã inteiro passado
-    // um bocadinho — um pisco momentâneo já não chega para isso.
+    // Nalguns aparelhos (sobretudo 2-em-1 com ecrã tátil), rodar ou mexer
+    // no ecrã faz o próprio Windows/browser sair do ecrã inteiro sozinho,
+    // sem ser o utilizador a pedir isso — não é um gesto de fechar, é o
+    // sistema a reagir à mudança de ecrã. Nesses casos, tenta voltar-se
+    // logo a ecrã inteiro sozinho; só se isso falhar (ou o utilizador
+    // tiver mesmo saído de propósito) é que o quadro fecha a sério.
     let temporizador = null;
     const aoSairDoFullscreen = () => {
       if (document.fullscreenElement) {
@@ -9533,9 +9531,13 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
         return;
       }
       if (temporizador) clearTimeout(temporizador);
+      const elAtual = quadroRootRef.current;
+      if (elAtual && elAtual.requestFullscreen) {
+        elAtual.requestFullscreen().catch(() => { /* não conseguiu — segue para o temporizador de fecho, abaixo */ });
+      }
       temporizador = setTimeout(() => {
         if (!document.fullscreenElement) onClose();
-      }, 400);
+      }, 700);
     };
     document.addEventListener('fullscreenchange', aoSairDoFullscreen);
     return () => {
