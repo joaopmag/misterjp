@@ -9443,17 +9443,23 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
      nem de ouvir os eventos certos (`resize`/`orientationchange`
      nalguns aparelhos disparam tarde, ou não disparam de todo, à volta
      de mudanças de ecrã inteiro). */
-  const [vertical, setVertical] = useState(() => window.matchMedia('(orientation: portrait)').matches);
+  // "Vertical" só deve significar telemóvel/tablet de pé — por isso exige
+  // também um ecrã de toque (`pointer: coarse`), não só a janela ser mais
+  // alta do que larga. Sem isso, uma janela de computador redimensionada
+  // (ou o ecrã inteiro nalgumas configurações) também batia como
+  // "portrait" e ativava sem querer o layout de telemóvel no desktop.
+  const ehVerticalAgora = () => window.matchMedia('(orientation: portrait)').matches && window.matchMedia('(pointer: coarse)').matches;
+  const [vertical, setVertical] = useState(ehVerticalAgora);
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
     const mq = window.matchMedia('(orientation: portrait)');
-    const aoMudarOrientacao = () => setVertical(mq.matches);
+    const aoMudarOrientacao = () => setVertical(ehVerticalAgora());
     // Alguns browsers só têm `addListener` (a forma antiga); os mais
     // recentes preferem `addEventListener('change', ...)` — tenta os
     // dois, para funcionar em qualquer um.
     if (mq.addEventListener) mq.addEventListener('change', aoMudarOrientacao);
     else if (mq.addListener) mq.addListener(aoMudarOrientacao);
-    const aoRedimensionar = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
+    const aoRedimensionar = () => { setViewport({ w: window.innerWidth, h: window.innerHeight }); setVertical(ehVerticalAgora()); };
     window.addEventListener('resize', aoRedimensionar);
     return () => {
       if (mq.removeEventListener) mq.removeEventListener('change', aoMudarOrientacao);
