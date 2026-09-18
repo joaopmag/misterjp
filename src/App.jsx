@@ -9375,7 +9375,7 @@ function BenchesAndTechnicalArea({ printMode }) {
 const SEQUENCIA_POSICOES = ['GR', 'DD', 'DC', 'DC', 'DE', 'MD', 'MC', 'MO', 'EX', 'EX', 'PL'];
 const RAIO_BOLA_QUADRO = 1.85;
 const RAIO_BOLA_FUTEBOL_QUADRO = 1.0;
-const RAIO_BORRACHA_QUADRO = 1.8;
+const RAIO_BORRACHA_QUADRO = 3.5;
 
 /* Ao tocar numa cor SEM arrastar, a bola tem de nascer num sítio certo
    e sempre DENTRO das 4 linhas — sem isto, toques seguidos na mesma (ou
