@@ -9492,35 +9492,14 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     // Se já se entrou em ecrã inteiro no próprio clique que abriu este
     // ecrã (ver `abrirQuadroTatico`, no componente App), não se pede
     // outra vez — pedir duas vezes seguidas (uma no clique, outra aqui
-    // ao montar) podia competir uma com a outra e, nalguns browsers,
-    // fazer o próprio ecrã inteiro pestanejar ao entrar. Só pede aqui
-    // como rede de segurança, se por algum motivo ainda não estiver
-    // ativo (ex: este ecrã abriu de outro sítio, sem passar por lá).
+    // NOTA: já não se bloqueia a orientação para "landscape" — o ecrã
+    // deve poder rodar livremente com o aparelho, tal como o resto da
+    // app (o layout `vertical`/`horizontal`, logo abaixo, já se adapta
+    // sozinho a qualquer orientação).
     const jaEmFullscreen = !!document.fullscreenElement;
     const el = quadroRootRef.current;
-    const pedirBloqueioOrientacao = () => {
-      // Bloquear a orientação só costuma ser possível DEPOIS de entrar
-      // em ecrã inteiro, e só em alguns browsers (ex: falha sempre no
-      // Safari/iOS — não há forma de contornar isso a partir daqui, é
-      // uma limitação do próprio aparelho). Onde funcionar, o ecrã já
-      // não roda sozinho ao virar o telemóvel/tablet.
-      //
-      // Um pequeno atraso (só um instante, não dá para reparar) separa
-      // isto do próprio pedido de ecrã inteiro — pedir os dois colados
-      // um ao outro somava duas transições do browser seguidas, o que
-      // se via como um "flash".
-      setTimeout(() => {
-        if (screen.orientation && screen.orientation.lock) {
-          screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
-        }
-      }, 250);
-    };
-    if (jaEmFullscreen) {
-      pedirBloqueioOrientacao();
-    } else if (el && el.requestFullscreen) {
-      el.requestFullscreen()
-        .then(pedirBloqueioOrientacao)
-        .catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
+    if (!jaEmFullscreen && el && el.requestFullscreen) {
+      el.requestFullscreen().catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
     }
     // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
     // puxar uma cor do banco) fazem o ecrã piscar por uma fração de
@@ -9545,7 +9524,6 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
     return () => {
       if (temporizador) clearTimeout(temporizador);
       document.removeEventListener('fullscreenchange', aoSairDoFullscreen);
-      if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
