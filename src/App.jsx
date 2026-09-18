@@ -9448,7 +9448,14 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   // alta do que larga. Sem isso, uma janela de computador redimensionada
   // (ou o ecrã inteiro nalgumas configurações) também batia como
   // "portrait" e ativava sem querer o layout de telemóvel no desktop.
-  const ehVerticalAgora = () => window.matchMedia('(orientation: portrait)').matches && window.matchMedia('(pointer: coarse)').matches;
+  // "Vertical" só deve significar telemóvel/tablet de pé — por isso exige
+  // também um ecrã estreito (< 860px, o mesmo limiar que o resto da app
+  // usa para "isMobile"), não só a janela ser mais alta do que larga.
+  // Chegou a usar-se `pointer: coarse` para essa segunda condição, mas
+  // computadores com ecrã tátil (ex.: portáteis 2-em-1) também respondem
+  // "coarse" mesmo a serem usados como computador normal — a largura da
+  // janela é um sinal muito mais fiável de que é mesmo um telemóvel.
+  const ehVerticalAgora = () => window.matchMedia('(orientation: portrait)').matches && window.innerWidth < 860;
   const [vertical, setVertical] = useState(ehVerticalAgora);
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
