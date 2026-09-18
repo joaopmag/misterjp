@@ -3273,33 +3273,31 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 )}
               </button>
             ))}
+            {/* QUADRO TÁTICO — mesmo estilo e sequência dos outros itens
+                do menu, com um ícone próprio (quadro tático: X's e seta)
+                em vez de um ícone genérico da lib. */}
+            <button
+              onClick={abrirQuadroTatico}
+              aria-label="Abrir o Quadro Tático"
+              title="Quadro Tático"
+              className="navbtn"
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 11,
+                padding: '9px 20px', background: 'transparent', border: 'none',
+                borderLeft: '3px solid transparent', color: T.muted,
+                cursor: 'pointer', fontSize: 13.5, fontWeight: 500, textAlign: 'left', ...body,
+              }}
+            >
+              <svg viewBox="2.5 3.5 19 17" width="16" height="16" fill="none" stroke={T.mutedDim} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4.5 5.5l4 4M8.5 5.5l-4 4" />
+                <path d="M15.5 15l4 4M19.5 15l-4 4" />
+                <circle cx="5.5" cy="18" r="1.6" />
+                <path d="M7.3 16.6c2.5-2 4.3-4.8 6.2-8.9" />
+                <path d="M11.9 6.3l2.1-.5.5 2.3" />
+              </svg>
+              Quadro Tático
+            </button>
           </nav>
-          {/* QUADRO TÁTICO — em vez de mais um item na lista (que já vai
-              longa), fica aqui, separado, sempre à mão em qualquer ecrã
-              da app. Mesmo estilo de linha dos outros itens do menu, com
-              um ícone próprio (quadro tático: X's e seta) em vez de um
-              ícone genérico da lib. */}
-          <button
-            onClick={abrirQuadroTatico}
-            aria-label="Abrir o Quadro Tático"
-            title="Quadro Tático"
-            className="navbtn"
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 11,
-              padding: '9px 20px', background: 'transparent', border: 'none',
-              borderLeft: '3px solid transparent', color: T.muted,
-              cursor: 'pointer', fontSize: 13.5, fontWeight: 500, textAlign: 'left', ...body,
-            }}
-          >
-            <svg viewBox="2.5 3.5 19 17" width="16" height="16" fill="none" stroke={T.mutedDim} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4.5 5.5l4 4M8.5 5.5l-4 4" />
-              <path d="M15.5 15l4 4M19.5 15l-4 4" />
-              <circle cx="5.5" cy="18" r="1.6" />
-              <path d="M7.3 16.6c2.5-2 4.3-4.8 6.2-8.9" />
-              <path d="M11.9 6.3l2.1-.5.5 2.3" />
-            </svg>
-            Quadro Tático
-          </button>
           <div style={{ padding: '14px 20px', borderTop: `1px solid ${T.line}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
               <div style={{ fontSize: 10.5, color: T.mutedDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
