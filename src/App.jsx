@@ -9449,13 +9449,17 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   // (ou o ecrã inteiro nalgumas configurações) também batia como
   // "portrait" e ativava sem querer o layout de telemóvel no desktop.
   // "Vertical" só deve significar telemóvel/tablet de pé — por isso exige
-  // também um ecrã estreito (< 860px, o mesmo limiar que o resto da app
-  // usa para "isMobile"), não só a janela ser mais alta do que larga.
-  // Chegou a usar-se `pointer: coarse` para essa segunda condição, mas
-  // computadores com ecrã tátil (ex.: portáteis 2-em-1) também respondem
-  // "coarse" mesmo a serem usados como computador normal — a largura da
-  // janela é um sinal muito mais fiável de que é mesmo um telemóvel.
-  const ehVerticalAgora = () => window.matchMedia('(orientation: portrait)').matches && window.innerWidth < 860;
+  // também que o aparelho SEJA um telemóvel/tablet a sério (Android,
+  // iPhone, iPad), não só a janela ser mais alta do que larga. Chegou a
+  // usar-se `pointer: coarse` e depois a largura da janela para essa
+  // segunda condição, mas nenhum dos dois é fiável em portáteis 2-em-1
+  // com ecrã tátil: respondem "coarse" como um telemóvel, e a escala do
+  // Windows (150%/200%) pode fazer o browser reportar uma janela mais
+  // estreita do que o ecrã é na realidade, mesmo sendo um ecrã grande.
+  // Perguntar ao sistema que tipo de aparelho é, em vez de adivinhar
+  // pelo tamanho ou pelo tipo de toque, resolve os dois casos.
+  const ehDispositivoMovel = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const ehVerticalAgora = () => ehDispositivoMovel() && window.matchMedia('(orientation: portrait)').matches;
   const [vertical, setVertical] = useState(ehVerticalAgora);
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
