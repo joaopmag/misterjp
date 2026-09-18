@@ -405,7 +405,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       const pt = getPoint(e);
       const { index, inicio, pontosIniciais } = dragState.current;
       const dx = pt.x - inicio.x, dy = pt.y - inicio.y;
-      if (Math.hypot(dx, dy) > 0.5) dragState.current.moveu = true;
+      if (Math.hypot(dx, dy) > 2.5) dragState.current.moveu = true; // margem maior — um toque real nunca fica 100% parado
       setShapes(s => s.map((sh, i) => (i === index ? { ...sh, points: pontosIniciais.map(p => ({ x: p.x + dx, y: p.y + dy })) } : sh)));
       return;
     }
