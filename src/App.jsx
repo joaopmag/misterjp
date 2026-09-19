@@ -26226,7 +26226,7 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBibliot
 function PlayerJogosHome({ code, teamId, onBack }) {
   const [subTab, setSubTab] = useState('convocatorias');
   const abas = [
-    { id: 'convocatorias', label: 'Convocatórias' },
+    { id: 'convocatorias', label: 'Convocatória' },
     { id: 'planoJogo', label: 'Plano de Jogo' },
     { id: 'adversario', label: 'Adversário' },
   ];
@@ -26239,7 +26239,7 @@ function PlayerJogosHome({ code, teamId, onBack }) {
         <ChevronLeft size={15} /> Voltar
       </button>
 
-      <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Jogos</div>
+      <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Jogo</div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         {abas.map(a => {
