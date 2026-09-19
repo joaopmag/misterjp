@@ -2983,6 +2983,17 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              continuam a funcionar, porque o corte é só ao nível da
              página. */
           html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; background: ${T.bg}; }
+          /* Em computador, quem desloca é sempre o <main> (tem o seu
+             próprio scroll interno, já sem barra visível — classe
+             .mjp-scroll-fino, mais abaixo) — a própria página (html/body)
+             nunca precisa de deslocar-se por cima disso, mas às vezes
+             ficava 1-2px mais alta do que o ecrã e mostrava a sua
+             própria barra, a mais, encostada à borda direita do browser.
+             Só se aplica a computador — no telemóvel é a própria página
+             que desloca (o <main> não tem scroll próprio aí). */
+          @media (min-width: 860px) {
+            html, body { overflow-y: hidden; }
+          }
           /* Reserva sempre o espaço da barra de scroll vertical — ver o
              mesmo comentário em CheckinApp/moldura. Sem isto, trocar de
              ecrã aqui na pré-visualização (Pré-visualizar, no separador
