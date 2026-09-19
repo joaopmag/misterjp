@@ -9443,18 +9443,23 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
      nem de ouvir os eventos certos (`resize`/`orientationchange`
      nalguns aparelhos disparam tarde, ou não disparam de todo, à volta
      de mudanças de ecrã inteiro). */
-  // O quadro fica sempre na disposição horizontal — de propósito, sem
-  // nenhuma adaptação à orientação do ecrã. Já se tentou fazer isto
-  // adaptar-se sozinho a telemóvel na vertical, mas em aparelhos 2-em-1
-  // com ecrã tátil isso confundia-se com o próprio computador a ser
-  // rodado/mexido, o que não fazia sentido nenhum aqui — mais vale ficar
-  // sempre fixo do que tentar adivinhar mal.
-  const vertical = false;
+  const [vertical, setVertical] = useState(() => window.matchMedia('(orientation: portrait)').matches);
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
+    const mq = window.matchMedia('(orientation: portrait)');
+    const aoMudarOrientacao = () => setVertical(mq.matches);
+    // Alguns browsers só têm `addListener` (a forma antiga); os mais
+    // recentes preferem `addEventListener('change', ...)` — tenta os
+    // dois, para funcionar em qualquer um.
+    if (mq.addEventListener) mq.addEventListener('change', aoMudarOrientacao);
+    else if (mq.addListener) mq.addListener(aoMudarOrientacao);
     const aoRedimensionar = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', aoRedimensionar);
-    return () => window.removeEventListener('resize', aoRedimensionar);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', aoMudarOrientacao);
+      else if (mq.removeListener) mq.removeListener(aoMudarOrientacao);
+      window.removeEventListener('resize', aoRedimensionar);
+    };
   }, []);
   /* `compacto` só decide o TAMANHO dos ícones (pequenos ou grandes) —
      nunca onde ficam. Onde ficam é só uma pergunta: o ecrã é vertical
@@ -9484,13 +9489,38 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const slotsPendentes = useRef({ A: new Set(), B: new Set(), C: new Set(), D: new Set() });
 
   useEffect(() => {
-    // Pede-se ecrã inteiro, se ainda não estiver. A disposição fica
-    // sempre igual (sempre "horizontal", nunca um modo vertical à
-    // parte) — não depende de pedir nada ao sistema.
+    // Se já se entrou em ecrã inteiro no próprio clique que abriu este
+    // ecrã (ver `abrirQuadroTatico`, no componente App), não se pede
+    // outra vez — pedir duas vezes seguidas (uma no clique, outra aqui
+    // ao montar) podia competir uma com a outra e, nalguns browsers,
+    // fazer o próprio ecrã inteiro pestanejar ao entrar. Só pede aqui
+    // como rede de segurança, se por algum motivo ainda não estiver
+    // ativo (ex: este ecrã abriu de outro sítio, sem passar por lá).
     const jaEmFullscreen = !!document.fullscreenElement;
     const el = quadroRootRef.current;
-    if (!jaEmFullscreen && el && el.requestFullscreen) {
-      el.requestFullscreen().catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
+    const pedirBloqueioOrientacao = () => {
+      // Bloquear a orientação só costuma ser possível DEPOIS de entrar
+      // em ecrã inteiro, e só em alguns browsers (ex: falha sempre no
+      // Safari/iOS — não há forma de contornar isso a partir daqui, é
+      // uma limitação do próprio aparelho). Onde funcionar, o ecrã já
+      // não roda sozinho ao virar o telemóvel/tablet.
+      //
+      // Um pequeno atraso (só um instante, não dá para reparar) separa
+      // isto do próprio pedido de ecrã inteiro — pedir os dois colados
+      // um ao outro somava duas transições do browser seguidas, o que
+      // se via como um "flash".
+      setTimeout(() => {
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
+        }
+      }, 250);
+    };
+    if (jaEmFullscreen) {
+      pedirBloqueioOrientacao();
+    } else if (el && el.requestFullscreen) {
+      el.requestFullscreen()
+        .then(pedirBloqueioOrientacao)
+        .catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
     }
     // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
     // puxar uma cor do banco) fazem o ecrã piscar por uma fração de
@@ -9605,18 +9635,12 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
      possível dentro do espaço medido, sem surpresas de motor de CSS. */
   const areaRef = useRef(null);
   const [areaTamanho, setAreaTamanho] = useState({ w: 0, h: 0 });
-  const escalaFixaRef = useRef(null);
   useEffect(() => {
     const el = areaRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const obs = new ResizeObserver((entries) => {
-      // Só se regista a medida UMA VEZ — depois disso, o campo e tudo lá
-      // dentro (jogadores, bolas, desenhos) ficam fixos nesse tamanho
-      // para o resto da sessão, sem reagir a mais nada que aconteça ao
-      // ecrã (incluindo rodar o aparelho).
-      if (escalaFixaRef.current != null) return;
       const { width, height } = entries[0].contentRect;
-      if (width > 0 && height > 0) setAreaTamanho({ w: width, h: height });
+      setAreaTamanho({ w: width, h: height });
     });
     obs.observe(el);
     return () => obs.disconnect();
@@ -9626,11 +9650,9 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   // disponível na vertical, e o desenho lá dentro é que roda para caber.
   const largoBase = vertical ? VB_H : VB_W;
   const altoBase = vertical ? VB_W : VB_H;
-  const escalaMedida = areaTamanho.w > 0 && areaTamanho.h > 0
+  const escalaCampo = areaTamanho.w > 0 && areaTamanho.h > 0
     ? Math.min(areaTamanho.w / largoBase, areaTamanho.h / altoBase)
     : 0;
-  if (escalaMedida > 0 && escalaFixaRef.current == null) escalaFixaRef.current = escalaMedida;
-  const escalaCampo = escalaFixaRef.current ?? 0;
   const campoLargura = largoBase * escalaCampo;
   const campoAltura = altoBase * escalaCampo;
 
