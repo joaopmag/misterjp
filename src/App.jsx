@@ -9484,17 +9484,23 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const slotsPendentes = useRef({ A: new Set(), B: new Set(), C: new Set(), D: new Set() });
 
   useEffect(() => {
-    // Se já se entrou em ecrã inteiro no próprio clique que abriu este
-    // ecrã (ver `abrirQuadroTatico`, no componente App), não se pede
-    // outra vez — pedir duas vezes seguidas (uma no clique, outra aqui
-    // NOTA: já não se bloqueia a orientação para "landscape" — o ecrã
-    // deve poder rodar livremente com o aparelho, tal como o resto da
-    // app (o layout `vertical`/`horizontal`, logo abaixo, já se adapta
-    // sozinho a qualquer orientação).
+    // O quadro tem de ficar sempre na horizontal, faça-se o que se fizer
+    // ao ecrã — e isso só se consegue mesmo pedindo ao sistema para
+    // bloquear a orientação (só funciona depois de entrar em ecrã
+    // inteiro, e só nalguns browsers — no Safari/iOS, por exemplo, não
+    // há alternativa, é uma limitação do aparelho).
     const jaEmFullscreen = !!document.fullscreenElement;
     const el = quadroRootRef.current;
-    if (!jaEmFullscreen && el && el.requestFullscreen) {
-      el.requestFullscreen().catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
+    const pedirBloqueioOrientacao = () => {
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
+      }
+    };
+    if (jaEmFullscreen) {
+      pedirBloqueioOrientacao();
+    } else if (el && el.requestFullscreen) {
+      el.requestFullscreen().then(pedirBloqueioOrientacao)
+        .catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
     }
     // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
     // puxar uma cor do banco) fazem o ecrã piscar por uma fração de
