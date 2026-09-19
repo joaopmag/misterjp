@@ -210,9 +210,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   useEffect(() => {
     const idsAPreparar = videosOriginais.filter(v => v.pronto === false).map(v => v.id);
     if (idsAPreparar.length === 0) return undefined;
+    let falhasSeguidas = 0;
     const intervalo = setInterval(async () => {
       const { data, error } = await supabase.from('video_originais').select('id, data').in('id', idsAPreparar);
-      if (error || !data) return;
+      if (error || !data) {
+        // Depois de várias falhas seguidas (ex.: sessão de login expirou
+        // numa aba deixada aberta muito tempo), desiste — martelar o
+        // mesmo pedido de 15 em 15 segundos para sempre não ajuda nada
+        // nesse caso, só enche os registos de erros. Um simples refresh
+        // da página resolve (renova a sessão).
+        falhasSeguidas += 1;
+        if (falhasSeguidas >= 4) clearInterval(intervalo);
+        return;
+      }
+      falhasSeguidas = 0;
       setVideosOriginais(prev => prev.map(v => {
         const atualizado = data.find(r => r.id === v.id);
         return atualizado ? { ...atualizado.data, id: v.id } : v;
