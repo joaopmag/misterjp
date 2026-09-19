@@ -9484,23 +9484,13 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   const slotsPendentes = useRef({ A: new Set(), B: new Set(), C: new Set(), D: new Set() });
 
   useEffect(() => {
-    // O quadro tem de ficar sempre na horizontal, faça-se o que se fizer
-    // ao ecrã — e isso só se consegue mesmo pedindo ao sistema para
-    // bloquear a orientação (só funciona depois de entrar em ecrã
-    // inteiro, e só nalguns browsers — no Safari/iOS, por exemplo, não
-    // há alternativa, é uma limitação do aparelho).
+    // Pede-se ecrã inteiro, se ainda não estiver. A disposição fica
+    // sempre igual (sempre "horizontal", nunca um modo vertical à
+    // parte) — não depende de pedir nada ao sistema.
     const jaEmFullscreen = !!document.fullscreenElement;
     const el = quadroRootRef.current;
-    const pedirBloqueioOrientacao = () => {
-      if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('landscape').catch(() => { /* não suportado neste aparelho — sem alternativa */ });
-      }
-    };
-    if (jaEmFullscreen) {
-      pedirBloqueioOrientacao();
-    } else if (el && el.requestFullscreen) {
-      el.requestFullscreen().then(pedirBloqueioOrientacao)
-        .catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
+    if (!jaEmFullscreen && el && el.requestFullscreen) {
+      el.requestFullscreen().catch(() => { /* browser recusou o ecrã inteiro — continua na mesma, só sem esconder a barra */ });
     }
     // Nalguns aparelhos, certos gestos de arrastar (mover uma bola,
     // puxar uma cor do banco) fazem o ecrã piscar por uma fração de
@@ -9615,12 +9605,18 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
      possível dentro do espaço medido, sem surpresas de motor de CSS. */
   const areaRef = useRef(null);
   const [areaTamanho, setAreaTamanho] = useState({ w: 0, h: 0 });
+  const escalaFixaRef = useRef(null);
   useEffect(() => {
     const el = areaRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
     const obs = new ResizeObserver((entries) => {
+      // Só se regista a medida UMA VEZ — depois disso, o campo e tudo lá
+      // dentro (jogadores, bolas, desenhos) ficam fixos nesse tamanho
+      // para o resto da sessão, sem reagir a mais nada que aconteça ao
+      // ecrã (incluindo rodar o aparelho).
+      if (escalaFixaRef.current != null) return;
       const { width, height } = entries[0].contentRect;
-      setAreaTamanho({ w: width, h: height });
+      if (width > 0 && height > 0) setAreaTamanho({ w: width, h: height });
     });
     obs.observe(el);
     return () => obs.disconnect();
@@ -9630,9 +9626,11 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   // disponível na vertical, e o desenho lá dentro é que roda para caber.
   const largoBase = vertical ? VB_H : VB_W;
   const altoBase = vertical ? VB_W : VB_H;
-  const escalaCampo = areaTamanho.w > 0 && areaTamanho.h > 0
+  const escalaMedida = areaTamanho.w > 0 && areaTamanho.h > 0
     ? Math.min(areaTamanho.w / largoBase, areaTamanho.h / altoBase)
     : 0;
+  if (escalaMedida > 0 && escalaFixaRef.current == null) escalaFixaRef.current = escalaMedida;
+  const escalaCampo = escalaFixaRef.current ?? 0;
   const campoLargura = largoBase * escalaCampo;
   const campoAltura = altoBase * escalaCampo;
 
