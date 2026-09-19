@@ -26209,7 +26209,7 @@ function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBibliot
         <TemaCirculo Icon={Lightbulb} label="Ideia de Jogo" onClick={onOpenIdeiaJogo} />
         <TemaCirculo Icon={CalendarDays} label="Treino" onClick={onOpenTreino} />
         <TemaCirculo Icon={Tv} label="Biblioteca" onClick={onOpenBiblioteca} />
-        <TemaCirculo Icon={Trophy} label="Jogos" onClick={onOpenJogos} />
+        <TemaCirculo Icon={Trophy} label="Jogo" onClick={onOpenJogos} />
         <TemaCirculo Icon={ListOrdered} label="Competição" onClick={onOpenCompeticao} />
         <TemaCirculo Icon={TrendingUp} label="Desenvolvimento" onClick={onOpenDesenvolvimento} />
         <TemaCirculo Icon={ClipboardList} label="Tarefas" onClick={onOpenTarefas} badge={tarefasPendentes} />
