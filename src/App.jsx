@@ -9443,23 +9443,15 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
      nem de ouvir os eventos certos (`resize`/`orientationchange`
      nalguns aparelhos disparam tarde, ou não disparam de todo, à volta
      de mudanças de ecrã inteiro). */
-  const [vertical, setVertical] = useState(() => window.matchMedia('(orientation: portrait)').matches);
+  // O quadro fica sempre na disposição horizontal — sem ecrã vertical
+  // nenhum para onde mudar. Tudo o resto (ecrã inteiro, bloqueio de
+  // orientação do sistema, medição reativa do campo) continua igual.
+  const vertical = false;
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
-    const mq = window.matchMedia('(orientation: portrait)');
-    const aoMudarOrientacao = () => setVertical(mq.matches);
-    // Alguns browsers só têm `addListener` (a forma antiga); os mais
-    // recentes preferem `addEventListener('change', ...)` — tenta os
-    // dois, para funcionar em qualquer um.
-    if (mq.addEventListener) mq.addEventListener('change', aoMudarOrientacao);
-    else if (mq.addListener) mq.addListener(aoMudarOrientacao);
     const aoRedimensionar = () => setViewport({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', aoRedimensionar);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener('change', aoMudarOrientacao);
-      else if (mq.removeListener) mq.removeListener(aoMudarOrientacao);
-      window.removeEventListener('resize', aoRedimensionar);
-    };
+    return () => window.removeEventListener('resize', aoRedimensionar);
   }, []);
   /* `compacto` só decide o TAMANHO dos ícones (pequenos ou grandes) —
      nunca onde ficam. Onde ficam é só uma pergunta: o ecrã é vertical
