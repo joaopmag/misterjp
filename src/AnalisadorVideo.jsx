@@ -164,7 +164,7 @@ function ClipPlayerModal({ clip, tag, onClose }) {
    teamId, videosOriginais, setVideosOriginais, clipes, setClipes
    (os dois últimos pares vêm de `useCollectionSync('video_originais', …)`
    e `useCollectionSync('video_clips', …)` no App principal). */
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -305,11 +305,23 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     aCarregarAntesRef.current = uploadVideoEstado?.ativo;
   }, [uploadVideoEstado?.ativo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const apagarOriginal = async (video) => {
-    if (!window.confirm(`Apagar o vídeo "${video.titulo}"? Os clipes já cortados dele mantêm-se — só o vídeo completo desaparece.`)) return;
-    try { await supabase.storage.from('videos-originais').remove([video.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
-    setVideosOriginais(prev => prev.filter(v => v.id !== video.id));
-    if (originalAtivoId === video.id) { setOriginalAtivoId(null); limparMarcas(); }
+  const apagarOriginal = (video) => {
+    const executar = async () => {
+      try { await supabase.storage.from('videos-originais').remove([video.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
+      setVideosOriginais(prev => prev.filter(v => v.id !== video.id));
+      if (originalAtivoId === video.id) { setOriginalAtivoId(null); limparMarcas(); }
+    };
+    if (askConfirm) {
+      askConfirm({
+        title: 'Apagar vídeo?',
+        label: `Vídeo "${video.titulo}"`,
+        note: 'Os clipes já cortados dele mantêm-se — só o vídeo completo desaparece.',
+        confirmLabel: 'Apagar',
+        onConfirm: executar,
+      });
+    } else if (window.confirm(`Apagar o vídeo "${video.titulo}"? Os clipes já cortados dele mantêm-se — só o vídeo completo desaparece.`)) {
+      executar();
+    }
   };
 
   /* ---- Guardar clipe: chama a função que corta sem recodificar ---- */
@@ -349,10 +361,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
   };
 
-  const removerClipe = async (clip) => {
-    if (!window.confirm('Apagar este clipe?')) return;
-    try { await supabase.storage.from('videos-clipes').remove([clip.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
-    setClipes(prev => prev.filter(c => c.id !== clip.id));
+  const removerClipe = (clip) => {
+    const executar = async () => {
+      try { await supabase.storage.from('videos-clipes').remove([clip.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
+      setClipes(prev => prev.filter(c => c.id !== clip.id));
+    };
+    if (askConfirm) {
+      askConfirm({ title: 'Apagar clipe?', label: 'Este clipe', confirmLabel: 'Apagar', onConfirm: executar });
+    } else if (window.confirm('Apagar este clipe?')) {
+      executar();
+    }
   };
 
   const copiarLink = (clip) => {
