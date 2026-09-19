@@ -2537,7 +2537,17 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         const upload = new tus.Upload(file, {
           endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
           retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000],
-          headers: { authorization: `Bearer ${session.access_token}`, 'x-upsert': 'false' },
+          headers: { 'x-upsert': 'false' },
+          // Um vídeo grande pode demorar mais de uma hora a enviar — e o
+          // "bilhete" (token) da sessão expira ao fim de uma hora. Sem
+          // isto, o token ficava fixo desde o início e o envio começava a
+          // ser recusado a meio, com ficheiros grandes. Assim, pede-se um
+          // token válido a cada pedido — o próprio Supabase renova-o
+          // sozinho por trás se já estiver perto de expirar.
+          onBeforeRequest: async (req) => {
+            const { data: { session: sessaoAtual } } = await supabase.auth.getSession();
+            if (sessaoAtual?.access_token) req.setHeader('Authorization', `Bearer ${sessaoAtual.access_token}`);
+          },
           uploadDataDuringCreation: true,
           removeFingerprintOnSuccess: true,
           metadata: { bucketName: 'videos-originais', objectName: caminho, contentType: file.type || 'video/mp4', cacheControl: '3600' },
