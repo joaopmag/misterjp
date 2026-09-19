@@ -200,6 +200,28 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
 
+  // Enquanto houver algum vídeo "a preparar" (pronto: false), confirma-se
+  // a cada 15 segundos se já ficou pronto — sem esperar pela rede de
+  // segurança geral da app (essa só corre de 20 em 20 minutos, pensada
+  // para casos gerais, não para alguém a olhar para o ecrã à espera de
+  // UM vídeo específico agora mesmo). O Realtime continua a ser o
+  // caminho normal; isto é só um reforço para quando ele falha em
+  // silêncio.
+  useEffect(() => {
+    const idsAPreparar = videosOriginais.filter(v => v.pronto === false).map(v => v.id);
+    if (idsAPreparar.length === 0) return undefined;
+    const intervalo = setInterval(async () => {
+      const { data, error } = await supabase.from('video_originais').select('id, data').in('id', idsAPreparar);
+      if (error || !data) return;
+      setVideosOriginais(prev => prev.map(v => {
+        const atualizado = data.find(r => r.id === v.id);
+        return atualizado ? { ...atualizado.data, id: v.id } : v;
+      }));
+    }, 15000);
+    return () => clearInterval(intervalo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videosOriginais.map(v => `${v.id}:${v.pronto}`).join(',')]);
+
   useEffect(() => {
     const aoMudar = () => setFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', aoMudar);
