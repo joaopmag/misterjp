@@ -3331,7 +3331,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             ecrã. O limite de largura do conteúdo passou para o <div> de
             dentro; antes estava no próprio <main> e sobrava uma faixa
             escura à direita, fora da zona com scroll. */}
-        <main ref={mainRef} style={{
+        <main ref={mainRef} className="mjp-scroll-fino" style={{
           flex: 1, minWidth: 0,
           ...(isMobile ? {} : { overflowY: 'auto', height: '100vh' }),
         }}>
