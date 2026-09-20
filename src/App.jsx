@@ -22336,7 +22336,6 @@ function MatchDashboard({ players, matches }) {
   const colunaOrdenada = sortCol != null ? colunas[sortCol] : null;
   const rows = players
     .map(p => ({ player: p, s: playerStats(p, [], escolhidos) }))
-    .filter(r => r.s.matchesPlayed > 0)
     .sort((a, b) => {
       if (colunaOrdenada) {
         // A nota vem como texto ("6.3", de `.toFixed(1)`), não como
