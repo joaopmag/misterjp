@@ -21206,7 +21206,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
             Assiduidade e nota média
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rows.map(({ player, attended, pct, possiveis, avgTreino, avgJogo, avgAmigavel, totais }) => {
+            {rows.map(({ player, attended, pct, possiveis, avgTreino, avgJogo, totais }) => {
               const color = pct === null ? T.mutedDim : pct >= 80 ? T.good : pct >= 60 ? T.warn : T.bad;
               const noteColor = (v) => (v === null ? T.mutedDim : v >= 7 ? T.good : v >= 5 ? T.warn : T.bad);
               return (
@@ -21261,10 +21261,6 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                   <div style={{ textAlign: 'right', flexShrink: 0, width: 56 }}>
                     <div style={{ ...mono, color: noteColor(avgJogo), fontSize: 13 }}>{avgJogo === null ? 'NA' : avgJogo}</div>
                     <div style={{ fontSize: 10, color: T.mutedDim }}>média jogo</div>
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0, width: 66 }}>
-                    <div style={{ ...mono, color: noteColor(avgAmigavel), fontSize: 13 }}>{avgAmigavel === null ? 'NA' : avgAmigavel}</div>
-                    <div style={{ fontSize: 10, color: T.mutedDim }}>média amigável</div>
                   </div>
                 </div>
               );
