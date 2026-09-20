@@ -20987,7 +20987,12 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
       .filter(r => r != null && r !== '')
       .map(Number);
     const treinoVals = notasDe(d => !d.match);
-    const jogoVals = notasDe(d => !!d.match);
+    // "Jogo" (competição) e "amigável" são coisas diferentes — a nota de
+    // um amigável não deve pesar na média que representa o desempenho
+    // na competição a sério, por isso contam-se à parte, cada uma com a
+    // sua própria média.
+    const jogoVals = notasDe(d => !!d.match && !isFriendlyMatch(d.match));
+    const amigavelVals = notasDe(d => !!d.match && isFriendlyMatch(d.match));
 
     /* Totalizadores.
 
@@ -21001,7 +21006,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
 
     return {
       player: p, attended, pct, possiveis: diasPossiveis.length,
-      avgTreino: mean(treinoVals), avgJogo: mean(jogoVals),
+      avgTreino: mean(treinoVals), avgJogo: mean(jogoVals), avgAmigavel: mean(amigavelVals),
       countTreino: treinoVals.length, countJogo: jogoVals.length,
       totais: {
         presente: conta(comPresenca, 'presente'),
@@ -21201,7 +21206,7 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
             Assiduidade e nota média
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rows.map(({ player, attended, pct, possiveis, avgTreino, avgJogo, totais }) => {
+            {rows.map(({ player, attended, pct, possiveis, avgTreino, avgJogo, avgAmigavel, totais }) => {
               const color = pct === null ? T.mutedDim : pct >= 80 ? T.good : pct >= 60 ? T.warn : T.bad;
               const noteColor = (v) => (v === null ? T.mutedDim : v >= 7 ? T.good : v >= 5 ? T.warn : T.bad);
               return (
@@ -21256,6 +21261,10 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
                   <div style={{ textAlign: 'right', flexShrink: 0, width: 56 }}>
                     <div style={{ ...mono, color: noteColor(avgJogo), fontSize: 13 }}>{avgJogo === null ? 'NA' : avgJogo}</div>
                     <div style={{ fontSize: 10, color: T.mutedDim }}>média jogo</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0, width: 66 }}>
+                    <div style={{ ...mono, color: noteColor(avgAmigavel), fontSize: 13 }}>{avgAmigavel === null ? 'NA' : avgAmigavel}</div>
+                    <div style={{ fontSize: 10, color: T.mutedDim }}>média amigável</div>
                   </div>
                 </div>
               );
@@ -22579,7 +22588,21 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
   const rounds = (comp && comp.rounds) || [];
   const round = rounds[roundIdx];
 
-  useEffect(() => { setRoundIdx(0); }, [comp && comp.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A jornada mais recente é a última que já teve jogos com data até
+  // hoje — não é sempre a primeira da lista (isso só fazia sentido no
+  // início da época). Sem data nenhuma nos jogos, fica-se na primeira.
+  const jornadaMaisRecente = (lista) => {
+    const hoje = todayStr();
+    let melhorIdx = 0, melhorData = null;
+    lista.forEach((r, i) => {
+      (r.games || []).forEach(g => {
+        if (g.date && g.date <= hoje && (melhorData == null || g.date > melhorData)) { melhorData = g.date; melhorIdx = i; }
+      });
+    });
+    return melhorIdx;
+  };
+
+  useEffect(() => { setRoundIdx(jornadaMaisRecente(rounds)); }, [comp && comp.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // Ao chegarem novas jornadas (ex: outra pessoa acabou de atualizar),
@@ -26368,7 +26391,17 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
   const nossoClube = (dados && dados.clube) || '';
   const est = (dados && dados.estatisticas) || null;
 
-  useEffect(() => { setRoundIdx(0); }, [comp && comp.id]);
+  useEffect(() => {
+    const hoje = todayStr();
+    let melhorIdx = 0, melhorData = null;
+    rounds.forEach((r, i) => {
+      (r.games || []).forEach(g => {
+        if (g.date && g.date <= hoje && (melhorData == null || g.date > melhorData)) { melhorData = g.date; melhorIdx = i; }
+      });
+    });
+    setRoundIdx(melhorIdx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comp && comp.id]);
   useEffect(() => {
     if (roundIdx >= rounds.length && rounds.length > 0) setRoundIdx(rounds.length - 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -31296,9 +31329,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             </div>
             )}
 
+            {/* Altura FIXA (não só um máximo) — com poucos ou nenhuns
+                resultados a lista encolhia, e isso empurrava o resto da
+                página, dando a sensação de "saltar" ao escrever. Com
+                altura sempre igual, só o que está lá dentro muda. */}
             {visibleItems.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '10px 2px' }}>
-                Nada encontrado para “{busca}”.
+              <div style={{ height: '62vh', display: 'flex', alignItems: 'flex-start' }}>
+                <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '10px 2px' }}>
+                  Nada encontrado para “{busca}”.
+                </div>
               </div>
             ) : (
               <>
@@ -31314,7 +31353,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 </div>
                 <div style={{
                   display: 'flex', flexDirection: 'column', gap: 8,
-                  maxHeight: '62vh', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
+                  height: '62vh', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
                 }}>
                   {visibleItems.map(renderRow)}
                 </div>
