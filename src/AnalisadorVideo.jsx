@@ -254,7 +254,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       for (let tentativa = 0; tentativa < 5 && !cancelado; tentativa++) {
         const { data, error } = await supabase.storage.from('videos-originais').createSignedUrl(originalAtivo.storagePath, 3600);
         if (cancelado) return;
-        if (!error) { setSignedUrl(data.signedUrl); return; }
+        if (!error) {
+          // A Supabase recomenda o endereço direto de storage para
+          // ficheiros grandes — evita um salto extra por um gateway
+          // (Kong) que fica no caminho do endereço normal. Isto pode
+          // ser o que torna lento o seek perto do fim de vídeos longos.
+          const urlDireto = data.signedUrl.replace('.supabase.co/storage', '.storage.supabase.co/storage');
+          setSignedUrl(urlDireto);
+          return;
+        }
         await new Promise(r => setTimeout(r, 3000));
       }
       if (!cancelado) setErro('Este vídeo ainda não está disponível no servidor. Espera um pouco e volta a escolhê-lo na lista.');
