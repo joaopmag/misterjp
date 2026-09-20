@@ -25764,7 +25764,7 @@ const CHECKIN_ALLOW_BACKFILL = false;
    precisamente essa a forma de corrigir/preencher fora de horas.
 ---------------------------------------------------------------- */
 const CHECKIN_WINDOWS = {
-  wellness: { startMin: 8 * 60, endMin: 13 * 60, label: 'das 08:00 às 13:00' },
+  wellness: { startMin: 6 * 60 + 30, endMin: 13 * 60, label: 'das 06:30 às 13:00' },
   rpe: { startMin: 13 * 60 + 10, endMin: 23 * 60 + 59, label: 'das 13:10 às 23:59' },
 };
 
