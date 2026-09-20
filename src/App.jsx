@@ -22690,7 +22690,7 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                       const somosNos = /salgueiros/i.test(nome || '');
                       return (
                         <span style={{
-                          minWidth: 0, textAlign: lado, color: somosNos ? T.gold : T.cream,
+                          minWidth: 0, textAlign: lado, color: somosNos ? T.crimsonBright : T.cream,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                           fontWeight: somosNos ? 700 : 400,
                         }} title={nome}>{nome}</span>
@@ -26497,7 +26497,7 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
                     const somosNos = /salgueiros/i.test(nomeTxt || '');
                     return (
                       <span style={{
-                        minWidth: 0, textAlign: lado, color: somosNos ? T.gold : T.cream,
+                        minWidth: 0, textAlign: lado, color: somosNos ? T.crimsonBright : T.cream,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         fontWeight: somosNos ? 700 : 400,
                       }} title={nomeTxt}>{nomeTxt}</span>
