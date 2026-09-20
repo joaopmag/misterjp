@@ -22687,12 +22687,16 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                      de um lado deslocava o centro do resto da linha. */
                   return jogos.map((g, i) => {
                     const mostraData = i === 0 || g.date !== jogos[i - 1].date;
-                    const nomeEquipa = (nome, lado) => (
-                      <span style={{
-                        minWidth: 0, textAlign: lado, color: T.cream,
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }} title={nome}>{nome}</span>
-                    );
+                    const nomeEquipa = (nome, lado) => {
+                      const somosNos = /salgueiros/i.test(nome || '');
+                      return (
+                        <span style={{
+                          minWidth: 0, textAlign: lado, color: T.cream,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          fontWeight: somosNos ? 700 : 400,
+                        }} title={nome}>{nome}</span>
+                      );
+                    };
                     const confronto = (
                       <div style={{
                         display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
@@ -26490,12 +26494,16 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {(round?.games || []).map((g, i, jogos) => {
                   const mostraData = i === 0 || g.date !== jogos[i - 1].date;
-                  const nomeEquipa = (nomeTxt, lado) => (
-                    <span style={{
-                      minWidth: 0, textAlign: lado, color: T.cream,
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }} title={nomeTxt}>{nomeTxt}</span>
-                  );
+                  const nomeEquipa = (nomeTxt, lado) => {
+                    const somosNos = /salgueiros/i.test(nomeTxt || '');
+                    return (
+                      <span style={{
+                        minWidth: 0, textAlign: lado, color: T.cream,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        fontWeight: somosNos ? 700 : 400,
+                      }} title={nomeTxt}>{nomeTxt}</span>
+                    );
+                  };
                   const confronto = (
                     <div style={{
                       display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center',
