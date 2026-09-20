@@ -21100,7 +21100,17 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   // única nota por jogador, por dia.
   const setRating = (day, playerId, val) => {
     if (day.match) {
-      setMatches(prev => prev.map(x => (x.id === day.match.id ? { ...x, ratings: { ...(x.ratings || {}), [playerId]: val } } : x)));
+      setMatches(prev => prev.map(x => {
+        if (x.id !== day.match.id) return x;
+        // A mesma nota de jogo aparece em dois sítios da app (aqui, e no
+        // Relatório de Jogo, em Jogos/Planeamento) — sem isto, editar
+        // aqui não se refletia lá, e as estatísticas do jogador (que
+        // leem do Relatório de Jogo) ficavam com um número desatualizado.
+        const numero = val !== '' && val != null ? Number(val) : null;
+        const report = { ...(x.report || {}) };
+        report[playerId] = { ...(report[playerId] || {}), rating: numero };
+        return { ...x, ratings: { ...(x.ratings || {}), [playerId]: val }, report };
+      }));
       return;
     }
     setSessions(prev => prev.map(s => s.date === day.date ? { ...s, ratings: { ...(s.ratings || {}), [playerId]: val } } : s));
@@ -21119,10 +21129,41 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
     exportAttendanceCSV({ players: orderedPlayers, dayGroups, monthKeys: keys });
   };
 
+  // Notas de jogo já preenchidas ANTES de `ratings` e `report[pid].rating`
+  // passarem a andar ligados (ver `setRating`/`setReport`) — ficaram cada
+  // uma no seu sítio. Isto junta as duas, de uma vez, para os jogos já
+  // registados: onde só uma das duas existir, copia-a para a outra;
+  // onde já existirem as duas mas diferentes, fica a das Presenças (foi
+  // a mais recentemente confirmada aqui).
+  const jogosPorSincronizar = matches.filter(m => {
+    const rat = m.ratings || {};
+    const rep = m.report || {};
+    return Object.keys(rat).some(pid => Number(rat[pid]) !== (rep[pid]?.rating != null ? Number(rep[pid].rating) : null));
+  }).length;
+  const sincronizarNotasAntigas = () => {
+    setMatches(prev => prev.map(m => {
+      const rat = m.ratings || {};
+      if (Object.keys(rat).length === 0) return m;
+      const report = { ...(m.report || {}) };
+      Object.keys(rat).forEach(pid => {
+        const numero = rat[pid] != null && rat[pid] !== '' ? Number(rat[pid]) : null;
+        report[pid] = { ...(report[pid] || {}), rating: numero };
+      });
+      return { ...m, report };
+    }));
+  };
+
   return (
     <div>
       <SectionHeader title="Presenças" subtitle="Assiduidade e nota de treino."
-        action={dayGroups.length > 0 ? <Btn variant="ghost" onClick={doExport}><Download size={15} /> Exportar CSV</Btn> : null} />
+        action={<div style={{ display: 'flex', gap: 8 }}>
+          {jogosPorSincronizar > 0 && (
+            <Btn variant="ghost" onClick={sincronizarNotasAntigas} title="Junta as notas de jogo já preenchidas aqui com as do Relatório de Jogo">
+              <RefreshCw size={15} /> Sincronizar notas antigas ({jogosPorSincronizar})
+            </Btn>
+          )}
+          {dayGroups.length > 0 && <Btn variant="ghost" onClick={doExport}><Download size={15} /> Exportar CSV</Btn>}
+        </div>} />
 
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores no separador Plantel." />
@@ -21392,6 +21433,7 @@ function distribuirOnzeNoCampo(titulares, formacao, alinhamento) {
    o minuto exato, passa a ser um campo próprio. */
 function eventosDoJogo(match, players, duracao = 90) {
   const report = (match && match.report) || {};
+  const ratingsPresencas = (match && match.ratings) || {};
   const convocados = (match && match.convocados) || [];
   const titularesIds = (match && match.starters) || [];
 
@@ -21402,6 +21444,12 @@ function eventosDoJogo(match, players, duracao = 90) {
     const min = Number(r.minutes);
     const temMinutos = Number.isFinite(min) && min > 0;
     const titular = titularesIds.includes(pid);
+    // Nota: primeiro a do próprio relatório de jogo; se não houver,
+    // usa-se a que foi preenchida nas Presenças (mesma nota, dois sítios
+    // — ver `setReport`/`setRating`, que já as mantêm ligadas para
+    // edições novas; isto aqui cobre notas preenchidas antes disso).
+    const notaReport = r.rating != null && r.rating !== '' ? Number(r.rating) : null;
+    const notaPresencas = ratingsPresencas[pid] != null && ratingsPresencas[pid] !== '' ? Number(ratingsPresencas[pid]) : null;
     return {
       player: p,
       titular,
@@ -21409,7 +21457,7 @@ function eventosDoJogo(match, players, duracao = 90) {
       golos: Number(r.goals) || 0,
       assistencias: Number(r.assists) || 0,
       cartao: r.card && r.card !== 'none' ? r.card : null,
-      nota: r.rating != null && r.rating !== '' ? Number(r.rating) : null,
+      nota: notaReport != null ? notaReport : notaPresencas,
       // Saiu: titular que não fez o jogo todo. Entrou: suplente com minutos.
       saiuAo: titular && temMinutos && min < duracao ? min : null,
       entrouAo: !titular && temMinutos ? Math.max(0, duracao - min) : null,
@@ -24245,7 +24293,20 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
     });
   };
   const setReport = (pid, field, val) => {
-    setF({ ...f, report: { ...f.report, [pid]: { ...(f.report[pid] || {}), [field]: val } } });
+    setF(prev => {
+      const novo = { ...prev, report: { ...prev.report, [pid]: { ...(prev.report[pid] || {}), [field]: val } } };
+      // A nota é a MESMA coisa em dois sítios da app (aqui, e na tabela
+      // de Presenças) — sem isto, dava para ficarem duas notas
+      // diferentes para o mesmo jogador no mesmo jogo, consoante onde se
+      // editasse por último.
+      if (field === 'rating') {
+        const numero = val !== '' && val != null ? Number(val) : null;
+        novo.ratings = { ...(prev.ratings || {}) };
+        if (numero == null || Number.isNaN(numero)) delete novo.ratings[pid];
+        else novo.ratings[pid] = numero;
+      }
+      return novo;
+    });
   };
 
   const convocadoPlayers = players.filter(p => f.convocados.includes(p.id));
