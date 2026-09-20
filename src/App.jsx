@@ -30799,7 +30799,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
-      ) : visibleItems.length === 0 ? (
+      ) : visibleItems.length === 0 && !termo ? (
         <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
       ) : modoFeed ? (
         /* Largura de leitura, como numa rede social: em ecrã largo um vídeo
@@ -30813,7 +30813,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               {visibleItems.length} {visibleItems.length === 1 ? 'ficheiro' : 'ficheiros'}
             </span>
           </div>
-          {visibleItems.map(v => (
+          {visibleItems.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '10px 2px' }}>Nada encontrado para "{busca}".</div>
+          ) : visibleItems.map(v => (
             <MediaFeedItem
               key={v.id}
               item={v}
