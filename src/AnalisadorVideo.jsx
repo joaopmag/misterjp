@@ -482,7 +482,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const confirmarTexto = () => {
     setTextoPendente(t => {
       if (t && t.valor.trim()) {
-        setShapes(s => [...s, { tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }]);
+        setShapes(s => [...s, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }]);
       }
       return null;
     });
@@ -515,7 +515,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })), moveu: false };
       return;
     }
-    drawState.current = { tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
+    drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
+    setShapes(s => [...s, drawState.current]);
   };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
@@ -530,7 +531,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (!drawState.current) return;
     const pt = getPoint(e); const st = drawState.current;
     if (st.tool === 'livre' || st.tool === 'zonalivre') st.points.push(pt); else st.points[1] = pt;
-    setShapes(s => [...s.filter(x => x !== st), { ...st }]);
+    // Substitui SEMPRE a mesma entrada (pelo id, criado uma única vez em
+    // startDraw) — nunca acrescenta uma cópia nova. Era aqui que estava o
+    // problema: comparar pelo objeto `st` nunca batia certo com o que já
+    // estava no array (lá dentro só havia cópias, nunca o `st` original),
+    // por isso cada movimento ia sempre ACRESCENTANDO em vez de substituir.
+    setShapes(s => s.map(sh => (sh.id === st.id ? { ...st, points: [...st.points] } : sh)));
   };
   const endDraw = () => {
     if (dragState.current) {
@@ -539,10 +545,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       if (!moveu) abrirPopupDuracao(index); // foi um toque simples, sem arrastar — abre o tempo desse desenho
       return;
     }
-    const st = drawState.current;
-    if (!st) return;
-    setShapes(s => [...s.filter(x => x !== st), { ...st }]);
-    drawState.current = null;
+    drawState.current = null; // a forma já está no array e atualizada — nada mais a fazer
   };
 
   const pct = (t) => (duration ? (t / duration) * 100 : 0);
