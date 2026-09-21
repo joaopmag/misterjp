@@ -844,7 +844,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     {playing ? <Pause size={13} /> : <Play size={13} />} Usar este momento
                   </Btn>
                   <input
-                    autoFocus
                     value={duracaoInputTexto}
                     onChange={e => setDuracaoInputTexto(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') confirmarDuracaoShape(); }}
