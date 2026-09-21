@@ -83,12 +83,16 @@ export default async function handler(req, res) {
       console.error('cortar-clipe: falhou createSignedUrl', { storagePath, teamId, signErr });
       throw signErr;
     }
+    // Endereço direto de storage (recomendado pela Supabase para ficheiros
+    // grandes) — evita o gateway (Kong) que torna lentos os pedidos do
+    // ffmpeg a pontos fundos dentro de vídeos longos.
+    const urlLeituraDireta = signed.signedUrl.replace('.supabase.co/storage', '.storage.supabase.co/storage');
 
     const nomeSaida = `${teamId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
     const caminhoTemp = path.join(os.tmpdir(), `clip-${Date.now()}.mp4`);
 
     await new Promise((resolve, reject) => {
-      ffmpeg(signed.signedUrl)
+      ffmpeg(urlLeituraDireta)
         .inputOptions([`-ss ${start}`])       // seek de INPUT — rápido, só lê o troço
         .outputOptions([`-t ${duracao}`, '-c copy', '-avoid_negative_ts', 'make_zero'])
         .output(caminhoTemp)
@@ -106,8 +110,9 @@ export default async function handler(req, res) {
     if (upErr) throw upErr;
 
     const { data: pub } = supabaseAdmin.storage.from('videos-clipes').getPublicUrl(nomeSaida);
+    const publicUrlDireto = pub.publicUrl.replace('.supabase.co/storage', '.storage.supabase.co/storage');
 
-    return res.status(200).json({ storagePath: nomeSaida, publicUrl: pub.publicUrl });
+    return res.status(200).json({ storagePath: nomeSaida, publicUrl: publicUrlDireto });
   } catch (e) {
     console.error('cortar-clipe:', e);
     return res.status(500).json({ error: e.message || 'Falha ao cortar o clipe' });
