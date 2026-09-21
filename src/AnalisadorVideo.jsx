@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type, Pencil, Lasso,
+  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -116,7 +116,7 @@ function distanciaShape(sh, p) {
     const c = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
     return Math.min(distPontoSegmento(p, c[0], c[1]), distPontoSegmento(p, c[1], c[2]), distPontoSegmento(p, c[2], c[3]), distPontoSegmento(p, c[3], c[0]));
   }
-  if (sh.tool === 'livre' || sh.tool === 'zonalivre') {
+  if (sh.tool === 'livre' || sh.tool === 'zonalivre' || sh.tool === 'linhaPontos') {
     let min = Infinity;
     for (let k = 0; k < pts.length - 1; k++) min = Math.min(min, distPontoSegmento(p, pts[k], pts[k + 1]));
     if (sh.tool === 'zonalivre' && pts.length > 2) min = Math.min(min, distPontoSegmento(p, pts[pts.length - 1], pts[0])); // o traço fecha, junta o último ponto ao primeiro
@@ -136,7 +136,7 @@ function renderShape(sh, i) {
   if (sh.tool === 'texto') {
     return <text key={i} x={a.x} y={a.y} fill={sh.color || COR_DESENHO} fontSize={3.4} fontWeight={700} style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#00000099', strokeWidth: 0.5 }}>{sh.texto}</text>;
   }
-  if (sh.tool === 'livre' || sh.tool === 'zonalivre') {
+  if (sh.tool === 'livre' || sh.tool === 'zonalivre' || sh.tool === 'linhaPontos') {
     const fechado = sh.tool === 'zonalivre';
     const d = sh.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + (fechado ? ' Z' : '');
     return <path key={i} d={d}
@@ -226,11 +226,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [tool, setTool] = useState('seta');
   const [corAtual, setCorAtual] = useState(COR_DESENHO);
   const [shapes, setShapes] = useState([]);
+  const [historico, setHistorico] = useState([]); // pilha para o "Retroceder" — cada entrada é um estado anterior de shapes
+  const [pontosEmCurso, setPontosEmCurso] = useState(null); // { tool, points } — a construir a "Zona livre" ou "Ligar pontos" por toques
   const [textoPendente, setTextoPendente] = useState(null);
   const [editandoDuracaoIndex, setEditandoDuracaoIndex] = useState(null);
   const [duracaoInputTexto, setDuracaoInputTexto] = useState('');
   const drawState = useRef(null);
   const dragState = useRef(null);
+  const handleDragState = useRef(null); // arrastar um dos dois "pegas" de uma forma selecionada, para a redimensionar
   const [fullscreen, setFullscreen] = useState(false);
 
   const [copiedId, setCopiedId] = useState(null);
@@ -455,7 +458,34 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return { x: ((e.clientX - rect.left) / rect.width) * 100, y: ((e.clientY - rect.top) / rect.height) * 56.25 };
   };
   const abrirDesenho = () => { videoRef.current?.pause(); setModoDesenho(true); };
-  const fecharDesenho = () => { setModoDesenho(false); setTextoPendente(null); setEditandoDuracaoIndex(null); };
+  const fecharDesenho = () => { setModoDesenho(false); setTextoPendente(null); setEditandoDuracaoIndex(null); setPontosEmCurso(null); };
+
+  // Guarda o estado anterior antes de qualquer alteração (criar, mover,
+  // redimensionar, apagar) — o "Retroceder" repõe o último estado guardado.
+  // Até 20 passos, para não crescer sem limite.
+  const pushHistorico = () => setHistorico(h => [...h.slice(-19), shapes]);
+  const retroceder = () => {
+    setHistorico(h => {
+      if (h.length === 0) return h;
+      setShapes(h[h.length - 1]);
+      return h.slice(0, -1);
+    });
+  };
+
+  // "Zona livre" e "Ligar pontos" constroem-se por toques sucessivos —
+  // cada toque acrescenta um vértice, e "Concluir" fecha a forma.
+  const concluirPontos = () => {
+    if (!pontosEmCurso) return;
+    const minimo = pontosEmCurso.tool === 'zonalivre' ? 3 : 2;
+    if (pontosEmCurso.points.length < minimo) return;
+    pushHistorico();
+    setShapes(s => [...s, { id: uid(), tool: pontosEmCurso.tool, color: corAtual, points: pontosEmCurso.points, criadoEmTempo: current, mostrarAte: null }]);
+    setPontosEmCurso(null);
+  };
+  const apagarUltimoPonto = () => setPontosEmCurso(p => (p && p.points.length > 1 ? { ...p, points: p.points.slice(0, -1) } : null));
+
+  // Cancela uma construção por pontos a meio, se se mudar de ferramenta.
+  useEffect(() => { setPontosEmCurso(null); }, [tool]);
 
   // Abre-se ao clicar (sem arrastar) num desenho já existente, para
   // definir ou ajustar até quando fica visível.
@@ -482,6 +512,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const confirmarTexto = () => {
     setTextoPendente(t => {
       if (t && t.valor.trim()) {
+        pushHistorico();
         setShapes(s => [...s, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }]);
       }
       return null;
@@ -494,10 +525,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (textoPendente) { confirmarTexto(); return; }
     videoRef.current?.pause();
     const pt = getPoint(e);
+
+    // A construir uma "Zona livre" ou "Ligar pontos" — cada toque só
+    // acrescenta mais um vértice (conclui-se com o botão "Concluir").
+    if (pontosEmCurso) {
+      setPontosEmCurso(p => ({ ...p, points: [...p.points, pt] }));
+      return;
+    }
     if (tool === 'apagar') {
       let melhorI = -1, melhorD = 6;
       shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
-      if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
+      if (melhorI >= 0) { pushHistorico(); setShapes(s => s.filter((_, i) => i !== melhorI)); }
       return;
     }
     if (tool === 'texto') {
@@ -508,18 +546,36 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     // Antes de desenhar algo novo, vê-se se o toque caiu em cima de um
     // desenho já existente — nesse caso é para mexer nele (arrastando) ou
     // para o selecionar (um toque simples, sem arrastar), em vez de criar
-    // um desenho novo por cima. Funciona com qualquer ferramenta ativa.
+    // um desenho novo por cima. Funciona com qualquer ferramenta ativa,
+    // incluindo as duas ferramentas por pontos.
     let melhorI = -1, melhorD = 6;
     shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
     if (melhorI >= 0) {
+      pushHistorico();
       dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })), moveu: false };
       return;
     }
+    if (tool === 'zonalivre' || tool === 'linhaPontos') { setPontosEmCurso({ tool, points: [pt] }); return; }
+    pushHistorico();
     drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
     setShapes(s => [...s, drawState.current]);
   };
+  // Arrastar uma das duas "pegas" de uma forma selecionada (aparecem junto
+  // ao popup de duração) — para a redimensionar ou reorientar, em vez de
+  // só a poder mover inteira.
+  const startHandleDrag = (index, ponto, e) => {
+    e.stopPropagation();
+    pushHistorico();
+    handleDragState.current = { index, ponto };
+  };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
+    if (handleDragState.current) {
+      const pt = getPoint(e);
+      const { index, ponto } = handleDragState.current;
+      setShapes(s => s.map((sh, i) => (i === index ? { ...sh, points: sh.points.map((p, pi) => (pi === ponto ? pt : p)) } : sh)));
+      return;
+    }
     if (dragState.current) {
       const pt = getPoint(e);
       const { index, inicio, pontosIniciais } = dragState.current;
@@ -530,19 +586,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     if (!drawState.current) return;
     const pt = getPoint(e); const st = drawState.current;
-    if (st.tool === 'livre' || st.tool === 'zonalivre') st.points.push(pt); else st.points[1] = pt;
+    if (st.tool === 'livre') st.points.push(pt); else st.points[1] = pt;
     // Substitui SEMPRE a mesma entrada (pelo id, criado uma única vez em
-    // startDraw) — nunca acrescenta uma cópia nova. Era aqui que estava o
-    // problema: comparar pelo objeto `st` nunca batia certo com o que já
-    // estava no array (lá dentro só havia cópias, nunca o `st` original),
-    // por isso cada movimento ia sempre ACRESCENTANDO em vez de substituir.
+    // startDraw) — nunca acrescenta uma cópia nova.
     setShapes(s => s.map(sh => (sh.id === st.id ? { ...st, points: [...st.points] } : sh)));
   };
   const endDraw = () => {
+    if (handleDragState.current) { handleDragState.current = null; return; }
     if (dragState.current) {
       const { index, moveu } = dragState.current;
       dragState.current = null;
-      if (!moveu) abrirPopupDuracao(index); // foi um toque simples, sem arrastar — abre o tempo desse desenho
+      if (!moveu) abrirPopupDuracao(index); // foi um toque simples, sem arrastar — abre o tempo desse desenho (e mostra as pegas, se a forma tiver)
       return;
     }
     drawState.current = null; // a forma já está no array e atualizada — nada mais a fazer
@@ -558,6 +612,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     ['retangulo', Square, 'Zona'],
     ['livre', Pencil, 'Traço'],
     ['zonalivre', Lasso, 'Zona livre'],
+    ['linhaPontos', Waypoints, 'Ligar pontos'],
   ];
 
   return (
@@ -600,15 +655,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
       {originalAtivo && (
         <div ref={containerRef} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, overflow: 'hidden', ...(fullscreen ? { display: 'flex', flexDirection: 'column', height: '100vh' } : {}) }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: modoDesenho ? T.surfaceRaise : 'transparent' }}>
-            <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>{modoDesenho ? 'Modo de desenho — vídeo em pausa' : ''}</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Btn variant="ghost" onClick={alternarEcraInteiro} style={{ padding: 8 }} title="Ecrã inteiro">
-                {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              </Btn>
-              {modoDesenho && <Btn variant="solid" onClick={fecharDesenho}><Check size={14} /> Concluído</Btn>}
+          {modoDesenho && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise }}>
+              <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Btn variant="ghost" onClick={retroceder} disabled={historico.length === 0} style={{ padding: 8 }} title="Retroceder">
+                  <Undo2 size={16} />
+                </Btn>
+                <Btn variant="solid" onClick={fecharDesenho}><Check size={14} /> Concluído</Btn>
+              </div>
             </div>
-          </div>
+          )}
 
           <div style={{ display: 'flex', flex: fullscreen ? 1 : undefined, minHeight: 0 }}>
             {modoDesenho && (
@@ -631,7 +688,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
                 <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
                 <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
-                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => setShapes([])} />
+                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
               </div>
             )}
             <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: fullscreen ? undefined : '16/9', flex: fullscreen ? 1 : undefined, width: '100%', touchAction: modoDesenho ? 'none' : 'auto' }}
@@ -659,7 +716,48 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               )}
               <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? 'not-allowed' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
+
+                {/* Pré-visualização da "Zona livre" / "Ligar pontos" a meio da construção */}
+                {pontosEmCurso && pontosEmCurso.points.length > 0 && (
+                  <g>
+                    {pontosEmCurso.points.length > 1 && (
+                      <path
+                        d={pontosEmCurso.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + (pontosEmCurso.tool === 'zonalivre' && pontosEmCurso.points.length > 2 ? ' Z' : '')}
+                        stroke={corAtual} strokeWidth={0.5} strokeDasharray="1.6,1.2" strokeLinejoin="round"
+                        fill={pontosEmCurso.tool === 'zonalivre' ? corAtual : 'none'} fillOpacity={pontosEmCurso.tool === 'zonalivre' ? 0.18 : undefined}
+                      />
+                    )}
+                    {pontosEmCurso.points.map((p, idx) => (
+                      <circle key={idx} cx={p.x} cy={p.y} r={1.3} fill={corAtual} stroke="#000" strokeWidth={0.3} />
+                    ))}
+                  </g>
+                )}
+
+                {/* Pegas para redimensionar a forma selecionada (a mesma que tem o popup de duração aberto) */}
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'retangulo'].includes(shapes[editandoDuracaoIndex].tool) &&
+                  shapes[editandoDuracaoIndex].points.map((p, pi) => (
+                    <circle key={pi} cx={p.x} cy={p.y} r={2} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.5}
+                      onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
+                      style={{ cursor: 'pointer', touchAction: 'none' }} />
+                  ))}
               </svg>
+              {pontosEmCurso && (
+                <div onPointerDown={e => e.stopPropagation()}
+                  style={{
+                    position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+                    background: 'rgba(0,0,0,0.88)', border: `1px solid ${corAtual}`, borderRadius: 8,
+                    padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, zIndex: 6, flexWrap: 'wrap', justifyContent: 'center',
+                  }}>
+                  <span style={{ fontSize: 12, color: '#fff', ...body }}>
+                    {pontosEmCurso.points.length} ponto{pontosEmCurso.points.length === 1 ? '' : 's'} — toca no vídeo para acrescentar
+                  </span>
+                  <Btn variant="ghost" onClick={apagarUltimoPonto} disabled={pontosEmCurso.points.length < 2} style={{ padding: '5px 8px', fontSize: 12 }}>Apagar último</Btn>
+                  <Btn variant="solid" onClick={concluirPontos} disabled={pontosEmCurso.points.length < (pontosEmCurso.tool === 'zonalivre' ? 3 : 2)} style={{ padding: '5px 10px', fontSize: 12 }}>
+                    <Check size={13} /> Concluir
+                  </Btn>
+                  <Btn variant="ghost" onClick={() => setPontosEmCurso(null)} style={{ padding: '5px 10px', fontSize: 12 }}>Cancelar</Btn>
+                </div>
+              )}
               {textoPendente && (
                 <div onPointerDown={e => e.stopPropagation()}
                   style={{ position: 'absolute', left: textoPendente.xPix, top: textoPendente.yPix, transform: 'translate(-4px,-50%)', display: 'flex', gap: 4, zIndex: 5 }}>
@@ -720,6 +818,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               }} />
             </div>
             <span style={{ fontSize: 12, color: T.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
+            <Btn variant="ghost" onClick={alternarEcraInteiro} style={{ padding: 8 }} title="Ecrã inteiro">
+              {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </Btn>
           </div>
 
           {!modoDesenho && (
