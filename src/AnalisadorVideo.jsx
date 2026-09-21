@@ -227,14 +227,14 @@ function pontosNoTempo(sh, tempo) {
 
 /* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
    desaparecerem no tempo certo, tal como foram marcados. ---- */
-function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied }) {
+function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied, onChangeTag }) {
   const [t, setT] = useState(0);
   return (
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
-          <span style={{ fontSize: 12.5, color: T.muted, ...body }}>{tag?.label} · {Math.round(clip.duracao)}s</span>
+          <span style={{ fontSize: 12.5, color: T.muted, ...body }}>{tag?.label || 'Sem etiqueta'} · {Math.round(clip.duracao)}s</span>
           <div style={{ display: 'flex', gap: 6 }}>
             <Btn variant="ghost" onClick={onCopy} style={{ padding: '6px 10px' }} title="Copiar link">
               {copied ? <Check size={14} color={T.good} /> : <Link2 size={14} />}
@@ -250,7 +250,21 @@ function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied }) {
             {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(sh => (sh.pontosFim ? { ...sh, points: pontosNoTempo(sh, t) } : sh)).map(renderShape)}
           </svg>
         </div>
-        {clip.note && <div style={{ padding: 12, fontSize: 13, color: T.cream }}>{clip.note}</div>}
+        {clip.note && <div style={{ padding: '12px 12px 0', fontSize: 13, color: T.cream }}>{clip.note}</div>}
+        {/* Etiqueta — pode-se atribuir ou mudar aqui, mesmo depois de o
+           clipe já estar guardado sem nenhuma. */}
+        <div style={{ padding: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {TAGS.map(tg => (
+            <button key={tg.id} onClick={() => onChangeTag(tg.id)}
+              style={{
+                padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', ...body,
+                border: `1px solid ${tg.color}`, background: clip.tagId === tg.id ? tg.color : 'transparent',
+                color: clip.tagId === tg.id ? TEXT_ON_ACCENT : tg.color,
+              }}>
+              {tg.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -472,9 +486,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.error || 'Falha ao cortar');
 
-      const tag = TAGS.find(t => t.id === pendingTag) || TAGS[0];
+      const tag = TAGS.find(t => t.id === pendingTag) || null;
       const novoClipe = {
-        id: uid(), tagId: tag.id, storagePath: json.storagePath, publicUrl: json.publicUrl, thumbUrl: json.thumbUrl || null,
+        id: uid(), tagId: tag ? tag.id : null, storagePath: json.storagePath, publicUrl: json.publicUrl, thumbUrl: json.thumbUrl || null,
         origemInicio: inPoint, origemFim: outPoint, duracao: outPoint - inPoint,
         note,
         // Os tempos dos desenhos foram marcados relativamente ao vídeo
@@ -494,6 +508,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     } finally {
       setAGuardarClipe(false);
     }
+  };
+
+  // Muda (ou atribui pela primeira vez) a etiqueta de um clipe já guardado.
+  const mudarTagClipe = (clip, novoTagId) => {
+    setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, tagId: novoTagId } : c)));
+    setClipeAReproduzir(prev => (prev && prev.id === clip.id ? { ...prev, tagId: novoTagId } : prev));
   };
 
   const removerClipe = (clip, onRemovido) => {
@@ -1094,6 +1114,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   </div>
                   <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…"
                     style={{ width: '100%', minHeight: 54, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 7, color: T.cream, padding: 8, fontSize: 13, resize: 'vertical', ...body }} />
+                  {erro && (
+                    <div style={{ background: T.surface, border: `1px solid ${T.bad}`, borderRadius: 7, padding: 9, marginTop: 8, color: T.cream, fontSize: 12.5 }}>{erro}</div>
+                  )}
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe}>
                       {aGuardarClipe ? <Loader2 size={14} className="spin" /> : <Check size={14} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
@@ -1161,13 +1184,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                           <Film size={22} color={T.mutedDim} />
                         </div>
                       )}
-                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: tag?.color }} />
+                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: tag?.color || T.line }} />
                       <span style={{ position: 'absolute', bottom: 4, right: 6, fontSize: 10.5, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 5px', ...mono }}>
                         {Math.round(clip.duracao)}s
                       </span>
                     </div>
                     <div style={{ padding: '7px 9px' }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: tag?.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: tag?.color || T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label || 'Sem etiqueta'}</div>
                       {clip.note ? (
                         <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip.note}</div>
                       ) : (
@@ -1190,6 +1213,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           copied={copiedId === clipeAReproduzir.id}
           onCopy={() => copiarLink(clipeAReproduzir)}
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
+          onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
         />
       )}
     </div>

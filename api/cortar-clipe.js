@@ -98,7 +98,7 @@ export default async function handler(req, res) {
     // pode ter vários GB), não um problema real com o pedido. Repetir
     // resolve a esmagadora maioria dessas falhas sozinho.
     let ultimoErro = null;
-    for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    for (let tentativa = 1; tentativa <= 3; tentativa++) {
       try {
         await new Promise((resolve, reject) => {
           ffmpeg(urlLeituraDireta)
