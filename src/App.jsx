@@ -2556,7 +2556,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           uploadDataDuringCreation: true,
           removeFingerprintOnSuccess: true,
           metadata: { bucketName: 'videos-originais', objectName: caminho, contentType: file.type || 'video/mp4', cacheControl: '3600' },
-          chunkSize: 6 * 1024 * 1024,
+          chunkSize: 2 * 1024 * 1024, // era 6MB — mais pequeno aguenta melhor uma ligação instável (menos para reenviar se um pedaço falhar)
           onError: (err) => reject(err),
           onProgress: (enviados, total) => setUploadVideoEstado(s => ({ ...s, progresso: Math.round((enviados / total) * 100) })),
           onSuccess: () => resolve(),
