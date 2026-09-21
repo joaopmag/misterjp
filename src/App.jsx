@@ -2523,7 +2523,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // carregamento continua em segundo plano mesmo que o treinador vá ver
   // outra parte da app enquanto espera.
   const [uploadVideoEstado, setUploadVideoEstado] = useState({ ativo: false, progresso: 0, finalizando: false, erro: '' });
-  const iniciarUploadVideo = useCallback(async (file) => {
+  const iniciarUploadVideo = useCallback(async (file, nomePersonalizado) => {
     setUploadVideoEstado({ ativo: true, progresso: 0, finalizando: false, erro: '' });
     try {
       const nomeLimpo = file.name
@@ -2582,7 +2582,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       if (!pronto) throw new Error('O vídeo foi enviado, mas o Supabase ainda não o disponibilizou. Espera um minuto e recarrega a página — costuma aparecer sozinho.');
 
       const novo = {
-        id: uid(), storagePath: caminho, titulo: file.name.replace(/\.[^.]+$/, ''),
+        id: uid(), storagePath: caminho, titulo: (nomePersonalizado && nomePersonalizado.trim()) || file.name.replace(/\.[^.]+$/, ''),
         tamanho: file.size, criadoEm: new Date().toISOString(),
         // pronto:false até o video-worker (serviço à parte) confirmar que já
         // reorganizou o ficheiro para arrancar depressa. Chega sozinho via
@@ -3395,7 +3395,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
           {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
-          {tab === 'analise' && <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} />}
+          {/* Sempre montado, escondido com CSS (não desmontado) — o mesmo
+             motivo da Biblioteca logo abaixo: sem isto, trocar de separador
+             e voltar perdia o vídeo selecionado, a posição de reprodução e
+             qualquer desenho a meio de ser feito. */}
+          <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
+            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} />
+          </div>
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.

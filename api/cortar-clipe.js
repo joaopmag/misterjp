@@ -93,15 +93,31 @@ export default async function handler(req, res) {
 
     const nomeSaida = `${teamId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
 
-    await new Promise((resolve, reject) => {
-      ffmpeg(urlLeituraDireta)
-        .inputOptions([`-ss ${start}`])       // seek de INPUT — rápido, só lê o troço
-        .outputOptions([`-t ${duracao}`, '-c copy', '-avoid_negative_ts', 'make_zero'])
-        .output(caminhoTemp)
-        .on('end', resolve)
-        .on('error', reject)
-        .run();
-    });
+    // Tenta cortar até 2 vezes — a causa mais comum de falha aqui é uma
+    // quebra momentânea da rede a meio da leitura do vídeo original (que
+    // pode ter vários GB), não um problema real com o pedido. Repetir
+    // resolve a esmagadora maioria dessas falhas sozinho.
+    let ultimoErro = null;
+    for (let tentativa = 1; tentativa <= 2; tentativa++) {
+      try {
+        await new Promise((resolve, reject) => {
+          ffmpeg(urlLeituraDireta)
+            .inputOptions([`-ss ${start}`])       // seek de INPUT — rápido, só lê o troço
+            .outputOptions([`-t ${duracao}`, '-c copy', '-avoid_negative_ts', 'make_zero'])
+            .output(caminhoTemp)
+            .on('end', resolve)
+            .on('error', reject)
+            .run();
+        });
+        ultimoErro = null;
+        break;
+      } catch (e) {
+        ultimoErro = e;
+        console.error(`cortar-clipe: falhou o corte (tentativa ${tentativa})`, e.message || e);
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+    if (ultimoErro) throw ultimoErro;
 
     const { error: upErr } = await supabaseAdmin
       .storage.from('videos-clipes')

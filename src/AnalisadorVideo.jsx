@@ -220,6 +220,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const canvasWrapRef = useRef(null);
   const containerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const [ficheiroPendente, setFicheiroPendente] = useState(null); // ficheiro escolhido, à espera do nome antes de começar o envio
+  const [nomeVideoInput, setNomeVideoInput] = useState('');
 
   const [originalAtivoId, setOriginalAtivoId] = useState(null);
   const [signedUrl, setSignedUrl] = useState(null);
@@ -670,27 +672,62 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   return (
     <div>
       <input ref={fileInputRef} type="file" accept="video/*" style={{ display: 'none' }}
-        onChange={e => { const f = e.target.files[0]; if (f) iniciarUploadVideo(f); e.target.value = ''; }} />
+        onChange={e => {
+          const f = e.target.files[0];
+          if (f) { setFicheiroPendente(f); setNomeVideoInput(f.name.replace(/\.[^.]+$/, '')); }
+          e.target.value = '';
+        }} />
 
       {(erro || uploadVideoEstado?.erro) && <div style={{ background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 8, padding: 10, marginBottom: 12, color: T.cream, fontSize: 13 }}>{erro || uploadVideoEstado.erro}</div>}
 
-      {/* Vídeos originais carregados (temporários) */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14, alignItems: 'center' }}>
+      {/* Nome do vídeo — pede-se antes de começar a enviar, para a lista
+         não ficar cheia de nomes de ficheiro em bruto do telemóvel. */}
+      {ficheiroPendente && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12.5, color: T.muted, ...body }}>Nome do vídeo:</span>
+          <input
+            autoFocus
+            value={nomeVideoInput}
+            onChange={e => setNomeVideoInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && nomeVideoInput.trim()) { iniciarUploadVideo(ficheiroPendente, nomeVideoInput.trim()); setFicheiroPendente(null); } }}
+            style={{ flex: '1 1 180px', background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '6px 9px', fontSize: 13, ...body }}
+          />
+          <Btn variant="solid" disabled={!nomeVideoInput.trim()} onClick={() => { iniciarUploadVideo(ficheiroPendente, nomeVideoInput.trim()); setFicheiroPendente(null); }}>
+            <Upload size={13} /> Carregar
+          </Btn>
+          <Btn variant="ghost" onClick={() => setFicheiroPendente(null)}>Cancelar</Btn>
+        </div>
+      )}
+
+      {/* Vídeos originais carregados (temporários) — caixas retangulares */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
         {videosOriginais.map(v => (
           <button key={v.id} onClick={() => { setOriginalAtivoId(v.id); limparMarcas(); }}
             style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 999, fontSize: 12.5, cursor: 'pointer', ...body,
-              border: `1px solid ${v.id === originalAtivoId ? T.crimsonBright : T.line}`,
-              background: v.id === originalAtivoId ? T.surfaceRaise : 'transparent', color: T.cream,
+              display: 'flex', flexDirection: 'column', gap: 8, width: 172, textAlign: 'left', cursor: 'pointer', padding: '10px 12px', ...body,
+              borderRadius: 10, border: `1px solid ${v.id === originalAtivoId ? T.crimsonBright : T.line}`,
+              background: v.id === originalAtivoId ? T.surfaceRaise : T.surface,
             }}>
-            <Film size={12} color={T.muted} /> {v.titulo}
-            {v.pronto === false && <Loader2 size={11} className="spin" color={T.warn} title="A preparar…" />}
-            <X size={12} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Film size={14} color={T.muted} style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.titulo}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              {v.pronto === false ? (
+                <span style={{ fontSize: 11, color: T.warn, display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={11} className="spin" /> A preparar…</span>
+              ) : <span style={{ fontSize: 11, color: T.mutedDim }}>Pronto</span>}
+              <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
+            </div>
           </button>
         ))}
-        <Btn variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo}>
-          {uploadVideoEstado?.ativo ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar no servidor…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
-        </Btn>
+        <button onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo}
+          style={{
+            width: 172, minHeight: 62, borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: uploadVideoEstado?.ativo ? 'not-allowed' : 'pointer', fontSize: 12,
+          }}>
+          {uploadVideoEstado?.ativo ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+          {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
+        </button>
       </div>
 
       {uploadVideoEstado?.ativo && (
@@ -925,7 +962,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       <div style={{ marginTop: 26 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <Tag size={16} color={T.gold} />
-          <h2 style={{ fontSize: 15, margin: 0, ...display, fontWeight: 600 }}>
+          <h2 style={{ fontSize: 15, margin: 0, ...display, fontWeight: 600, color: T.cream }}>
             Clipes ({(filtroTag ? clipes.filter(c => c.tagId === filtroTag) : clipes).length})
           </h2>
         </div>
