@@ -2541,7 +2541,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       await new Promise((resolve, reject) => {
         const upload = new tus.Upload(file, {
           endpoint: `${SUPABASE_URL_STORAGE_DIRETO}/storage/v1/upload/resumable`,
-          retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000],
+          retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 90000, 120000, 120000], // mais paciência — dá até 2 min entre tentativas para quebras de rede mais longas
           headers: { 'x-upsert': 'false' },
           // Um vídeo grande pode demorar mais de uma hora a enviar — e o
           // "bilhete" (token) da sessão expira ao fim de uma hora. Sem
