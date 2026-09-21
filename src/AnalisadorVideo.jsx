@@ -265,6 +265,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const containerRef = useRef(null);
   const fileInputRef = useRef(null);
   const [ficheiroPendente, setFicheiroPendente] = useState(null); // ficheiro escolhido, à espera do nome antes de começar o envio
+  const [editandoNomeId, setEditandoNomeId] = useState(null); // id do vídeo cujo nome está a ser editado agora
+  const [nomeEditado, setNomeEditado] = useState('');
   const [nomeVideoInput, setNomeVideoInput] = useState('');
 
   const [originalAtivoId, setOriginalAtivoId] = useState(null);
@@ -436,6 +438,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     aCarregarAntesRef.current = uploadVideoEstado?.ativo;
   }, [uploadVideoEstado?.ativo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Muda o nome de um vídeo já carregado — não mexe no ficheiro em si,
+  // só no nome que a app mostra.
+  const renomearVideo = (id, novoNome) => {
+    if (!novoNome.trim()) { setEditandoNomeId(null); return; }
+    setVideosOriginais(prev => prev.map(v => (v.id === id ? { ...v, titulo: novoNome.trim() } : v)));
+    setEditandoNomeId(null);
+  };
 
   const apagarOriginal = (video) => {
     const executar = async () => {
@@ -798,7 +808,23 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 )}
               </div>
               <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.titulo}</span>
+                {editandoNomeId === v.id ? (
+                  <input
+                    autoFocus
+                    value={nomeEditado}
+                    onChange={e => setNomeEditado(e.target.value)}
+                    onClick={e => e.stopPropagation()}
+                    onKeyDown={e => { if (e.key === 'Enter') renomearVideo(v.id, nomeEditado); if (e.key === 'Escape') setEditandoNomeId(null); }}
+                    onBlur={() => renomearVideo(v.id, nomeEditado)}
+                    style={{ width: '100%', background: '#111', color: '#fff', border: `1px solid ${T.crimsonBright}`, borderRadius: 4, padding: '3px 6px', fontSize: 12.5, ...body }}
+                  />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{v.titulo}</span>
+                    <Pencil size={11} color={T.mutedDim} style={{ flexShrink: 0 }}
+                      onClick={(e) => { e.stopPropagation(); setNomeEditado(v.titulo); setEditandoNomeId(v.id); }} />
+                  </div>
+                )}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   {v.pronto === false ? (
                     <span style={{ fontSize: 11, color: T.warn }}>A preparar…</span>
