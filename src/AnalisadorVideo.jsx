@@ -169,7 +169,7 @@ function renderShape(sh, i) {
           strokeWidth={ESPESSURA} strokeLinecap="round" strokeLinejoin="round" />
         {/* "Ligar pontos" mostra sempre os vértices, para se ver onde estão os pontos ligados */}
         {sh.tool === 'linhaPontos' && sh.points.map((p, pi) => (
-          <circle key={pi} cx={p.x} cy={p.y} r={0.55} fill={sh.color || COR_DESENHO} />
+          <circle key={pi} cx={p.x} cy={p.y} r={0.4} fill={sh.color || COR_DESENHO} />
         ))}
       </g>
     );
@@ -209,6 +209,22 @@ function shapeVisivelEm(sh, tempo) {
   return true; // sem limite definido = sempre visível
 }
 
+// Para um círculo com "posição final" definida (a acompanhar um jogador em
+// movimento) — calcula onde deve estar num instante `tempo`, deslizando
+// linearmente entre a posição inicial e a final ao longo da janela de
+// tempo em que a forma está visível. Sem posição final, devolve os pontos
+// tal como estão sempre (formas normais, paradas).
+function pontosNoTempo(sh, tempo) {
+  if (!sh.pontosFim || sh.mostrarAte == null) return sh.points;
+  const t0 = sh.criadoEmTempo ?? 0, t1 = sh.mostrarAte;
+  if (t1 <= t0) return sh.points;
+  const frac = Math.max(0, Math.min(1, (tempo - t0) / (t1 - t0)));
+  return sh.points.map((p, idx) => {
+    const pf = sh.pontosFim[idx] || p;
+    return { x: p.x + (pf.x - p.x) * frac, y: p.y + (pf.y - p.y) * frac };
+  });
+}
+
 /* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
    desaparecerem no tempo certo, tal como foram marcados. ---- */
 function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied }) {
@@ -231,7 +247,7 @@ function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied }) {
           <video src={clip.publicUrl} controls autoPlay onTimeUpdate={e => setT(e.currentTarget.currentTime)}
             style={{ width: '100%', display: 'block', background: '#000' }} />
           <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-            {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(renderShape)}
+            {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(sh => (sh.pontosFim ? { ...sh, points: pontosNoTempo(sh, t) } : sh)).map(renderShape)}
           </svg>
         </div>
         {clip.note && <div style={{ padding: 12, fontSize: 13, color: T.cream }}>{clip.note}</div>}
@@ -275,6 +291,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [historico, setHistorico] = useState([]); // pilha para o "Retroceder" — cada entrada é um estado anterior de shapes
   const [futuro, setFuturo] = useState([]); // pilha para o "Avançar" — os estados que se desfizeram com o Retroceder
   const [pontosEmCurso, setPontosEmCurso] = useState(null); // { tool, points } — a construir a "Zona livre" ou "Ligar pontos" por toques
+  const [editarPosicaoFim, setEditarPosicaoFim] = useState(false); // true = as pegas do círculo mexem na posição FINAL (para onde o jogador se desloca), não na inicial
   const [textoPendente, setTextoPendente] = useState(null);
   const [editandoDuracaoIndex, setEditandoDuracaoIndex] = useState(null);
   const [duracaoInputTexto, setDuracaoInputTexto] = useState('');
@@ -549,6 +566,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   // Cancela uma construção por pontos a meio, se se mudar de ferramenta.
   useEffect(() => { setPontosEmCurso(null); }, [tool]);
+  useEffect(() => { setEditarPosicaoFim(false); }, [editandoDuracaoIndex]);
 
   // Abre-se ao clicar (sem arrastar) num desenho já existente, para
   // definir ou ajustar até quando fica visível.
@@ -628,10 +646,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Arrastar uma das "pegas" de uma forma selecionada (aparecem junto ao
   // popup de duração) — para a redimensionar ou reorientar. Na Zona há
   // ainda uma pega extra só para rodar.
-  const startHandleDrag = (index, ponto, e, tipo) => {
+  const startHandleDrag = (index, ponto, e, tipo, alvo) => {
     e.stopPropagation();
     pushHistorico();
-    handleDragState.current = { index, ponto, tipo };
+    handleDragState.current = { index, ponto, tipo, alvo };
   };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
@@ -644,7 +662,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     if (handleDragState.current) {
       const pt = getPoint(e);
-      const { index, ponto, tipo } = handleDragState.current;
+      const { index, ponto, tipo, alvo } = handleDragState.current;
       setShapes(s => s.map((sh, i) => {
         if (i !== index) return sh;
         if (tipo === 'rotacao' && sh.points[0] && sh.points[1]) {
@@ -660,6 +678,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           const cx = (Math.min(pa.x, pb.x) + Math.max(pa.x, pb.x)) / 2, cy = (Math.min(pa.y, pb.y) + Math.max(pa.y, pb.y)) / 2;
           const pLocal = girar(pt, { x: cx, y: cy }, -sh.rotacao);
           return { ...sh, points: sh.points.map((p, pi) => (pi === ponto ? pLocal : p)) };
+        }
+        if (alvo === 'fim') {
+          // Posição final do círculo a acompanhar um jogador — guarda-se à
+          // parte de `points` (a posição inicial), nunca a substitui.
+          const baseFim = (sh.pontosFim || sh.points).map(p => ({ ...p }));
+          baseFim[ponto] = pt;
+          return { ...sh, pontosFim: baseFim };
         }
         return { ...sh, points: sh.points.map((p, pi) => (pi === ponto ? pt : p)) };
       }));
@@ -708,7 +733,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // depois. A única exceção é a forma que está com o popup de duração
   // aberto: essa fica sempre visível, para não desaparecer a meio de a
   // estares a ajustar.
-  const shapesVisiveis = shapes.filter((sh, i) => editandoDuracaoIndex === i || shapeVisivelEm(sh, current));
+  const shapesVisiveis = shapes
+    .filter((sh, i) => editandoDuracaoIndex === i || shapeVisivelEm(sh, current))
+    .map(sh => (sh.pontosFim ? { ...sh, points: pontosNoTempo(sh, current) } : sh));
 
   const FERRAMENTAS = [
     ['seta', ArrowUpRight, 'Seta'],
@@ -899,7 +926,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       />
                     )}
                     {pontosEmCurso.points.map((p, idx) => (
-                      <circle key={idx} cx={p.x} cy={p.y} r={0.8} fill={corAtual} stroke="#000" strokeWidth={0.25} />
+                      <circle key={idx} cx={p.x} cy={p.y} r={0.55} fill={corAtual} stroke="#000" strokeWidth={0.2} />
                     ))}
                   </g>
                 )}
@@ -918,22 +945,37 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   const pegaRodar = girar({ x: centro.x, y: y - 6 }, centro, rot);
                   return (
                     <g>
-                      <line x1={topoMeio.x} y1={topoMeio.y} x2={pegaRodar.x} y2={pegaRodar.y} stroke={T.gold} strokeWidth={0.2} />
-                      <circle cx={p0.x} cy={p0.y} r={1.1} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.25}
+                      <line x1={topoMeio.x} y1={topoMeio.y} x2={pegaRodar.x} y2={pegaRodar.y} stroke={T.gold} strokeWidth={0.15} />
+                      <circle cx={p0.x} cy={p0.y} r={0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 0, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
-                      <circle cx={p1.x} cy={p1.y} r={1.1} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.25}
+                      <circle cx={p1.x} cy={p1.y} r={0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 1, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
-                      <circle cx={pegaRodar.x} cy={pegaRodar.y} r={1.1} fill={T.gold} stroke="#fff" strokeWidth={0.25}
+                      <circle cx={pegaRodar.x} cy={pegaRodar.y} r={0.55} fill={T.gold} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, null, e, 'rotacao')} style={{ cursor: 'grab', touchAction: 'none' }} />
                     </g>
                   );
                 })()}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
-                  shapes[editandoDuracaoIndex].points.map((p, pi) => (
-                    <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.7 : 1.1} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.22}
-                      onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
-                      style={{ cursor: 'pointer', touchAction: 'none' }} />
-                  ))}
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) && (() => {
+                  const forma = shapes[editandoDuracaoIndex];
+                  const aEditarFim = forma.tool === 'circulo' && editarPosicaoFim;
+                  const pontosPega = aEditarFim ? (forma.pontosFim || forma.points) : forma.points;
+                  const corPega = aEditarFim ? T.teamB : T.crimsonBright;
+                  const raio = ['zonalivre', 'linhaPontos'].includes(forma.tool) ? 0.4 : 0.55;
+                  return (
+                    <g>
+                      {/* Enquanto se edita a posição final, mostra-se uma linha ténue até à posição inicial, para se ver o trajeto. */}
+                      {aEditarFim && forma.pontosFim && (
+                        <line x1={forma.points[0].x} y1={forma.points[0].y} x2={forma.pontosFim[0].x} y2={forma.pontosFim[0].y}
+                          stroke={T.teamB} strokeWidth={0.15} strokeDasharray="1,1" />
+                      )}
+                      {pontosPega.map((p, pi) => (
+                        <circle key={pi} cx={p.x} cy={p.y} r={raio} fill={corPega} stroke="#fff" strokeWidth={0.15}
+                          onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e, undefined, aEditarFim ? 'fim' : 'inicio')}
+                          style={{ cursor: 'pointer', touchAction: 'none' }} />
+                      ))}
+                    </g>
+                  );
+                })()}
               </svg>
               {pontosEmCurso && (
                 <div onPointerDown={e => e.stopPropagation()}
@@ -990,6 +1032,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   />
                   <Btn variant="solid" onClick={confirmarDuracaoShape} style={{ padding: '5px 10px', fontSize: 12 }}>OK</Btn>
                   <Btn variant="ghost" onClick={marcarSempreVisivelShape} style={{ padding: '5px 10px', fontSize: 12 }}>Sempre visível</Btn>
+                  {shapes[editandoDuracaoIndex]?.tool === 'circulo' && shapes[editandoDuracaoIndex]?.mostrarAte != null && (
+                    <Btn variant={editarPosicaoFim ? 'solid' : 'ghost'} onClick={() => setEditarPosicaoFim(v => !v)} style={{ padding: '5px 10px', fontSize: 12 }}
+                      title="Arrasta o círculo para onde o jogador vai estar — desloca-se sozinho até lá">
+                      <Waypoints size={13} /> {editarPosicaoFim ? 'A editar posição final — toca aqui para voltar à inicial' : 'Seguir jogador'}
+                    </Btn>
+                  )}
                 </div>
               )}
             </div>
