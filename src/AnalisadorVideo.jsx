@@ -152,7 +152,7 @@ function renderShape(sh, i) {
           strokeWidth={ESPESSURA} strokeLinecap="round" strokeLinejoin="round" />
         {/* "Ligar pontos" mostra sempre os vértices, para se ver onde estão os pontos ligados */}
         {sh.tool === 'linhaPontos' && sh.points.map((p, pi) => (
-          <circle key={pi} cx={p.x} cy={p.y} r={0.9} fill={sh.color || COR_DESENHO} />
+          <circle key={pi} cx={p.x} cy={p.y} r={0.55} fill={sh.color || COR_DESENHO} />
         ))}
       </g>
     );
@@ -633,7 +633,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (tool !== 'apagar' && tool !== 'texto' && !pontosEmCurso) {
       const pt = getPoint(e);
       let perto = false;
-      for (const sh of shapes) { if (distanciaShape(sh, pt) < 6) { perto = true; break; } }
+      for (const sh of shapes) { if (distanciaShape(sh, pt) < 4) { perto = true; break; } }
       setHoverMove(h => (h === perto ? h : perto));
     }
   };
@@ -724,7 +724,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
           <div style={{ display: 'flex', flex: fullscreen ? 1 : undefined, minHeight: 0 }}>
             {modoDesenho && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden' }}>
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
                   <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
@@ -783,15 +783,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       />
                     )}
                     {pontosEmCurso.points.map((p, idx) => (
-                      <circle key={idx} cx={p.x} cy={p.y} r={1.3} fill={corAtual} stroke="#000" strokeWidth={0.3} />
+                      <circle key={idx} cx={p.x} cy={p.y} r={0.8} fill={corAtual} stroke="#000" strokeWidth={0.25} />
                     ))}
                   </g>
                 )}
 
-                {/* Pegas para redimensionar a forma selecionada (a mesma que tem o popup de duração aberto) */}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'retangulo'].includes(shapes[editandoDuracaoIndex].tool) &&
+                {/* Pegas para mover/redimensionar a forma selecionada (a mesma que tem o popup de duração aberto) —
+                   para a Zona livre e o Ligar pontos, aparece uma pega por cada vértice já colocado. */}
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'retangulo', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
                   shapes[editandoDuracaoIndex].points.map((p, pi) => (
-                    <circle key={pi} cx={p.x} cy={p.y} r={2} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.5}
+                    <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 1.2 : 2} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.4}
                       onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
                       style={{ cursor: 'pointer', touchAction: 'none' }} />
                   ))}
