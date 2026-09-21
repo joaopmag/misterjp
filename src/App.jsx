@@ -2533,9 +2533,14 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Sessão expirada — sai e entra na app outra vez.');
       const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+      // Endereço direto de storage — evita o gateway (Kong), recomendado
+      // pela Supabase para ficheiros grandes. Ajuda tanto à velocidade
+      // como à fiabilidade: menos um salto de rede onde algo pode falhar,
+      // sobretudo em ligações móveis menos estáveis.
+      const SUPABASE_URL_STORAGE_DIRETO = SUPABASE_URL.replace('.supabase.co', '.storage.supabase.co');
       await new Promise((resolve, reject) => {
         const upload = new tus.Upload(file, {
-          endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
+          endpoint: `${SUPABASE_URL_STORAGE_DIRETO}/storage/v1/upload/resumable`,
           retryDelays: [0, 1000, 3000, 5000, 10000, 20000, 30000, 60000, 60000],
           headers: { 'x-upsert': 'false' },
           // Um vídeo grande pode demorar mais de uma hora a enviar — e o
