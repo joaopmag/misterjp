@@ -18,6 +18,10 @@ const T = {
 };
 const TEXT_ON_ACCENT = '#FBF3F0';
 const COR_DESENHO = '#FFFFFF'; // branco — antes era vermelho por omissão
+
+// Cursor da borracha — uma borracha a sério, em vez do símbolo de
+// "proibido" que o browser mostra por omissão.
+const CURSOR_BORRACHA = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'><g transform='rotate(-35 13 13)'><rect x='5' y='8' width='16' height='10' rx='2.2' fill='white' stroke='%23222222' stroke-width='1.4'/><rect x='5' y='8' width='16' height='4.4' rx='2.2' fill='%23e84c62'/></g></svg>\") 6 20, auto";
 const display = { fontFamily: "'Oswald', sans-serif" };
 const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
@@ -80,13 +84,13 @@ function ToolBtn({ icon: Icon, label, active, onClick }) {
   return (
     <button onClick={onClick} title={label}
       style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
-        width: 56, minHeight: 50, padding: '8px 4px', borderRadius: 8, cursor: 'pointer', ...body,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+        width: '100%', minHeight: 44, padding: '6px 2px', borderRadius: 8, cursor: 'pointer', ...body,
         border: `1px solid ${active ? T.crimsonBright : T.line}`,
         background: active ? T.surfaceRaise : 'transparent', color: active ? T.cream : T.muted,
       }}>
-      <Icon size={18} />
-      <span style={{ fontSize: 9.5, lineHeight: 1, whiteSpace: 'nowrap' }}>{label}</span>
+      <Icon size={16} />
+      <span style={{ fontSize: 9, lineHeight: 1, whiteSpace: 'nowrap' }}>{label}</span>
     </button>
   );
 }
@@ -128,6 +132,8 @@ function distanciaShape(sh, p) {
 
 /* Desenha uma forma no SVG — usado tanto no editor como na reprodução do
    clipe já guardado (por isso vive fora do componente principal). */
+const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
+
 function renderShape(sh, i) {
   if (!sh || !sh.points || sh.points.length === 0) return null;
   const [a, b] = sh.points;
@@ -139,22 +145,30 @@ function renderShape(sh, i) {
   if (sh.tool === 'livre' || sh.tool === 'zonalivre' || sh.tool === 'linhaPontos') {
     const fechado = sh.tool === 'zonalivre';
     const d = sh.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + (fechado ? ' Z' : '');
-    return <path key={i} d={d}
-      stroke={sh.color || COR_DESENHO} fill={fechado ? (sh.color || COR_DESENHO) : 'none'} fillOpacity={fechado ? 0.22 : undefined}
-      strokeWidth={0.6} strokeLinecap="round" strokeLinejoin="round" />;
+    return (
+      <g key={i}>
+        <path d={d}
+          stroke={sh.color || COR_DESENHO} fill={fechado ? (sh.color || COR_DESENHO) : 'none'} fillOpacity={fechado ? 0.22 : undefined}
+          strokeWidth={ESPESSURA} strokeLinecap="round" strokeLinejoin="round" />
+        {/* "Ligar pontos" mostra sempre os vértices, para se ver onde estão os pontos ligados */}
+        {sh.tool === 'linhaPontos' && sh.points.map((p, pi) => (
+          <circle key={pi} cx={p.x} cy={p.y} r={0.9} fill={sh.color || COR_DESENHO} />
+        ))}
+      </g>
+    );
   }
   if (!b) return null;
-  if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} style={cor} strokeWidth={0.6} />;
-  if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />;
+  if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} style={cor} strokeWidth={ESPESSURA} />;
+  if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={ESPESSURA} />;
   if (sh.tool === 'retangulo') {
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-    return <rect key={i} x={x} y={y} width={w} height={h} fill={sh.color || COR_DESENHO} fillOpacity={0.22} stroke={sh.color || COR_DESENHO} strokeWidth={0.6} />;
+    return <rect key={i} x={x} y={y} width={w} height={h} fill={sh.color || COR_DESENHO} fillOpacity={0.22} stroke={sh.color || COR_DESENHO} strokeWidth={ESPESSURA} />;
   }
-  const angle = Math.atan2(b.y - a.y, b.x - a.x); const ah = 2.2;
+  const angle = Math.atan2(b.y - a.y, b.x - a.x); const ah = 1.7;
   const p1 = { x: b.x - ah * Math.cos(angle - 0.4), y: b.y - ah * Math.sin(angle - 0.4) };
   const p2 = { x: b.x - ah * Math.cos(angle + 0.4), y: b.y - ah * Math.sin(angle + 0.4) };
-  return <g key={i}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={0.6} />
-    <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} M ${b.x} ${b.y} L ${p2.x} ${p2.y}`} style={cor} strokeWidth={0.6} strokeLinecap="round" /></g>;
+  return <g key={i}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={ESPESSURA} />
+    <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} M ${b.x} ${b.y} L ${p2.x} ${p2.y}`} style={cor} strokeWidth={ESPESSURA} strokeLinecap="round" /></g>;
 }
 
 function shapeVisivelEm(sh, tempo) {
@@ -234,6 +248,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const drawState = useRef(null);
   const dragState = useRef(null);
   const handleDragState = useRef(null); // arrastar um dos dois "pegas" de uma forma selecionada, para a redimensionar
+  const apagando = useRef(false); // a borracha está a ser arrastada — continua a apagar tudo por onde passar
+  const [hoverMove, setHoverMove] = useState(false); // o cursor está em cima de um desenho já colocado — mostra que dá para o mover
   const [fullscreen, setFullscreen] = useState(false);
 
   const [copiedId, setCopiedId] = useState(null);
@@ -533,9 +549,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       return;
     }
     if (tool === 'apagar') {
+      pushHistorico();
       let melhorI = -1, melhorD = 6;
       shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
-      if (melhorI >= 0) { pushHistorico(); setShapes(s => s.filter((_, i) => i !== melhorI)); }
+      if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
+      apagando.current = true; // continua a apagar enquanto se arrasta o dedo/rato
       return;
     }
     if (tool === 'texto') {
@@ -570,6 +588,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
+    if (apagando.current) {
+      const pt = getPoint(e);
+      let melhorI = -1, melhorD = 6;
+      shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
+      if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
+      return;
+    }
     if (handleDragState.current) {
       const pt = getPoint(e);
       const { index, ponto } = handleDragState.current;
@@ -584,14 +609,25 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       setShapes(s => s.map((sh, i) => (i === index ? { ...sh, points: pontosIniciais.map(p => ({ x: p.x + dx, y: p.y + dy })) } : sh)));
       return;
     }
-    if (!drawState.current) return;
-    const pt = getPoint(e); const st = drawState.current;
-    if (st.tool === 'livre') st.points.push(pt); else st.points[1] = pt;
-    // Substitui SEMPRE a mesma entrada (pelo id, criado uma única vez em
-    // startDraw) — nunca acrescenta uma cópia nova.
-    setShapes(s => s.map(sh => (sh.id === st.id ? { ...st, points: [...st.points] } : sh)));
+    if (drawState.current) {
+      const pt = getPoint(e); const st = drawState.current;
+      if (st.tool === 'livre') st.points.push(pt); else st.points[1] = pt;
+      // Substitui SEMPRE a mesma entrada (pelo id, criado uma única vez em
+      // startDraw) — nunca acrescenta uma cópia nova.
+      setShapes(s => s.map(sh => (sh.id === st.id ? { ...st, points: [...st.points] } : sh)));
+      return;
+    }
+    // Nada a arrastar/desenhar neste momento — só a ver se o cursor está
+    // em cima de um desenho já feito, para mostrar que dá para o mover.
+    if (tool !== 'apagar' && tool !== 'texto' && !pontosEmCurso) {
+      const pt = getPoint(e);
+      let perto = false;
+      for (const sh of shapes) { if (distanciaShape(sh, pt) < 6) { perto = true; break; } }
+      setHoverMove(h => (h === perto ? h : perto));
+    }
   };
   const endDraw = () => {
+    if (apagando.current) { apagando.current = false; return; }
     if (handleDragState.current) { handleDragState.current = null; return; }
     if (dragState.current) {
       const { index, moveu } = dragState.current;
@@ -603,7 +639,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   const pct = (t) => (duration ? (t / duration) * 100 : 0);
-  const shapesVisiveis = modoDesenho ? shapes : shapes.filter(sh => shapeVisivelEm(sh, current));
+  // Aplica-se sempre o limite de tempo definido — mesmo dentro do modo de
+  // desenho — para o que se vê ao testar ser igual ao que vai acontecer
+  // depois. A única exceção é a forma que está com o popup de duração
+  // aberto: essa fica sempre visível, para não desaparecer a meio de a
+  // estares a ajustar.
+  const shapesVisiveis = shapes.filter((sh, i) => editandoDuracaoIndex === i || shapeVisivelEm(sh, current));
 
   const FERRAMENTAS = [
     ['seta', ArrowUpRight, 'Seta'],
@@ -669,24 +710,24 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
           <div style={{ display: 'flex', flex: fullscreen ? 1 : undefined, minHeight: 0 }}>
             {modoDesenho && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, padding: 10, borderRight: `1px solid ${T.line}`, width: 124, flexShrink: 0, alignContent: 'start' }}>
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
                   <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
                 <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
 
-                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
+                <div style={{ gridColumn: '1 / -1', height: 1, background: T.line, margin: '2px 0' }} />
+                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', padding: '1px 0' }}>
                   {PALETA_DESENHO.map(p => (
                     <button key={p.id} onClick={() => setCorAtual(p.cor)} title={p.id}
                       style={{
-                        width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
+                        width: 20, height: 20, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
                         background: p.cor, border: corAtual === p.cor ? `2px solid ${T.crimsonBright}` : `1px solid ${T.line}`,
                       }} />
                   ))}
                 </div>
 
-                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <div style={{ gridColumn: '1 / -1', height: 1, background: T.line, margin: '2px 0' }} />
                 <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
                 <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
               </div>
@@ -714,7 +755,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               ) : (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted }}><Loader2 size={20} className="spin" /></div>
               )}
-              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? 'not-allowed' : 'crosshair') : 'default' }}>
+              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? CURSOR_BORRACHA : hoverMove ? 'move' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
 
                 {/* Pré-visualização da "Zona livre" / "Ligar pontos" a meio da construção */}
