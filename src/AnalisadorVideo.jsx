@@ -885,10 +885,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       }} />
                   ))}
                 </div>
-
-                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
-                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
               </div>
             )}
             <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto' }}
@@ -1022,6 +1018,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
               )}
             </div>
+            {modoDesenho && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderLeft: `1px solid ${T.line}`, justifyContent: 'center' }}>
+                <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
+                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
+              </div>
+            )}
           </div>
 
           <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
