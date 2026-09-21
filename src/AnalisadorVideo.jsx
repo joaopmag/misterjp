@@ -842,9 +842,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       )}
 
       {originalAtivo && (
-        <div ref={containerRef} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, overflow: 'hidden', ...(fullscreen ? { display: 'flex', flexDirection: 'column', height: '100vh' } : {}) }}>
+        <div ref={containerRef} style={{
+          background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+          // Cabe sempre na janela, sem ser preciso descer a página — antes
+          // o vídeo tirava a altura só da largura do ecrã (16:9 "deitado"),
+          // o que em ecrãs largos o fazia enorme e empurrava os controlos
+          // todos para fora da vista.
+          height: fullscreen ? '100vh' : 'calc(100vh - 140px)',
+          maxHeight: fullscreen ? '100vh' : 'calc(100vh - 140px)',
+        }}>
           {modoDesenho && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise, flexShrink: 0 }}>
               <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Btn variant="ghost" onClick={retroceder} disabled={historico.length === 0} style={{ padding: 8 }} title="Retroceder">
@@ -858,7 +867,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             </div>
           )}
 
-          <div style={{ display: 'flex', flex: fullscreen ? 1 : undefined, minHeight: 0 }}>
+          <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {modoDesenho && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden' }}>
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
@@ -882,7 +891,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
               </div>
             )}
-            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: fullscreen ? undefined : '16/9', flex: fullscreen ? 1 : undefined, width: '100%', touchAction: modoDesenho ? 'none' : 'auto' }}
+            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto' }}
               onPointerDown={startDraw} onPointerMove={moveDraw} onPointerUp={endDraw} onPointerLeave={endDraw} onPointerCancel={endDraw}>
               {originalAtivo?.pronto === false ? (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted, gap: 8, textAlign: 'center', padding: 20 }}>
@@ -893,7 +902,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
               ) : signedUrl ? (
                 <>
-                  <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block', objectFit: fullscreen ? 'contain' : 'fill' }} playsInline
+                  <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} playsInline
                     onLoadStart={() => setVideoPronto(false)} onCanPlay={() => setVideoPronto(true)} />
                   {!videoPronto && (
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: T.muted, pointerEvents: 'none' }}>
