@@ -133,6 +133,7 @@ function distanciaShape(sh, p) {
 /* Desenha uma forma no SVG — usado tanto no editor como na reprodução do
    clipe já guardado (por isso vive fora do componente principal). */
 const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
+const RAIO_TOQUE = 3; // distância máxima (era 6) para um toque "acertar" num desenho já feito — mais exato, tem de se tocar mesmo perto
 
 function renderShape(sh, i) {
   if (!sh || !sh.points || sh.points.length === 0) return null;
@@ -162,7 +163,18 @@ function renderShape(sh, i) {
   if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={ESPESSURA} />;
   if (sh.tool === 'retangulo') {
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-    return <rect key={i} x={x} y={y} width={w} height={h} fill={sh.color || COR_DESENHO} fillOpacity={0.22} stroke={sh.color || COR_DESENHO} strokeWidth={ESPESSURA} />;
+    const corZona = sh.color || COR_DESENHO;
+    const idPadrao = `hachura-${sh.id || i}`;
+    return (
+      <g key={i}>
+        <defs>
+          <pattern id={idPadrao} patternUnits="userSpaceOnUse" width={2.2} height={2.2} patternTransform="rotate(45)">
+            <line x1={0} y1={0} x2={0} y2={2.2} stroke={corZona} strokeWidth={0.35} />
+          </pattern>
+        </defs>
+        <rect x={x} y={y} width={w} height={h} fill={`url(#${idPadrao})`} fillOpacity={0.6} stroke={corZona} strokeWidth={ESPESSURA} />
+      </g>
+    );
   }
   const angle = Math.atan2(b.y - a.y, b.x - a.x); const ah = 1.7;
   const p1 = { x: b.x - ah * Math.cos(angle - 0.4), y: b.y - ah * Math.sin(angle - 0.4) };
@@ -485,6 +497,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // se podia "Avançar", tal como num editor normal.
   const pushHistorico = () => { setHistorico(h => [...h.slice(-19), shapes]); setFuturo([]); };
   const retroceder = () => {
+    // A meio de colocar pontos (Zona livre / Ligar pontos), "Retroceder"
+    // tira o último ponto colocado — voltar a um estado de ANTES de
+    // começar a forma não faria sentido, já que a forma ainda nem existe.
+    if (pontosEmCurso) { apagarUltimoPonto(); return; }
     setHistorico(h => {
       if (h.length === 0) return h;
       setFuturo(f => [...f, shapes]);
@@ -563,7 +579,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     if (tool === 'apagar') {
       pushHistorico();
-      let melhorI = -1, melhorD = 6;
+      let melhorI = -1, melhorD = RAIO_TOQUE;
       shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
       if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
       apagando.current = true; // continua a apagar enquanto se arrasta o dedo/rato
@@ -579,7 +595,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     // para o selecionar (um toque simples, sem arrastar), em vez de criar
     // um desenho novo por cima. Funciona com qualquer ferramenta ativa,
     // incluindo as duas ferramentas por pontos.
-    let melhorI = -1, melhorD = 6;
+    let melhorI = -1, melhorD = RAIO_TOQUE;
     shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
     if (melhorI >= 0) {
       pushHistorico();
@@ -603,7 +619,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (!modoDesenho) return;
     if (apagando.current) {
       const pt = getPoint(e);
-      let melhorI = -1, melhorD = 6;
+      let melhorI = -1, melhorD = RAIO_TOQUE;
       shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
       if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
       return;
@@ -635,7 +651,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (tool !== 'apagar' && tool !== 'texto' && !pontosEmCurso) {
       const pt = getPoint(e);
       let perto = false;
-      for (const sh of shapes) { if (distanciaShape(sh, pt) < 4) { perto = true; break; } }
+      for (const sh of shapes) { if (distanciaShape(sh, pt) < RAIO_TOQUE) { perto = true; break; } }
       setHoverMove(h => (h === perto ? h : perto));
     }
   };
