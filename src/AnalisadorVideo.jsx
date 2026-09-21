@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2,
+  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -84,13 +84,13 @@ function ToolBtn({ icon: Icon, label, active, onClick }) {
   return (
     <button onClick={onClick} title={label}
       style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-        width: '100%', minHeight: 44, padding: '6px 2px', borderRadius: 8, cursor: 'pointer', ...body,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+        width: 56, minHeight: 50, padding: '8px 4px', borderRadius: 8, cursor: 'pointer', ...body,
         border: `1px solid ${active ? T.crimsonBright : T.line}`,
         background: active ? T.surfaceRaise : 'transparent', color: active ? T.cream : T.muted,
       }}>
-      <Icon size={16} />
-      <span style={{ fontSize: 9, lineHeight: 1, whiteSpace: 'nowrap' }}>{label}</span>
+      <Icon size={18} />
+      <span style={{ fontSize: 9.5, lineHeight: 1, whiteSpace: 'nowrap' }}>{label}</span>
     </button>
   );
 }
@@ -241,6 +241,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [corAtual, setCorAtual] = useState(COR_DESENHO);
   const [shapes, setShapes] = useState([]);
   const [historico, setHistorico] = useState([]); // pilha para o "Retroceder" — cada entrada é um estado anterior de shapes
+  const [futuro, setFuturo] = useState([]); // pilha para o "Avançar" — os estados que se desfizeram com o Retroceder
   const [pontosEmCurso, setPontosEmCurso] = useState(null); // { tool, points } — a construir a "Zona livre" ou "Ligar pontos" por toques
   const [textoPendente, setTextoPendente] = useState(null);
   const [editandoDuracaoIndex, setEditandoDuracaoIndex] = useState(null);
@@ -478,13 +479,23 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   // Guarda o estado anterior antes de qualquer alteração (criar, mover,
   // redimensionar, apagar) — o "Retroceder" repõe o último estado guardado.
-  // Até 20 passos, para não crescer sem limite.
-  const pushHistorico = () => setHistorico(h => [...h.slice(-19), shapes]);
+  // Até 20 passos, para não crescer sem limite. Uma ação nova apaga o que
+  // se podia "Avançar", tal como num editor normal.
+  const pushHistorico = () => { setHistorico(h => [...h.slice(-19), shapes]); setFuturo([]); };
   const retroceder = () => {
     setHistorico(h => {
       if (h.length === 0) return h;
+      setFuturo(f => [...f, shapes]);
       setShapes(h[h.length - 1]);
       return h.slice(0, -1);
+    });
+  };
+  const avancar = () => {
+    setFuturo(f => {
+      if (f.length === 0) return f;
+      setHistorico(h => [...h, shapes]);
+      setShapes(f[f.length - 1]);
+      return f.slice(0, -1);
     });
   };
 
@@ -703,6 +714,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <Btn variant="ghost" onClick={retroceder} disabled={historico.length === 0} style={{ padding: 8 }} title="Retroceder">
                   <Undo2 size={16} />
                 </Btn>
+                <Btn variant="ghost" onClick={avancar} disabled={futuro.length === 0} style={{ padding: 8 }} title="Avançar">
+                  <Redo2 size={16} />
+                </Btn>
                 <Btn variant="solid" onClick={fecharDesenho}><Check size={14} /> Concluído</Btn>
               </div>
             </div>
@@ -710,24 +724,24 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
           <div style={{ display: 'flex', flex: fullscreen ? 1 : undefined, minHeight: 0 }}>
             {modoDesenho && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, padding: 10, borderRight: `1px solid ${T.line}`, width: 124, flexShrink: 0, alignContent: 'start' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto' }}>
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
                   <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
                 <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
 
-                <div style={{ gridColumn: '1 / -1', height: 1, background: T.line, margin: '2px 0' }} />
-                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center', padding: '1px 0' }}>
+                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
                   {PALETA_DESENHO.map(p => (
                     <button key={p.id} onClick={() => setCorAtual(p.cor)} title={p.id}
                       style={{
-                        width: 20, height: 20, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
+                        width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
                         background: p.cor, border: corAtual === p.cor ? `2px solid ${T.crimsonBright}` : `1px solid ${T.line}`,
                       }} />
                   ))}
                 </div>
 
-                <div style={{ gridColumn: '1 / -1', height: 1, background: T.line, margin: '2px 0' }} />
+                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
                 <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
                 <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
               </div>
