@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type,
+  Maximize2, Minimize2, Square, Type, Pencil, Lasso,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -31,6 +31,16 @@ const TAGS = [
   { id: 'transicao', label: 'Transição', color: T.crimsonBright },
   { id: 'individual', label: 'Ação Individual', color: T.teamC },
   { id: 'erro', label: 'Erro', color: T.bad },
+];
+
+// Cores à escolha para os desenhos — útil para distinguir, por exemplo,
+// os movimentos da nossa equipa (branco) dos do adversário (vermelho).
+const PALETA_DESENHO = [
+  { id: 'branco', cor: '#FFFFFF' },
+  { id: 'vermelho', cor: T.crimsonBright },
+  { id: 'amarelo', cor: T.gold },
+  { id: 'azul', cor: T.teamB },
+  { id: 'verde', cor: T.good },
 ];
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -64,6 +74,23 @@ function Btn({ children, onClick, variant = 'ghost', active, disabled, style, ti
   );
 }
 
+// Botão de ferramenta de desenho — ícone + etiqueta sempre visível (não
+// só tooltip, que não aparece ao toque) e área de toque generosa.
+function ToolBtn({ icon: Icon, label, active, onClick }) {
+  return (
+    <button onClick={onClick} title={label}
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+        width: 56, minHeight: 50, padding: '8px 4px', borderRadius: 8, cursor: 'pointer', ...body,
+        border: `1px solid ${active ? T.crimsonBright : T.line}`,
+        background: active ? T.surfaceRaise : 'transparent', color: active ? T.cream : T.muted,
+      }}>
+      <Icon size={18} />
+      <span style={{ fontSize: 9.5, lineHeight: 1, whiteSpace: 'nowrap' }}>{label}</span>
+    </button>
+  );
+}
+
 /* ---- Geometria para a borracha parcial (distância de um ponto a uma forma) ---- */
 function distPontoSegmento(p, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -89,9 +116,10 @@ function distanciaShape(sh, p) {
     const c = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
     return Math.min(distPontoSegmento(p, c[0], c[1]), distPontoSegmento(p, c[1], c[2]), distPontoSegmento(p, c[2], c[3]), distPontoSegmento(p, c[3], c[0]));
   }
-  if (sh.tool === 'livre') {
+  if (sh.tool === 'livre' || sh.tool === 'zonalivre') {
     let min = Infinity;
     for (let k = 0; k < pts.length - 1; k++) min = Math.min(min, distPontoSegmento(p, pts[k], pts[k + 1]));
+    if (sh.tool === 'zonalivre' && pts.length > 2) min = Math.min(min, distPontoSegmento(p, pts[pts.length - 1], pts[0])); // o traço fecha, junta o último ponto ao primeiro
     return min;
   }
   if (b) return distPontoSegmento(p, a, b);
@@ -108,9 +136,12 @@ function renderShape(sh, i) {
   if (sh.tool === 'texto') {
     return <text key={i} x={a.x} y={a.y} fill={sh.color || COR_DESENHO} fontSize={3.4} fontWeight={700} style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#00000099', strokeWidth: 0.5 }}>{sh.texto}</text>;
   }
-  if (sh.tool === 'livre') {
-    const d = sh.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-    return <path key={i} d={d} style={cor} strokeWidth={0.6} strokeLinecap="round" />;
+  if (sh.tool === 'livre' || sh.tool === 'zonalivre') {
+    const fechado = sh.tool === 'zonalivre';
+    const d = sh.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + (fechado ? ' Z' : '');
+    return <path key={i} d={d}
+      stroke={sh.color || COR_DESENHO} fill={fechado ? (sh.color || COR_DESENHO) : 'none'} fillOpacity={fechado ? 0.22 : undefined}
+      strokeWidth={0.6} strokeLinecap="round" strokeLinejoin="round" />;
   }
   if (!b) return null;
   if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} style={cor} strokeWidth={0.6} />;
@@ -193,6 +224,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const [modoDesenho, setModoDesenho] = useState(false);
   const [tool, setTool] = useState('seta');
+  const [corAtual, setCorAtual] = useState(COR_DESENHO);
   const [shapes, setShapes] = useState([]);
   const [textoPendente, setTextoPendente] = useState(null);
   const [editandoDuracaoIndex, setEditandoDuracaoIndex] = useState(null);
@@ -450,7 +482,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const confirmarTexto = () => {
     setTextoPendente(t => {
       if (t && t.valor.trim()) {
-        setShapes(s => [...s, { tool: 'texto', color: COR_DESENHO, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }]);
+        setShapes(s => [...s, { tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }]);
       }
       return null;
     });
@@ -483,7 +515,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })), moveu: false };
       return;
     }
-    drawState.current = { tool, color: COR_DESENHO, points: [pt], criadoEmTempo: current, mostrarAte: null };
+    drawState.current = { tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
   };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
@@ -497,7 +529,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     if (!drawState.current) return;
     const pt = getPoint(e); const st = drawState.current;
-    if (st.tool === 'livre') st.points.push(pt); else st.points[1] = pt;
+    if (st.tool === 'livre' || st.tool === 'zonalivre') st.points.push(pt); else st.points[1] = pt;
     setShapes(s => [...s.filter(x => x !== st), { ...st }]);
   };
   const endDraw = () => {
@@ -516,7 +548,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const pct = (t) => (duration ? (t / duration) * 100 : 0);
   const shapesVisiveis = modoDesenho ? shapes : shapes.filter(sh => shapeVisivelEm(sh, current));
 
-  const FERRAMENTAS = [['seta', ArrowUpRight, 'Seta'], ['circulo', Circle, 'Círculo'], ['linha', Minus, 'Linha'], ['retangulo', Square, 'Retângulo']];
+  const FERRAMENTAS = [
+    ['seta', ArrowUpRight, 'Seta'],
+    ['linha', Minus, 'Linha'],
+    ['circulo', Circle, 'Círculo'],
+    ['retangulo', Square, 'Zona'],
+    ['livre', Pencil, 'Traço'],
+    ['zonalivre', Lasso, 'Zona livre'],
+  ];
 
   return (
     <div>
@@ -572,13 +611,24 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {modoDesenho && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto' }}>
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
-                  <Btn key={id} variant="ghost" active={tool === id} onClick={() => setTool(id)} style={{ padding: 10 }} title={titulo}><Icon size={18} /></Btn>
+                  <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
-                <Btn variant="ghost" active={tool === 'livre'} onClick={() => setTool('livre')} style={{ padding: 10, fontSize: 11 }} title="Traço livre">Livre</Btn>
-                <Btn variant="ghost" active={tool === 'texto'} onClick={() => setTool('texto')} style={{ padding: 10 }} title="Texto"><Type size={18} /></Btn>
+                <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
+
                 <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                <Btn variant="ghost" active={tool === 'apagar'} onClick={() => setTool('apagar')} style={{ padding: 10 }} title="Apagar um desenho (clica nele)"><Eraser size={18} /></Btn>
-                <Btn variant="plain" onClick={() => setShapes([])} style={{ padding: 10 }} title="Apagar tudo"><Trash2 size={18} /></Btn>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
+                  {PALETA_DESENHO.map(p => (
+                    <button key={p.id} onClick={() => setCorAtual(p.cor)} title={p.id}
+                      style={{
+                        width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
+                        background: p.cor, border: corAtual === p.cor ? `2px solid ${T.crimsonBright}` : `1px solid ${T.line}`,
+                      }} />
+                  ))}
+                </div>
+
+                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
+                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => setShapes([])} />
               </div>
             )}
             <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', aspectRatio: fullscreen ? undefined : '16/9', flex: fullscreen ? 1 : undefined, width: '100%', touchAction: modoDesenho ? 'none' : 'auto' }}
@@ -618,7 +668,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     placeholder="Escreve o texto…"
                     style={{
                       background: 'rgba(0,0,0,0.85)', color: '#fff',
-                      border: `1px solid ${COR_DESENHO}`, borderRadius: 4, padding: '3px 7px', fontSize: 14,
+                      border: `1px solid ${corAtual}`, borderRadius: 4, padding: '3px 7px', fontSize: 14,
                       minWidth: 100, outline: 'none', ...body,
                     }}
                   />
