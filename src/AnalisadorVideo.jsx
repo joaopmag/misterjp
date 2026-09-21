@@ -880,6 +880,28 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
                 <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
+
+                {/* Em ecrã inteiro não há coluna à direita (ficaria fora do
+                   alcance do rato/dedo num ecrã grande) — cores e apagar
+                   vêm todos para aqui. Fora de ecrã inteiro, ficam à
+                   direita (ver abaixo), como já estava. */}
+                {fullscreen && (
+                  <>
+                    <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
+                      {PALETA_DESENHO.map(p => (
+                        <button key={p.id} onClick={() => setCorAtual(p.cor)} title={p.id}
+                          style={{
+                            width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
+                            background: p.cor, border: corAtual === p.cor ? `2px solid ${T.crimsonBright}` : `1px solid ${T.line}`,
+                          }} />
+                      ))}
+                    </div>
+                    <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                    <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
+                    <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
+                  </>
+                )}
               </div>
             </div>
             <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto', transition: 'width 0.2s ease' }}
@@ -1014,7 +1036,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               )}
             </div>
             <div style={{
-              maxWidth: modoDesenho ? 90 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
+              maxWidth: (modoDesenho && !fullscreen) ? 90 : 0, opacity: (modoDesenho && !fullscreen) ? 1 : 0, overflow: 'hidden', flexShrink: 0,
               transition: 'max-width 0.2s ease, opacity 0.15s ease',
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderLeft: `1px solid ${T.line}`, justifyContent: 'center', width: 90 }}>
