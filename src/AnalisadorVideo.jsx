@@ -136,7 +136,7 @@ function shapeVisivelEm(sh, tempo) {
 
 /* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
    desaparecerem no tempo certo, tal como foram marcados. ---- */
-function ClipPlayerModal({ clip, tag, onClose }) {
+function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied }) {
   const [t, setT] = useState(0);
   return (
     <div onClick={onClose}
@@ -144,7 +144,13 @@ function ClipPlayerModal({ clip, tag, onClose }) {
       <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
           <span style={{ fontSize: 12.5, color: T.muted, ...body }}>{tag?.label} · {Math.round(clip.duracao)}s</span>
-          <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Btn variant="ghost" onClick={onCopy} style={{ padding: '6px 10px' }} title="Copiar link">
+              {copied ? <Check size={14} color={T.good} /> : <Link2 size={14} />}
+            </Btn>
+            <Btn variant="ghost" onClick={onRemove} style={{ padding: '6px 10px' }} title="Apagar clipe"><Trash2 size={14} color={T.bad} /></Btn>
+            <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
+          </div>
         </div>
         <div style={{ position: 'relative' }}>
           <video src={clip.publicUrl} controls autoPlay onTimeUpdate={e => setT(e.currentTarget.currentTime)}
@@ -197,6 +203,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const [copiedId, setCopiedId] = useState(null);
   const [clipeAReproduzir, setClipeAReproduzir] = useState(null);
+  const [filtroTag, setFiltroTag] = useState(null);
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
 
@@ -293,9 +300,28 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const togglePlay = () => { const v = videoRef.current; if (v) { v.paused ? v.play() : v.pause(); } };
   const seekTo = (t) => { const v = videoRef.current; if (v) { v.currentTime = Math.max(0, Math.min(duration || t, t)); setCurrent(v.currentTime); } };
-  const onScrubClick = (e) => {
+
+  // Arrastar o dedo/rato ao longo da barra para navegar — antes só se
+  // podia clicar num ponto exato, o que é difícil de acertar ao toque
+  // num vídeo longo. Pausa-se enquanto se arrasta, e retoma-se a
+  // reproduzir no fim se já estava a tocar antes.
+  const scrubDragState = useRef(null);
+  const startScrub = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    scrubDragState.current = { wasPlaying: !!(videoRef.current && !videoRef.current.paused) };
+    videoRef.current?.pause();
+    seekTo(((e.clientX - rect.left) / rect.width) * (duration || 0));
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const dragScrub = (e) => {
+    if (!scrubDragState.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     seekTo(((e.clientX - rect.left) / rect.width) * (duration || 0));
+  };
+  const endScrub = () => {
+    if (!scrubDragState.current) return;
+    if (scrubDragState.current.wasPlaying) videoRef.current?.play();
+    scrubDragState.current = null;
   };
 
   const markIn = () => { setInPoint(current); if (outPoint != null && outPoint < current) setOutPoint(null); };
@@ -347,7 +373,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
       const tag = TAGS.find(t => t.id === pendingTag) || TAGS[0];
       const novoClipe = {
-        id: uid(), tagId: tag.id, storagePath: json.storagePath, publicUrl: json.publicUrl,
+        id: uid(), tagId: tag.id, storagePath: json.storagePath, publicUrl: json.publicUrl, thumbUrl: json.thumbUrl || null,
         origemInicio: inPoint, origemFim: outPoint, duracao: outPoint - inPoint,
         note,
         // Os tempos dos desenhos foram marcados relativamente ao vídeo
@@ -369,10 +395,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
   };
 
-  const removerClipe = (clip) => {
+  const removerClipe = (clip, onRemovido) => {
     const executar = async () => {
       try { await supabase.storage.from('videos-clipes').remove([clip.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
       setClipes(prev => prev.filter(c => c.id !== clip.id));
+      onRemovido?.();
     };
     if (askConfirm) {
       askConfirm({ title: 'Apagar clipe?', label: 'Este clipe', confirmLabel: 'Apagar', onConfirm: executar });
@@ -627,11 +654,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
             <Btn variant="ghost" onClick={togglePlay} style={{ padding: 8 }}>{playing ? <Pause size={16} /> : <Play size={16} />}</Btn>
             <span style={{ fontSize: 12, color: T.muted, ...mono, minWidth: 44 }}>{fmt(current)}</span>
-            <div onClick={onScrubClick} style={{ flex: 1, height: 22, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+            <div onPointerDown={startScrub} onPointerMove={dragScrub} onPointerUp={endScrub} onPointerCancel={endScrub}
+              style={{ flex: 1, height: 36, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
               <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: T.line, borderRadius: 3 }} />
               <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: T.crimson, borderRadius: 3 }} />
               {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: T.good }} />}
               {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: T.bad }} />}
+              <div style={{
+                position: 'absolute', left: `${pct(current)}%`, transform: 'translateX(-50%)',
+                width: 16, height: 16, borderRadius: '50%', background: T.crimsonBright,
+                border: `2px solid ${T.cream}`, boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+              }} />
             </div>
             <span style={{ fontSize: 12, color: T.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
           </div>
@@ -683,34 +716,86 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       <div style={{ marginTop: 26 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <Tag size={16} color={T.gold} />
-          <h2 style={{ fontSize: 15, margin: 0, ...display, fontWeight: 600 }}>Clipes ({clipes.length})</h2>
+          <h2 style={{ fontSize: 15, margin: 0, ...display, fontWeight: 600 }}>
+            Clipes ({(filtroTag ? clipes.filter(c => c.tagId === filtroTag) : clipes).length})
+          </h2>
         </div>
+
         {clipes.length === 0 && <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0' }}>Ainda não há clipes guardados.</div>}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {clipes.map(clip => {
-            const tag = TAGS.find(t => t.id === clip.tagId);
-            return (
-              <div key={clip.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: tag?.color, flexShrink: 0 }} />
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: tag?.color, minWidth: 88, ...body }}>{tag?.label}</span>
-                <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>{Math.round(clip.duracao)}s</span>
-                <span style={{ fontSize: 11.5, color: T.mutedDim }}>{clip.originalTitulo}</span>
-                {clip.note && <span style={{ fontSize: 12.5, color: T.cream, flex: '1 1 200px' }}>{clip.note}</span>}
-                <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
-                  <Btn variant="ghost" onClick={() => setClipeAReproduzir(clip)} style={{ padding: '6px 10px' }}><Play size={12} /></Btn>
-                  <Btn variant="ghost" onClick={() => copiarLink(clip)} style={{ padding: '6px 10px' }}>
-                    {copiedId === clip.id ? <Check size={12} color={T.good} /> : <Link2 size={12} />}
-                  </Btn>
-                  <Btn variant="plain" onClick={() => removerClipe(clip)} style={{ padding: '6px 10px' }}><Trash2 size={12} color={T.bad} /></Btn>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+
+        {clipes.length > 0 && (
+          <>
+            {/* Filtro por etiqueta — só mostra as etiquetas que têm pelo
+               menos um clipe, para não encher a tira de opções vazias. */}
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 10, WebkitOverflowScrolling: 'touch' }}>
+              <button onClick={() => setFiltroTag(null)}
+                style={{
+                  flex: '0 0 auto', padding: '7px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
+                  border: `1px solid ${T.muted}`, background: filtroTag == null ? T.muted : 'transparent', color: filtroTag == null ? T.bg : T.muted,
+                }}>
+                Todos
+              </button>
+              {TAGS.filter(tag => clipes.some(c => c.tagId === tag.id)).map(tag => (
+                <button key={tag.id} onClick={() => setFiltroTag(tag.id)}
+                  style={{
+                    flex: '0 0 auto', padding: '7px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
+                    border: `1px solid ${tag.color}`, background: filtroTag === tag.id ? tag.color : 'transparent', color: filtroTag === tag.id ? TEXT_ON_ACCENT : tag.color,
+                  }}>
+                  {tag.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Cartões com miniatura, em tira horizontal — desliza-se com
+               o dedo, tal como numa galeria. Toca-se num cartão para abrir
+               o clipe. */}
+            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, scrollSnapType: 'x proximity', WebkitOverflowScrolling: 'touch' }}>
+              {(filtroTag ? clipes.filter(c => c.tagId === filtroTag) : clipes).map(clip => {
+                const tag = TAGS.find(t => t.id === clip.tagId);
+                return (
+                  <button key={clip.id} onClick={() => setClipeAReproduzir(clip)}
+                    style={{
+                      flex: '0 0 auto', width: 148, scrollSnapAlign: 'start', textAlign: 'left', cursor: 'pointer', padding: 0,
+                      background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body,
+                    }}>
+                    <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
+                      {clip.thumbUrl ? (
+                        <img src={clip.thumbUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Film size={22} color={T.mutedDim} />
+                        </div>
+                      )}
+                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: tag?.color }} />
+                      <span style={{ position: 'absolute', bottom: 4, right: 6, fontSize: 10.5, color: '#fff', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '1px 5px', ...mono }}>
+                        {Math.round(clip.duracao)}s
+                      </span>
+                    </div>
+                    <div style={{ padding: '7px 9px' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: tag?.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label}</div>
+                      {clip.note ? (
+                        <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip.note}</div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: T.mutedDim }}>{clip.originalTitulo}</div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {clipeAReproduzir && (
-        <ClipPlayerModal clip={clipeAReproduzir} tag={TAGS.find(t => t.id === clipeAReproduzir.tagId)} onClose={() => setClipeAReproduzir(null)} />
+        <ClipPlayerModal
+          clip={clipeAReproduzir}
+          tag={TAGS.find(t => t.id === clipeAReproduzir.tagId)}
+          onClose={() => setClipeAReproduzir(null)}
+          copied={copiedId === clipeAReproduzir.id}
+          onCopy={() => copiarLink(clipeAReproduzir)}
+          onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
+        />
       )}
     </div>
   );

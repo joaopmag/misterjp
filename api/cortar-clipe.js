@@ -73,6 +73,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Clipe demasiado longo (máx. 3 min por corte)' });
   }
 
+  const caminhoTemp = path.join(os.tmpdir(), `clip-${Date.now()}.mp4`);
+  const caminhoThumb = path.join(os.tmpdir(), `thumb-${Date.now()}.jpg`);
+
   try {
     // Signed URL de leitura do vídeo original — só válido alguns minutos,
     // tempo mais do que suficiente para este corte.
@@ -89,7 +92,6 @@ export default async function handler(req, res) {
     const urlLeituraDireta = signed.signedUrl.replace('.supabase.co/storage', '.storage.supabase.co/storage');
 
     const nomeSaida = `${teamId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
-    const caminhoTemp = path.join(os.tmpdir(), `clip-${Date.now()}.mp4`);
 
     await new Promise((resolve, reject) => {
       ffmpeg(urlLeituraDireta)
@@ -101,20 +103,51 @@ export default async function handler(req, res) {
         .run();
     });
 
-    const ficheiro = fs.readFileSync(caminhoTemp);
-    fs.unlinkSync(caminhoTemp);
-
     const { error: upErr } = await supabaseAdmin
       .storage.from('videos-clipes')
-      .upload(nomeSaida, ficheiro, { contentType: 'video/mp4', upsert: false });
+      .upload(nomeSaida, fs.readFileSync(caminhoTemp), { contentType: 'video/mp4', upsert: false });
     if (upErr) throw upErr;
 
     const { data: pub } = supabaseAdmin.storage.from('videos-clipes').getPublicUrl(nomeSaida);
     const publicUrlDireto = pub.publicUrl.replace('.supabase.co/storage', '.storage.supabase.co/storage');
 
-    return res.status(200).json({ storagePath: nomeSaida, publicUrl: publicUrlDireto });
+    // Miniatura — uma imagem fixa a meio do clipe, para a biblioteca
+    // conseguir mostrar cartões com imagem em vez de só texto (muito
+    // mais fácil de reconhecer um clipe ao toque, num telemóvel).
+    // É um extra: se falhar por algum motivo, o clipe continua a
+    // guardar-se na mesma, só sem imagem (a app mostra um ícone).
+    let thumbUrlDireto = null;
+    try {
+      const instanteThumb = Math.max(0, Math.min(duracao - 0.1, duracao / 2));
+      await new Promise((resolve, reject) => {
+        ffmpeg(caminhoTemp)
+          .on('end', resolve)
+          .on('error', reject)
+          .screenshots({
+            timestamps: [instanteThumb],
+            filename: path.basename(caminhoThumb),
+            folder: path.dirname(caminhoThumb),
+            size: '320x?',
+          });
+      });
+      const nomeThumb = nomeSaida.replace(/\.mp4$/, '.jpg');
+      const { error: upThumbErr } = await supabaseAdmin
+        .storage.from('videos-clipes')
+        .upload(nomeThumb, fs.readFileSync(caminhoThumb), { contentType: 'image/jpeg', upsert: false });
+      if (!upThumbErr) {
+        const { data: pubThumb } = supabaseAdmin.storage.from('videos-clipes').getPublicUrl(nomeThumb);
+        thumbUrlDireto = pubThumb.publicUrl.replace('.supabase.co/storage', '.storage.supabase.co/storage');
+      }
+    } catch (eThumb) {
+      console.error('cortar-clipe: falhou a miniatura (não crítico)', eThumb.message || eThumb);
+    }
+
+    return res.status(200).json({ storagePath: nomeSaida, publicUrl: publicUrlDireto, thumbUrl: thumbUrlDireto });
   } catch (e) {
     console.error('cortar-clipe:', e);
     return res.status(500).json({ error: e.message || 'Falha ao cortar o clipe' });
+  } finally {
+    fs.rm(caminhoTemp, { force: true }, () => {});
+    fs.rm(caminhoThumb, { force: true }, () => {});
   }
 }
