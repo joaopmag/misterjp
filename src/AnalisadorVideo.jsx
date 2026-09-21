@@ -852,8 +852,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           height: fullscreen ? '100vh' : 'calc(100vh - 140px)',
           maxHeight: fullscreen ? '100vh' : 'calc(100vh - 140px)',
         }}>
-          {modoDesenho && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise, flexShrink: 0 }}>
+          <div style={{
+            maxHeight: modoDesenho ? 60 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
+            transition: 'max-height 0.2s ease, opacity 0.15s ease',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise }}>
               <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Btn variant="ghost" onClick={retroceder} disabled={historico.length === 0} style={{ padding: 8 }} title="Retroceder">
@@ -865,18 +868,21 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <Btn variant="solid" onClick={fecharDesenho}><Check size={14} /> Concluído</Btn>
               </div>
             </div>
-          )}
+          </div>
 
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            {modoDesenho && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden' }}>
+            <div style={{
+              maxWidth: modoDesenho ? 90 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
+              transition: 'max-width 0.2s ease, opacity 0.15s ease',
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden', width: 90 }}>
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
                   <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
                 <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
               </div>
-            )}
-            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto' }}
+            </div>
+            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto', transition: 'width 0.2s ease' }}
               onPointerDown={startDraw} onPointerMove={moveDraw} onPointerUp={endDraw} onPointerLeave={endDraw} onPointerCancel={endDraw}>
               {originalAtivo?.pronto === false ? (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted, gap: 8, textAlign: 'center', padding: 20 }}>
@@ -1007,8 +1013,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
               )}
             </div>
-            {modoDesenho && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderLeft: `1px solid ${T.line}`, justifyContent: 'center' }}>
+            <div style={{
+              maxWidth: modoDesenho ? 90 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
+              transition: 'max-width 0.2s ease, opacity 0.15s ease',
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderLeft: `1px solid ${T.line}`, justifyContent: 'center', width: 90 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
                   {PALETA_DESENHO.map(p => (
                     <button key={p.id} onClick={() => setCorAtual(p.cor)} title={p.id}
@@ -1022,7 +1031,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
                 <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
               </div>
-            )}
+            </div>
           </div>
 
           <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
