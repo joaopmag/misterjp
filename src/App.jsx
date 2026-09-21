@@ -2525,6 +2525,21 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [uploadVideoEstado, setUploadVideoEstado] = useState({ ativo: false, progresso: 0, finalizando: false, erro: '' });
   const iniciarUploadVideo = useCallback(async (file, nomePersonalizado) => {
     setUploadVideoEstado({ ativo: true, progresso: 0, finalizando: false, erro: '' });
+    // Pede ao telemóvel para não apagar o ecrã enquanto o vídeo envia — em
+    // muitos telemóveis, o ecrã apagar-se corta a ligação de rede do
+    // browser a meio do envio. Não existe em todos os browsers/telemóveis;
+    // se não estiver disponível, o envio continua na mesma, só sem esta
+    // proteção extra. Não ajuda se a pessoa sair da app para outra.
+    let wakeLock = null;
+    const reAdquirirWakeLock = async () => {
+      if (document.visibilityState === 'visible' && 'wakeLock' in navigator) {
+        try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* não crítico */ }
+      }
+    };
+    document.addEventListener('visibilitychange', reAdquirirWakeLock);
+    try {
+      if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+    } catch (e) { /* não crítico — segue sem o wake lock */ }
     try {
       const nomeLimpo = file.name
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -2606,6 +2621,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       }
     } catch (e) {
       setUploadVideoEstado({ ativo: false, progresso: 0, finalizando: false, erro: `Não consegui carregar o vídeo: ${e.message || e}` });
+    } finally {
+      document.removeEventListener('visibilitychange', reAdquirirWakeLock);
+      wakeLock?.release().catch(() => {});
     }
   }, [teamId, setVideosOriginais]);
   // O Canal (Biblioteca) mostra só os vídeos gerais — os de um adversário
