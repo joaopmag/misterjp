@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2,
+  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -104,6 +104,17 @@ function distPontoSegmento(p, a, b) {
   const px = a.x + t * dx, py = a.y + t * dy;
   return Math.hypot(p.x - px, p.y - py);
 }
+// Roda um ponto à volta de um centro, em graus — usado para a Zona
+// rotativa: tanto para desenhar como para saber se um toque lhe acertou.
+function girar(p, centro, graus) {
+  if (!graus) return p;
+  const rad = (graus * Math.PI) / 180;
+  const dx = p.x - centro.x, dy = p.y - centro.y;
+  return {
+    x: centro.x + dx * Math.cos(rad) - dy * Math.sin(rad),
+    y: centro.y + dx * Math.sin(rad) + dy * Math.cos(rad),
+  };
+}
 function distanciaShape(sh, p) {
   const pts = sh.points || [];
   const [a, b] = pts;
@@ -116,9 +127,14 @@ function distanciaShape(sh, p) {
   }
   if (sh.tool === 'retangulo' && b) {
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-    if (p.x >= x && p.x <= x + w && p.y >= y && p.y <= y + h) return 0; // dentro da zona conta sempre como acerto
+    // Roda o ponto tocado para o referencial "sem rotação" da zona, antes
+    // de comparar com o retângulo — assim continua a acertar-se numa zona
+    // que já foi rodada.
+    const centro = { x: x + w / 2, y: y + h / 2 };
+    const pLocal = sh.rotacao ? girar(p, centro, -sh.rotacao) : p;
+    if (pLocal.x >= x && pLocal.x <= x + w && pLocal.y >= y && pLocal.y <= y + h) return 0; // dentro da zona conta sempre como acerto
     const c = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-    return Math.min(distPontoSegmento(p, c[0], c[1]), distPontoSegmento(p, c[1], c[2]), distPontoSegmento(p, c[2], c[3]), distPontoSegmento(p, c[3], c[0]));
+    return Math.min(distPontoSegmento(pLocal, c[0], c[1]), distPontoSegmento(pLocal, c[1], c[2]), distPontoSegmento(pLocal, c[2], c[3]), distPontoSegmento(pLocal, c[3], c[0]));
   }
   if (sh.tool === 'livre' || sh.tool === 'zonalivre' || sh.tool === 'linhaPontos') {
     let min = Infinity;
@@ -165,6 +181,7 @@ function renderShape(sh, i) {
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
     const corZona = sh.color || COR_DESENHO;
     const idPadrao = `hachura-${sh.id || i}`;
+    const cx = x + w / 2, cy = y + h / 2;
     return (
       <g key={i}>
         <defs>
@@ -172,7 +189,8 @@ function renderShape(sh, i) {
             <line x1={0} y1={0} x2={0} y2={2.2} stroke={corZona} strokeWidth={0.35} />
           </pattern>
         </defs>
-        <rect x={x} y={y} width={w} height={h} fill={`url(#${idPadrao})`} fillOpacity={0.6} stroke={corZona} strokeWidth={ESPESSURA} />
+        <rect x={x} y={y} width={w} height={h} fill={`url(#${idPadrao})`} fillOpacity={0.6} stroke={corZona} strokeWidth={ESPESSURA}
+          transform={sh.rotacao ? `rotate(${sh.rotacao} ${cx} ${cy})` : undefined} />
       </g>
     );
   }
@@ -607,13 +625,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
     setShapes(s => [...s, drawState.current]);
   };
-  // Arrastar uma das duas "pegas" de uma forma selecionada (aparecem junto
-  // ao popup de duração) — para a redimensionar ou reorientar, em vez de
-  // só a poder mover inteira.
-  const startHandleDrag = (index, ponto, e) => {
+  // Arrastar uma das "pegas" de uma forma selecionada (aparecem junto ao
+  // popup de duração) — para a redimensionar ou reorientar. Na Zona há
+  // ainda uma pega extra só para rodar.
+  const startHandleDrag = (index, ponto, e, tipo) => {
     e.stopPropagation();
     pushHistorico();
-    handleDragState.current = { index, ponto };
+    handleDragState.current = { index, ponto, tipo };
   };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
@@ -626,8 +644,25 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     if (handleDragState.current) {
       const pt = getPoint(e);
-      const { index, ponto } = handleDragState.current;
-      setShapes(s => s.map((sh, i) => (i === index ? { ...sh, points: sh.points.map((p, pi) => (pi === ponto ? pt : p)) } : sh)));
+      const { index, ponto, tipo } = handleDragState.current;
+      setShapes(s => s.map((sh, i) => {
+        if (i !== index) return sh;
+        if (tipo === 'rotacao' && sh.points[0] && sh.points[1]) {
+          const [pa, pb] = sh.points;
+          const cx = (Math.min(pa.x, pb.x) + Math.max(pa.x, pb.x)) / 2, cy = (Math.min(pa.y, pb.y) + Math.max(pa.y, pb.y)) / 2;
+          const graus = (Math.atan2(pt.y - cy, pt.x - cx) * 180) / Math.PI + 90; // a pega fica acima do centro
+          return { ...sh, rotacao: graus };
+        }
+        if (sh.tool === 'retangulo' && sh.rotacao) {
+          // A pega aparece na posição já rodada — roda o toque de volta ao
+          // referencial original da zona antes de o guardar como canto.
+          const [pa, pb] = sh.points;
+          const cx = (Math.min(pa.x, pb.x) + Math.max(pa.x, pb.x)) / 2, cy = (Math.min(pa.y, pb.y) + Math.max(pa.y, pb.y)) / 2;
+          const pLocal = girar(pt, { x: cx, y: cy }, -sh.rotacao);
+          return { ...sh, points: sh.points.map((p, pi) => (pi === ponto ? pLocal : p)) };
+        }
+        return { ...sh, points: sh.points.map((p, pi) => (pi === ponto ? pt : p)) };
+      }));
       return;
     }
     if (dragState.current) {
@@ -715,36 +750,64 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         </div>
       )}
 
-      {/* Vídeos originais carregados (temporários) — caixas retangulares */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-        {videosOriginais.map(v => (
-          <button key={v.id} onClick={() => { setOriginalAtivoId(v.id); limparMarcas(); }}
+      {/* Vídeos originais carregados — caixas retangulares com pré-visualização,
+         só visíveis quando não há nenhum aberto (para não ocupar espaço por
+         cima do leitor). Com um vídeo aberto, mostra-se só uma barra fina
+         com "Voltar", sempre à vista sem ser preciso subir a página. */}
+      {!originalAtivo ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+          {videosOriginais.map(v => (
+            <button key={v.id} onClick={() => { setOriginalAtivoId(v.id); limparMarcas(); }}
+              style={{
+                display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
+                borderRadius: 10, border: `1px solid ${v.id === originalAtivoId ? T.crimsonBright : T.line}`,
+                background: v.id === originalAtivoId ? T.surfaceRaise : T.surface,
+              }}>
+              <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
+                {v.thumbUrl ? (
+                  <img src={v.thumbUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Film size={20} color={T.mutedDim} />
+                  </div>
+                )}
+                {v.pronto === false && (
+                  <span style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Loader2 size={16} className="spin" color="#fff" />
+                  </span>
+                )}
+              </div>
+              <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.titulo}</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  {v.pronto === false ? (
+                    <span style={{ fontSize: 11, color: T.warn }}>A preparar…</span>
+                  ) : <span style={{ fontSize: 11, color: T.mutedDim }}>Pronto</span>}
+                  <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
+                </div>
+              </div>
+            </button>
+          ))}
+          <button onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo}
             style={{
-              display: 'flex', flexDirection: 'column', gap: 8, width: 172, textAlign: 'left', cursor: 'pointer', padding: '10px 12px', ...body,
-              borderRadius: 10, border: `1px solid ${v.id === originalAtivoId ? T.crimsonBright : T.line}`,
-              background: v.id === originalAtivoId ? T.surfaceRaise : T.surface,
+              width: 172, minHeight: 62, borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: uploadVideoEstado?.ativo ? 'not-allowed' : 'pointer', fontSize: 12,
             }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Film size={14} color={T.muted} style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.titulo}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              {v.pronto === false ? (
-                <span style={{ fontSize: 11, color: T.warn, display: 'flex', alignItems: 'center', gap: 4 }}><Loader2 size={11} className="spin" /> A preparar…</span>
-              ) : <span style={{ fontSize: 11, color: T.mutedDim }}>Pronto</span>}
-              <X size={13} color={T.bad} onClick={(e) => { e.stopPropagation(); apagarOriginal(v); }} />
-            </div>
+            {uploadVideoEstado?.ativo ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+            {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
           </button>
-        ))}
-        <button onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo}
-          style={{
-            width: 172, minHeight: 62, borderRadius: 10, border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, ...body,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: uploadVideoEstado?.ativo ? 'not-allowed' : 'pointer', fontSize: 12,
-          }}>
-          {uploadVideoEstado?.ativo ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
-          {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
-        </button>
-      </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          <Btn variant="ghost" onClick={() => setOriginalAtivoId(null)}>
+            <ArrowLeft size={14} /> Vídeos e clipes
+          </Btn>
+          <span style={{ fontSize: 12.5, color: T.muted, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{originalAtivo.titulo}</span>
+          <Btn variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={uploadVideoEstado?.ativo} style={{ marginLeft: 'auto' }}>
+            {uploadVideoEstado?.ativo ? <Loader2 size={14} className="spin" /> : <Upload size={14} />} {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar…' : `${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
+          </Btn>
+        </div>
+      )}
 
       {uploadVideoEstado?.ativo && (
         <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: -10, marginBottom: 14 }}>
@@ -842,10 +905,32 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 )}
 
                 {/* Pegas para mover/redimensionar a forma selecionada (a mesma que tem o popup de duração aberto) —
-                   para a Zona livre e o Ligar pontos, aparece uma pega por cada vértice já colocado. */}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'retangulo', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
+                   para a Zona livre e o Ligar pontos, aparece uma pega por cada vértice já colocado.
+                   Mais pequenas e finas do que antes, para não tapar o vídeo. */}
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && shapes[editandoDuracaoIndex].tool === 'retangulo' && shapes[editandoDuracaoIndex].points[1] && (() => {
+                  const forma = shapes[editandoDuracaoIndex];
+                  const [pa, pb] = forma.points;
+                  const x = Math.min(pa.x, pb.x), y = Math.min(pa.y, pb.y), w = Math.abs(pb.x - pa.x), h = Math.abs(pb.y - pa.y);
+                  const centro = { x: x + w / 2, y: y + h / 2 };
+                  const rot = forma.rotacao || 0;
+                  const p0 = girar(pa, centro, rot), p1 = girar(pb, centro, rot);
+                  const topoMeio = girar({ x: centro.x, y }, centro, rot);
+                  const pegaRodar = girar({ x: centro.x, y: y - 6 }, centro, rot);
+                  return (
+                    <g>
+                      <line x1={topoMeio.x} y1={topoMeio.y} x2={pegaRodar.x} y2={pegaRodar.y} stroke={T.gold} strokeWidth={0.2} />
+                      <circle cx={p0.x} cy={p0.y} r={1.1} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.25}
+                        onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 0, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
+                      <circle cx={p1.x} cy={p1.y} r={1.1} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.25}
+                        onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 1, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
+                      <circle cx={pegaRodar.x} cy={pegaRodar.y} r={1.1} fill={T.gold} stroke="#fff" strokeWidth={0.25}
+                        onPointerDown={e => startHandleDrag(editandoDuracaoIndex, null, e, 'rotacao')} style={{ cursor: 'grab', touchAction: 'none' }} />
+                    </g>
+                  );
+                })()}
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
                   shapes[editandoDuracaoIndex].points.map((p, pi) => (
-                    <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 1.2 : 2} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.4}
+                    <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.7 : 1.1} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.22}
                       onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
                       style={{ cursor: 'pointer', touchAction: 'none' }} />
                   ))}
