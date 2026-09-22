@@ -149,7 +149,7 @@ function distanciaShape(sh, p) {
 /* Desenha uma forma no SVG — usado tanto no editor como na reprodução do
    clipe já guardado (por isso vive fora do componente principal). */
 const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
-const RAIO_TOQUE = 3; // distância máxima (era 6) para um toque "acertar" num desenho já feito — mais exato, tem de se tocar mesmo perto
+const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um toque "acertar" num desenho já feito — mais exato ainda, tem de se tocar mesmo em cima
 
 function renderShape(sh, i) {
   if (!sh || !sh.points || sh.points.length === 0) return null;
