@@ -84,13 +84,13 @@ function ToolBtn({ icon: Icon, label, active, onClick }) {
   return (
     <button onClick={onClick} title={label}
       style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
-        width: 56, minHeight: 50, padding: '8px 4px', borderRadius: 8, cursor: 'pointer', ...body,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+        width: '100%', minHeight: 42, padding: '6px 3px', borderRadius: 8, cursor: 'pointer', ...body,
         border: `1px solid ${active ? T.crimsonBright : T.line}`,
         background: active ? T.surfaceRaise : 'transparent', color: active ? T.cream : T.muted,
       }}>
-      <Icon size={18} />
-      <span style={{ fontSize: 9.5, lineHeight: 1, whiteSpace: 'nowrap' }}>{label}</span>
+      <Icon size={16} />
+      <span style={{ fontSize: 9, lineHeight: 1, whiteSpace: 'nowrap' }}>{label}</span>
     </button>
   );
 }
@@ -922,18 +922,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               maxWidth: modoDesenho ? 90 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
               transition: 'max-width 0.2s ease, opacity 0.15s ease',
             }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden', width: 90 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden', width: 90 }}>
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
                   <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
-                <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
 
                 {/* Em ecrã inteiro não há coluna à direita (ficaria fora do
-                   alcance do rato/dedo num ecrã grande) — cores e apagar
-                   vêm todos para aqui. Fora de ecrã inteiro, ficam à
-                   direita (ver abaixo), como já estava. */}
+                   alcance do rato/dedo num ecrã grande) — texto, cores e
+                   apagar vêm todos para aqui. Fora de ecrã inteiro, ficam
+                   à direita (ver abaixo). */}
                 {fullscreen && (
                   <>
+                    <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
                     <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
                       {PALETA_DESENHO.map(p => (
@@ -1091,7 +1091,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               maxWidth: (modoDesenho && !fullscreen) ? 90 : 0, opacity: (modoDesenho && !fullscreen) ? 1 : 0, overflow: 'hidden', flexShrink: 0,
               transition: 'max-width 0.2s ease, opacity 0.15s ease',
             }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderLeft: `1px solid ${T.line}`, justifyContent: 'center', width: 90 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderLeft: `1px solid ${T.line}`, justifyContent: 'center', width: 90 }}>
+                <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
+                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
                   {PALETA_DESENHO.map(p => (
                     <button key={p.id} onClick={() => setCorAtual(p.cor)} title={p.id}
