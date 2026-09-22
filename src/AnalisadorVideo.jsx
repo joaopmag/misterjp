@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft,
+  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -189,10 +189,23 @@ function renderShape(sh, i) {
             <line x1={0} y1={0} x2={0} y2={2.2} stroke={corZona} strokeWidth={0.35} />
           </pattern>
         </defs>
-        <rect x={x} y={y} width={w} height={h} fill={`url(#${idPadrao})`} fillOpacity={0.6} stroke={corZona} strokeWidth={ESPESSURA}
+        <rect x={x} y={y} width={w} height={h} fill={`url(#${idPadrao})`} fillOpacity={0.6}
+          stroke={sh.semContorno ? 'none' : corZona} strokeWidth={sh.semContorno ? 0 : ESPESSURA}
           transform={sh.rotacao ? `rotate(${sh.rotacao} ${cx} ${cy})` : undefined} />
       </g>
     );
+  }
+  if (sh.tool === 'cone') {
+    // Cone de visão — sai de `a` (o jogador) em direção a `b`, alargando
+    // à medida que se afasta, como o campo de visão dele.
+    const corCone = sh.color || COR_DESENHO;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const angBase = Math.atan2(b.y - a.y, b.x - a.x);
+    const meioAngulo = 0.5; // ~29° para cada lado — largura do cone
+    const p1 = { x: a.x + dist * Math.cos(angBase - meioAngulo), y: a.y + dist * Math.sin(angBase - meioAngulo) };
+    const p2 = { x: a.x + dist * Math.cos(angBase + meioAngulo), y: a.y + dist * Math.sin(angBase + meioAngulo) };
+    return <path key={i} d={`M ${a.x} ${a.y} L ${p1.x} ${p1.y} A ${dist} ${dist} 0 0 1 ${p2.x} ${p2.y} Z`}
+      fill={corCone} fillOpacity={0.3} stroke={corCone} strokeWidth={ESPESSURA} strokeLinejoin="round" />;
   }
   const angle = Math.atan2(b.y - a.y, b.x - a.x); const ah = 1.7;
   const p1 = { x: b.x - ah * Math.cos(angle - 0.4), y: b.y - ah * Math.sin(angle - 0.4) };
@@ -598,6 +611,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (editandoDuracaoIndex != null) setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: null } : sh)));
     setEditandoDuracaoIndex(null);
   };
+  // Liga/desliga o contorno da Zona — sem contorno, fica só com as linhas
+  // diagonais a marcar a área, sem a moldura à volta.
+  const alternarContornoZona = () => {
+    if (editandoDuracaoIndex == null) return;
+    pushHistorico();
+    setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, semContorno: !sh.semContorno } : sh)));
+  };
   // Dá para dar play, deixar correr até ao ponto certo, pausar, e usar esse
   // momento exato — em vez de teres de escrever o minuto de cabeça.
   const usarTempoAtualComoLimite = () => setDuracaoInputTexto(fmt(current));
@@ -745,6 +765,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     ['linha', Minus, 'Linha'],
     ['circulo', Circle, 'Círculo'],
     ['retangulo', Square, 'Zona'],
+    ['cone', Eye, 'Visão'],
     ['livre', Pencil, 'Traço'],
     ['zonalivre', Lasso, 'Zona livre'],
     ['linhaPontos', Waypoints, 'Ligar pontos'],
@@ -996,7 +1017,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </g>
                   );
                 })()}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
                   shapes[editandoDuracaoIndex].points.map((p, pi) => (
                     <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.4 : 0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
                       onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
@@ -1058,6 +1079,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   />
                   <Btn variant="solid" onClick={confirmarDuracaoShape} style={{ padding: '5px 10px', fontSize: 12 }}>OK</Btn>
                   <Btn variant="ghost" onClick={marcarSempreVisivelShape} style={{ padding: '5px 10px', fontSize: 12 }}>Sempre visível</Btn>
+                  {shapes[editandoDuracaoIndex]?.tool === 'retangulo' && (
+                    <Btn variant={shapes[editandoDuracaoIndex]?.semContorno ? 'solid' : 'ghost'} onClick={alternarContornoZona} style={{ padding: '5px 10px', fontSize: 12 }}>
+                      {shapes[editandoDuracaoIndex]?.semContorno ? 'Sem contorno' : 'Com contorno'}
+                    </Btn>
+                  )}
                 </div>
               )}
             </div>
