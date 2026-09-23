@@ -30618,6 +30618,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
 
   const save = (data) => {
+    if (modoCanal && data.id && data.adversarioId && !items.some(v => v.id === data.id) && setTodosVideos) {
+      // Corte da ficha editado a partir do cartão da equipa.
+      setTodosVideos(prev => prev.map(v => (v.id === data.id ? data : v)));
+      setModal(null);
+      return;
+    }
     // Depois de guardar, o filtro passa SEMPRE a mostrar o sítio onde o
     // item ficou: a pasta escolhida, ou "Tudo" se não tiver pasta. Assim
     // nunca se guarda alguma coisa e se fica a olhar para uma vista onde
@@ -30638,10 +30644,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     else setFolderFilter(destino || null);
     setModal(null);
   };
-  const remove = (id) => removeWithUndo(
-    items, setItems, id, itemLabel(items.find(v => v.id === id), 'Ficheiro'),
-    () => { if (activeId === id) setActiveId(null); },
-  );
+  const remove = (id) => {
+    // Corte que vive na ficha de um adversário (mostrado no cartão da
+    // equipa): apaga-se da coleção completa, não da lista do Canal.
+    if (!items.some(v => v.id === id) && setTodosVideos) {
+      const lista = todosVideos || [];
+      removeWithUndo(lista, setTodosVideos, id, itemLabel(lista.find(v => v.id === id), 'Corte'),
+        () => { if (activeId === id) setActiveId(null); });
+      return;
+    }
+    removeWithUndo(
+      items, setItems, id, itemLabel(items.find(v => v.id === id), 'Ficheiro'),
+      () => { if (activeId === id) setActiveId(null); },
+    );
+  };
   const selectItem = (id) => {
     if (sequencia && !sequencia.includes(id)) setSequencia(null);
     if (modoCanal && termo) { irPara(items.find(v => v.id === id)); return; }
@@ -30750,12 +30766,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     Object.entries(porAdv).forEach(([key, lista]) => {
       const nome = key === 'sem' ? '' : nomeEquipa[key];
       const ficha = key === 'sem' ? null : fichaDaEquipa(nome, adversarios);
-      const secoes = seccionarPorJogo(lista, byIdItens, ordemCriacao, rotuloSubJogo);
+      // Os cortes gravados na ficha desta equipa também aparecem aqui,
+      // junto do jogo de onde saíram — vivem na ficha (Scouting), mas
+      // vêem-se a partir da Biblioteca sem ter de lá ir.
+      const cortesFicha = ficha ? (todosVideos || []).filter(v => v.adversarioId === ficha.id && ehClipe(v)) : [];
+      const secoes = seccionarPorJogo([...lista, ...cortesFicha], byIdItens, ordemCriacao, rotuloSubJogo);
       const itens = secoes.flatMap(s => s.itens);
       const completos = itens.filter(v => !ehClipe(v)).length;
       gruposAdv.push({
         key, nome, ficha, itens, secoes,
-        jogos: secoes.length, completos, cortesCanal: itens.length - completos,
+        jogos: secoes.length, completos, cortesCanal: itens.filter(v => ehClipe(v) && !v.adversarioId).length,
         cortesNaFicha: ficha ? (todosVideos || []).filter(v => v.adversarioId === ficha.id).length : 0,
         titulo: key === 'sem' ? 'Por associar' : nome,
       });
@@ -30963,6 +30983,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      corrida (dentro de uma pasta) como dentro de cada pasta fechada. */
   const renderRow = (v) => {
     const Icon = kindIcon[v.kind] || FileText;
+    const naFicha = modoCanal && !!v.adversarioId;
     return (
         <div key={v.id} style={{
           display: 'flex', gap: 8, borderRadius: 8, border: `1px solid ${v.id === active?.id ? T.gold : T.line}`,
@@ -30996,6 +31017,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 // antes o intervalo.
                 <div style={{ fontSize: 11, color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Scissors size={10} /> {fmtMMSS(v.clipInicio)}–{fmtMMSS(v.clipFim)}
+                  {naFicha && <span style={{ color: T.warn }}>· na ficha</span>}
                 </div>
               ) : (v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
               {/* Só se mostra a pasta quando se está a ver tudo —
@@ -31007,12 +31029,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           </button>
           {/* Mover para outra pasta sem abrir a janela de edição. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isNarrow ? { justifyContent: 'flex-end' } : {}) }}>
-          {!soLeitura && !semCatalogo && modoCanal && catDe(v) !== 'tema' && (
+          {!soLeitura && !semCatalogo && modoCanal && (catDe(v) !== 'tema' || naFicha) && (
             // Jogos e adversários não vivem em pastas — mantém-se o lugar
             // do seletor, para os ícones continuarem alinhados em coluna.
             <span style={isNarrow ? { flex: 1 } : { width: 150, flexShrink: 0 }} />
           )}
-          {!soLeitura && !semCatalogo && (!modoCanal || catDe(v) === 'tema') && (
+          {!soLeitura && !semCatalogo && (!modoCanal || (catDe(v) === 'tema' && !naFicha)) && (
           <select
             value={cleanFolder(v.pasta)}
             onChange={e => moveItem(v.id, e.target.value)}
@@ -31472,7 +31494,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // ainda estão no Canal: passam todos para a ficha da equipa do cartão.
   const moverCortesParaFicha = (g) => {
     if (!g || !g.ficha) return;
-    const cortes = g.itens.filter(ehClipe);
+    const cortes = g.itens.filter(v => ehClipe(v) && !v.adversarioId);
     if (!cortes.length) return;
     const orig = {};
     cortes.forEach(v => { orig[v.id] = v; });
@@ -31510,7 +31532,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               <Scissors size={14} /> Mover {g.cortesCanal} {g.cortesCanal === 1 ? 'corte' : 'cortes'} para a ficha
             </Btn>
           )}
-          {eJogos && cortesDoGrupo.length > 0 && (
+          {cortesDoGrupo.length > 0 && (
             posSeq >= 0 ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 12, color: T.warn, ...mono }}>Corte {posSeq + 1}/{sequencia.length}</span>
@@ -32059,10 +32081,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           folders={folders}
           // Ao adicionar dentro de uma pasta aberta, já vem preenchida.
           defaultFolder={(modoCanal ? pastaTema : folderFilter) && (modoCanal ? pastaTema : folderFilter) !== NO_FOLDER ? (modoCanal ? pastaTema : folderFilter) : ''}
-          semCatalogo={semCatalogo}
+          semCatalogo={semCatalogo || (modal !== 'new' && !!modal.adversarioId)}
           onClose={() => setModal(null)}
           onSave={save}
-          modoCanal={modoCanal}
+          modoCanal={modoCanal && !(modal !== 'new' && modal.adversarioId)}
           matches={matches}
           adversarios={adversarios}
           // O que vem preenchido: num item existente, a categoria que ele
@@ -32216,6 +32238,27 @@ function driveOpenSrc(drive) {
   return drive.kind === 'slides'
     ? `https://docs.google.com/presentation/d/${drive.id}/edit`
     : `https://drive.google.com/file/d/${drive.id}/view`;
+}
+
+/* Várias variantes de um formulário no MESMO espaço: todas ficam
+   desenhadas (a caixa tem a altura da maior), só a `ativa` se vê e recebe
+   cliques. Evita que uma janela mude de tamanho — e os botões saltem —
+   ao trocar de opção. As escondidas não recebem foco nem teclado. */
+function CamadasFixas({ ativa, camadas }) {
+  return (
+    <div style={{ display: 'grid' }}>
+      {camadas.map(c => {
+        const on = c.id === ativa;
+        return (
+          <div
+            key={c.id}
+            aria-hidden={!on}
+            style={{ gridArea: '1 / 1', minWidth: 0, visibility: on ? 'visible' : 'hidden', pointerEvents: on ? 'auto' : 'none' }}
+          >{c.conteudo}</div>
+        );
+      })}
+    </div>
+  );
 }
 
 /* FICHA DO ADVERSÁRIO, PEDIDA A MEIO DE UM CORTE.
@@ -32481,144 +32524,165 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
           </div>
         </div>
       )}
-      {modoCanal && categoria === 'jogo' && (
-        <div style={{ marginBottom: 12 }}>
-          <Field label="Jogo (opcional — liga ao módulo Jogos)">
-            <Select value={jogoId} onChange={e => escolherJogo(e.target.value)}>
-              <option value="">— sem ligação —</option>
-              {jogosOrdenados.map(m => (
-                <option key={m.id} value={m.id}>
-                  {[m.jornada && (numDoJogo(m) != null ? `J${numDoJogo(m)}` : m.jornada), `vs ${m.opponent || 'Adversário'}`, m.date && fmtDate(m.date)].filter(Boolean).join(' · ')}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-      )}
-      {modoCanal && categoria === 'adversario' && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ ...FIELD_GRID }}>
-            {[0, 1].map(i => (
-              <Field key={i} label={`Equipa ${i + 1}`}>
-                {nomesEquipas.length ? (
-                  <Select value={eqs[i]} onChange={e => setEqs(prev => prev.map((x, k) => (k === i ? e.target.value : x)))}>
-                    <option value="">— escolher —</option>
-                    {(eqs[i] && !nomesEquipas.some(n => semAcentos(n) === semAcentos(eqs[i])) ? [eqs[i], ...nomesEquipas] : nomesEquipas)
-                      .map(n => <option key={n} value={n}>{n}</option>)}
-                  </Select>
-                ) : (
-                  <Input value={eqs[i]} onChange={e => setEqs(prev => prev.map((x, k) => (k === i ? e.target.value : x)))} placeholder="Nome da equipa" />
-                )}
+      {/* JANELA FIXA — cada opção (tipo de vídeo, fonte) mostra campos
+          diferentes; antes a janela crescia e encolhia a cada clique e os
+          botões saltavam de sítio. Agora todas as variantes ficam
+          desenhadas umas por cima das outras (`CamadasFixas`) e só a
+          escolhida se vê: a janela tem sempre a altura da maior. */}
+      {(() => {
+        const titulo = (
+          <div style={{ marginBottom: 12 }}>
+            <Field label="Título"><Input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Ex: Jornada 12 vs FC Foz" /></Field>
+          </div>
+        );
+        const descricao = (rotulo, dica) => (
+          <div style={{ marginBottom: 12 }}>
+            <Field label={rotulo}><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="Ex: Jornada 12 · Campeonato" /></Field>
+            {dica && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6 }}>{dica}</div>}
+          </div>
+        );
+        /* PASTA — a lista escolhe uma das existentes; a caixa ao lado serve
+           para criar uma nova. `semCatalogo` esconde tudo isto — não há
+           pastas quando os vídeos vivem à parte de um único adversário. */
+        const pasta = !semCatalogo && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ ...FIELD_GRID }}>
+              <Field label="Pasta existente">
+                <Select
+                  value={folders.includes(f.pasta) ? f.pasta : ''}
+                  onChange={e => setF({ ...f, pasta: e.target.value })}
+                >
+                  <option value="">— sem pasta —</option>
+                  {folders.map(name => <option key={name} value={name}>{name}</option>)}
+                </Select>
               </Field>
-            ))}
-          </div>
-          <div style={{ fontSize: 11.5, color: nomesEquipas.length ? T.mutedDim : T.warn, marginTop: 6 }}>
-            {nomesEquipas.length
-              ? 'O vídeo aparece no cartão de cada equipa, e cada uma fica com ficha em Scouting › Adversários (criada sozinha, se ainda não existir). Os cortes vão para a ficha da equipa escolhida ao gravar o corte.'
-              : 'Ainda não há equipas nas competições — configura-as em Jogos › Competições e jornadas para as escolheres de uma lista.'}
-          </div>
-        </div>
-      )}
-      <div style={{ marginBottom: 12 }}>
-        <Field label="Título"><Input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Ex: Jornada 12 vs FC Foz" /></Field>
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <Field label={modoCanal && categoria === 'jogo' ? 'Jornada' : 'Descrição / contexto (opcional)'}><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="Ex: Jornada 12 · Campeonato" /></Field>
-        {modoCanal && categoria === 'jogo' && (
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6 }}>
-            É pela jornada que as partes do mesmo jogo e os seus cortes ficam juntos (ex.: "2ª Jornada").
-          </div>
-        )}
-      </div>
-      {/* PASTA — escreve-se o nome à mão (criando uma pasta nova) ou
-          escolhe-se uma das que já existem na lista sugerida. Deixar em
-          branco põe o item fora de qualquer pasta. */}
-      {/* PASTA — a lista escolhe uma das existentes; a caixa ao lado serve
-          para criar uma nova. Antes era um <datalist>, cuja seta o browser
-          desenha mas não abre de forma fiável no telemóvel. `semCatalogo`
-          esconde tudo isto — não há pastas para escolher quando os vídeos
-          já vivem à parte de um único adversário. */}
-      {!semCatalogo && (!modoCanal || categoria === 'tema') && (
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ ...FIELD_GRID }}>
-          <Field label="Pasta existente">
-            <Select
-              value={folders.includes(f.pasta) ? f.pasta : ''}
-              onChange={e => setF({ ...f, pasta: e.target.value })}
-            >
-              <option value="">— sem pasta —</option>
-              {folders.map(name => <option key={name} value={name}>{name}</option>)}
-            </Select>
-          </Field>
-          <Field label="Ou criar pasta nova">
-            <Input
-              value={folders.includes(f.pasta) ? '' : f.pasta}
-              onChange={e => setF({ ...f, pasta: e.target.value })}
-              placeholder="Ex: Adversários"
-            />
-          </Field>
-        </div>
-      </div>
-      )}
-
-      {source === 'drive' ? (
-        <div style={{ marginBottom: 8 }}>
-          <Field label="Link de partilha do Google Drive">
-            <Input
-              value={f.driveUrl || ''}
-              onChange={e => { setF({ ...f, driveUrl: e.target.value }); setError(''); }}
-              placeholder="https://drive.google.com/file/d/…/view?usp=sharing"
-            />
-          </Field>
-          <div style={{
-            fontSize: 11.5, color: T.mutedDim, marginTop: 10, lineHeight: 1.55,
-            border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px', background: T.bg,
-          }}>
-            <div style={{ color: T.warn, marginBottom: 4 }}>Para documentos grandes ou que atualizas com frequência.</div>
-            O ficheiro fica no Drive — aqui guarda-se só o link, por isso não há limite de tamanho
-            nem risco de a gravação falhar.
-            <br /><br />
-            <span style={{ color: T.cream }}>Tem de estar partilhado como "qualquer pessoa com o link".</span> Caso contrário
-            os teus adjuntos veem um pedido de acesso em vez do documento.
-            <br /><br />
-            A pré-visualização passa a ser a do próprio Google: a navegação de páginas, o deslize e o
-            ecrã inteiro são os deles, não os nossos.
-          </div>
-        </div>
-      ) : source === 'link' ? (
-        <div style={{ marginBottom: 8 }}>
-          <Field label="Link do vídeo">
-            <Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/... · instagram.com/reel/... · tiktok.com/@user/video/..." />
-          </Field>
-          <p style={{ fontSize: 11.5, color: T.mutedDim, margin: '6px 0 0' }}>
-            No TikTok, usa o link completo (com "/video/"), não o link curto (vm.tiktok.com).
-          </p>
-        </div>
-      ) : (
-        <div style={{ marginBottom: 8 }}>
-          <Field label="Ficheiro" bloco>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <label style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-                padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
-                background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
-              }}>
-                {loadingFile ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                {f.fileName ? 'Substituir ficheiro' : 'Carregar ficheiro'}
-                <input
-                  type="file"
-                  accept="application/pdf,image/*,video/*,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                  onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ''; }}
-                  style={{ display: 'none' }}
+              <Field label="Ou criar pasta nova">
+                <Input
+                  value={folders.includes(f.pasta) ? '' : f.pasta}
+                  onChange={e => setF({ ...f, pasta: e.target.value })}
+                  placeholder="Ex: Adversários"
                 />
-              </label>
-              {f.fileName && (
-                <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.fileName}</span>
-              )}
+              </Field>
             </div>
-          </Field>
-        </div>
-      )}
+          </div>
+        );
+        const tema = <>{titulo}{descricao('Descrição / contexto (opcional)')}{pasta}</>;
+        if (!modoCanal) return tema;
+        return (
+          <CamadasFixas ativa={categoria} camadas={[
+            { id: 'jogo', conteudo: (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <Field label="Jogo (opcional — liga ao módulo Jogos)">
+                    <Select value={jogoId} onChange={e => escolherJogo(e.target.value)}>
+                      <option value="">— sem ligação —</option>
+                      {jogosOrdenados.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {[m.jornada && (numDoJogo(m) != null ? `J${numDoJogo(m)}` : m.jornada), `vs ${m.opponent || 'Adversário'}`, m.date && fmtDate(m.date)].filter(Boolean).join(' · ')}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+                {titulo}
+                {descricao('Jornada', 'É pela jornada que as partes do mesmo jogo e os seus cortes ficam juntos (ex.: "2ª Jornada"). Nos amigáveis, escreve "Amigável".')}
+              </>
+            ) },
+            { id: 'adversario', conteudo: (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ ...FIELD_GRID }}>
+                    {[0, 1].map(i => (
+                      <Field key={i} label={`Equipa ${i + 1}`}>
+                        {nomesEquipas.length ? (
+                          <Select value={eqs[i]} onChange={e => setEqs(prev => prev.map((x, k) => (k === i ? e.target.value : x)))}>
+                            <option value="">— escolher —</option>
+                            {(eqs[i] && !nomesEquipas.some(n => semAcentos(n) === semAcentos(eqs[i])) ? [eqs[i], ...nomesEquipas] : nomesEquipas)
+                              .map(n => <option key={n} value={n}>{n}</option>)}
+                          </Select>
+                        ) : (
+                          <Input value={eqs[i]} onChange={e => setEqs(prev => prev.map((x, k) => (k === i ? e.target.value : x)))} placeholder="Nome da equipa" />
+                        )}
+                      </Field>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: nomesEquipas.length ? T.mutedDim : T.warn, marginTop: 6 }}>
+                    {nomesEquipas.length
+                      ? 'O vídeo aparece no cartão de cada equipa, e cada uma fica com ficha em Scouting › Adversários (criada sozinha, se ainda não existir).'
+                      : 'Ainda não há equipas nas competições — configura-as em Jogos › Competições e jornadas para as escolheres de uma lista.'}
+                  </div>
+                </div>
+                {titulo}
+                {descricao('Descrição / contexto (opcional)')}
+              </>
+            ) },
+            { id: 'tema', conteudo: tema },
+          ]} />
+        );
+      })()}
+
+      <CamadasFixas ativa={source} camadas={[
+        { id: 'link', conteudo: (
+            <div style={{ marginBottom: 8 }}>
+              <Field label="Link do vídeo">
+                <Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/... · instagram.com/reel/... · tiktok.com/@user/video/..." />
+              </Field>
+              <p style={{ fontSize: 11.5, color: T.mutedDim, margin: '6px 0 0' }}>
+                No TikTok, usa o link completo (com "/video/"), não o link curto (vm.tiktok.com).
+              </p>
+            </div>
+        ) },
+        { id: 'file', conteudo: (
+            <div style={{ marginBottom: 8 }}>
+              <Field label="Ficheiro" bloco>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <label style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                    padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
+                    background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
+                  }}>
+                    {loadingFile ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {f.fileName ? 'Substituir ficheiro' : 'Carregar ficheiro'}
+                    <input
+                      type="file"
+                      accept="application/pdf,image/*,video/*,.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                      onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ''; }}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                  {f.fileName && (
+                    <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.fileName}</span>
+                  )}
+                </div>
+              </Field>
+            </div>
+        ) },
+        { id: 'drive', conteudo: (
+            <div style={{ marginBottom: 8 }}>
+              <Field label="Link de partilha do Google Drive">
+                <Input
+                  value={f.driveUrl || ''}
+                  onChange={e => { setF({ ...f, driveUrl: e.target.value }); setError(''); }}
+                  placeholder="https://drive.google.com/file/d/…/view?usp=sharing"
+                />
+              </Field>
+              <div style={{
+                fontSize: 11.5, color: T.mutedDim, marginTop: 10, lineHeight: 1.55,
+                border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px', background: T.bg,
+              }}>
+                <div style={{ color: T.warn, marginBottom: 4 }}>Para documentos grandes ou que atualizas com frequência.</div>
+                O ficheiro fica no Drive — aqui guarda-se só o link, por isso não há limite de tamanho
+                nem risco de a gravação falhar.
+                <br /><br />
+                <span style={{ color: T.cream }}>Tem de estar partilhado como "qualquer pessoa com o link".</span> Caso contrário
+                os teus adjuntos veem um pedido de acesso em vez do documento.
+                <br /><br />
+                A pré-visualização passa a ser a do próprio Google: a navegação de páginas, o deslize e o
+                ecrã inteiro são os deles, não os nossos.
+              </div>
+            </div>
+        ) },
+      ]} />
 
       {error && <p style={{ fontSize: 12, color: T.bad, margin: '0 0 12px' }}>{error}</p>}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
