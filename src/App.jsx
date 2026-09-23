@@ -16,7 +16,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type,
+  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw,
   Video
 } from 'lucide-react';
 
@@ -30008,8 +30008,11 @@ function InstagramEmbedResponsivo({ src, titulo, tipo }) {
    porque o objetivo é passar os olhos, não estudar um ficheiro. Para isso
    há o botão que abre o item no visualizador completo. */
 function MediaFeedItem({ item, onOpen }) {
+  // Num clipe, `end=` faz o próprio YouTube parar no fim do corte — aqui
+  // não há a barra própria nem o ciclo do visualizador completo, e sem
+  // controlos nativos (ver `youtubeEmbedSrc`) não se sai do corte.
   const fonte = item.youtubeId
-    ? youtubeEmbedSrc(item)
+    ? youtubeEmbedSrc(item, typeof item.clipFim === 'number' ? `end=${Math.ceil(item.clipFim)}` : '')
     : item.social
       ? socialEmbedSrc(item.social)
       : (item.kind === 'drive' && item.drive) ? driveEmbedSrc(item.drive) : null;
@@ -30101,7 +30104,16 @@ function socialExternalUrl(social) {
 function youtubeEmbedSrc(item, extra) {
   if (!item || !item.youtubeId) return '';
   const bits = ['rel=0', 'playsinline=1'];
-  if (typeof item.clipInicio === 'number') bits.push(`start=${Math.max(0, Math.floor(item.clipInicio))}`);
+  if (typeof item.clipInicio === 'number') {
+    bits.push(`start=${Math.max(0, Math.floor(item.clipInicio))}`);
+    // Num CLIPE, a barra nativa do YouTube mostrava (e deixava percorrer)
+    // o jogo inteiro. Sem controlos nativos (e sem atalhos de teclado,
+    // que também saltavam para qualquer lado), a única forma de andar
+    // para a frente/trás é a nossa barra própria, limitada ao intervalo
+    // do corte (ver "BARRA DO CLIPE" em MediaLibrary). Tocar no vídeo
+    // continua a pôr em pausa/retomar.
+    bits.push('controls=0', 'disablekb=1');
+  }
   // Sem `end=`, de propósito: esse parâmetro do próprio YouTube tem um
   // problema conhecido de gaguejar/repetir o último segundo em vez de
   // simplesmente parar. O fim do corte é vigiado à parte (ver o efeito
@@ -30234,7 +30246,7 @@ function socialInnerStyle(platform, isFullscreen, boxSize, zoom, barH, offset) {
    ou TikTok (Reels/vídeos, tocados também dentro da app), OU um
    ficheiro carregado diretamente (PDF, PowerPoint, vídeo). Layout:
    painel principal grande à esquerda + lista de itens à direita;
-   clicar no painel principal abre a versão maior (lightbox).
+   o botão "Ecrã inteiro" põe o próprio leitor em ecrã inteiro.
 ---------------------------------------------------------------- */
 // Normaliza o nome de uma pasta: sem espaços à volta, e vazio significa
 // "sem pasta". Fica numa função só para o modal e a biblioteca usarem
@@ -30255,7 +30267,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [renaming, setRenaming] = useState(null); // nome antigo, enquanto se renomeia
   const [renameValue, setRenameValue] = useState('');
   const [activeId, setActiveId] = useState(null);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
   // youtubeId -> 'embed_disabled' (dono do canal bloqueou a incorporação,
   // erro 101/150) | 'unavailable' (outro erro, ex: vídeo removido/privado).
   // Só nesse caso mostramos o aviso "abre no YouTube" — o resto reproduz
@@ -30273,141 +30284,21 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [tituloClipe, setTituloClipe] = useState('');
   const sairDoModoClipe = () => { setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe(''); };
 
-  /* ANOTAÇÃO — CÍRCULO OU CAIXA DE TEXTO QUE "SEGUEM" O JOGADOR.
-     Não há visão computacional nenhuma aqui: o treinador é que marca, com
-     um arrasto sobre o vídeo, onde o jogador está em cada momento —
-     cada amostra fica uma marca (tempo + posição x/y, em fração da caixa
-     do vídeo, 0 a 1). Na reprodução normal, a forma desliza por
-     interpolação linear entre as marcas mais próximas do tempo atual —
-     é essa interpolação que dá a sensação de "seguir" o jogador, com
-     marcas suficientes. Guardado em `item.anotacoes`, um array de
-     `{ id, tipo: 'circulo'|'texto', texto?, marcas: [{ tempo, x, y }] }`
-     — `texto` só existe nas do tipo caixa de texto; anotações antigas,
-     gravadas antes de existir `tipo`, tratam-se sempre como círculo.
-
-     Modo mutuamente exclusivo com o Criar clipe — os dois usam a mesma
-     barra de ferramentas e não faz sentido misturar. */
-  const [modoAnotar, setModoAnotar] = useState(false);
-  const [tipoAnotacao, setTipoAnotacao] = useState('circulo');
-  const [textoAnotacao, setTextoAnotacao] = useState('');
-  // Quanto tempo, depois da última marca, a anotação continua visível
-  // antes de desaparecer sozinha — vale para as duas formas: uma bola ou
-  // uma caixa de texto perdidas no meio do vídeo até ao fim, sem
-  // desaparecerem nunca, não fazem sentido nenhum como sinalização
-  // pontual de um momento.
-  const [duracaoAnotacao, setDuracaoAnotacao] = useState(4);
-  const [anotacaoMarcas, setAnotacaoMarcas] = useState([]);
-  const sairDoModoAnotar = () => { setModoAnotar(false); setAnotacaoMarcas([]); setTipoAnotacao('circulo'); setTextoAnotacao(''); setDuracaoAnotacao(4); };
-
-  // Enquanto se marca uma anotação, os controlos do próprio YouTube ficam
-  // tapados pela camada transparente que apanha o clique — por isso há
-  // botões próprios de play/pausa/avançar, enviados por postMessage "cru"
-  // (o mesmo protocolo já usado para o handshake 'listening', sem
-  // precisar de carregar o script oficial da API — ver comentário mais
-  // acima sobre CSP). Servem para pousar o vídeo no fotograma exato antes
-  // de tocar.
+  // Comandos ao leitor do YouTube por postMessage "cru" (o mesmo
+  // protocolo do handshake 'listening', sem carregar o script oficial da
+  // API — ver comentário mais abaixo sobre CSP). Usados pela barra do
+  // clipe (reproduzir/pausar/procurar dentro do corte) e pelo ciclo que
+  // faz o corte voltar ao início.
+  //
+  // (A antiga função "Adicionar anotação" — círculo/caixa de texto sobre
+  // o vídeo — foi retirada a pedido. Anotações já gravadas em itens
+  // antigos ficam no registo, mas deixam de ser desenhadas.)
   const enviarComandoYoutube = (func, args) => {
-    // O comando vai para o leitor que está mesmo visível — em ecrã
-    // inteiro (lightbox) é um iframe diferente do da caixa normal.
-    const targetRef = lightboxOpen ? iframeRef : inlineIframeRef;
-    const win = targetRef.current && targetRef.current.contentWindow;
+    const win = inlineIframeRef.current && inlineIframeRef.current.contentWindow;
     if (!win) return;
     win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
   };
-  const avancarTempo = (delta) => enviarComandoYoutube('seekTo', [Math.max(0, currentTimeRef.current + delta), true]);
 
-  /* ANOTAÇÃO NUM SÍTIO FIXO — um clique/toque só, para qualquer uma das
-     formas. Substitui sempre a marca anterior (nunca acrescenta) — uma
-     vez colocada, fica sempre no mesmo sítio (só desaparece ao fim do
-     tempo definido, nunca se desloca sozinha). Como só existe essa
-     marca, `posicaoAnotacao` já sabe mostrá-la parada, sem precisar de
-     mais nenhuma lógica.
-
-     (Já existiu aqui uma versão por arrasto contínuo, para o círculo ou
-     o texto "seguirem" o jogador — foi pedido para trás: uma vez
-     colocada, a anotação deve ficar sempre no mesmo sítio, nunca em
-     movimento.) */
-  const colocarAnotacaoFixa = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
-    setAnotacaoMarcas([{ tempo: currentTimeRef.current, x, y }]);
-  };
-
-  const guardarAnotacao = () => {
-    if (!active || anotacaoMarcas.length === 0) return;
-    if (tipoAnotacao === 'texto' && !textoAnotacao.trim()) return;
-    const nova = {
-      id: uid(),
-      tipo: tipoAnotacao,
-      marcas: [...anotacaoMarcas].sort((a, b) => a.tempo - b.tempo),
-      duracao: Math.max(1, Number(duracaoAnotacao) || 4),
-      ...(tipoAnotacao === 'texto' ? { texto: textoAnotacao.trim() } : {}),
-    };
-    setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoes: [...(v.anotacoes || []), nova] } : v)));
-    sairDoModoAnotar();
-  };
-  const removerAnotacao = (id) => {
-    if (!active) return;
-    setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoes: (v.anotacoes || []).filter(a => a.id !== id) } : v)));
-  };
-
-  // Posição interpolada de uma anotação num instante — sustém a posição
-  // da marca mais próxima antes/depois de quem estiver fora do intervalo
-  // marcado, em vez de desaparecer ou saltar.
-  const posicaoAnotacao = (anotacao, tempo) => {
-    const marcas = anotacao.marcas;
-    if (!marcas || !marcas.length) return null;
-    if (marcas.length === 1 || tempo <= marcas[0].tempo) return marcas[0];
-    if (tempo >= marcas[marcas.length - 1].tempo) return marcas[marcas.length - 1];
-    const depois = marcas.findIndex(m => m.tempo > tempo);
-    const antes = marcas[depois - 1], prox = marcas[depois];
-    const f = (tempo - antes.tempo) / (prox.tempo - antes.tempo || 1);
-    return { x: antes.x + (prox.x - antes.x) * f, y: antes.y + (prox.y - antes.y) * f };
-  };
-
-  // Desenha UMA anotação (círculo ou caixa de texto) na sua posição
-  // interpolada — partilhado entre a caixa normal e o ecrã inteiro, para
-  // as duas nunca poderem divergir na forma como desenham a mesma coisa.
-  const renderAnotacao = (an) => {
-    const marcas = an.marcas;
-    if (!marcas || !marcas.length) return null;
-    // A margem de 0.5s absorve a diferença entre o instante exato (com
-    // decimais) em que a marca ficou gravada e o sítio onde se aterra ao
-    // arrastar a barra de volta para lá — sem ela, a anotação parecia ter
-    // desaparecido de vez quando só estava fora da janela por uma fração
-    // de segundo (continuava gravada, só não se desenhava). Anotações
-    // antigas, gravadas antes de existir `duracao`, continuam a
-    // comportar-se como antes — visíveis do início ao fim do vídeo.
-    if (typeof an.duracao === 'number') {
-      const fimVisivel = marcas[marcas.length - 1].tempo + an.duracao;
-      if (liveTime < marcas[0].tempo - 0.5 || liveTime > fimVisivel + 0.5) return null;
-    }
-    const pos = posicaoAnotacao(an, liveTime);
-    if (!pos) return null;
-    if (an.tipo === 'texto') {
-      return (
-        <div key={an.id} style={{
-          position: 'absolute', left: `${pos.x * 100}%`, top: `${pos.y * 100}%`,
-          transform: 'translate(-50%, -50%)', pointerEvents: 'none',
-          background: 'rgba(0,0,0,.72)', border: `1.5px solid ${T.warn}`, borderRadius: 6,
-          padding: '3px 8px', color: T.warn, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
-          transition: 'left .18s linear, top .18s linear',
-        }}>{an.texto}</div>
-      );
-    }
-    return (
-      <div key={an.id} style={{
-        position: 'absolute', left: `${pos.x * 100}%`, top: `${pos.y * 100}%`,
-        width: 46, height: 46, marginLeft: -23, marginTop: -23,
-        borderRadius: '50%', border: `3px solid ${T.warn}`,
-        boxShadow: '0 0 0 2px rgba(0,0,0,.5)', pointerEvents: 'none',
-        transition: 'left .18s linear, top .18s linear',
-      }} />
-    );
-  };
-
-  const iframeRef = React.useRef(null);
   const inlineIframeRef = React.useRef(null);
   const activeYoutubeIdRef = React.useRef(null);
 
@@ -30484,22 +30375,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // abaixo, depois de `active` estar definido — precisa de o ler.
   const precisaTempoAoVivoRef = React.useRef(false);
   const [liveTime, setLiveTime] = useState(0);
-  // Enquanto o ecrã inteiro (lightbox) está aberto, a caixa normal por
-  // trás pode continuar montada — dois iframes do YouTube ao mesmo tempo,
-  // cada um a mandar as suas próprias mensagens. Sem filtrar por origem,
-  // `currentTimeRef` ia saltando entre os dois tempos, tornando a
-  // marcação (Criar clipe/anotação) imprevisível assim que se abrisse o
-  // ecrã inteiro. `lightboxOpenRef` diz qual dos dois iframes é "o que
-  // interessa" agora, para o handler (que só é criado uma vez, ver
-  // `useEffect(..., [])` abaixo) saber sempre o valor atual.
-  const lightboxOpenRef = React.useRef(false);
-  useEffect(() => { lightboxOpenRef.current = lightboxOpen; }, [lightboxOpen]);
+  // Estado do leitor (1 = a tocar, 3 = a carregar) — só para o botão
+  // reproduzir/pausar da barra do clipe mostrar o ícone certo.
+  const [ytATocar, setYtATocar] = useState(false);
+  // Existe agora um único iframe do YouTube (o ecrã inteiro usa o MESMO
+  // leitor, ver "ECRÃ INTEIRO" abaixo) — as mensagens de outros iframes
+  // do YouTube na página (ex.: vista em coluna) são ignoradas.
   useEffect(() => {
     const onMessage = (event) => {
       if (!event.origin || !event.origin.includes('youtube.com')) return;
-      const janelaRelevante = lightboxOpenRef.current
-        ? (iframeRef.current && iframeRef.current.contentWindow)
-        : (inlineIframeRef.current && inlineIframeRef.current.contentWindow);
+      const janelaRelevante = inlineIframeRef.current && inlineIframeRef.current.contentWindow;
       if (janelaRelevante && event.source !== janelaRelevante) return;
       let data = event.data;
       try { data = typeof data === 'string' ? JSON.parse(data) : data; } catch { return; }
@@ -30508,14 +30393,86 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         const reason = (code === 101 || code === 150) ? 'embed_disabled' : 'unavailable';
         setBlockedIds(prev => ({ ...prev, [activeYoutubeIdRef.current]: reason }));
       }
-      if (data && data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number') {
-        currentTimeRef.current = data.info.currentTime;
-        if (precisaTempoAoVivoRef.current) setLiveTime(data.info.currentTime);
+      if (data && data.event === 'onStateChange' && typeof data.info === 'number') {
+        setYtATocar(data.info === 1 || data.info === 3);
+      }
+      if (data && data.event === 'infoDelivery' && data.info) {
+        if (typeof data.info.playerState === 'number') {
+          setYtATocar(data.info.playerState === 1 || data.info.playerState === 3);
+        }
+        if (typeof data.info.currentTime === 'number') {
+          currentTimeRef.current = data.info.currentTime;
+          if (precisaTempoAoVivoRef.current) setLiveTime(data.info.currentTime);
+        }
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, []);
+
+  /* ECRÃ INTEIRO DO YOUTUBE — sobre o MESMO leitor que já está a tocar.
+
+     Antes abria-se uma janela ampliada com um SEGUNDO iframe (o vídeo
+     recomeçava) e o botão de ecrã inteiro nativo do YouTube ficava
+     disponível — mas nesse ecrã inteiro não há como pôr botões nossos,
+     por isso não se podia criar clipes a ver em grande. Agora:
+     - o botão nativo do YouTube está desligado (fs=0 no embed);
+     - o nosso "Ecrã inteiro" põe em ecrã inteiro a CAIXA toda (vídeo +
+       barra do clipe + Criar clipe), via API nativa do browser — o
+       vídeo não recomeça;
+     - onde essa API não existe para elementos (iPhone), a caixa passa a
+       cobrir o ecrã por CSS (position: fixed) — mesmo resultado prático. */
+  const ytBoxRef = React.useRef(null);
+  const [ytFull, setYtFull] = useState(false); // false | 'nativo' | 'css'
+  useEffect(() => {
+    const onFsChange = () => {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      setYtFull(prev => (fsEl && fsEl === ytBoxRef.current ? 'nativo' : (prev === 'nativo' ? false : prev)));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+  // Esc também fecha o modo CSS (o nativo já o faz sozinho).
+  useEffect(() => {
+    if (ytFull !== 'css') return;
+    const onKey = (e) => { if (e.key === 'Escape') setYtFull(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [ytFull]);
+  const toggleYtFull = () => {
+    const el = ytBoxRef.current;
+    if (ytFull) {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fsEl) {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch { /* sem suporte */ }
+      setYtFull(false);
+      return;
+    }
+    if (!el) return;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) { setYtFull('css'); return; }
+    try {
+      const p = req.call(el);
+      const rodar = () => {
+        // No telemóvel, tenta rodar para horizontal — se o sistema não
+        // deixar, fica como está, sem erro.
+        try {
+          if (isNarrow && screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+        } catch { /* sem suporte */ }
+      };
+      if (p && typeof p.then === 'function') p.then(rodar).catch(() => setYtFull('css'));
+      else rodar();
+    } catch {
+      setYtFull('css');
+    }
+  };
 
   // Envia o "handshake" ao iframe assim que carrega, para o player começar
   // a reportar-nos eventos (incluindo onError) por postMessage. Fábrica em
@@ -30548,7 +30505,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     items, setItems, id, itemLabel(items.find(v => v.id === id), 'Ficheiro'),
     () => { if (activeId === id) setActiveId(null); },
   );
-  const selectItem = (id) => { setActiveId(id); setLightboxOpen(false); };
+  const selectItem = (id) => { setActiveId(id); };
 
   // As pastas não são registos próprios: são deduzidas do campo "pasta" dos
   // itens. Consequência a ter em conta — uma pasta existe enquanto tiver
@@ -30628,62 +30585,71 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
 
+  const ativoEClipe = !!(active && active.youtubeId && typeof active.clipInicio === 'number');
+  const clipIni = ativoEClipe ? active.clipInicio : 0;
+  const clipFimEf = ativoEClipe
+    ? (typeof active.clipFim === 'number' ? active.clipFim : active.clipInicio + 30)
+    : 0;
+
   // Só liga os re-renders de tempo ao vivo (ver `precisaTempoAoVivoRef`
-  // mais acima) quando há mesmo alguma coisa a animar OU a vigiar — um
-  // clipe a reproduzir também entra aqui, para o efeito logo abaixo
-  // conseguir saber se saiu do intervalo do corte.
+  // mais acima) quando há mesmo alguma coisa a vigiar: um clipe a
+  // reproduzir (barra própria + limites do corte).
   useEffect(() => {
-    precisaTempoAoVivoRef.current = modoAnotar
-      || !!(active && active.anotacoes && active.anotacoes.length)
-      || !!(active && typeof active.clipInicio === 'number');
+    precisaTempoAoVivoRef.current = ativoEClipe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modoAnotar, active && active.id, active && active.anotacoes]);
+  }, [ativoEClipe, active && active.id]);
 
-  /* MANTER O CORTE A FUNCIONAR COMO CORTE — SEM LUTAR CONTRA QUEM ARRASTA
-     A BARRA À VONTADE.
+  /* O CLIPE SÓ MOSTRA O CLIPE.
 
-     Sem `end=` no embed (ver `youtubeEmbedSrc`), quem manda no fim do
-     corte é este efeito: ao alcançar `clipFim` A TOCAR NORMALMENTE, salta
-     de volta para `clipInicio` e manda continuar — um ciclo contínuo,
-     como pedido.
-
-     A primeira versão disto reagia a QUALQUER leitura de tempo fora da
-     margem, incluindo as leituras intermédias que o próprio YouTube manda
-     enquanto se está a ARRASTAR a barra — por isso um arrasto normal
-     ficava sempre a ser puxado de volta a meio do gesto, sem deixar
-     chegar aonde se queria. A correção: comparar cada leitura com a
-     anterior. Um salto GRANDE de um instante para o outro (mais de 2s) só
-     acontece por arrasto manual — nesse caso, nunca se mexe, fica-se
-     exatamente onde a pessoa arrastou, seja onde for. Só o cruzamento
-     GRADUAL do fim (a tocar normalmente, sem arrastar nada) é que
-     dispara o salto de volta ao início.
-
-     A única exceção — continua a proteger-se — é um salto grande que
-     aterre perto do zero: é a assinatura exata do "repetir" nativo do
-     YouTube, que reinicia o vídeo ORIGINAL do zero, não o corte. Um
-     arrasto genuíno da pessoa para essa zona é indistinguível disto, mas
-     como o vídeo original todo nunca é o que se quer ver aqui, mantém-se
-     a proteção só neste caso específico. */
+     Antes, a barra nativa do YouTube deixava arrastar para qualquer ponto
+     do jogo inteiro (e a regra era de propósito "nunca lutar contra quem
+     arrasta"). Pedido novo: dentro de um clipe só se anda para a frente/
+     trás DENTRO do corte. Por isso:
+     - a barra nativa está escondida nos clipes (controls=0, ver
+       `youtubeEmbedSrc`) e a nossa barra só vai de `clipInicio` a
+       `clipFim`;
+     - este efeito é a rede de segurança: qualquer leitura fora do
+       intervalo (ex.: o "repetir" nativo do YouTube, que recomeça o
+       vídeo ORIGINAL do zero) volta ao início do corte;
+     - ao chegar ao fim A TOCAR NORMALMENTE, volta ao início e continua —
+       o ciclo contínuo de sempre. */
   const tempoAnteriorClipeRef = React.useRef(null);
   useEffect(() => {
-    if (!active || typeof active.clipInicio !== 'number') { tempoAnteriorClipeRef.current = null; return; }
+    if (!ativoEClipe) { tempoAnteriorClipeRef.current = null; return; }
     const anterior = tempoAnteriorClipeRef.current;
     tempoAnteriorClipeRef.current = liveTime;
     if (anterior == null) return; // primeira leitura deste corte — sem nada para comparar ainda
 
-    const salto = Math.abs(liveTime - anterior);
-    const aTocarNormalmente = salto < 2;
-
-    if (aTocarNormalmente && typeof active.clipFim === 'number' && liveTime >= active.clipFim) {
-      enviarComandoYoutube('seekTo', [active.clipInicio, true]);
+    const aTocarNormalmente = Math.abs(liveTime - anterior) < 2;
+    if (aTocarNormalmente && liveTime >= clipFimEf) {
+      enviarComandoYoutube('seekTo', [clipIni, true]);
       enviarComandoYoutube('playVideo');
-      tempoAnteriorClipeRef.current = active.clipInicio;
-    } else if (!aTocarNormalmente && liveTime < 2 && active.clipInicio > 5) {
-      enviarComandoYoutube('seekTo', [active.clipInicio, true]);
-      tempoAnteriorClipeRef.current = active.clipInicio;
+      tempoAnteriorClipeRef.current = clipIni;
+    } else if (liveTime < clipIni - 1.25 || liveTime > clipFimEf + 0.75) {
+      enviarComandoYoutube('seekTo', [clipIni, true]);
+      tempoAnteriorClipeRef.current = clipIni;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveTime, active && active.id]);
+
+  // BARRA DO CLIPE — enquanto se arrasta, mostra a posição do dedo/rato
+  // (e não a do leitor, que chega com atraso e faria o cursor saltar).
+  const [arrastoClipe, setArrastoClipe] = useState(null);
+  const procurarNoClipe = (t) => {
+    // Nunca exatamente no fim: aí o ciclo acima recomeçava logo o corte.
+    const alvo = Math.min(Math.max(t, clipIni), Math.max(clipIni, clipFimEf - 0.25));
+    setArrastoClipe(alvo);
+    enviarComandoYoutube('seekTo', [alvo, true]);
+  };
+  const largarBarraClipe = () => setArrastoClipe(null);
+  const recuarClipe = (delta) => procurarNoClipe((arrastoClipe != null ? arrastoClipe : liveTime) + delta);
+  // Quando o leitor já está perto do sítio escolhido, larga o valor do
+  // arrasto (evita ficar "preso" se o soltar do dedo não chegar).
+  useEffect(() => {
+    if (arrastoClipe == null) return;
+    const t = setTimeout(() => setArrastoClipe(null), 1500);
+    return () => clearTimeout(t);
+  }, [arrastoClipe]);
 
   /* Uma linha da lista. Extraída para poder ser usada tanto na lista
      corrida (dentro de uma pasta) como dentro de cada pasta fechada. */
@@ -30779,31 +30745,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     activeYoutubeIdRef.current = (active && active.youtubeId) || null;
   }, [active?.youtubeId]);
 
-  // Fecha a janela maior com a tecla Esc.
-  useEffect(() => {
-    if (!lightboxOpen) return;
-    const onKey = (e) => { if (e.key === 'Escape') setLightboxOpen(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [lightboxOpen]);
-
-  // Só o YouTube usa a janela ampliada (o painel principal só mostra uma
-  // miniatura antes do clique, por isso não há duplicação). Instagram/TikTok
-  // e ficheiros locais (vídeo/PDF) já têm o seu próprio botão de ecrã
-  // inteiro que atua sobre o MESMO leitor já em reprodução.
-  const canEnlarge = active && active.youtubeId;
 
   // Trocar de vídeo a meio de uma marcação não faz sentido — os
   // marcadores são segundos DENTRO do vídeo que estava a tocar.
   useEffect(() => {
     sairDoModoClipe();
-    sairDoModoAnotar();
     // Sem isto, o tempo ficava agarrado ao último valor do vídeo
-    // anterior até chegar a primeira atualização do novo — e uma
-    // anotação colocada nesse intervalo ficava gravada com o tempo
-    // errado (do vídeo de antes, não deste).
+    // anterior até chegar a primeira atualização do novo — e uma marca
+    // de clipe feita nesse intervalo ficava com o tempo errado.
     currentTimeRef.current = 0;
     setLiveTime(0);
+    setYtATocar(false);
+    setArrastoClipe(null);
   }, [activeId]);
 
   const marcarInicio = () => setClipMarcas(prev => ({ ...prev, inicio: currentTimeRef.current }));
@@ -30832,6 +30785,49 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFolderFilter('Cortes');
     sairDoModoClipe();
   };
+
+  // Painel "Criar clipe" — o mesmo em modo normal (cartão por baixo do
+  // vídeo) e em ecrã inteiro (faixa escura compacta dentro da caixa).
+  const renderPainelClipe = (escuro) => (
+    <div style={escuro ? {
+      background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+      padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 8,
+    } : {
+      marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+      padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+    }}>
+      {!escuro && (
+        <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+          Deixa o vídeo a tocar e marca onde o corte começa e acaba — depois dá-lhe um nome
+          e o clipe fica gravado à parte, na pasta "Cortes", pronto a rever mais tarde.
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
+        <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
+        <div style={{ color: T.mutedDim, fontSize: 12 }}>até</div>
+        <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
+        <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
+        {clipMarcas.inicio != null && clipMarcas.fim != null && Math.abs(clipMarcas.fim - clipMarcas.inicio) >= 1 && (
+          <>
+            <input
+              value={tituloClipe} onChange={e => setTituloClipe(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') guardarClipe(); }}
+              placeholder="Nome do clipe (ex.: Saída de bola sob pressão)"
+              style={{
+                flex: 1, minWidth: isNarrow ? 160 : 200, background: escuro ? '#000' : T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+                padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
+              }}
+            />
+            <Btn onClick={guardarClipe}><Scissors size={14} /> Guardar clipe</Btn>
+          </>
+        )}
+      </div>
+      {clipMarcas.inicio != null && clipMarcas.fim != null && Math.abs(clipMarcas.fim - clipMarcas.inicio) < 1 && (
+        <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto — marca o fim um pouco mais à frente.</div>
+      )}
+    </div>
+  );
 
   return (
     <div>
@@ -30962,8 +30958,29 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   // botão "Ecrã inteiro" abaixo, para quem quiser um ecrã
                   // maior, mas já não é preciso para simplesmente ver o vídeo.
                   <>
-                  <div style={{ borderRadius: 10, overflow: 'hidden', border: `1px solid ${T.line}`, background: '#000', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ position: 'relative', paddingTop: '56.25%' }}>
+                  <div
+                    ref={ytBoxRef}
+                    style={{
+                      overflow: 'hidden', background: '#000', display: 'flex', flexDirection: 'column',
+                      ...(ytFull
+                        ? {
+                            // Em ecrã inteiro a caixa ocupa tudo: vídeo em
+                            // cima (a crescer), barras em baixo.
+                            width: '100%', height: '100%', borderRadius: 0, border: 'none',
+                            ...(ytFull === 'css' ? {
+                              position: 'fixed', inset: 0, zIndex: 80, width: '100vw', height: '100dvh',
+                              paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxSizing: 'border-box',
+                            } : {}),
+                          }
+                        : { borderRadius: 10, border: `1px solid ${T.line}` }),
+                    }}
+                  >
+                    {/* A estrutura é SEMPRE a mesma dentro e fora do ecrã
+                        inteiro — só mudam as medidas — para o React nunca
+                        voltar a montar o iframe (o vídeo recomeçaria). */}
+                    <div style={ytFull
+                      ? { position: 'relative', flex: 1, minHeight: 0 }
+                      : { position: 'relative', paddingTop: '56.25%' }}>
                       {isBlocked ? (
                         <div style={{
                           position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
@@ -30987,72 +31004,84 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           key={active.id}
                           ref={inlineIframeRef}
                           onLoad={handleIframeLoad(inlineIframeRef)}
-                          src={youtubeEmbedSrc(active, 'enablejsapi=1')}
+                          // fs=0: sem o ecrã inteiro nativo do YouTube — o
+                          // nosso (botão abaixo) mantém o Criar clipe e a
+                          // barra do clipe à mão.
+                          src={youtubeEmbedSrc(active, 'enablejsapi=1&fs=0')}
                           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                          allowFullScreen
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           referrerPolicy="strict-origin-when-cross-origin"
                           title={active.title}
                         />
                       )}
-                      {/* ANOTAÇÕES (círculo ou caixa de texto) — só
-                          desenham, nunca capturam cliques (pointerEvents:
-                          'none'), para os controlos do próprio YouTube
-                          continuarem a funcionar por baixo durante a
-                          reprodução normal. */}
-                      {!isBlocked && !modoAnotar && (active.anotacoes || []).map(renderAnotacao)}
-                      {/* CAMADA DE MARCAÇÃO — cobre o vídeo inteiro para
-                          apanhar o toque no sítio exato da anotação;
-                          por tapar tudo, os controlos nativos do YouTube
-                          ficam inacessíveis enquanto isto está ativo —
-                          daí os botões de play/pausa/avançar próprios na
-                          barra abaixo, para pousar o vídeo no fotograma
-                          certo antes de tocar. */}
-                      {!isBlocked && modoAnotar && (
-                        <div
-                          onClick={colocarAnotacaoFixa}
-                          title="Toca onde queres colocar a anotação"
-                          style={{ position: 'absolute', inset: 0, cursor: 'crosshair' }}
-                        >
-                          {anotacaoMarcas.map((m, i) => (
-                            <div key={i} style={{
-                              position: 'absolute', left: `${m.x * 100}%`, top: `${m.y * 100}%`,
-                              width: 10, height: 10, marginLeft: -5, marginTop: -5,
-                              borderRadius: '50%', background: T.warn, border: '1.5px solid #000', pointerEvents: 'none',
-                            }} title={fmtMMSS(m.tempo)} />
-                          ))}
-                        </div>
-                      )}
                     </div>
-                    {!isBlocked && modoAnotar && (
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                        padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
-                      }}>
-                        <button onClick={() => enviarComandoYoutube('playVideo')} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>▶ Reproduzir</button>
-                        <button onClick={() => enviarComandoYoutube('pauseVideo')} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>❚❚ Pausar</button>
-                        <button onClick={() => avancarTempo(-1)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>-1s</button>
-                        <button onClick={() => avancarTempo(-0.25)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>-¼s</button>
-                        <span style={{ fontSize: 12, color: '#fff', ...mono }}>{fmtMMSS(liveTime)}</span>
-                        <button onClick={() => avancarTempo(0.25)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>+¼s</button>
-                        <button onClick={() => avancarTempo(1)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>+1s</button>
-                      </div>
-                    )}
+                    {/* BARRA DO CLIPE — só nos clipes. Vai do início ao fim
+                        do corte, e nada mais: não há como ver o resto do
+                        jogo a partir de um clipe. */}
+                    {!isBlocked && ativoEClipe && (() => {
+                      const dur = Math.max(0.1, clipFimEf - clipIni);
+                      const agora = Math.min(Math.max(arrastoClipe != null ? arrastoClipe : liveTime, clipIni), clipFimEf);
+                      const btn = {
+                        background: 'none', border: 'none', color: '#fff', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4, flexShrink: 0,
+                      };
+                      return (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: isNarrow ? 6 : 10,
+                          padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+                        }}>
+                          <button
+                            onClick={() => enviarComandoYoutube(ytATocar ? 'pauseVideo' : 'playVideo')}
+                            title={ytATocar ? 'Pausar' : 'Reproduzir'}
+                            style={btn}
+                          >{ytATocar ? <Pause size={16} /> : <Play size={16} />}</button>
+                          <button onClick={() => procurarNoClipe(clipIni)} title="Voltar ao início do clipe" style={btn}><RotateCcw size={14} /></button>
+                          {!isNarrow && (
+                            <button onClick={() => recuarClipe(-2)} title="Recuar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>-2s</button>
+                          )}
+                          <input
+                            type="range"
+                            min={clipIni}
+                            max={clipFimEf}
+                            step={0.1}
+                            value={agora}
+                            onChange={e => procurarNoClipe(Number(e.target.value))}
+                            onMouseUp={largarBarraClipe}
+                            onTouchEnd={largarBarraClipe}
+                            aria-label="Posição dentro do clipe"
+                            style={{ flex: 1, minWidth: 0, accentColor: '#B5393F', cursor: 'pointer' }}
+                          />
+                          {!isNarrow && (
+                            <button onClick={() => recuarClipe(2)} title="Avançar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>+2s</button>
+                          )}
+                          <span style={{ fontSize: 11.5, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
+                            {fmtMMSS(agora - clipIni)} / {fmtMMSS(dur)}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     {!isBlocked && (
                       <div style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                         padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
                       }}>
-                        <a
-                          href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
-                          target="_blank" rel="noopener noreferrer"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', textDecoration: 'none' }}
-                        >
-                          <ExternalLink size={13} /> Abrir no YouTube
-                        </a>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        {ytFull ? (
+                          // Em ecrã inteiro não há título por baixo — fica aqui.
+                          <span style={{ fontSize: 12, color: '#ffffffcc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                            {active.title}
+                          </span>
+                        ) : (
+                          <a
+                            href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
+                            target="_blank" rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', textDecoration: 'none', flexShrink: 0 }}
+                          >
+                            <ExternalLink size={13} /> Abrir no YouTube
+                          </a>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
                           <button
-                            onClick={() => (clipMode ? sairDoModoClipe() : (sairDoModoAnotar(), setClipMode(true)))}
+                            onClick={() => (clipMode ? sairDoModoClipe() : setClipMode(true))}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
                               color: clipMode ? T.warn : '#fff',
@@ -31062,135 +31091,23 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             <Scissors size={13} /> {clipMode ? 'Cancelar clipe' : 'Criar clipe'}
                           </button>
                           <button
-                            onClick={() => (modoAnotar ? sairDoModoAnotar() : (sairDoModoClipe(), setModoAnotar(true)))}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
-                              color: modoAnotar ? T.warn : '#fff',
-                              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
-                            }}
-                          >
-                            <Circle size={13} /> {modoAnotar ? 'Cancelar anotação' : 'Adicionar anotação'}
-                          </button>
-                          <button
-                            onClick={() => setLightboxOpen(true)}
+                            onClick={toggleYtFull}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff',
                               background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
                             }}
                           >
-                            <Maximize2 size={14} /> Ecrã inteiro
+                            {ytFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {ytFull ? 'Sair' : 'Ecrã inteiro'}
                           </button>
                         </div>
                       </div>
                     )}
+                    {/* Criar clipe EM ECRÃ INTEIRO — o mesmo painel, em
+                        versão escura e compacta, dentro da caixa que está
+                        em ecrã inteiro (fora dela não se veria). */}
+                    {ytFull && clipMode && !isBlocked && renderPainelClipe(true)}
                   </div>
-                  {clipMode && !isBlocked && (
-                    <div style={{
-                      marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
-                      padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
-                    }}>
-                      <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-                        Deixa o vídeo a tocar e marca onde o corte começa e acaba — depois dá-lhe um nome
-                        e o clipe fica gravado à parte, na pasta "Cortes", pronto a rever mais tarde.
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
-                        <div style={{ fontSize: 13, color: T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
-                        <div style={{ color: T.mutedDim, fontSize: 12 }}>até</div>
-                        <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
-                        <div style={{ fontSize: 13, color: T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
-                      </div>
-                      {clipMarcas.inicio != null && clipMarcas.fim != null && (
-                        Math.abs(clipMarcas.fim - clipMarcas.inicio) < 1 ? (
-                          <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto — marca o fim um pouco mais à frente.</div>
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                            <input
-                              value={tituloClipe} onChange={e => setTituloClipe(e.target.value)}
-                              placeholder="Nome do clipe (ex.: Saída de bola sob pressão)"
-                              style={{
-                                flex: 1, minWidth: 200, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-                                padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
-                              }}
-                            />
-                            <Btn onClick={guardarClipe}><Scissors size={14} /> Guardar clipe</Btn>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  )}
-                  {modoAnotar && !isBlocked && (
-                    <div style={{
-                      marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
-                      padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 12, color: T.mutedDim }}>Forma:</span>
-                        <button onClick={() => setTipoAnotacao('circulo')} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
-                          background: tipoAnotacao === 'circulo' ? T.warn : 'transparent',
-                          color: tipoAnotacao === 'circulo' ? '#000' : T.cream,
-                          border: `1px solid ${tipoAnotacao === 'circulo' ? T.warn : T.line}`,
-                        }}><Circle size={11} /> Círculo</button>
-                        <button onClick={() => setTipoAnotacao('texto')} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
-                          background: tipoAnotacao === 'texto' ? T.warn : 'transparent',
-                          color: tipoAnotacao === 'texto' ? '#000' : T.cream,
-                          border: `1px solid ${tipoAnotacao === 'texto' ? T.warn : T.line}`,
-                        }}><Type size={11} /> Caixa de texto</button>
-                      </div>
-                      {tipoAnotacao === 'texto' && (
-                        <input
-                          value={textoAnotacao} onChange={e => setTextoAnotacao(e.target.value)}
-                          placeholder="Texto a mostrar (ex.: nome do jogador, uma indicação)"
-                          style={{
-                            background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-                            padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
-                          }}
-                        />
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 12, color: T.mutedDim }}>Fica visível durante</span>
-                        <input
-                          type="number" min={1} max={30} value={duracaoAnotacao}
-                          onChange={e => setDuracaoAnotacao(e.target.value)}
-                          style={{
-                            width: 52, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6,
-                            padding: '4px 6px', color: T.cream, fontSize: 13, ...body,
-                          }}
-                        />
-                        <span style={{ fontSize: 12, color: T.mutedDim }}>segundos depois da última marca, depois apaga-se sozinha.</span>
-                      </div>
-                      <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-                        Toca no vídeo no sítio exato onde queres colocar a anotação — fica ali, fixa,
-                        só pelo tempo definido acima, sem se deslocar. Podes tocar outra vez para
-                        corrigir o sítio antes de gravar.
-                      </div>
-                      <div style={{ fontSize: 13, color: T.cream }}>
-                        {anotacaoMarcas.length === 0 ? 'Ainda sem posição — toca no vídeo.' : 'Posição escolhida.'}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <Btn variant="ghost" disabled={!anotacaoMarcas.length} onClick={() => setAnotacaoMarcas([])}>Recomeçar</Btn>
-                        <Btn disabled={!anotacaoMarcas.length || (tipoAnotacao === 'texto' && !textoAnotacao.trim())} onClick={guardarAnotacao}>
-                          {tipoAnotacao === 'texto' ? <Type size={14} /> : <Circle size={14} />} Guardar anotação
-                        </Btn>
-                      </div>
-                    </div>
-                  )}
-                  {!modoAnotar && !clipMode && (active.anotacoes || []).length > 0 && (
-                    <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {active.anotacoes.map((an, i) => (
-                        <div key={an.id} style={{
-                          display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.mutedDim,
-                          border: `1px solid ${T.line}`, borderRadius: 20, padding: '4px 10px',
-                        }}>
-                          {an.tipo === 'texto' ? <Type size={11} color={T.warn} /> : <Circle size={11} color={T.warn} />}
-                          {an.tipo === 'texto' ? `"${an.texto}"` : `Anotação ${i + 1}`} ({an.marcas.length} {an.marcas.length === 1 ? 'marca' : 'marcas'})
-                          <button onClick={() => removerAnotacao(an.id)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={12} /></button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {!ytFull && clipMode && !isBlocked && renderPainelClipe(false)}
                   </>
                 ) : active.social ? (
                   <div style={{ maxWidth: isSocialFullscreen ? 'none' : 320, margin: '0 auto' }}>
@@ -31407,228 +31324,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         />
       )}
 
-      {lightboxOpen && active && canEnlarge && (
-        <div
-          onClick={() => setLightboxOpen(false)}
-          style={{
-            position: 'fixed', inset: 0, background: '#000000e6', zIndex: 60,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ width: '100%', maxWidth: 1100 }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-              <button
-                onClick={() => setLightboxOpen(false)}
-                style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}
-              >
-                <X size={20} /> Fechar
-              </button>
-            </div>
-            {/* canEnlarge só é verdadeiro para YouTube (ver acima) — os
-               outros tipos usam sempre o mesmo leitor, com o seu próprio
-               botão de ecrã inteiro, nunca uma segunda cópia aqui. */}
-            <div style={{ position: 'relative', paddingTop: '56.25%', borderRadius: 10, overflow: 'hidden', background: '#000', boxShadow: '0 20px 60px #00000080' }}>
-              {isBlocked ? (
-                <div style={{
-                  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
-                  alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
-                }}>
-                  <div style={{ color: T.bad, fontSize: 13, fontWeight: 500 }}>
-                    {isBlocked === 'embed_disabled'
-                      ? 'Este vídeo não permite reprodução incorporada — o dono do canal bloqueou-a.'
-                      : 'Não foi possível carregar este vídeo (pode ter sido removido ou estar privado).'}
-                  </div>
-                  <a
-                    href={`https://www.youtube.com/watch?v=${active.youtubeId}`}
-                    target="_blank" rel="noopener noreferrer"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none' }}
-                  >
-                    <ExternalLink size={13} /> Abrir no YouTube
-                  </a>
-                </div>
-              ) : (
-                <iframe
-                  key={active.id}
-                  ref={iframeRef}
-                  onLoad={handleIframeLoad(iframeRef)}
-                  src={youtubeEmbedSrc(active, 'autoplay=1&enablejsapi=1')}
-                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                  allowFullScreen
-                  referrerPolicy="strict-origin-when-cross-origin"
-                  title={active.title}
-                />
-              )}
-              {!isBlocked && !modoAnotar && (active.anotacoes || []).map(renderAnotacao)}
-              {!isBlocked && modoAnotar && (
-                <div
-                  onClick={colocarAnotacaoFixa}
-                  title="Toca onde queres colocar a anotação"
-                  style={{ position: 'absolute', inset: 0, cursor: 'crosshair' }}
-                >
-                  {anotacaoMarcas.map((m, i) => (
-                    <div key={i} style={{
-                      position: 'absolute', left: `${m.x * 100}%`, top: `${m.y * 100}%`,
-                      width: 10, height: 10, marginLeft: -5, marginTop: -5,
-                      borderRadius: '50%', background: T.warn, border: '1.5px solid #000', pointerEvents: 'none',
-                    }} title={fmtMMSS(m.tempo)} />
-                  ))}
-                </div>
-              )}
-            </div>
-            {!isBlocked && modoAnotar && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                marginTop: 8, padding: '6px 10px', background: '#111', borderRadius: 8,
-              }}>
-                <button onClick={() => enviarComandoYoutube('playVideo')} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>▶ Reproduzir</button>
-                <button onClick={() => enviarComandoYoutube('pauseVideo')} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>❚❚ Pausar</button>
-                <button onClick={() => avancarTempo(-1)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>-1s</button>
-                <button onClick={() => avancarTempo(-0.25)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>-¼s</button>
-                <span style={{ fontSize: 12, color: '#fff', ...mono }}>{fmtMMSS(liveTime)}</span>
-                <button onClick={() => avancarTempo(0.25)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>+¼s</button>
-                <button onClick={() => avancarTempo(1)} style={{ background: 'none', border: `1px solid ${T.line}`, color: '#fff', borderRadius: 6, cursor: 'pointer', padding: '3px 8px', fontSize: 11.5 }}>+1s</button>
-              </div>
-            )}
-            {!isBlocked && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 8 }}>
-                <button
-                  onClick={() => (clipMode ? sairDoModoClipe() : (sairDoModoAnotar(), setClipMode(true)))}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5,
-                    color: clipMode ? T.warn : '#fff',
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
-                  }}
-                >
-                  <Scissors size={13} /> {clipMode ? 'Cancelar clipe' : 'Criar clipe'}
-                </button>
-                <button
-                  onClick={() => (modoAnotar ? sairDoModoAnotar() : (sairDoModoClipe(), setModoAnotar(true)))}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5,
-                    color: modoAnotar ? T.warn : '#fff',
-                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
-                  }}
-                >
-                  <Circle size={13} /> {modoAnotar ? 'Cancelar anotação' : 'Adicionar anotação'}
-                </button>
-              </div>
-            )}
-            {clipMode && !isBlocked && (
-              <div style={{
-                marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
-                padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
-              }}>
-                <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-                  Deixa o vídeo a tocar e marca onde o corte começa e acaba — depois dá-lhe um nome
-                  e o clipe fica gravado à parte, na pasta "Cortes", pronto a rever mais tarde.
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
-                  <div style={{ fontSize: 13, color: T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
-                  <div style={{ color: T.mutedDim, fontSize: 12 }}>até</div>
-                  <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
-                  <div style={{ fontSize: 13, color: T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
-                </div>
-                {clipMarcas.inicio != null && clipMarcas.fim != null && (
-                  Math.abs(clipMarcas.fim - clipMarcas.inicio) < 1 ? (
-                    <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto — marca o fim um pouco mais à frente.</div>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                      <input
-                        value={tituloClipe} onChange={e => setTituloClipe(e.target.value)}
-                        placeholder="Nome do clipe (ex.: Saída de bola sob pressão)"
-                        style={{
-                          flex: 1, minWidth: 200, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-                          padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
-                        }}
-                      />
-                      <Btn onClick={guardarClipe}><Scissors size={14} /> Guardar clipe</Btn>
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-            {modoAnotar && !isBlocked && (
-              <div style={{
-                marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
-                padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 12, color: T.mutedDim }}>Forma:</span>
-                  <button onClick={() => setTipoAnotacao('circulo')} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
-                    background: tipoAnotacao === 'circulo' ? T.warn : 'transparent',
-                    color: tipoAnotacao === 'circulo' ? '#000' : T.cream,
-                    border: `1px solid ${tipoAnotacao === 'circulo' ? T.warn : T.line}`,
-                  }}><Circle size={11} /> Círculo</button>
-                  <button onClick={() => setTipoAnotacao('texto')} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 9px', borderRadius: 20, cursor: 'pointer',
-                    background: tipoAnotacao === 'texto' ? T.warn : 'transparent',
-                    color: tipoAnotacao === 'texto' ? '#000' : T.cream,
-                    border: `1px solid ${tipoAnotacao === 'texto' ? T.warn : T.line}`,
-                  }}><Type size={11} /> Caixa de texto</button>
-                </div>
-                {tipoAnotacao === 'texto' && (
-                  <input
-                    value={textoAnotacao} onChange={e => setTextoAnotacao(e.target.value)}
-                    placeholder="Texto a mostrar (ex.: nome do jogador, uma indicação)"
-                    style={{
-                      background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-                      padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
-                    }}
-                  />
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 12, color: T.mutedDim }}>Fica visível durante</span>
-                  <input
-                    type="number" min={1} max={30} value={duracaoAnotacao}
-                    onChange={e => setDuracaoAnotacao(e.target.value)}
-                    style={{
-                      width: 52, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6,
-                      padding: '4px 6px', color: T.cream, fontSize: 13, ...body,
-                    }}
-                  />
-                  <span style={{ fontSize: 12, color: T.mutedDim }}>segundos depois da última marca, depois apaga-se sozinha.</span>
-                </div>
-                <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-                  Toca no vídeo no sítio exato onde queres colocar a anotação — fica ali, fixa,
-                  só pelo tempo definido acima, sem se deslocar. Podes tocar outra vez para
-                  corrigir o sítio antes de gravar.
-                </div>
-                <div style={{ fontSize: 13, color: T.cream }}>
-                  {anotacaoMarcas.length === 0 ? 'Ainda sem posição — toca no vídeo.' : 'Posição escolhida.'}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <Btn variant="ghost" disabled={!anotacaoMarcas.length} onClick={() => setAnotacaoMarcas([])}>Recomeçar</Btn>
-                  <Btn disabled={!anotacaoMarcas.length || (tipoAnotacao === 'texto' && !textoAnotacao.trim())} onClick={guardarAnotacao}>
-                    {tipoAnotacao === 'texto' ? <Type size={14} /> : <Circle size={14} />} Guardar anotação
-                  </Btn>
-                </div>
-              </div>
-            )}
-            {!modoAnotar && !clipMode && (active.anotacoes || []).length > 0 && (
-              <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {active.anotacoes.map((an, i) => (
-                  <div key={an.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#ffffffaa',
-                    border: `1px solid ${T.line}`, borderRadius: 20, padding: '4px 10px',
-                  }}>
-                    {an.tipo === 'texto' ? <Type size={11} color={T.warn} /> : <Circle size={11} color={T.warn} />}
-                    {an.tipo === 'texto' ? `"${an.texto}"` : `Anotação ${i + 1}`} ({an.marcas.length} {an.marcas.length === 1 ? 'marca' : 'marcas'})
-                    <button onClick={() => removerAnotacao(an.id)} style={{ background: 'none', border: 'none', color: '#ffffffaa', cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={12} /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{ marginTop: 10, color: '#fff', fontSize: 15, fontWeight: 500 }}>{active.title}</div>
-            {active.jornada && <div style={{ color: '#ffffffaa', fontSize: 12.5 }}>{active.jornada}</div>}
-          </div>
-        </div>
-      )}
     </div>
   );
 });
