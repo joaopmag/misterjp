@@ -257,7 +257,7 @@ function useFecharComEsc(onClose, ativo = true) {
   }, [onClose, ativo]);
 }
 
-function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, podeMudarTempos }) {
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId }) {
   const [t, setT] = useState(0);
   // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
   const [aEditar, setAEditar] = useState(false);
@@ -266,7 +266,9 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   const [fimEd, setFimEd] = useState('');
   const [aGuardar, setAGuardar] = useState(false);
   const [erroEd, setErroEd] = useState('');
+  const [originalEd, setOriginalEd] = useState(null);
   const abrirEdicao = () => {
+    setOriginalEd(originalSugeridoId || null);
     setNotaEd(clip.note || '');
     setInicioEd(fmt(clip.origemInicio || 0));
     setFimEd(fmt(clip.origemFim || 0));
@@ -280,7 +282,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
     if (f - ini < 1) { setErroEd('O fim tem de ser pelo menos 1 segundo depois do início.'); return; }
     setAGuardar(true); setErroEd('');
     try {
-      await onSaveEdit({ note: notaEd.trim(), inicio: ini, fim: f });
+      await onSaveEdit({ note: notaEd.trim(), inicio: ini, fim: f, originalId: originalEd });
       setAEditar(false);
     } catch (e) {
       setErroEd((e && e.message) || 'Não foi possível guardar. Tenta outra vez.');
@@ -320,7 +322,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
           </div>
         </div>
-        <div ref={areaRef} style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <div ref={areaRef} style={{ flex: 1, minHeight: '25vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <div style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto' }}>
             <video ref={videoRef} src={clip.publicUrl} autoPlay playsInline onClick={alternar}
               onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
@@ -355,33 +357,42 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
         </div>
         {/* Texto, edição e etiquetas — por baixo do vídeo, com a sua
             própria rolagem para nunca empurrar o vídeo para fora do ecrã. */}
-        <div style={{ flexShrink: 0, maxHeight: '45vh', overflowY: 'auto', background: T.surface, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div style={{ flexShrink: 0, maxHeight: '60vh', overflowY: 'auto', background: T.surface, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         {aEditar ? (
-          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, borderBottom: `1px solid ${T.line}`, ...body }}>
-            <textarea value={notaEd} onChange={e => setNotaEd(e.target.value)} rows={3} maxLength={2000}
+          <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: `1px solid ${T.line}`, ...body }}>
+            <textarea value={notaEd} onChange={e => setNotaEd(e.target.value)} rows={2} maxLength={2000}
               placeholder="Texto do clipe (ex.: Abrir espaços)"
-              style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, resize: 'vertical', ...body }} />
+              style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '7px 10px', color: T.cream, fontSize: 13, resize: 'vertical', ...body }} />
+            {/* Tempos, vídeo original e botões numa só linha (parte-se em
+                ecrãs estreitos) — a edição tem de caber sem tapar o vídeo. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, color: T.mutedDim }}>No vídeo original, de</span>
-              <input value={inicioEd} onChange={e => setInicioEd(e.target.value)} disabled={!podeMudarTempos} aria-label="Início (mm:ss)"
-                style={{ width: 70, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 13, textAlign: 'center', ...mono, opacity: podeMudarTempos ? 1 : 0.5 }} />
+              <span style={{ fontSize: 12, color: T.mutedDim }}>De</span>
+              <input value={inicioEd} onChange={e => setInicioEd(e.target.value)} disabled={!originalEd} aria-label="Início no vídeo original (mm:ss)"
+                style={{ width: 64, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 13, textAlign: 'center', ...mono, opacity: originalEd ? 1 : 0.5 }} />
               <span style={{ fontSize: 12, color: T.mutedDim }}>até</span>
-              <input value={fimEd} onChange={e => setFimEd(e.target.value)} disabled={!podeMudarTempos} aria-label="Fim (mm:ss)"
-                style={{ width: 70, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 13, textAlign: 'center', ...mono, opacity: podeMudarTempos ? 1 : 0.5 }} />
-            </div>
-            {!podeMudarTempos && (
-              <div style={{ fontSize: 12, color: T.mutedDim }}>O vídeo original deste clipe já não existe, por isso só dá para mudar o texto.</div>
-            )}
-            {podeMudarTempos && (
-              <div style={{ fontSize: 12, color: T.mutedDim }}>Mudar os tempos volta a cortar o vídeo original (demora uns segundos). Os desenhos acompanham o novo início.</div>
-            )}
-            {erroEd && <div style={{ fontSize: 12.5, color: T.bad }}>{erroEd}</div>}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <input value={fimEd} onChange={e => setFimEd(e.target.value)} disabled={!originalEd} aria-label="Fim no vídeo original (mm:ss)"
+                style={{ width: 64, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 13, textAlign: 'center', ...mono, opacity: originalEd ? 1 : 0.5 }} />
+              <span style={{ fontSize: 12, color: T.mutedDim }}>em</span>
+              <select value={originalEd || ''} onChange={e => setOriginalEd(e.target.value || null)} aria-label="Vídeo original"
+                style={{ maxWidth: 240, minWidth: 0, background: T.bg, border: `1px solid ${originalEd ? T.line : T.warn}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 12.5, ...body }}>
+                <option value="">Escolhe o vídeo original…</option>
+                {(originais || []).map(v => <option key={v.id} value={v.id}>{v.titulo || '(sem nome)'}</option>)}
+              </select>
+              <span style={{ flex: 1 }} />
               <Btn variant="ghost" onClick={() => setAEditar(false)} disabled={aGuardar}>Cancelar</Btn>
               <Btn variant="solid" onClick={guardarEdicao} disabled={aGuardar}>
                 {aGuardar ? <><Loader2 size={14} className="spin" /> A guardar…</> : <><Check size={14} /> Guardar alterações</>}
               </Btn>
             </div>
+            {erroEd
+              ? <div style={{ fontSize: 12.5, color: T.bad }}>{erroEd}</div>
+              : (
+                <div style={{ fontSize: 11.5, color: T.mutedDim }}>
+                  {originalEd
+                    ? 'Mudar os tempos volta a cortar o vídeo original (uns segundos); os desenhos acompanham.'
+                    : 'Não encontrei o vídeo original deste clipe. Escolhe-o na lista para mudar os tempos; sem isso, só muda o texto.'}
+                </div>
+              )}
           </div>
         ) : (
           clip.note && <div style={{ padding: '12px 12px 0', fontSize: 13, color: T.cream }}>{clip.note}</div>
@@ -891,16 +902,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   // Editar um clipe cortado: texto sempre; tempos, voltando a cortar o
   // original. Mantém o mesmo id (os links partilhados continuam válidos).
-  const editarClipeFicheiro = async (clip, { note: novaNota, inicio, fim }) => {
-    const mudouTempos = Math.round(inicio) !== Math.round(clip.origemInicio || 0) || Math.round(fim) !== Math.round(clip.origemFim || 0);
+  const editarClipeFicheiro = async (clip, { note: novaNota, inicio, fim, originalId }) => {
+    const escolhido = originalId ? videosOriginais.find(v => v.id === originalId) : null;
+    const mudouOriginal = !!escolhido && escolhido.id !== (originalDoClipe(clip) || {}).id;
+    const mudouTempos = mudouOriginal || Math.round(inicio) !== Math.round(clip.origemInicio || 0) || Math.round(fim) !== Math.round(clip.origemFim || 0);
     if (!mudouTempos) {
       const novo = { ...clip, note: novaNota };
       setClipes(prev => prev.map(c => (c.id === clip.id ? novo : c)));
       setClipeAReproduzir(prev => (prev && prev.id === clip.id ? novo : prev));
       return;
     }
-    const original = originalDoClipe(clip);
-    if (!original || !original.storagePath) throw new Error('O vídeo original deste clipe já não existe. Só dá para mudar o texto.');
+    const original = escolhido || originalDoClipe(clip);
+    if (!original || !original.storagePath) throw new Error('Escolhe o vídeo original para mudar os tempos. Sem ele, só dá para mudar o texto.');
     const resp = await fetch('/api/cortar-clipe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1743,7 +1756,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           copied={copiedId === clipeAReproduzir.id}
           onShare={async () => { if (await partilharClipeFicheiro(clipeAReproduzir) === 'copiado') { setCopiedId(clipeAReproduzir.id); setTimeout(() => setCopiedId(null), 1600); } }}
           onSaveEdit={(dados) => editarClipeFicheiro(clipeAReproduzir, dados)}
-          podeMudarTempos={!!originalDoClipe(clipeAReproduzir)}
+          originais={videosOriginais.filter(v => v.storagePath)}
+          originalSugeridoId={(originalDoClipe(clipeAReproduzir) || {}).id || null}
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
           onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
         />
