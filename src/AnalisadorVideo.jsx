@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
-  Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
+  Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
 } from 'lucide-react';
 
@@ -224,8 +224,37 @@ function shapeVisivelEm(sh, tempo) {
 
 /* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
    desaparecerem no tempo certo, tal como foram marcados. ---- */
-function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied, onChangeTag }) {
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, podeMudarTempos }) {
   const [t, setT] = useState(0);
+  // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
+  const [aEditar, setAEditar] = useState(false);
+  const [notaEd, setNotaEd] = useState('');
+  const [inicioEd, setInicioEd] = useState('');
+  const [fimEd, setFimEd] = useState('');
+  const [aGuardar, setAGuardar] = useState(false);
+  const [erroEd, setErroEd] = useState('');
+  const abrirEdicao = () => {
+    setNotaEd(clip.note || '');
+    setInicioEd(fmt(clip.origemInicio || 0));
+    setFimEd(fmt(clip.origemFim || 0));
+    setErroEd('');
+    setAEditar(true);
+  };
+  const guardarEdicao = async () => {
+    const ini = parseMMSS(inicioEd);
+    const f = parseMMSS(fimEd);
+    if (ini == null || f == null) { setErroEd('Escreve os tempos como mm:ss (ex.: 12:05).'); return; }
+    if (f - ini < 1) { setErroEd('O fim tem de ser pelo menos 1 segundo depois do início.'); return; }
+    setAGuardar(true); setErroEd('');
+    try {
+      await onSaveEdit({ note: notaEd.trim(), inicio: ini, fim: f });
+      setAEditar(false);
+    } catch (e) {
+      setErroEd((e && e.message) || 'Não foi possível guardar. Tenta outra vez.');
+    } finally {
+      setAGuardar(false);
+    }
+  };
   const videoRef = useRef(null);
   const [aTocar, setATocar] = useState(false);
   const [duracaoVideo, setDuracaoVideo] = useState(0);
@@ -243,8 +272,11 @@ function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied, onChang
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
           <span style={{ fontSize: 12.5, color: T.muted, ...body }}>{tag?.label || 'Sem etiqueta'} · {Math.round(clip.duracao)}s</span>
           <div style={{ display: 'flex', gap: 6 }}>
-            <Btn variant="ghost" onClick={onCopy} style={{ padding: '6px 10px' }} title="Copiar link">
-              {copied ? <Check size={14} color={T.good} /> : <Link2 size={14} />}
+            <Btn variant="ghost" onClick={onShare} style={{ padding: '6px 10px' }} title="Partilhar o clipe">
+              {copied ? <Check size={14} color={T.good} /> : <Share2 size={14} />}
+            </Btn>
+            <Btn variant="ghost" onClick={aEditar ? () => setAEditar(false) : abrirEdicao} active={aEditar} style={{ padding: '6px 10px' }} title="Editar texto e tempos">
+              <Pencil size={14} />
             </Btn>
             <Btn variant="ghost" onClick={onRemove} style={{ padding: '6px 10px' }} title="Apagar clipe"><Trash2 size={14} color={T.bad} /></Btn>
             <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
@@ -276,7 +308,36 @@ function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied, onChang
             style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }} />
           <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(t)} / {mmss(duracaoVideo)}</span>
         </div>
-        {clip.note && <div style={{ padding: '12px 12px 0', fontSize: 13, color: T.cream }}>{clip.note}</div>}
+        {aEditar ? (
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, borderBottom: `1px solid ${T.line}`, ...body }}>
+            <textarea value={notaEd} onChange={e => setNotaEd(e.target.value)} rows={3} maxLength={2000}
+              placeholder="Texto do clipe (ex.: Abrir espaços)"
+              style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, resize: 'vertical', ...body }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: T.mutedDim }}>No vídeo original, de</span>
+              <input value={inicioEd} onChange={e => setInicioEd(e.target.value)} disabled={!podeMudarTempos} aria-label="Início (mm:ss)"
+                style={{ width: 70, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 13, textAlign: 'center', ...mono, opacity: podeMudarTempos ? 1 : 0.5 }} />
+              <span style={{ fontSize: 12, color: T.mutedDim }}>até</span>
+              <input value={fimEd} onChange={e => setFimEd(e.target.value)} disabled={!podeMudarTempos} aria-label="Fim (mm:ss)"
+                style={{ width: 70, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 13, textAlign: 'center', ...mono, opacity: podeMudarTempos ? 1 : 0.5 }} />
+            </div>
+            {!podeMudarTempos && (
+              <div style={{ fontSize: 12, color: T.mutedDim }}>O vídeo original deste clipe já não existe, por isso só dá para mudar o texto.</div>
+            )}
+            {podeMudarTempos && (
+              <div style={{ fontSize: 12, color: T.mutedDim }}>Mudar os tempos volta a cortar o vídeo original (demora uns segundos). Os desenhos acompanham o novo início.</div>
+            )}
+            {erroEd && <div style={{ fontSize: 12.5, color: T.bad }}>{erroEd}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Btn variant="ghost" onClick={() => setAEditar(false)} disabled={aGuardar}>Cancelar</Btn>
+              <Btn variant="solid" onClick={guardarEdicao} disabled={aGuardar}>
+                {aGuardar ? <><Loader2 size={14} className="spin" /> A guardar…</> : <><Check size={14} /> Guardar alterações</>}
+              </Btn>
+            </div>
+          </div>
+        ) : (
+          clip.note && <div style={{ padding: '12px 12px 0', fontSize: 13, color: T.cream }}>{clip.note}</div>
+        )}
         {/* Etiqueta — pode-se atribuir ou mudar aqui, mesmo depois de o
            clipe já estar guardado sem nenhuma. */}
         <div style={{ padding: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -324,6 +385,12 @@ function dataCurta(iso) {
    só do início ao fim do corte e, ao chegar ao fim, volta ao início
    (o mesmo comportamento dos cortes do Canal). O tempo chega por
    postMessage (enablejsapi=1), o mesmo mecanismo usado no App. */
+/* ENDEREÇO PÚBLICO DA APP — base de todos os links partilhados (tem de
+   ser igual a URL_PUBLICA_APP no App.jsx). Fixo de propósito: partilhar a
+   partir de um endereço de pré-visualização do Vercel, ou do computador
+   em desenvolvimento, dava links que não abrem para quem os recebe. */
+const URL_PUBLICA_APP = 'https://misterjp.vercel.app/';
+
 /* PARTILHAR — o sistema (telemóvel) ou, sem ele, copiar para a área de
    transferência. Devolve 'copiado' quando copiou, para o botão mostrar o ✓. */
 async function partilharLink({ titulo, texto, url }) {
@@ -349,15 +416,18 @@ function partilharClipeAtleta(clip) {
     f: String(Math.ceil(Number(clip.clipFim) || 0)),
     t: titulo,
   });
-  return partilharLink({ titulo, texto: titulo, url: `${window.location.origin}${window.location.pathname}?${q.toString()}` });
+  return partilharLink({ titulo, texto: titulo, url: `${URL_PUBLICA_APP}?${q.toString()}` });
 }
 
-// Clipe cortado aqui (ficheiro): o próprio ficheiro já é só o corte.
+// Clipe cortado aqui (ficheiro): link curto para a página da app
+// (?clipe=<id>, ver `PaginaClipe` no App), que vai buscar o ficheiro pela
+// função `clipe_publico`. O endereço do ficheiro no Supabase era enorme.
+// Como o id do clipe não muda ao editar, o link continua a funcionar.
+// A mensagem é o texto do clipe (ou a etiqueta, se não tiver texto).
 function partilharClipeFicheiro(clip) {
   const tag = TAGS.find(t => t.id === clip.tagId);
-  const titulo = tag ? tag.label : 'Clipe';
-  const texto = [tag && tag.label, clip.note, clip.originalTitulo].filter(Boolean).join('\n');
-  return partilharLink({ titulo, texto, url: clip.publicUrl });
+  const titulo = (clip.note || '').trim() || (tag ? tag.label : 'Clipe');
+  return partilharLink({ titulo, texto: titulo, url: `${URL_PUBLICA_APP}?clipe=${encodeURIComponent(clip.id)}` });
 }
 
 function ClipAtletaModal({ clip, onClose, onRemove }) {
@@ -722,7 +792,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           criadoEmTempo: s.criadoEmTempo == null ? null : Math.max(0, s.criadoEmTempo - inPoint),
           mostrarAte: s.mostrarAte == null ? null : Math.max(0, s.mostrarAte - inPoint),
         })),
-        originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
+        originalId: originalAtivo.id, originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
       };
       setClipes(prev => [novoClipe, ...(prev || [])]);
       limparMarcas();
@@ -755,11 +825,60 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
   };
 
-  const copiarLink = (clip) => {
-    if (navigator.clipboard) navigator.clipboard.writeText(clip.publicUrl).catch(() => {});
-    setCopiedId(clip.id);
-    setTimeout(() => setCopiedId(null), 1600);
+  /* ORIGINAL DE UM CLIPE — pelo id (clipes novos) ou, nos antigos que
+     não o guardavam, pelo título, só se houver exatamente um com esse
+     título (dois vídeos com o mesmo nome e o corte podia sair do errado). */
+  const originalDoClipe = (clip) => {
+    if (!clip) return null;
+    if (clip.originalId) return videosOriginais.find(v => v.id === clip.originalId) || null;
+    const mesmos = videosOriginais.filter(v => v.titulo && v.titulo === clip.originalTitulo);
+    return mesmos.length === 1 ? mesmos[0] : null;
   };
+
+  // Editar um clipe cortado: texto sempre; tempos, voltando a cortar o
+  // original. Mantém o mesmo id (os links partilhados continuam válidos).
+  const editarClipeFicheiro = async (clip, { note: novaNota, inicio, fim }) => {
+    const mudouTempos = Math.round(inicio) !== Math.round(clip.origemInicio || 0) || Math.round(fim) !== Math.round(clip.origemFim || 0);
+    if (!mudouTempos) {
+      const novo = { ...clip, note: novaNota };
+      setClipes(prev => prev.map(c => (c.id === clip.id ? novo : c)));
+      setClipeAReproduzir(prev => (prev && prev.id === clip.id ? novo : prev));
+      return;
+    }
+    const original = originalDoClipe(clip);
+    if (!original || !original.storagePath) throw new Error('O vídeo original deste clipe já não existe. Só dá para mudar o texto.');
+    const resp = await fetch('/api/cortar-clipe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ teamId, storagePath: original.storagePath, start: inicio, end: fim }),
+    });
+    let json = {};
+    try { json = await resp.json(); } catch (e) { /* resposta sem corpo */ }
+    if (!resp.ok) throw new Error(`Não consegui voltar a cortar o clipe: ${json.error || resp.status}`);
+    // Os desenhos estão guardados relativos ao início do clipe: acompanham a mudança.
+    const desvio = (clip.origemInicio || 0) - inicio;
+    const novo = {
+      ...clip,
+      note: novaNota,
+      storagePath: json.storagePath, publicUrl: json.publicUrl, thumbUrl: json.thumbUrl || null,
+      origemInicio: inicio, origemFim: fim, duracao: fim - inicio,
+      originalId: original.id, originalTitulo: original.titulo,
+      shapes: (clip.shapes || []).map(sh => ({
+        ...sh,
+        criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo + desvio),
+        mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte + desvio),
+      })),
+      editadoEm: new Date().toISOString(),
+    };
+    setClipes(prev => prev.map(c => (c.id === clip.id ? novo : c)));
+    setClipeAReproduzir(prev => (prev && prev.id === clip.id ? novo : prev));
+    // O ficheiro antigo só se apaga depois de o novo estar gravado.
+    if (clip.storagePath && clip.storagePath !== json.storagePath) {
+      try { await supabase.storage.from('videos-clipes').remove([clip.storagePath]); } catch (e) { /* fica órfão, sem mal */ }
+    }
+  };
+
+
 
   /* ---- Telestração ---- */
   const getPoint = (e) => {
@@ -1568,7 +1687,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           tag={TAGS.find(t => t.id === clipeAReproduzir.tagId)}
           onClose={() => setClipeAReproduzir(null)}
           copied={copiedId === clipeAReproduzir.id}
-          onCopy={() => copiarLink(clipeAReproduzir)}
+          onShare={async () => { if (await partilharClipeFicheiro(clipeAReproduzir) === 'copiado') { setCopiedId(clipeAReproduzir.id); setTimeout(() => setCopiedId(null), 1600); } }}
+          onSaveEdit={(dados) => editarClipeFicheiro(clipeAReproduzir, dados)}
+          podeMudarTempos={!!originalDoClipe(clipeAReproduzir)}
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
           onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
         />

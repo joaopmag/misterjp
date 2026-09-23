@@ -30328,13 +30328,18 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
    usa o mesmo leitor dos clipes: só o intervalo, com a barra amarela, e
    volta ao início no fim. Tudo o que a página precisa vai no próprio
    link (vídeo, início, fim, título): não lê nada da base de dados. */
+/* ENDEREÇO PÚBLICO DA APP — base de todos os links partilhados (igual a
+   URL_PUBLICA_APP no AnalisadorVideo.jsx). Fixo de propósito: partilhar
+   a partir de um endereço de pré-visualização do Vercel, ou do
+   computador em desenvolvimento, dava links que não abrem a quem os recebe. */
+const URL_PUBLICA_APP = 'https://misterjp.vercel.app/';
+
 function linkDoCorteYoutube(youtubeId, inicio, fim, titulo) {
   const ini = Math.max(0, Math.floor(Number(inicio) || 0));
   const f = Math.max(ini + 1, Math.ceil(Number(fim) || 0));
-  const base = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : '';
   const q = new URLSearchParams({ corte: youtubeId, i: String(ini), f: String(f) });
   if (titulo) q.set('t', titulo);
-  return `${base}?${q.toString()}`;
+  return `${URL_PUBLICA_APP}?${q.toString()}`;
 }
 
 // mm:ss a partir de segundos — só para os marcadores de "Criar clipe".
@@ -35592,6 +35597,68 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* PÁGINA PÚBLICA DE UM CLIPE CORTADO (?clipe=<id>)
+
+   Destino dos links "Partilhar" dos clipes cortados no Analisador de
+   Vídeo (ficheiros). Abre sem login: pede à função `clipe_publico` o
+   endereço do ficheiro e o texto desse clipe, e mostra-o com a barra
+   amarela. Os desenhos feitos no Analisador não aparecem aqui. */
+const ETIQUETAS_CLIPE = {
+  golo: 'Golo', remate: 'Remate', bp: 'Bola Parada', perda: 'Perda',
+  recuperacao: 'Recuperação', transicao: 'Transição', individual: 'Ação Individual', erro: 'Erro',
+};
+function PaginaClipe() {
+  const id = (new URLSearchParams(window.location.search).get('clipe') || '').trim();
+  const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
+  const [clipe, setClipe] = useState(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        if (!/^[A-Za-z0-9_-]{4,64}$/.test(id)) throw new Error('id');
+        const { data, error } = await supabase.rpc('clipe_publico', { p_clipe_id: id });
+        if (cancelado) return;
+        if (error) throw error;
+        let d = data;
+        if (Array.isArray(d)) d = d[0];
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica */ } }
+        if (!d || !d.ok || !d.clipe || !d.clipe.publicUrl) throw new Error('sem clipe');
+        setClipe(d.clipe);
+        setEstado('pronto');
+        const t = (d.clipe.note || '').trim() || ETIQUETAS_CLIPE[d.clipe.tagId] || 'Clipe';
+        document.title = t;
+      } catch (e) {
+        if (!cancelado) setEstado('erro');
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [id]);
+
+  const titulo = clipe ? ((clipe.note || '').trim() || ETIQUETAS_CLIPE[clipe.tagId] || 'Clipe') : '';
+  const etiqueta = clipe && ETIQUETAS_CLIPE[clipe.tagId];
+
+  return (
+    <div style={{ minHeight: '100vh', background: T.bg, color: T.cream, ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
+      <div style={{ width: '100%', maxWidth: 900 }}>
+        {estado === 'a-carregar' && <div style={{ fontSize: 13, color: T.mutedDim, padding: '40px 0', textAlign: 'center' }}>A carregar…</div>}
+        {estado === 'erro' && <div style={{ fontSize: 14, color: T.bad, padding: '40px 0', textAlign: 'center' }}>Este clipe já não existe ou o link não é válido.</div>}
+        {estado === 'pronto' && (
+          <>
+            <h1 style={{ ...display, fontSize: 22, fontWeight: 600, margin: '0 0 4px', whiteSpace: 'pre-wrap' }}>{titulo}</h1>
+            <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 14 }}>
+              {[etiqueta && etiqueta !== titulo ? etiqueta : null, clipe.duracao ? `${Math.round(clipe.duracao)}s` : null].filter(Boolean).join(' · ')}
+            </div>
+            <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden' }}>
+              <VideoComBarra src={clipe.publicUrl} preload="metadata" videoStyle={{ maxHeight: '75vh' }} />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* PÁGINA PÚBLICA DE UM CORTE (?corte=<youtubeId>&i=<início>&f=<fim>&t=<título>)
 
    É o destino dos links "Partilhar" dos cortes do YouTube. Abre sem
@@ -35718,6 +35785,10 @@ export default function AppRoot() {
   // Link partilhado de um corte: página pública, sem login (ver PaginaCorte).
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('corte')) {
     return <ErrorBoundary><PaginaCorte /></ErrorBoundary>;
+  }
+  // Link partilhado de um clipe cortado no Analisador (ver PaginaClipe).
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('clipe')) {
+    return <ErrorBoundary><PaginaClipe /></ErrorBoundary>;
   }
 
   const isCheckin = typeof window !== 'undefined' &&
