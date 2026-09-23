@@ -31915,13 +31915,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
     return (
       <div>
-        {!eJogos && (
-          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 14, lineHeight: 1.5 }}>
-            {soLeitura
-              ? 'Jogos completos dos adversários, organizados por equipa.'
-              : 'Jogos completos de adversários, por equipa — um jogo aparece no cartão das duas equipas. Cada corte criado aqui fica na ficha do adversário (Scouting › Adversários), não no Canal.'}
-          </div>
-        )}
         {grupos.length === 0 ? (
           <EmptyState
             text={eJogos
@@ -35646,6 +35639,9 @@ function PaginaClipe() {
         {estado === 'pronto' && (
           <>
             <h1 style={{ ...display, fontSize: 22, fontWeight: 600, margin: '0 0 4px', whiteSpace: 'pre-wrap' }}>{titulo}</h1>
+            {clipe.originalTitulo && (
+              <div style={{ fontSize: 14, color: T.muted, marginBottom: 4 }}>{clipe.originalTitulo}</div>
+            )}
             <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 14 }}>
               {[etiqueta && etiqueta !== titulo ? etiqueta : null, clipe.duracao ? `${Math.round(clipe.duracao)}s` : null].filter(Boolean).join(' · ')}
             </div>

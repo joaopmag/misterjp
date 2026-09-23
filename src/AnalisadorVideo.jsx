@@ -224,6 +224,39 @@ function shapeVisivelEm(sh, tempo) {
 
 /* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
    desaparecerem no tempo certo, tal como foram marcados. ---- */
+/* JANELA INTEIRA DOS LEITORES DE CLIPES — o vídeo ocupa o maior
+   retângulo que cabe na área disponível, mantendo a proporção. Os
+   desenhos (SVG por cima) têm de ficar exatamente sobre o vídeo, por isso
+   a caixa é medida em vez de deixar o vídeo encolher dentro dela. */
+function useCaixaNaArea(proporcao) {
+  const areaRef = useRef(null);
+  const [tam, setTam] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return undefined;
+    const medir = () => {
+      const r = el.getBoundingClientRect();
+      const w = Math.max(0, Math.min(r.width, r.height * proporcao));
+      setTam({ w, h: w / proporcao });
+    };
+    medir();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(medir) : null;
+    if (ro) ro.observe(el); else window.addEventListener('resize', medir);
+    return () => { if (ro) ro.disconnect(); else window.removeEventListener('resize', medir); };
+  }, [proporcao]);
+  return [areaRef, tam];
+}
+
+// Esc fecha o leitor (em janela inteira já não há fundo onde clicar).
+function useFecharComEsc(onClose, ativo = true) {
+  useEffect(() => {
+    if (!ativo) return undefined;
+    const aoTeclar = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, [onClose, ativo]);
+}
+
 function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, podeMudarTempos }) {
   const [t, setT] = useState(0);
   // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
@@ -265,12 +298,17 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   };
   const irPara = (seg) => { const v = videoRef.current; if (v) { v.currentTime = seg; setT(seg); } };
   const lerDuracao = (e) => { const d = e.currentTarget.duration; setDuracaoVideo(Number.isFinite(d) ? d : 0); };
+  // Proporção real do vídeo (16:9 até se saber) — a caixa segue-a.
+  const [proporcao, setProporcao] = useState(16 / 9);
+  const [areaRef, caixa] = useCaixaNaArea(proporcao);
+  useFecharComEsc(onClose, !aEditar);
   return (
-    <div onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
-          <span style={{ fontSize: 12.5, color: T.muted, ...body }}>{tag?.label || 'Sem etiqueta'} · {Math.round(clip.duracao)}s</span>
+    <div style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))', borderBottom: `1px solid ${T.line}`, background: T.surface, flexShrink: 0 }}>
+          <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {tag?.label || 'Sem etiqueta'} · {Math.round(clip.duracao)}s{clip.originalTitulo ? ` · ${clip.originalTitulo}` : ''}
+          </span>
           <div style={{ display: 'flex', gap: 6 }}>
             <Btn variant="ghost" onClick={onShare} style={{ padding: '6px 10px' }} title="Partilhar o clipe">
               {copied ? <Check size={14} color={T.good} /> : <Share2 size={14} />}
@@ -282,18 +320,25 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
           </div>
         </div>
-        <div style={{ position: 'relative' }}>
-          <video ref={videoRef} src={clip.publicUrl} autoPlay playsInline onClick={alternar}
-            onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
-            onLoadedMetadata={lerDuracao} onDurationChange={lerDuracao}
-            onTimeUpdate={e => setT(e.currentTarget.currentTime)}
-            style={{ width: '100%', display: 'block', background: '#000', cursor: 'pointer' }} />
-          <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-            {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(renderShape)}
-          </svg>
+        <div ref={areaRef} style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          <div style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto' }}>
+            <video ref={videoRef} src={clip.publicUrl} autoPlay playsInline onClick={alternar}
+              onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
+              onLoadedMetadata={e => {
+                lerDuracao(e);
+                const v = e.currentTarget;
+                if (v.videoWidth && v.videoHeight) setProporcao(v.videoWidth / v.videoHeight);
+              }}
+              onDurationChange={lerDuracao}
+              onTimeUpdate={e => setT(e.currentTarget.currentTime)}
+              style={{ width: '100%', height: '100%', display: 'block', background: '#000', cursor: 'pointer' }} />
+            <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+              {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(renderShape)}
+            </svg>
+          </div>
         </div>
         {/* A mesma barra amarela de todos os vídeos da app. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderBottom: `1px solid ${T.line}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
           <button onClick={alternar} title={aTocar ? 'Pausa' : 'Reproduzir'}
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
             {aTocar ? <Pause size={16} /> : <Play size={16} />}
@@ -308,6 +353,9 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }} />
           <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(t)} / {mmss(duracaoVideo)}</span>
         </div>
+        {/* Texto, edição e etiquetas — por baixo do vídeo, com a sua
+            própria rolagem para nunca empurrar o vídeo para fora do ecrã. */}
+        <div style={{ flexShrink: 0, maxHeight: '45vh', overflowY: 'auto', background: T.surface, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         {aEditar ? (
           <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, borderBottom: `1px solid ${T.line}`, ...body }}>
             <textarea value={notaEd} onChange={e => setNotaEd(e.target.value)} rows={3} maxLength={2000}
@@ -351,6 +399,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               {tg.label}
             </button>
           ))}
+        </div>
         </div>
       </div>
     </div>
@@ -423,11 +472,13 @@ function partilharClipeAtleta(clip) {
 // (?clipe=<id>, ver `PaginaClipe` no App), que vai buscar o ficheiro pela
 // função `clipe_publico`. O endereço do ficheiro no Supabase era enorme.
 // Como o id do clipe não muda ao editar, o link continua a funcionar.
-// A mensagem é o texto do clipe (ou a etiqueta, se não tiver texto).
+// A mensagem é o texto do clipe (ou a etiqueta, se não tiver texto) e,
+// por baixo, o nome dado ao vídeo quando foi carregado.
 function partilharClipeFicheiro(clip) {
   const tag = TAGS.find(t => t.id === clip.tagId);
   const titulo = (clip.note || '').trim() || (tag ? tag.label : 'Clipe');
-  return partilharLink({ titulo, texto: titulo, url: `${URL_PUBLICA_APP}?clipe=${encodeURIComponent(clip.id)}` });
+  const texto = [titulo, (clip.originalTitulo || '').trim()].filter(Boolean).join('\n');
+  return partilharLink({ titulo, texto, url: `${URL_PUBLICA_APP}?clipe=${encodeURIComponent(clip.id)}` });
 }
 
 function ClipAtletaModal({ clip, onClose, onRemove }) {
@@ -481,12 +532,13 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
 
   const src = `https://www.youtube.com/embed/${clip.youtubeId}?start=${Math.floor(inicio)}&autoplay=1&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`;
   const duracao = fim - inicio;
+  const [areaRef, caixa] = useCaixaNaArea(16 / 9);
+  useFecharComEsc(onClose);
 
   return (
-    <div onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden', maxHeight: '100%', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
+    <div style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))', borderBottom: `1px solid ${T.line}`, background: T.surface, flexShrink: 0 }}>
           <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {clip.atletaNome || 'Atleta'} · {mmss(inicio)}–{mmss(fim)} ({Math.round(duracao)}s)
           </span>
@@ -498,16 +550,18 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
             <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
           </div>
         </div>
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000' }}>
-          <iframe
-            ref={iframeRef} onLoad={aoCarregar}
-            src={src} title={clip.titulo || 'Clipe'}
-            allow="autoplay; encrypted-media; picture-in-picture"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
-          />
+        <div ref={areaRef} style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          <div style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto', aspectRatio: caixa.w ? undefined : '16/9' }}>
+            <iframe
+              ref={iframeRef} onLoad={aoCarregar}
+              src={src} title={clip.titulo || 'Clipe'}
+              allow="autoplay; encrypted-media; picture-in-picture"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
+            />
+          </div>
         </div>
         {/* BARRA DO CLIPE — só o intervalo do corte. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderBottom: `1px solid ${T.line}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
           <button onClick={() => comando(aTocar ? 'pauseVideo' : 'playVideo')} title={aTocar ? 'Pausa' : 'Reproduzir'}
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
             {aTocar ? <Pause size={16} /> : <Play size={16} />}
@@ -522,7 +576,7 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
             style={{ flex: 1, accentColor: T.gold }} />
           <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(tempo - inicio)} / {mmss(duracao)}</span>
         </div>
-        <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ padding: 14, paddingBottom: 'calc(14px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, maxHeight: '40vh', overflowY: 'auto', background: T.surface }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body }}>{clip.titulo || '(sem título)'}</div>
           {clip.originalTitulo && <div style={{ fontSize: 12, color: T.mutedDim, ...body }}>{clip.originalTitulo}</div>}
           {clip.note
