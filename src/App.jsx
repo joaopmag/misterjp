@@ -29093,8 +29093,11 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
             <div key={a.id} onClick={() => setViewing(a)} style={{
               background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{a.nome}</div>
+              {/* Cartão só com o nome do clube, numa linha. Se um nome for
+                  mais comprido do que o cartão, termina em "…" e o nome
+                  completo aparece ao passar o rato. */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div title={a.nome} style={{ color: T.cream, fontWeight: 500, fontSize: 15, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.nome}</div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   <button
                     onClick={(e) => { e.stopPropagation(); setAdversarios(prev => prev.map(x => (x.id === a.id ? { ...x, visivelAtletas: !x.visivelAtletas } : x))); }}
@@ -29106,12 +29109,6 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
                   <button onClick={(e) => { e.stopPropagation(); setEditando(a); }} title="Editar adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
                   <button onClick={(e) => { e.stopPropagation(); remove(a.id); }} title="Apagar adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
                 </div>
-              </div>
-              <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 3 }}>
-                {[a.escalao, a.prova, a.quadroTatica].filter(Boolean).join(' · ') || 'Sem detalhes ainda'}
-              </div>
-              <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 8 }}>
-                {(a.jogadoresChaveIds || []).length} jogador{(a.jogadoresChaveIds || []).length === 1 ? '' : 'es'}-chave
               </div>
             </div>
           ))}
