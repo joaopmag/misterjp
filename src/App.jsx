@@ -16,7 +16,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw,
+  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
   Video
 } from 'lucide-react';
 
@@ -3464,6 +3464,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 ref={canalRef}
                 items={videosGerais} setItems={setVideosGerais}
                 addLabel="Adicionar vídeo" semBotaoTopo recentesPrimeiro
+                modoCanal matches={matches} adversarios={adversarios} setAdversarios={setAdversarios} todosVideos={videos} setTodosVideos={setVideos}
                 emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
               />
@@ -30259,7 +30260,78 @@ function cleanFolder(name) {
 // Etiqueta usada no filtro para os itens que não estão em nenhuma pasta.
 const NO_FOLDER = '__sem_pasta__';
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro }, ref) {
+/* ---------------------------------------------------------------
+   CATÁLOGO DO CANAL — Jogos · Adversários · Temas.
+
+   O Canal deixou de ter "Tudo" e pastas soltas lado a lado. Cada vídeo
+   pertence a UMA de três secções (`categoria`):
+   - 'jogo'       jogos da nossa equipa, agrupados por jornada/jogo, com
+                  os cortes desse jogo lá dentro;
+   - 'adversario' jogos completos de adversários (para fazer cortes) —
+                  agrupados pela ficha do adversário; os CORTES destes
+                  vídeos vão para a ficha dele (Scouting › Adversários);
+   - 'tema'       tudo o resto, nas pastas de sempre (Ideias, Motivacional…).
+
+   Vídeos antigos não têm `categoria` gravada — deduz-se sem mexer em
+   nada: um corte segue o vídeo de onde saiu; a pasta "Adversários" é
+   'adversario'; um vídeo com jornada na descrição é 'jogo'; o resto é
+   'tema'. Editar o vídeo grava a categoria escolhida. */
+function numJornada(txt) {
+  const s = String(txt || '');
+  if (!/jornada|^\s*j\s*\d/i.test(s)) return null;
+  const m = s.match(/\d+/);
+  return m ? Number(m[0]) : null;
+}
+// Número da jornada de um jogo do módulo Jogos (aí o campo pode ser só "2").
+function numDoJogo(m) {
+  const x = String((m && m.jornada) || '').match(/\d+/);
+  return x ? Number(x[0]) : null;
+}
+function ehClipe(v) { return !!v && typeof v.clipInicio === 'number'; }
+// A origem de um corte (se ainda existir na lista), para herdar o sítio.
+function origemDe(v, byId) {
+  return ehClipe(v) && v.clipOrigemId && byId[v.clipOrigemId] && byId[v.clipOrigemId] !== v ? byId[v.clipOrigemId] : null;
+}
+function categoriaDoItem(v, byId, prof = 0) {
+  if (!v) return 'tema';
+  if (v.categoria) return v.categoria;
+  const o = prof < 4 && origemDe(v, byId);
+  if (o) return categoriaDoItem(o, byId, prof + 1);
+  if (semAcentos(v.pasta).trim() === 'adversarios') return 'adversario';
+  if (numJornada(v.jornada) != null) return 'jogo';
+  return 'tema';
+}
+function chaveJogoDoItem(v, byId, matchesById, prof = 0) {
+  const o = prof < 4 && origemDe(v, byId);
+  if (o) return chaveJogoDoItem(o, byId, matchesById, prof + 1);
+  const m = v.jogoId && matchesById[v.jogoId];
+  const n = numJornada(v.jornada) ?? (m ? numDoJogo(m) : null);
+  if (n != null) return `j${n}`;
+  if (v.jogoId) return `m${v.jogoId}`;
+  return 'sem';
+}
+function fichaIdDoItem(v, byId, prof = 0) {
+  if (!v) return null;
+  if (v.adversarioFichaId) return v.adversarioFichaId;
+  const o = prof < 4 && origemDe(v, byId);
+  return o ? fichaIdDoItem(o, byId, prof + 1) : null;
+}
+// Ordem dentro de um jogo: primeiro os vídeos completos, depois os cortes
+// pela ordem em que acontecem (vídeo de origem, depois minuto).
+function ordenarDoJogo(lista) {
+  const completos = lista.filter(v => !ehClipe(v));
+  const cortes = lista.filter(ehClipe).sort((a, b) =>
+    String(a.clipOrigemTitulo || '').localeCompare(String(b.clipOrigemTitulo || ''), 'pt', { numeric: true })
+    || a.clipInicio - b.clipInicio);
+  return [...completos, ...cortes];
+}
+const SECOES_CANAL = [
+  { id: 'jogos', label: 'Jogos', cat: 'jogo', Icon: Trophy },
+  { id: 'adversarios', label: 'Adversários', cat: 'adversario', Icon: Shield },
+  { id: 'temas', label: 'Temas', cat: 'tema', Icon: FolderOpen },
+];
+
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos }, ref) {
   const [modal, setModal] = useState(null);
   React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
   // Pasta atualmente aberta: null = todas.
@@ -30273,6 +30345,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // sempre dentro do leitor da plataforma.
   const [blockedIds, setBlockedIds] = useState({});
   const isNarrow = useIsMobile(760);
+
+  // NAVEGAÇÃO DO CANAL (só com `modoCanal`) — secção aberta e, dentro de
+  // Jogos/Adversários, o jogo/adversário aberto (null = lista de cartões).
+  const [secao, setSecao] = useState('jogos');
+  const [grupo, setGrupo] = useState(null);
+  // "Ver cortes em seguida" — ids dos cortes a reproduzir por ordem.
+  const [sequencia, setSequencia] = useState(null);
+  // Corte de um jogo de adversário ainda sem ficha: fica aqui à espera
+  // de se escolher/criar a ficha (ver `FichaAdversarioRapida`).
+  const [pedirFicha, setPedirFicha] = useState(null);
 
   // CRIAR CLIPE — marca início/fim enquanto o vídeo do YouTube toca, e
   // grava um novo item na Biblioteca que reproduz só esse troço (via
@@ -30490,22 +30572,30 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // nunca se guarda alguma coisa e se fica a olhar para uma vista onde
     // ela não aparece.
     const destino = cleanFolder(data.pasta);
+    let guardado = data;
+    let novaLista;
     if (data.id) {
-      setItems(items.map(v => v.id === data.id ? data : v));
-      setActiveId(data.id);
+      novaLista = items.map(v => v.id === data.id ? data : v);
+      setItems(prev => prev.map(v => v.id === data.id ? data : v));
     } else {
-      const created = { ...data, id: uid() };
-      setItems([created, ...items]);
-      setActiveId(created.id);
+      guardado = { ...data, id: uid() };
+      novaLista = [guardado, ...items];
+      setItems(prev => [guardado, ...prev]);
     }
-    setFolderFilter(destino || null);
+    setActiveId(guardado.id);
+    if (modoCanal) irPara(guardado, novaLista);
+    else setFolderFilter(destino || null);
     setModal(null);
   };
   const remove = (id) => removeWithUndo(
     items, setItems, id, itemLabel(items.find(v => v.id === id), 'Ficheiro'),
     () => { if (activeId === id) setActiveId(null); },
   );
-  const selectItem = (id) => { setActiveId(id); };
+  const selectItem = (id) => {
+    if (sequencia && !sequencia.includes(id)) setSequencia(null);
+    if (modoCanal && termo) { irPara(items.find(v => v.id === id)); return; }
+    setActiveId(id);
+  };
 
   // As pastas não são registos próprios: são deduzidas do campo "pasta" dos
   // itens. Consequência a ter em conta — uma pasta existe enquanto tiver
@@ -30513,31 +30603,146 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Pesquisa por título, subtítulo, nome do ficheiro ou pasta. É o que
   // torna a lista longa navegável sem a esconder atrás de acordeões.
   const [busca, setBusca] = useState('');
-  const folders = Array.from(new Set(items.map(v => cleanFolder(v.pasta)).filter(Boolean)))
+  const termo = busca.trim().toLowerCase();
+
+  /* CATÁLOGO (Canal) — ver o comentário de `categoriaDoItem`. Tudo é
+     derivado a cada desenho, a partir dos próprios itens: não há
+     registos de "jogo" ou "grupo" guardados à parte. */
+  const byIdItens = {};
+  items.forEach(v => { byIdItens[v.id] = v; });
+  const matchesById = {};
+  (matches || []).forEach(m => { matchesById[m.id] = m; });
+  const fichasById = {};
+  (adversarios || []).forEach(f => { fichasById[f.id] = f; });
+  const catDe = (v) => categoriaDoItem(v, byIdItens);
+  const chaveAdvDe = (v) => {
+    const f = fichaIdDoItem(v, byIdItens);
+    return f && fichasById[f] ? `f${f}` : 'sem';
+  };
+  const itensTema = modoCanal ? items.filter(v => catDe(v) === 'tema') : items;
+  const gruposJogo = [];
+  const gruposAdv = [];
+  if (modoCanal) {
+    const porJogo = {};
+    const porAdv = {};
+    items.forEach(v => {
+      const c = catDe(v);
+      if (c === 'jogo') { const k = chaveJogoDoItem(v, byIdItens, matchesById); (porJogo[k] = porJogo[k] || []).push(v); }
+      else if (c === 'adversario') { const k = chaveAdvDe(v); (porAdv[k] = porAdv[k] || []).push(v); }
+    });
+    Object.entries(porJogo).forEach(([key, lista]) => {
+      const n = key[0] === 'j' ? Number(key.slice(1)) : null;
+      const comJogo = lista.find(v => v.jogoId && matchesById[v.jogoId]);
+      let match = comJogo ? matchesById[comJogo.jogoId] : null;
+      if (!match && n != null) {
+        const cands = (matches || []).filter(m => numDoJogo(m) === n && !isFriendlyMatch(m));
+        if (cands.length === 1) match = cands[0];
+      }
+      const itens = ordenarDoJogo(lista);
+      const completos = itens.filter(v => !ehClipe(v));
+      gruposJogo.push({
+        key, n, match, itens,
+        completos: completos.length, cortes: itens.length - completos.length,
+        titulo: n != null ? `${n}ª Jornada` : (match ? fmtDate(match.date) : 'Sem jornada'),
+        adversario: match
+          ? `${match.opponent || 'Adversário'}${match.atHome === undefined ? '' : (match.atHome ? ' (C)' : ' (F)')}`
+          : ((completos[0] && completos[0].title) || (itens[0] && (itens[0].clipOrigemTitulo || itens[0].title)) || ''),
+        resultado: match && match.result ? match.result : '',
+      });
+    });
+    gruposJogo.sort((x, y) => {
+      if (x.key === 'sem') return 1;
+      if (y.key === 'sem') return -1;
+      if (x.n != null && y.n != null) return y.n - x.n;
+      if (x.n != null) return -1;
+      if (y.n != null) return 1;
+      return String((y.match && y.match.date) || '').localeCompare(String((x.match && x.match.date) || ''));
+    });
+    Object.entries(porAdv).forEach(([key, lista]) => {
+      const ficha = key === 'sem' ? null : fichasById[key.slice(1)];
+      const itens = ordenarDoJogo(lista);
+      const completos = itens.filter(v => !ehClipe(v));
+      gruposAdv.push({
+        key, ficha, itens,
+        completos: completos.length, cortesCanal: itens.length - completos.length,
+        cortesNaFicha: ficha ? (todosVideos || []).filter(v => v.adversarioId === ficha.id).length : 0,
+        titulo: ficha ? (ficha.nome || 'Adversário') : 'Por associar a uma ficha',
+      });
+    });
+    gruposAdv.sort((x, y) => (x.key === 'sem' ? -1 : y.key === 'sem' ? 1 : x.titulo.localeCompare(y.titulo, 'pt')));
+  }
+  const gruposDaSecao = secao === 'jogos' ? gruposJogo : gruposAdv;
+  const grupoAtual = modoCanal && secao !== 'temas' ? (gruposDaSecao.find(g => g.key === grupo) || null) : null;
+
+  const folders = Array.from(new Set(itensTema.map(v => cleanFolder(v.pasta)).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b, 'pt'));
   const countIn = (name) => (name === NO_FOLDER
-    ? items.filter(v => !cleanFolder(v.pasta)).length
-    : items.filter(v => cleanFolder(v.pasta) === name).length);
-  const naPastaBase = folderFilter === null
-    ? items
-    : (folderFilter === NO_FOLDER
-      ? items.filter(v => !cleanFolder(v.pasta))
-      : items.filter(v => cleanFolder(v.pasta) === folderFilter));
+    ? itensTema.filter(v => !cleanFolder(v.pasta)).length
+    : itensTema.filter(v => cleanFolder(v.pasta) === name).length);
+  // No Canal não há "Tudo": nos Temas há sempre uma pasta aberta — a
+  // escolhida, ou a primeira.
+  const pastaTema = !modoCanal ? folderFilter
+    : ((folderFilter && (folderFilter === NO_FOLDER ? countIn(NO_FOLDER) > 0 : folders.includes(folderFilter)))
+      ? folderFilter
+      : (folders[0] || (countIn(NO_FOLDER) > 0 ? NO_FOLDER : null)));
+  const filtroPasta = (lista, pasta) => (pasta === null
+    ? lista
+    : (pasta === NO_FOLDER
+      ? lista.filter(v => !cleanFolder(v.pasta))
+      : lista.filter(v => cleanFolder(v.pasta) === pasta)));
+  let naPastaBase;
+  if (!modoCanal) naPastaBase = filtroPasta(items, folderFilter);
+  else if (termo) naPastaBase = items; // a pesquisa procura no Canal todo
+  else if (secao === 'temas') naPastaBase = filtroPasta(itensTema, pastaTema);
+  else naPastaBase = grupoAtual ? grupoAtual.itens : [];
   // `items` chega sempre por ordem de criação (mais antigo primeiro —
   // é como a leitura vem da base de dados). No Canal geral faz mais
   // sentido ver o mais recente primeiro; inverte-se só aqui, na leitura
   // — a escrita (criar, mover, apagar) continua a usar `items` tal
   // como veio, por isso não há risco de baralhar a ordem gravada.
-  const naPasta = recentesPrimeiro ? [...naPastaBase].reverse() : naPastaBase;
-  const termo = busca.trim().toLowerCase();
+  // Dentro de um jogo mantém-se a ordem do jogo (completos, depois cortes).
+  const naPasta = recentesPrimeiro && !grupoAtual ? [...naPastaBase].reverse() : naPastaBase;
   /* Duas formas de percorrer a mesma pasta: o visualizador (um ficheiro
      de cada vez, com controlos) ou a coluna contínua, com tudo aberto,
      para rever material a rolar. */
   const [modoFeed, setModoFeed] = useState(false);
   const visibleItems = termo
-    ? naPasta.filter(v => [v.title, v.jornada, v.fileName, cleanFolder(v.pasta)]
+    ? naPasta.filter(v => [v.title, v.jornada, v.fileName, cleanFolder(v.pasta), v.clipOrigemTitulo]
         .some(campo => String(campo || '').toLowerCase().includes(termo)))
     : naPasta;
+
+  // Onde um item vive, em palavras — para os resultados da pesquisa.
+  const lugarDoItem = (v) => {
+    const c = catDe(v);
+    if (c === 'jogo') {
+      const g = gruposJogo.find(x => x.itens.includes(v));
+      return g ? `Jogos · ${g.titulo}${g.adversario ? ` · ${g.adversario}` : ''}` : 'Jogos';
+    }
+    if (c === 'adversario') {
+      const g = gruposAdv.find(x => x.itens.includes(v));
+      return g ? `Adversários · ${g.titulo}` : 'Adversários';
+    }
+    return `Temas · ${cleanFolder(v.pasta) || 'Sem pasta'}`;
+  };
+
+  // Abre o sítio onde o item vive (secção + jogo/adversário/pasta) e
+  // seleciona-o. `lista` permite usar a lista acabada de gravar, antes de
+  // o estado chegar atualizado.
+  const irPara = (v, lista) => {
+    if (!v) return;
+    if (!modoCanal) { setFolderFilter(cleanFolder(v.pasta) || null); setActiveId(v.id); return; }
+    const b = {};
+    (lista || items).forEach(x => { b[x.id] = x; });
+    const c = categoriaDoItem(v, b);
+    setBusca('');
+    setModoFeed(false);
+    if (c === 'jogo') { setSecao('jogos'); setGrupo(chaveJogoDoItem(v, b, matchesById)); }
+    else if (c === 'adversario') {
+      const f = fichaIdDoItem(v, b);
+      setSecao('adversarios'); setGrupo(f && fichasById[f] ? `f${f}` : 'sem');
+    } else { setSecao('temas'); setFolderFilter(cleanFolder(v.pasta) || NO_FOLDER); }
+    setActiveId(v.id);
+  };
 
   // Mudar o nome de uma pasta = reescrever o campo em todos os seus itens.
   const applyRename = () => {
@@ -30621,7 +30826,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (anterior == null) return; // primeira leitura deste corte — sem nada para comparar ainda
 
     const aTocarNormalmente = Math.abs(liveTime - anterior) < 2;
-    if (aTocarNormalmente && liveTime >= clipFimEf) {
+    // Em "Ver cortes em seguida", o fim de um corte passa ao seguinte
+    // em vez de o repetir; no último, volta ao início dele e pára.
+    if (aTocarNormalmente && liveTime >= clipFimEf && sequencia && sequencia.includes(active.id)) {
+      const i = sequencia.indexOf(active.id);
+      if (i < sequencia.length - 1) {
+        setActiveId(sequencia[i + 1]);
+      } else {
+        enviarComandoYoutube('pauseVideo');
+        enviarComandoYoutube('seekTo', [clipIni, true]);
+        setSequencia(null);
+      }
+      tempoAnteriorClipeRef.current = null;
+    } else if (aTocarNormalmente && liveTime >= clipFimEf) {
       enviarComandoYoutube('seekTo', [clipIni, true]);
       enviarComandoYoutube('playVideo');
       tempoAnteriorClipeRef.current = clipIni;
@@ -30686,14 +30903,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               {(v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
               {/* Só se mostra a pasta quando se está a ver tudo —
                   dentro de uma pasta seria informação repetida. */}
-              {folderFilter === null && !semCatalogo && cleanFolder(v.pasta) && (
-                <div style={{ fontSize: 10.5, color: T.warn, marginTop: 2 }}>{cleanFolder(v.pasta)}</div>
+              {!semCatalogo && (modoCanal ? !!termo : (folderFilter === null && !!cleanFolder(v.pasta))) && (
+                <div style={{ fontSize: 10.5, color: T.warn, marginTop: 2 }}>{modoCanal ? lugarDoItem(v) : cleanFolder(v.pasta)}</div>
               )}
             </span>
           </button>
           {/* Mover para outra pasta sem abrir a janela de edição. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(isNarrow ? { justifyContent: 'flex-end' } : {}) }}>
-          {!semCatalogo && (
+          {!semCatalogo && modoCanal && catDe(v) !== 'tema' && (
+            // Jogos e adversários não vivem em pastas — mantém-se o lugar
+            // do seletor, para os ícones continuarem alinhados em coluna.
+            <span style={isNarrow ? { flex: 1 } : { width: 150, flexShrink: 0 }} />
+          )}
+          {!semCatalogo && (!modoCanal || catDe(v) === 'tema') && (
           <select
             value={cleanFolder(v.pasta)}
             onChange={e => moveItem(v.id, e.target.value)}
@@ -30757,6 +30979,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setLiveTime(0);
     setYtATocar(false);
     setArrastoClipe(null);
+    tempoAnteriorClipeRef.current = null;
   }, [activeId]);
 
   const marcarInicio = () => setClipMarcas(prev => ({ ...prev, inicio: currentTimeRef.current }));
@@ -30780,10 +31003,72 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       clipOrigemId: active.clipOrigemId || active.id,
       clipOrigemTitulo: active.clipOrigemTitulo || active.title || '',
     };
-    setItems(prev => [novo, ...prev]);
-    setActiveId(novo.id);
-    setFolderFilter('Cortes');
+    if (!modoCanal) {
+      setItems(prev => [novo, ...prev]);
+      setActiveId(novo.id);
+      setFolderFilter('Cortes');
+      sairDoModoClipe();
+      return;
+    }
+
+    /* NO CANAL, o corte fica onde o vídeo de origem está:
+       - jogo nosso  → no mesmo jogo (não numa pasta "Cortes" gigante);
+       - tema        → na mesma pasta do vídeo;
+       - adversário  → vai para a FICHA do adversário (Scouting). Se o
+         vídeo ainda não tem ficha associada, pede-se primeiro. */
+    const cat = catDe(active);
+    if (cat === 'adversario') {
+      const fichaId = fichaIdDoItem(active, byIdItens);
+      const ficha = fichaId && fichasById[fichaId];
+      if (ficha) { gravarCorteNaFicha(novo, ficha, null); sairDoModoClipe(); }
+      else setPedirFicha({ corte: novo, raizId: novo.clipOrigemId });
+      return;
+    }
+    const corte = cat === 'jogo'
+      ? { ...novo, categoria: 'jogo', pasta: '', jogoId: active.jogoId || (byIdItens[novo.clipOrigemId] || {}).jogoId || null }
+      : { ...novo, categoria: 'tema', pasta: cleanFolder(active.pasta) };
+    setItems(prev => [corte, ...prev]);
+    setActiveId(corte.id);
+    if (cat === 'tema') setFolderFilter(cleanFolder(active.pasta) || NO_FOLDER);
     sairDoModoClipe();
+  };
+
+  // Grava o corte na ficha do adversário: leva `adversarioId`, por isso
+  // sai do Canal e aparece nos vídeos da ficha (ver `useSubColecao`).
+  // `raizId` (opcional) é o vídeo completo que passa a ficar associado a
+  // essa ficha — daí em diante os cortes dele vão para lá sozinhos.
+  const gravarCorteNaFicha = (corte, ficha, raizId) => {
+    const naFicha = { ...corte, pasta: '', categoria: undefined, adversarioId: ficha.id };
+    setItems(prev => [
+      naFicha,
+      ...prev.map(v => (raizId && v.id === raizId ? { ...v, categoria: 'adversario', adversarioFichaId: ficha.id } : v)),
+    ]);
+    // O corte já não está na lista do Canal (vive na ficha) — anular tem
+    // de o tirar da coleção completa de vídeos.
+    offerUndo(`Clipe gravado na ficha do adversário (${ficha.nome || 'Adversário'}).`, () => {
+      if (setTodosVideos) setTodosVideos(prev => prev.filter(v => v.id !== naFicha.id));
+    });
+  };
+
+  // Resposta da janela "Ficha do adversário": ficha escolhida ou criada.
+  const confirmarFicha = ({ fichaExistenteId, nova }) => {
+    if (!pedirFicha) return;
+    let ficha = fichaExistenteId ? fichasById[fichaExistenteId] : null;
+    if (!ficha && nova) {
+      ficha = {
+        id: uid(), nome: nova.nome.trim(), escalao: (nova.escalao || '').trim(), prova: (nova.prova || '').trim(),
+        pontosFortes: '', pontosFracos: '', notas: '',
+        jogadoresChaveIds: [], quadroTatica: TATICA_OMISSAO, quadroOverrides: {}, taticas: [],
+      };
+      if (setAdversarios) setAdversarios(prev => [...(prev || []), ficha]);
+    }
+    if (!ficha) return;
+    gravarCorteNaFicha(pedirFicha.corte, ficha, pedirFicha.raizId);
+    setPedirFicha(null);
+    sairDoModoClipe();
+    // O vídeo completo mudou de grupo (de "por associar" para esta
+    // ficha) — acompanha-o.
+    setGrupo(`f${ficha.id}`);
   };
 
   // Painel "Criar clipe" — o mesmo em modo normal (cartão por baixo do
@@ -30829,6 +31114,202 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     </div>
   );
 
+  /* ---------- CANAL: secções, cartões e caminho ---------- */
+  const abrirSecao = (id) => { setSecao(id); setGrupo(null); setBusca(''); setSequencia(null); setModoFeed(false); };
+  const abrirGrupo = (key) => {
+    setGrupo(key); setSequencia(null); setModoFeed(false);
+    const g = gruposDaSecao.find(x => x.key === key);
+    if (g && g.itens[0]) setActiveId(g.itens[0].id);
+  };
+  const cortesDoGrupo = grupoAtual ? grupoAtual.itens.filter(v => ehClipe(v) && v.youtubeId) : [];
+  const iniciarSequencia = () => {
+    if (!cortesDoGrupo.length) return;
+    const ids = cortesDoGrupo.map(v => v.id);
+    setSequencia(ids);
+    setActiveId(ids[0]);
+  };
+  const posSeq = sequencia && active ? sequencia.indexOf(active.id) : -1;
+
+  const pill = (on) => ({
+    display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, whiteSpace: 'nowrap',
+    padding: '7px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', ...body,
+    background: on ? '#B5393F' : 'transparent',
+    color: on ? TEXT_ON_ACCENT : T.muted,
+    border: `1px solid ${on ? '#B5393F' : T.line}`,
+  });
+
+  const renderSecoesCanal = () => (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
+      flexDirection: isNarrow ? 'column' : 'row', ...(isNarrow ? { alignItems: 'stretch' } : {}),
+    }}>
+      <div style={{
+        display: 'flex', gap: 8, alignItems: 'center',
+        ...(isNarrow
+          ? { overflowX: 'auto', margin: '0 -14px', padding: '0 14px 2px', scrollbarWidth: 'none' }
+          : {}),
+      }}>
+        {SECOES_CANAL.map(s => {
+          const on = secao === s.id && !termo;
+          const n = s.id === 'jogos' ? gruposJogo.length : (s.id === 'adversarios' ? gruposAdv.length : itensTema.length);
+          return (
+            <button key={s.id} onClick={() => abrirSecao(s.id)} style={pill(on)}>
+              <s.Icon size={14} /> {s.label}
+              <span style={{ ...mono, fontSize: 11.5, opacity: 0.75 }}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+      {/* A pesquisa fica aqui (e não na coluna da lista) para ser sempre a
+          mesma caixa — ao escrever, a vista troca de cartões para
+          resultados sem a caixa perder o foco. Procura no Canal todo. */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, maxWidth: isNarrow ? 'none' : 420, marginLeft: isNarrow ? 0 : 'auto' }}>
+        <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
+        <input
+          value={busca}
+          onChange={e => setBusca(e.target.value)}
+          placeholder="Procurar em todo o Canal..."
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '8px 30px 8px 30px',
+            background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+            color: T.cream, fontSize: 12.5, outline: 'none', ...body,
+          }}
+        />
+        {busca && (
+          <button
+            onClick={() => setBusca('')} title="Limpar pesquisa"
+            style={{ position: 'absolute', right: 8, background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', padding: 0 }}
+          ><X size={14} /></button>
+        )}
+      </div>
+    </div>
+  );
+
+  const miniatura = (g) => {
+    const comImagem = g.itens.find(v => !ehClipe(v) && v.youtubeId) || g.itens.find(v => v.youtubeId);
+    return comImagem ? (
+      <img src={`https://img.youtube.com/vi/${comImagem.youtubeId}/mqdefault.jpg`} alt="" style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }} />
+    ) : (
+      <div style={{ width: '100%', aspectRatio: '16 / 9', background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Play size={22} color={T.mutedDim} />
+      </div>
+    );
+  };
+
+  const renderCartoesCanal = () => {
+    const eJogos = secao === 'jogos';
+    const grupos = gruposDaSecao;
+    const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+    return (
+      <div>
+        {!eJogos && (
+          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 14, lineHeight: 1.5 }}>
+            Jogos completos de adversários, para fazer cortes. Cada corte criado aqui fica na
+            ficha do adversário (Scouting › Adversários), não no Canal.
+          </div>
+        )}
+        {grupos.length === 0 ? (
+          <EmptyState
+            text={eJogos
+              ? 'Ainda sem jogos. Ao adicionar um vídeo, escolhe "Jogo da equipa" e indica a jornada.'
+              : 'Ainda sem jogos de adversários. Ao adicionar um vídeo, escolhe "Jogo de adversário".'}
+            action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar vídeo</Btn>}
+          />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isNarrow ? 150 : 220}px, 1fr))`, gap: 12 }}>
+            {grupos.map(g => (
+              <button
+                key={g.key}
+                onClick={() => abrirGrupo(g.key)}
+                style={{
+                  textAlign: 'left', padding: 0, cursor: 'pointer', overflow: 'hidden', ...body,
+                  background: T.surface, border: `1px solid ${g.key === 'sem' ? T.warn : T.line}`, borderRadius: 10,
+                  display: 'flex', flexDirection: 'column',
+                }}
+              >
+                {miniatura(g)}
+                <div style={{ padding: '9px 11px 11px', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                  {eJogos ? (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <span style={{ fontSize: 11, color: T.warn, ...mono }}>{g.titulo}</span>
+                        {g.resultado && <span style={{ fontSize: 11.5, color: T.cream, ...mono }}>{g.resultado}</span>}
+                      </div>
+                      <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.adversario || 'Jogo'}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: T.mutedDim }}>
+                        {plural(g.completos, 'vídeo', 'vídeos')} · {plural(g.cortes, 'corte', 'cortes')}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 13.5, color: g.ficha ? T.cream : T.warn, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.titulo}
+                      </div>
+                      {g.ficha && (g.ficha.escalao || g.ficha.prova) && (
+                        <div style={{ fontSize: 11, color: T.mutedDim }}>{[g.ficha.escalao, g.ficha.prova].filter(Boolean).join(' · ')}</div>
+                      )}
+                      <div style={{ fontSize: 11.5, color: T.mutedDim }}>
+                        {plural(g.completos, 'jogo', 'jogos')}
+                        {g.ficha ? ` · ${plural(g.cortesNaFicha, 'corte', 'cortes')} na ficha` : ' · ficha escolhe-se no 1.º corte'}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderMigalhas = () => {
+    const g = grupoAtual;
+    const eJogos = secao === 'jogos';
+    const titulo = eJogos
+      ? [g.titulo, g.adversario, g.resultado].filter(Boolean).join(' · ')
+      : g.titulo;
+    const btnIcone = {
+      background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream,
+      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 8px',
+    };
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => { setGrupo(null); setSequencia(null); }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: `1px solid ${T.line}`,
+              borderRadius: 8, color: T.cream, padding: '6px 11px', cursor: 'pointer', ...body, fontSize: 12.5,
+            }}
+          ><ChevronLeft size={14} /> {eJogos ? 'Jogos' : 'Adversários'}</button>
+          <div style={{ fontSize: 15, color: T.cream, fontWeight: 600, minWidth: 0, flex: 1 }}>{titulo}</div>
+          {eJogos && cortesDoGrupo.length > 0 && (
+            posSeq >= 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, color: T.warn, ...mono }}>Corte {posSeq + 1}/{sequencia.length}</span>
+                <button title="Corte anterior" disabled={posSeq === 0} onClick={() => setActiveId(sequencia[posSeq - 1])} style={{ ...btnIcone, opacity: posSeq === 0 ? 0.4 : 1 }}><SkipBack size={14} /></button>
+                <button title="Corte seguinte" disabled={posSeq === sequencia.length - 1} onClick={() => setActiveId(sequencia[posSeq + 1])} style={{ ...btnIcone, opacity: posSeq === sequencia.length - 1 ? 0.4 : 1 }}><SkipForward size={14} /></button>
+                <Btn variant="ghost" onClick={() => setSequencia(null)}><X size={14} /> Parar</Btn>
+              </div>
+            ) : (
+              <Btn variant="ghost" onClick={iniciarSequencia}><Play size={14} /> Ver cortes em seguida</Btn>
+            )
+          )}
+        </div>
+        {!eJogos && (
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 8 }}>
+            {g.ficha
+              ? `Os cortes destes jogos vão para a ficha de ${g.ficha.nome || 'este adversário'} (${g.cortesNaFicha} já lá ${g.cortesNaFicha === 1 ? 'está' : 'estão'}).`
+              : 'Estes vídeos ainda não têm ficha de adversário — ao gravar o primeiro corte, escolhes ou crias a ficha.'}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div>
       {!semBotaoTopo && (
@@ -30840,7 +31321,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           desliga isto: quando os vídeos já vivem à parte de um único
           adversário (ou outro contexto próprio), não há nada para
           catalogar — são sempre só os vídeos dele. */}
-      {!semCatalogo && items.length > 0 && (folders.length > 0 || countIn(NO_FOLDER) > 0) && (
+      {modoCanal && items.length > 0 && renderSecoesCanal()}
+
+      {!semCatalogo && items.length > 0 && (!modoCanal || (secao === 'temas' && !termo)) && (folders.length > 0 || countIn(NO_FOLDER) > 0) && (
         /* No telemóvel os separadores das pastas ficam numa faixa única que
            desliza na horizontal, em vez de se partirem em três linhas
            desalinhadas que empurravam o conteúdo todo para baixo. A faixa
@@ -30856,6 +31339,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               }
             : { flexWrap: 'wrap' }),
         }}>
+          {!modoCanal && (
           <button onClick={() => setFolderFilter(null)} style={{
             padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
             flexShrink: 0, whiteSpace: 'nowrap',
@@ -30863,9 +31347,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             color: folderFilter === null ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${folderFilter === null ? '#B5393F' : T.line}`,
           }}>Tudo ({items.length})</button>
+          )}
 
           {folders.map(name => {
-            const on = folderFilter === name;
+            const on = pastaTema === name;
             if (renaming === name) {
               return (
                 <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -30891,7 +31376,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 background: on ? '#B5393F' : 'transparent',
                 border: `1px solid ${on ? '#B5393F' : T.line}`,
               }}>
-                <button onClick={() => setFolderFilter(on ? null : name)} style={{
+                <button onClick={() => setFolderFilter(on && !modoCanal ? null : name)} style={{
                   background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, ...body,
                   color: on ? TEXT_ON_ACCENT : T.muted, padding: 0, whiteSpace: 'nowrap',
                 }}>{name} ({countIn(name)})</button>
@@ -30908,21 +31393,27 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           })}
 
           {countIn(NO_FOLDER) > 0 && folders.length > 0 && (
-            <button onClick={() => setFolderFilter(folderFilter === NO_FOLDER ? null : NO_FOLDER)} style={{
+            <button onClick={() => setFolderFilter(pastaTema === NO_FOLDER && !modoCanal ? null : NO_FOLDER)} style={{
               padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
               flexShrink: 0, whiteSpace: 'nowrap',
-              background: folderFilter === NO_FOLDER ? '#B5393F' : 'transparent',
-              color: folderFilter === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
-              border: `1px solid ${folderFilter === NO_FOLDER ? '#B5393F' : T.line}`,
+              background: pastaTema === NO_FOLDER ? '#B5393F' : 'transparent',
+              color: pastaTema === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${pastaTema === NO_FOLDER ? '#B5393F' : T.line}`,
             }}>Sem pasta ({countIn(NO_FOLDER)})</button>
           )}
         </div>
       )}
 
+      {modoCanal && !termo && grupoAtual && renderMigalhas()}
+
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={<Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
+      ) : modoCanal && !termo && secao !== 'temas' && !grupoAtual ? (
+        renderCartoesCanal()
       ) : visibleItems.length === 0 && !termo ? (
-        <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
+        modoCanal
+          ? <EmptyState text="Ainda sem vídeos em Temas." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar vídeo</Btn>} />
+          : <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
       ) : modoFeed ? (
         /* Largura de leitura, como numa rede social: em ecrã largo um vídeo
            a ocupar 1400 px não se vê melhor, vê-se pior — obriga a mover a
@@ -31007,7 +31498,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           // fs=0: sem o ecrã inteiro nativo do YouTube — o
                           // nosso (botão abaixo) mantém o Criar clipe e a
                           // barra do clipe à mão.
-                          src={youtubeEmbedSrc(active, 'enablejsapi=1&fs=0')}
+                          src={youtubeEmbedSrc(active, sequencia && sequencia.includes(active.id) ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0')}
                           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           referrerPolicy="strict-origin-when-cross-origin"
@@ -31239,7 +31730,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         <span>·</span>
                         {items.some(v => v.id === active.clipOrigemId) ? (
                           <button
-                            onClick={() => { setFolderFilter(null); setActiveId(active.clipOrigemId); }}
+                            onClick={() => irPara(items.find(v => v.id === active.clipOrigemId))}
                             style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', padding: 0, fontSize: 12.5, ...body }}
                           >{active.clipOrigemTitulo}</button>
                         ) : (
@@ -31256,7 +31747,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               muitos ficheiros, a página inteira ficava com metros de altura
               e o visualizador à esquerda saía do ecrã. */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-            {!semCatalogo && (
+            {!semCatalogo && !modoCanal && (
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, pointerEvents: 'none' }} />
               <input
@@ -31304,7 +31795,26 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   display: 'flex', flexDirection: 'column', gap: 8,
                   height: '62vh', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4, minWidth: 0,
                 }}>
-                  {visibleItems.map(renderRow)}
+                  {modoCanal && grupoAtual && !termo ? (() => {
+                    // Dentro de um jogo/adversário: "Jogo completo" e, por
+                    // baixo, os cortes — cada bloco com o seu título.
+                    const out = [];
+                    let fase = null;
+                    visibleItems.forEach(v => {
+                      const f = ehClipe(v) ? 'c' : 'j';
+                      if (f !== fase) {
+                        fase = f;
+                        const txt = f === 'j'
+                          ? (secao === 'jogos' ? 'Jogo completo' : 'Jogos completos')
+                          : (secao === 'jogos' ? `Cortes (${grupoAtual.cortes})` : `Cortes ainda no Canal (${grupoAtual.cortesCanal})`);
+                        out.push(
+                          <div key={`h-${f}`} style={{ fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: out.length ? '8px 0 0' : 0 }}>{txt}</div>
+                        );
+                      }
+                      out.push(renderRow(v));
+                    });
+                    return out;
+                  })() : visibleItems.map(renderRow)}
                 </div>
               </>
             )}
@@ -31312,15 +31822,37 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         </div>
       )}
 
+      {pedirFicha && (
+        <FichaAdversarioRapida
+          adversarios={adversarios}
+          video={byIdItens[pedirFicha.raizId]}
+          onClose={() => setPedirFicha(null)}
+          onConfirm={confirmarFicha}
+        />
+      )}
+
       {modal && (
         <MediaModal
           item={modal === 'new' ? null : modal}
           folders={folders}
           // Ao adicionar dentro de uma pasta aberta, já vem preenchida.
-          defaultFolder={folderFilter && folderFilter !== NO_FOLDER ? folderFilter : ''}
+          defaultFolder={(modoCanal ? pastaTema : folderFilter) && (modoCanal ? pastaTema : folderFilter) !== NO_FOLDER ? (modoCanal ? pastaTema : folderFilter) : ''}
           semCatalogo={semCatalogo}
           onClose={() => setModal(null)}
           onSave={save}
+          modoCanal={modoCanal}
+          matches={matches}
+          adversarios={adversarios}
+          // O que vem preenchido: num item existente, a categoria que ele
+          // tem (mesmo deduzida); num novo, o sítio onde se está.
+          iniciais={modal === 'new'
+            ? {
+                categoria: secao === 'jogos' ? 'jogo' : (secao === 'adversarios' ? 'adversario' : 'tema'),
+                jornada: secao === 'jogos' && grupoAtual && grupoAtual.n != null ? `${grupoAtual.n}ª Jornada` : '',
+                jogoId: secao === 'jogos' && grupoAtual && grupoAtual.match ? grupoAtual.match.id : '',
+                adversarioFichaId: secao === 'adversarios' && grupoAtual && grupoAtual.ficha ? grupoAtual.ficha.id : '',
+              }
+            : { categoria: catDe(modal), adversarioFichaId: modal.adversarioFichaId || '', jogoId: modal.jogoId || '' }}
         />
       )}
 
@@ -31463,7 +31995,67 @@ function driveOpenSrc(drive) {
     : `https://drive.google.com/file/d/${drive.id}/view`;
 }
 
-function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', semCatalogo }) {
+/* FICHA DO ADVERSÁRIO, PEDIDA A MEIO DE UM CORTE.
+
+   Um corte feito num jogo completo de um adversário vai para a ficha
+   desse adversário (Scouting › Adversários). Quando o vídeo ainda não
+   está associado a nenhuma, pergunta-se aqui: escolher uma ficha que já
+   existe, ou criar uma nova só com o essencial — o resto (pontos fortes,
+   jogadores-chave, dinâmicas) preenche-se depois na própria ficha. */
+function FichaAdversarioRapida({ adversarios, video, onClose, onConfirm }) {
+  const lista = [...(adversarios || [])].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt'));
+  const [modo, setModo] = useState(lista.length ? 'existente' : 'nova');
+  const [fichaId, setFichaId] = useState('');
+  const [f, setF] = useState({ nome: '', escalao: '', prova: '' });
+  const valido = modo === 'existente' ? !!fichaId : f.nome.trim().length > 0;
+  const tab = (on) => ({
+    flex: 1, padding: '8px 0', borderRadius: 8, cursor: 'pointer', fontSize: 13, ...body, color: T.cream,
+    border: `1px solid ${on ? T.gold : T.line}`, background: on ? `${T.crimson}33` : 'none',
+  });
+  const confirmar = () => {
+    if (!valido) return;
+    onConfirm(modo === 'existente' ? { fichaExistenteId: fichaId } : { nova: f });
+  };
+  return (
+    <Modal title="Ficha do adversário" onClose={onClose}>
+      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 14, lineHeight: 1.5 }}>
+        Os cortes de jogos de adversários ficam na ficha do adversário.
+        {video && video.title ? <> O vídeo <span style={{ color: T.cream }}>{video.title}</span> é de que adversário?</> : ' Este vídeo é de que adversário?'}
+        {' '}Daqui em diante, os cortes deste vídeo vão para lá automaticamente.
+      </div>
+      {lista.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <button onClick={() => setModo('existente')} style={tab(modo === 'existente')}>Ficha existente</button>
+          <button onClick={() => setModo('nova')} style={tab(modo === 'nova')}>Criar ficha nova</button>
+        </div>
+      )}
+      {modo === 'existente' ? (
+        <div style={{ marginBottom: 16 }}>
+          <Field label="Adversário">
+            <Select value={fichaId} onChange={e => setFichaId(e.target.value)}>
+              <option value="">— escolher —</option>
+              {lista.map(a => <option key={a.id} value={a.id}>{a.nome || '(sem nome)'}{a.escalao ? ` · ${a.escalao}` : ''}</option>)}
+            </Select>
+          </Field>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+          <Field label="Nome do adversário"><Input autoFocus value={f.nome} onChange={e => setF({ ...f, nome: e.target.value })} placeholder="Ex: Padroense FC" /></Field>
+          <div style={{ ...FIELD_GRID }}>
+            <Field label="Escalão (opcional)"><Input value={f.escalao} onChange={e => setF({ ...f, escalao: e.target.value })} placeholder="Ex: Sub-19" /></Field>
+            <Field label="Prova (opcional)"><Input value={f.prova} onChange={e => setF({ ...f, prova: e.target.value })} placeholder="Ex: Campeonato Nacional" /></Field>
+          </div>
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn disabled={!valido} onClick={confirmar}><Scissors size={14} /> Gravar corte na ficha</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', semCatalogo, modoCanal, matches, adversarios, iniciais }) {
   const initialSource = item
     ? (item.drive ? 'drive' : ((item.youtubeId || item.social) ? 'link' : 'file'))
     : 'link';
@@ -31474,7 +32066,36 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
         url: item.youtubeId ? `https://youtu.be/${item.youtubeId}` : (item.social ? socialEmbedSrc(item.social) : ''),
         driveUrl: item.drive ? driveOpenSrc(item.drive) : '',
       }
-    : { title: '', jornada: '', pasta: defaultFolder || '', url: '', driveUrl: '', kind: null, fileName: '', dataUrl: '' });
+    : { title: '', jornada: (iniciais && iniciais.jornada) || '', pasta: defaultFolder || '', url: '', driveUrl: '', kind: null, fileName: '', dataUrl: '' });
+  // CANAL — em que secção fica o vídeo (ver `categoriaDoItem`), e a que
+  // jogo/ficha pertence. Fora do Canal nada disto aparece nem é gravado.
+  const [categoria, setCategoria] = useState((iniciais && iniciais.categoria) || 'tema');
+  const [jogoId, setJogoId] = useState((iniciais && iniciais.jogoId) || '');
+  const [fichaId, setFichaId] = useState((iniciais && iniciais.adversarioFichaId) || '');
+  const jogosOrdenados = [...(matches || [])].sort((x, y) => String(y.date || '').localeCompare(String(x.date || '')));
+  const fichasOrdenadas = [...(adversarios || [])].sort((x, y) => String(x.nome || '').localeCompare(String(y.nome || ''), 'pt'));
+  const escolherJogo = (id) => {
+    setJogoId(id);
+    const m = (matches || []).find(x => x.id === id);
+    // A jornada é o que junta os vídeos do mesmo jogo — vem do próprio
+    // jogo quando se escolhe um.
+    if (m && m.jornada) {
+      const n = numDoJogo(m);
+      setF(prev => ({ ...prev, jornada: n != null ? `${n}ª Jornada` : String(m.jornada) }));
+    }
+  };
+  // Campos comuns a todas as gravações.
+  const comuns = () => {
+    const base = { title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta) };
+    if (!modoCanal) return base;
+    return {
+      ...base,
+      categoria,
+      pasta: categoria === 'tema' ? cleanFolder(f.pasta) : '',
+      jogoId: categoria === 'jogo' ? (jogoId || null) : null,
+      adversarioFichaId: categoria === 'adversario' ? (fichaId || null) : null,
+    };
+  };
   const [error, setError] = useState('');
   const [loadingFile, setLoadingFile] = useState(false);
 
@@ -31510,12 +32131,12 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
     if (source === 'link') {
       const ytId = parseYouTubeId(f.url);
       if (ytId) {
-        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null, drive: null });
+        onSave({ ...(item || {}), ...comuns(), youtubeId: ytId, social: null, kind: null, fileName: null, dataUrl: null, drive: null });
         return;
       }
       const social = detectSocialEmbed(f.url);
       if (social) {
-        onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), youtubeId: null, social, kind: null, fileName: null, dataUrl: null, drive: null });
+        onSave({ ...(item || {}), ...comuns(), youtubeId: null, social, kind: null, fileName: null, dataUrl: null, drive: null });
         return;
       }
       setError('Não consegui identificar o vídeo — confirma o link do YouTube, Instagram ou TikTok (link completo, não o link curto do TikTok).');
@@ -31526,12 +32147,12 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
         return;
       }
       onSave({
-        ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta),
+        ...(item || {}), ...comuns(),
         drive, kind: 'drive', youtubeId: null, social: null, fileName: null, dataUrl: null,
       });
     } else {
       if (!f.dataUrl || !f.kind) { setError('Carrega um ficheiro antes de guardar.'); return; }
-      onSave({ ...(item || {}), title: f.title, jornada: f.jornada, pasta: cleanFolder(f.pasta), kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null, social: null, drive: null });
+      onSave({ ...(item || {}), ...comuns(), kind: f.kind, fileName: f.fileName, dataUrl: f.dataUrl, youtubeId: null, social: null, drive: null });
     }
   };
 
@@ -31550,11 +32171,62 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
         <button onClick={() => { setSource('drive'); setError(''); }} style={tabBtnStyle('drive')}>Google Drive</button>
       </div>
 
+      {modoCanal && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6 }}>Onde fica no Canal</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[
+              { id: 'jogo', label: 'Jogo da equipa', Icon: Trophy },
+              { id: 'adversario', label: 'Jogo de adversário', Icon: Shield },
+              { id: 'tema', label: 'Outro (tema)', Icon: FolderOpen },
+            ].map(o => (
+              <button key={o.id} onClick={() => setCategoria(o.id)} style={{
+                flex: 1, minWidth: 130, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, ...body, color: T.cream,
+                border: `1px solid ${categoria === o.id ? T.gold : T.line}`,
+                background: categoria === o.id ? `${T.crimson}33` : 'none',
+              }}><o.Icon size={13} /> {o.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {modoCanal && categoria === 'jogo' && (
+        <div style={{ marginBottom: 12 }}>
+          <Field label="Jogo (opcional — liga ao módulo Jogos)">
+            <Select value={jogoId} onChange={e => escolherJogo(e.target.value)}>
+              <option value="">— sem ligação —</option>
+              {jogosOrdenados.map(m => (
+                <option key={m.id} value={m.id}>
+                  {[m.jornada && (numDoJogo(m) != null ? `J${numDoJogo(m)}` : m.jornada), `vs ${m.opponent || 'Adversário'}`, m.date && fmtDate(m.date)].filter(Boolean).join(' · ')}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      )}
+      {modoCanal && categoria === 'adversario' && (
+        <div style={{ marginBottom: 12 }}>
+          <Field label="Ficha do adversário">
+            <Select value={fichaId} onChange={e => setFichaId(e.target.value)}>
+              <option value="">— escolher ao criar o primeiro corte —</option>
+              {fichasOrdenadas.map(a => <option key={a.id} value={a.id}>{a.nome || '(sem nome)'}{a.escalao ? ` · ${a.escalao}` : ''}</option>)}
+            </Select>
+          </Field>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6 }}>
+            Os cortes deste vídeo vão para a ficha do adversário, em Scouting › Adversários.
+          </div>
+        </div>
+      )}
       <div style={{ marginBottom: 12 }}>
         <Field label="Título"><Input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="Ex: Jornada 12 vs FC Foz" /></Field>
       </div>
       <div style={{ marginBottom: 12 }}>
-        <Field label="Descrição / contexto (opcional)"><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="Ex: Jornada 12 · Campeonato" /></Field>
+        <Field label={modoCanal && categoria === 'jogo' ? 'Jornada' : 'Descrição / contexto (opcional)'}><Input value={f.jornada} onChange={e => setF({ ...f, jornada: e.target.value })} placeholder="Ex: Jornada 12 · Campeonato" /></Field>
+        {modoCanal && categoria === 'jogo' && (
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6 }}>
+            É pela jornada que as partes do mesmo jogo e os seus cortes ficam juntos (ex.: "2ª Jornada").
+          </div>
+        )}
       </div>
       {/* PASTA — escreve-se o nome à mão (criando uma pasta nova) ou
           escolhe-se uma das que já existem na lista sugerida. Deixar em
@@ -31564,7 +32236,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
           desenha mas não abre de forma fiável no telemóvel. `semCatalogo`
           esconde tudo isto — não há pastas para escolher quando os vídeos
           já vivem à parte de um único adversário. */}
-      {!semCatalogo && (
+      {!semCatalogo && (!modoCanal || categoria === 'tema') && (
       <div style={{ marginBottom: 14 }}>
         <div style={{ ...FIELD_GRID }}>
           <Field label="Pasta existente">
