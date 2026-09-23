@@ -3466,6 +3466,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 addLabel="Adicionar vídeo" semBotaoTopo recentesPrimeiro
                 modoCanal matches={matches} adversarios={adversarios} setAdversarios={setAdversarios} todosVideos={videos} setTodosVideos={setVideos}
                 equipasCompeticao={nomesEquipasCompeticao(standings)}
+                provaDeEquipa={(nome) => provaDaEquipa(nome, standings)}
+                adversariosProntos={!!adversariosReady && !!videosReady}
                 emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
               />
@@ -30304,11 +30306,51 @@ function equipasDoItem(v, byId, fichasById, prof = 0) {
 }
 // Ficha do adversário que corresponde a uma equipa da competição — pelo
 // nome, ou pela equipa a que a ficha foi associada à mão.
+//
+// Os nomes raramente vêm iguais nos dois sítios ("Padroense" na ficha,
+// "Padroense FC" na competição; "Paços Ferreira" / "FC Paços de
+// Ferreira"). Por isso, depois da comparação exata, compara-se o nome
+// "limpo" — sem siglas de clube (FC, SC, UD, USC…), escalões (U19,
+// Sub-19) e palavras de ligação — e, por fim, um nome contido no outro,
+// mas só quando há UMA ficha candidata (nunca se adivinha entre duas).
+const PALAVRAS_CLUBE = new Set([
+  'fc', 'sc', 'cf', 'ud', 'usc', 'ad', 'gd', 'cd', 'sad', 'ac', 'cfc', 'sl', 'sp', 'ca', 'ss', 'as', 'ug', 'ard', 'gdr', 'adr',
+  'clube', 'club', 'futebol', 'football', 'sport', 'desportivo', 'desportiva', 'associacao', 'uniao', 'grupo',
+  'de', 'da', 'do', 'das', 'dos', 'e', 'juniores', 'junior', 'formacao', 'sub',
+]);
+function chaveNomeEquipa(nome) {
+  return semAcentos(nome)
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .split(/\s+/)
+    .filter(p => p && !PALAVRAS_CLUBE.has(p) && !/^u\d{1,2}$/.test(p) && !/^\d{1,2}$/.test(p))
+    .join(' ');
+}
 function fichaDaEquipa(nome, adversarios) {
+  const lista = adversarios || [];
   const k = semAcentos(nome);
   if (!k) return null;
-  return (adversarios || []).find(a => semAcentos(a.equipaCompeticao) === k)
-    || (adversarios || []).find(a => semAcentos(a.nome) === k) || null;
+  const exata = lista.find(a => semAcentos(a.equipaCompeticao) === k) || lista.find(a => semAcentos(a.nome) === k);
+  if (exata) return exata;
+  const c = chaveNomeEquipa(nome);
+  if (!c) return null;
+  const limpas = lista.filter(a => chaveNomeEquipa(a.nome) === c || (a.equipaCompeticao && chaveNomeEquipa(a.equipaCompeticao) === c));
+  if (limpas.length === 1) return limpas[0];
+  if (limpas.length > 1) return null;
+  if (c.length < 4) return null;
+  const contidas = lista.filter(a => {
+    const ca = chaveNomeEquipa(a.nome);
+    return ca.length >= 4 && (ca.includes(c) || c.includes(ca));
+  });
+  return contidas.length === 1 ? contidas[0] : null;
+}
+// Competição (nome) em que a equipa está — vai para a "Prova" da ficha
+// criada automaticamente.
+function provaDaEquipa(nome, standings) {
+  const k = semAcentos(nome);
+  const { competitions } = normalizeStandings(standings);
+  const c = (competitions || []).find(cc =>
+    [...(cc.teamNames || []), ...((cc.teams || []).map(t => t && t.name))].some(n => semAcentos(n) === k));
+  return (c && c.name) || '';
 }
 // Todas as equipas das competições configuradas (Jogos › Competições e
 // jornadas) — é a lista de onde se escolhem as equipas de um jogo.
@@ -30339,7 +30381,7 @@ const SECOES_CANAL = [
   { id: 'temas', label: 'Temas', cat: 'tema', Icon: FolderOpen },
 ];
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos }, ref) {
   const [modal, setModal] = useState(null);
   React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
   // Pasta atualmente aberta: null = todas.
@@ -31046,6 +31088,59 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const marcarInicio = () => setClipMarcas(prev => ({ ...prev, inicio: currentTimeRef.current }));
   const marcarFim = () => setClipMarcas(prev => ({ ...prev, fim: currentTimeRef.current }));
 
+  /* FICHAS CRIADAS SOZINHAS — cada equipa escolhida num jogo de
+     adversário passa a ter ficha em Scouting › Adversários, sem perguntar.
+     Antes de criar, procura-se uma ficha que já exista com esse nome
+     (mesmo escrito de outra forma — ver `fichaDaEquipa`); se existir,
+     fica associada à equipa em vez de se criar outra.
+
+     Só corre com as fichas e os vídeos já carregados (`adversariosProntos`)
+     — com a lista ainda vazia, pareceria que nenhuma existe e criavam-se
+     duplicados. `fichasPedidasRef` evita criar a mesma duas vezes
+     enquanto a gravação anterior ainda não voltou. */
+  const fichasPedidasRef = React.useRef(new Set());
+  const assinaturaEquipas = modoCanal
+    ? items.filter(v => catDe(v) === 'adversario').flatMap(equipasDe).map(semAcentos).sort().join('|')
+    : '';
+  useEffect(() => {
+    if (!modoCanal || soLeitura || !setAdversarios || !adversariosProntos || !assinaturaEquipas) return;
+    const nomes = new Map();
+    items.filter(v => catDe(v) === 'adversario').forEach(v => equipasDe(v).forEach(n => {
+      if (!nomes.has(semAcentos(n))) nomes.set(semAcentos(n), n);
+    }));
+    const novas = [];
+    const associar = [];
+    nomes.forEach((nome, k) => {
+      if (fichasPedidasRef.current.has(k)) return;
+      const existente = fichaDaEquipa(nome, [...(adversarios || []), ...novas]);
+      if (existente) {
+        // Encontrada por nome parecido: grava a ligação, para a partir
+        // daqui ser uma correspondência exata.
+        if (!existente.equipaCompeticao && semAcentos(existente.nome) !== k && !novas.includes(existente)) {
+          associar.push({ id: existente.id, equipa: nome });
+        }
+        return;
+      }
+      fichasPedidasRef.current.add(k);
+      novas.push({
+        id: uid(), nome, equipaCompeticao: nome,
+        escalao: '', prova: provaDeEquipa ? provaDeEquipa(nome) : '',
+        pontosFortes: '', pontosFracos: '', notas: '',
+        jogadoresChaveIds: [], quadroTatica: TATICA_OMISSAO, quadroOverrides: {}, taticas: [],
+      });
+    });
+    if (!novas.length && !associar.length) return;
+    associar.forEach(x => fichasPedidasRef.current.add(semAcentos(x.equipa)));
+    setAdversarios(prev => [
+      ...(prev || []).map(a => {
+        const lig = associar.find(x => x.id === a.id);
+        return lig ? { ...a, equipaCompeticao: lig.equipa } : a;
+      }),
+      ...novas.filter(n => !fichaDaEquipa(n.nome, prev || [])),
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assinaturaEquipas, adversariosProntos, (adversarios || []).length]);
+
   // CORTE DE UM JOGO DE ADVERSÁRIO — as duas equipas do jogo, e sobre qual
   // delas é o corte (vai para a ficha dessa). Por omissão, a do cartão
   // que está aberto.
@@ -31183,7 +31278,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             );
           })}
           <span style={{ fontSize: 11.5, color: T.mutedDim }}>
-            {fichaDaEquipa(equipaCorteEf, adversarios) ? '→ vai para a ficha' : '→ pede-se a ficha ao gravar'}
+            {fichaDaEquipa(equipaCorteEf, adversarios)
+              ? `→ ficha de ${fichaDaEquipa(equipaCorteEf, adversarios).nome}`
+              : '→ a ficha é criada ao gravar'}
           </span>
         </div>
       )}
@@ -31350,7 +31447,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       </div>
                       {!soLeitura && g.key !== 'sem' && (
                         <div style={{ fontSize: 11, color: g.ficha ? T.mutedDim : T.warn }}>
-                          {g.ficha ? ([g.ficha.escalao, g.ficha.prova].filter(Boolean).join(' · ') || 'Com ficha') : 'Sem ficha ainda'}
+                          {g.ficha
+                            ? (semAcentos(g.ficha.nome) !== semAcentos(g.nome) ? `Ficha: ${g.ficha.nome}` : ([g.ficha.escalao, g.ficha.prova].filter(Boolean).join(' · ') || 'Com ficha'))
+                            : 'A criar ficha…'}
                         </div>
                       )}
                       <div style={{ fontSize: 11.5, color: T.mutedDim }}>
@@ -31367,6 +31466,22 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         )}
       </div>
     );
+  };
+
+  // Cortes antigos, feitos antes de os cortes irem para a ficha, que
+  // ainda estão no Canal: passam todos para a ficha da equipa do cartão.
+  const moverCortesParaFicha = (g) => {
+    if (!g || !g.ficha) return;
+    const cortes = g.itens.filter(ehClipe);
+    if (!cortes.length) return;
+    const orig = {};
+    cortes.forEach(v => { orig[v.id] = v; });
+    setItems(prev => prev.map(v => (orig[v.id]
+      ? { ...v, adversarioId: g.ficha.id, pasta: '', categoria: undefined, equipa: g.nome }
+      : v)));
+    offerUndo(`${cortes.length} ${cortes.length === 1 ? 'corte gravado' : 'cortes gravados'} na ficha do adversário (${g.ficha.nome}).`, () => {
+      if (setTodosVideos) setTodosVideos(prev => prev.map(v => orig[v.id] || v));
+    });
   };
 
   const renderMigalhas = () => {
@@ -31390,6 +31505,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             }}
           ><ChevronLeft size={14} /> {eJogos ? 'Jogos' : 'Adversários'}</button>
           <div style={{ fontSize: 15, color: T.cream, fontWeight: 600, minWidth: 0, flex: 1 }}>{titulo}</div>
+          {!eJogos && !soLeitura && g.ficha && g.cortesCanal > 0 && (
+            <Btn variant="ghost" onClick={() => moverCortesParaFicha(g)}>
+              <Scissors size={14} /> Mover {g.cortesCanal} {g.cortesCanal === 1 ? 'corte' : 'cortes'} para a ficha
+            </Btn>
+          )}
           {eJogos && cortesDoGrupo.length > 0 && (
             posSeq >= 0 ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -31409,7 +31529,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               ? 'Estes vídeos ainda não têm as equipas definidas — edita o vídeo (lápis) ou define-as ao gravar o primeiro corte.'
               : g.ficha
                 ? `Os cortes sobre ${g.nome} vão para a ficha dele (${g.cortesNaFicha} já lá ${g.cortesNaFicha === 1 ? 'está' : 'estão'}).`
-                : `${g.nome} ainda não tem ficha — cria-se ao gravar o primeiro corte sobre esta equipa.`}
+                : `A ficha de ${g.nome} está a ser criada em Scouting › Adversários.`}
           </div>
         )}
       </div>
@@ -32394,7 +32514,7 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
           </div>
           <div style={{ fontSize: 11.5, color: nomesEquipas.length ? T.mutedDim : T.warn, marginTop: 6 }}>
             {nomesEquipas.length
-              ? 'O vídeo aparece no cartão de cada equipa. Os cortes vão para a ficha da equipa escolhida ao gravar o corte (Scouting › Adversários).'
+              ? 'O vídeo aparece no cartão de cada equipa, e cada uma fica com ficha em Scouting › Adversários (criada sozinha, se ainda não existir). Os cortes vão para a ficha da equipa escolhida ao gravar o corte.'
               : 'Ainda não há equipas nas competições — configura-as em Jogos › Competições e jornadas para as escolheres de uma lista.'}
           </div>
         </div>
