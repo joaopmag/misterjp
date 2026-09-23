@@ -26203,10 +26203,10 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
   const [meusClipes, setMeusClipes] = useState([]);
   // Confirmação depois de gravar um clipe. O Portal não tem a barra de
   // avisos do staff (`UndoBar`), por isso fica aqui.
-  const [avisoClipe, setAvisoClipe] = useState('');
+  const [avisoClipe, setAvisoClipe] = useState(null); // { texto, erro }
   useEffect(() => {
     if (!avisoClipe) return undefined;
-    const t = setTimeout(() => setAvisoClipe(''), 5000);
+    const t = setTimeout(() => setAvisoClipe(null), 5000);
     return () => clearTimeout(t);
   }, [avisoClipe]);
 
@@ -26264,7 +26264,33 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
       throw new Error(ERROS_CLIPE_ATLETA[resposta && resposta.erro] || 'O clipe não ficou gravado. Tenta outra vez.');
     }
     if (resposta.clipe) setMeusClipes(prev => [...prev, clipeAtletaParaCanal(resposta.clipe)]);
-    setAvisoClipe(`Clipe "${titulo}" gravado. Fica na lista do jogo e o treinador já o pode ver.`);
+    setAvisoClipe({ texto: `Clipe "${titulo}" gravado. Fica na lista do jogo e o treinador já o pode ver.` });
+  };
+
+  // Só apaga clipes do próprio jogador: o servidor volta a confirmar
+  // que o clipe é dele antes de apagar.
+  const apagarClipeAtleta = async (clipeId) => {
+    let resposta;
+    try {
+      const { data, error } = await supabase.rpc('checkin_clipe_apagar', { p_code: code, p_team: teamId, p_clipe_id: clipeId });
+      if (error) throw error;
+      resposta = lerJson(data);
+    } catch (e) {
+      setAvisoClipe({ texto: 'Não foi possível ligar. Verifica a internet e tenta outra vez.', erro: true });
+      throw e;
+    }
+    if (!resposta || !resposta.ok) {
+      // Já não existe (apagado pelo treinador, por exemplo): sai da lista na mesma.
+      if (resposta && resposta.erro === 'clipe_invalido') {
+        setMeusClipes(prev => prev.filter(c => c.id !== clipeId));
+        setAvisoClipe({ texto: 'Este clipe já não existia.' });
+        return;
+      }
+      setAvisoClipe({ texto: 'O clipe não foi apagado. Tenta outra vez.', erro: true });
+      throw new Error('recusado');
+    }
+    setMeusClipes(prev => prev.filter(c => c.id !== clipeId));
+    setAvisoClipe({ texto: 'Clipe apagado.' });
   };
 
   return (
@@ -26296,8 +26322,8 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
         <div role="status" style={{
           position: 'fixed', left: '50%', bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))', transform: 'translateX(-50%)',
           zIndex: 3000, maxWidth: 'min(520px, 92vw)', padding: '10px 14px', borderRadius: 8, fontSize: 13, color: T.cream,
-          background: T.surface, border: `1px solid ${T.good}`, boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
-        }}>{avisoClipe}</div>
+          background: T.surface, border: `1px solid ${avisoClipe.erro ? T.bad : T.good}`, boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+        }}>{avisoClipe.texto}</div>
       )}
 
       {estado === 'pronto' && (
@@ -26309,6 +26335,7 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
           modoCanal
           soLeitura
           criarClipeAtleta={criarClipeAtleta}
+          apagarClipeAtleta={apagarClipeAtleta}
           emptyText="Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver."
         />
       )}
@@ -30473,7 +30500,7 @@ const SECOES_CANAL = [
   { id: 'temas', label: 'Temas', cat: 'tema', Icon: FolderOpen },
 ];
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta }, ref) {
   const [modal, setModal] = useState(null);
   React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
   // Pasta atualmente aberta: null = todas.
@@ -30515,6 +30542,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [notaClipe, setNotaClipe] = useState('');
   const [aGravarClipeAtleta, setAGravarClipeAtleta] = useState(false);
   const [erroClipeAtleta, setErroClipeAtleta] = useState('');
+  // Apagar um clipe do próprio atleta (Portal): confirmação na própria
+  // linha, porque o Portal não tem o diálogo de confirmação do staff.
+  const [confirmarApagarId, setConfirmarApagarId] = useState(null);
+  const [aApagarClipeId, setAApagarClipeId] = useState(null);
+  const confirmarApagarClipeAtleta = (id) => {
+    if (!apagarClipeAtleta || aApagarClipeId) return;
+    setAApagarClipeId(id);
+    Promise.resolve(apagarClipeAtleta(id))
+      .catch(() => { /* o Portal mostra o aviso de erro */ })
+      .finally(() => { setAApagarClipeId(null); setConfirmarApagarId(null); });
+  };
   const sairDoModoClipe = () => {
     setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe('');
     setNotaClipe(''); setErroClipeAtleta(''); setAGravarClipeAtleta(false);
@@ -31177,6 +31215,26 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             ><Printer size={13} /></button>
           ) : (
             <span style={{ width: 20, flexShrink: 0 }} />
+          )}
+          {soLeitura && v.deAtleta && apagarClipeAtleta && (
+            confirmarApagarId === v.id ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0, fontSize: 12, ...body }}>
+                <span style={{ color: T.cream }}>{aApagarClipeId === v.id ? 'A apagar…' : 'Apagar o clipe?'}</span>
+                {aApagarClipeId !== v.id && (
+                  <>
+                    <button onClick={() => confirmarApagarClipeAtleta(v.id)} style={{ background: 'none', border: `1px solid ${T.bad}`, borderRadius: 6, color: T.bad, cursor: 'pointer', padding: '3px 9px', fontSize: 12, ...body }}>Apagar</button>
+                    <button onClick={() => setConfirmarApagarId(null)} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, color: T.muted, cursor: 'pointer', padding: '3px 9px', fontSize: 12, ...body }}>Cancelar</button>
+                  </>
+                )}
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmarApagarId(v.id)}
+                title="Apagar este clipe"
+                aria-label={`Apagar o clipe ${v.title || ''}`}
+                style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
+              ><Trash2 size={13} /></button>
+            )
           )}
           {!soLeitura && (
             <>
