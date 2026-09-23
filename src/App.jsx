@@ -26196,6 +26196,7 @@ const ERROS_CLIPE_ATLETA = {
   tempos_invalidos: 'Marca o início e o fim do clipe.',
   duracao_invalida: `O clipe tem de ter entre 1 e ${MAX_CLIPE_ATLETA_SEG} segundos.`,
   titulo_obrigatorio: 'Dá um título ao clipe antes de gravar.',
+  clipe_invalido: 'Este clipe já não existe (pode ter sido apagado pelo treinador).',
 };
 
 function PlayerBibliotecaView({ code, teamId, onBack }) {
@@ -26277,6 +26278,29 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
     setAvisoClipe({ texto: `Clipe "${titulo}" gravado em "Os meus clipes". O treinador já o pode ver.` });
   };
 
+  // Editar um clipe do próprio jogador (tempos, título e texto).
+  const editarClipeAtleta = async ({ clipeId, inicio, fim, titulo, nota }) => {
+    let resposta;
+    try {
+      const { data, error } = await supabase.rpc('checkin_clipe_editar', {
+        p_code: code, p_team: teamId, p_clipe_id: clipeId,
+        p_inicio: inicio, p_fim: fim, p_titulo: titulo, p_nota: nota || '',
+      });
+      if (error) throw error;
+      resposta = lerJson(data);
+    } catch (e) {
+      throw new Error('Não foi possível ligar. Verifica a internet e tenta outra vez.');
+    }
+    if (!resposta || !resposta.ok) {
+      throw new Error(ERROS_CLIPE_ATLETA[resposta && resposta.erro] || 'As alterações não ficaram gravadas. Tenta outra vez.');
+    }
+    if (resposta.clipe) {
+      const novo = clipeAtletaParaCanal(resposta.clipe);
+      setMeusClipes(prev => prev.map(c => (c.id === novo.id ? novo : c)));
+    }
+    setAvisoClipe({ texto: `Clipe "${titulo}" atualizado.` });
+  };
+
   // Só apaga clipes do próprio jogador: o servidor volta a confirmar
   // que o clipe é dele antes de apagar.
   const apagarClipeAtleta = async (clipeId) => {
@@ -26354,6 +26378,7 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
           soLeitura
           criarClipeAtleta={criarClipeAtleta}
           apagarClipeAtleta={apagarClipeAtleta}
+          editarClipeAtleta={editarClipeAtleta}
           emptyText="Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver."
         />
       )}
@@ -30296,6 +30321,16 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
   );
 }
 
+/* LINK DE UM CORTE — o leitor do YouTube aberto diretamente (/embed/),
+   que começa no início do corte e para no fim (`start`/`end`). É o único
+   link do YouTube que respeita um fim: o link normal (youtu.be ou
+   watch) só aceita o início e continua pelo jogo fora. */
+function linkDoCorteYoutube(youtubeId, inicio, fim) {
+  const ini = Math.max(0, Math.floor(Number(inicio) || 0));
+  const f = Math.ceil(Number(fim) || 0);
+  return `https://www.youtube.com/embed/${youtubeId}?start=${ini}${f > ini ? `&end=${f}` : ''}&autoplay=1&rel=0&playsinline=1`;
+}
+
 // mm:ss a partir de segundos — só para os marcadores de "Criar clipe".
 function fmtMMSS(seg) {
   const s = Math.max(0, Math.round(seg || 0));
@@ -30604,7 +30639,7 @@ const SECOES_CANAL = [
 // Só no Portal do Atleta: os clipes criados pelo próprio jogador.
 const SECAO_MEUS_CLIPES = { id: 'meus', label: 'Os meus clipes', cat: 'meus', Icon: Scissors };
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta }, ref) {
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
   // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
@@ -30664,9 +30699,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       .catch(() => { /* o Portal mostra o aviso de erro */ })
       .finally(() => { setAApagarClipeId(null); setConfirmarApagarId(null); });
   };
+  // EDITAR um clipe do atleta: o mesmo painel, preenchido com o que o
+  // clipe já tem, sobre o vídeo completo de onde saiu (para se poder
+  // marcar de novo o início e o fim). `edicaoPendenteRef` guarda o
+  // pedido enquanto o vídeo de origem ainda não está aberto — trocar de
+  // vídeo limpa o modo clipe (ver o efeito de `activeId`).
+  const [edicaoClipeId, setEdicaoClipeId] = useState(null);
+  const edicaoPendenteRef = React.useRef(null);
   const sairDoModoClipe = () => {
     setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe('');
-    setNotaClipe(''); setErroClipeAtleta(''); setAGravarClipeAtleta(false);
+    setNotaClipe(''); setErroClipeAtleta(''); setAGravarClipeAtleta(false); setEdicaoClipeId(null);
+  };
+  const aplicarEdicao = (e) => {
+    setClipMode(true);
+    setClipMarcas({ inicio: e.inicio, fim: e.fim });
+    setTituloClipe(e.titulo || '');
+    setNotaClipe(e.nota || '');
+    setErroClipeAtleta('');
+    setEdicaoClipeId(e.clipeId);
   };
 
   // Comandos ao leitor do YouTube por postMessage "cru" (o mesmo
@@ -31335,6 +31385,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           ) : (
             <span style={{ width: 20, flexShrink: 0 }} />
           )}
+          {soLeitura && v.deAtleta && confirmarApagarId !== v.id && (
+            <>
+              <button
+                onClick={() => shareMediaItem(v)}
+                title="Partilhar só o corte"
+                aria-label={`Partilhar o clipe ${v.title || ''}`}
+                style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
+              ><Share2 size={13} /></button>
+              {editarClipeAtleta && (
+                <button
+                  onClick={() => iniciarEdicaoClipeAtleta(v)}
+                  title="Editar o clipe"
+                  aria-label={`Editar o clipe ${v.title || ''}`}
+                  style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
+                ><Pencil size={13} /></button>
+              )}
+            </>
+          )}
           {soLeitura && v.deAtleta && apagarClipeAtleta && (
             confirmarApagarId === v.id ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0, fontSize: 12, ...body }}>
@@ -31378,6 +31446,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // marcadores são segundos DENTRO do vídeo que estava a tocar.
   useEffect(() => {
     sairDoModoClipe();
+    if (edicaoPendenteRef.current && edicaoPendenteRef.current.abrirEm === activeId) {
+      aplicarEdicao(edicaoPendenteRef.current);
+      edicaoPendenteRef.current = null;
+    }
     // Sem isto, o tempo ficava agarrado ao último valor do vídeo
     // anterior até chegar a primeira atualização do novo — e uma marca
     // de clipe feita nesse intervalo ficava com o tempo errado.
@@ -31465,6 +31537,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       if (!tituloClipe.trim() || fim - inicio > MAX_CLIPE_ATLETA_SEG || aGravarClipeAtleta) return;
       setAGravarClipeAtleta(true);
       setErroClipeAtleta('');
+      if (edicaoClipeId) {
+        const id = edicaoClipeId;
+        editarClipeAtleta({ clipeId: id, inicio, fim, titulo: tituloClipe.trim(), nota: notaClipe.trim() })
+          .then(() => { sairDoModoClipe(); setSecao('meus'); setGrupo(null); setActiveId(id); })
+          .catch(e => {
+            setErroClipeAtleta((e && e.message) || 'As alterações não ficaram gravadas. Tenta outra vez.');
+            setAGravarClipeAtleta(false);
+          });
+        return;
+      }
       criarClipeAtleta({ videoId: active.id, inicio, fim, titulo: tituloClipe.trim(), nota: notaClipe.trim() })
         .then(() => sairDoModoClipe())
         .catch(e => {
@@ -31567,7 +31649,27 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Quem pode criar clipes neste vídeo: o staff em qualquer vídeo do
   // YouTube; no Portal, o jogador só em vídeos de JOGOS da equipa.
   const podeCriarClipe = !soLeitura
-    || (!!criarClipeAtleta && !!active && !!active.youtubeId && !active.deAtleta && catDe(active) === 'jogo');
+    || (!!criarClipeAtleta && !!active && !!active.youtubeId
+      && (!!edicaoClipeId || (!active.deAtleta && catDe(active) === 'jogo')));
+
+  // Abre a edição de um clipe do atleta: vai para o vídeo completo de
+  // origem (se ainda existir); senão, edita sobre o próprio clipe, o que
+  // só deixa encurtá-lo.
+  const iniciarEdicaoClipeAtleta = (v) => {
+    if (!editarClipeAtleta || !v) return;
+    const origem = v.clipOrigemId && items.find(x => x.id === v.clipOrigemId && !ehClipe(x));
+    const alvo = origem || v;
+    const pedido = { abrirEm: alvo.id, clipeId: v.id, inicio: v.clipInicio, fim: v.clipFim, titulo: v.title, nota: v.notaAtleta || '' };
+    if (alvo.id === (active && active.id)) { aplicarEdicao(pedido); return; }
+    edicaoPendenteRef.current = pedido;
+    if (origem) irPara(origem); else { setSecao('meus'); setActiveId(v.id); }
+  };
+  // Sair do modo clipe; se era uma edição, volta ao clipe em "Os meus clipes".
+  const cancelarModoClipe = () => {
+    const id = edicaoClipeId;
+    sairDoModoClipe();
+    if (id) { setSecao('meus'); setGrupo(null); setActiveId(id); }
+  };
   const duracaoMarcada = clipMarcas.inicio != null && clipMarcas.fim != null
     ? Math.abs(clipMarcas.fim - clipMarcas.inicio) : null;
 
@@ -31589,12 +31691,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
         padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
       }}>
-        {!escuro && (
+        {!escuro && (edicaoClipeId ? (
+          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+            A editar o clipe. Podes marcar de novo o início e o fim (até {MAX_CLIPE_ATLETA_SEG / 60} minutos),
+            ou mudar só o título e o texto. As alterações só ficam quando carregares em Guardar alterações.
+          </div>
+        ) : (
           <div style={{ fontSize: 12.5, color: T.mutedDim }}>
             Deixa o vídeo a tocar e marca onde o lance começa e acaba (até {MAX_CLIPE_ATLETA_SEG / 60} minutos).
             Depois dá-lhe um título e escreve o que quiseres sobre ele. O clipe fica guardado para ti e para o treinador.
           </div>
-        )}
+        ))}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
           <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
@@ -31602,6 +31709,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
           <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
           {marcado && <div style={{ fontSize: 12, color: T.mutedDim }}>{Math.round(duracaoMarcada)}s</div>}
+          {clipMarcas.inicio != null && !(active && ehClipe(active)) && (
+            <Btn variant="ghost" onClick={() => enviarComandoYoutube('seekTo', [Math.min(clipMarcas.inicio, clipMarcas.fim ?? clipMarcas.inicio), true])}>
+              Ir para o início marcado
+            </Btn>
+          )}
         </div>
         {duracaoMarcada != null && duracaoMarcada < 1 && (
           <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto. Marca o fim um pouco mais à frente.</div>
@@ -31627,7 +31739,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             {erroClipeAtleta && <div style={{ fontSize: 12.5, color: T.bad }}>{erroClipeAtleta}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <Btn onClick={guardarClipe} disabled={!podeGravar}>
-                <Scissors size={14} /> {aGravarClipeAtleta ? 'A gravar…' : 'Gravar clipe'}
+                <Scissors size={14} /> {aGravarClipeAtleta ? 'A gravar…' : (edicaoClipeId ? 'Guardar alterações' : 'Gravar clipe')}
               </Btn>
             </div>
           </>
@@ -32194,14 +32306,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
                           {podeCriarClipe && (
                           <button
-                            onClick={() => (clipMode ? sairDoModoClipe() : setClipMode(true))}
+                            onClick={() => (clipMode ? cancelarModoClipe() : setClipMode(true))}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
                               color: clipMode ? T.warn : '#fff',
                               background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
                             }}
                           >
-                            <Scissors size={13} /> {clipMode ? 'Cancelar clipe' : 'Criar clipe'}
+                            <Scissors size={13} /> {clipMode ? (edicaoClipeId ? 'Cancelar edição' : 'Cancelar clipe') : 'Criar clipe'}
                           </button>
                           )}
                           <button
@@ -32508,13 +32620,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 async function shareMediaItem(item) {
   if (!item) return;
   const titulo = item.title || item.fileName || 'Documento';
+  // Um CORTE do YouTube partilha-se só com o intervalo (ver
+  // `linkDoCorteYoutube`); um vídeo completo, com o link normal.
+  const eCorte = ehClipe(item) && !!item.youtubeId;
   const url = item.drive ? driveOpenSrc(item.drive)
-    : item.youtubeId ? `https://youtu.be/${item.youtubeId}`
-      : (item.social ? socialEmbedSrc(item.social) : null);
+    : eCorte ? linkDoCorteYoutube(item.youtubeId, item.clipInicio, item.clipFim)
+      : item.youtubeId ? `https://youtu.be/${item.youtubeId}`
+        : (item.social ? socialEmbedSrc(item.social) : null);
+  const texto = eCorte ? `Corte ${fmtMMSS(item.clipInicio)}–${fmtMMSS(item.clipFim)}` : (item.jornada || '');
 
   if (url) {
     if (navigator.share) {
-      try { await navigator.share({ title: titulo, text: item.jornada || '', url }); return; } catch (e) { /* cancelado */ return; }
+      try { await navigator.share({ title: titulo, text: texto, url }); return; } catch (e) { /* cancelado */ return; }
     }
     if (navigator.clipboard) {
       try { await navigator.clipboard.writeText(url); window.alert('Link copiado.'); return; } catch (e) { /* segue para abrir */ }

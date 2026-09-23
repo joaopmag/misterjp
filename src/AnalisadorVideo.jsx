@@ -331,6 +331,22 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
   const [tempo, setTempo] = useState(inicio);
   const [aTocar, setATocar] = useState(false);
   const saltoRef = useRef(0); // evita pedir vários saltos seguidos enquanto o primeiro não chega
+  const [copiado, setCopiado] = useState(false);
+
+  // Partilhar SÓ o corte: o leitor do YouTube aberto diretamente, do
+  // início ao fim do clipe (o link normal do YouTube não aceita um fim).
+  const linkDoCorte = `https://www.youtube.com/embed/${clip.youtubeId}?start=${Math.floor(inicio)}&end=${Math.ceil(fim)}&autoplay=1&rel=0&playsinline=1`;
+  const partilhar = async () => {
+    const titulo = clip.titulo || 'Clipe';
+    if (navigator.share) {
+      try { await navigator.share({ title: titulo, text: `${clip.atletaNome || ''} · ${mmss(inicio)}–${mmss(fim)}`.replace(/^ · /, ''), url: linkDoCorte }); } catch (e) { /* cancelado */ }
+      return;
+    }
+    if (navigator.clipboard) {
+      try { await navigator.clipboard.writeText(linkDoCorte); setCopiado(true); setTimeout(() => setCopiado(false), 1600); return; } catch (e) { /* abre */ }
+    }
+    window.open(linkDoCorte, '_blank');
+  };
 
   const comando = (func, args) => {
     const win = iframeRef.current && iframeRef.current.contentWindow;
@@ -379,6 +395,9 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
             {clip.atletaNome || 'Atleta'} · {mmss(inicio)}–{mmss(fim)} ({Math.round(duracao)}s)
           </span>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <Btn variant="ghost" onClick={partilhar} style={{ padding: '6px 10px' }} title="Partilhar só o corte">
+              {copiado ? <Check size={14} color={T.good} /> : <Link2 size={14} />}
+            </Btn>
             <Btn variant="ghost" onClick={onRemove} style={{ padding: '6px 10px' }} title="Apagar clipe"><Trash2 size={14} color={T.bad} /></Btn>
             <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
           </div>
