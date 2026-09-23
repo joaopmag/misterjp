@@ -17,7 +17,8 @@ import {
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
   HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
-  Video
+  Video,
+  Volume2, VolumeX,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -26164,7 +26165,7 @@ function PlayerTreinoView({ code, teamId, onBack }) {
    faz sentido nenhum. */
 // Duração máxima de um clipe criado por um jogador no Portal. Tem de
 // bater certo com o limite da função `checkin_clipe_criar` no Supabase.
-const MAX_CLIPE_ATLETA_SEG = 120;
+const MAX_CLIPE_ATLETA_SEG = 180;
 
 /* Um clipe gravado por um jogador (tabela `video_clips`, origem
    'atleta') no formato de um corte do Canal — assim aparece dentro do
@@ -26273,7 +26274,7 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
       throw new Error(ERROS_CLIPE_ATLETA[resposta && resposta.erro] || 'O clipe não ficou gravado. Tenta outra vez.');
     }
     if (resposta.clipe) setMeusClipes(prev => [...prev, clipeAtletaParaCanal(resposta.clipe)]);
-    setAvisoClipe({ texto: `Clipe "${titulo}" gravado. Fica na lista do jogo e o treinador já o pode ver.` });
+    setAvisoClipe({ texto: `Clipe "${titulo}" gravado em "Os meus clipes". O treinador já o pode ver.` });
   };
 
   // Só apaga clipes do próprio jogador: o servidor volta a confirmar
@@ -26326,7 +26327,8 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
           adicionar, editar, mover nem apagar. A única exceção é criar
           clipes nos vídeos de JOGOS (`criarClipeAtleta`), que ficam
           guardados para o jogador e para o staff (Análise de Vídeo ›
-          Análise individual em clipes). */}
+          Análise individual em clipes). No Portal, esses clipes ficam
+          numa secção própria, "Os meus clipes", a seguir a Temas. */}
       {avisoClipe && (
         <div role="status" style={{
           position: 'fixed', left: '50%', bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))', transform: 'translateX(-50%)',
@@ -26335,36 +26337,9 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
         }}>{avisoClipe.texto}</div>
       )}
 
-      {/* OS MEUS CLIPES — atalho para os clipes do próprio jogador. Cada
-          clipe vive dentro do jogo de onde saiu (Jogos › jornada ›
-          Cortes); tocar aqui abre esse jogo com o clipe selecionado. */}
-      {estado === 'pronto' && (meusClipes.length > 0 || erroMeusClipes) && (
-        <div style={{ marginBottom: 16, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: meusClipes.length ? 10 : 0 }}>
-            <Scissors size={15} color={T.good} />
-            <span style={{ ...display, fontSize: 15, color: T.cream }}>Os meus clipes ({meusClipes.length})</span>
-            <span style={{ fontSize: 11.5, color: T.mutedDim }}>Só tu e o treinador os vêem.</span>
-          </div>
-          {erroMeusClipes && (
-            <div style={{ fontSize: 12.5, color: T.bad }}>Não foi possível carregar os teus clipes. Tenta outra vez ou fala com o staff.</div>
-          )}
-          {meusClipes.length > 0 && (
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
-              {[...meusClipes].reverse().map(c => (
-                <button key={c.id} onClick={() => canalRef.current && canalRef.current.irParaItem(c.id)}
-                  style={{
-                    flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, maxWidth: 260, textAlign: 'left',
-                    background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 10px 6px 6px', cursor: 'pointer', ...body,
-                  }}>
-                  <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
-                  <span style={{ minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</span>
-                    <span style={{ display: 'block', fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmtMMSS(c.clipInicio)}–{fmtMMSS(c.clipFim)} · {c.clipOrigemTitulo || 'Jogo'}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+      {estado === 'pronto' && erroMeusClipes && (
+        <div style={{ fontSize: 12.5, color: T.bad, marginBottom: 12 }}>
+          Não foi possível carregar os teus clipes. Tenta outra vez ou fala com o staff.
         </div>
       )}
 
@@ -30166,13 +30141,7 @@ function MediaFeedItem({ item, onOpen }) {
            YouTube, em vez de obrigar a abrir o visualizador. `preload
            metadata`: numa coluna com muitos vídeos não se descarrega
            nenhum por inteiro antes de se carregar no play. */
-        <video
-          src={item.dataUrl}
-          controls
-          playsInline
-          preload="metadata"
-          style={{ display: 'block', width: '100%', maxHeight: '70vh', background: '#000' }}
-        />
+        <VideoComBarra src={item.dataUrl} preload="metadata" videoStyle={{ maxHeight: '70vh' }} />
       ) : (
         <div style={{ padding: '18px 13px', fontSize: 12.5, color: T.mutedDim }}>
           {item.kind === 'video' && !item.dataUrl
@@ -30235,6 +30204,96 @@ function youtubeEmbedSrc(item, extra) {
   // em vez de só parar.
   if (extra) bits.push(extra);
   return `https://www.youtube.com/embed/${item.youtubeId}?${bits.join('&')}`;
+}
+
+/* VÍDEO CARREGADO COM A BARRA DA APP — em vez dos controlos nativos
+   do browser (cada browser desenha os seus, com cores próprias), a
+   mesma barra amarela dos clipes: reproduzir/pausa, posição, tempo,
+   som e ecrã inteiro. Tocar no vídeo também põe em pausa/retoma.
+   `semEcraInteiro`: quando quem o usa já tem o seu botão de ecrã
+   inteiro (o visualizador da Biblioteca). */
+function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraInteiro, onTimeUpdate }) {
+  const wrapRef = useRef(null);
+  const videoRef = useRef(null);
+  const [aTocar, setATocar] = useState(false);
+  const [tempo, setTempo] = useState(0);
+  const [duracao, setDuracao] = useState(0);
+  const [mudo, setMudo] = useState(false);
+  const [emEcraInteiro, setEmEcraInteiro] = useState(false);
+
+  useEffect(() => {
+    const aoMudar = () => setEmEcraInteiro(!!wrapRef.current && document.fullscreenElement === wrapRef.current);
+    document.addEventListener('fullscreenchange', aoMudar);
+    return () => document.removeEventListener('fullscreenchange', aoMudar);
+  }, []);
+
+  const alternar = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); } else v.pause();
+  };
+  const irPara = (t) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.max(0, Math.min(duracao || t, t));
+    setTempo(v.currentTime);
+  };
+  const lerDuracao = (e) => { const d = e.currentTarget.duration; setDuracao(Number.isFinite(d) ? d : 0); };
+  const ecraInteiro = () => {
+    if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen().catch(() => {}); return; }
+    const w = wrapRef.current;
+    const v = videoRef.current;
+    if (w && w.requestFullscreen) w.requestFullscreen().catch(() => {});
+    // iPhone: só o próprio vídeo entra em ecrã inteiro (com os controlos do sistema).
+    else if (v && v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+  };
+  const btn = {
+    background: 'none', border: 'none', color: '#fff', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4, flexShrink: 0,
+  };
+
+  return (
+    <div ref={wrapRef} style={{
+      display: 'flex', flexDirection: 'column', background: '#000',
+      ...style, ...(emEcraInteiro ? { height: '100%', width: '100%' } : {}),
+    }}>
+      <video
+        ref={videoRef} src={src} playsInline preload={preload} autoPlay={autoPlay}
+        onClick={alternar}
+        onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
+        onLoadedMetadata={lerDuracao} onDurationChange={lerDuracao}
+        onVolumeChange={e => setMudo(e.currentTarget.muted)}
+        onTimeUpdate={e => { const t = e.currentTarget.currentTime; setTempo(t); if (onTimeUpdate) onTimeUpdate(t); }}
+        style={{
+          display: 'block', width: '100%', flex: 1, minHeight: 0, objectFit: 'contain', background: '#000', cursor: 'pointer',
+          ...videoStyle, ...(emEcraInteiro ? { maxHeight: 'none' } : {}),
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
+        <button onClick={alternar} title={aTocar ? 'Pausar' : 'Reproduzir'} style={btn}>
+          {aTocar ? <Pause size={16} /> : <Play size={16} />}
+        </button>
+        <input
+          type="range" min={0} max={duracao || 0} step={0.1} value={Math.min(tempo, duracao || 0)}
+          onChange={e => irPara(Number(e.target.value))}
+          aria-label="Posição no vídeo" disabled={!duracao}
+          style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }}
+        />
+        <span style={{ fontSize: 11.5, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
+          {fmtMMSS(tempo)} / {fmtMMSS(duracao)}
+        </span>
+        <button
+          onClick={() => { const v = videoRef.current; if (v) v.muted = !v.muted; }}
+          title={mudo ? 'Ligar o som' : 'Tirar o som'} style={btn}
+        >{mudo ? <VolumeX size={15} /> : <Volume2 size={15} />}</button>
+        {!semEcraInteiro && (
+          <button onClick={ecraInteiro} title={emEcraInteiro ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'} style={btn}>
+            {emEcraInteiro ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // mm:ss a partir de segundos — só para os marcadores de "Criar clipe".
@@ -30542,6 +30601,8 @@ const SECOES_CANAL = [
   { id: 'adversarios', label: 'Adversários', cat: 'adversario', Icon: Shield },
   { id: 'temas', label: 'Temas', cat: 'tema', Icon: FolderOpen },
 ];
+// Só no Portal do Atleta: os clipes criados pelo próprio jogador.
+const SECAO_MEUS_CLIPES = { id: 'meus', label: 'Os meus clipes', cat: 'meus', Icon: Scissors };
 
 const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta }, ref) {
   const [modal, setModal] = useState(null);
@@ -30875,6 +30936,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const catDe = (v) => categoriaDoItem(v, byIdItens);
   const equipasDe = (v) => equipasDoItem(v, byIdItens, fichasById);
   const itensTema = modoCanal ? items.filter(v => catDe(v) === 'tema') : items;
+  // Portal: os clipes do próprio jogador vivem só na secção "Os meus
+  // clipes" (não se repetem dentro do cartão do jogo).
+  const itensMeus = modoCanal ? items.filter(v => v.deAtleta) : [];
+  const secoesCanal = criarClipeAtleta ? [...SECOES_CANAL, SECAO_MEUS_CLIPES] : SECOES_CANAL;
   const ordemCriacao = {};
   items.forEach((v, i) => { ordemCriacao[v.id] = i + 1; });
   // Rótulo de um jogo dentro de um cartão com vários (Amigáveis/adversário).
@@ -30891,6 +30956,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const porAdv = {};
     const nomeEquipa = {};
     items.forEach(v => {
+      if (v.deAtleta) return;
       const c = catDe(v);
       if (c === 'jogo') { const k = chaveJogoDoItem(v, byIdItens, matchesById); (porJogo[k] = porJogo[k] || []).push(v); }
       else if (c === 'adversario') {
@@ -30974,7 +31040,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     gruposAdv.sort((x, y) => (x.key === 'sem' ? -1 : y.key === 'sem' ? 1 : x.titulo.localeCompare(y.titulo, 'pt')));
   }
   const gruposDaSecao = secao === 'jogos' ? gruposJogo : gruposAdv;
-  const grupoAtual = modoCanal && secao !== 'temas' ? (gruposDaSecao.find(g => g.key === grupo) || null) : null;
+  const grupoAtual = modoCanal && secao !== 'temas' && secao !== 'meus' ? (gruposDaSecao.find(g => g.key === grupo) || null) : null;
 
   const folders = Array.from(new Set(itensTema.map(v => cleanFolder(v.pasta)).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b, 'pt'));
@@ -30996,6 +31062,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   if (!modoCanal) naPastaBase = filtroPasta(items, folderFilter);
   else if (termo) naPastaBase = items; // a pesquisa procura no Canal todo
   else if (secao === 'temas') naPastaBase = filtroPasta(itensTema, pastaTema);
+  else if (secao === 'meus') naPastaBase = itensMeus;
   else naPastaBase = grupoAtual ? grupoAtual.itens : [];
   // `items` chega sempre por ordem de criação (mais antigo primeiro —
   // é como a leitura vem da base de dados). No Canal geral faz mais
@@ -31015,6 +31082,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
   // Onde um item vive, em palavras — para os resultados da pesquisa.
   const lugarDoItem = (v) => {
+    if (v.deAtleta) return 'Os meus clipes';
     const c = catDe(v);
     if (c === 'jogo') {
       const g = gruposJogo.find(x => x.itens.includes(v));
@@ -31038,7 +31106,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const c = categoriaDoItem(v, b);
     setBusca('');
     setModoFeed(false);
-    if (c === 'jogo') { setSecao('jogos'); setGrupo(chaveJogoDoItem(v, b, matchesById)); }
+    if (v.deAtleta) { setSecao('meus'); setGrupo(null); }
+    else if (c === 'jogo') { setSecao('jogos'); setGrupo(chaveJogoDoItem(v, b, matchesById)); }
     else if (c === 'adversario') {
       const eqs = equipasDoItem(v, b, fichasById);
       setSecao('adversarios'); setGrupo(eqs.length ? `e:${semAcentos(eqs[0])}` : 'sem');
@@ -31210,7 +31279,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 <div style={{ fontSize: 11, color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Scissors size={10} /> {fmtMMSS(v.clipInicio)}–{fmtMMSS(v.clipFim)}
                   {naFicha && <span style={{ color: T.warn }}>· corte</span>}
-                  {v.deAtleta && <span style={{ color: T.good }}>· o meu clipe</span>}
                 </div>
               ) : (v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
               {/* Só se mostra a pasta quando se está a ver tudo —
@@ -31499,7 +31567,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Quem pode criar clipes neste vídeo: o staff em qualquer vídeo do
   // YouTube; no Portal, o jogador só em vídeos de JOGOS da equipa.
   const podeCriarClipe = !soLeitura
-    || (!!criarClipeAtleta && !!active && !!active.youtubeId && catDe(active) === 'jogo');
+    || (!!criarClipeAtleta && !!active && !!active.youtubeId && !active.deAtleta && catDe(active) === 'jogo');
   const duracaoMarcada = clipMarcas.inicio != null && clipMarcas.fim != null
     ? Math.abs(clipMarcas.fim - clipMarcas.inicio) : null;
 
@@ -31668,9 +31736,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           ? { overflowX: 'auto', margin: '0 -14px', padding: '0 14px 2px', scrollbarWidth: 'none' }
           : {}),
       }}>
-        {SECOES_CANAL.map(s => {
+        {secoesCanal.map(s => {
           const on = secao === s.id && !termo;
-          const n = s.id === 'jogos' ? gruposJogo.length : (s.id === 'adversarios' ? gruposAdv.length : itensTema.length);
+          const n = s.id === 'jogos' ? gruposJogo.length
+            : s.id === 'adversarios' ? gruposAdv.length
+            : s.id === 'meus' ? itensMeus.length
+            : itensTema.length;
           return (
             <button key={s.id} onClick={() => abrirSecao(s.id)} style={pill(on)}>
               <s.Icon size={14} /> {s.label}
@@ -31956,10 +32027,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={soLeitura ? null : <Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
-      ) : modoCanal && !termo && secao !== 'temas' && !grupoAtual ? (
+      ) : modoCanal && !termo && secao !== 'temas' && secao !== 'meus' && !grupoAtual ? (
         renderCartoesCanal()
       ) : visibleItems.length === 0 && !termo ? (
-        modoCanal
+        modoCanal && secao === 'meus'
+          ? <EmptyState text={`Ainda não criaste clipes. Abre um jogo em Jogos, carrega em "Criar clipe" e marca o lance (até ${MAX_CLIPE_ATLETA_SEG / 60} minutos).`} />
+          : modoCanal
           ? <EmptyState text="Ainda sem vídeos em Temas." action={soLeitura ? null : <Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar vídeo</Btn>} />
           : <EmptyState text="Esta pasta está vazia." action={<Btn variant="ghost" onClick={() => setFolderFilter(null)}>Ver tudo</Btn>} />
       ) : modoFeed ? (
@@ -32088,7 +32161,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             onMouseUp={largarBarraClipe}
                             onTouchEnd={largarBarraClipe}
                             aria-label="Posição dentro do clipe"
-                            style={{ flex: 1, minWidth: 0, accentColor: '#B5393F', cursor: 'pointer' }}
+                            style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }}
                           />
                           {!isNarrow && (
                             <button onClick={() => recuarClipe(2)} title="Avançar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>+2s</button>
@@ -33423,8 +33496,8 @@ function AttachmentPreview({ item, tall }) {
   if (item.kind === 'video') {
     return (
       <div ref={boxRef} style={wrapStyle}>
-        <div style={{ flex: 1, minHeight: 0, background: '#000' }}>
-          <video key={item.id} src={item.dataUrl} controls style={{ width: '100%', height: '100%', background: '#000' }} />
+        <div style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', flexDirection: 'column' }}>
+          <VideoComBarra key={item.id} src={item.dataUrl} semEcraInteiro style={{ flex: 1, minHeight: 0 }} />
         </div>
         {FsBar}
       </div>

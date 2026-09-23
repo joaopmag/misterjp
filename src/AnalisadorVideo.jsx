@@ -226,6 +226,16 @@ function shapeVisivelEm(sh, tempo) {
    desaparecerem no tempo certo, tal como foram marcados. ---- */
 function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied, onChangeTag }) {
   const [t, setT] = useState(0);
+  const videoRef = useRef(null);
+  const [aTocar, setATocar] = useState(false);
+  const [duracaoVideo, setDuracaoVideo] = useState(0);
+  const alternar = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); } else v.pause();
+  };
+  const irPara = (seg) => { const v = videoRef.current; if (v) { v.currentTime = seg; setT(seg); } };
+  const lerDuracao = (e) => { const d = e.currentTarget.duration; setDuracaoVideo(Number.isFinite(d) ? d : 0); };
   return (
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -241,11 +251,30 @@ function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied, onChang
           </div>
         </div>
         <div style={{ position: 'relative' }}>
-          <video src={clip.publicUrl} controls autoPlay onTimeUpdate={e => setT(e.currentTarget.currentTime)}
-            style={{ width: '100%', display: 'block', background: '#000' }} />
+          <video ref={videoRef} src={clip.publicUrl} autoPlay playsInline onClick={alternar}
+            onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
+            onLoadedMetadata={lerDuracao} onDurationChange={lerDuracao}
+            onTimeUpdate={e => setT(e.currentTarget.currentTime)}
+            style={{ width: '100%', display: 'block', background: '#000', cursor: 'pointer' }} />
           <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
             {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(renderShape)}
           </svg>
+        </div>
+        {/* A mesma barra amarela de todos os vídeos da app. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderBottom: `1px solid ${T.line}` }}>
+          <button onClick={alternar} title={aTocar ? 'Pausa' : 'Reproduzir'}
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
+            {aTocar ? <Pause size={16} /> : <Play size={16} />}
+          </button>
+          <button onClick={() => irPara(0)} title="Voltar ao início"
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
+            <RotateCcw size={15} />
+          </button>
+          <input type="range" min={0} max={duracaoVideo || 0} step={0.1} value={Math.min(t, duracaoVideo || 0)}
+            onChange={e => irPara(Number(e.target.value))} disabled={!duracaoVideo}
+            aria-label="Posição no clipe"
+            style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }} />
+          <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(t)} / {mmss(duracaoVideo)}</span>
         </div>
         {clip.note && <div style={{ padding: '12px 12px 0', fontSize: 13, color: T.cream }}>{clip.note}</div>}
         {/* Etiqueta — pode-se atribuir ou mudar aqui, mesmo depois de o
@@ -1262,12 +1291,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             <div onPointerDown={startScrub} onPointerMove={dragScrub} onPointerUp={endScrub} onPointerCancel={endScrub}
               style={{ flex: 1, height: 36, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
               <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: T.line, borderRadius: 3 }} />
-              <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: T.crimson, borderRadius: 3 }} />
+              <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: T.gold, borderRadius: 3 }} />
               {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: T.good }} />}
               {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: T.bad }} />}
               <div style={{
                 position: 'absolute', left: `${pct(current)}%`, transform: 'translateX(-50%)',
-                width: 16, height: 16, borderRadius: '50%', background: T.crimsonBright,
+                width: 16, height: 16, borderRadius: '50%', background: T.gold,
                 border: `2px solid ${T.cream}`, boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
               }} />
             </div>
