@@ -247,6 +247,26 @@ function useCaixaNaArea(proporcao) {
   return [areaRef, tam];
 }
 
+/* ECRÃ INTEIRO do vídeo + barra (não do leitor todo): a barra amarela e
+   os desenhos continuam lá. No iPhone só o próprio <video> pode entrar
+   em ecrã inteiro, e aí os desenhos não aparecem. */
+function useEcraInteiro() {
+  const fsRef = useRef(null);
+  const [emEcraInteiro, setEmEcraInteiro] = useState(false);
+  useEffect(() => {
+    const aoMudar = () => setEmEcraInteiro(!!fsRef.current && document.fullscreenElement === fsRef.current);
+    document.addEventListener('fullscreenchange', aoMudar);
+    return () => document.removeEventListener('fullscreenchange', aoMudar);
+  }, []);
+  const alternar = (videoEl) => {
+    if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen().catch(() => {}); return; }
+    const el = fsRef.current;
+    if (el && el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (videoEl && videoEl.webkitEnterFullscreen) videoEl.webkitEnterFullscreen();
+  };
+  return [fsRef, emEcraInteiro, alternar];
+}
+
 // Esc fecha o leitor (em janela inteira já não há fundo onde clicar).
 function useFecharComEsc(onClose, ativo = true) {
   useEffect(() => {
@@ -303,7 +323,9 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   // Proporção real do vídeo (16:9 até se saber) — a caixa segue-a.
   const [proporcao, setProporcao] = useState(16 / 9);
   const [areaRef, caixa] = useCaixaNaArea(proporcao);
-  useFecharComEsc(onClose, !aEditar);
+  const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();
+  // Em ecrã inteiro, o Esc sai do ecrã inteiro (é o browser que o faz), não fecha o leitor.
+  useFecharComEsc(onClose, !aEditar && !emEcraInteiro);
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -322,6 +344,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
           </div>
         </div>
+        <div ref={fsRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
         <div ref={areaRef} style={{ flex: 1, minHeight: '25vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <div style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto' }}>
             <video ref={videoRef} src={clip.publicUrl} autoPlay playsInline onClick={alternar}
@@ -354,12 +377,18 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             aria-label="Posição no clipe"
             style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }} />
           <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(t)} / {mmss(duracaoVideo)}</span>
+          <button onClick={() => alternarEcraInteiro(videoRef.current)} title={emEcraInteiro ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'}
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex', flexShrink: 0 }}>
+            {emEcraInteiro ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
         </div>
-        {/* Texto, edição e etiquetas — por baixo do vídeo, com a sua
-            própria rolagem para nunca empurrar o vídeo para fora do ecrã. */}
-        <div style={{ flexShrink: 0, maxHeight: '60vh', overflowY: 'auto', background: T.surface, paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        </div>
+        {/* Texto, edição e etiquetas — por baixo do vídeo, numa zona de
+            ALTURA FIXA: abrir e fechar a edição não mexe no tamanho do
+            vídeo. O que não couber ganha rolagem dentro da zona. */}
+        <div style={{ flexShrink: 0, height: 'calc(158px + env(safe-area-inset-bottom, 0px))', overflowY: 'auto', background: T.surface, paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxSizing: 'border-box' }}>
         {aEditar ? (
-          <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: `1px solid ${T.line}`, ...body }}>
+          <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, ...body }}>
             <textarea value={notaEd} onChange={e => setNotaEd(e.target.value)} rows={2} maxLength={2000}
               placeholder="Texto do clipe (ex.: Abrir espaços)"
               style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '7px 10px', color: T.cream, fontSize: 13, resize: 'vertical', ...body }} />
@@ -398,8 +427,9 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
           clip.note && <div style={{ padding: '12px 12px 0', fontSize: 13, color: T.cream }}>{clip.note}</div>
         )}
         {/* Etiqueta — pode-se atribuir ou mudar aqui, mesmo depois de o
-           clipe já estar guardado sem nenhuma. */}
-        <div style={{ padding: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+           clipe já estar guardado sem nenhuma. Escondida durante a edição,
+           para a edição caber na mesma altura. */}
+        {!aEditar && <div style={{ padding: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {TAGS.map(tg => (
             <button key={tg.id} onClick={() => onChangeTag(tg.id)}
               style={{
@@ -410,7 +440,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               {tg.label}
             </button>
           ))}
-        </div>
+        </div>}
         </div>
       </div>
     </div>
@@ -544,7 +574,8 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
   const src = `https://www.youtube.com/embed/${clip.youtubeId}?start=${Math.floor(inicio)}&autoplay=1&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`;
   const duracao = fim - inicio;
   const [areaRef, caixa] = useCaixaNaArea(16 / 9);
-  useFecharComEsc(onClose);
+  const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();
+  useFecharComEsc(onClose, !emEcraInteiro);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
@@ -561,6 +592,7 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
             <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
           </div>
         </div>
+        <div ref={fsRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
         <div ref={areaRef} style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <div style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto', aspectRatio: caixa.w ? undefined : '16/9' }}>
             <iframe
@@ -586,6 +618,11 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
             aria-label="Posição no clipe"
             style={{ flex: 1, accentColor: T.gold }} />
           <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(tempo - inicio)} / {mmss(duracao)}</span>
+          <button onClick={() => alternarEcraInteiro(null)} title={emEcraInteiro ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'}
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex', flexShrink: 0 }}>
+            {emEcraInteiro ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        </div>
         </div>
         <div style={{ padding: 14, paddingBottom: 'calc(14px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, maxHeight: '40vh', overflowY: 'auto', background: T.surface }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body }}>{clip.titulo || '(sem título)'}</div>
