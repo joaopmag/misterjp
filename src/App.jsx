@@ -30321,14 +30321,20 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
   );
 }
 
-/* LINK DE UM CORTE — o leitor do YouTube aberto diretamente (/embed/),
-   que começa no início do corte e para no fim (`start`/`end`). É o único
-   link do YouTube que respeita um fim: o link normal (youtu.be ou
-   watch) só aceita o início e continua pelo jogo fora. */
-function linkDoCorteYoutube(youtubeId, inicio, fim) {
+/* LINK DE UM CORTE — aponta para uma página da própria app
+   (`?corte=`, ver `PaginaCorte`), não para o YouTube. Um link do YouTube
+   (mesmo o /embed/ com start/end) é apanhado pela app do YouTube no
+   telemóvel, que abre o jogo inteiro. A nossa página abre no browser e
+   usa o mesmo leitor dos clipes: só o intervalo, com a barra amarela, e
+   volta ao início no fim. Tudo o que a página precisa vai no próprio
+   link (vídeo, início, fim, título): não lê nada da base de dados. */
+function linkDoCorteYoutube(youtubeId, inicio, fim, titulo) {
   const ini = Math.max(0, Math.floor(Number(inicio) || 0));
-  const f = Math.ceil(Number(fim) || 0);
-  return `https://www.youtube.com/embed/${youtubeId}?start=${ini}${f > ini ? `&end=${f}` : ''}&autoplay=1&rel=0&playsinline=1`;
+  const f = Math.max(ini + 1, Math.ceil(Number(fim) || 0));
+  const base = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : '';
+  const q = new URLSearchParams({ corte: youtubeId, i: String(ini), f: String(f) });
+  if (titulo) q.set('t', titulo);
+  return `${base}?${q.toString()}`;
 }
 
 // mm:ss a partir de segundos — só para os marcadores de "Criar clipe".
@@ -32624,10 +32630,11 @@ async function shareMediaItem(item) {
   // `linkDoCorteYoutube`); um vídeo completo, com o link normal.
   const eCorte = ehClipe(item) && !!item.youtubeId;
   const url = item.drive ? driveOpenSrc(item.drive)
-    : eCorte ? linkDoCorteYoutube(item.youtubeId, item.clipInicio, item.clipFim)
+    : eCorte ? linkDoCorteYoutube(item.youtubeId, item.clipInicio, item.clipFim, titulo)
       : item.youtubeId ? `https://youtu.be/${item.youtubeId}`
         : (item.social ? socialEmbedSrc(item.social) : null);
-  const texto = eCorte ? `Corte ${fmtMMSS(item.clipInicio)}–${fmtMMSS(item.clipFim)}` : (item.jornada || '');
+  // Num corte, a mensagem é o título que lhe deram (o link vem a seguir).
+  const texto = eCorte ? titulo : (item.jornada || '');
 
   if (url) {
     if (navigator.share) {
@@ -35583,6 +35590,113 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* PÁGINA PÚBLICA DE UM CORTE (?corte=<youtubeId>&i=<início>&f=<fim>&t=<título>)
+
+   É o destino dos links "Partilhar" dos cortes do YouTube. Abre sem
+   login e sem tocar na base de dados: só mostra o intervalo do vídeo,
+   sem os controlos do YouTube (que deixavam percorrer o jogo todo), com
+   a barra amarela da app limitada ao corte e a voltar ao início no fim.
+
+   Nota: isto limita o que se VÊ aqui, não é uma proteção do vídeo — o
+   vídeo continua no YouTube, e quem tiver o id pode abri-lo lá. */
+function PaginaCorte() {
+  const params = new URLSearchParams(window.location.search);
+  const youtubeId = (params.get('corte') || '').trim();
+  const idValido = /^[A-Za-z0-9_-]{6,20}$/.test(youtubeId);
+  const inicio = Math.max(0, Number(params.get('i')) || 0);
+  const fim = Math.max(inicio + 1, Number(params.get('f')) || inicio + 1);
+  const titulo = (params.get('t') || '').slice(0, 200);
+  const duracao = fim - inicio;
+
+  const iframeRef = useRef(null);
+  const [tempo, setTempo] = useState(inicio);
+  const [aTocar, setATocar] = useState(false);
+  const saltoRef = useRef(0);
+
+  useEffect(() => {
+    document.title = titulo ? `${titulo} · Corte` : 'Corte';
+  }, [titulo]);
+
+  const comando = (func, args) => {
+    const win = iframeRef.current && iframeRef.current.contentWindow;
+    if (win) win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
+  };
+  const irPara = (seg) => { saltoRef.current = Date.now(); comando('seekTo', [seg, true]); setTempo(seg); };
+
+  useEffect(() => {
+    const onMessage = (event) => {
+      if (!event.origin || !event.origin.includes('youtube.com')) return;
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (win && event.source !== win) return;
+      let data = event.data;
+      try { data = typeof data === 'string' ? JSON.parse(data) : data; } catch (e) { return; }
+      if (!data) return;
+      if (data.event === 'onStateChange' && typeof data.info === 'number') setATocar(data.info === 1 || data.info === 3);
+      if (data.event === 'infoDelivery' && data.info) {
+        if (typeof data.info.playerState === 'number') setATocar(data.info.playerState === 1 || data.info.playerState === 3);
+        const t = data.info.currentTime;
+        if (typeof t === 'number') {
+          const aSaltar = Date.now() - saltoRef.current < 800;
+          if (!aSaltar && (t >= fim - 0.15 || t < inicio - 0.5)) irPara(inicio);
+          else setTempo(Math.min(fim, Math.max(inicio, t)));
+        }
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [youtubeId, inicio, fim]);
+
+  const aoCarregar = () => {
+    const win = iframeRef.current && iframeRef.current.contentWindow;
+    if (win) win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+  };
+
+  const btn = { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 4, display: 'flex', flexShrink: 0 };
+
+  return (
+    <div style={{ minHeight: '100vh', background: T.bg, color: T.cream, ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
+      <div style={{ width: '100%', maxWidth: 900 }}>
+        {!idValido ? (
+          <div style={{ fontSize: 14, color: T.bad, padding: '40px 0', textAlign: 'center' }}>Este link de corte não é válido.</div>
+        ) : (
+          <>
+            {titulo && <h1 style={{ ...display, fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>{titulo}</h1>}
+            <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 14, ...mono }}>
+              {fmtMMSS(inicio)}–{fmtMMSS(fim)} ({Math.round(duracao)}s)
+            </div>
+            <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', background: '#000' }}>
+              <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9' }}>
+                <iframe
+                  ref={iframeRef} onLoad={aoCarregar} title={titulo || 'Corte'}
+                  src={`https://www.youtube.com/embed/${youtubeId}?start=${Math.floor(inicio)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`}
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderTop: `1px solid ${T.line}` }}>
+                <button onClick={() => comando(aTocar ? 'pauseVideo' : 'playVideo')} title={aTocar ? 'Pausar' : 'Reproduzir'} style={btn}>
+                  {aTocar ? <Pause size={18} /> : <Play size={18} />}
+                </button>
+                <button onClick={() => irPara(inicio)} title="Voltar ao início do corte" style={btn}><RotateCcw size={16} /></button>
+                <input
+                  type="range" min={0} max={duracao} step={0.1} value={Math.max(0, tempo - inicio)}
+                  onChange={e => irPara(inicio + Number(e.target.value))}
+                  aria-label="Posição no corte"
+                  style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }}
+                />
+                <span style={{ fontSize: 12, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
+                  {fmtMMSS(tempo - inicio)} / {fmtMMSS(duracao)}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AppRoot() {
   const [session, setSession] = useState(undefined); // undefined = a verificar
 
@@ -35599,6 +35713,11 @@ export default function AppRoot() {
   // (nem devem precisar de) conta de treinador — por isso esta
   // verificação acontece ANTES do portão de login, e nunca mostra o ecrã
   // de autenticação da plataforma.
+  // Link partilhado de um corte: página pública, sem login (ver PaginaCorte).
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('corte')) {
+    return <ErrorBoundary><PaginaCorte /></ErrorBoundary>;
+  }
+
   const isCheckin = typeof window !== 'undefined' &&
     (window.location.search.includes('checkin') || window.location.hash.includes('checkin')
       || window.location.search.includes('portal=') || window.location.hash.includes('portal='));

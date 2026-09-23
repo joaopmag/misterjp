@@ -333,13 +333,17 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
   const saltoRef = useRef(0); // evita pedir vários saltos seguidos enquanto o primeiro não chega
   const [copiado, setCopiado] = useState(false);
 
-  // Partilhar SÓ o corte: o leitor do YouTube aberto diretamente, do
-  // início ao fim do clipe (o link normal do YouTube não aceita um fim).
-  const linkDoCorte = `https://www.youtube.com/embed/${clip.youtubeId}?start=${Math.floor(inicio)}&end=${Math.ceil(fim)}&autoplay=1&rel=0&playsinline=1`;
+  // Partilhar SÓ o corte: a página própria da app (?corte=, ver
+  // `PaginaCorte` no App), que mostra apenas o intervalo. Um link do
+  // YouTube abriria o jogo inteiro na app do YouTube do telemóvel.
+  const titulo = clip.titulo || 'Clipe';
+  const linkDoCorte = (() => {
+    const q = new URLSearchParams({ corte: clip.youtubeId, i: String(Math.floor(inicio)), f: String(Math.ceil(fim)), t: titulo });
+    return `${window.location.origin}${window.location.pathname}?${q.toString()}`;
+  })();
   const partilhar = async () => {
-    const titulo = clip.titulo || 'Clipe';
     if (navigator.share) {
-      try { await navigator.share({ title: titulo, text: `${clip.atletaNome || ''} · ${mmss(inicio)}–${mmss(fim)}`.replace(/^ · /, ''), url: linkDoCorte }); } catch (e) { /* cancelado */ }
+      try { await navigator.share({ title: titulo, text: titulo, url: linkDoCorte }); } catch (e) { /* cancelado */ }
       return;
     }
     if (navigator.clipboard) {
