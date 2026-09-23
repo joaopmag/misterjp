@@ -28956,6 +28956,26 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
    respetivamente, o editor de prancheta da Ideia de Jogo e a Biblioteca
    — ver a conversa sobre esta funcionalidade). Por agora, só Resumo e
    Jogadores-chave. */
+/* Cor de um clube adversário, derivada do nome: sempre a mesma para o
+   mesmo nome, tons médios que funcionam no fundo escuro. */
+function corDoClube(nome, opacidade = 1) {
+  const t = String(nome || '').trim().toLowerCase();
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+  return `hsla(${h % 360}, 48%, 42%, ${opacidade})`;
+}
+/* Iniciais para o escudo: ignora as siglas do tipo de clube (FC, UD,
+   USC, SC, CD…), que se repetem em quase todos e não distinguem nada.
+   "FC Padroense" → "P"; "Rio Ave FC" → "RA". */
+const SIGLAS_CLUBE = new Set(['fc', 'ud', 'usc', 'sc', 'cd', 'ad', 'gd', 'cf', 'ac', 'acd', 'adc', 'gdc', 'udc', 'sl', 'sad', 'cs', 'as', 'cp', 'crc', 'ccd', 'ard', 'gdr', 'clube', 'futebol', 'de', 'da', 'do', 'dos', 'das', 'e']);
+function iniciaisDoClube(nome) {
+  const palavras = String(nome || '').replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  const uteis = palavras.filter(p => !SIGLAS_CLUBE.has(p.toLowerCase()));
+  const base = uteis.length ? uteis : palavras;
+  if (!base.length) return '?';
+  return base.slice(0, 2).map(p => p[0].toUpperCase()).join('');
+}
+
 function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, videos, setVideos, editando, setEditando }) {
   const [viewing, setViewing] = useState(null); // ficha em consulta — página cheia
   const [printAdversario, setPrintAdversario] = useState(null);
@@ -29089,29 +29109,52 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
         <EmptyState text="Ainda sem adversários registados." action={<Btn onClick={() => setEditando('new')}><Plus size={15} /> Adicionar o primeiro</Btn>} />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-          {adversarios.map(a => (
-            <div key={a.id} onClick={() => setViewing(a)} style={{
-              background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer',
+          {adversarios.map(a => {
+            const cor = corDoClube(a.nome);
+            const botao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 6, display: 'flex', borderRadius: 6 };
+            return (
+            /* CARTÃO DE ADVERSÁRIO — um "escudo" com as iniciais do clube,
+               numa cor própria de cada clube (sempre a mesma para o mesmo
+               nome), e o nome inteiro numa linha. As ações passam para uma
+               faixa por baixo, para não roubarem espaço ao nome. */
+            <div key={a.id} onClick={() => setViewing(a)} title="Ver ficha do adversário" style={{
+              position: 'relative', overflow: 'hidden', cursor: 'pointer',
+              background: `linear-gradient(135deg, ${corDoClube(a.nome, 0.16)} 0%, ${T.surface} 55%)`,
+              border: `1px solid ${T.line}`, borderRadius: 12,
+              display: 'flex', flexDirection: 'column',
             }}>
-              {/* Cartão só com o nome do clube, numa linha. Se um nome for
-                  mais comprido do que o cartão, termina em "…" e o nome
-                  completo aparece ao passar o rato. */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <div title={a.nome} style={{ color: T.cream, fontWeight: 500, fontSize: 15, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.nome}</div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setAdversarios(prev => prev.map(x => (x.id === a.id ? { ...x, visivelAtletas: !x.visivelAtletas } : x))); }}
-                    title={a.visivelAtletas ? 'Visível no Portal do Atleta — clicar para esconder' : 'Tornar visível no Portal do Atleta'}
-                    style={{ background: 'none', border: 'none', color: a.visivelAtletas ? T.gold : T.mutedDim, cursor: 'pointer' }}
-                  >{a.visivelAtletas ? <Eye size={13} /> : <EyeOff size={13} />}</button>
-                  <button onClick={(e) => { e.stopPropagation(); doShare(a); }} title="Partilhar ficha do adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); doPrint(a); }} title="Imprimir ficha do adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); setEditando(a); }} title="Editar adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); remove(a.id); }} title="Apagar adversário" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
-                </div>
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: cor }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '16px 16px 14px 20px' }}>
+                <div aria-hidden="true" style={{
+                  width: 44, height: 50, flexShrink: 0,
+                  clipPath: 'polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%)',
+                  background: `linear-gradient(160deg, ${cor} 0%, ${corDoClube(a.nome, 0.6)} 100%)`,
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 11, boxSizing: 'border-box',
+                  color: '#fff', ...display, fontSize: 17, fontWeight: 700, letterSpacing: 0.5,
+                }}>{iniciaisDoClube(a.nome)}</div>
+                <div title={a.nome} style={{
+                  flex: 1, minWidth: 0, color: T.cream, ...display, fontSize: 19, fontWeight: 600, letterSpacing: 0.2,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>{a.nome || 'Adversário sem nome'}</div>
+              </div>
+              <div onClick={e => e.stopPropagation()} style={{
+                display: 'flex', alignItems: 'center', gap: 2, padding: '4px 10px 6px 16px', marginTop: 'auto',
+                borderTop: `1px solid ${T.line}`, cursor: 'default',
+              }}>
+                <button
+                  onClick={() => setAdversarios(prev => prev.map(x => (x.id === a.id ? { ...x, visivelAtletas: !x.visivelAtletas } : x)))}
+                  title={a.visivelAtletas ? 'Visível no Portal do Atleta. Clicar para esconder' : 'Tornar visível no Portal do Atleta'}
+                  style={{ ...botao, gap: 6, alignItems: 'center', color: a.visivelAtletas ? T.gold : T.mutedDim, fontSize: 11.5, ...body }}
+                >{a.visivelAtletas ? <Eye size={14} /> : <EyeOff size={14} />} {a.visivelAtletas ? 'No Portal' : 'Só staff'}</button>
+                <span style={{ flex: 1 }} />
+                <button onClick={() => doShare(a)} title="Partilhar ficha do adversário" style={botao}><Share2 size={14} /></button>
+                <button onClick={() => doPrint(a)} title="Imprimir ficha do adversário" style={botao}><Printer size={14} /></button>
+                <button onClick={() => setEditando(a)} title="Editar adversário" style={botao}><Pencil size={14} /></button>
+                <button onClick={() => remove(a.id)} title="Apagar adversário" style={botao}><Trash2 size={14} /></button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
