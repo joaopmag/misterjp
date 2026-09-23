@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User,
+  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -324,6 +324,42 @@ function dataCurta(iso) {
    só do início ao fim do corte e, ao chegar ao fim, volta ao início
    (o mesmo comportamento dos cortes do Canal). O tempo chega por
    postMessage (enablejsapi=1), o mesmo mecanismo usado no App. */
+/* PARTILHAR — o sistema (telemóvel) ou, sem ele, copiar para a área de
+   transferência. Devolve 'copiado' quando copiou, para o botão mostrar o ✓. */
+async function partilharLink({ titulo, texto, url }) {
+  if (navigator.share) {
+    try { await navigator.share({ title: titulo, text: texto, url }); } catch (e) { /* cancelado */ }
+    return 'partilhado';
+  }
+  if (navigator.clipboard) {
+    try { await navigator.clipboard.writeText(texto ? `${texto}\n${url}` : url); return 'copiado'; } catch (e) { /* abre */ }
+  }
+  window.open(url, '_blank');
+  return 'aberto';
+}
+
+// Clipe de atleta: a página própria da app (?corte=, ver `PaginaCorte`
+// no App), que mostra só o intervalo. Um link do YouTube abriria o jogo
+// inteiro na app do YouTube do telemóvel. A mensagem é o título do clipe.
+function partilharClipeAtleta(clip) {
+  const titulo = clip.titulo || 'Clipe';
+  const q = new URLSearchParams({
+    corte: clip.youtubeId,
+    i: String(Math.floor(Number(clip.clipInicio) || 0)),
+    f: String(Math.ceil(Number(clip.clipFim) || 0)),
+    t: titulo,
+  });
+  return partilharLink({ titulo, texto: titulo, url: `${window.location.origin}${window.location.pathname}?${q.toString()}` });
+}
+
+// Clipe cortado aqui (ficheiro): o próprio ficheiro já é só o corte.
+function partilharClipeFicheiro(clip) {
+  const tag = TAGS.find(t => t.id === clip.tagId);
+  const titulo = tag ? tag.label : 'Clipe';
+  const texto = [tag && tag.label, clip.note, clip.originalTitulo].filter(Boolean).join('\n');
+  return partilharLink({ titulo, texto, url: clip.publicUrl });
+}
+
 function ClipAtletaModal({ clip, onClose, onRemove }) {
   const iframeRef = useRef(null);
   const inicio = Math.max(0, Number(clip.clipInicio) || 0);
@@ -333,23 +369,9 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
   const saltoRef = useRef(0); // evita pedir vários saltos seguidos enquanto o primeiro não chega
   const [copiado, setCopiado] = useState(false);
 
-  // Partilhar SÓ o corte: a página própria da app (?corte=, ver
-  // `PaginaCorte` no App), que mostra apenas o intervalo. Um link do
-  // YouTube abriria o jogo inteiro na app do YouTube do telemóvel.
-  const titulo = clip.titulo || 'Clipe';
-  const linkDoCorte = (() => {
-    const q = new URLSearchParams({ corte: clip.youtubeId, i: String(Math.floor(inicio)), f: String(Math.ceil(fim)), t: titulo });
-    return `${window.location.origin}${window.location.pathname}?${q.toString()}`;
-  })();
   const partilhar = async () => {
-    if (navigator.share) {
-      try { await navigator.share({ title: titulo, text: titulo, url: linkDoCorte }); } catch (e) { /* cancelado */ }
-      return;
-    }
-    if (navigator.clipboard) {
-      try { await navigator.clipboard.writeText(linkDoCorte); setCopiado(true); setTimeout(() => setCopiado(false), 1600); return; } catch (e) { /* abre */ }
-    }
-    window.open(linkDoCorte, '_blank');
+    const r = await partilharClipeAtleta(clip);
+    if (r === 'copiado') { setCopiado(true); setTimeout(() => setCopiado(false), 1600); }
   };
 
   const comando = (func, args) => {
@@ -400,7 +422,7 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
           </span>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
             <Btn variant="ghost" onClick={partilhar} style={{ padding: '6px 10px' }} title="Partilhar só o corte">
-              {copiado ? <Check size={14} color={T.good} /> : <Link2 size={14} />}
+              {copiado ? <Check size={14} color={T.good} /> : <Share2 size={14} />}
             </Btn>
             <Btn variant="ghost" onClick={onRemove} style={{ padding: '6px 10px' }} title="Apagar clipe"><Trash2 size={14} color={T.bad} /></Btn>
             <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
@@ -1421,10 +1443,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 340, overflowY: 'auto' }}>
                     {g.clipes.map(c => (
-                      <button key={c.id} onClick={() => setClipeAtletaAberto(c)}
+                      <div key={c.id} style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}` }}>
+                      <button onClick={() => setClipeAtletaAberto(c)}
                         style={{
-                          display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 12px', cursor: 'pointer',
-                          background: 'transparent', border: 'none', borderBottom: `1px solid ${T.line}`, ...body,
+                          flex: 1, minWidth: 0, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 4px 9px 12px', cursor: 'pointer',
+                          background: 'transparent', border: 'none', ...body,
                         }}>
                         <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
                           style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
@@ -1439,6 +1462,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                             : c.originalTitulo && <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.originalTitulo}</span>}
                         </span>
                       </button>
+                      <button
+                        onClick={async () => { if (await partilharClipeAtleta(c) === 'copiado') { setCopiedId(c.id); setTimeout(() => setCopiedId(null), 1600); } }}
+                        title="Partilhar só o corte" aria-label={`Partilhar o clipe ${c.titulo || ''}`}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', display: 'flex', flexShrink: 0 }}>
+                        {copiedId === c.id ? <Check size={15} color={T.good} /> : <Share2 size={15} color={T.muted} />}
+                      </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1479,9 +1509,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).map(clip => {
                 const tag = TAGS.find(t => t.id === clip.tagId);
                 return (
-                  <button key={clip.id} onClick={() => setClipeAReproduzir(clip)}
+                  <div key={clip.id} style={{ position: 'relative', flex: '0 0 auto', width: 148, scrollSnapAlign: 'start' }}>
+                  <button onClick={() => setClipeAReproduzir(clip)}
                     style={{
-                      flex: '0 0 auto', width: 148, scrollSnapAlign: 'start', textAlign: 'left', cursor: 'pointer', padding: 0,
+                      width: '100%', textAlign: 'left', cursor: 'pointer', padding: 0, display: 'block',
                       background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body,
                     }}>
                     <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
@@ -1506,6 +1537,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       )}
                     </div>
                   </button>
+                  <button
+                    onClick={async () => { if (await partilharClipeFicheiro(clip) === 'copiado') { setCopiedId(clip.id); setTimeout(() => setCopiedId(null), 1600); } }}
+                    title="Partilhar o clipe" aria-label="Partilhar o clipe"
+                    style={{
+                      position: 'absolute', top: 7, left: 6, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
+                      background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                    }}>
+                    {copiedId === clip.id ? <Check size={13} color={T.good} /> : <Share2 size={13} color="#fff" />}
+                  </button>
+                  </div>
                 );
               })}
             </div>

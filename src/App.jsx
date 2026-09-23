@@ -32633,15 +32633,17 @@ async function shareMediaItem(item) {
     : eCorte ? linkDoCorteYoutube(item.youtubeId, item.clipInicio, item.clipFim, titulo)
       : item.youtubeId ? `https://youtu.be/${item.youtubeId}`
         : (item.social ? socialEmbedSrc(item.social) : null);
-  // Num corte, a mensagem é o título que lhe deram (o link vem a seguir).
-  const texto = eCorte ? titulo : (item.jornada || '');
+  // Num corte, a mensagem é o título que lhe deram; num vídeo completo
+  // (ou noutro link), o descritivo todo: título e, por baixo, a
+  // jornada/descrição. O link vem a seguir.
+  const texto = eCorte ? titulo : [titulo, item.jornada].filter(Boolean).join('\n');
 
   if (url) {
     if (navigator.share) {
       try { await navigator.share({ title: titulo, text: texto, url }); return; } catch (e) { /* cancelado */ return; }
     }
     if (navigator.clipboard) {
-      try { await navigator.clipboard.writeText(url); window.alert('Link copiado.'); return; } catch (e) { /* segue para abrir */ }
+      try { await navigator.clipboard.writeText(texto ? `${texto}\n${url}` : url); window.alert('Link copiado.'); return; } catch (e) { /* segue para abrir */ }
     }
     window.open(url, '_blank');
     return;
