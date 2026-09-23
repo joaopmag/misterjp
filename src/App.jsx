@@ -26201,6 +26201,10 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
   const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
   const [videos, setVideosState] = useState([]);
   const [meusClipes, setMeusClipes] = useState([]);
+  // Se a leitura dos clipes do jogador falhar, diz-se no ecrã (antes
+  // falhava em silêncio e os clipes simplesmente não apareciam).
+  const [erroMeusClipes, setErroMeusClipes] = useState(false);
+  const canalRef = useRef(null);
   // Confirmação depois de gravar um clipe. O Portal não tem a barra de
   // avisos do staff (`UndoBar`), por isso fica aqui.
   const [avisoClipe, setAvisoClipe] = useState(null); // { texto, erro }
@@ -26237,10 +26241,15 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
       // continua a abrir na mesma, só sem eles.
       try {
         const { data, error } = await supabase.rpc('checkin_meus_clipes', { p_code: code, p_team: teamId });
-        if (cancelado || error) return;
+        if (cancelado) return;
+        if (error) throw error;
         const d = lerJson(data);
         setMeusClipes(((d && d.clipes) || []).filter(c => c && c.youtubeId).map(clipeAtletaParaCanal));
-      } catch (e) { /* sem clipes próprios */ }
+        setErroMeusClipes(false);
+      } catch (e) {
+        console.error('checkin_meus_clipes', e);
+        if (!cancelado) setErroMeusClipes(true);
+      }
     })();
     return () => { cancelado = true; };
   }, [code, teamId]);
@@ -26326,8 +26335,42 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
         }}>{avisoClipe.texto}</div>
       )}
 
+      {/* OS MEUS CLIPES — atalho para os clipes do próprio jogador. Cada
+          clipe vive dentro do jogo de onde saiu (Jogos › jornada ›
+          Cortes); tocar aqui abre esse jogo com o clipe selecionado. */}
+      {estado === 'pronto' && (meusClipes.length > 0 || erroMeusClipes) && (
+        <div style={{ marginBottom: 16, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: meusClipes.length ? 10 : 0 }}>
+            <Scissors size={15} color={T.good} />
+            <span style={{ ...display, fontSize: 15, color: T.cream }}>Os meus clipes ({meusClipes.length})</span>
+            <span style={{ fontSize: 11.5, color: T.mutedDim }}>Só tu e o treinador os vêem.</span>
+          </div>
+          {erroMeusClipes && (
+            <div style={{ fontSize: 12.5, color: T.bad }}>Não foi possível carregar os teus clipes. Tenta outra vez ou fala com o staff.</div>
+          )}
+          {meusClipes.length > 0 && (
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+              {[...meusClipes].reverse().map(c => (
+                <button key={c.id} onClick={() => canalRef.current && canalRef.current.irParaItem(c.id)}
+                  style={{
+                    flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, maxWidth: 260, textAlign: 'left',
+                    background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 10px 6px 6px', cursor: 'pointer', ...body,
+                  }}>
+                  <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmtMMSS(c.clipInicio)}–{fmtMMSS(c.clipFim)} · {c.clipOrigemTitulo || 'Jogo'}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {estado === 'pronto' && (
         <MediaLibrary
+          ref={canalRef}
           items={itensPortal}
           setItems={() => {}}
           semBotaoTopo
@@ -30502,7 +30545,14 @@ const SECOES_CANAL = [
 
 const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta }, ref) {
   const [modal, setModal] = useState(null);
-  React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
+  // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
+  // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
+  // depois de `irPara` existir.
+  const irParaRef = React.useRef(null);
+  React.useImperativeHandle(ref, () => ({
+    abrirNovo: () => setModal('new'),
+    irParaItem: (id) => { if (irParaRef.current) irParaRef.current(id); },
+  }));
   // Pasta atualmente aberta: null = todas.
   const [folderFilter, setFolderFilter] = useState(null);
   const [renaming, setRenaming] = useState(null); // nome antigo, enquanto se renomeia
@@ -30995,6 +31045,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     } else { setSecao('temas'); setFolderFilter(cleanFolder(v.pasta) || NO_FOLDER); }
     setActiveId(v.id);
   };
+  irParaRef.current = (id) => irPara(items.find(x => x.id === id));
 
   // Mudar o nome de uma pasta = reescrever o campo em todos os seus itens.
   const applyRename = () => {

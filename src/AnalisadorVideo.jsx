@@ -288,19 +288,66 @@ function dataCurta(iso) {
   return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+/* LEITOR DO CLIPE DE ATLETA — preso ao intervalo do corte.
+
+   Sem controlos nativos do YouTube (controls=0, disablekb=1): a barra
+   nativa mostrava e deixava percorrer o jogo inteiro. A nossa barra vai
+   só do início ao fim do corte e, ao chegar ao fim, volta ao início
+   (o mesmo comportamento dos cortes do Canal). O tempo chega por
+   postMessage (enablejsapi=1), o mesmo mecanismo usado no App. */
 function ClipAtletaModal({ clip, onClose, onRemove }) {
-  const inicio = Math.max(0, Math.floor(Number(clip.clipInicio) || 0));
-  const fim = Math.ceil(Number(clip.clipFim) || 0);
-  // Aqui usa-se o `end=` do próprio YouTube: é um leitor simples, só
-  // para ver o lance. Pode, em alguns casos, repetir o último segundo.
-  const src = `https://www.youtube.com/embed/${clip.youtubeId}?start=${inicio}${fim > inicio ? `&end=${fim}` : ''}&autoplay=1&rel=0&playsinline=1`;
+  const iframeRef = useRef(null);
+  const inicio = Math.max(0, Number(clip.clipInicio) || 0);
+  const fim = Math.max(inicio + 1, Number(clip.clipFim) || 0);
+  const [tempo, setTempo] = useState(inicio);
+  const [aTocar, setATocar] = useState(false);
+  const saltoRef = useRef(0); // evita pedir vários saltos seguidos enquanto o primeiro não chega
+
+  const comando = (func, args) => {
+    const win = iframeRef.current && iframeRef.current.contentWindow;
+    if (win) win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
+  };
+  const irPara = (seg) => { saltoRef.current = Date.now(); comando('seekTo', [seg, true]); setTempo(seg); };
+
+  useEffect(() => {
+    const onMessage = (event) => {
+      if (!event.origin || !event.origin.includes('youtube.com')) return;
+      const win = iframeRef.current && iframeRef.current.contentWindow;
+      if (win && event.source !== win) return;
+      let data = event.data;
+      try { data = typeof data === 'string' ? JSON.parse(data) : data; } catch (e) { return; }
+      if (!data) return;
+      if (data.event === 'onStateChange' && typeof data.info === 'number') setATocar(data.info === 1 || data.info === 3);
+      if (data.event === 'infoDelivery' && data.info) {
+        if (typeof data.info.playerState === 'number') setATocar(data.info.playerState === 1 || data.info.playerState === 3);
+        const t = data.info.currentTime;
+        if (typeof t === 'number') {
+          const aSaltar = Date.now() - saltoRef.current < 800;
+          if (!aSaltar && (t >= fim - 0.15 || t < inicio - 0.5)) irPara(inicio);
+          else setTempo(Math.min(fim, Math.max(inicio, t)));
+        }
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clip.id, inicio, fim]);
+
+  const aoCarregar = () => {
+    const win = iframeRef.current && iframeRef.current.contentWindow;
+    if (win) win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+  };
+
+  const src = `https://www.youtube.com/embed/${clip.youtubeId}?start=${Math.floor(inicio)}&autoplay=1&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`;
+  const duracao = fim - inicio;
+
   return (
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden', maxHeight: '100%', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
           <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {clip.atletaNome || 'Atleta'}, {mmss(clip.clipInicio)} a {mmss(clip.clipFim)} ({Math.round(Number(clip.duracao) || (fim - inicio))}s)
+            {clip.atletaNome || 'Atleta'} · {mmss(inicio)}–{mmss(fim)} ({Math.round(duracao)}s)
           </span>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
             <Btn variant="ghost" onClick={onRemove} style={{ padding: '6px 10px' }} title="Apagar clipe"><Trash2 size={14} color={T.bad} /></Btn>
@@ -309,10 +356,27 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
         </div>
         <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000' }}>
           <iframe
+            ref={iframeRef} onLoad={aoCarregar}
             src={src} title={clip.titulo || 'Clipe'}
-            allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
+            allow="autoplay; encrypted-media; picture-in-picture"
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
           />
+        </div>
+        {/* BARRA DO CLIPE — só o intervalo do corte. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderBottom: `1px solid ${T.line}` }}>
+          <button onClick={() => comando(aTocar ? 'pauseVideo' : 'playVideo')} title={aTocar ? 'Pausa' : 'Reproduzir'}
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
+            {aTocar ? <Pause size={16} /> : <Play size={16} />}
+          </button>
+          <button onClick={() => irPara(inicio)} title="Voltar ao início do clipe"
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
+            <RotateCcw size={15} />
+          </button>
+          <input type="range" min={0} max={duracao} step={0.1} value={Math.max(0, tempo - inicio)}
+            onChange={e => irPara(inicio + Number(e.target.value))}
+            aria-label="Posição no clipe"
+            style={{ flex: 1, accentColor: T.gold }} />
+          <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(tempo - inicio)} / {mmss(duracao)}</span>
         </div>
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body }}>{clip.titulo || '(sem título)'}</div>
@@ -1316,7 +1380,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                           <span style={{ display: 'block', fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.titulo || '(sem título)'}</span>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.mutedDim, ...mono }}>
                             <Scissors size={10} /> {mmss(c.clipInicio)}–{mmss(c.clipFim)}
-                            {dataCurta(c.criadoEm) && <span style={{ ...body }}>, {dataCurta(c.criadoEm)}</span>}
+                            {dataCurta(c.criadoEm) && <span style={{ ...body, marginLeft: 4 }}>· {dataCurta(c.criadoEm)}</span>}
                           </span>
                           {c.note
                             ? <span style={{ display: 'block', fontSize: 11.5, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.note}</span>
