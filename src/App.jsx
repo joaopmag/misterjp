@@ -26162,9 +26162,60 @@ function PlayerTreinoView({ code, teamId, onBack }) {
    cima ("Tudo", cada pasta, "Sem pasta"), e o conteúdo da pasta escolhida
    abre por baixo — mas sem nada de editar, mover ou apagar, que aqui não
    faz sentido nenhum. */
+// Duração máxima de um clipe criado por um jogador no Portal. Tem de
+// bater certo com o limite da função `checkin_clipe_criar` no Supabase.
+const MAX_CLIPE_ATLETA_SEG = 120;
+
+/* Um clipe gravado por um jogador (tabela `video_clips`, origem
+   'atleta') no formato de um corte do Canal — assim aparece dentro do
+   cartão do jogo de onde saiu, com a mesma barra do clipe. */
+function clipeAtletaParaCanal(c) {
+  return {
+    id: c.id,
+    title: c.titulo || '(sem título)',
+    youtubeId: c.youtubeId,
+    clipInicio: Number(c.clipInicio),
+    clipFim: Number(c.clipFim),
+    clipOrigemId: c.clipOrigemId || c.videoOrigemId || null,
+    clipOrigemTitulo: c.originalTitulo || '',
+    jogoId: c.jogoId || null,
+    jornada: c.jornada || '',
+    categoria: 'jogo',
+    pasta: '',
+    deAtleta: true,
+    notaAtleta: c.note || '',
+  };
+}
+
+// Mensagens da função `checkin_clipe_criar`, nas palavras do jogador.
+const ERROS_CLIPE_ATLETA = {
+  codigo_invalido: 'O teu código já não é válido. Volta a entrar no Portal.',
+  equipa_invalida: 'Este link não diz de que equipa és. Pede ao treinador o link da tua equipa.',
+  video_invalido: 'Este vídeo já não está disponível para criar clipes.',
+  tempos_invalidos: 'Marca o início e o fim do clipe.',
+  duracao_invalida: `O clipe tem de ter entre 1 e ${MAX_CLIPE_ATLETA_SEG} segundos.`,
+  titulo_obrigatorio: 'Dá um título ao clipe antes de gravar.',
+};
+
 function PlayerBibliotecaView({ code, teamId, onBack }) {
   const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
   const [videos, setVideosState] = useState([]);
+  const [meusClipes, setMeusClipes] = useState([]);
+  // Confirmação depois de gravar um clipe. O Portal não tem a barra de
+  // avisos do staff (`UndoBar`), por isso fica aqui.
+  const [avisoClipe, setAvisoClipe] = useState('');
+  useEffect(() => {
+    if (!avisoClipe) return undefined;
+    const t = setTimeout(() => setAvisoClipe(''), 5000);
+    return () => clearTimeout(t);
+  }, [avisoClipe]);
+
+  const lerJson = (data) => {
+    let d = data;
+    if (Array.isArray(d)) d = d[0];
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
+    return d;
+  };
 
   useEffect(() => {
     let cancelado = false;
@@ -26173,9 +26224,7 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
         const { data, error } = await supabase.rpc('checkin_biblioteca', { p_code: code, p_team: teamId });
         if (cancelado) return;
         if (error) throw error;
-        let d = data;
-        if (Array.isArray(d)) d = d[0];
-        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
+        const d = lerJson(data);
         // Por ordem de criação, como no Canal — é o próprio visualizador
         // (`recentesPrimeiro`) que mostra o mais recente primeiro.
         setVideosState(((d && d.videos) || []).slice());
@@ -26183,9 +26232,40 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
       } catch (e) {
         if (!cancelado) setEstado('erro');
       }
+      // Os clipes do próprio jogador vêm à parte. Se falharem (por
+      // exemplo, função ainda não criada no Supabase), a Biblioteca
+      // continua a abrir na mesma, só sem eles.
+      try {
+        const { data, error } = await supabase.rpc('checkin_meus_clipes', { p_code: code, p_team: teamId });
+        if (cancelado || error) return;
+        const d = lerJson(data);
+        setMeusClipes(((d && d.clipes) || []).filter(c => c && c.youtubeId).map(clipeAtletaParaCanal));
+      } catch (e) { /* sem clipes próprios */ }
     })();
     return () => { cancelado = true; };
   }, [code, teamId]);
+
+  // Referência estável: o Canal tem efeitos que dependem da lista.
+  const itensPortal = React.useMemo(() => [...videos, ...meusClipes], [videos, meusClipes]);
+
+  const criarClipeAtleta = async ({ videoId, inicio, fim, titulo, nota }) => {
+    let resposta;
+    try {
+      const { data, error } = await supabase.rpc('checkin_clipe_criar', {
+        p_code: code, p_team: teamId, p_video_id: videoId,
+        p_inicio: inicio, p_fim: fim, p_titulo: titulo, p_nota: nota || '',
+      });
+      if (error) throw error;
+      resposta = lerJson(data);
+    } catch (e) {
+      throw new Error('Não foi possível ligar. Verifica a internet e tenta outra vez.');
+    }
+    if (!resposta || !resposta.ok) {
+      throw new Error(ERROS_CLIPE_ATLETA[resposta && resposta.erro] || 'O clipe não ficou gravado. Tenta outra vez.');
+    }
+    if (resposta.clipe) setMeusClipes(prev => [...prev, clipeAtletaParaCanal(resposta.clipe)]);
+    setAvisoClipe(`Clipe "${titulo}" gravado. Fica na lista do jogo e o treinador já o pode ver.`);
+  };
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', padding: '28px 24px 60px' }}>
@@ -26208,15 +26288,27 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
 
       {/* O MESMO CANAL do staff (Jogos · Adversários · Temas, cartões por
           jogo, barra do clipe, ecrã inteiro) — em modo só de leitura: sem
-          adicionar, editar, mover, apagar nem criar clipes. */}
+          adicionar, editar, mover nem apagar. A única exceção é criar
+          clipes nos vídeos de JOGOS (`criarClipeAtleta`), que ficam
+          guardados para o jogador e para o staff (Análise de Vídeo ›
+          Análise individual em clipes). */}
+      {avisoClipe && (
+        <div role="status" style={{
+          position: 'fixed', left: '50%', bottom: 'calc(20px + env(safe-area-inset-bottom, 0px))', transform: 'translateX(-50%)',
+          zIndex: 3000, maxWidth: 'min(520px, 92vw)', padding: '10px 14px', borderRadius: 8, fontSize: 13, color: T.cream,
+          background: T.surface, border: `1px solid ${T.good}`, boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+        }}>{avisoClipe}</div>
+      )}
+
       {estado === 'pronto' && (
         <MediaLibrary
-          items={videos}
+          items={itensPortal}
           setItems={() => {}}
           semBotaoTopo
           recentesPrimeiro
           modoCanal
           soLeitura
+          criarClipeAtleta={criarClipeAtleta}
           emptyText="Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver."
         />
       )}
@@ -30381,7 +30473,7 @@ const SECOES_CANAL = [
   { id: 'temas', label: 'Temas', cat: 'tema', Icon: FolderOpen },
 ];
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta }, ref) {
   const [modal, setModal] = useState(null);
   React.useImperativeHandle(ref, () => ({ abrirNovo: () => setModal('new') }));
   // Pasta atualmente aberta: null = todas.
@@ -30415,7 +30507,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [clipMode, setClipMode] = useState(false);
   const [clipMarcas, setClipMarcas] = useState({ inicio: null, fim: null });
   const [tituloClipe, setTituloClipe] = useState('');
-  const sairDoModoClipe = () => { setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe(''); };
+  /* CLIPE DO ATLETA (Portal) — só existe quando o Portal passa
+     `criarClipeAtleta`. O fluxo é o mesmo (marcar início, marcar fim),
+     mas para gravar o jogador tem de catalogar: título obrigatório e um
+     texto livre. Grava no servidor (função `checkin_clipe_criar`) e não
+     na lista local, porque o Portal não escreve nas tabelas. */
+  const [notaClipe, setNotaClipe] = useState('');
+  const [aGravarClipeAtleta, setAGravarClipeAtleta] = useState(false);
+  const [erroClipeAtleta, setErroClipeAtleta] = useState('');
+  const sairDoModoClipe = () => {
+    setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe('');
+    setNotaClipe(''); setErroClipeAtleta(''); setAGravarClipeAtleta(false);
+  };
 
   // Comandos ao leitor do YouTube por postMessage "cru" (o mesmo
   // protocolo do handshake 'listening', sem carregar o script oficial da
@@ -31017,7 +31120,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 // antes o intervalo.
                 <div style={{ fontSize: 11, color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Scissors size={10} /> {fmtMMSS(v.clipInicio)}–{fmtMMSS(v.clipFim)}
-                  {naFicha && <span style={{ color: T.warn }}>· na ficha</span>}
+                  {naFicha && <span style={{ color: T.warn }}>· corte</span>}
+                  {v.deAtleta && <span style={{ color: T.good }}>· o meu clipe</span>}
                 </div>
               ) : (v.jornada || v.fileName) && <div style={{ fontSize: 11, color: T.mutedDim }}>{v.jornada || v.fileName}</div>}
               {/* Só se mostra a pasta quando se está a ver tudo —
@@ -31177,6 +31281,21 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const inicio = Math.min(clipMarcas.inicio, clipMarcas.fim);
     const fim = Math.max(clipMarcas.inicio, clipMarcas.fim);
     if (fim - inicio < 1) return;
+    if (criarClipeAtleta) {
+      // No Portal: título obrigatório e no máximo MAX_CLIPE_ATLETA_SEG.
+      // O servidor volta a validar tudo isto — aqui é só para o botão
+      // não deixar tentar.
+      if (!tituloClipe.trim() || fim - inicio > MAX_CLIPE_ATLETA_SEG || aGravarClipeAtleta) return;
+      setAGravarClipeAtleta(true);
+      setErroClipeAtleta('');
+      criarClipeAtleta({ videoId: active.id, inicio, fim, titulo: tituloClipe.trim(), nota: notaClipe.trim() })
+        .then(() => sairDoModoClipe())
+        .catch(e => {
+          setErroClipeAtleta((e && e.message) || 'O clipe não ficou gravado. Tenta outra vez.');
+          setAGravarClipeAtleta(false);
+        });
+      return;
+    }
     const novo = {
       id: uid(),
       title: tituloClipe.trim() || `${active.title || 'Vídeo'} — corte`,
@@ -31268,9 +31387,81 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setGrupo(`e:${semAcentos(equipa)}`);
   };
 
+  // Quem pode criar clipes neste vídeo: o staff em qualquer vídeo do
+  // YouTube; no Portal, o jogador só em vídeos de JOGOS da equipa.
+  const podeCriarClipe = !soLeitura
+    || (!!criarClipeAtleta && !!active && !!active.youtubeId && catDe(active) === 'jogo');
+  const duracaoMarcada = clipMarcas.inicio != null && clipMarcas.fim != null
+    ? Math.abs(clipMarcas.fim - clipMarcas.inicio) : null;
+
+  // Painel do Portal: marcar início e fim, depois catalogar (título
+  // obrigatório + texto livre) e só então gravar.
+  const renderPainelClipeAtleta = (escuro) => {
+    const demasiadoLongo = duracaoMarcada != null && duracaoMarcada > MAX_CLIPE_ATLETA_SEG;
+    const marcado = duracaoMarcada != null && duracaoMarcada >= 1 && !demasiadoLongo;
+    const podeGravar = marcado && !!tituloClipe.trim() && !aGravarClipeAtleta;
+    const campo = {
+      background: escuro ? '#000' : T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
+      padding: '8px 10px', color: T.cream, fontSize: 13, ...body, width: '100%', boxSizing: 'border-box',
+    };
+    return (
+      <div style={escuro ? {
+        background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+        padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 8,
+      } : {
+        marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+        padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+      }}>
+        {!escuro && (
+          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+            Deixa o vídeo a tocar e marca onde o lance começa e acaba (até {MAX_CLIPE_ATLETA_SEG / 60} minutos).
+            Depois dá-lhe um título e escreve o que quiseres sobre ele. O clipe fica guardado para ti e para o treinador.
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
+          <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
+          <div style={{ color: T.mutedDim, fontSize: 12 }}>até</div>
+          <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
+          <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
+          {marcado && <div style={{ fontSize: 12, color: T.mutedDim }}>{Math.round(duracaoMarcada)}s</div>}
+        </div>
+        {duracaoMarcada != null && duracaoMarcada < 1 && (
+          <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto. Marca o fim um pouco mais à frente.</div>
+        )}
+        {demasiadoLongo && (
+          <div style={{ fontSize: 12.5, color: T.bad }}>
+            O clipe tem {Math.round(duracaoMarcada)}s. O máximo são {MAX_CLIPE_ATLETA_SEG} segundos: marca o início ou o fim outra vez.
+          </div>
+        )}
+        {marcado && (
+          <>
+            <input
+              value={tituloClipe} onChange={e => setTituloClipe(e.target.value)} maxLength={120}
+              placeholder="Título (obrigatório), ex.: A minha receção orientada"
+              style={campo}
+            />
+            <textarea
+              value={notaClipe} onChange={e => setNotaClipe(e.target.value)} maxLength={2000}
+              rows={escuro ? 2 : 3}
+              placeholder="O que queres dizer sobre este lance? (opcional)"
+              style={{ ...campo, resize: 'vertical' }}
+            />
+            {erroClipeAtleta && <div style={{ fontSize: 12.5, color: T.bad }}>{erroClipeAtleta}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Btn onClick={guardarClipe} disabled={!podeGravar}>
+                <Scissors size={14} /> {aGravarClipeAtleta ? 'A gravar…' : 'Gravar clipe'}
+              </Btn>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   // Painel "Criar clipe" — o mesmo em modo normal (cartão por baixo do
   // vídeo) e em ecrã inteiro (faixa escura compacta dentro da caixa).
-  const renderPainelClipe = (escuro) => (
+  const renderPainelClipe = (escuro) => criarClipeAtleta ? renderPainelClipeAtleta(escuro) : (
     <div style={escuro ? {
       background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
       padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 8,
@@ -31819,7 +32010,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           </a>
                         )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
-                          {!soLeitura && (
+                          {podeCriarClipe && (
                           <button
                             onClick={() => (clipMode ? sairDoModoClipe() : setClipMode(true))}
                             style={{
@@ -31846,9 +32037,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {/* Criar clipe EM ECRÃ INTEIRO — o mesmo painel, em
                         versão escura e compacta, dentro da caixa que está
                         em ecrã inteiro (fora dela não se veria). */}
-                    {ytFull && clipMode && !soLeitura && !isBlocked && renderPainelClipe(true)}
+                    {ytFull && clipMode && podeCriarClipe && !isBlocked && renderPainelClipe(true)}
                   </div>
-                  {!ytFull && clipMode && !soLeitura && !isBlocked && renderPainelClipe(false)}
+                  {!ytFull && clipMode && podeCriarClipe && !isBlocked && renderPainelClipe(false)}
                   </>
                 ) : active.social ? (
                   <div style={{ maxWidth: isSocialFullscreen ? 'none' : 320, margin: '0 auto' }}>

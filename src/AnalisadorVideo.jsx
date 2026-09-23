@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Link2, Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
-  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye,
+  Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -267,6 +267,65 @@ function ClipPlayerModal({ clip, tag, onClose, onCopy, onRemove, copied, onChang
   );
 }
 
+/* CLIPES DOS ATLETAS — criados no Portal do Atleta (Biblioteca), sobre
+   vídeos de jogos do YouTube. Não são ficheiros cortados: guardam só
+   `youtubeId` + `clipInicio`/`clipFim`, com `origem: 'atleta'`, o
+   jogador que o criou (`atletaId`/`atletaNome`), o título e o texto
+   livre dele (`note`). Vivem na mesma tabela `video_clips`, mas não
+   entram na lista de clipes do staff: têm o separador próprio
+   "Análise individual em clipes", com um cartão por jogador. */
+const ehClipeAtleta = (c) => !!c && c.origem === 'atleta';
+
+function mmss(seg) {
+  const s = Math.max(0, Math.round(Number(seg) || 0));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function dataCurta(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function ClipAtletaModal({ clip, onClose, onRemove }) {
+  const inicio = Math.max(0, Math.floor(Number(clip.clipInicio) || 0));
+  const fim = Math.ceil(Number(clip.clipFim) || 0);
+  // Aqui usa-se o `end=` do próprio YouTube: é um leitor simples, só
+  // para ver o lance. Pode, em alguns casos, repetir o último segundo.
+  const src = `https://www.youtube.com/embed/${clip.youtubeId}?start=${inicio}${fim > inicio ? `&end=${fim}` : ''}&autoplay=1&rel=0&playsinline=1`;
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, maxWidth: 720, width: '100%', overflow: 'hidden', maxHeight: '100%', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: `1px solid ${T.line}` }}>
+          <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {clip.atletaNome || 'Atleta'}, {mmss(clip.clipInicio)} a {mmss(clip.clipFim)} ({Math.round(Number(clip.duracao) || (fim - inicio))}s)
+          </span>
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <Btn variant="ghost" onClick={onRemove} style={{ padding: '6px 10px' }} title="Apagar clipe"><Trash2 size={14} color={T.bad} /></Btn>
+            <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
+          </div>
+        </div>
+        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000' }}>
+          <iframe
+            src={src} title={clip.titulo || 'Clipe'}
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
+          />
+        </div>
+        <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body }}>{clip.titulo || '(sem título)'}</div>
+          {clip.originalTitulo && <div style={{ fontSize: 12, color: T.mutedDim, ...body }}>{clip.originalTitulo}</div>}
+          {clip.note
+            ? <div style={{ fontSize: 13, color: T.cream, whiteSpace: 'pre-wrap', lineHeight: 1.5, ...body }}>{clip.note}</div>
+            : <div style={{ fontSize: 12.5, color: T.mutedDim, fontStyle: 'italic', ...body }}>O jogador não escreveu nada sobre este clipe.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* PROPS ESPERADAS — passadas do App principal, tal como `documentos`/
    `setDocumentos` já são passadas ao `DocumentosApp`:
    teamId, videosOriginais, setVideosOriginais, clipes, setClipes
@@ -317,6 +376,26 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [copiedId, setCopiedId] = useState(null);
   const [clipeAReproduzir, setClipeAReproduzir] = useState(null);
   const [filtroTag, setFiltroTag] = useState(null);
+  // Separador da biblioteca de clipes: 'staff' (os clipes cortados aqui)
+  // ou 'atletas' (Análise individual em clipes, criados no Portal).
+  const [separadorClipes, setSeparadorClipes] = useState('staff');
+  const [clipeAtletaAberto, setClipeAtletaAberto] = useState(null);
+
+  const clipesStaff = clipes.filter(c => !ehClipeAtleta(c));
+  const clipesAtletas = clipes.filter(ehClipeAtleta);
+  // Um cartão por jogador, criado sozinho a partir do primeiro clipe
+  // dele. Ordem alfabética; dentro do cartão, o clipe mais recente primeiro.
+  const cartoesAtletas = (() => {
+    const porAtleta = new Map();
+    clipesAtletas.forEach(c => {
+      const chave = c.atletaId || c.atletaNome || 'sem-atleta';
+      if (!porAtleta.has(chave)) porAtleta.set(chave, { chave, nome: c.atletaNome || 'Atleta sem nome', clipes: [] });
+      porAtleta.get(chave).clipes.push(c);
+    });
+    const lista = [...porAtleta.values()];
+    lista.forEach(g => g.clipes.sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''))));
+    return lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+  })();
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
 
@@ -524,7 +603,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const removerClipe = (clip, onRemovido) => {
     const executar = async () => {
-      try { await supabase.storage.from('videos-clipes').remove([clip.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
+      // Os clipes dos atletas não têm ficheiro (são só marcas no YouTube).
+      if (clip.storagePath) {
+        try { await supabase.storage.from('videos-clipes').remove([clip.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
+      }
       setClipes(prev => prev.filter(c => c.id !== clip.id));
       onRemovido?.();
     };
@@ -1183,16 +1265,75 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
       {/* Biblioteca de clipes — permanente, independente do vídeo original */}
       <div style={{ marginTop: 26 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <Tag size={16} color={T.gold} />
-          <h2 style={{ fontSize: 15, margin: 0, ...display, fontWeight: 600, color: T.cream }}>
-            Clipes ({(filtroTag ? clipes.filter(c => c.tagId === filtroTag) : clipes).length})
-          </h2>
+        <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+          {[
+            { id: 'staff', label: `Clipes (${(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).length})`, Icon: Tag },
+            { id: 'atletas', label: `Análise individual em clipes (${clipesAtletas.length})`, Icon: User },
+          ].map(({ id, label, Icon }) => {
+            const on = separadorClipes === id;
+            return (
+              <button key={id} role="tab" aria-selected={on} onClick={() => setSeparadorClipes(id)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px', borderRadius: 8, cursor: 'pointer',
+                  ...display, fontSize: 14, fontWeight: 600,
+                  border: `1px solid ${on ? T.gold : T.line}`, background: on ? T.surfaceRaise : 'transparent', color: on ? T.cream : T.muted,
+                }}>
+                <Icon size={15} color={on ? T.gold : T.muted} /> {label}
+              </button>
+            );
+          })}
         </div>
 
-        {clipes.length === 0 && <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0' }}>Ainda não há clipes guardados.</div>}
+        {separadorClipes === 'atletas' && (
+          clipesAtletas.length === 0 ? (
+            <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0', ...body }}>
+              Ainda nenhum jogador criou clipes. No Portal do Atleta, em Biblioteca, os jogadores podem marcar lances nos vídeos dos jogos. Cada jogador que gravar um clipe ganha aqui o seu cartão.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+              {cartoesAtletas.map(g => (
+                <div key={g.chave} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderBottom: `1px solid ${T.line}` }}>
+                    <span style={{
+                      width: 30, height: 30, borderRadius: '50%', background: T.surfaceRaise, color: T.gold, flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, ...body,
+                    }}>
+                      {g.nome.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: T.cream, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.nome}</span>
+                    <span style={{ fontSize: 12, color: T.mutedDim, ...body, flexShrink: 0 }}>{g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 340, overflowY: 'auto' }}>
+                    {g.clipes.map(c => (
+                      <button key={c.id} onClick={() => setClipeAtletaAberto(c)}
+                        style={{
+                          display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 12px', cursor: 'pointer',
+                          background: 'transparent', border: 'none', borderBottom: `1px solid ${T.line}`, ...body,
+                        }}>
+                        <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
+                          style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'block', fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.titulo || '(sem título)'}</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.mutedDim, ...mono }}>
+                            <Scissors size={10} /> {mmss(c.clipInicio)}–{mmss(c.clipFim)}
+                            {dataCurta(c.criadoEm) && <span style={{ ...body }}>, {dataCurta(c.criadoEm)}</span>}
+                          </span>
+                          {c.note
+                            ? <span style={{ display: 'block', fontSize: 11.5, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.note}</span>
+                            : c.originalTitulo && <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.originalTitulo}</span>}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
 
-        {clipes.length > 0 && (
+        {separadorClipes === 'staff' && clipesStaff.length === 0 && <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0' }}>Ainda não há clipes guardados.</div>}
+
+        {separadorClipes === 'staff' && clipesStaff.length > 0 && (
           <>
             {/* Filtro por etiqueta — só mostra as etiquetas que têm pelo
                menos um clipe, para não encher a tira de opções vazias. */}
@@ -1204,7 +1345,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 }}>
                 Todos
               </button>
-              {TAGS.filter(tag => clipes.some(c => c.tagId === tag.id)).map(tag => (
+              {TAGS.filter(tag => clipesStaff.some(c => c.tagId === tag.id)).map(tag => (
                 <button key={tag.id} onClick={() => setFiltroTag(tag.id)}
                   style={{
                     flex: '0 0 auto', padding: '7px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
@@ -1219,7 +1360,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                o dedo, tal como numa galeria. Toca-se num cartão para abrir
                o clipe. */}
             <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, scrollSnapType: 'x proximity', WebkitOverflowScrolling: 'touch' }}>
-              {(filtroTag ? clipes.filter(c => c.tagId === filtroTag) : clipes).map(clip => {
+              {(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).map(clip => {
                 const tag = TAGS.find(t => t.id === clip.tagId);
                 return (
                   <button key={clip.id} onClick={() => setClipeAReproduzir(clip)}
@@ -1255,6 +1396,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </>
         )}
       </div>
+
+      {clipeAtletaAberto && (
+        <ClipAtletaModal
+          clip={clipeAtletaAberto}
+          onClose={() => setClipeAtletaAberto(null)}
+          onRemove={() => removerClipe(clipeAtletaAberto, () => setClipeAtletaAberto(null))}
+        />
+      )}
 
       {clipeAReproduzir && (
         <ClipPlayerModal
