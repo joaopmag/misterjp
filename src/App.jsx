@@ -28473,7 +28473,7 @@ function exportScoutingCSV(scouting) {
   rows.push(['RESUMO (ordenado por potencial)']);
   rows.push([
     '#', 'Nome', 'Posição', 'Pos. secundária', 'Pé', 'Clube atual',
-    'Ano nasc.', 'Idade', 'Nacionalidade', 'Fim de contrato', 'Observado em',
+    'Ano nasc.', 'Idade', 'País', 'Fim de contrato', 'Observado em',
     'Potencial (1-5)', 'Técnico', 'Tático', 'Físico', 'Psicológico', 'Média pilares',
   ]);
   list.forEach((x, i) => {
@@ -28620,7 +28620,7 @@ function buildScoutReportHtml(x) {
     ['Clube atual', x.club],
     ['Ano de nascimento', x.birthYear],
     ['Idade', x.birthYear ? age(x.birthYear) : x.age],
-    ['Nacionalidade(s)', x.nationality],
+    ['País', x.nationality],
     ['Fim de contrato', x.contractEnd],
     ['Posição principal', x.position],
     ['Posição secundária', x.secondaryPosition],
@@ -28800,33 +28800,45 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
             const playerAge = x.birthYear ? age(x.birthYear) : (x.age || null);
             const avg = pillarAverage(x);
             return (
+              /* CARTÃO DE SCOUTING — todos iguais: cada bloco tem sempre o
+                 mesmo lugar e a mesma altura, preenchido ou não. Linha 1:
+                 clube · posição(ões) · pé · idade. Linha 2: país · ano de
+                 nascimento. Uma linha cada (o que não couber termina em "…",
+                 o texto completo aparece ao passar o rato). O texto livre
+                 (características e notas) fica encostado ao fundo e sobe à
+                 medida que vai sendo preenchido. */
               <div key={x.id} onClick={() => setViewing(x)} title="Ver ficha completa"
-                style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                  <div>
-                    <div style={{ color: T.cream, fontWeight: 500, fontSize: 15 }}>{x.name}</div>
-                    <div style={{ color: T.mutedDim, fontSize: 12 }}>
-                      {x.club || 'Clube desconhecido'}{x.position ? ` · ${x.position}${x.secondaryPosition ? `/${x.secondaryPosition}` : ''}` : ''}{playerAge ? ` · ${playerAge} anos` : ''}
-                    </div>
-                    {(x.nationality || x.dominantFoot || x.birthYear) && (
-                      <div style={{ color: T.mutedDim, fontSize: 11, marginTop: 2 }}>
-                        {[x.nationality, x.dominantFoot ? `Pé ${x.dominantFoot.toLowerCase()}` : null, x.birthYear || null]
-                          .filter(Boolean).join(' · ')}
+                style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                {(() => {
+                  const linhaUm = [
+                    x.club || 'Clube desconhecido',
+                    x.position ? `${x.position}${x.secondaryPosition ? `/${x.secondaryPosition}` : ''}` : null,
+                    x.dominantFoot ? `Pé ${x.dominantFoot.toLowerCase()}` : null,
+                    playerAge ? `${playerAge} anos` : null,
+                  ].filter(Boolean).join(' · ');
+                  const linhaDois = [x.nationality, x.birthYear || null].filter(Boolean).join(' · ');
+                  const umaLinha = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
+                  return (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div title={x.name} style={{ color: T.cream, fontWeight: 500, fontSize: 15, lineHeight: '20px', ...umaLinha }}>{x.name}</div>
+                        <div title={linhaUm} style={{ color: T.mutedDim, fontSize: 12, lineHeight: '17px', height: 17, ...umaLinha }}>{linhaUm}</div>
+                        <div title={linhaDois || undefined} style={{ color: T.mutedDim, fontSize: 11, lineHeight: '16px', height: 16, marginTop: 2, ...umaLinha }}>{linhaDois || '\u00a0'}</div>
                       </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
-                  </div>
-                </div>
+                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                        <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setModal(x); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
                   <RatingStars value={x.potential || 0} />
                   <span style={{ color: T.mutedDim, fontSize: 11 }}>Potencial geral</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, marginBottom: 8 }}>
                   {SCOUT_PILLARS.map(p => (
                     <div key={p.key} style={{ textAlign: 'center', background: T.surfaceRaise, borderRadius: 6, padding: '5px 2px' }}>
                       <div style={{ color: T.mutedDim, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{p.label}</div>
@@ -28834,9 +28846,13 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                     </div>
                   ))}
                 </div>
-                {avg !== null && <div style={{ color: T.mutedDim, fontSize: 11, marginBottom: 6 }}>Média: {avg}</div>}
-                {x.traits && <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 6px' }}>{x.traits}</p>}
-                {x.notes && <p style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>{x.notes}</p>}
+                {/* Média sempre no mesmo sítio (— enquanto não houver notas). */}
+                <div style={{ color: T.mutedDim, fontSize: 11, lineHeight: '16px' }}>Média: {avg !== null ? avg : '—'}</div>
+                {/* Texto livre encostado ao fundo do cartão. */}
+                <div style={{ marginTop: 'auto', paddingTop: (x.traits || x.notes) ? 10 : 0 }}>
+                  {x.traits && <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: x.notes ? '0 0 6px' : 0 }}>{x.traits}</p>}
+                  {x.notes && <p style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>{x.notes}</p>}
+                </div>
               </div>
             );
           })}
@@ -28859,7 +28875,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                   ['Clube atual', printScout.club],
                   ['Ano de nascimento', printScout.birthYear],
                   ['Idade', printScout.birthYear ? `${age(printScout.birthYear)} anos` : (printScout.age || '')],
-                  ['Nacionalidade(s)', printScout.nationality],
+                  ['País', printScout.nationality],
                   ['Fim de contrato', printScout.contractEnd],
                   ['Posição principal', printScout.position],
                   ['Posição secundária', printScout.secondaryPosition],
@@ -29736,7 +29752,7 @@ function ScoutSheetPage({ player: x, videos, setVideos, onBack, onEdit, onShare,
             {linha('Clube atual', x.club)}
             {linha('Ano de nascimento', x.birthYear)}
             {linha('Idade', playerAge ? `${playerAge} anos` : null)}
-            {linha('Nacionalidade(s)', x.nationality)}
+            {linha('País', x.nationality)}
             {linha('Fim de contrato', x.contractEnd)}
             {linha('Posição principal', x.position)}
             {linha('Posição secundária', x.secondaryPosition)}
@@ -29853,7 +29869,7 @@ function ScoutPlayerForm({ player, onBack, onSave }) {
         <div style={FIELD_FULL}>
           <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" autoFocus /></Field>
         </div>
-        <Field label="Nacionalidade(s)"><Input value={f.nationality} onChange={e => setF({ ...f, nationality: e.target.value })} placeholder="Portuguesa" /></Field>
+        <Field label="País"><Input value={f.nationality} onChange={e => setF({ ...f, nationality: e.target.value })} placeholder="Portugal" /></Field>
         <Field label="Ano de nascimento">
           <Input type="number" value={f.birthYear} onChange={e => setF({ ...f, birthYear: e.target.value })} placeholder="2008" />
         </Field>
