@@ -32759,10 +32759,53 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     </div>
   );
 
-  const miniatura = (g) => {
-    const comImagem = g.itens.find(v => !ehClipe(v) && v.youtubeId) || g.itens.find(v => v.youtubeId);
+  /* CAPAS DOS CARTÕES — um jogo entre dois adversários aparece no cartão
+     de cada um, e os dois cartões ficavam com a mesma imagem. Por isso,
+     numa secção:
+     1. cada cartão prefere um vídeo que ainda não seja capa de outro
+        (uma equipa com vários jogos mostra um diferente);
+     2. se o cartão partilha jogos com cartões anteriores (as duas
+        equipas do mesmo jogo), usa OUTRA imagem: o YouTube gera três
+        fotogramas automáticos de cada vídeo (a cerca de 1/4, 1/2 e 3/4),
+        em `hq1`, `hq2` e `hq3`. O primeiro cartão fica com a capa normal
+        (`mqdefault`).
+     Se um fotograma não existir, volta à capa normal (onError). */
+  const FOTOGRAMAS_CAPA = ['mqdefault', 'hq2', 'hq1', 'hq3'];
+  const capasDosCartoes = (grupos) => {
+    const usos = {};
+    const capas = {};
+    const anteriores = []; // conjuntos de vídeos dos cartões já tratados
+    grupos.forEach(g => {
+      const completos = g.itens.filter(v => !ehClipe(v) && v.youtubeId);
+      const candidatos = completos.length ? completos : g.itens.filter(v => v.youtubeId);
+      const meus = new Set(candidatos.map(v => v.youtubeId));
+      if (!candidatos.length) { anteriores.push(meus); return; }
+      const livre = candidatos.find(v => !usos[v.youtubeId]);
+      const escolhido = livre || [...candidatos].sort((a, b) => (usos[a.youtubeId] || 0) - (usos[b.youtubeId] || 0))[0];
+      usos[escolhido.youtubeId] = (usos[escolhido.youtubeId] || 0) + 1;
+      /* As duas partes do mesmo jogo são vídeos diferentes mas com a
+         mesma câmara — as capas ficavam iguais na mesma. Por isso o
+         fotograma conta quantos cartões anteriores partilham vídeos com
+         este (as mesmas equipas, os mesmos jogos). */
+      const partilhados = anteriores.filter(c => [...meus].some(id => c.has(id))).length;
+      anteriores.push(meus);
+      capas[g.key] = { youtubeId: escolhido.youtubeId, fotograma: FOTOGRAMAS_CAPA[partilhados % FOTOGRAMAS_CAPA.length] };
+    });
+    return capas;
+  };
+
+  const miniatura = (g, capa) => {
+    const comImagem = capa
+      || (() => { const v = g.itens.find(x => !ehClipe(x) && x.youtubeId) || g.itens.find(x => x.youtubeId); return v ? { youtubeId: v.youtubeId, fotograma: 'mqdefault' } : null; })();
     return comImagem ? (
-      <img src={`https://img.youtube.com/vi/${comImagem.youtubeId}/mqdefault.jpg`} alt="" style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }} />
+      <img
+        src={`https://img.youtube.com/vi/${comImagem.youtubeId}/${comImagem.fotograma}.jpg`}
+        onError={e => {
+          const alvo = `https://img.youtube.com/vi/${comImagem.youtubeId}/mqdefault.jpg`;
+          if (e.currentTarget.src !== alvo) e.currentTarget.src = alvo;
+        }}
+        alt="" style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', display: 'block', background: '#000' }}
+      />
     ) : (
       <div style={{ width: '100%', aspectRatio: '16 / 9', background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <Play size={22} color={T.mutedDim} />
@@ -32774,6 +32817,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const eJogos = secao === 'jogos';
     const grupos = gruposDaSecao;
     const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+    const capas = capasDosCartoes(grupos);
     return (
       <div>
         {grupos.length === 0 ? (
@@ -32795,7 +32839,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   display: 'flex', flexDirection: 'column',
                 }}
               >
-                {miniatura(g)}
+                {miniatura(g, capas[g.key])}
                 <div style={{ padding: '9px 11px 11px', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
                   {eJogos ? (
                     <>
