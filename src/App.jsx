@@ -6459,10 +6459,17 @@ function WellnessLoadMatrix({ players, monitoring }) {
       </div>
 
       {open && (
-        <Modal title="Wellness × esforço · últimos 7 dias" onClose={() => setOpen(false)} wide>
-          <MatrixChart points={points} W={640} H={480} scale={2} />
+        /* Página inteira, como o leitor de clipes: a matriz precisa de
+           espaço para os nomes não se amontoarem. Em ecrãs largos, a
+           matriz fica à esquerda e as listas por quadrante à direita;
+           em ecrãs estreitos, uma por baixo da outra. */
+        <Modal title="Wellness × esforço · últimos 7 dias" onClose={() => setOpen(false)} fullPage xwide>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start' }}>
+          <div style={{ flex: '3 1 520px', minWidth: 0 }}>
+            <MatrixChart points={points} W={640} H={480} scale={2} />
+          </div>
 
-          <div style={{ marginTop: 20 }}>
+          <div style={{ flex: '2 1 280px', minWidth: 0 }}>
             {Object.entries(QUADRANTS).map(([key, q]) => {
               const list = points.filter(pt => quadrantOf(pt) === key)
                 .sort((a, b) => b.pse - a.pse || a.well - b.well);
@@ -6489,13 +6496,14 @@ function WellnessLoadMatrix({ players, monitoring }) {
                 </div>
               );
             })}
-          </div>
 
           {missing > 0 && (
             <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4, lineHeight: 1.5 }}>
               {missing} {missing === 1 ? 'jogador não aparece' : 'jogadores não aparecem'} na matriz — falta-lhes wellness ou PSE nos últimos 7 dias.
             </div>
           )}
+          </div>
+          </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
             <Btn variant="ghost" onClick={() => setOpen(false)}>Fechar</Btn>
