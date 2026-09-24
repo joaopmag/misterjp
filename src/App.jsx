@@ -28662,14 +28662,6 @@ ${x.notes ? `<h2>Notas gerais</h2><p class="desc">${escapeHtmlText(x.notes)}</p>
 }
 
 function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, setVideos }) {
-  // Cor do clube de um jogador observado: a do adversário com o mesmo
-  // clube (ver `chaveDoClube`); sem correspondência, fica o cinzento.
-  const corPorClube = React.useMemo(() => {
-    const m = {};
-    (adversarios || []).forEach(a => { const k = chaveDoClube(a.nome); if (k && a.cor) m[k] = a.cor; });
-    return m;
-  }, [adversarios]);
-  const corDoJogador = (x) => corPorClube[chaveDoClube(x.club)] || '';
   const botaoCartao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 6, display: 'flex', borderRadius: 6 };
   const umaLinhaEstilo = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
   const [subTab, setSubTab] = useState('jogadores');
@@ -28812,24 +28804,21 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
             return (
               /* CARTÃO DE SCOUTING — todos iguais: cada bloco tem sempre o
                  mesmo lugar e a mesma altura, preenchido ou não.
-                 · Cabeça: círculo com as iniciais na cor do clube (vai
-                   buscá-la ao adversário com o mesmo nome; cinzento se não
-                   houver), nome, e duas linhas de identificação:
+                 · Nome e duas linhas de identificação:
                    clube · posição(ões) · pé · idade / país · ano.
                  · Potencial (estrelas) e média, lado a lado.
                  · Os quatro pilares, cada um com a nota e uma barra.
-                 · Texto livre encostado ao fundo, sobe à medida que cresce.
                  · Ações numa faixa por baixo, para não roubarem espaço ao
-                   nome (era por isso que os nomes ficavam cortados). */
+                   nome.
+                 Sem cor de clube (o jogador pode mudar de clube) e sem o
+                 texto livre (características e observações), que fica só
+                 na ficha completa. */
               <div key={x.id} onClick={() => setViewing(x)} title="Ver ficha completa"
                 style={{
-                  position: 'relative', overflow: 'hidden', cursor: 'pointer', minWidth: 0,
-                  background: `linear-gradient(160deg, ${corDoClube(corDoJogador(x), 0.13)} 0%, ${T.surface} 45%)`,
-                  border: `1px solid ${T.line}`, borderRadius: 12, display: 'flex', flexDirection: 'column',
+                  overflow: 'hidden', cursor: 'pointer', minWidth: 0,
+                  background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, display: 'flex', flexDirection: 'column',
                 }}>
-                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: corDoClube(corDoJogador(x)) }} />
                 {(() => {
-                  const cor = corDoJogador(x);
                   const posicoes = x.position ? `${x.position}${x.secondaryPosition ? `/${x.secondaryPosition}` : ''}` : null;
                   const linhaUm = [
                     x.club || 'Clube desconhecido',
@@ -28839,17 +28828,9 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                   ].filter(Boolean).join(' · ');
                   const linhaDois = [x.nationality, x.birthYear || null].filter(Boolean).join(' · ');
                   const umaLinha = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
-                  const iniciais = String(x.name || '?').trim().split(/\s+/).filter(Boolean)
-                    .filter((_, i, arr) => i === 0 || i === arr.length - 1).map(p => p[0].toUpperCase()).join('');
                   return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 16px 10px 20px' }}>
-                      <div aria-hidden="true" style={{
-                        width: 42, height: 42, borderRadius: '50%', flexShrink: 0,
-                        background: corDoClube(cor), color: textoSobreCor(cor),
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        ...display, fontSize: 15, fontWeight: 700, letterSpacing: 0.5,
-                      }}>{iniciais || '?'}</div>
-                      <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ padding: '16px 16px 10px' }}>
+                      <div style={{ minWidth: 0 }}>
                         <div title={x.name} style={{ color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '22px', ...umaLinha }}>{x.name}</div>
                         <div title={linhaUm} style={{ color: T.muted, fontSize: 12, lineHeight: '17px', height: 17, ...umaLinha }}>{linhaUm}</div>
                         <div title={linhaDois || undefined} style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: '16px', height: 16, ...umaLinha }}>{linhaDois || '\u00a0'}</div>
@@ -28857,7 +28838,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                     </div>
                   );
                 })()}
-                <div style={{ padding: '0 16px 0 20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 10px' }}>
                     <RatingStars value={x.potential || 0} />
                     <span style={{ color: T.mutedDim, fontSize: 11 }}>Potencial</span>
@@ -28883,11 +28864,6 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                         </div>
                       );
                     })}
-                  </div>
-                  {/* Texto livre encostado ao fundo do cartão. */}
-                  <div style={{ marginTop: 'auto', paddingTop: (x.traits || x.notes) ? 12 : 0, paddingBottom: (x.traits || x.notes) ? 12 : 10 }}>
-                    {x.traits && <p style={{ color: T.muted, fontSize: 12.5, lineHeight: 1.5, margin: x.notes ? '0 0 6px' : 0 }}>{x.traits}</p>}
-                    {x.notes && <p style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>{x.notes}</p>}
                   </div>
                 </div>
                 <div onClick={e => e.stopPropagation()} style={{
@@ -29024,14 +29000,6 @@ const CORES_CLUBE = [
   { cor: '#E87722', nome: 'Laranja' }, { cor: '#5B2C83', nome: 'Roxo' }, { cor: '#111111', nome: 'Preto' },
   { cor: '#F5F5F5', nome: 'Branco' },
 ];
-/* Chave para reconhecer o mesmo clube escrito de maneiras diferentes:
-   "FC Padroense" e "Padroense FC" dão os dois "padroense". Serve para
-   os cartões de jogadores irem buscar a cor do clube aos Adversários. */
-function chaveDoClube(nome) {
-  return String(nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(p => p && !SIGLAS_CLUBE.has(p)).join(' ');
-}
-
 /* Iniciais para o escudo: ignora as siglas do tipo de clube (FC, UD,
    USC, SC, CD…), que se repetem em quase todos e não distinguem nada.
    "FC Padroense" → "P"; "Rio Ave FC" → "RA". */
