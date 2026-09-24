@@ -28836,7 +28836,7 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                       <div style={{ minWidth: 0 }}>
                         {/* Nome e ações na mesma linha; os ícones ficam juntos
                             para deixar o máximo de espaço ao nome. */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                           <div title={x.name} style={{ flex: 1, color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '22px', ...umaLinha }}>{nomeCurto}</div>
                           <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}>
                             <button onClick={() => doShare(x)} title="Partilhar ficha do jogador" style={botaoCartao}><Share2 size={13} /></button>
@@ -28845,14 +28845,14 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                             <button onClick={() => remove(x.id)} title="Apagar jogador" style={botaoCartao}><Trash2 size={13} /></button>
                           </div>
                         </div>
-                        <div title={linhaUm} style={{ color: T.muted, fontSize: 12, lineHeight: '17px', height: 17, ...umaLinha }}>{linhaUm}</div>
-                        <div title={linhaDois || undefined} style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: '16px', height: 16, ...umaLinha }}>{linhaDois || '\u00a0'}</div>
+                        <div title={linhaUm} style={{ color: T.muted, fontSize: 12, lineHeight: '18px', height: 18, ...umaLinha }}>{linhaUm}</div>
+                        <div title={linhaDois || undefined} style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: '17px', height: 17, marginTop: 4, ...umaLinha }}>{linhaDois || '\u00a0'}</div>
                       </div>
                     </div>
                   );
                 })()}
                 <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 0 12px' }}>
                     <RatingStars value={x.potential || 0} />
                     <span style={{ color: T.mutedDim, fontSize: 11 }}>Potencial</span>
                     <span style={{ flex: 1 }} />
