@@ -28662,6 +28662,16 @@ ${x.notes ? `<h2>Notas gerais</h2><p class="desc">${escapeHtmlText(x.notes)}</p>
 }
 
 function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, setVideos }) {
+  // Cor do clube de um jogador observado: a do adversário com o mesmo
+  // clube (ver `chaveDoClube`); sem correspondência, fica o cinzento.
+  const corPorClube = React.useMemo(() => {
+    const m = {};
+    (adversarios || []).forEach(a => { const k = chaveDoClube(a.nome); if (k && a.cor) m[k] = a.cor; });
+    return m;
+  }, [adversarios]);
+  const corDoJogador = (x) => corPorClube[chaveDoClube(x.club)] || '';
+  const botaoCartao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 6, display: 'flex', borderRadius: 6 };
+  const umaLinhaEstilo = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
   const [subTab, setSubTab] = useState('jogadores');
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('');
@@ -28795,63 +28805,99 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
       {visible.length === 0 ? (
         <EmptyState text="Ainda sem jogadores adversários registados." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Adicionar o primeiro</Btn>} />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {visible.map(x => {
             const playerAge = x.birthYear ? age(x.birthYear) : (x.age || null);
             const avg = pillarAverage(x);
             return (
               /* CARTÃO DE SCOUTING — todos iguais: cada bloco tem sempre o
-                 mesmo lugar e a mesma altura, preenchido ou não. Linha 1:
-                 clube · posição(ões) · pé · idade. Linha 2: país · ano de
-                 nascimento. Uma linha cada (o que não couber termina em "…",
-                 o texto completo aparece ao passar o rato). O texto livre
-                 (características e notas) fica encostado ao fundo e sobe à
-                 medida que vai sendo preenchido. */
+                 mesmo lugar e a mesma altura, preenchido ou não.
+                 · Cabeça: círculo com as iniciais na cor do clube (vai
+                   buscá-la ao adversário com o mesmo nome; cinzento se não
+                   houver), nome, e duas linhas de identificação:
+                   clube · posição(ões) · pé · idade / país · ano.
+                 · Potencial (estrelas) e média, lado a lado.
+                 · Os quatro pilares, cada um com a nota e uma barra.
+                 · Texto livre encostado ao fundo, sobe à medida que cresce.
+                 · Ações numa faixa por baixo, para não roubarem espaço ao
+                   nome (era por isso que os nomes ficavam cortados). */
               <div key={x.id} onClick={() => setViewing(x)} title="Ver ficha completa"
-                style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                style={{
+                  position: 'relative', overflow: 'hidden', cursor: 'pointer', minWidth: 0,
+                  background: `linear-gradient(160deg, ${corDoClube(corDoJogador(x), 0.13)} 0%, ${T.surface} 45%)`,
+                  border: `1px solid ${T.line}`, borderRadius: 12, display: 'flex', flexDirection: 'column',
+                }}>
+                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: corDoClube(corDoJogador(x)) }} />
                 {(() => {
+                  const cor = corDoJogador(x);
+                  const posicoes = x.position ? `${x.position}${x.secondaryPosition ? `/${x.secondaryPosition}` : ''}` : null;
                   const linhaUm = [
                     x.club || 'Clube desconhecido',
-                    x.position ? `${x.position}${x.secondaryPosition ? `/${x.secondaryPosition}` : ''}` : null,
+                    posicoes,
                     x.dominantFoot ? `Pé ${x.dominantFoot.toLowerCase()}` : null,
                     playerAge ? `${playerAge} anos` : null,
                   ].filter(Boolean).join(' · ');
                   const linhaDois = [x.nationality, x.birthYear || null].filter(Boolean).join(' · ');
                   const umaLinha = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
+                  const iniciais = String(x.name || '?').trim().split(/\s+/).filter(Boolean)
+                    .filter((_, i, arr) => i === 0 || i === arr.length - 1).map(p => p[0].toUpperCase()).join('');
                   return (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 16px 10px 20px' }}>
+                      <div aria-hidden="true" style={{
+                        width: 42, height: 42, borderRadius: '50%', flexShrink: 0,
+                        background: corDoClube(cor), color: textoSobreCor(cor),
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        ...display, fontSize: 15, fontWeight: 700, letterSpacing: 0.5,
+                      }}>{iniciais || '?'}</div>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div title={x.name} style={{ color: T.cream, fontWeight: 500, fontSize: 15, lineHeight: '20px', ...umaLinha }}>{x.name}</div>
-                        <div title={linhaUm} style={{ color: T.mutedDim, fontSize: 12, lineHeight: '17px', height: 17, ...umaLinha }}>{linhaUm}</div>
-                        <div title={linhaDois || undefined} style={{ color: T.mutedDim, fontSize: 11, lineHeight: '16px', height: 16, marginTop: 2, ...umaLinha }}>{linhaDois || '\u00a0'}</div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                        <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={13} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir ficha do jogador" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={13} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); setModal(x); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={13} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={13} /></button>
+                        <div title={x.name} style={{ color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '22px', ...umaLinha }}>{x.name}</div>
+                        <div title={linhaUm} style={{ color: T.muted, fontSize: 12, lineHeight: '17px', height: 17, ...umaLinha }}>{linhaUm}</div>
+                        <div title={linhaDois || undefined} style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: '16px', height: 16, ...umaLinha }}>{linhaDois || '\u00a0'}</div>
                       </div>
                     </div>
                   );
                 })()}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' }}>
-                  <RatingStars value={x.potential || 0} />
-                  <span style={{ color: T.mutedDim, fontSize: 11 }}>Potencial geral</span>
+                <div style={{ padding: '0 16px 0 20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 10px' }}>
+                    <RatingStars value={x.potential || 0} />
+                    <span style={{ color: T.mutedDim, fontSize: 11 }}>Potencial</span>
+                    <span style={{ flex: 1 }} />
+                    <span title="Média dos quatro pilares" style={{
+                      fontSize: 11.5, color: avg !== null ? T.cream : T.mutedDim, background: T.surfaceRaise,
+                      borderRadius: 999, padding: '2px 9px', ...mono, whiteSpace: 'nowrap',
+                    }}>Média {avg !== null ? avg : '—'}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
+                    {SCOUT_PILLARS.map(p => {
+                      const v = Number(x[`${p.key}Rating`]) || 0;
+                      return (
+                        <div key={p.key} style={{ background: T.surfaceRaise, borderRadius: 8, padding: '7px 10px 8px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+                            <span style={{ color: T.mutedDim, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.4, ...umaLinhaEstilo }}>{p.label}</span>
+                            <span style={{ color: v ? T.warn : T.mutedDim, fontWeight: 700, fontSize: 14, ...mono }}>{v || '—'}</span>
+                          </div>
+                          {/* Barra de 1 a 5 — a nota lê-se de relance. */}
+                          <div style={{ height: 4, borderRadius: 2, background: T.line, marginTop: 5, overflow: 'hidden' }}>
+                            <div style={{ width: `${(v / 5) * 100}%`, height: '100%', background: T.warn, borderRadius: 2 }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Texto livre encostado ao fundo do cartão. */}
+                  <div style={{ marginTop: 'auto', paddingTop: (x.traits || x.notes) ? 12 : 0, paddingBottom: (x.traits || x.notes) ? 12 : 10 }}>
+                    {x.traits && <p style={{ color: T.muted, fontSize: 12.5, lineHeight: 1.5, margin: x.notes ? '0 0 6px' : 0 }}>{x.traits}</p>}
+                    {x.notes && <p style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>{x.notes}</p>}
+                  </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, marginBottom: 8 }}>
-                  {SCOUT_PILLARS.map(p => (
-                    <div key={p.key} style={{ textAlign: 'center', background: T.surfaceRaise, borderRadius: 6, padding: '5px 2px' }}>
-                      <div style={{ color: T.mutedDim, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.4 }}>{p.label}</div>
-                      <div style={{ color: x[`${p.key}Rating`] ? T.warn : T.mutedDim, fontWeight: 600, fontSize: 13 }}>{x[`${p.key}Rating`] || '—'}</div>
-                    </div>
-                  ))}
-                </div>
-                {/* Média sempre no mesmo sítio (— enquanto não houver notas). */}
-                <div style={{ color: T.mutedDim, fontSize: 11, lineHeight: '16px' }}>Média: {avg !== null ? avg : '—'}</div>
-                {/* Texto livre encostado ao fundo do cartão. */}
-                <div style={{ marginTop: 'auto', paddingTop: (x.traits || x.notes) ? 10 : 0 }}>
-                  {x.traits && <p style={{ color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: x.notes ? '0 0 6px' : 0 }}>{x.traits}</p>}
-                  {x.notes && <p style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: 1.5, margin: 0, fontStyle: 'italic' }}>{x.notes}</p>}
+                <div onClick={e => e.stopPropagation()} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2,
+                  padding: '4px 10px 6px 16px', borderTop: `1px solid ${T.line}`, cursor: 'default',
+                }}>
+                  <button onClick={() => doShare(x)} title="Partilhar ficha do jogador" style={botaoCartao}><Share2 size={14} /></button>
+                  <button onClick={() => doPrint(x)} title="Imprimir ficha do jogador" style={botaoCartao}><Printer size={14} /></button>
+                  <button onClick={() => setModal(x)} title="Editar jogador" style={botaoCartao}><Pencil size={14} /></button>
+                  <button onClick={() => remove(x.id)} title="Apagar jogador" style={botaoCartao}><Trash2 size={14} /></button>
                 </div>
               </div>
             );
@@ -28956,14 +29002,36 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
    respetivamente, o editor de prancheta da Ideia de Jogo e a Biblioteca
    — ver a conversa sobre esta funcionalidade). Por agora, só Resumo e
    Jogadores-chave. */
-/* Cor de um clube adversário, derivada do nome: sempre a mesma para o
-   mesmo nome, tons médios que funcionam no fundo escuro. */
-function corDoClube(nome, opacidade = 1) {
-  const t = String(nome || '').trim().toLowerCase();
-  let h = 0;
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
-  return `hsla(${h % 360}, 48%, 42%, ${opacidade})`;
+/* COR DE UM CLUBE — a cor verdadeira, escolhida na ficha do adversário
+   (`cor`, em #rrggbb). Sem cor preenchida, cinzento neutro. */
+const COR_CLUBE_OMISSAO = '#6B7280';
+function corDoClube(cor, opacidade = 1) {
+  const hex = /^#[0-9a-f]{6}$/i.test(String(cor || '')) ? cor : COR_CLUBE_OMISSAO;
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacidade})`;
 }
+// Texto por cima da cor do clube: escuro nas cores claras (branco,
+// amarelo…), branco nas outras.
+function textoSobreCor(cor) {
+  const hex = /^#[0-9a-f]{6}$/i.test(String(cor || '')) ? cor : COR_CLUBE_OMISSAO;
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 170 ? '#1A1A1A' : '#FFFFFF';
+}
+// Cores mais comuns nos clubes, para escolher com um toque.
+const CORES_CLUBE = [
+  { cor: '#C8102E', nome: 'Vermelho' }, { cor: '#7A1F2B', nome: 'Grená' }, { cor: '#1F4E9C', nome: 'Azul' },
+  { cor: '#5DA9E9', nome: 'Azul claro' }, { cor: '#1E7B3A', nome: 'Verde' }, { cor: '#F2C200', nome: 'Amarelo' },
+  { cor: '#E87722', nome: 'Laranja' }, { cor: '#5B2C83', nome: 'Roxo' }, { cor: '#111111', nome: 'Preto' },
+  { cor: '#F5F5F5', nome: 'Branco' },
+];
+/* Chave para reconhecer o mesmo clube escrito de maneiras diferentes:
+   "FC Padroense" e "Padroense FC" dão os dois "padroense". Serve para
+   os cartões de jogadores irem buscar a cor do clube aos Adversários. */
+function chaveDoClube(nome) {
+  return String(nome || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(p => p && !SIGLAS_CLUBE.has(p)).join(' ');
+}
+
 /* Iniciais para o escudo: ignora as siglas do tipo de clube (FC, UD,
    USC, SC, CD…), que se repetem em quase todos e não distinguem nada.
    "FC Padroense" → "P"; "Rio Ave FC" → "RA". */
@@ -29110,16 +29178,16 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {adversarios.map(a => {
-            const cor = corDoClube(a.nome);
+            const cor = corDoClube(a.cor);
             const botao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 6, display: 'flex', borderRadius: 6 };
             return (
             /* CARTÃO DE ADVERSÁRIO — um "escudo" com as iniciais do clube,
-               numa cor própria de cada clube (sempre a mesma para o mesmo
-               nome), e o nome inteiro numa linha. As ações passam para uma
+               na cor do clube (escolhida na ficha; cinzento se não tiver),
+               e o nome inteiro numa linha. As ações passam para uma
                faixa por baixo, para não roubarem espaço ao nome. */
             <div key={a.id} onClick={() => setViewing(a)} title="Ver ficha do adversário" style={{
               position: 'relative', overflow: 'hidden', cursor: 'pointer',
-              background: `linear-gradient(135deg, ${corDoClube(a.nome, 0.16)} 0%, ${T.surface} 55%)`,
+              background: `linear-gradient(135deg, ${corDoClube(a.cor, 0.16)} 0%, ${T.surface} 55%)`,
               border: `1px solid ${T.line}`, borderRadius: 12,
               display: 'flex', flexDirection: 'column',
             }}>
@@ -29128,9 +29196,9 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
                 <div aria-hidden="true" style={{
                   width: 44, height: 50, flexShrink: 0,
                   clipPath: 'polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%)',
-                  background: `linear-gradient(160deg, ${cor} 0%, ${corDoClube(a.nome, 0.6)} 100%)`,
+                  background: `linear-gradient(160deg, ${cor} 0%, ${corDoClube(a.cor, 0.7)} 100%)`,
                   display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 11, boxSizing: 'border-box',
-                  color: '#fff', ...display, fontSize: 17, fontWeight: 700, letterSpacing: 0.5,
+                  color: textoSobreCor(a.cor), ...display, fontSize: 17, fontWeight: 700, letterSpacing: 0.5,
                 }}>{iniciaisDoClube(a.nome)}</div>
                 <div title={a.nome} style={{
                   flex: 1, minWidth: 0, color: T.cream, ...display, fontSize: 19, fontWeight: 600, letterSpacing: 0.2,
@@ -29491,6 +29559,35 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
       <div style={{ marginBottom: 14 }}>
         <Field label="Clube / Equipa" bloco solto>
           <Input value={f.nome} onChange={e => setF({ ...f, nome: e.target.value })} placeholder="Ex: FC Padroense" autoFocus />
+        </Field>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <Field label="Cor do clube" bloco solto>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {CORES_CLUBE.map(c => {
+              const on = (f.cor || '').toLowerCase() === c.cor.toLowerCase();
+              return (
+                <button key={c.cor} type="button" onClick={() => setF({ ...f, cor: c.cor })} title={c.nome} aria-label={c.nome} aria-pressed={on}
+                  style={{
+                    width: 28, height: 28, borderRadius: '50%', background: c.cor, cursor: 'pointer', padding: 0,
+                    border: on ? `2px solid ${T.cream}` : `1px solid ${T.line}`, boxShadow: on ? `0 0 0 2px ${T.bg} inset` : 'none',
+                  }} />
+              );
+            })}
+            {/* Outra cor qualquer, no seletor do sistema. */}
+            <label title="Outra cor" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.muted, cursor: 'pointer', ...body }}>
+              <input type="color" value={/^#[0-9a-f]{6}$/i.test(f.cor || '') ? f.cor : COR_CLUBE_OMISSAO}
+                onChange={e => setF({ ...f, cor: e.target.value })}
+                style={{ width: 32, height: 28, padding: 0, border: `1px solid ${T.line}`, borderRadius: 6, background: 'transparent', cursor: 'pointer' }} />
+              Outra
+            </label>
+            {f.cor && (
+              <button type="button" onClick={() => setF({ ...f, cor: '' })}
+                style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 12, textDecoration: 'underline', ...body }}>
+                Sem cor
+              </button>
+            )}
+          </div>
         </Field>
       </div>
       <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
