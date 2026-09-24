@@ -6282,13 +6282,22 @@ const QUADRANTS = {
 /* O gráfico em si. `scale` amplia tipos de letra e pontos na versão
    grande, sem duplicar o desenho. */
 function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
-  /* NO TELEMÓVEL NÃO HÁ RATO.
+  /* IDENTIFICAR PONTOS — pelo ponto MAIS PRÓXIMO do cursor, não pelo
+     ponto que está por baixo dele.
 
-     Os pontos sem etiqueta (os que ficariam por cima de outros) só se
-     identificavam ao passar o cursor — gesto que não existe num ecrã de
-     toque. O toque fixa aqui o ponto escolhido e mostra o nome; tocar fora
-     ou no mesmo ponto limpa. */
-  const [tocado, setTocado] = useState(null);
+     Antes, cada ponto tinha o seu próprio alvo invisível (um círculo
+     maior) com um <title>. Com o plantel amontoado, os alvos tapavam-se
+     uns aos outros: só o de cima respondia, e vários pontos não davam
+     nada ao passar o rato. Agora há uma única camada por cima do
+     gráfico que, a cada movimento, procura o ponto mais perto; os pontos
+     praticamente no mesmo sítio (mesmos valores) aparecem todos juntos
+     na mesma etiqueta.
+
+     No telemóvel não há rato: o toque faz o mesmo e fica fixado até se
+     tocar noutro sítio. */
+  const svgRef = useRef(null);
+  const [emFoco, setEmFoco] = useState(null);   // rato: ids em foco
+  const [tocado, setTocado] = useState(null);   // toque: ids fixados
   const ml = 30 * scale, mr = 12 * scale, mt = 12 * scale, mb = 26 * scale;
   const plotW = W - ml - mr, plotH = H - mt - mb;
   const xOf = (well) => ml + ((Math.max(1, Math.min(5, well)) - 1) / 4) * plotW;
@@ -6296,8 +6305,36 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
   const midX = xOf(3), midY = yOf(5);
   const fs = 7.5 * scale, fsAxis = 8.5 * scale;
 
+  const posicoes = points.map(pt => ({ pt, x: xOf(pt.well), y: yOf(pt.pse) }));
+
+  // Coordenadas do rato/dedo no sistema do SVG (o SVG é redimensionado).
+  const noSvg = (e) => {
+    const svg = svgRef.current;
+    if (!svg || !svg.getScreenCTM) return null;
+    const p = svg.createSVGPoint();
+    p.x = e.clientX; p.y = e.clientY;
+    const m = svg.getScreenCTM();
+    return m ? p.matrixTransform(m.inverse()) : null;
+  };
+  // Ids do ponto mais próximo e dos que estão praticamente no mesmo sítio.
+  const idsPerto = (e) => {
+    const c = noSvg(e);
+    if (!c || !posicoes.length) return null;
+    let melhor = null;
+    posicoes.forEach(q => {
+      const d = Math.hypot(q.x - c.x, q.y - c.y);
+      if (!melhor || d < melhor.d) melhor = { ...q, d };
+    });
+    if (!melhor || melhor.d > 18 * scale) return null;
+    return posicoes.filter(q => Math.hypot(q.x - melhor.x, q.y - melhor.y) <= 5 * scale).map(q => q.pt.id);
+  };
+  const mesmos = (a, b) => (a || []).join('|') === (b || []).join('|');
+  const ativos = emFoco || tocado;
+  const ativosSet = new Set(ativos || []);
+
   // Afasta etiquetas quase sobrepostas, para os nomes não ficarem uns por
-  // cima dos outros.
+  // cima dos outros. Quando a etiqueta fica longe do ponto, desenha-se
+  // um traço fino a ligá-los.
   const placed = [];
   const labelOffset = (x, y) => {
     let dy = -6 * scale;
@@ -6307,9 +6344,7 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
   };
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block' }}>
-      {/* Tocar no fundo limpa a etiqueta fixada. */}
-      <rect x={0} y={0} width={W} height={H} fill="transparent" onPointerDown={() => setTocado(null)} />
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block', touchAction: 'manipulation' }}>
       <rect x={ml} y={mt} width={midX - ml} height={midY - mt} fill={`${T.bad}18`} />
       <rect x={midX} y={mt} width={ml + plotW - midX} height={midY - mt} fill={`${T.warn}12`} />
       <rect x={ml} y={midY} width={midX - ml} height={mt + plotH - midY} fill={`${T.warn}10`} />
@@ -6331,47 +6366,62 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
       <text x={ml} y={mt + plotH + 10 * scale} fontSize={fs} fill={T.mutedDim} textAnchor="middle" style={{ fontFamily: "'JetBrains Mono', monospace" }}>1</text>
       <text x={ml + plotW} y={mt + plotH + 10 * scale} fontSize={fs} fill={T.mutedDim} textAnchor="middle" style={{ fontFamily: "'JetBrains Mono', monospace" }}>5</text>
 
-      {points.map(pt => {
-        const x = xOf(pt.well), y = yOf(pt.pse);
+      {posicoes.map(({ pt, x, y }) => {
         const color = QUADRANTS[quadrantOf(pt)].color;
         const dy = labelOffset(x, y);
         const anchor = x > ml + plotW - 40 * scale ? 'end' : x < ml + 40 * scale ? 'start' : 'middle';
-        const escolhido = tocado === pt.id;
-        const detalhe = `${pt.nome || pt.label} · wellness ${pt.well.toFixed(1)} · PSE ${pt.pse.toFixed(1)}`;
+        const realce = ativosSet.has(pt.id);
+        const apagado = ativos && !realce;
         return (
-          <g key={pt.id}>
-            <circle cx={x} cy={y} r={(escolhido ? 4.6 : 3.2) * scale} fill={color} stroke={T.bg} strokeWidth={0.8 * scale} />
-            <text x={x} y={y + dy} fontSize={fs} fill={T.cream} textAnchor={anchor} style={{ fontFamily: "'Inter', sans-serif" }}>{pt.label}</text>
-            {/* Alvo invisível maior do que o ponto: com o dedo é impossível
-                acertar em 3 px. O <title> serve o rato, o onPointerDown
-                serve o toque — no telemóvel não há "passar por cima". */}
-            <circle
-              cx={x} cy={y} r={11 * scale} fill="transparent" style={{ cursor: 'pointer' }}
-              onPointerDown={(e) => { e.stopPropagation(); setTocado(escolhido ? null : pt.id); }}
-            >
-              <title>{detalhe}</title>
-            </circle>
+          <g key={pt.id} style={{ opacity: apagado ? 0.35 : 1, pointerEvents: 'none' }}>
+            {dy < -8 * scale && (
+              <line x1={x} y1={y - 3.2 * scale} x2={x} y2={y + dy + 2 * scale} stroke={T.line} strokeWidth={0.6 * scale} />
+            )}
+            <circle cx={x} cy={y} r={(realce ? 4.8 : 3.2) * scale} fill={color} stroke={realce ? T.cream : T.bg} strokeWidth={(realce ? 1.1 : 0.8) * scale} />
+            <text x={x} y={y + dy} fontSize={fs} fill={T.cream} fontWeight={realce ? 700 : 400} textAnchor={anchor} style={{ fontFamily: "'Inter', sans-serif" }}>{pt.label}</text>
           </g>
         );
       })}
 
-      {/* Etiqueta fixada pelo toque. Desenhada no fim para ficar por cima
-          de tudo o resto. */}
+      {/* Camada única que responde ao rato e ao toque (ver o comentário
+          no topo). Por cima dos pontos, por baixo da etiqueta. */}
+      <rect
+        x={0} y={0} width={W} height={H} fill="transparent"
+        style={{ cursor: emFoco ? 'pointer' : 'default' }}
+        onPointerMove={(e) => {
+          if (e.pointerType !== 'mouse') return;
+          const ids = idsPerto(e);
+          if (!mesmos(ids, emFoco)) setEmFoco(ids);
+        }}
+        onPointerLeave={() => setEmFoco(null)}
+        onPointerDown={(e) => {
+          if (e.pointerType === 'mouse') return;
+          const ids = idsPerto(e);
+          setTocado(!ids || mesmos(ids, tocado) ? null : ids);
+        }}
+      />
+
+      {/* Etiqueta do ponto em foco (ou dos pontos no mesmo sítio). */}
       {(() => {
-        const pt = points.find(v => v.id === tocado);
-        if (!pt) return null;
-        const x = xOf(pt.well), y = yOf(pt.pse);
-        const texto = `${pt.nome || pt.label} · W ${pt.well.toFixed(1)} · PSE ${pt.pse.toFixed(1)}`;
-        const larg = Math.max(70 * scale, texto.length * 5.4 * scale);
+        if (!ativos || !ativos.length) return null;
+        const sel = posicoes.filter(q => ativosSet.has(q.pt.id));
+        if (!sel.length) return null;
+        const { x, y } = sel[0];
+        const linhas = sel.map(({ pt }) => `${pt.nome || pt.label} · W ${pt.well.toFixed(1)} · PSE ${pt.pse.toFixed(1)}`);
+        const maior = Math.max(...linhas.map(l => l.length));
+        const larg = Math.max(70 * scale, maior * 4.6 * scale + 12 * scale);
+        const alt = (linhas.length * 11 + 6) * scale;
         const lx = Math.max(2, Math.min(W - larg - 2, x - larg / 2));
-        const acima = y > H / 2;
-        const ly = acima ? y - 20 * scale : y + 9 * scale;
+        const acima = y > mt + alt + 12 * scale;
+        const ly = acima ? y - alt - 8 * scale : y + 9 * scale;
         return (
           <g style={{ pointerEvents: 'none' }}>
-            <rect x={lx} y={ly} width={larg} height={14 * scale} rx={3 * scale}
-              fill={T.surfaceRaise} stroke={QUADRANTS[quadrantOf(pt)].color} strokeWidth={0.8 * scale} />
-            <text x={lx + larg / 2} y={ly + 10 * scale} fontSize={fs} fill={T.cream} textAnchor="middle"
-              style={{ fontFamily: "'Inter', sans-serif" }}>{texto}</text>
+            <rect x={lx} y={ly} width={larg} height={alt} rx={3 * scale}
+              fill={T.surfaceRaise} stroke={QUADRANTS[quadrantOf(sel[0].pt)].color} strokeWidth={0.8 * scale} />
+            {linhas.map((l, i) => (
+              <text key={i} x={lx + larg / 2} y={ly + (11 * i + 11) * scale} fontSize={fs} fill={T.cream} textAnchor="middle"
+                style={{ fontFamily: "'Inter', sans-serif" }}>{l}</text>
+            ))}
           </g>
         );
       })()}
