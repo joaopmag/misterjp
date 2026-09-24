@@ -173,22 +173,47 @@ const nivelClinico = (id) => NIVEIS_CLINICOS.find(n => n.id === id) || NIVEIS_CL
 
 // Nível num dia concreto. Barata de propósito: é chamada para cada
 // jogador em cada dia das presenças.
+/* Com RECAÍDAS, uma lesão pode ter intervalos: alta a 21/09, recaída a
+   24/09. Nos dias entre uma alta e uma recaída o jogador esteve apto, e
+   aqui devolve-se '' (fora do boletim). A alta conta a partir do dia
+   SEGUINTE (no próprio dia da alta mantém-se o nível, como sempre foi);
+   a recaída conta a partir do próprio dia. */
 function nivelNoDia(o, dia) {
   if (!o) return '';
   if (!Array.isArray(o.evolucao) || !o.evolucao.length) return o.nivel;
   let nivel = o.nivelInicial || o.nivel;
-  let ultimaData = '';
-  o.evolucao.forEach(e => {
-    if (e.nivel && e.data && e.data <= dia && e.data >= ultimaData) { nivel = e.nivel; ultimaData = e.data; }
+  ordenarEvolucao(o.evolucao).forEach(e => {
+    if (!e.data) return;
+    if (e.alta) { if (e.data < dia) nivel = ''; return; }
+    if (e.data > dia) return;
+    if (e.recaida) nivel = e.nivel || o.nivelInicial || o.nivel;
+    else if (e.nivel) nivel = e.nivel;
   });
   return nivel;
+}
+
+/* Períodos em que a lesão esteve ativa: [[de, até], …]. Sem recaídas é
+   um só, do início à alta (ou até hoje). */
+function periodosDaOcorrencia(o) {
+  if (!o || !o.inicio) return [];
+  const hoje = todayStr();
+  if (!Array.isArray(o.evolucao)) return [[o.inicio, o.fim || hoje]];
+  const periodos = [];
+  let de = o.inicio;
+  ordenarEvolucao(o.evolucao).forEach(e => {
+    if (!e.data) return;
+    if (e.alta && de) { periodos.push([de, e.data]); de = null; }
+    else if (e.recaida && !de) { de = e.data; }
+  });
+  if (de) periodos.push([de, hoje]);
+  return periodos;
 }
 
 /* Ordem cronológica. No MESMO dia: primeiro as mudanças de nível sem
    texto (o que mudou), depois as notas, e a alta sempre por último —
    uma alta não pode aparecer antes de uma nota do próprio dia. */
 function ordenarEvolucao(lista) {
-  const peso = (e) => (e.alta ? 2 : (e.nivel && !String(e.texto || '').trim() ? 0 : 1));
+  const peso = (e) => (e.alta ? 2 : ((e.recaida || e.nivel) && !String(e.texto || '').trim() ? 0 : 1));
   return [...(lista || [])].sort((a, b) => (a.data || '').localeCompare(b.data || '')
     || peso(a) - peso(b)
     || (a.criadoEm || '').localeCompare(b.criadoEm || ''));
@@ -285,8 +310,52 @@ function recalcularOcorrencia(o) {
     if (e.previsaoRetorno !== undefined) previsaoRetorno = e.previsaoRetorno;
     if (e.restricoes !== undefined) restricoes = e.restricoes;
     if (e.alta) fim = e.data;
+    if (e.recaida) fim = ''; // uma recaída reabre a lesão
   });
   return { ...n, evolucao, nivel, previsaoRetorno, restricoes, fim };
+}
+
+/* RECAÍDAS — o jogador teve alta e, pouco depois, volta a parar pelo
+   mesmo problema (recaída ou avaliação precipitada). Deve ser a MESMA
+   lesão, reaberta, e não uma nova.
+
+   `anteriorParaRecaida` responde à pergunta ao criar uma ocorrência:
+   há uma lesão do mesmo jogador, na mesma zona, com alta nos últimos
+   30 dias antes deste início? `possiveisRecaidas` faz a mesma pergunta
+   ao que já está registado, para juntar os casos antigos. */
+const DIAS_RECAIDA = 30;
+function anteriorParaRecaida(clinico, { playerId, zona, inicio, excluirId }) {
+  if (!playerId || !zona || zona === 'Outra' || !inicio) return null;
+  const limite = proximoDiaIso(inicio, -DIAS_RECAIDA);
+  return (clinico || [])
+    .filter(a => a.id !== excluirId && a.playerId === playerId && a.zona === zona && a.fim && a.fim < inicio && a.fim >= limite)
+    .sort((x, y) => (y.fim || '').localeCompare(x.fim || ''))[0] || null;
+}
+function possiveisRecaidas(clinico) {
+  const pares = [];
+  const usados = new Set();
+  [...(clinico || [])].sort((a, b) => (a.inicio || '').localeCompare(b.inicio || '')).forEach(b => {
+    const a = anteriorParaRecaida(clinico, { playerId: b.playerId, zona: b.zona, inicio: b.inicio, excluirId: b.id });
+    if (!a || usados.has(a.id) || usados.has(b.id)) return;
+    if ((b.naoRecaidaDe || []).includes(a.id)) return;
+    usados.add(a.id); usados.add(b.id);
+    pares.push([a, b]);
+  });
+  return pares;
+}
+// Junta B na lesão A como recaída: A fica (com a alta que teve), B passa
+// a ser a reabertura, com o nível, a previsão e as restrições com que
+// foi registada, seguida da evolução dela.
+function juntarComoRecaida(anterior, nova) {
+  const a = normalizarOcorrencia(anterior);
+  const b = normalizarOcorrencia(nova);
+  const reabertura = {
+    id: `${nova.id}-recaida`, data: nova.inicio, recaida: true, texto: '',
+    nivel: b.nivelInicial, previsaoRetorno: b.previsaoInicial || '', restricoes: b.restricoesIniciais || '',
+    criadoEm: new Date().toISOString(),
+  };
+  const notas = [anterior.notas, nova.notas].map(t => String(t || '').trim()).filter(Boolean).join('\n\n');
+  return recalcularOcorrencia({ ...a, evolucao: [...a.evolucao, reabertura, ...b.evolucao], notas });
 }
 
 /* LESÕES PARTIDAS EM DUAS pela versão anterior: o mesmo jogador, o mesmo
@@ -399,7 +468,9 @@ function estadoClinicoEm(jogadorId, data, clinico) {
     && (!o.fim || o.fim >= data));
   if (!abertas.length) return null;
   const o = abertas.sort((a, b) => (b.inicio || '').localeCompare(a.inicio || ''))[0];
-  return { ...nivelClinico(nivelNoDia(o, data)), ocorrencia: o };
+  const nivel = nivelNoDia(o, data);
+  if (!nivel) return null; // entre uma alta e uma recaída: estava apto
+  return { ...nivelClinico(nivel), ocorrencia: o };
 }
 
 /* Texto curto para o aviso, sem obrigar quem o mostra a montar a frase.
@@ -7618,6 +7689,7 @@ function RegistoClinicoJogador({ ocorrencias }) {
                 <span style={{ color: T.cream, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {[original.tipo, original.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
                   {ordem > 1 && <span style={{ color: T.warn, marginLeft: 6 }}>{ordem}.ª nesta zona</span>}
+                  {(() => { const r = (o.evolucao || []).filter(e => e.recaida).length; return r ? <span style={{ color: T.warn, marginLeft: 6 }}>{r} {r === 1 ? 'recaída' : 'recaídas'}</span> : null; })()}
                 </span>
                 <span style={{ ...mono, color: T.mutedDim, fontSize: 11, flexShrink: 0 }}>
                   {original.inicio ? fmtShort(original.inicio) : '—'}{dias != null ? ` · ${dias}d` : ''}
@@ -7633,6 +7705,7 @@ function RegistoClinicoJogador({ ocorrencias }) {
                     <div key={e.id} style={{ fontSize: 12, lineHeight: 1.5, marginTop: 6 }}>
                       <span style={{ ...mono, color: T.mutedDim, fontSize: 11 }}>{e.data ? fmtShort(e.data) : ''}</span>
                       {e.alta && <span style={{ color: T.good, marginLeft: 6 }}>Alta</span>}
+                      {e.recaida && <span style={{ color: T.warn, marginLeft: 6 }}>Recaída</span>}
                       {e.nivel && <span style={{ color: nivelClinico(e.nivel).cor, marginLeft: 6 }}>{nivelClinico(e.nivel).label}</span>}
                       {e.texto && <span style={{ color: T.cream, marginLeft: 6 }}>{e.texto}</span>}
                     </div>
@@ -20029,7 +20102,7 @@ const ZONAS_CORPORAIS = ['Tornozelo', 'Joelho', 'Coxa', 'Virilha', 'Anca', 'Pern
 /* Ficha de uma ocorrência. `presetPlayerId` e `presetData` chegam
    preenchidos quando a janela é aberta a partir de um L nas presenças —
    é o que evita escrever duas vezes a mesma coisa. */
-function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onClose, onSave, onRemove }) {
+function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onClose, onSave, onRemove, clinico, onRecaida }) {
   /* Duas utilizações:
      · NOVA ocorrência: tudo o que se sabe no primeiro dia, incluindo uma
        primeira nota, que abre a evolução.
@@ -20051,6 +20124,21 @@ function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onCl
   });
   const valido = f.playerId && f.inicio && f.nivel;
 
+  // Mesmo jogador, mesma zona, alta há pouco: provavelmente é uma recaída.
+  const anterior = !aEditar && onRecaida
+    ? anteriorParaRecaida(clinico, { playerId: f.playerId, zona: f.zona, inicio: f.inicio })
+    : null;
+
+  const novaAPartirDoForm = () => {
+    const agora = new Date().toISOString();
+    const nota = String(f.nota || '').trim();
+    return recalcularOcorrencia({
+      playerId: f.playerId, inicio: f.inicio, tipo: f.tipo, zona: f.zona,
+      nivelInicial: f.nivel, previsaoInicial: f.previsaoRetorno || '', restricoesIniciais: f.restricoes || '',
+      evolucao: nota ? [{ id: uid(), data: f.inicio, texto: nota, criadoEm: agora }] : [],
+    });
+  };
+
   const guardar = () => {
     if (!valido) return;
     if (aEditar) {
@@ -20059,13 +20147,12 @@ function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onCl
       }));
       return;
     }
-    const agora = new Date().toISOString();
-    const nota = String(f.nota || '').trim();
-    onSave(recalcularOcorrencia({
-      playerId: f.playerId, inicio: f.inicio, tipo: f.tipo, zona: f.zona,
-      nivelInicial: f.nivel, previsaoInicial: f.previsaoRetorno || '', restricoesIniciais: f.restricoes || '',
-      evolucao: nota ? [{ id: uid(), data: f.inicio, texto: nota, criadoEm: agora }] : [],
-    }));
+    onSave(novaAPartirDoForm());
+  };
+
+  const guardarComoRecaida = () => {
+    if (!valido || !anterior) return;
+    onRecaida(juntarComoRecaida(anterior, { ...novaAPartirDoForm(), id: uid() }));
   };
 
   return (
@@ -20140,10 +20227,28 @@ function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onCl
         </>
       )}
 
+      {anterior && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', marginBottom: 14, borderRadius: 8, border: `1px solid ${T.warn}`, background: T.bg }}>
+          <AlertTriangle size={16} color={T.warn} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.5 }}>
+            Este jogador teve alta de {[anterior.tipo, anterior.zona].filter(Boolean).join(' · ') || 'uma lesão'} a {fmtDate(anterior.fim)}.
+            Se é o mesmo problema, regista como <strong>recaída</strong>: a lesão reabre e fica tudo na mesma ficha.
+            Os dias em que esteve apto entre a alta e hoje continuam a contar como aptos.
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
         {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> Apagar lesão</Btn>}
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={guardar} disabled={!valido}>Guardar</Btn>
+        {anterior ? (
+          <>
+            <Btn variant="ghost" onClick={guardar} disabled={!valido}>É uma lesão nova</Btn>
+            <Btn onClick={guardarComoRecaida} disabled={!valido}>Registar como recaída</Btn>
+          </>
+        ) : (
+          <Btn onClick={guardar} disabled={!valido}>Guardar</Btn>
+        )}
       </div>
     </Modal>
   );
@@ -20183,6 +20288,7 @@ function LinhaOcorrencia({ o: original, jogador, onAbrir, onAtualizar, mostrarJo
             original.fim ? `até ${fmtDate(original.fim)}` : null,
             dias != null ? `${dias} ${dias === 1 ? 'dia' : 'dias'}` : null,
             aberta && original.previsaoRetorno ? `previsão ${fmtShort(original.previsaoRetorno)}` : null,
+            (o.evolucao || []).some(e => e.recaida) ? 'com recaída' : null,
           ].filter(Boolean).join(' · ')}
         </div>
         {ultima && (
@@ -20222,11 +20328,14 @@ function proximoDiaIso(d, n = 1) {
 
 /* Dias decorridos: até à alta, ou até hoje se ainda estiver aberta. */
 function diasDeOcorrencia(o) {
-  if (!o.inicio) return null;
-  const de = new Date(`${o.inicio}T00:00:00`);
-  const a = new Date(`${o.fim || todayStr()}T00:00:00`);
-  const d = Math.round((a - de) / 86400000);
-  return d >= 0 ? d + 1 : null;
+  if (!o || !o.inicio) return null;
+  // Somam-se só os períodos ativos: os dias entre uma alta e uma recaída,
+  // em que o jogador esteve apto, não contam.
+  const total = periodosDaOcorrencia(o).reduce((soma, [de, ate]) => {
+    const d = Math.round((new Date(`${ate}T00:00:00`) - new Date(`${de}T00:00:00`)) / 86400000);
+    return soma + (d >= 0 ? d + 1 : 0);
+  }, 0);
+  return total || null;
 }
 
 /* MARCAR L NOS DIAS DE UMA OCORRÊNCIA.
@@ -20378,7 +20487,7 @@ function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar,
   const editarEntrada = (e) => {
     setErro('');
     setForm({
-      modo: e.alta ? 'alta' : 'atualizar', entradaId: e.id, data: e.data || hoje, texto: e.texto || '',
+      modo: e.alta ? 'alta' : (e.recaida ? 'recaida' : 'atualizar'), entradaId: e.id, data: e.data || hoje, texto: e.texto || '',
       nivel: e.nivel || '',
       previsaoRetorno: e.previsaoRetorno !== undefined ? e.previsaoRetorno : '',
       restricoes: e.restricoes !== undefined ? e.restricoes : '',
@@ -20394,6 +20503,13 @@ function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar,
     const entrada = { id: form.entradaId || uid(), data: form.data, texto, criadoEm: new Date().toISOString() };
     if (form.modo === 'alta') {
       entrada.alta = true;
+    } else if (form.modo === 'recaida') {
+      if (!form.nivel) { setErro('Escolhe o nível com que o jogador volta ao boletim.'); return; }
+      const ultimaAlta = [...o.evolucao].reverse().find(e => e.alta && e.id !== form.entradaId);
+      if (!form.entradaId && ultimaAlta && form.data <= ultimaAlta.data) {
+        setErro(`A recaída tem de ser depois da alta (${fmtShort(ultimaAlta.data)}).`); return;
+      }
+      Object.assign(entrada, { recaida: true, nivel: form.nivel, previsaoRetorno: form.previsaoRetorno || '', restricoes: form.restricoes || '' });
     } else {
       if (form.nivel) entrada.nivel = form.nivel;
       // Só entra o que mudou em relação ao estado atual (ou o que a
@@ -20407,18 +20523,18 @@ function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar,
         return;
       }
     }
+    // Com recaídas uma lesão pode ter várias altas (uma por período), por
+    // isso nada se substitui: "Dar alta" só aparece com a lesão aberta.
     const antigas = o.evolucao.filter(e => e.id !== entrada.id);
-    // Uma lesão só tem uma alta: dar alta outra vez substitui a anterior.
-    const semOutraAlta = entrada.alta ? antigas.filter(e => !e.alta) : antigas;
-    onGuardar(recalcularOcorrencia({ ...o, evolucao: [...semOutraAlta, entrada] }));
+    onGuardar(recalcularOcorrencia({ ...o, evolucao: [...antigas, entrada] }));
     setForm(null); setErro('');
   };
 
   const apagarEntrada = (e) => {
     askConfirm({
-      title: e.alta ? 'Retirar a alta?' : 'Apagar esta atualização?',
+      title: e.alta ? 'Retirar a alta?' : e.recaida ? 'Apagar a recaída?' : 'Apagar esta atualização?',
       label: `${e.data ? fmtDate(e.data) : ''}${e.texto ? ` · ${e.texto.slice(0, 60)}` : ''}`,
-      note: e.alta ? 'A lesão volta a ficar aberta.' : '',
+      note: e.alta ? 'A lesão volta a ficar aberta.' : e.recaida ? 'A lesão volta a ficar fechada na alta anterior.' : '',
       confirmLabel: e.alta ? 'Retirar' : 'Apagar',
       destructive: true,
       onConfirm: () => onGuardar(recalcularOcorrencia({ ...o, evolucao: o.evolucao.filter(x => x.id !== e.id) })),
@@ -20461,6 +20577,7 @@ function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar,
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {aberta && <Btn onClick={() => { setErro(''); setForm(formVazio('atualizar')); }}><Plus size={15} /> Atualização</Btn>}
           {aberta && <Btn variant="ghost" onClick={() => { setErro(''); setForm(formVazio('alta')); }}><CheckCircle2 size={15} /> Dar alta</Btn>}
+          {!aberta && <Btn onClick={() => { setErro(''); setForm({ ...formVazio('recaida'), nivel: 'indisponivel', previsaoRetorno: '', restricoes: '' }); }}><RotateCcw size={15} /> Registar recaída</Btn>}
           <span style={{ flex: 1 }} />
           <Btn variant="ghost" onClick={onEditarDados} title="Corrigir jogador, tipo, zona, início ou nível no início"><Pencil size={14} /> Dados da lesão</Btn>
         </div>
@@ -20470,17 +20587,23 @@ function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar,
       {form && (
         <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, marginBottom: 16 }}>
           <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
-            {form.modo === 'alta' ? (form.entradaId ? 'Corrigir a alta' : 'Dar alta') : (form.entradaId ? 'Corrigir atualização' : 'Nova atualização')}
+            {form.modo === 'alta' ? (form.entradaId ? 'Corrigir a alta' : 'Dar alta')
+              : form.modo === 'recaida' ? (form.entradaId ? 'Corrigir a recaída' : 'Registar recaída')
+              : (form.entradaId ? 'Corrigir atualização' : 'Nova atualização')}
           </div>
           <div style={{ ...FIELD_GRID, marginBottom: 10 }}>
-            <Field label={form.modo === 'alta' ? 'Data da alta' : 'Data'}>
+            <Field label={form.modo === 'alta' ? 'Data da alta' : form.modo === 'recaida' ? 'Data da recaída' : 'Data'}>
               <Input type="date" value={form.data} onChange={e => setForm({ ...form, data: e.target.value })} style={campo} />
             </Field>
             {form.modo !== 'alta' && (
               <Field label="Nível">
                 <Select value={form.nivel} onChange={e => setForm({ ...form, nivel: e.target.value })}>
-                  <option value="">{form.entradaId ? 'Sem mudança de nível' : `Mantém: ${nivelAtual.label}`}</option>
-                  {NIVEIS_CLINICOS.map(n => <option key={n.id} value={n.id}>Passa a: {n.label}</option>)}
+                  {form.modo === 'recaida'
+                    ? NIVEIS_CLINICOS.map(n => <option key={n.id} value={n.id}>{n.label}</option>)
+                    : [
+                      <option key="" value="">{form.entradaId ? 'Sem mudança de nível' : `Mantém: ${nivelAtual.label}`}</option>,
+                      ...NIVEIS_CLINICOS.map(n => <option key={n.id} value={n.id}>Passa a: {n.label}</option>),
+                    ]}
                 </Select>
               </Field>
             )}
@@ -20499,7 +20622,7 @@ function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar,
             </div>
           )}
           <div style={{ marginBottom: 10 }}>
-            <Field label={form.modo === 'alta' ? 'Nota (opcional)' : 'Como está o jogador'} bloco solto>
+            <Field label={form.modo === 'alta' ? 'Nota (opcional)' : form.modo === 'recaida' ? 'O que aconteceu' : 'Como está o jogador'} bloco solto>
               <TextArea value={form.texto} onChange={e => setForm({ ...form, texto: e.target.value })} autoFocus
                 placeholder={form.modo === 'alta' ? 'Ex: reavaliado pelo fisioterapeuta, sem dor, treino completo' : 'Ex: nova ecografia, rotura grau 1; começa corrida contínua'}
                 style={{ minHeight: 64 }} />
@@ -20508,7 +20631,7 @@ function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar,
           {erro && <div style={{ fontSize: 12.5, color: T.bad, marginBottom: 10 }}>{erro}</div>}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Btn variant="ghost" onClick={() => { setForm(null); setErro(''); }}>Cancelar</Btn>
-            <Btn onClick={guardarForm}>{form.modo === 'alta' && !form.entradaId ? 'Dar alta' : 'Guardar'}</Btn>
+            <Btn onClick={guardarForm}>{form.entradaId ? 'Guardar' : form.modo === 'alta' ? 'Dar alta' : form.modo === 'recaida' ? 'Reabrir a lesão' : 'Guardar'}</Btn>
           </div>
         </div>
       )}
@@ -20528,7 +20651,8 @@ function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar,
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ ...mono, fontSize: 12, color: T.cream }}>{e.data ? fmtDate(e.data) : 'sem data'}</span>
                 {e.alta && pill(T.good, 'Alta')}
-                {nv && pill(nv.cor, `Passa a ${nv.label}`)}
+                {e.recaida && nv && pill(nv.cor, `Recaída · ${nv.label}`)}
+                {!e.recaida && nv && pill(nv.cor, `Passa a ${nv.label}`)}
                 {e.previsaoRetorno !== undefined && <span style={{ fontSize: 11.5, color: T.muted }}>Previsão: {e.previsaoRetorno ? fmtShort(e.previsaoRetorno) : 'sem data'}</span>}
                 <span style={{ flex: 1 }} />
                 <button onClick={() => editarEntrada(e)} title="Corrigir" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 2 }}><Pencil size={12} /></button>
@@ -20570,6 +20694,7 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
   const abertas = ordenar((clinico || []).filter(o => !o.fim));
   const fechadas = ordenar((clinico || []).filter(o => o.fim));
   const partidas = lesoesPartidas(clinico);
+  const recaidas = possiveisRecaidas(clinico);
 
   const propor = (registo) => proporMarcacaoClinica({
     ocorrencia: registo, sessions, matches, setSessions, setMatches,
@@ -20588,6 +20713,25 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
     const registo = { ...data, id: uid() };
     setModal({ tipo: 'ficha', id: registo.id });
     gravar(registo);
+  };
+
+  // Nova ocorrência registada como recaída de uma anterior (já vem junta).
+  const criarRecaida = (registo) => {
+    setModal({ tipo: 'ficha', id: registo.id });
+    gravar(registo);
+  };
+
+  // Casos antigos: junta B em A como recaída, ou marca que não é.
+  const juntarRecaida = ([a, b]) => {
+    const junta = juntarComoRecaida(a, b);
+    const antes = clinico;
+    setClinico(prev => prev.filter(o => o.id !== b.id).map(o => (o.id === a.id ? junta : o)));
+    offerUndo('Juntada como recaída.', () => setClinico(antes));
+    propor(junta);
+  };
+  const naoERecaida = ([a, b]) => {
+    const registo = { ...b, naoRecaidaDe: [...(b.naoRecaidaDe || []), a.id] };
+    setClinico(prev => prev.map(o => (o.id === b.id ? registo : o)));
   };
 
   const remove = (id) => {
@@ -20638,6 +20782,39 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
           </span>
           <Btn variant="ghost" onClick={juntarPartidas}>Ver e juntar</Btn>
         </div>
+      )}
+
+      {/* POSSÍVEIS RECAÍDAS já registadas como lesões separadas: mesmo
+          jogador, mesma zona, nova paragem até 30 dias depois da alta.
+          Uma a uma, porque só quem conhece o caso sabe se é o mesmo
+          problema. */}
+      {recaidas.length > 0 && (
+        <Panel title={`Possíveis recaídas (${recaidas.length})`}>
+          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
+            O mesmo jogador voltou a parar na mesma zona pouco depois de ter alta. Se é o mesmo problema, junta como recaída:
+            fica uma só lesão, reaberta, e os dias em que esteve apto entre a alta e a recaída continuam a contar como aptos.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {recaidas.map(([a, b]) => {
+              const j = jogadorDe(b.playerId);
+              const dias = Math.round((new Date(`${b.inicio}T00:00:00`) - new Date(`${a.fim}T00:00:00`)) / 86400000);
+              return (
+                <div key={`${a.id}-${b.id}`} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 12px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8 }}>
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ fontSize: 13.5, color: T.cream }}>
+                      {j ? `${j.number ? `${j.number} ` : ''}${j.name}` : 'Jogador'} · {[b.tipo, b.zona].filter(Boolean).join(' · ')}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>
+                      Alta a {fmtDate(a.fim)} · voltou a parar a {fmtDate(b.inicio)} ({dias} {dias === 1 ? 'dia' : 'dias'} depois)
+                    </div>
+                  </div>
+                  <Btn variant="ghost" onClick={() => naoERecaida([a, b])}>Não é recaída</Btn>
+                  <Btn onClick={() => juntarRecaida([a, b])}><RotateCcw size={14} /> Juntar como recaída</Btn>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
       )}
 
       <Panel
@@ -20691,7 +20868,8 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
       </Panel>
 
       {modal === 'new' && (
-        <OcorrenciaModal ocorrencia={null} players={players} onClose={() => setModal(null)} onSave={criar} />
+        <OcorrenciaModal ocorrencia={null} players={players} onClose={() => setModal(null)} onSave={criar}
+          clinico={clinico} onRecaida={criarRecaida} />
       )}
 
       {emFicha && (
@@ -21858,6 +22036,15 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
           onSave={(data) => {
             const registo = { ...data, id: uid() };
             setClinico([...(clinico || []), registo]);
+            setNovaOcorrencia(null);
+            proporMarcacaoClinica({
+              ocorrencia: registo, sessions, matches, setSessions, setMatches,
+              jogador: players.find(p => p.id === registo.playerId),
+            });
+          }}
+          clinico={clinico}
+          onRecaida={(registo) => {
+            setClinico(prev => prev.map(o => (o.id === registo.id ? registo : o)));
             setNovaOcorrencia(null);
             proporMarcacaoClinica({
               ocorrencia: registo, sessions, matches, setSessions, setMatches,
