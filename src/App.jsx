@@ -6473,10 +6473,15 @@ function WellnessLoadMatrix({ players, monitoring }) {
             : <MatrixChart points={points} W={820} H={470} scale={1.6} estilo={{ maxHeight: '68vh' }} />}
 
           <div style={{ display: 'grid', gridTemplateColumns: estreito ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: '8px 20px', marginTop: 24, alignItems: 'start' }}>
-            {Object.entries(QUADRANTS).map(([key, q]) => {
+            {/* Primeiro os dois quadrantes que pedem atenção (costumam ter
+                poucos nomes), lado a lado; depois os dois grandes, também
+                lado a lado — assim as colunas ficam com alturas parecidas
+                e não sobram buracos. */}
+            {['alerta', 'malestar', 'aguenta', 'margem'].map(key => [key, QUADRANTS[key]]).map(([key, q]) => {
               const list = points.filter(pt => quadrantOf(pt) === key)
                 .sort((a, b) => b.pse - a.pse || a.well - b.well);
-              if (list.length === 0) return null;
+              // Um quadrante vazio fica no lugar (com uma linha a dizê-lo),
+              // para a grelha manter sempre a mesma arrumação.
               return (
                 <div key={key} style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -6485,6 +6490,9 @@ function WellnessLoadMatrix({ players, monitoring }) {
                     <span style={{ color: T.mutedDim, fontSize: 11.5 }}>· {q.hint}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {list.length === 0 && (
+                      <div style={{ padding: '6px 10px', fontSize: 12.5, color: T.mutedDim, border: `1px dashed ${T.line}`, borderRadius: 7 }}>Ninguém neste quadrante.</div>
+                    )}
                     {list.map(pt => (
                       <div key={pt.id} style={{
                         display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px',
