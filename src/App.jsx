@@ -7303,6 +7303,21 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
     });
   };
 
+  /* Lesão aberta a partir da página do jogador: a mesma ficha do Boletim
+     Clínico, por cima do perfil. Guardar grava UMA ocorrência e propõe
+     acertar os L, como no Boletim. */
+  const [lesaoPerfil, setLesaoPerfil] = useState(null); // null | { tipo: 'ficha' | 'dados', id }
+  const lesaoEmFicha = lesaoPerfil && lesaoPerfil.tipo === 'ficha' ? (clinico || []).find(o => o.id === lesaoPerfil.id) : null;
+  const lesaoEmDados = lesaoPerfil && lesaoPerfil.tipo === 'dados' ? (clinico || []).find(o => o.id === lesaoPerfil.id) : null;
+  const mudarLesaoPara = (proximo) => trocarJanela(() => {}, () => setLesaoPerfil(proximo));
+  const gravarLesao = (registo) => {
+    setClinico(prev => (prev || []).map(o => (o.id === registo.id ? registo : o)));
+    proporMarcacaoClinica({
+      ocorrencia: registo, sessions, matches, setSessions, setMatches,
+      jogador: players.find(p => p.id === registo.playerId),
+    });
+  };
+
   return (
     <div>
       {/* Um jogador selecionado ocupa a página toda — troca-se a grelha do
@@ -7313,12 +7328,32 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
         <PlayerProfilePage
           player={statsFor} sessions={sessions} matches={matches} clinico={clinico}
           monitoring={monitoring} desenvolvimento={desenvolvimento}
+          onAbrirLesao={(id) => setLesaoPerfil({ tipo: 'ficha', id })}
           onBack={fecharPerfil}
           onShare={() => doShare(statsFor)}
           onPrint={() => { const p = statsFor; doPrint(p); }}
           onEdit={() => { const p = statsFor; setModalVoltarPerfil(true); trocarJanela(() => setStatsFor(null), () => setModal(p)); }}
         />
-      ) : (
+      ) : null}
+      {statsFor && lesaoEmFicha && (
+        <FichaOcorrencia
+          key={lesaoEmFicha.id}
+          ocorrencia={lesaoEmFicha}
+          jogador={players.find(p => p.id === lesaoEmFicha.playerId)}
+          onClose={() => setLesaoPerfil(null)}
+          onGuardar={gravarLesao}
+          onEditarDados={() => mudarLesaoPara({ tipo: 'dados', id: lesaoEmFicha.id })}
+        />
+      )}
+      {statsFor && lesaoEmDados && (
+        <OcorrenciaModal
+          ocorrencia={lesaoEmDados}
+          players={players}
+          onClose={() => mudarLesaoPara({ tipo: 'ficha', id: lesaoEmDados.id })}
+          onSave={(registo) => { gravarLesao(registo); mudarLesaoPara({ tipo: 'ficha', id: registo.id }); }}
+        />
+      )}
+      {statsFor ? null : (
         <>
       <SectionHeader title="Plantel" subtitle={`${players.length} jogador${players.length === 1 ? '' : 'es'} inscrito${players.length === 1 ? '' : 's'}`}
         action={<Btn onClick={() => { setModalVoltarPerfil(false); setModal('new'); }}><Plus size={15} /> Adicionar jogador</Btn>} />
@@ -7632,11 +7667,13 @@ function ImageLightbox({ src, alt, onClose }) {
   );
 }
 
-/* REGISTO CLÍNICO DO JOGADOR (ficha do jogador, só leitura) — todas as
-   lesões dele, cada uma com a sua evolução, o total de dias indisponível
-   na época (desde 1 de agosto) e as recidivas por zona ("2.ª na
-   virilha"). Editar faz-se no Boletim Clínico. */
-function RegistoClinicoJogador({ ocorrencias }) {
+/* REGISTO CLÍNICO DO JOGADOR (ficha do jogador) — todas as lesões dele,
+   o total de dias indisponível na época (desde 1 de agosto) e as
+   recidivas por zona ("2.ª na virilha"). Tocar numa lesão abre a MESMA
+   ficha do Boletim Clínico (`onAbrir`), por cima da página do jogador:
+   ver a evolução, atualizar, dar alta, sem mudar de separador. Sem
+   `onAbrir`, abre a evolução ali mesmo, só para ler. */
+function RegistoClinicoJogador({ ocorrencias, onAbrir }) {
   const [aberta, setAberta] = useState(null);
   const hoje = todayStr();
   const d = new Date();
@@ -7682,7 +7719,7 @@ function RegistoClinicoJogador({ ocorrencias }) {
               background: T.bg, borderRadius: 7, border: `1px solid ${T.line}`,
               borderLeft: `3px solid ${original.fim ? T.line : nivel.cor}`, overflow: 'hidden',
             }}>
-              <button onClick={() => setAberta(expandida ? null : original.id)} style={{
+              <button onClick={() => (onAbrir ? onAbrir(original.id) : setAberta(expandida ? null : original.id))} title={onAbrir ? 'Abrir a ficha da lesão' : undefined} style={{
                 display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', cursor: 'pointer',
                 padding: '7px 10px', background: 'none', border: 'none', fontSize: 12, ...body,
               }}>
@@ -7697,7 +7734,9 @@ function RegistoClinicoJogador({ ocorrencias }) {
                 <span style={{ fontSize: 11, color: original.fim ? T.mutedDim : nivel.cor, flexShrink: 0 }}>
                   {original.fim ? 'alta' : nivel.curto}
                 </span>
-                <ChevronDown size={13} style={{ color: T.mutedDim, flexShrink: 0, transform: expandida ? 'rotate(180deg)' : 'none' }} />
+                {onAbrir
+                  ? <ChevronRight size={13} style={{ color: T.mutedDim, flexShrink: 0 }} />
+                  : <ChevronDown size={13} style={{ color: T.mutedDim, flexShrink: 0, transform: expandida ? 'rotate(180deg)' : 'none' }} />}
               </button>
               {expandida && (
                 <div style={{ padding: '4px 10px 10px 12px', borderTop: `1px solid ${T.line}` }}>
@@ -7724,7 +7763,7 @@ function RegistoClinicoJogador({ ocorrencias }) {
   );
 }
 
-function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, onBack, onShare, onPrint, onEdit }) {
+function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, onBack, onShare, onPrint, onEdit, onAbrirLesao }) {
   const s = playerStats(player, sessions, jogosOficiaisDe(matches));
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
 
@@ -7897,7 +7936,7 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
           {ocorrencias.length === 0 ? (
             <div style={{ ...card, color: T.mutedDim, fontSize: 12.5, marginBottom: 16 }}>Sem ocorrências registadas.</div>
           ) : (
-            <RegistoClinicoJogador ocorrencias={ocorrencias} />
+            <RegistoClinicoJogador ocorrencias={ocorrencias} onAbrir={onAbrirLesao} />
           )}
 
           <div style={sectionTitle}>Desenvolvimento individual</div>
