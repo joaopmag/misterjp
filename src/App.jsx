@@ -28662,7 +28662,7 @@ ${x.notes ? `<h2>Notas gerais</h2><p class="desc">${escapeHtmlText(x.notes)}</p>
 }
 
 function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, setVideos }) {
-  const botaoCartao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 6, display: 'flex', borderRadius: 6 };
+  const botaoCartao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 5, display: 'flex', borderRadius: 6 };
   const umaLinhaEstilo = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
   const [subTab, setSubTab] = useState('jogadores');
   const [modal, setModal] = useState(null);
@@ -28805,11 +28805,11 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
               /* CARTÃO DE SCOUTING — todos iguais: cada bloco tem sempre o
                  mesmo lugar e a mesma altura, preenchido ou não.
                  · Nome e duas linhas de identificação:
-                   clube · posição(ões) · pé · idade / país · ano.
+                   clube · posição(ões) · pé / país · ano · idade.
                  · Potencial (estrelas) e média, lado a lado.
                  · Os quatro pilares, cada um com a nota e uma barra.
-                 · Ações numa faixa por baixo, para não roubarem espaço ao
-                   nome.
+                 · Ações em cima, ao lado do nome, juntas; no nome aparece
+                   o primeiro e o último (o completo ao passar o rato).
                  Sem cor de clube (o jogador pode mudar de clube) e sem o
                  texto livre (características e observações), que fica só
                  na ficha completa. */
@@ -28824,21 +28824,34 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                     x.club || 'Clube desconhecido',
                     posicoes,
                     x.dominantFoot ? `Pé ${x.dominantFoot.toLowerCase()}` : null,
-                    playerAge ? `${playerAge} anos` : null,
                   ].filter(Boolean).join(' · ');
-                  const linhaDois = [x.nationality, x.birthYear || null].filter(Boolean).join(' · ');
+                  const linhaDois = [x.nationality, x.birthYear || null, playerAge ? `${playerAge} anos` : null].filter(Boolean).join(' · ');
                   const umaLinha = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
+                  // No cartão, só o primeiro e o último nome (o completo
+                  // fica na ficha e ao passar o rato).
+                  const palavras = String(x.name || '').trim().split(/\s+/).filter(Boolean);
+                  const nomeCurto = palavras.length > 2 ? `${palavras[0]} ${palavras[palavras.length - 1]}` : (x.name || '');
                   return (
-                    <div style={{ padding: '16px 16px 10px' }}>
+                    <div style={{ padding: '14px 12px 10px 16px' }}>
                       <div style={{ minWidth: 0 }}>
-                        <div title={x.name} style={{ color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '22px', ...umaLinha }}>{x.name}</div>
+                        {/* Nome e ações na mesma linha; os ícones ficam juntos
+                            para deixar o máximo de espaço ao nome. */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div title={x.name} style={{ flex: 1, color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '22px', ...umaLinha }}>{nomeCurto}</div>
+                          <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}>
+                            <button onClick={() => doShare(x)} title="Partilhar ficha do jogador" style={botaoCartao}><Share2 size={13} /></button>
+                            <button onClick={() => doPrint(x)} title="Imprimir ficha do jogador" style={botaoCartao}><Printer size={13} /></button>
+                            <button onClick={() => setModal(x)} title="Editar jogador" style={botaoCartao}><Pencil size={13} /></button>
+                            <button onClick={() => remove(x.id)} title="Apagar jogador" style={botaoCartao}><Trash2 size={13} /></button>
+                          </div>
+                        </div>
                         <div title={linhaUm} style={{ color: T.muted, fontSize: 12, lineHeight: '17px', height: 17, ...umaLinha }}>{linhaUm}</div>
                         <div title={linhaDois || undefined} style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: '16px', height: 16, ...umaLinha }}>{linhaDois || '\u00a0'}</div>
                       </div>
                     </div>
                   );
                 })()}
-                <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+                <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 10px' }}>
                     <RatingStars value={x.potential || 0} />
                     <span style={{ color: T.mutedDim, fontSize: 11 }}>Potencial</span>
@@ -28865,15 +28878,6 @@ function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, 
                       );
                     })}
                   </div>
-                </div>
-                <div onClick={e => e.stopPropagation()} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2,
-                  padding: '4px 10px 6px 16px', borderTop: `1px solid ${T.line}`, cursor: 'default',
-                }}>
-                  <button onClick={() => doShare(x)} title="Partilhar ficha do jogador" style={botaoCartao}><Share2 size={14} /></button>
-                  <button onClick={() => doPrint(x)} title="Imprimir ficha do jogador" style={botaoCartao}><Printer size={14} /></button>
-                  <button onClick={() => setModal(x)} title="Editar jogador" style={botaoCartao}><Pencil size={14} /></button>
-                  <button onClick={() => remove(x.id)} title="Apagar jogador" style={botaoCartao}><Trash2 size={14} /></button>
                 </div>
               </div>
             );
