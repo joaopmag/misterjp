@@ -20,9 +20,9 @@ const T = {
 const TEXT_ON_ACCENT = '#FBF3F0';
 const COR_DESENHO = '#FFFFFF'; // branco — antes era vermelho por omissão
 
-// O serviço de seguimento automático de jogador (Modal) — configurado
-// como variável de ambiente no Vercel, tal como o VIDEO_WORKER_URL.
-const SEGUIDOR_URL = import.meta.env.VITE_SEGUIDOR_URL;
+// O serviço de seguimento automático de jogador é chamado através do
+// "porteiro" (/api/seguir-jogador) — a app nunca fala diretamente com
+// o Modal, nem sabe o endereço nem a chave secreta dele.
 
 // Onde está o jogador em foco num instante `tempo`, interpolando entre
 // os dois pontos mais próximos da trajetória devolvida pelo serviço de
@@ -372,7 +372,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
     const tInicial = modoSeguir === 'a_corrigir' ? (videoRef.current?.currentTime || 0) : 0;
     setModoSeguir('a_processar');
     try {
-      const resp = await fetch(SEGUIDOR_URL, {
+      const resp = await fetch('/api/seguir-jogador', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ video_url: clip.publicUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial }),
