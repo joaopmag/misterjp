@@ -2074,7 +2074,7 @@ const TextArea = React.forwardRef(function TextArea(props, ref) {
    campo tático, onde a precisão do desenho depende de o campo ser grande
    no ecrã. Nos ecrãs pequenos os três tamanhos dão no mesmo, porque o
    limite passa a ser a largura da janela. */
-function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larguraTotal }) {
+function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larguraMax }) {
   const estreito = useIsMobile(620);
   const scrollRef = useRef(null);
   useModalHistory(onClose);
@@ -2108,8 +2108,9 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larg
         overflowY: 'auto', overflowX: 'hidden',
       }}>
         <div style={{
-          // `larguraTotal`: ocupa a largura toda do ecrã (a matriz wellness × esforço).
-          maxWidth: larguraTotal ? 'none' : (xwide ? 1100 : (wide ? 640 : 460)), margin: '0 auto',
+          // `larguraMax`: largura própria, quando nenhuma das três serve
+          // (a matriz wellness × esforço).
+          maxWidth: larguraMax || (xwide ? 1100 : (wide ? 640 : 460)), margin: '0 auto',
           padding: estreito ? 14 : 22, paddingBottom: 60,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
@@ -6462,16 +6463,16 @@ function WellnessLoadMatrix({ players, monitoring }) {
       </div>
 
       {open && (
-        /* Página inteira, na largura toda do ecrã: a matriz em cima, com
-           proporção larga (mais espaço na horizontal separa os nomes, e a
-           altura fica limitada para caber no ecrã), e as listas por
-           quadrante por baixo, lado a lado em colunas quando há largura. */
-        <Modal title="Wellness × esforço · últimos 7 dias" onClose={() => setOpen(false)} fullPage larguraTotal>
+        /* Página inteira, com a largura limitada a cerca de 60% do ecrã
+           (na largura toda a matriz parecia esticada): a matriz em cima,
+           ligeiramente mais larga do que alta, e as listas por quadrante
+           por baixo, duas por linha. */
+        <Modal title="Wellness × esforço · últimos 7 dias" onClose={() => setOpen(false)} fullPage larguraMax="max(60vw, 720px)">
           {estreito
             ? <MatrixChart points={points} W={640} H={480} scale={2} />
-            : <MatrixChart points={points} W={1200} H={560} scale={2} estilo={{ maxHeight: '68vh' }} />}
+            : <MatrixChart points={points} W={820} H={470} scale={1.6} estilo={{ maxHeight: '68vh' }} />}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '8px 20px', marginTop: 24, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: estreito ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: '8px 20px', marginTop: 24, alignItems: 'start' }}>
             {Object.entries(QUADRANTS).map(([key, q]) => {
               const list = points.filter(pt => quadrantOf(pt) === key)
                 .sort((a, b) => b.pse - a.pse || a.well - b.well);
