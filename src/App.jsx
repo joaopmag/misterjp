@@ -3669,6 +3669,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           {tab === 'equipa' && (
             <GestaoEquipa
               equipa={equipaAtiva} session={session}
+              onPreview={() => setPreviewKiosk(true)}
               onEquipasMudaram={onEquipasMudaram}
               setPlayers={setPlayers}
               dados={{
@@ -3687,7 +3688,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
             <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} />
           </div>
-          {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} onPreview={() => setPreviewKiosk(true)} teamId={teamId} />}
+          {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} teamId={teamId} />}
           {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
 
@@ -4735,7 +4736,7 @@ function retratoDeDados({ players, monitoring, clinico, sessions, matches, desen
   };
 }
 
-function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) {
+function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, onPreview }) {
   const players = (dados && dados.players) || [];
   const estreito = useIsMobile(640);
 
@@ -4770,6 +4771,20 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) 
   // Fechados por omissão, pela mesma razão que o código de convite só
   // aparece a quem administra.
   const [showCodes, setShowCodes] = useState(false);
+
+  /* LINK DO PORTAL DO ATLETA — veio de Monitorização. Fica aqui, logo
+     antes dos códigos de acesso: o link é a porta, o código é a chave de
+     cada atleta. Leva a equipa (?portal=<id>), para o servidor não ter de
+     adivinhar de quem é o código. Os links antigos (?checkin=1&e=...)
+     continuam a funcionar (ver `equipaDoLink`). Usa o endereço público
+     da app, como os outros links partilhados. */
+  const [linkPortalCopiado, setLinkPortalCopiado] = useState(false);
+  const linkPortal = `${URL_PUBLICA_APP}?portal=${equipa.id}`;
+  const copiarLinkPortal = async () => {
+    try { await navigator.clipboard.writeText(linkPortal); } catch (e) { /* o campo fica selecionável */ }
+    setLinkPortalCopiado(true);
+    setTimeout(() => setLinkPortalCopiado(false), 2000);
+  };
 
   /* O LOGÓTIPO É UM ENDEREÇO, NÃO UM FICHEIRO.
 
@@ -5177,6 +5192,21 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers }) 
 
         <div style={barraAcoes}>
           <Btn variant="ghost" onClick={sairDaEquipa} style={botaoAcao}><LogOut size={15} /> Sair desta equipa</Btn>
+        </div>
+      </Panel>
+
+      <div style={{ height: 16 }} />
+      <Panel title="Portal do Atleta">
+        <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
+          Envia este link aos atletas. Abre o Portal do Atleta (questionários de wellness e PSE, biblioteca, clipes e o resto do que partilhas com eles), sem mostrar a plataforma do staff.
+          Cada atleta entra com o seu código individual, {souDono ? 'na lista logo abaixo' : 'que quem administra a equipa lhe dá'}.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Input readOnly value={linkPortal} onFocus={e => e.target.select()} style={{ flex: 1, minWidth: 220, ...mono, fontSize: 12.5 }} />
+          <Btn variant="ghost" onClick={copiarLinkPortal}>
+            {linkPortalCopiado ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar link</>}
+          </Btn>
+          {onPreview && <Btn onClick={onPreview}><Play size={15} /> Abrir o Portal</Btn>}
         </div>
       </Panel>
 
@@ -25358,12 +25388,11 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
 /* ---------------------------------------------------------------
    MONITORIZAÇÃO
 ---------------------------------------------------------------- */
-function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, sessions, matches = [], onPreview, teamId }) {
+function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, sessions, matches = [], teamId }) {
   // Contexto de cada PSE (treino ou jogo) — ver rpeContexto.
   const ctx = { matches, sessions };
   const [modal, setModal] = useState(false);
   const [modalType, setModalType] = useState('wellness');
-  const [linkCopied, setLinkCopied] = useState(false);
   // "Sessão de hoje" fica fechada por omissão — é consulta pontual, não
   // precisa de estar sempre à vista (ver a nota grande junto ao Panel).
   const [mostrarSessaoHoje, setMostrarSessaoHoje] = useState(false);
@@ -25390,29 +25419,9 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
      cada jogador na tabela, um a um. */
   const [filaLembretes, setFilaLembretes] = useState(null); // { lista: [{ player, url }], indice }
 
-  /* O link leva a equipa. Sem ela, o servidor tem de adivinhar de quem é
-     o código — e com vários clubes na mesma base, adivinhar mal significa
-     um atleta a abrir o questionário de outro.
-
-     Link novo, mais curto: ?portal=<id-da-equipa> — o próprio Portal do
-     Atleta é agora o conceito principal, por isso passa a dar-lhe o
-     nome. Os links antigos (?checkin=1&e=...), já partilhados com
-     atletas antes desta mudança, continuam a funcionar na mesma (ver
-     `equipaDoLink`) — só os NOVOS links copiados a partir de agora é
-     que vêm neste formato. */
-  const checkinUrl = typeof window !== 'undefined'
-    ? `${window.location.origin}${window.location.pathname}${teamId ? `?portal=${teamId}` : '?checkin=1'}`
-    : '';
-
-  const copyCheckinUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(checkinUrl);
-    } catch {
-      // Alguns navegadores/contextos bloqueiam o clipboard — seleciona o texto do campo como alternativa.
-    }
-    setLinkCopied(true);
-    setTimeout(() => setLinkCopied(false), 2000);
-  };
+  /* O link do Portal do Atleta (e o botão para o abrir) passou para
+     Equipa › Membros e convite, junto dos códigos de acesso: já não é só
+     o questionário de wellness, é a porta de entrada dos atletas. */
 
   // Registo manual: substitui o registo do mesmo jogador/dia/tipo em vez de
   // duplicar linhas — o quadro fica aberto para o jogador seguinte.
@@ -25488,26 +25497,12 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
         <ComposicaoCorporal players={players} monitoring={monitoring} setMonitoring={setMonitoring} onNovaPesagem={() => openBoard('composicao')} />
       ) : (
       <>
-      <Panel title="Questionário para os atletas">
-        <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
-          Envia este link aos atletas — abre diretamente o ecrã de código pessoal, sem mostrar o resto da plataforma. Cada um entra com o seu código individual (em Equipa → Membros e convite).
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <Input readOnly value={checkinUrl} onFocus={e => e.target.select()} style={{ flex: 1, minWidth: 220, ...mono, fontSize: 12.5 }} />
-          <Btn variant="ghost" onClick={copyCheckinUrl}>
-            {linkCopied ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar link</>}
-          </Btn>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 0' }}>
-          <Btn onClick={onPreview}><Play size={15} /> Abrir questionário</Btn>
-        </div>
-      </Panel>
 
       {/* FICA FECHADO POR OMISSÃO.
           É informação de consulta pontual (só interessa saber ao montar
           o treino de hoje), não algo que precise de estar sempre à
-          vista — e era isto, mais os Códigos de acesso (agora em
-          Equipa → Membros e convite), que empurrava a tabela de
+          vista — e era isto, mais os Códigos de acesso e o link do
+          Portal (agora em Equipa → Membros e convite), que empurrava a tabela de
           respostas — o conteúdo principal deste ecrã — para muito mais
           abaixo do que devia. */}
       <Panel title="Sessão de hoje (usada no RPE)"
