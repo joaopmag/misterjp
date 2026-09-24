@@ -18,7 +18,7 @@ import {
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
   HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
   Video,
-  Volume2, VolumeX,
+  Volume2, VolumeX, CheckCircle2,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -144,6 +144,167 @@ const NIVEIS_CLINICOS = [
 ];
 const nivelClinico = (id) => NIVEIS_CLINICOS.find(n => n.id === id) || NIVEIS_CLINICOS[0];
 
+/* ================================================================
+   EVOLUÇÃO DE UMA OCORRÊNCIA
+   ================================================================
+
+   Uma lesão é UM registo, do primeiro dia até à alta. O que muda pelo
+   caminho (como o jogador está, o nível, a previsão de retorno, as
+   restrições, a própria alta) é uma lista de atualizações datadas em
+   `evolucao`:
+
+     { id, data, texto, nivel?, previsaoRetorno?, restricoes?, alta?, criadoEm }
+
+   Um campo ausente numa atualização quer dizer "não mudou". Os valores
+   de partida ficam em `nivelInicial`, `previsaoInicial` e
+   `restricoesIniciais`; `nivel`, `previsaoRetorno`, `restricoes` e `fim`
+   são o estado ATUAL, recalculado a partir da evolução
+   (`recalcularOcorrencia`) — ficam gravados para que o resto da app os
+   possa ler sem saber nada disto.
+
+   Antes, mudar de "Indisponível" para outro nível fechava a ocorrência e
+   abria outra, para os L passados continuarem certos. Com a evolução, o
+   nível de cada dia lê-se daqui (`nivelNoDia`) e a lesão fica inteira.
+
+   Registos antigos (sem `evolucao`) continuam válidos: são normalizados
+   só na leitura (`normalizarOcorrencia`) e só passam a gravar-se no
+   formato novo quando alguém lhes mexe. As `notas` originais nunca se
+   apagam. */
+
+// Nível num dia concreto. Barata de propósito: é chamada para cada
+// jogador em cada dia das presenças.
+function nivelNoDia(o, dia) {
+  if (!o) return '';
+  if (!Array.isArray(o.evolucao) || !o.evolucao.length) return o.nivel;
+  let nivel = o.nivelInicial || o.nivel;
+  let ultimaData = '';
+  o.evolucao.forEach(e => {
+    if (e.nivel && e.data && e.data <= dia && e.data >= ultimaData) { nivel = e.nivel; ultimaData = e.data; }
+  });
+  return nivel;
+}
+
+function ordenarEvolucao(lista) {
+  return [...(lista || [])].sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.criadoEm || '').localeCompare(b.criadoEm || ''));
+}
+
+/* Notas antigas → entradas da evolução. Só parte o texto onde uma data
+   aparece claramente a abrir um trecho (início de linha, ou depois de
+   "." / ";"), no formato dd/mm, dd-mm ou dd.mm, com ou sem ano. O texto
+   antes da primeira data fica como entrada do dia de início. Se não
+   houver datas, fica tudo numa entrada só — não se inventam datas. */
+function notasParaEvolucao(o) {
+  const texto = String(o.notas || '').trim();
+  if (!texto) return [];
+  const inicio = o.inicio || '';
+  const anoBase = inicio ? Number(inicio.slice(0, 4)) : new Date().getFullYear();
+  const re = /(^|\n|[.;]\s+)\s*(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?\b\s*(?:[-–—:)]\s*)?/g;
+  const marcas = [];
+  let m;
+  while ((m = re.exec(texto)) !== null) {
+    const dia = Number(m[2]), mes = Number(m[3]);
+    if (dia < 1 || dia > 31 || mes < 1 || mes > 12) continue;
+    let ano = m[4] ? Number(m[4].length === 2 ? `20${m[4]}` : m[4]) : anoBase;
+    let iso = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    if (!m[4] && inicio && iso < inicio) { ano += 1; iso = `${ano}-${iso.slice(5)}`; }
+    const d = new Date(`${iso}T00:00:00`);
+    if (Number.isNaN(d.getTime()) || d.getDate() !== dia) continue;
+    marcas.push({ iso, inicioTexto: m.index + m[1].length, fimMarca: m.index + m[0].length });
+  }
+  const limpar = (t) => t.replace(/^[\s\-–—:;.]+/, '').replace(/[\s;]+$/, '').trim();
+  if (!marcas.length) return [{ id: `${o.id}-n0`, data: inicio, texto: limpar(texto), migrado: true }];
+  const entradas = [];
+  const antes = limpar(texto.slice(0, marcas[0].inicioTexto));
+  if (antes) entradas.push({ id: `${o.id}-n0`, data: inicio, texto: antes, migrado: true });
+  marcas.forEach((mk, i) => {
+    const t = limpar(texto.slice(mk.fimMarca, i + 1 < marcas.length ? marcas[i + 1].inicioTexto : texto.length));
+    if (t) entradas.push({ id: `${o.id}-n${i + 1}`, data: mk.iso, texto: t, migrado: true });
+  });
+  return entradas;
+}
+
+// Uma ocorrência no formato novo (só na leitura; não grava nada).
+function normalizarOcorrencia(o) {
+  if (!o) return o;
+  const base = {
+    ...o,
+    nivelInicial: o.nivelInicial || o.nivel || '',
+    previsaoInicial: o.previsaoInicial !== undefined ? o.previsaoInicial : (o.previsaoRetorno || ''),
+    restricoesIniciais: o.restricoesIniciais !== undefined ? o.restricoesIniciais : (o.restricoes || ''),
+  };
+  if (Array.isArray(o.evolucao)) return base;
+  const evolucao = notasParaEvolucao(o);
+  if (o.fim) evolucao.push({ id: `${o.id}-alta`, data: o.fim, alta: true, texto: '', migrado: true });
+  return { ...base, evolucao: ordenarEvolucao(evolucao) };
+}
+
+// Estado atual a partir da evolução. Chamar SEMPRE antes de gravar.
+function recalcularOcorrencia(o) {
+  const n = normalizarOcorrencia(o);
+  const evolucao = ordenarEvolucao(n.evolucao);
+  let nivel = n.nivelInicial;
+  let previsaoRetorno = n.previsaoInicial || '';
+  let restricoes = n.restricoesIniciais || '';
+  let fim = '';
+  evolucao.forEach(e => {
+    if (e.nivel) nivel = e.nivel;
+    if (e.previsaoRetorno !== undefined) previsaoRetorno = e.previsaoRetorno;
+    if (e.restricoes !== undefined) restricoes = e.restricoes;
+    if (e.alta) fim = e.data;
+  });
+  return { ...n, evolucao, nivel, previsaoRetorno, restricoes, fim };
+}
+
+/* LESÕES PARTIDAS EM DUAS pela versão anterior: o mesmo jogador, o mesmo
+   tipo e zona, uma "Indisponível" que fecha no dia em que abre outra de
+   nível diferente. Devolve cadeias [primeira, segunda, …]. */
+function lesoesPartidas(clinico) {
+  const porJogador = {};
+  (clinico || []).forEach(o => { (porJogador[o.playerId] = porJogador[o.playerId] || []).push(o); });
+  const cadeias = [];
+  Object.values(porJogador).forEach(lista => {
+    const ord = [...lista].sort((a, b) => (a.inicio || '').localeCompare(b.inicio || ''));
+    const usados = new Set();
+    ord.forEach(o => {
+      if (usados.has(o.id)) return;
+      const cadeia = [o];
+      let atual = o;
+      for (;;) {
+        const seguinte = ord.find(x => !usados.has(x.id) && x.id !== atual.id && !cadeia.includes(x)
+          && atual.fim && x.inicio === atual.fim && atual.nivel === 'indisponivel' && x.nivel !== 'indisponivel'
+          && (x.tipo || '') === (atual.tipo || '') && (x.zona || '') === (atual.zona || '')
+          && !Array.isArray(x.evolucao));
+        if (!seguinte) break;
+        cadeia.push(seguinte);
+        atual = seguinte;
+      }
+      if (cadeia.length > 1) { cadeia.forEach(c => usados.add(c.id)); cadeias.push(cadeia); }
+    });
+  });
+  return cadeias;
+}
+
+// Junta uma cadeia numa só lesão: a primeira fica, as outras passam a
+// ser mudanças de nível na evolução dela.
+function juntarLesoes(cadeia) {
+  const [primeira, ...resto] = cadeia;
+  const base = normalizarOcorrencia(primeira);
+  let evolucao = base.evolucao.filter(e => !e.alta);
+  resto.forEach(o => {
+    const n = normalizarOcorrencia(o);
+    evolucao.push({
+      id: `${o.id}-nivel`, data: o.inicio, texto: '', nivel: o.nivel, migrado: true,
+      ...(o.previsaoRetorno ? { previsaoRetorno: o.previsaoRetorno } : {}),
+      ...(o.restricoes ? { restricoes: o.restricoes } : {}),
+    });
+    evolucao = evolucao.concat(n.evolucao.filter(e => !e.alta));
+  });
+  const ultima = cadeia[cadeia.length - 1];
+  if (ultima.fim) evolucao.push({ id: `${ultima.id}-alta`, data: ultima.fim, alta: true, texto: '', migrado: true });
+  const notasOriginais = cadeia.map(o => String(o.notas || '').trim()).filter(Boolean).join('\n\n');
+  return recalcularOcorrencia({ ...base, evolucao, notas: notasOriginais });
+}
+
 /* A pergunta certa nunca é "este jogador está lesionado?" — é "este
    jogador estava lesionado NAQUELE dia?". Uma sessão de 12/08 não pode
    ser afetada por uma lesão que começou a 20/08, e o lançamento é quase
@@ -185,7 +346,7 @@ function sincronizarVisivelNoJogo(data, adversario, visivel, matches, setMatches
 function diaAutoLesionado(jogadorId, data, clinico) {
   if (!jogadorId || !data) return false;
   return (clinico || []).some(o => (
-    o.playerId === jogadorId && o.nivel === 'indisponivel'
+    o.playerId === jogadorId && nivelNoDia(o, data) === 'indisponivel'
     && o.inicio && o.inicio <= data
     // Enquanto a ocorrência não tem `fim` (alta), o jogador continua
     // indisponível — mesmo que já se tenha passado a previsão de
@@ -204,7 +365,7 @@ function estadoClinicoEm(jogadorId, data, clinico) {
     && (!o.fim || o.fim >= data));
   if (!abertas.length) return null;
   const o = abertas.sort((a, b) => (b.inicio || '').localeCompare(a.inicio || ''))[0];
-  return { ...nivelClinico(o.nivel), ocorrencia: o };
+  return { ...nivelClinico(nivelNoDia(o, data)), ocorrencia: o };
 }
 
 /* Texto curto para o aviso, sem obrigar quem o mostra a montar a frase.
@@ -7366,6 +7527,96 @@ function ImageLightbox({ src, alt, onClose }) {
   );
 }
 
+/* REGISTO CLÍNICO DO JOGADOR (ficha do jogador, só leitura) — todas as
+   lesões dele, cada uma com a sua evolução, o total de dias indisponível
+   na época (desde 1 de agosto) e as recidivas por zona ("2.ª na
+   virilha"). Editar faz-se no Boletim Clínico. */
+function RegistoClinicoJogador({ ocorrencias }) {
+  const [aberta, setAberta] = useState(null);
+  const hoje = todayStr();
+  const d = new Date();
+  const inicioEpoca = `${d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1}-08-01`;
+
+  // Dias indisponível na época: dia a dia, pelo nível de cada dia.
+  let diasEpoca = 0;
+  ocorrencias.forEach(o => {
+    if (!o.inicio) return;
+    let dia = o.inicio > inicioEpoca ? o.inicio : inicioEpoca;
+    const ate = o.fim && o.fim < hoje ? o.fim : hoje;
+    let guarda = 0;
+    while (dia <= ate && guarda < 800) {
+      if (nivelNoDia(o, dia) === 'indisponivel') diasEpoca += 1;
+      dia = proximoDiaIso(dia, 1);
+      guarda += 1;
+    }
+  });
+
+  // Ordem da lesão em cada zona (a mais antiga é a 1.ª).
+  const ordemNaZona = {};
+  const contagemZona = {};
+  [...ocorrencias].sort((x, y) => (x.inicio || '').localeCompare(y.inicio || '')).forEach(o => {
+    if (!o.zona || o.zona === 'Outra') return;
+    contagemZona[o.zona] = (contagemZona[o.zona] || 0) + 1;
+    ordemNaZona[o.id] = contagemZona[o.zona];
+  });
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 12, color: T.muted, marginBottom: 8 }}>
+        {ocorrencias.length} {ocorrencias.length === 1 ? 'lesão' : 'lesões'} · {diasEpoca} {diasEpoca === 1 ? 'dia' : 'dias'} indisponível esta época
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {ocorrencias.map(original => {
+          const o = normalizarOcorrencia(original);
+          const nivel = nivelClinico(nivelNoDia(o, hoje));
+          const dias = diasDeOcorrencia(original);
+          const expandida = aberta === original.id;
+          const ordem = ordemNaZona[original.id];
+          return (
+            <div key={original.id} style={{
+              background: T.bg, borderRadius: 7, border: `1px solid ${T.line}`,
+              borderLeft: `3px solid ${original.fim ? T.line : nivel.cor}`, overflow: 'hidden',
+            }}>
+              <button onClick={() => setAberta(expandida ? null : original.id)} style={{
+                display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', cursor: 'pointer',
+                padding: '7px 10px', background: 'none', border: 'none', fontSize: 12, ...body,
+              }}>
+                <span style={{ color: T.cream, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {[original.tipo, original.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
+                  {ordem > 1 && <span style={{ color: T.warn, marginLeft: 6 }}>{ordem}.ª nesta zona</span>}
+                </span>
+                <span style={{ ...mono, color: T.mutedDim, fontSize: 11, flexShrink: 0 }}>
+                  {original.inicio ? fmtShort(original.inicio) : '—'}{dias != null ? ` · ${dias}d` : ''}
+                </span>
+                <span style={{ fontSize: 11, color: original.fim ? T.mutedDim : nivel.cor, flexShrink: 0 }}>
+                  {original.fim ? 'alta' : nivel.curto}
+                </span>
+                <ChevronDown size={13} style={{ color: T.mutedDim, flexShrink: 0, transform: expandida ? 'rotate(180deg)' : 'none' }} />
+              </button>
+              {expandida && (
+                <div style={{ padding: '4px 10px 10px 12px', borderTop: `1px solid ${T.line}` }}>
+                  {[...o.evolucao].reverse().map(e => (
+                    <div key={e.id} style={{ fontSize: 12, lineHeight: 1.5, marginTop: 6 }}>
+                      <span style={{ ...mono, color: T.mutedDim, fontSize: 11 }}>{e.data ? fmtShort(e.data) : ''}</span>
+                      {e.alta && <span style={{ color: T.good, marginLeft: 6 }}>Alta</span>}
+                      {e.nivel && <span style={{ color: nivelClinico(e.nivel).cor, marginLeft: 6 }}>{nivelClinico(e.nivel).label}</span>}
+                      {e.texto && <span style={{ color: T.cream, marginLeft: 6 }}>{e.texto}</span>}
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 12, marginTop: 6 }}>
+                    <span style={{ ...mono, color: T.mutedDim, fontSize: 11 }}>{o.inicio ? fmtShort(o.inicio) : ''}</span>
+                    <span style={{ color: nivelClinico(o.nivelInicial).cor, marginLeft: 6 }}>Início · {nivelClinico(o.nivelInicial).label}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, onBack, onShare, onPrint, onEdit }) {
   const s = playerStats(player, sessions, jogosOficiaisDe(matches));
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
@@ -7535,33 +7786,11 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
             {linha('Cartões', [s.yellow ? `${s.yellow} amarelo${s.yellow === 1 ? '' : 's'}` : null, s.red ? `${s.red} vermelho${s.red === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') || '—')}
           </div>
 
-          <div style={sectionTitle}>Boletim clínico</div>
+          <div style={sectionTitle}>Registo clínico</div>
           {ocorrencias.length === 0 ? (
             <div style={{ ...card, color: T.mutedDim, fontSize: 12.5, marginBottom: 16 }}>Sem ocorrências registadas.</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-              {ocorrencias.map(o => {
-                const nivel = nivelClinico(o.nivel);
-                const dias = diasDeOcorrencia(o);
-                return (
-                  <div key={o.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, fontSize: 12,
-                    padding: '7px 10px', background: T.bg, borderRadius: 7,
-                    border: `1px solid ${T.line}`, borderLeft: `3px solid ${o.fim ? T.line : nivel.cor}`,
-                  }}>
-                    <span style={{ color: T.cream, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {[o.tipo, o.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
-                    </span>
-                    <span style={{ ...mono, color: T.mutedDim, fontSize: 11, flexShrink: 0 }}>
-                      {o.inicio ? fmtShort(o.inicio) : '—'}{dias != null ? ` · ${dias}d` : ''}
-                    </span>
-                    <span style={{ fontSize: 11, color: o.fim ? T.mutedDim : nivel.cor, flexShrink: 0 }}>
-                      {o.fim ? 'alta' : nivel.curto}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            <RegistoClinicoJogador ocorrencias={ocorrencias} />
           )}
 
           <div style={sectionTitle}>Desenvolvimento individual</div>
@@ -19767,28 +19996,48 @@ const ZONAS_CORPORAIS = ['Tornozelo', 'Joelho', 'Coxa', 'Virilha', 'Anca', 'Pern
    preenchidos quando a janela é aberta a partir de um L nas presenças —
    é o que evita escrever duas vezes a mesma coisa. */
 function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onClose, onSave, onRemove }) {
-  const [f, setF] = useState(ocorrencia || {
+  /* Duas utilizações:
+     · NOVA ocorrência: tudo o que se sabe no primeiro dia, incluindo uma
+       primeira nota, que abre a evolução.
+     · EDITAR os dados de base de uma que já existe (jogador, tipo, zona,
+       início, nível no início). O que muda com o tempo (nível, previsão,
+       restrições, alta, notas) já não se edita aqui: regista-se como
+       atualização, na ficha da lesão, para ficar com data. */
+  const aEditar = !!ocorrencia;
+  const base = aEditar ? normalizarOcorrencia(ocorrencia) : null;
+  const [f, setF] = useState(aEditar ? {
+    playerId: base.playerId, inicio: base.inicio, nivel: base.nivelInicial, tipo: base.tipo || '', zona: base.zona || '',
+  } : {
     playerId: presetPlayerId || '',
     inicio: presetData || todayStr(),
-    fim: '',
     /* Sem nível por omissão, de propósito. Um valor pré-escolhido é
        aceite sem se pensar, e o nível é justamente a decisão que faz o
-       resto da app comportar-se de uma maneira ou de outra. Obriga a
-       escolher — é um clique. */
-    nivel: '',
-    tipo: '',
-    zona: '',
-    descricao: '',
-    previsaoRetorno: '',
-    restricoes: '',
-    notas: '',
+       resto da app comportar-se de uma maneira ou de outra. */
+    nivel: '', tipo: '', zona: '', previsaoRetorno: '', restricoes: '', nota: '',
   });
   const valido = f.playerId && f.inicio && f.nivel;
 
+  const guardar = () => {
+    if (!valido) return;
+    if (aEditar) {
+      onSave(recalcularOcorrencia({
+        ...base, playerId: f.playerId, inicio: f.inicio, tipo: f.tipo, zona: f.zona, nivelInicial: f.nivel,
+      }));
+      return;
+    }
+    const agora = new Date().toISOString();
+    const nota = String(f.nota || '').trim();
+    onSave(recalcularOcorrencia({
+      playerId: f.playerId, inicio: f.inicio, tipo: f.tipo, zona: f.zona,
+      nivelInicial: f.nivel, previsaoInicial: f.previsaoRetorno || '', restricoesIniciais: f.restricoes || '',
+      evolucao: nota ? [{ id: uid(), data: f.inicio, texto: nota, criadoEm: agora }] : [],
+    }));
+  };
+
   return (
     <Modal
-      title={ocorrencia ? 'Editar ocorrência' : 'Nova ocorrência'}
-      subtitle={ocorrencia ? null : 'Boletim Clínico'}
+      title={aEditar ? 'Editar dados da lesão' : 'Nova ocorrência'}
+      subtitle={aEditar ? 'Para registar como está o jogador, usa "+ Atualização" na ficha da lesão.' : 'Boletim Clínico'}
       onClose={onClose}
       wide
     >
@@ -19801,7 +20050,7 @@ function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onCl
             ))}
           </Select>
         </Field>
-        <Field label="Nível">
+        <Field label={aEditar ? 'Nível no início' : 'Nível'}>
           <Select value={f.nivel} onChange={e => setF({ ...f, nivel: e.target.value })}>
             <option value="">Escolher…</option>
             {NIVEIS_CLINICOS.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
@@ -19825,48 +20074,42 @@ function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onCl
             {ZONAS_CORPORAIS.map(z => <option key={z} value={z}>{z}</option>)}
           </Select>
         </Field>
-        <Field label="Previsão de retorno">
-          <Input type="date" value={f.previsaoRetorno} onChange={e => setF({ ...f, previsaoRetorno: e.target.value })} />
-        </Field>
+        {!aEditar && (
+          <Field label="Previsão de retorno">
+            <Input type="date" value={f.previsaoRetorno} onChange={e => setF({ ...f, previsaoRetorno: e.target.value })} />
+          </Field>
+        )}
       </div>
 
-      {/* A DATA DE ALTA É O QUE FECHA A OCORRÊNCIA.
-
-          Não há botão "dar alta" nem estado "Alta": preencher esta data É
-          a alta. Um estado à parte seria um segundo sítio a dizer a mesma
-          coisa, e mais tarde ou mais cedo os dois discordavam. */}
-      <div style={{ marginBottom: 14 }}>
-        <Field label="Data de alta (deixa vazio enquanto estiver a decorrer)" bloco solto>
-          <Input type="date" value={f.fim} onChange={e => setF({ ...f, fim: e.target.value })} />
-        </Field>
-      </div>
-
-      <div style={{ marginBottom: 14 }}>
-        <Field label="Restrições" bloco solto>
-          <TextArea
-            value={f.restricoes}
-            onChange={e => setF({ ...f, restricoes: e.target.value })}
-            placeholder="Ex: corrida linear sim, mudanças de direção não · sem contacto · 30 min de treino integrado"
-            style={{ minHeight: 64 }}
-          />
-        </Field>
-      </div>
-
-      <div style={{ marginBottom: 16 }}>
-        <Field label="Notas" bloco solto>
-          <TextArea
-            value={f.notas}
-            onChange={e => setF({ ...f, notas: e.target.value })}
-            placeholder="Diagnóstico, quem avaliou, evolução, link do Drive para exames…"
-            style={{ minHeight: 64 }}
-          />
-        </Field>
-      </div>
+      {!aEditar && (
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <Field label="Restrições" bloco solto>
+              <TextArea
+                value={f.restricoes}
+                onChange={e => setF({ ...f, restricoes: e.target.value })}
+                placeholder="Ex: corrida linear sim, mudanças de direção não · sem contacto · 30 min de treino integrado"
+                style={{ minHeight: 56 }}
+              />
+            </Field>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <Field label="Primeira nota" bloco solto>
+              <TextArea
+                value={f.nota}
+                onChange={e => setF({ ...f, nota: e.target.value })}
+                placeholder="O que aconteceu, quem avaliou, link do Drive para exames… As próximas notas vão para a evolução, com data."
+                style={{ minHeight: 56 }}
+              />
+            </Field>
+          </div>
+        </>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-        {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> Apagar</Btn>}
+        {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> Apagar lesão</Btn>}
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => valido && onSave(f)} disabled={!valido}>Guardar</Btn>
+        <Btn onClick={guardar} disabled={!valido}>Guardar</Btn>
       </div>
     </Modal>
   );
@@ -19874,16 +20117,20 @@ function OcorrenciaModal({ ocorrencia, players, presetPlayerId, presetData, onCl
 
 /* Uma linha do boletim. A mesma no painel das ocorrências abertas e no
    histórico — muda só a informação que faz sentido em cada um. */
-function LinhaOcorrencia({ o, jogador, onEdit, mostrarJogador = true }) {
-  const nivel = nivelClinico(o.nivel);
-  const aberta = !o.fim;
-  const dias = diasDeOcorrencia(o);
-  const atrasada = aberta && o.previsaoRetorno && o.previsaoRetorno < todayStr();
+function LinhaOcorrencia({ o: original, jogador, onAbrir, onAtualizar, mostrarJogador = true }) {
+  const o = normalizarOcorrencia(original);
+  const hoje = todayStr();
+  const aberta = !original.fim;
+  const nivel = nivelClinico(nivelNoDia(o, hoje));
+  const dias = diasDeOcorrencia(original);
+  const atrasada = aberta && original.previsaoRetorno && original.previsaoRetorno < hoje;
+  // A última coisa escrita — é o que se quer ver de relance.
+  const ultima = [...(o.evolucao || [])].reverse().find(e => String(e.texto || '').trim());
 
   return (
     <div
-      onClick={onEdit}
-      title="Abrir ocorrência"
+      onClick={onAbrir}
+      title="Abrir a ficha da lesão"
       style={{
         display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
         padding: '11px 14px', background: T.bg, borderRadius: 8,
@@ -19892,33 +20139,51 @@ function LinhaOcorrencia({ o, jogador, onEdit, mostrarJogador = true }) {
     >
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ color: T.cream, fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {mostrarJogador && jogador ? `${jogador.number ? `${jogador.number} ` : ''}${jogador.name} — ` : ''}
-          {[o.tipo, o.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
+          {mostrarJogador && jogador ? `${jogador.number ? `${jogador.number} ` : ''}${jogador.name} · ` : ''}
+          {[original.tipo, original.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
         </div>
         <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>
           {[
             aberta ? nivel.label : 'Alta',
-            o.inicio ? fmtDate(o.inicio) : null,
-            o.fim ? `até ${fmtDate(o.fim)}` : null,
+            original.inicio ? fmtDate(original.inicio) : null,
+            original.fim ? `até ${fmtDate(original.fim)}` : null,
             dias != null ? `${dias} ${dias === 1 ? 'dia' : 'dias'}` : null,
+            aberta && original.previsaoRetorno ? `previsão ${fmtShort(original.previsaoRetorno)}` : null,
           ].filter(Boolean).join(' · ')}
         </div>
-        {aberta && o.restricoes ? (
-          <div style={{ color: T.muted, fontSize: 11.5, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {o.restricoes}
+        {ultima && (
+          <div style={{ color: T.muted, fontSize: 12, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ ...mono, color: T.mutedDim, fontSize: 11 }}>{ultima.data ? fmtShort(ultima.data) : ''}</span>
+            {'  '}{ultima.texto}
           </div>
-        ) : null}
+        )}
       </div>
       {/* A previsão de retorno já passou e ninguém deu alta: não é um erro,
           mas é a única coisa nesta lista que pede uma ação. */}
       {atrasada && (
-        <span title={`Previsão de retorno era ${fmtDate(o.previsaoRetorno)}`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: T.warn, fontSize: 11.5, flexShrink: 0 }}>
+        <span title={`Previsão de retorno era ${fmtDate(original.previsaoRetorno)}`} style={{ display: 'flex', alignItems: 'center', gap: 5, color: T.warn, fontSize: 11.5, flexShrink: 0 }}>
           <AlertTriangle size={13} /> rever
         </span>
       )}
-      <Pencil size={14} style={{ color: T.mutedDim, flexShrink: 0 }} />
+      {aberta && onAtualizar && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onAtualizar(); }}
+          title="Registar como está hoje"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, cursor: 'pointer', ...body,
+            background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, fontSize: 12, padding: '6px 10px',
+          }}
+        ><Plus size={13} /> Atualização</button>
+      )}
     </div>
   );
+}
+
+// Soma dias a uma data AAAA-MM-DD (negativo recua).
+function proximoDiaIso(d, n = 1) {
+  const dt = new Date(`${d}T00:00:00`);
+  dt.setDate(dt.getDate() + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
 /* Dias decorridos: até à alta, ou até hoje se ainda estiver aberta. */
@@ -19970,17 +20235,28 @@ function diasDaOcorrencia({ ocorrencia, sessions, matches, playerId }) {
 
   const dentro = (d) => d >= inicio && d <= fim;
   const jaL = (a) => a.lesionados.includes(playerId);
+  // Só os dias em que o jogador estava INDISPONÍVEL levam L. Em "treino
+  // condicionado" ou "apto com vigilância" ele treina.
+  const indisponivel = (d) => nivelNoDia(o, d) === 'indisponivel';
 
-  const marcar = alvos.filter(a => dentro(a.date) && !jaL(a) && !a.fechado);
+  const marcar = alvos.filter(a => dentro(a.date) && indisponivel(a.date) && !jaL(a) && !a.fechado);
 
-  /* Se a alta chegou antes da previsão, sobram dias marcados como L
-     depois de o jogador já estar apto. São esses que se propõe limpar —
-     e só esses: L posteriores a outra ocorrência não são nossos. */
-  const limpar = o.fim
-    ? alvos.filter(a => a.date > o.fim && a.date <= (o.previsaoRetorno || o.fim) && jaL(a) && !a.fechado)
-    : [];
+  /* Dias com L que deixaram de ser da lesão:
+     · depois da alta, se ela chegou antes da previsão;
+     · depois de uma atualização que tirou o jogador de "Indisponível"
+       (os L tinham sido marcados até à previsão de retorno).
+     Só esses: L de outras ocorrências, ou postos à mão antes de
+     qualquer mudança, não são nossos. */
+  const saidas = (Array.isArray(o.evolucao) ? o.evolucao : [])
+    .filter(e => e.nivel && e.nivel !== 'indisponivel' && e.data && nivelNoDia(o, proximoDiaIso(e.data, -1)) === 'indisponivel')
+    .map(e => e.data);
+  const depoisDeSair = (d) => saidas.some(sd => sd <= d);
+  const limpar = alvos.filter(a => jaL(a) && !a.fechado && (
+    (o.fim && a.date > o.fim && a.date <= (o.previsaoRetorno || o.fim))
+    || (dentro(a.date) && !indisponivel(a.date) && depoisDeSair(a.date))
+  ));
 
-  const fechados = alvos.filter(a => dentro(a.date) && !jaL(a) && a.fechado).length;
+  const fechados = alvos.filter(a => dentro(a.date) && indisponivel(a.date) && !jaL(a) && a.fechado).length;
   return { marcar, limpar, fechados };
 }
 
@@ -20045,8 +20321,209 @@ function proporMarcacaoClinica({ ocorrencia, sessions, matches, setSessions, set
   return true;
 }
 
+/* FICHA DE UMA LESÃO — o episódio inteiro numa janela: estado atual em
+   cima, a evolução por baixo (a mais recente primeiro) e o formulário
+   de atualização quando é preciso. `modoInicial` 'atualizar' abre já
+   com o formulário (o botão "+ Atualização" da lista). */
+function FichaOcorrencia({ ocorrencia, jogador, modoInicial, onClose, onGuardar, onEditarDados }) {
+  const o = normalizarOcorrencia(ocorrencia);
+  const hoje = todayStr();
+  const aberta = !ocorrencia.fim;
+  const nivelAtual = nivelClinico(nivelNoDia(o, hoje));
+  const dias = diasDeOcorrencia(ocorrencia);
+  const atrasada = aberta && ocorrencia.previsaoRetorno && ocorrencia.previsaoRetorno < hoje;
+
+  // Formulário: null | { modo: 'atualizar' | 'alta', entradaId? , ...campos }
+  const formVazio = (modo) => ({
+    modo, entradaId: null, data: hoje, texto: '',
+    nivel: '', previsaoRetorno: ocorrencia.previsaoRetorno || '', restricoes: ocorrencia.restricoes || '',
+  });
+  const [form, setForm] = useState(modoInicial === 'atualizar' && aberta ? formVazio('atualizar') : null);
+  const [erro, setErro] = useState('');
+
+  const editarEntrada = (e) => {
+    setErro('');
+    setForm({
+      modo: e.alta ? 'alta' : 'atualizar', entradaId: e.id, data: e.data || hoje, texto: e.texto || '',
+      nivel: e.nivel || '',
+      previsaoRetorno: e.previsaoRetorno !== undefined ? e.previsaoRetorno : '',
+      restricoes: e.restricoes !== undefined ? e.restricoes : '',
+      tinhaPrevisao: e.previsaoRetorno !== undefined, tinhaRestricoes: e.restricoes !== undefined,
+    });
+  };
+
+  const guardarForm = () => {
+    if (!form) return;
+    if (!form.data) { setErro('Escolhe a data.'); return; }
+    if (o.inicio && form.data < o.inicio) { setErro(`A data não pode ser antes do início da lesão (${fmtShort(o.inicio)}).`); return; }
+    const texto = String(form.texto || '').trim();
+    const entrada = { id: form.entradaId || uid(), data: form.data, texto, criadoEm: new Date().toISOString() };
+    if (form.modo === 'alta') {
+      entrada.alta = true;
+    } else {
+      if (form.nivel) entrada.nivel = form.nivel;
+      // Só entra o que mudou em relação ao estado atual (ou o que a
+      // entrada já tinha, quando se está a corrigir uma).
+      const mudouPrevisao = form.entradaId ? form.tinhaPrevisao || form.previsaoRetorno !== '' : form.previsaoRetorno !== (ocorrencia.previsaoRetorno || '');
+      const mudouRestricoes = form.entradaId ? form.tinhaRestricoes || form.restricoes !== '' : form.restricoes !== (ocorrencia.restricoes || '');
+      if (mudouPrevisao) entrada.previsaoRetorno = form.previsaoRetorno;
+      if (mudouRestricoes) entrada.restricoes = form.restricoes;
+      if (!texto && !entrada.nivel && !mudouPrevisao && !mudouRestricoes) {
+        setErro('Escreve como está o jogador, ou muda o nível, a previsão ou as restrições.');
+        return;
+      }
+    }
+    const antigas = o.evolucao.filter(e => e.id !== entrada.id);
+    // Uma lesão só tem uma alta: dar alta outra vez substitui a anterior.
+    const semOutraAlta = entrada.alta ? antigas.filter(e => !e.alta) : antigas;
+    onGuardar(recalcularOcorrencia({ ...o, evolucao: [...semOutraAlta, entrada] }));
+    setForm(null); setErro('');
+  };
+
+  const apagarEntrada = (e) => {
+    askConfirm({
+      title: e.alta ? 'Retirar a alta?' : 'Apagar esta atualização?',
+      label: `${e.data ? fmtDate(e.data) : ''}${e.texto ? ` · ${e.texto.slice(0, 60)}` : ''}`,
+      note: e.alta ? 'A lesão volta a ficar aberta.' : '',
+      confirmLabel: e.alta ? 'Retirar' : 'Apagar',
+      destructive: true,
+      onConfirm: () => onGuardar(recalcularOcorrencia({ ...o, evolucao: o.evolucao.filter(x => x.id !== e.id) })),
+    });
+  };
+
+  const evolucaoRecente = [...o.evolucao].reverse();
+  const pill = (cor, texto) => (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: cor, border: `1px solid ${cor}`, borderRadius: 999, padding: '1px 8px' }}>{texto}</span>
+  );
+  const campo = { width: '100%', boxSizing: 'border-box' };
+
+  return (
+    <Modal
+      title={`${jogador ? `${jogador.number ? `${jogador.number} ` : ''}${jogador.name}` : 'Jogador'}`}
+      subtitle={[ocorrencia.tipo, ocorrencia.zona].filter(Boolean).join(' · ') || 'Ocorrência'}
+      onClose={onClose}
+      wide
+    >
+      {/* ESTADO ATUAL */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        {aberta ? pill(nivelAtual.cor, nivelAtual.label) : pill(T.mutedDim, `Alta a ${fmtShort(ocorrencia.fim)}`)}
+        <span style={{ fontSize: 12.5, color: T.muted }}>
+          {[
+            ocorrencia.inicio ? `desde ${fmtDate(ocorrencia.inicio)}` : null,
+            dias != null ? `${dias} ${dias === 1 ? 'dia' : 'dias'}` : null,
+            aberta && ocorrencia.previsaoRetorno ? `previsão de retorno ${fmtDate(ocorrencia.previsaoRetorno)}` : null,
+          ].filter(Boolean).join(' · ')}
+        </span>
+        {atrasada && <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: T.warn, fontSize: 12 }}><AlertTriangle size={13} /> a previsão já passou</span>}
+      </div>
+      {aberta && ocorrencia.restricoes && (
+        <div style={{ fontSize: 12.5, color: T.cream, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', marginBottom: 12, lineHeight: 1.5 }}>
+          <span style={{ color: T.mutedDim, fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em' }}>Restrições · </span>{ocorrencia.restricoes}
+        </div>
+      )}
+
+      {/* AÇÕES */}
+      {!form && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          {aberta && <Btn onClick={() => { setErro(''); setForm(formVazio('atualizar')); }}><Plus size={15} /> Atualização</Btn>}
+          {aberta && <Btn variant="ghost" onClick={() => { setErro(''); setForm(formVazio('alta')); }}><CheckCircle2 size={15} /> Dar alta</Btn>}
+          <span style={{ flex: 1 }} />
+          <Btn variant="ghost" onClick={onEditarDados} title="Corrigir jogador, tipo, zona, início ou nível no início"><Pencil size={14} /> Dados da lesão</Btn>
+        </div>
+      )}
+
+      {/* FORMULÁRIO DE ATUALIZAÇÃO / ALTA */}
+      {form && (
+        <div style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
+            {form.modo === 'alta' ? (form.entradaId ? 'Corrigir a alta' : 'Dar alta') : (form.entradaId ? 'Corrigir atualização' : 'Nova atualização')}
+          </div>
+          <div style={{ ...FIELD_GRID, marginBottom: 10 }}>
+            <Field label={form.modo === 'alta' ? 'Data da alta' : 'Data'}>
+              <Input type="date" value={form.data} onChange={e => setForm({ ...form, data: e.target.value })} style={campo} />
+            </Field>
+            {form.modo !== 'alta' && (
+              <Field label="Nível">
+                <Select value={form.nivel} onChange={e => setForm({ ...form, nivel: e.target.value })}>
+                  <option value="">{form.entradaId ? 'Sem mudança de nível' : `Mantém: ${nivelAtual.label}`}</option>
+                  {NIVEIS_CLINICOS.map(n => <option key={n.id} value={n.id}>Passa a: {n.label}</option>)}
+                </Select>
+              </Field>
+            )}
+            {form.modo !== 'alta' && (
+              <Field label="Previsão de retorno">
+                <Input type="date" value={form.previsaoRetorno} onChange={e => setForm({ ...form, previsaoRetorno: e.target.value })} style={campo} />
+              </Field>
+            )}
+          </div>
+          {form.modo !== 'alta' && (
+            <div style={{ marginBottom: 10 }}>
+              <Field label="Restrições" bloco solto>
+                <TextArea value={form.restricoes} onChange={e => setForm({ ...form, restricoes: e.target.value })}
+                  placeholder="Deixa como está se não mudaram" style={{ minHeight: 44 }} />
+              </Field>
+            </div>
+          )}
+          <div style={{ marginBottom: 10 }}>
+            <Field label={form.modo === 'alta' ? 'Nota (opcional)' : 'Como está o jogador'} bloco solto>
+              <TextArea value={form.texto} onChange={e => setForm({ ...form, texto: e.target.value })} autoFocus
+                placeholder={form.modo === 'alta' ? 'Ex: reavaliado pelo fisioterapeuta, sem dor, treino completo' : 'Ex: nova ecografia, rotura grau 1; começa corrida contínua'}
+                style={{ minHeight: 64 }} />
+            </Field>
+          </div>
+          {erro && <div style={{ fontSize: 12.5, color: T.bad, marginBottom: 10 }}>{erro}</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <Btn variant="ghost" onClick={() => { setForm(null); setErro(''); }}>Cancelar</Btn>
+            <Btn onClick={guardarForm}>{form.modo === 'alta' && !form.entradaId ? 'Dar alta' : 'Guardar'}</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* EVOLUÇÃO — a mais recente primeiro; o início fecha a lista. */}
+      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>Evolução</div>
+      <div style={{ position: 'relative', paddingLeft: 18 }}>
+        <div style={{ position: 'absolute', left: 5, top: 6, bottom: 6, width: 2, background: T.line, borderRadius: 1 }} />
+        {evolucaoRecente.map(e => {
+          const nv = e.nivel ? nivelClinico(e.nivel) : null;
+          return (
+            <div key={e.id} style={{ position: 'relative', paddingBottom: 14 }}>
+              <span style={{
+                position: 'absolute', left: -18, top: 4, width: 12, height: 12, borderRadius: '50%',
+                background: e.alta ? T.good : (nv ? nv.cor : T.surfaceRaise), border: `2px solid ${T.surface}`,
+              }} />
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ ...mono, fontSize: 12, color: T.cream }}>{e.data ? fmtDate(e.data) : 'sem data'}</span>
+                {e.alta && pill(T.good, 'Alta')}
+                {nv && pill(nv.cor, `Passa a ${nv.label}`)}
+                {e.previsaoRetorno !== undefined && <span style={{ fontSize: 11.5, color: T.muted }}>Previsão: {e.previsaoRetorno ? fmtShort(e.previsaoRetorno) : 'sem data'}</span>}
+                <span style={{ flex: 1 }} />
+                <button onClick={() => editarEntrada(e)} title="Corrigir" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 2 }}><Pencil size={12} /></button>
+                <button onClick={() => apagarEntrada(e)} title={e.alta ? 'Retirar a alta' : 'Apagar'} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 2 }}><Trash2 size={12} /></button>
+              </div>
+              {e.restricoes !== undefined && e.restricoes !== '' && (
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>Restrições: {e.restricoes}</div>
+              )}
+              {e.texto && <div style={{ fontSize: 13, color: T.cream, marginTop: 3, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{e.texto}</div>}
+            </div>
+          );
+        })}
+        <div style={{ position: 'relative' }}>
+          <span style={{ position: 'absolute', left: -18, top: 4, width: 12, height: 12, borderRadius: '50%', background: nivelClinico(o.nivelInicial).cor, border: `2px solid ${T.surface}` }} />
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ ...mono, fontSize: 12, color: T.cream }}>{o.inicio ? fmtDate(o.inicio) : '—'}</span>
+            {pill(nivelClinico(o.nivelInicial).cor, `Início · ${nivelClinico(o.nivelInicial).label}`)}
+            {o.previsaoInicial && <span style={{ fontSize: 11.5, color: T.muted }}>Previsão: {fmtShort(o.previsaoInicial)}</span>}
+          </div>
+          {o.restricoesIniciais && <div style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>Restrições: {o.restricoesIniciais}</div>}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, matches, setMatches }) {
-  const [modal, setModal] = useState(null); // 'new' | ocorrência
+  // null | 'new' | { tipo: 'ficha', id, modo } | { tipo: 'dados', id }
+  const [modal, setModal] = useState(null);
   const [verHistorico, setVerHistorico] = useState(false);
   const hoje = todayStr();
 
@@ -20058,64 +20535,77 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
      se ver. */
   const abertas = ordenar((clinico || []).filter(o => !o.fim));
   const fechadas = ordenar((clinico || []).filter(o => o.fim));
+  const partidas = lesoesPartidas(clinico);
 
-  const save = (data) => {
-    /* MUDAR DE "INDISPONÍVEL" PARA "APTO COM VIGILÂNCIA"/"TREINO
-       CONDICIONADO" DIVIDE A OCORRÊNCIA EM DUAS, EM VEZ DE REESCREVER A
-       MESMA.
+  const propor = (registo) => proporMarcacaoClinica({
+    ocorrencia: registo, sessions, matches, setSessions, setMatches,
+    jogador: jogadorDe(registo.playerId),
+  });
 
-       `diaAutoLesionado` olha para o `nivel` da ocorrência inteira, do
-       início ao fim — não sabe que nível se aplicava a CADA dia dentro
-       desse período. Se se limitasse a trocar o `nivel` no mesmo
-       registo, os dias passados em que o jogador esteve mesmo
-       indisponível deixavam de bater certo com "indisponível" e
-       perdiam o L também — reescrevendo um histórico que estava
-       correto. Fechando a ocorrência antiga em hoje (o L fica
-       gravado como esteve até aqui) e abrindo uma nova com o nível
-       novo a partir de hoje, os dias passados continuam a apontar
-       para a ocorrência fechada (com o nível de então) e os dias
-       futuros passam a apontar para a nova — sem se apagar nada que já
-       tinha acontecido. */
-    const original = data.id ? clinico.find(o => o.id === data.id) : null;
-    const mudouDeIndisponivel = original && original.nivel === 'indisponivel' && data.nivel !== 'indisponivel';
-
-    if (mudouDeIndisponivel) {
-      const fechada = { ...original, fim: (original.fim && original.fim < hoje) ? original.fim : hoje };
-      const nova = { ...data, id: uid(), inicio: hoje };
-      setClinico([...clinico.map(o => (o.id === fechada.id ? fechada : o)), nova]);
-      setModal(null);
-      proporMarcacaoClinica({
-        ocorrencia: nova, sessions, matches, setSessions, setMatches,
-        jogador: jogadorDe(nova.playerId),
-      });
-      return;
-    }
-
-    const registo = data.id ? data : { ...data, id: uid() };
-    setClinico(prev => (data.id ? prev.map(o => (o.id === data.id ? data : o)) : [...prev, registo]));
-    setModal(null);
+  // Gravar UMA ocorrência (nunca a lista inteira).
+  const gravar = (registo) => {
+    setClinico(prev => (prev.some(o => o.id === registo.id) ? prev.map(o => (o.id === registo.id ? registo : o)) : [...prev, registo]));
     // A ocorrência fica guardada de qualquer forma; as presenças só mudam
     // se a resposta for sim.
-    proporMarcacaoClinica({
-      ocorrencia: registo, sessions, matches, setSessions, setMatches,
-      jogador: jogadorDe(registo.playerId),
-    });
+    propor(registo);
   };
+
+  const criar = (data) => {
+    const registo = { ...data, id: uid() };
+    setModal({ tipo: 'ficha', id: registo.id });
+    gravar(registo);
+  };
+
   const remove = (id) => {
     const o = clinico.find(x => x.id === id);
     const j = o && jogadorDe(o.playerId);
-    removeWithUndo(clinico, setClinico, id, `Ocorrência${j ? ` de ${j.name}` : ''}`);
-    setModal(null);
+    removeWithUndo(clinico, setClinico, id, `Lesão${j ? ` de ${j.name}` : ''}`, () => setModal(null));
+  };
+
+  const juntarPartidas = () => {
+    const linhas = partidas.map(c => {
+      const j = jogadorDe(c[0].playerId);
+      return `${j ? j.name : 'Jogador'} (${[c[0].tipo, c[0].zona].filter(Boolean).join(' · ') || 'ocorrência'}, ${c.length} registos)`;
+    });
+    askConfirm({
+      title: 'Juntar lesões partidas?',
+      label: linhas.join(' · '),
+      note: 'Cada lesão passa a ser um só registo; as mudanças de nível ficam na evolução, com a data em que aconteceram. As presenças não mudam.',
+      confirmLabel: 'Juntar',
+      destructive: false,
+      onConfirm: () => {
+        const antes = clinico;
+        const juntas = partidas.map(juntarLesoes);
+        const aRemover = new Set(partidas.flatMap(c => c.slice(1).map(o => o.id)));
+        const porId = Object.fromEntries(juntas.map(o => [o.id, o]));
+        setClinico(prev => prev.filter(o => !aRemover.has(o.id)).map(o => porId[o.id] || o));
+        offerUndo(`${juntas.length} ${juntas.length === 1 ? 'lesão juntada' : 'lesões juntadas'}.`, () => setClinico(antes));
+      },
+    });
   };
 
   const contagem = NIVEIS_CLINICOS.map(n => ({
     nivel: n,
-    n: abertas.filter(o => o.nivel === n.id && o.inicio <= hoje).length,
+    n: abertas.filter(o => nivelNoDia(o, hoje) === n.id && o.inicio <= hoje).length,
   }));
+
+  const emFicha = modal && modal.tipo === 'ficha' ? (clinico || []).find(o => o.id === modal.id) : null;
+  const emDados = modal && modal.tipo === 'dados' ? (clinico || []).find(o => o.id === modal.id) : null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <SectionHeader title="Boletim Clínico" subtitle="Registo de ocorrências." />
+      <SectionHeader title="Boletim Clínico" subtitle="Uma ficha por lesão, com a evolução datada." />
+
+      {partidas.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', borderRadius: 10, border: `1px solid ${T.warn}`, background: T.surface }}>
+          <AlertTriangle size={16} color={T.warn} />
+          <span style={{ flex: 1, minWidth: 200, fontSize: 13, color: T.cream }}>
+            {partidas.length === 1 ? 'Há 1 lesão que ficou partida' : `Há ${partidas.length} lesões que ficaram partidas`} em dois registos quando se mudou o nível.
+          </span>
+          <Btn variant="ghost" onClick={juntarPartidas}>Ver e juntar</Btn>
+        </div>
+      )}
+
       <Panel
         title="Lista clínica"
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ocorrência</Btn>}
@@ -20137,7 +20627,9 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {abertas.map(o => (
-              <LinhaOcorrencia key={o.id} o={o} jogador={jogadorDe(o.playerId)} onEdit={() => setModal(o)} />
+              <LinhaOcorrencia key={o.id} o={o} jogador={jogadorDe(o.playerId)}
+                onAbrir={() => setModal({ tipo: 'ficha', id: o.id })}
+                onAtualizar={() => setModal({ tipo: 'ficha', id: o.id, modo: 'atualizar' })} />
             ))}
           </div>
         )}
@@ -20158,19 +20650,35 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {fechadas.map(o => (
-              <LinhaOcorrencia key={o.id} o={o} jogador={jogadorDe(o.playerId)} onEdit={() => setModal(o)} />
+              <LinhaOcorrencia key={o.id} o={o} jogador={jogadorDe(o.playerId)} onAbrir={() => setModal({ tipo: 'ficha', id: o.id })} />
             ))}
           </div>
         )}
       </Panel>
 
-      {modal && (
-        <OcorrenciaModal
-          ocorrencia={modal === 'new' ? null : modal}
-          players={players}
+      {modal === 'new' && (
+        <OcorrenciaModal ocorrencia={null} players={players} onClose={() => setModal(null)} onSave={criar} />
+      )}
+
+      {emFicha && (
+        <FichaOcorrencia
+          key={`${emFicha.id}-${modal.modo || ''}`}
+          ocorrencia={emFicha}
+          jogador={jogadorDe(emFicha.playerId)}
+          modoInicial={modal.modo}
           onClose={() => setModal(null)}
-          onSave={save}
-          onRemove={modal !== 'new' ? () => remove(modal.id) : null}
+          onGuardar={gravar}
+          onEditarDados={() => setModal({ tipo: 'dados', id: emFicha.id })}
+        />
+      )}
+
+      {emDados && (
+        <OcorrenciaModal
+          ocorrencia={emDados}
+          players={players}
+          onClose={() => setModal({ tipo: 'ficha', id: emDados.id })}
+          onSave={(registo) => { gravar(registo); setModal({ tipo: 'ficha', id: registo.id }); }}
+          onRemove={() => remove(emDados.id)}
         />
       )}
     </div>
