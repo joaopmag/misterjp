@@ -4,6 +4,7 @@ import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
+  Target, Crosshair,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -18,6 +19,28 @@ const T = {
 };
 const TEXT_ON_ACCENT = '#FBF3F0';
 const COR_DESENHO = '#FFFFFF'; // branco — antes era vermelho por omissão
+
+// O serviço de seguimento automático de jogador (Modal) — configurado
+// como variável de ambiente no Vercel, tal como o VIDEO_WORKER_URL.
+const SEGUIDOR_URL = import.meta.env.VITE_SEGUIDOR_URL;
+
+// Onde está o jogador em foco num instante `tempo`, interpolando entre
+// os dois pontos mais próximos da trajetória devolvida pelo serviço de
+// seguimento. Antes/depois do intervalo conhecido, fica parado no
+// primeiro/último ponto, em vez de desaparecer.
+function posicaoNaTrajetoria(pontos, tempo) {
+  if (!pontos || pontos.length === 0) return null;
+  if (tempo <= pontos[0].t) return pontos[0];
+  if (tempo >= pontos[pontos.length - 1].t) return pontos[pontos.length - 1];
+  for (let i = 0; i < pontos.length - 1; i++) {
+    const a = pontos[i], b = pontos[i + 1];
+    if (tempo >= a.t && tempo <= b.t) {
+      const frac = b.t === a.t ? 0 : (tempo - a.t) / (b.t - a.t);
+      return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac };
+    }
+  }
+  return pontos[pontos.length - 1];
+}
 
 // Cursor da borracha — uma borracha a sério, em vez do símbolo de
 // "proibido" que o browser mostra por omissão.
@@ -277,7 +300,7 @@ function useFecharComEsc(onClose, ativo = true) {
   }, [onClose, ativo]);
 }
 
-function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId }) {
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria }) {
   const [t, setT] = useState(0);
   // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
   const [aEditar, setAEditar] = useState(false);
@@ -326,6 +349,57 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();
   // Em ecrã inteiro, o Esc sai do ecrã inteiro (é o browser que o faz), não fecha o leitor.
   useFecharComEsc(onClose, !aEditar && !emEcraInteiro);
+
+  // SEGUIR JOGADOR — deteção automática (serviço à parte, no Modal),
+  // com toque para escolher quem seguir e para corrigir a meio.
+  const [modoSeguir, setModoSeguir] = useState('normal'); // normal | a_escolher | a_corrigir | a_processar
+  const [erroSeguir, setErroSeguir] = useState('');
+  const caixaVideoRef = useRef(null); // a caixa do vídeo em si (para converter o toque em fração 0-1)
+  const temTrajetoria = clip.trajetoriaFoco?.pontos?.length > 0;
+
+  const comecarEscolha = () => {
+    const v = videoRef.current;
+    if (v) { v.pause(); v.currentTime = 0; }
+    setErroSeguir('');
+    setModoSeguir('a_escolher');
+  };
+  const comecarCorrecao = () => {
+    videoRef.current?.pause();
+    setErroSeguir('');
+    setModoSeguir('a_corrigir');
+  };
+  const escolherJogador = async (xFrac, yFrac) => {
+    const tInicial = modoSeguir === 'a_corrigir' ? (videoRef.current?.currentTime || 0) : 0;
+    setModoSeguir('a_processar');
+    try {
+      const resp = await fetch(SEGUIDOR_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_url: clip.publicUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error || 'Falha ao seguir o jogador');
+      let novosPontos = json.pontos || [];
+      if (tInicial > 0 && clip.trajetoriaFoco?.pontos) {
+        // um reancorar a meio — mantém a trajetória antiga até este
+        // instante, e substitui-a a partir daqui pela nova
+        const antigos = clip.trajetoriaFoco.pontos.filter(p => p.t < tInicial);
+        novosPontos = [...antigos, ...novosPontos];
+      }
+      onChangeTrajetoria({ pontos: novosPontos, duracao: json.duracao });
+      setModoSeguir('normal');
+    } catch (e) {
+      setErroSeguir(`Não consegui seguir o jogador: ${e.message || e}`);
+      setModoSeguir('normal');
+    }
+  };
+  const aoTocarNoVideo = (e) => {
+    if (modoSeguir !== 'a_escolher' && modoSeguir !== 'a_corrigir') return;
+    const rect = caixaVideoRef.current.getBoundingClientRect();
+    escolherJogador((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height);
+  };
+  const posicaoAtual = temTrajetoria ? posicaoNaTrajetoria(clip.trajetoriaFoco.pontos, t) : null;
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -346,7 +420,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
         </div>
         <div ref={fsRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
         <div ref={areaRef} style={{ flex: 1, minHeight: '25vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          <div style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto' }}>
+          <div ref={caixaVideoRef} style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto' }}>
             <video ref={videoRef} src={clip.publicUrl} autoPlay playsInline onClick={alternar}
               onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
               onLoadedMetadata={e => {
@@ -359,7 +433,24 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               style={{ width: '100%', height: '100%', display: 'block', background: '#000', cursor: 'pointer' }} />
             <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(renderShape)}
+              {posicaoAtual && (
+                <circle cx={posicaoAtual.x * 100} cy={posicaoAtual.y * 56.25} r={3.2} fill="none" stroke={T.crimsonBright} strokeWidth={0.8} />
+              )}
             </svg>
+            {(modoSeguir === 'a_escolher' || modoSeguir === 'a_corrigir') && (
+              <div onClick={aoTocarNoVideo}
+                style={{ position: 'absolute', inset: 0, cursor: 'crosshair', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+                <span style={{ marginTop: 12, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, ...body }}>
+                  Toca no jogador {modoSeguir === 'a_corrigir' ? 'certo, neste momento' : 'que queres seguir'}
+                </span>
+              </div>
+            )}
+            {modoSeguir === 'a_processar' && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#fff' }}>
+                <Loader2 size={22} className="spin" />
+                <span style={{ fontSize: 12.5, ...body, textAlign: 'center', padding: '0 20px' }}>A seguir o jogador — pode demorar alguns minutos…</span>
+              </div>
+            )}
           </div>
         </div>
         {/* A mesma barra amarela de todos os vídeos da app. */}
@@ -425,6 +516,23 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
           </div>
         ) : (
           clip.note && <div style={{ padding: '12px 12px 0', fontSize: 13, color: T.cream }}>{clip.note}</div>
+        )}
+        {/* Seguir jogador automaticamente — escondido durante a edição,
+           pela mesma razão das etiquetas a seguir. */}
+        {!aEditar && (
+          <div style={{ padding: '10px 12px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Btn variant={temTrajetoria ? 'ghost' : 'solid'} onClick={comecarEscolha} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12.5 }}>
+              <Target size={13} /> {temTrajetoria ? 'Seguir outra vez' : 'Seguir jogador'}
+            </Btn>
+            {temTrajetoria && (
+              <Btn variant="ghost" onClick={comecarCorrecao} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12.5 }}>
+                <Crosshair size={13} /> Corrigir aqui
+              </Btn>
+            )}
+          </div>
+        )}
+        {erroSeguir && !aEditar && (
+          <div style={{ margin: '8px 12px 0', background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 7, padding: 9, color: T.cream, fontSize: 12.5 }}>{erroSeguir}</div>
         )}
         {/* Etiqueta — pode-se atribuir ou mudar aqui, mesmo depois de o
            clipe já estar guardado sem nenhuma. Escondida durante a edição,
@@ -909,6 +1017,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const mudarTagClipe = (clip, novoTagId) => {
     setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, tagId: novoTagId } : c)));
     setClipeAReproduzir(prev => (prev && prev.id === clip.id ? { ...prev, tagId: novoTagId } : prev));
+  };
+
+  // Guarda a trajetória do jogador em foco (o resultado do serviço de
+  // seguimento automático) num clipe já guardado.
+  const mudarTrajetoriaClipe = (clip, trajetoria) => {
+    setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, trajetoriaFoco: trajetoria } : c)));
+    setClipeAReproduzir(prev => (prev && prev.id === clip.id ? { ...prev, trajetoriaFoco: trajetoria } : prev));
   };
 
   const removerClipe = (clip, onRemovido) => {
@@ -1797,6 +1912,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           originalSugeridoId={(originalDoClipe(clipeAReproduzir) || {}).id || null}
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
           onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
+          onChangeTrajetoria={trajetoria => mudarTrajetoriaClipe(clipeAReproduzir, trajetoria)}
         />
       )}
     </div>
