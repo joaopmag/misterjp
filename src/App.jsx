@@ -2074,7 +2074,7 @@ const TextArea = React.forwardRef(function TextArea(props, ref) {
    campo tático, onde a precisão do desenho depende de o campo ser grande
    no ecrã. Nos ecrãs pequenos os três tamanhos dão no mesmo, porque o
    limite passa a ser a largura da janela. */
-function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage }) {
+function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larguraTotal }) {
   const estreito = useIsMobile(620);
   const scrollRef = useRef(null);
   useModalHistory(onClose);
@@ -2108,7 +2108,8 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage }) {
         overflowY: 'auto', overflowX: 'hidden',
       }}>
         <div style={{
-          maxWidth: xwide ? 1100 : (wide ? 640 : 460), margin: '0 auto',
+          // `larguraTotal`: ocupa a largura toda do ecrã (a matriz wellness × esforço).
+          maxWidth: larguraTotal ? 'none' : (xwide ? 1100 : (wide ? 640 : 460)), margin: '0 auto',
           padding: estreito ? 14 : 22, paddingBottom: 60,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
@@ -6281,7 +6282,7 @@ const QUADRANTS = {
 
 /* O gráfico em si. `scale` amplia tipos de letra e pontos na versão
    grande, sem duplicar o desenho. */
-function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
+function MatrixChart({ points, W = 320, H = 260, scale = 1, estilo }) {
   /* IDENTIFICAR PONTOS — pelo ponto MAIS PRÓXIMO do cursor, não pelo
      ponto que está por baixo dele.
 
@@ -6344,7 +6345,7 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
   };
 
   return (
-    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block', touchAction: 'manipulation' }}>
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', display: 'block', touchAction: 'manipulation', ...estilo }}>
       <rect x={ml} y={mt} width={midX - ml} height={midY - mt} fill={`${T.bad}18`} />
       <rect x={midX} y={mt} width={ml + plotW - midX} height={midY - mt} fill={`${T.warn}12`} />
       <rect x={ml} y={midY} width={midX - ml} height={mt + plotH - midY} fill={`${T.warn}10`} />
@@ -6431,6 +6432,8 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1 }) {
 
 function WellnessLoadMatrix({ players, monitoring }) {
   const [open, setOpen] = useState(false);
+  // No telemóvel a proporção larga ficaria baixa demais: volta ao 4:3.
+  const estreito = useIsMobile(700);
   const points = matrixPoints(players, monitoring);
   const missing = players.length - points.length;
 
@@ -6459,17 +6462,16 @@ function WellnessLoadMatrix({ players, monitoring }) {
       </div>
 
       {open && (
-        /* Página inteira, como o leitor de clipes: a matriz precisa de
-           espaço para os nomes não se amontoarem. Em ecrãs largos, a
-           matriz fica à esquerda e as listas por quadrante à direita;
-           em ecrãs estreitos, uma por baixo da outra. */
-        <Modal title="Wellness × esforço · últimos 7 dias" onClose={() => setOpen(false)} fullPage xwide>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start' }}>
-          <div style={{ flex: '3 1 520px', minWidth: 0 }}>
-            <MatrixChart points={points} W={640} H={480} scale={2} />
-          </div>
+        /* Página inteira, na largura toda do ecrã: a matriz em cima, com
+           proporção larga (mais espaço na horizontal separa os nomes, e a
+           altura fica limitada para caber no ecrã), e as listas por
+           quadrante por baixo, lado a lado em colunas quando há largura. */
+        <Modal title="Wellness × esforço · últimos 7 dias" onClose={() => setOpen(false)} fullPage larguraTotal>
+          {estreito
+            ? <MatrixChart points={points} W={640} H={480} scale={2} />
+            : <MatrixChart points={points} W={1200} H={560} scale={2} estilo={{ maxHeight: '68vh' }} />}
 
-          <div style={{ flex: '2 1 280px', minWidth: 0 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '8px 20px', marginTop: 24, alignItems: 'start' }}>
             {Object.entries(QUADRANTS).map(([key, q]) => {
               const list = points.filter(pt => quadrantOf(pt) === key)
                 .sort((a, b) => b.pse - a.pse || a.well - b.well);
@@ -6496,14 +6498,13 @@ function WellnessLoadMatrix({ players, monitoring }) {
                 </div>
               );
             })}
+          </div>
 
           {missing > 0 && (
             <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4, lineHeight: 1.5 }}>
               {missing} {missing === 1 ? 'jogador não aparece' : 'jogadores não aparecem'} na matriz — falta-lhes wellness ou PSE nos últimos 7 dias.
             </div>
           )}
-          </div>
-          </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
             <Btn variant="ghost" onClick={() => setOpen(false)}>Fechar</Btn>
