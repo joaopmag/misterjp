@@ -20709,15 +20709,22 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
     propor(registo);
   };
 
+  /* Passar de uma janela para outra (nova ocorrência → ficha, ficha →
+     dados da lesão e volta) tem de ir por `trocarJanela`: a janela nova
+     herda a marca do histórico da anterior. Sem isto, o "voltar" que a
+     janela que fecha deixa pendente fechava logo a que abria — era o
+     piscar ao carregar em "Dados da lesão". */
+  const mudarPara = (proximo) => trocarJanela(() => {}, () => setModal(proximo));
+
   const criar = (data) => {
     const registo = { ...data, id: uid() };
-    setModal({ tipo: 'ficha', id: registo.id });
+    mudarPara({ tipo: 'ficha', id: registo.id });
     gravar(registo);
   };
 
   // Nova ocorrência registada como recaída de uma anterior (já vem junta).
   const criarRecaida = (registo) => {
-    setModal({ tipo: 'ficha', id: registo.id });
+    mudarPara({ tipo: 'ficha', id: registo.id });
     gravar(registo);
   };
 
@@ -20880,7 +20887,7 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
           modoInicial={modal.modo}
           onClose={() => setModal(null)}
           onGuardar={gravar}
-          onEditarDados={() => setModal({ tipo: 'dados', id: emFicha.id })}
+          onEditarDados={() => mudarPara({ tipo: 'dados', id: emFicha.id })}
         />
       )}
 
@@ -20888,8 +20895,8 @@ function BoletimClinico({ players, clinico, setClinico, sessions, setSessions, m
         <OcorrenciaModal
           ocorrencia={emDados}
           players={players}
-          onClose={() => setModal({ tipo: 'ficha', id: emDados.id })}
-          onSave={(registo) => { gravar(registo); setModal({ tipo: 'ficha', id: registo.id }); }}
+          onClose={() => mudarPara({ tipo: 'ficha', id: emDados.id })}
+          onSave={(registo) => { gravar(registo); mudarPara({ tipo: 'ficha', id: registo.id }); }}
           onRemove={() => remove(emDados.id)}
         />
       )}
