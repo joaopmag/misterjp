@@ -6293,7 +6293,8 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1, estilo }) {
      nada ao passar o rato. Agora há uma única camada por cima do
      gráfico que, a cada movimento, procura o ponto mais perto; os pontos
      praticamente no mesmo sítio (mesmos valores) aparecem todos juntos
-     na mesma etiqueta.
+     na mesma etiqueta. O ponto em foco destaca-se sozinho; o resto do
+     gráfico não muda, para não piscar.
 
      No telemóvel não há rato: o toque faz o mesmo e fica fixado até se
      tocar noutro sítio. */
@@ -6373,9 +6374,11 @@ function MatrixChart({ points, W = 320, H = 260, scale = 1, estilo }) {
         const dy = labelOffset(x, y);
         const anchor = x > ml + plotW - 40 * scale ? 'end' : x < ml + 40 * scale ? 'start' : 'middle';
         const realce = ativosSet.has(pt.id);
-        const apagado = ativos && !realce;
+        // Só o ponto em foco muda (maior, contornado, nome a negrito). Os
+        // outros NÃO se esbatem: ao passar o rato pelo gráfico, o foco
+        // entra e sai a cada movimento e o gráfico todo piscava.
         return (
-          <g key={pt.id} style={{ opacity: apagado ? 0.35 : 1, pointerEvents: 'none' }}>
+          <g key={pt.id} style={{ pointerEvents: 'none' }}>
             {dy < -8 * scale && (
               <line x1={x} y1={y - 3.2 * scale} x2={x} y2={y + dy + 2 * scale} stroke={T.line} strokeWidth={0.6 * scale} />
             )}
