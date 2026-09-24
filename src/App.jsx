@@ -184,8 +184,37 @@ function nivelNoDia(o, dia) {
   return nivel;
 }
 
+/* Ordem cronológica. No MESMO dia: primeiro as mudanças de nível sem
+   texto (o que mudou), depois as notas, e a alta sempre por último —
+   uma alta não pode aparecer antes de uma nota do próprio dia. */
 function ordenarEvolucao(lista) {
-  return [...(lista || [])].sort((a, b) => (a.data || '').localeCompare(b.data || '') || (a.criadoEm || '').localeCompare(b.criadoEm || ''));
+  const peso = (e) => (e.alta ? 2 : (e.nivel && !String(e.texto || '').trim() ? 0 : 1));
+  return [...(lista || [])].sort((a, b) => (a.data || '').localeCompare(b.data || '')
+    || peso(a) - peso(b)
+    || (a.criadoEm || '').localeCompare(b.criadoEm || ''));
+}
+
+/* Limpeza das entradas vindas das notas antigas (`migrado`):
+   · A versão anterior, ao mudar de nível, copiava as notas para a
+     ocorrência nova — ao juntar, o mesmo texto aparecia duas vezes.
+     Fica só a primeira (a de data mais antiga).
+   · Uma data sem ano lida para o futuro ficou no ano errado: recua um
+     ano. */
+function limparEntradasMigradas(lista) {
+  const hoje = todayStr();
+  const vistos = new Set();
+  return ordenarEvolucao((lista || []).map(e => {
+    if (!e.migrado || !e.data || e.data <= hoje) return e;
+    const anoAntes = `${Number(e.data.slice(0, 4)) - 1}${e.data.slice(4)}`;
+    return { ...e, data: anoAntes };
+  })).filter(e => {
+    if (!e.migrado) return true;
+    const t = String(e.texto || '').trim().toLowerCase();
+    if (!t) return true;
+    if (vistos.has(t)) return false;
+    vistos.add(t);
+    return true;
+  });
 }
 
 /* Notas antigas → entradas da evolução. Só parte o texto onde uma data
@@ -206,7 +235,12 @@ function notasParaEvolucao(o) {
     if (dia < 1 || dia > 31 || mes < 1 || mes > 12) continue;
     let ano = m[4] ? Number(m[4].length === 2 ? `20${m[4]}` : m[4]) : anoBase;
     let iso = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-    if (!m[4] && inicio && iso < inicio) { ano += 1; iso = `${ano}-${iso.slice(5)}`; }
+    // Sem ano: só passa para o ano seguinte se ficar MUITO antes do início
+    // (uma lesão de dezembro com notas de janeiro). Uns dias antes é só
+    // uma nota que já vinha de trás, e fica no mesmo ano.
+    if (!m[4] && inicio && iso < inicio && (new Date(`${inicio}T00:00:00`) - new Date(`${iso}T00:00:00`)) > 180 * 86400000) {
+      ano += 1; iso = `${ano}-${iso.slice(5)}`;
+    }
     const d = new Date(`${iso}T00:00:00`);
     if (Number.isNaN(d.getTime()) || d.getDate() !== dia) continue;
     marcas.push({ iso, inicioTexto: m.index + m[1].length, fimMarca: m.index + m[0].length });
@@ -232,10 +266,10 @@ function normalizarOcorrencia(o) {
     previsaoInicial: o.previsaoInicial !== undefined ? o.previsaoInicial : (o.previsaoRetorno || ''),
     restricoesIniciais: o.restricoesIniciais !== undefined ? o.restricoesIniciais : (o.restricoes || ''),
   };
-  if (Array.isArray(o.evolucao)) return base;
+  if (Array.isArray(o.evolucao)) return { ...base, evolucao: limparEntradasMigradas(o.evolucao) };
   const evolucao = notasParaEvolucao(o);
   if (o.fim) evolucao.push({ id: `${o.id}-alta`, data: o.fim, alta: true, texto: '', migrado: true });
-  return { ...base, evolucao: ordenarEvolucao(evolucao) };
+  return { ...base, evolucao: limparEntradasMigradas(evolucao) };
 }
 
 // Estado atual a partir da evolução. Chamar SEMPRE antes de gravar.
