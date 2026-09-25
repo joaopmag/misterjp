@@ -108,6 +108,8 @@ const INTENSITIES = [
   { value: 'alta', label: 'Alta' },
 ];
 const intensityLabel = (v) => INTENSITIES.find(i => i.value === v)?.label || v || '—';
+// Cores da intensidade na Agenda: alta vermelho, média amarelo, baixa verde.
+const COR_INTENSIDADE = { alta: '#D2504A', media: '#E0B12E', baixa: '#4CA86B' };
 // Dias de folga (fase "Descanso") são descanso total: não fazem sentido
 // com intensidade nenhuma, por isso esta função devolve '' para eles em
 // vez de "Intensidade: —", em qualquer sítio onde a sessão é resumida.
@@ -18936,7 +18938,11 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       const mk = w.slice(0, 7);
       if (!mesAberto(mk)) toggleMes(mk);
       if (isWeekCollapsed(w)) toggleWeek(w);
-    } else if (isWeekCollapsed(w)) toggleWeek(w);
+    } else {
+      // Semana atual/futura vive no separador Microciclo.
+      setView('lista');
+      if (isWeekCollapsed(w)) toggleWeek(w);
+    }
     setSaltarPara(w);
   };
   useEffect(() => {
@@ -18949,17 +18955,23 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
   const cabecalhoBloco = (texto) => (
     <div style={{ ...mono, fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.08em', margin: '4px 0 12px' }}>{texto}</div>
   );
-  const renderListaPlaneamento = (renderSemana) => (
+  /* SEPARADORES: "Microciclo" é a semana atual e as próximas (onde se
+     trabalha no dia a dia); "Histórico" são as semanas já terminadas,
+     agrupadas por mês. */
+  const renderListaPlaneamento = (renderSemana) => (view === 'lista' ? (
+    semanasAtuais.length > 0
+      ? <div>{semanasAtuais.map(w => renderSemana(w, grouped[w]))}</div>
+      : <EmptyState
+          text="Ainda não há nada planeado para esta semana nem para as próximas."
+          action={<Btn onClick={() => { setModalVoltarDia(false); setModal('new'); }}><Plus size={15} /> Nova sessão</Btn>}
+        />
+  ) : (
     <>
-      {semanasAtuais.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          {cabecalhoBloco('Esta semana e próximas')}
-          {semanasAtuais.map(w => renderSemana(w, grouped[w]))}
-        </div>
+      {mesesHistorico.length === 0 && (
+        <EmptyState text="Ainda sem histórico — as semanas aparecem aqui depois de terminarem." />
       )}
       {mesesHistorico.length > 0 && (
         <div>
-          {cabecalhoBloco('Histórico')}
           {mesesHistorico.map(mes => {
             const aberto = mesAberto(mes.key);
             return (
@@ -18987,7 +18999,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
         </div>
       )}
     </>
-  );
+  ));
 
   /* O caminho inverso de `sessaoDoJogo`: dada a sessão de um jogo
      (amigável ou oficial), qual é o jogo que lhe deu origem. É de lá que
@@ -19026,7 +19038,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
         action={<Btn onClick={() => { setModalVoltarDia(false); setModal('new'); }}><Plus size={15} /> Nova sessão</Btn>} />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-        {view === 'lista' && orderedWeekKeys.length > 0 && (
+        {view === 'historico' && orderedWeekKeys.length > 0 && (
           <label style={{ order: 2, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.mutedDim, ...body }}>
             Ir para
             <input
@@ -19036,7 +19048,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             />
           </label>
         )}
-        {[['lista', 'Lista'], ['agenda', 'Agenda semanal']].map(([id, label]) => (
+        {[['lista', 'Microciclo'], ['historico', 'Histórico'], ['agenda', 'Agenda']].map(([id, label]) => (
           <button key={id} onClick={() => setView(id)} style={{
             padding: '6px 14px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
             background: view === id ? '#B5393F' : 'transparent', color: view === id ? TEXT_ON_ACCENT : T.muted,
@@ -19818,20 +19830,31 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
           return (
             <div key={d} style={{
               background: T.surface, border: `1px solid ${isToday ? T.gold : T.line}`, borderRadius: 8, padding: 8, minHeight: 140,
+              // Coluna: os cartões em cima e o "+ sessão" SEMPRE no fundo
+              // (marginTop auto) — como todos os dias da linha têm a mesma
+              // altura, os "+ sessão" ficam alinhados de ponta a ponta.
+              display: 'flex', flexDirection: 'column',
             }}>
               <div style={{ fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.04em' }}>{dayLabel(d)}</div>
               <div style={{ ...mono, fontSize: 15, color: isToday ? T.warn : T.cream, marginBottom: 8 }}>{new Date(d + 'T00:00:00').getDate()}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6 }}>
+                {/* JOGO — cartão CLARO (fundo creme, texto escuro), com a
+                    etiqueta "JOGO": fica fora das três cores de intensidade
+                    dos treinos, por isso nunca se confunde com um treino
+                    de intensidade alta, e salta à vista na semana. */}
                 {dayMatches.map(m => (
                   <button key={m.id} onClick={() => onEditMatch(m)} style={{
-                    textAlign: 'left', fontSize: 11, color: T.cream, background: `${T.warn}33`,
-                    border: `1px solid ${T.warn}88`, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
-                    display: 'flex', alignItems: 'flex-start', gap: 5,
+                    textAlign: 'left', fontSize: 11, color: '#1B241C', background: T.cream,
+                    border: `1px solid ${T.cream}`, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
+                    display: 'flex', alignItems: 'flex-start', gap: 5, fontWeight: 600,
                   }}>
-                    <Trophy size={11} color={T.warn} style={{ marginTop: 1, flexShrink: 0 }} />
-                    <span>
+                    <Trophy size={11} color="#1B241C" style={{ marginTop: 1, flexShrink: 0 }} />
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ ...mono, fontSize: 9, letterSpacing: '.08em', opacity: 0.7, display: 'block' }}>
+                        {isFriendlyMatch(m) ? 'AMIGÁVEL' : 'JOGO'}
+                      </span>
                       vs {m.opponent || 'Adversário'}
-                      <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{m.result || competitionLabel(m.competition) || 'Jogo'}</div>
+                      <div style={{ fontSize: 9.5, color: '#1B241CAA', marginTop: 1, fontWeight: 400 }}>{m.result || competitionLabel(m.competition) || 'Jogo'}</div>
                     </span>
                   </button>
                 ))}
@@ -19839,11 +19862,16 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                   // Dia de folga: mostra "Folga" em vez de "Sessão" — não há
                   // treino nem foco a apresentar.
                   const isRest = s.phase === 'Descanso';
+                  // Cor pela intensidade: alta vermelho, média amarelo,
+                  // baixa verde. Sem intensidade marcada fica neutro.
+                  const cor = isRest ? null : COR_INTENSIDADE[s.intensity];
                   return (
-                    <button key={s.id} onClick={() => onEdit(s)} style={{
+                    <button key={s.id} onClick={() => onEdit(s)} title={cor ? `Intensidade ${intensityLabel(s.intensity).toLowerCase()}` : undefined} style={{
                       textAlign: 'left', fontSize: 11, color: isRest ? T.mutedDim : T.cream,
-                      background: isRest ? T.bg : `${T.crimson}44`,
-                      border: `1px solid ${isRest ? T.line : T.gold + '55'}`, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
+                      background: isRest ? T.bg : (cor ? `${cor}2E` : T.surfaceRaise || T.bg),
+                      border: `1px solid ${isRest ? T.line : (cor ? `${cor}AA` : T.line)}`,
+                      borderLeft: `4px solid ${isRest ? T.line : (cor || T.line)}`,
+                      borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
                     }}>
                       {isRest ? 'Folga' : (s.focus || 'Sessão')}
                       <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{isRest ? 'Descanso total' : s.phase}</div>
@@ -19852,12 +19880,23 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                 })}
               </div>
               <button onClick={() => onAddForDate(d)} style={{
+                marginTop: 'auto',
                 width: '100%', fontSize: 11, color: T.mutedDim, background: 'none',
                 border: `1px dashed ${T.line}`, borderRadius: 6, padding: '4px 0', cursor: 'pointer', ...body,
               }}>+ sessão</button>
             </div>
           );
         })}
+      </div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12, fontSize: 11.5, color: T.mutedDim }}>
+        {[['alta', 'Alta'], ['media', 'Média'], ['baixa', 'Baixa']].map(([v, l]) => (
+          <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: COR_INTENSIDADE[v] }} /> Intensidade {l.toLowerCase()}
+          </span>
+        ))}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: T.cream }} /> Jogo
+        </span>
       </div>
     </div>
   );
