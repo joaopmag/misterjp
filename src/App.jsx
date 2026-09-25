@@ -18827,7 +18827,29 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
   const matchItems = (matches || [])
     .filter(m => m.date)
     .map(m => ({ ...m, __match: true }));
-  const grouped = groupByWeek([...sessions, ...matchItems]);
+  /* HISTÓRICO ORGANIZADO POR MÊS.
+
+     Com o passar da época a lista ia acumulando semanas soltas umas por
+     baixo das outras. Agora:
+     - no topo, a semana atual e as próximas (abertas) — onde se trabalha;
+     - depois, o histórico agrupado por mês, do mais recente para o mais
+       antigo; cada mês fecha-se/abre-se, e só o mais recente vem aberto;
+     - cada semana fechada mostra um resumo (sessões, minutos, jogos) em
+       vez de só "N registos";
+     - "Ir para" salta para qualquer data, abrindo o mês e a semana.
+
+     As semanas passam a ter como chave a data da segunda-feira (ISO),
+     e não o texto "Semana de 10/08" — esse texto repetia-se de uma época
+     para a outra e juntava semanas de anos diferentes. */
+  const grouped = {};
+  [...sessions, ...matchItems]
+    .filter(s => s.date)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .forEach(s => { const k = getMonday(s.date); (grouped[k] = grouped[k] || []).push(s); });
+  const rotuloSemana = (monday) => {
+    const [, m, d] = monday.split('-');
+    return `Semana de ${d}/${m}`;
+  };
   /* A sessão que qualquer jogo cria automaticamente (ver ensureMatchSession,
      amigável ou oficial) continua a contar para a carga da semana — por
      isso entra em `grouped` tal e qual. Mas na Lista o jogo já tem o seu
@@ -18839,9 +18861,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
 
   // Segunda-feira de cada semana já agrupada, para decidir por omissão
   // se está terminada (fechada) e para encontrar a semana atual.
-  const weekMondays = Object.fromEntries(
-    Object.entries(grouped).map(([week, items]) => [week, getMonday(items[0].date)])
-  );
+  const weekMondays = Object.fromEntries(Object.keys(grouped).map(w => [w, w]));
   const currentMonday = getMonday(todayStr());
   const isWeekPast = (week) => addDays(weekMondays[week], 6) < todayStr();
   const isWeekCollapsed = (week) => toggledWeeks.has(week) ? !isWeekPast(week) : isWeekPast(week);
@@ -18854,14 +18874,120 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
     || orderedWeekKeys[orderedWeekKeys.length - 1]
     || null;
 
+  // A semana atual já está no topo — não é preciso saltar para ela ao
+  // abrir. O salto agora é o do "Ir para" (ver `irParaData`).
+  void scrolledRef; void targetWeekKey;
+
+  const semanasAtuais = orderedWeekKeys.filter(w => !isWeekPast(w));
+  const semanasPassadas = orderedWeekKeys.filter(w => isWeekPast(w)).reverse();
+  const mesesHistorico = [];
+  semanasPassadas.forEach(w => {
+    const k = w.slice(0, 7);
+    const ultimo = mesesHistorico[mesesHistorico.length - 1];
+    if (ultimo && ultimo.key === k) ultimo.semanas.push(w);
+    else mesesHistorico.push({ key: k, semanas: [w] });
+  });
+  const mesMaisRecente = mesesHistorico.length ? mesesHistorico[0].key : null;
+  const [toggledMeses, setToggledMeses] = useState(() => new Set());
+  const mesAberto = (k) => (toggledMeses.has(k) ? k !== mesMaisRecente : k === mesMaisRecente);
+  const toggleMes = (k) => setToggledMeses(prev => {
+    const n = new Set(prev);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  });
+  const rotuloMes = (k) => {
+    const [y, m] = k.split('-').map(Number);
+    const nome = new Date(y, m - 1, 1).toLocaleDateString('pt-PT', { month: 'long' });
+    return `${nome.charAt(0).toUpperCase()}${nome.slice(1)} ${y}`;
+  };
+  const contarSemana = (items) => {
+    const sess = items.filter(s => !s.__match);
+    const min = sess.reduce((sum, s) => sum + (s.exerciseIds || []).reduce((a, e) => a + (Number(e.duration) || 0), 0), 0);
+    return { sess: sess.length, min, jogos: items.filter(s => s.__match) };
+  };
+  const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+  const resumoSemana = (items) => {
+    const c = contarSemana(items);
+    const partes = [plural(c.sess, 'sessão', 'sessões'), `${c.min} min`];
+    c.jogos.forEach(m => {
+      const nj = numDoJogo(m);
+      const etiqueta = isFriendlyMatch(m) ? 'Amigável' : (nj != null ? `J${nj}` : '');
+      partes.push([etiqueta, m.opponent || 'Jogo', String(m.result || '').trim()].filter(Boolean).join(' '));
+    });
+    return partes.join(' · ');
+  };
+  const resumoMes = (semanas) => {
+    let sess = 0; let jogos = 0;
+    semanas.forEach(w => { const c = contarSemana(grouped[w]); sess += c.sess; jogos += c.jogos.length; });
+    return [plural(semanas.length, 'semana', 'semanas'), plural(sess, 'sessão', 'sessões'), jogos ? plural(jogos, 'jogo', 'jogos') : '']
+      .filter(Boolean).join(' · ');
+  };
+
+  // IR PARA — abre o mês e a semana da data escolhida e faz scroll até lá
+  // (se nessa semana não houver nada, vai para a semana mais próxima).
+  const [saltarPara, setSaltarPara] = useState(null);
+  const irParaData = (d) => {
+    if (!d || !orderedWeekKeys.length) return;
+    const alvo = getMonday(d);
+    const w = orderedWeekKeys.includes(alvo)
+      ? alvo
+      : orderedWeekKeys.reduce((best, x) => (Math.abs(new Date(x) - new Date(alvo)) < Math.abs(new Date(best) - new Date(alvo)) ? x : best), orderedWeekKeys[0]);
+    if (isWeekPast(w)) {
+      const mk = w.slice(0, 7);
+      if (!mesAberto(mk)) toggleMes(mk);
+      if (isWeekCollapsed(w)) toggleWeek(w);
+    } else if (isWeekCollapsed(w)) toggleWeek(w);
+    setSaltarPara(w);
+  };
   useEffect(() => {
-    if (view !== 'lista' || scrolledRef.current || !targetWeekKey) return;
-    const el = weekRefs.current[targetWeekKey];
-    if (el) {
-      el.scrollIntoView({ behavior: 'auto', block: 'start' });
-      scrolledRef.current = true;
-    }
-  }, [view, targetWeekKey]);
+    if (!saltarPara) return;
+    const el = weekRefs.current[saltarPara];
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setSaltarPara(null);
+  }, [saltarPara]);
+
+  const cabecalhoBloco = (texto) => (
+    <div style={{ ...mono, fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.08em', margin: '4px 0 12px' }}>{texto}</div>
+  );
+  const renderListaPlaneamento = (renderSemana) => (
+    <>
+      {semanasAtuais.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {cabecalhoBloco('Esta semana e próximas')}
+          {semanasAtuais.map(w => renderSemana(w, grouped[w]))}
+        </div>
+      )}
+      {mesesHistorico.length > 0 && (
+        <div>
+          {cabecalhoBloco('Histórico')}
+          {mesesHistorico.map(mes => {
+            const aberto = mesAberto(mes.key);
+            return (
+              <div key={mes.key} style={{ marginBottom: 10 }}>
+                <button
+                  type="button" onClick={() => toggleMes(mes.key)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, width: '100%', flexWrap: 'wrap',
+                    background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+                    padding: '11px 14px', cursor: 'pointer', textAlign: 'left', ...body,
+                  }}
+                >
+                  <ChevronRight size={15} color={T.mutedDim} style={{ flexShrink: 0, transform: aberto ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
+                  <span style={{ fontSize: 14.5, color: T.cream, fontWeight: 600 }}>{rotuloMes(mes.key)}</span>
+                  <span style={{ fontSize: 12, color: T.mutedDim }}>{resumoMes(mes.semanas)}</span>
+                </button>
+                {aberto && (
+                  <div style={{ padding: '14px 0 0 14px', borderLeft: `1px solid ${T.line}`, marginLeft: 20, marginTop: 6 }}>
+                    {mes.semanas.map(w => renderSemana(w, grouped[w]))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
 
   /* O caminho inverso de `sessaoDoJogo`: dada a sessão de um jogo
      (amigável ou oficial), qual é o jogo que lhe deu origem. É de lá que
@@ -18899,7 +19025,17 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       <SectionHeader title="Planeamento" subtitle="A semana de treino, sessão a sessão."
         action={<Btn onClick={() => { setModalVoltarDia(false); setModal('new'); }}><Plus size={15} /> Nova sessão</Btn>} />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        {view === 'lista' && orderedWeekKeys.length > 0 && (
+          <label style={{ order: 2, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.mutedDim, ...body }}>
+            Ir para
+            <input
+              type="date"
+              onChange={e => { irParaData(e.target.value); }}
+              style={{ ...inputStyle, width: 'auto', padding: '6px 10px', fontSize: 12.5 }}
+            />
+          </label>
+        )}
         {[['lista', 'Lista'], ['agenda', 'Agenda semanal']].map(([id, label]) => (
           <button key={id} onClick={() => setView(id)} style={{
             padding: '6px 14px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
@@ -18923,7 +19059,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       ) : sessions.length === 0 && matchItems.length === 0 ? (
         <EmptyState text="Ainda não há sessões planeadas." action={<Btn onClick={() => { setModalVoltarDia(false); setModal('new'); }}><Plus size={15} /> Criar a primeira sessão</Btn>} />
       ) : (
-        Object.entries(grouped).map(([week, items]) => {
+        renderListaPlaneamento((week, items) => {
           const collapsed = isWeekCollapsed(week);
           return (
           <div key={week} ref={el => { weekRefs.current[week] = el; }} style={{ marginBottom: 22 }}>
@@ -18935,10 +19071,10 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               }}
             >
               <ChevronRight size={13} color={T.mutedDim} style={{ flexShrink: 0, transform: collapsed ? 'none' : 'rotate(90deg)', transition: 'transform .15s' }} />
-              <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>{week}</span>
+              <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em', flexShrink: 0 }}>{rotuloSemana(week)}</span>
               {collapsed && (
-                <span style={{ fontSize: 11, color: T.mutedDim }}>
-                  · {items.length} {items.length === 1 ? 'registo' : 'registos'} — toca para ver
+                <span style={{ fontSize: 11.5, color: T.muted, minWidth: 0 }}>
+                  · {resumoSemana(items)}
                 </span>
               )}
             </button>
