@@ -19895,9 +19895,14 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                     flexDirection: 'row', alignItems: 'flex-start', gap: 5, fontWeight: 600,
                   }}>
                     <Trophy size={11} color="#1B241C" style={{ marginTop: 1, flexShrink: 0 }} />
-                    <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-                      <span style={LINHAS(2)}>vs {m.opponent || 'Adversário'}</span>
-                      <span style={{ ...LINHAS(1), fontSize: 9.5, color: '#1B241CAA', marginTop: 1, fontWeight: 400 }}>{m.result || competitionLabel(m.competition) || 'Jogo'}</span>
+                    {/* Adversário numa linha e a competição em até duas, em
+                        baixo — assim o nome do campeonato cabe inteiro. */}
+                    <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignSelf: 'stretch' }}>
+                      <span style={LINHAS(1)}>vs {m.opponent || 'Adversário'}</span>
+                      <span
+                        title={m.result || competitionLabel(m.competition) || 'Jogo'}
+                        style={{ ...LINHAS(2), fontSize: 9.5, color: '#1B241CAA', marginTop: 'auto', fontWeight: 400 }}
+                      >{m.result || competitionLabel(m.competition) || 'Jogo'}</span>
                     </span>
                   </button>
                 ))}
@@ -19917,7 +19922,10 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                       borderLeft: `4px solid ${isRest ? T.line : (cor || T.line)}`,
                     }}>
                       <span style={LINHAS(2)}>{isRest ? 'Folga' : (s.focus || 'Sessão')}</span>
-                      <span style={{ ...LINHAS(1), fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{isRest ? 'Descanso total' : s.phase}</span>
+                      {/* O momento/fase sempre no fundo do cartão — fica na
+                          mesma linha em todos os dias, com título de uma ou
+                          de duas linhas. */}
+                      <span style={{ ...LINHAS(1), fontSize: 9.5, color: T.mutedDim, marginTop: 'auto' }}>{isRest ? 'Descanso total' : s.phase}</span>
                     </button>
                   );
                 })}
