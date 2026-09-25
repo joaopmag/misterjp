@@ -305,27 +305,38 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
   const [aEditar, setAEditar] = useState(false);
   const [notaEd, setNotaEd] = useState('');
-  const [inicioEd, setInicioEd] = useState('');
-  const [fimEd, setFimEd] = useState('');
+  const [inicioEd, setInicioEd] = useState(0);
+  const [fimEd, setFimEd] = useState(0);
   const [aGuardar, setAGuardar] = useState(false);
   const [erroEd, setErroEd] = useState('');
   const [originalEd, setOriginalEd] = useState(null);
   const abrirEdicao = () => {
     setOriginalEd(originalSugeridoId || null);
     setNotaEd(clip.note || '');
-    setInicioEd(fmt(clip.origemInicio || 0));
-    setFimEd(fmt(clip.origemFim || 0));
+    setInicioEd(clip.origemInicio || 0);
+    setFimEd(clip.origemFim || 0);
     setErroEd('');
     setAEditar(true);
   };
+  // Marca a partir de onde o próprio clipe já vai (dá play, pausa no
+  // momento certo, toca aqui) — em vez de escrever mm:ss à mão. Só
+  // consegue marcar dentro do que já está neste clipe; para alargar
+  // para fora disso, ainda é preciso escolher outro vídeo original.
+  const marcarInicioEd = () => {
+    const novo = (clip.origemInicio || 0) + (videoRef.current?.currentTime || 0);
+    setInicioEd(novo);
+    if (fimEd <= novo) setFimEd(novo + 1);
+  };
+  const marcarFimEd = () => {
+    const novo = (clip.origemInicio || 0) + (videoRef.current?.currentTime || 0);
+    setFimEd(novo);
+    if (inicioEd >= novo) setInicioEd(Math.max(0, novo - 1));
+  };
   const guardarEdicao = async () => {
-    const ini = parseMMSS(inicioEd);
-    const f = parseMMSS(fimEd);
-    if (ini == null || f == null) { setErroEd('Escreve os tempos como mm:ss (ex.: 12:05).'); return; }
-    if (f - ini < 1) { setErroEd('O fim tem de ser pelo menos 1 segundo depois do início.'); return; }
+    if (fimEd - inicioEd < 1) { setErroEd('O fim tem de ser pelo menos 1 segundo depois do início.'); return; }
     setAGuardar(true); setErroEd('');
     try {
-      await onSaveEdit({ note: notaEd.trim(), inicio: ini, fim: f, originalId: originalEd });
+      await onSaveEdit({ note: notaEd.trim(), inicio: inicioEd, fim: fimEd, originalId: originalEd });
       setAEditar(false);
     } catch (e) {
       setErroEd((e && e.message) || 'Não foi possível guardar. Tenta outra vez.');
@@ -486,12 +497,13 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             {/* Tempos, vídeo original e botões numa só linha (parte-se em
                 ecrãs estreitos) — a edição tem de caber sem tapar o vídeo. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, color: T.mutedDim }}>De</span>
-              <input value={inicioEd} onChange={e => setInicioEd(e.target.value)} disabled={!originalEd} aria-label="Início no vídeo original (mm:ss)"
-                style={{ width: 64, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 13, textAlign: 'center', ...mono, opacity: originalEd ? 1 : 0.5 }} />
+              <Btn variant="ghost" onClick={marcarInicioEd} style={{ padding: '6px 10px', fontSize: 12.5 }}>
+                <Flag size={13} color={T.good} /> Início ({fmt(inicioEd)})
+              </Btn>
               <span style={{ fontSize: 12, color: T.mutedDim }}>até</span>
-              <input value={fimEd} onChange={e => setFimEd(e.target.value)} disabled={!originalEd} aria-label="Fim no vídeo original (mm:ss)"
-                style={{ width: 64, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 13, textAlign: 'center', ...mono, opacity: originalEd ? 1 : 0.5 }} />
+              <Btn variant="ghost" onClick={marcarFimEd} style={{ padding: '6px 10px', fontSize: 12.5 }}>
+                <Flag size={13} color={T.bad} /> Fim ({fmt(fimEd)})
+              </Btn>
               <span style={{ fontSize: 12, color: T.mutedDim }}>em</span>
               <select value={originalEd || ''} onChange={e => setOriginalEd(e.target.value || null)} aria-label="Vídeo original"
                 style={{ maxWidth: 240, minWidth: 0, background: T.bg, border: `1px solid ${originalEd ? T.line : T.warn}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 12.5, ...body }}>
@@ -774,6 +786,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [note, setNote] = useState('');
   const [aGuardarClipe, setAGuardarClipe] = useState(false);
 
+  // SEGUIR JOGADOR — pensado para se marcar ANTES de cortar o clipe,
+  // no mesmo momento em que se desenha por cima do vídeo. A trajetória
+  // fica "pendente" e só é gravada no clipe quando ele é mesmo cortado
+  // (tal como os desenhos) — os tempos são sempre os do vídeo ORIGINAL
+  // até esse momento.
+  const [modoSeguirFoco, setModoSeguirFoco] = useState('normal'); // normal | a_escolher | a_processar
+  const [erroSeguirFoco, setErroSeguirFoco] = useState('');
+  const [trajetoriaFocoPendente, setTrajetoriaFocoPendente] = useState(null); // { pontos, duracao } | null
+
   const [modoDesenho, setModoDesenho] = useState(false);
   const [tool, setTool] = useState('seta');
   const [corAtual, setCorAtual] = useState(COR_DESENHO);
@@ -936,7 +957,34 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const markIn = () => { setInPoint(current); if (outPoint != null && outPoint < current) setOutPoint(null); };
   const markOut = () => { setOutPoint(current); if (inPoint == null) setInPoint(Math.max(0, current - 8)); };
-  const limparMarcas = () => { setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); setTextoPendente(null); };
+  const limparMarcas = () => { setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); setTextoPendente(null); setTrajetoriaFocoPendente(null); setErroSeguirFoco(''); };
+
+  // Precisa de início E fim já marcados — é esse troço, e só esse, que
+  // se manda seguir (sem isto, apontaria para o jogo inteiro).
+  const comecarEscolhaFoco = () => {
+    if (inPoint == null || outPoint == null || outPoint <= inPoint) return;
+    videoRef.current?.pause();
+    if (videoRef.current) videoRef.current.currentTime = inPoint;
+    setErroSeguirFoco('');
+    setModoSeguirFoco('a_escolher');
+  };
+  const escolherJogadorFoco = async (xFrac, yFrac) => {
+    setModoSeguirFoco('a_processar');
+    try {
+      const resp = await fetch('/api/seguir-jogador', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_url: signedUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: inPoint, t_fim: outPoint }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error || 'Falha ao seguir o jogador');
+      setTrajetoriaFocoPendente({ pontos: json.pontos || [], duracao: json.duracao });
+      setModoSeguirFoco('normal');
+    } catch (e) {
+      setErroSeguirFoco(`Não consegui seguir o jogador: ${e.message || e}`);
+      setModoSeguirFoco('normal');
+    }
+  };
 
   // Seleciona automaticamente o vídeo assim que o upload (gerido lá em
   // cima, no App, para sobreviver à troca de separador) terminar com êxito.
@@ -1002,6 +1050,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           criadoEmTempo: s.criadoEmTempo == null ? null : Math.max(0, s.criadoEmTempo - inPoint),
           mostrarAte: s.mostrarAte == null ? null : Math.max(0, s.mostrarAte - inPoint),
         })),
+        // O mesmo desvio para a trajetória do jogador em foco, se tiver
+        // sido marcada antes de cortar — os pontos fora do intervalo do
+        // clipe (não deviam existir, mas por segurança) ficam de fora.
+        trajetoriaFoco: trajetoriaFocoPendente ? {
+          pontos: trajetoriaFocoPendente.pontos
+            .filter(p => p.t >= inPoint && p.t <= outPoint)
+            .map(p => ({ ...p, t: Math.max(0, p.t - inPoint) })),
+          duracao: outPoint - inPoint,
+        } : null,
         originalId: originalAtivo.id, originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
       };
       setClipes(prev => [novoClipe, ...(prev || [])]);
@@ -1087,6 +1144,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo + desvio),
         mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte + desvio),
       })),
+      trajetoriaFoco: (clip.trajetoriaFoco && !mudouOriginal) ? {
+        pontos: clip.trajetoriaFoco.pontos
+          .map(p => ({ ...p, t: p.t + desvio }))
+          .filter(p => p.t >= 0 && p.t <= fim - inicio),
+        duracao: fim - inicio,
+      } : null,
       editadoEm: new Date().toISOString(),
     };
     setClipes(prev => prev.map(c => (c.id === clip.id ? novo : c)));
@@ -1191,6 +1254,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   const startDraw = (e) => {
+    if (modoSeguirFoco === 'a_escolher') {
+      const pt = getPoint(e);
+      escolherJogadorFoco(pt.x / 100, pt.y / 56.25);
+      return;
+    }
     if (!modoDesenho) return;
     if (editandoDuracaoIndex != null) setEditandoDuracaoIndex(null); // fecha um popup pendente antes de continuar
     if (textoPendente) { confirmarTexto(); return; }
@@ -1534,6 +1602,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               )}
               <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? CURSOR_BORRACHA : hoverMove ? 'move' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
+                {trajetoriaFocoPendente && (() => {
+                  const pos = posicaoNaTrajetoria(trajetoriaFocoPendente.pontos, current);
+                  if (!pos) return null;
+                  return <circle cx={pos.x * 100} cy={pos.y * 56.25} r={3.2} fill="none" stroke={T.crimsonBright} strokeWidth={0.8} />;
+                })()}
 
                 {/* Pré-visualização da "Zona livre" / "Ligar pontos" a meio da construção */}
                 {pontosEmCurso && pontosEmCurso.points.length > 0 && (
@@ -1582,6 +1655,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       style={{ cursor: 'pointer', touchAction: 'none' }} />
                   ))}
               </svg>
+              {modoSeguirFoco === 'a_escolher' && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pointerEvents: 'none' }}>
+                  <span style={{ marginTop: 12, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, ...body }}>
+                    Toca no jogador que queres seguir
+                  </span>
+                </div>
+              )}
+              {modoSeguirFoco === 'a_processar' && (
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#fff' }}>
+                  <Loader2 size={22} className="spin" />
+                  <span style={{ fontSize: 12.5, ...body, textAlign: 'center', padding: '0 20px' }}>A seguir o jogador — pode demorar alguns minutos…</span>
+                </div>
+              )}
               {pontosEmCurso && (
                 <div onPointerDown={e => e.stopPropagation()}
                   style={{
@@ -1697,9 +1783,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               <>
                 <div style={{ width: 1, background: T.line, margin: '0 4px' }} />
                 <Btn variant="ghost" onClick={abrirDesenho}><Scissors size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}</Btn>
+                <Btn variant={trajetoriaFocoPendente ? 'solid' : 'ghost'} onClick={comecarEscolhaFoco}
+                  disabled={inPoint == null || outPoint == null || outPoint <= inPoint || modoSeguirFoco === 'a_processar'}
+                  title={inPoint == null || outPoint == null ? 'Marca o início e o fim primeiro' : undefined}>
+                  <Target size={14} /> {trajetoriaFocoPendente ? 'Jogador marcado — seguir outro' : 'Seguir jogador'}
+                </Btn>
               </>
             )}
           </div>
+          {erroSeguirFoco && !modoDesenho && (
+            <div style={{ margin: '0 14px 10px', background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 7, padding: 9, color: T.cream, fontSize: 12.5 }}>{erroSeguirFoco}</div>
+          )}
 
           {!modoDesenho && (
             <>
