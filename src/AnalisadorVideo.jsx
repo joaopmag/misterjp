@@ -786,14 +786,44 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [note, setNote] = useState('');
   const [aGuardarClipe, setAGuardarClipe] = useState(false);
 
-  // SEGUIR JOGADOR — pensado para se marcar ANTES de cortar o clipe,
-  // no mesmo momento em que se desenha por cima do vídeo. A trajetória
-  // fica "pendente" e só é gravada no clipe quando ele é mesmo cortado
-  // (tal como os desenhos) — os tempos são sempre os do vídeo ORIGINAL
-  // até esse momento.
-  const [modoSeguirFoco, setModoSeguirFoco] = useState('normal'); // normal | a_escolher | a_processar
-  const [erroSeguirFoco, setErroSeguirFoco] = useState('');
   const [trajetoriaFocoPendente, setTrajetoriaFocoPendente] = useState(null); // { pontos, duracao } | null
+
+  // SEGUIR JOGADOR — mais uma ferramenta de desenho, não um botão à
+  // parte: escolhe-se como as outras (Seta, Círculo, ...), e o toque
+  // no jogador acontece onde o vídeo já estiver nesse momento (não
+  // força voltar ao início) — para poder começar a seguir a meio do
+  // clipe, se for isso que interessa.
+  const [processandoFoco, setProcessandoFoco] = useState(false);
+  const [erroSeguirFoco, setErroSeguirFoco] = useState('');
+  const escolherJogadorFoco = async (xFrac, yFrac) => {
+    const tInicial = current;
+    // Sem fim marcado, usa-se uma janela razoável (30s) para nunca
+    // mandar analisar mais do que isso de cada vez.
+    const tFim = outPoint != null && outPoint > tInicial ? outPoint : tInicial + 30;
+    setTool('seta');
+    setProcessandoFoco(true);
+    setErroSeguirFoco('');
+    try {
+      const resp = await fetch('/api/seguir-jogador', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_url: signedUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial, t_fim: tFim }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error || 'Falha ao seguir o jogador');
+      setTrajetoriaFocoPendente(prev => {
+        const novosPontos = json.pontos || [];
+        // se já havia uma trajetória pendente, este toque conta como
+        // reancorar a partir daqui — mantém a parte anterior a tInicial
+        const anteriores = prev ? prev.pontos.filter(p => p.t < tInicial) : [];
+        return { pontos: [...anteriores, ...novosPontos], duracao: json.duracao };
+      });
+    } catch (e) {
+      setErroSeguirFoco(`Não consegui seguir o jogador: ${e.message || e}`);
+    } finally {
+      setProcessandoFoco(false);
+    }
+  };
 
   const [modoDesenho, setModoDesenho] = useState(false);
   const [tool, setTool] = useState('seta');
@@ -958,33 +988,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const markIn = () => { setInPoint(current); if (outPoint != null && outPoint < current) setOutPoint(null); };
   const markOut = () => { setOutPoint(current); if (inPoint == null) setInPoint(Math.max(0, current - 8)); };
   const limparMarcas = () => { setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); setTextoPendente(null); setTrajetoriaFocoPendente(null); setErroSeguirFoco(''); };
-
-  // Precisa de início E fim já marcados — é esse troço, e só esse, que
-  // se manda seguir (sem isto, apontaria para o jogo inteiro).
-  const comecarEscolhaFoco = () => {
-    if (inPoint == null || outPoint == null || outPoint <= inPoint) return;
-    videoRef.current?.pause();
-    if (videoRef.current) videoRef.current.currentTime = inPoint;
-    setErroSeguirFoco('');
-    setModoSeguirFoco('a_escolher');
-  };
-  const escolherJogadorFoco = async (xFrac, yFrac) => {
-    setModoSeguirFoco('a_processar');
-    try {
-      const resp = await fetch('/api/seguir-jogador', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_url: signedUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: inPoint, t_fim: outPoint }),
-      });
-      const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error || 'Falha ao seguir o jogador');
-      setTrajetoriaFocoPendente({ pontos: json.pontos || [], duracao: json.duracao });
-      setModoSeguirFoco('normal');
-    } catch (e) {
-      setErroSeguirFoco(`Não consegui seguir o jogador: ${e.message || e}`);
-      setModoSeguirFoco('normal');
-    }
-  };
 
   // Seleciona automaticamente o vídeo assim que o upload (gerido lá em
   // cima, no App, para sobreviver à troca de separador) terminar com êxito.
@@ -1254,7 +1257,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   const startDraw = (e) => {
-    if (modoSeguirFoco === 'a_escolher') {
+    if (modoDesenho && tool === 'seguir') {
       const pt = getPoint(e);
       escolherJogadorFoco(pt.x / 100, pt.y / 56.25);
       return;
@@ -1552,6 +1555,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
                   <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
+                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <ToolBtn icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
 
                 {/* Em ecrã inteiro não há coluna à direita (ficaria fora do
                    alcance do rato/dedo num ecrã grande) — texto, cores e
@@ -1655,14 +1660,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       style={{ cursor: 'pointer', touchAction: 'none' }} />
                   ))}
               </svg>
-              {modoSeguirFoco === 'a_escolher' && (
+              {modoDesenho && tool === 'seguir' && !processandoFoco && (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pointerEvents: 'none' }}>
                   <span style={{ marginTop: 12, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, ...body }}>
                     Toca no jogador que queres seguir
                   </span>
                 </div>
               )}
-              {modoSeguirFoco === 'a_processar' && (
+              {processandoFoco && (
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#fff' }}>
                   <Loader2 size={22} className="spin" />
                   <span style={{ fontSize: 12.5, ...body, textAlign: 'center', padding: '0 20px' }}>A seguir o jogador — pode demorar alguns minutos…</span>
@@ -1782,16 +1787,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {!modoDesenho && (
               <>
                 <div style={{ width: 1, background: T.line, margin: '0 4px' }} />
-                <Btn variant="ghost" onClick={abrirDesenho}><Scissors size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}</Btn>
-                <Btn variant={trajetoriaFocoPendente ? 'solid' : 'ghost'} onClick={comecarEscolhaFoco}
-                  disabled={inPoint == null || outPoint == null || outPoint <= inPoint || modoSeguirFoco === 'a_processar'}
-                  title={inPoint == null || outPoint == null ? 'Marca o início e o fim primeiro' : undefined}>
-                  <Target size={14} /> {trajetoriaFocoPendente ? 'Jogador marcado — seguir outro' : 'Seguir jogador'}
+                <Btn variant="ghost" onClick={abrirDesenho}>
+                  <Scissors size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}
+                  {trajetoriaFocoPendente && <Target size={13} color={T.crimsonBright} style={{ marginLeft: 2 }} />}
                 </Btn>
               </>
             )}
           </div>
-          {erroSeguirFoco && !modoDesenho && (
+          {erroSeguirFoco && (
             <div style={{ margin: '0 14px 10px', background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 7, padding: 9, color: T.cream, fontSize: 12.5 }}>{erroSeguirFoco}</div>
           )}
 
