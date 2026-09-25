@@ -25795,37 +25795,6 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
       ) : (
       <>
 
-      {/* FICA FECHADO POR OMISSÃO.
-          É informação de consulta pontual (só interessa saber ao montar
-          o treino de hoje), não algo que precise de estar sempre à
-          vista — e era isto, mais os Códigos de acesso e o link do
-          Portal (agora em Equipa → Membros e convite), que empurrava a tabela de
-          respostas — o conteúdo principal deste ecrã — para muito mais
-          abaixo do que devia. */}
-      <Panel title="Sessão de hoje (usada no RPE)"
-        action={<button onClick={() => setMostrarSessaoHoje(!mostrarSessaoHoje)} style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
-          {mostrarSessaoHoje ? <><EyeOff size={13} /> Ocultar</> : <><Eye size={13} /> Mostrar</>}
-        </button>}>
-        {mostrarSessaoHoje ? (
-          todaySession ? (
-            <div style={{ fontSize: 13, color: T.cream, display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div style={{ fontWeight: 500 }}>{todaySession.phase === 'Descanso' ? 'Folga' : (todaySession.focus || todaySession.phase || 'Sessão de treino')}</div>
-              <div style={{ fontSize: 12, color: T.mutedDim }}>
-                {[todaySession.phase, intensityText(todaySession)].filter(Boolean).join(' · ')}
-              </div>
-            </div>
-          ) : (
-            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-              Ainda não há sessão criada para hoje em Planeamento. O RPE dos atletas fica associado automaticamente à sessão do dia — cria a sessão de hoje em Planeamento para que fiquem ligados.
-            </div>
-          )
-        ) : (
-          <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '4px 0' }}>
-            {todaySession ? (todaySession.phase === 'Descanso' ? 'Folga' : (todaySession.focus || todaySession.phase || 'Sessão de treino')) : 'Sem sessão criada para hoje.'} — clica em "Mostrar" para os detalhes.
-          </div>
-        )}
-      </Panel>
-
       {players.length > 0 && (
         <Panel title="Plantel — estado atual">
           {(() => {
@@ -25936,6 +25905,38 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
           </div>
         </Panel>
       )}
+
+      {/* Por baixo do "Plantel — estado atual" (o que se consulta
+          primeiro). FICA FECHADO POR OMISSÃO.
+          É informação de consulta pontual (só interessa saber ao montar
+          o treino de hoje), não algo que precise de estar sempre à
+          vista — e era isto, mais os Códigos de acesso e o link do
+          Portal (agora em Equipa → Membros e convite), que empurrava a tabela de
+          respostas — o conteúdo principal deste ecrã — para muito mais
+          abaixo do que devia. */}
+      <Panel title="Sessão de hoje (usada no RPE)"
+        action={<button onClick={() => setMostrarSessaoHoje(!mostrarSessaoHoje)} style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+          {mostrarSessaoHoje ? <><EyeOff size={13} /> Ocultar</> : <><Eye size={13} /> Mostrar</>}
+        </button>}>
+        {mostrarSessaoHoje ? (
+          todaySession ? (
+            <div style={{ fontSize: 13, color: T.cream, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ fontWeight: 500 }}>{todaySession.phase === 'Descanso' ? 'Folga' : (todaySession.focus || todaySession.phase || 'Sessão de treino')}</div>
+              <div style={{ fontSize: 12, color: T.mutedDim }}>
+                {[todaySession.phase, intensityText(todaySession)].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+              Ainda não há sessão criada para hoje em Planeamento. O RPE dos atletas fica associado automaticamente à sessão do dia — cria a sessão de hoje em Planeamento para que fiquem ligados.
+            </div>
+          )
+        ) : (
+          <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '4px 0' }}>
+            {todaySession ? (todaySession.phase === 'Descanso' ? 'Folga' : (todaySession.focus || todaySession.phase || 'Sessão de treino')) : 'Sem sessão criada para hoje.'} — clica em "Mostrar" para os detalhes.
+          </div>
+        )}
+      </Panel>
 
       <div style={{ height: 16 }} />
 
