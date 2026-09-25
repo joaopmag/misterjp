@@ -108,8 +108,35 @@ const INTENSITIES = [
   { value: 'alta', label: 'Alta' },
 ];
 const intensityLabel = (v) => INTENSITIES.find(i => i.value === v)?.label || v || '—';
-// Cores da intensidade na Agenda: alta vermelho, média amarelo, baixa verde.
+/* MICROCICLOS NUMERADOS — em vez de "Semana de 10/08", cada semana é
+   "Microciclo N (10/08)". O 1 é a primeira semana com alguma coisa no
+   Planeamento (sessão ou jogo); a contagem segue o calendário, por isso
+   uma semana sem nada marcado também conta (não se renumera tudo por
+   causa de uma paragem). Semanas antes da primeira ficam sem número. */
+function numeroMicrociclo(monday, primeiraSegunda) {
+  if (!monday || !primeiraSegunda) return null;
+  const dias = Math.round((new Date(monday + 'T00:00:00') - new Date(primeiraSegunda + 'T00:00:00')) / 86400000);
+  return dias >= 0 ? Math.floor(dias / 7) + 1 : null;
+}
+function rotuloMicrociclo(monday, primeiraSegunda) {
+  const [, m, d] = String(monday).split('-');
+  const n = numeroMicrociclo(monday, primeiraSegunda);
+  return n ? `Microciclo ${n} (${d}/${m})` : `Semana de ${d}/${m}`;
+}
+// Cores da carga na Agenda: alta vermelho, média amarelo, baixa verde.
 const COR_INTENSIDADE = { alta: '#D2504A', media: '#E0B12E', baixa: '#4CA86B' };
+/* Todos os cartões de um dia na Agenda com a MESMA altura, tenham pouco
+   ou muito texto: título até 2 linhas e subtítulo numa linha (o resto
+   corta com reticências). */
+const CARTAO_AGENDA = {
+  height: 60, boxSizing: 'border-box', overflow: 'hidden', flexShrink: 0,
+  display: 'flex', flexDirection: 'column', justifyContent: 'flex-start',
+  textAlign: 'left', fontSize: 11, borderRadius: 6, padding: '5px 7px', cursor: 'pointer',
+  fontFamily: 'inherit', lineHeight: 1.25,
+};
+const LINHAS = (n) => ({
+  display: '-webkit-box', WebkitLineClamp: n, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word',
+});
 // Dias de folga (fase "Descanso") são descanso total: não fazem sentido
 // com intensidade nenhuma, por isso esta função devolve '' para eles em
 // vez de "Intensidade: —", em qualquer sítio onde a sessão é resumida.
@@ -18848,10 +18875,8 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
     .filter(s => s.date)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))
     .forEach(s => { const k = getMonday(s.date); (grouped[k] = grouped[k] || []).push(s); });
-  const rotuloSemana = (monday) => {
-    const [, m, d] = monday.split('-');
-    return `Semana de ${d}/${m}`;
-  };
+  const primeiraSegunda = Object.keys(grouped)[0] || null;
+  const rotuloSemana = (monday) => rotuloMicrociclo(monday, primeiraSegunda);
   /* A sessão que qualquer jogo cria automaticamente (ver ensureMatchSession,
      amigável ou oficial) continua a contar para a carga da semana — por
      isso entra em `grouped` tal e qual. Mas na Lista o jogo já tem o seu
@@ -18928,6 +18953,17 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
   // IR PARA — abre o mês e a semana da data escolhida e faz scroll até lá
   // (se nessa semana não houver nada, vai para a semana mais próxima).
   const [saltarPara, setSaltarPara] = useState(null);
+  // Trocar de separador mantém a página exatamente onde estava.
+  const scrollAntesRef = useRef(null);
+  const trocarVista = (id) => {
+    scrollAntesRef.current = window.scrollY;
+    setView(id);
+  };
+  React.useLayoutEffect(() => {
+    if (scrollAntesRef.current == null) return;
+    window.scrollTo(0, scrollAntesRef.current);
+    scrollAntesRef.current = null;
+  }, [view]);
   const irParaData = (d) => {
     if (!d || !orderedWeekKeys.length) return;
     const alvo = getMonday(d);
@@ -19038,8 +19074,13 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
         action={<Btn onClick={() => { setModalVoltarDia(false); setModal('new'); }}><Plus size={15} /> Nova sessão</Btn>} />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-        {view === 'historico' && orderedWeekKeys.length > 0 && (
-          <label style={{ order: 2, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.mutedDim, ...body }}>
+        {orderedWeekKeys.length > 0 && (
+          // Está sempre lá (só se vê no Histórico) — assim a linha dos
+          // separadores tem sempre a mesma altura e nada salta ao trocar.
+          <label style={{
+            order: 2, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.mutedDim, ...body,
+            visibility: view === 'historico' ? 'visible' : 'hidden',
+          }}>
             Ir para
             <input
               type="date"
@@ -19048,8 +19089,8 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             />
           </label>
         )}
-        {[['lista', 'Microciclo'], ['historico', 'Histórico'], ['agenda', 'Agenda']].map(([id, label]) => (
-          <button key={id} onClick={() => setView(id)} style={{
+        {[['lista', 'Microciclo'], ['agenda', 'Agenda'], ['historico', 'Histórico']].map(([id, label]) => (
+          <button key={id} onClick={() => trocarVista(id)} style={{
             padding: '6px 14px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
             background: view === id ? '#B5393F' : 'transparent', color: view === id ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${view === id ? '#B5393F' : T.line}`,
@@ -19057,6 +19098,9 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
         ))}
       </div>
 
+      {/* Altura mínima de um ecrã: ao trocar de separador, um conteúdo
+          mais curto não encolhe a página nem a faz saltar para cima. */}
+      <div style={{ minHeight: '100vh' }}>
       {view === 'agenda' ? (
         <WeekAgenda
           weekStart={weekStart}
@@ -19067,6 +19111,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           onAddForDate={(d) => { setModalVoltarDia(false); setModal({ presetDate: d }); }}
           onEditMatch={(m) => { setMatchModalVoltarFicha(false); setMatchModal(m); }}
           season={season}
+          primeiraSegunda={primeiraSegunda}
         />
       ) : sessions.length === 0 && matchItems.length === 0 ? (
         <EmptyState text="Ainda não há sessões planeadas." action={<Btn onClick={() => { setModalVoltarDia(false); setModal('new'); }}><Plus size={15} /> Criar a primeira sessão</Btn>} />
@@ -19251,6 +19296,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           );
         })
       )}
+      </div>
 
       {/* O SIMULADOR EM ECRÃ INTEIRO, POR CIMA DO PLANEAMENTO.
 
@@ -19792,7 +19838,7 @@ function formatShortDatePt(dateStr) {
    AGENDA SEMANAL — vista de calendário Seg-Dom, criada a partir
    do Planeamento, com edição direta de cada sessão.
 ---------------------------------------------------------------- */
-function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddForDate, onEditMatch, season }) {
+function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddForDate, onEditMatch, season, primeiraSegunda }) {
   const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
   const currentDayStr = todayStr();
   // No telemóvel a semana passa a 3 colunas (3 dias em cima, 3 no meio e o
@@ -19810,7 +19856,7 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
           <ChevronLeft size={16} />
         </button>
         <div style={{ ...display, color: T.warn, fontSize: 15, fontWeight: 600 }}>
-          Semana de {fmtShort(days[0])} a {fmtShort(days[6])}
+          {numeroMicrociclo(weekStart, primeiraSegunda) ? `Microciclo ${numeroMicrociclo(weekStart, primeiraSegunda)} · ` : 'Semana de '}{fmtShort(days[0])} a {fmtShort(days[6])}
         </div>
         <button onClick={() => setWeekStart(addDays(weekStart, 7))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, color: T.cream, cursor: 'pointer', padding: '4px 6px' }}>
           <ChevronRight size={16} />
@@ -19844,17 +19890,14 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                     de intensidade alta, e salta à vista na semana. */}
                 {dayMatches.map(m => (
                   <button key={m.id} onClick={() => onEditMatch(m)} style={{
-                    textAlign: 'left', fontSize: 11, color: '#1B241C', background: T.cream,
-                    border: `1px solid ${T.cream}`, borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
-                    display: 'flex', alignItems: 'flex-start', gap: 5, fontWeight: 600,
+                    ...CARTAO_AGENDA, ...body,
+                    color: '#1B241C', background: T.cream, border: `1px solid ${T.cream}`,
+                    flexDirection: 'row', alignItems: 'flex-start', gap: 5, fontWeight: 600,
                   }}>
                     <Trophy size={11} color="#1B241C" style={{ marginTop: 1, flexShrink: 0 }} />
-                    <span style={{ minWidth: 0 }}>
-                      <span style={{ ...mono, fontSize: 9, letterSpacing: '.08em', opacity: 0.7, display: 'block' }}>
-                        {isFriendlyMatch(m) ? 'AMIGÁVEL' : 'JOGO'}
-                      </span>
-                      vs {m.opponent || 'Adversário'}
-                      <div style={{ fontSize: 9.5, color: '#1B241CAA', marginTop: 1, fontWeight: 400 }}>{m.result || competitionLabel(m.competition) || 'Jogo'}</div>
+                    <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                      <span style={LINHAS(2)}>vs {m.opponent || 'Adversário'}</span>
+                      <span style={{ ...LINHAS(1), fontSize: 9.5, color: '#1B241CAA', marginTop: 1, fontWeight: 400 }}>{m.result || competitionLabel(m.competition) || 'Jogo'}</span>
                     </span>
                   </button>
                 ))}
@@ -19866,15 +19909,15 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                   // baixa verde. Sem intensidade marcada fica neutro.
                   const cor = isRest ? null : COR_INTENSIDADE[s.intensity];
                   return (
-                    <button key={s.id} onClick={() => onEdit(s)} title={cor ? `Intensidade ${intensityLabel(s.intensity).toLowerCase()}` : undefined} style={{
-                      textAlign: 'left', fontSize: 11, color: isRest ? T.mutedDim : T.cream,
+                    <button key={s.id} onClick={() => onEdit(s)} title={cor ? `Carga ${intensityLabel(s.intensity).toLowerCase()}` : undefined} style={{
+                      ...CARTAO_AGENDA, ...body,
+                      color: isRest ? T.mutedDim : T.cream,
                       background: isRest ? T.bg : (cor ? `${cor}2E` : T.surfaceRaise || T.bg),
                       border: `1px solid ${isRest ? T.line : (cor ? `${cor}AA` : T.line)}`,
                       borderLeft: `4px solid ${isRest ? T.line : (cor || T.line)}`,
-                      borderRadius: 6, padding: '5px 7px', cursor: 'pointer', ...body,
                     }}>
-                      {isRest ? 'Folga' : (s.focus || 'Sessão')}
-                      <div style={{ fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{isRest ? 'Descanso total' : s.phase}</div>
+                      <span style={LINHAS(2)}>{isRest ? 'Folga' : (s.focus || 'Sessão')}</span>
+                      <span style={{ ...LINHAS(1), fontSize: 9.5, color: T.mutedDim, marginTop: 1 }}>{isRest ? 'Descanso total' : s.phase}</span>
                     </button>
                   );
                 })}
@@ -19891,7 +19934,7 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12, fontSize: 11.5, color: T.mutedDim }}>
         {[['alta', 'Alta'], ['media', 'Média'], ['baixa', 'Baixa']].map(([v, l]) => (
           <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: COR_INTENSIDADE[v] }} /> Intensidade {l.toLowerCase()}
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: COR_INTENSIDADE[v] }} /> Carga {l.toLowerCase()}
           </span>
         ))}
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
