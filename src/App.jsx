@@ -26273,6 +26273,8 @@ function ComposicaoCorporal({ players, monitoring, setMonitoring, onNovaPesagem 
         </>
       )}
 
+      {/* Mesmo espaço entre cartões que no resto da Monitorização. */}
+      {players.length > 0 && pesagens.length > 0 && <div style={{ height: 16 }} />}
       {players.length > 0 && <ComposicaoHistorico players={players} monitoring={pesagens} />}
     </>
   );
