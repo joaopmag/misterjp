@@ -42,6 +42,37 @@ function posicaoNaTrajetoria(pontos, tempo) {
   return pontos[pontos.length - 1];
 }
 
+// O jogador em foco — sombra colorida nos pés + holofote a convergir de
+// cima, como uma luz de destaque. A posição atualiza a cada fotograma
+// real do ecrã (requestAnimationFrame, a ler o vídeo diretamente), não
+// a cada vez que o próprio vídeo avisa — o aviso do vídeo só chega
+// umas 4 vezes por segundo, o que fazia o efeito "saltar" em vez de
+// deslizar continuamente.
+function MarcadorTrajetoria({ videoRef, pontos }) {
+  const [tempo, setTempo] = useState(0);
+  useEffect(() => {
+    let ativo = true;
+    const passo = () => {
+      if (!ativo) return;
+      if (videoRef.current) setTempo(videoRef.current.currentTime);
+      requestAnimationFrame(passo);
+    };
+    const id = requestAnimationFrame(passo);
+    return () => { ativo = false; cancelAnimationFrame(id); };
+  }, [videoRef]);
+
+  const pos = posicaoNaTrajetoria(pontos, tempo);
+  if (!pos) return null;
+  const px = pos.x * 100, py = pos.y * 56.25;
+  const meiaBaseHolofote = 14; // metade da largura do holofote lá em cima do ecrã
+  return (
+    <g style={{ pointerEvents: 'none' }}>
+      <polygon points={`${px - meiaBaseHolofote},0 ${px + meiaBaseHolofote},0 ${px},${py}`} fill={T.crimsonBright} opacity={0.13} />
+      <ellipse cx={px} cy={py} rx={2.6} ry={0.9} fill={T.crimsonBright} opacity={0.55} />
+    </g>
+  );
+}
+
 // Cursor da borracha — uma borracha a sério, em vez do símbolo de
 // "proibido" que o browser mostra por omissão.
 const CURSOR_BORRACHA = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'><g transform='rotate(-35 13 13)'><rect x='5' y='8' width='16' height='10' rx='2.2' fill='white' stroke='%23222222' stroke-width='1.4'/><rect x='5' y='8' width='16' height='4.4' rx='2.2' fill='%23e84c62'/></g></svg>\") 6 20, auto";
@@ -409,7 +440,6 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
     const rect = caixaVideoRef.current.getBoundingClientRect();
     escolherJogador((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height);
   };
-  const posicaoAtual = temTrajetoria ? posicaoNaTrajetoria(clip.trajetoriaFoco.pontos, t) : null;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
@@ -444,9 +474,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               style={{ width: '100%', height: '100%', display: 'block', background: '#000', cursor: 'pointer' }} />
             <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(renderShape)}
-              {posicaoAtual && (
-                <circle cx={posicaoAtual.x * 100} cy={posicaoAtual.y * 56.25} r={3.2} fill="none" stroke={T.crimsonBright} strokeWidth={0.8} />
-              )}
+              {temTrajetoria && <MarcadorTrajetoria videoRef={videoRef} pontos={clip.trajetoriaFoco.pontos} />}
             </svg>
             {(modoSeguir === 'a_escolher' || modoSeguir === 'a_corrigir') && (
               <div onClick={aoTocarNoVideo}
@@ -1607,11 +1635,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               )}
               <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? CURSOR_BORRACHA : hoverMove ? 'move' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
-                {trajetoriaFocoPendente && (() => {
-                  const pos = posicaoNaTrajetoria(trajetoriaFocoPendente.pontos, current);
-                  if (!pos) return null;
-                  return <circle cx={pos.x * 100} cy={pos.y * 56.25} r={3.2} fill="none" stroke={T.crimsonBright} strokeWidth={0.8} />;
-                })()}
+                {trajetoriaFocoPendente && <MarcadorTrajetoria videoRef={videoRef} pontos={trajetoriaFocoPendente.pontos} />}
 
                 {/* Pré-visualização da "Zona livre" / "Ligar pontos" a meio da construção */}
                 {pontosEmCurso && pontosEmCurso.points.length > 0 && (
