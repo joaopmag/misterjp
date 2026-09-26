@@ -64,11 +64,22 @@ function MarcadorTrajetoria({ videoRef, pontos }) {
   const pos = posicaoNaTrajetoria(pontos, tempo);
   if (!pos) return null;
   const px = pos.x * 100, py = pos.y * 56.25;
-  const meiaBaseHolofote = 14; // metade da largura do holofote lá em cima do ecrã
+  const largTopo = 3.4;  // metade da largura do tubo lá em cima do ecrã
+  const largBase = 2.2;  // metade da largura mesmo por cima dos pés — mais estreito, não converge num ponto
   return (
     <g style={{ pointerEvents: 'none' }}>
-      <polygon points={`${px - meiaBaseHolofote},0 ${px + meiaBaseHolofote},0 ${px},${py}`} fill={T.crimsonBright} opacity={0.13} />
-      <ellipse cx={px} cy={py} rx={2.6} ry={0.9} fill={T.crimsonBright} opacity={0.55} />
+      <defs>
+        <linearGradient id="gradienteHolofote" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={T.crimsonBright} stopOpacity="0" />
+          <stop offset="100%" stopColor={T.crimsonBright} stopOpacity="0.3" />
+        </linearGradient>
+      </defs>
+      {/* holofote — um tubo de luz, não um leque largo: quase da mesma
+         largura de cima a baixo, só um pouco mais estreito junto aos pés */}
+      <polygon points={`${px - largTopo},0 ${px + largTopo},0 ${px + largBase},${py} ${px - largBase},${py}`} fill="url(#gradienteHolofote)" />
+      {/* a "roda" nos pés — um anel, não uma mancha cheia; o jogador
+         fica sempre exatamente no centro dela */}
+      <ellipse cx={px} cy={py} rx={2.3} ry={0.78} fill="none" stroke={T.crimsonBright} strokeWidth={0.45} opacity={0.95} />
     </g>
   );
 }
