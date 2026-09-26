@@ -42,6 +42,32 @@ function posicaoNaTrajetoria(pontos, tempo) {
   return pontos[pontos.length - 1];
 }
 
+// O seguimento é lento (1 a 3 minutos) — em vez de a app ficar ligada
+// à espera de uma única resposta, entrega-se o pedido a uma fila
+// (/api/seguir-jogador-iniciar) e vai-se perguntando de tempos a
+// tempos se já está pronto (/api/seguir-jogador-estado). Fechar a
+// página a meio já não perde o trabalho.
+async function seguirJogadorAssincrono(pedido) {
+  const respInicio = await fetch('/api/seguir-jogador-iniciar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pedido),
+  });
+  const jsonInicio = await respInicio.json();
+  if (!respInicio.ok) throw new Error(jsonInicio.error || 'Falha ao iniciar o seguimento');
+  const { jobId } = jsonInicio;
+
+  for (let tentativa = 0; tentativa < 200; tentativa++) { // 200 × 3s ≈ 10 minutos, bem mais do que devia demorar
+    await new Promise(r => setTimeout(r, 3000));
+    const respEstado = await fetch(`/api/seguir-jogador-estado?jobId=${jobId}`);
+    const estado = await respEstado.json();
+    if (estado.estado === 'concluido') return estado;
+    if (estado.estado === 'erro') throw new Error(estado.mensagem || 'Falha ao seguir o jogador');
+    // 'pendente' ou 'a_processar' — continua a perguntar
+  }
+  throw new Error('O seguimento está a demorar demasiado tempo.');
+}
+
 // O jogador em foco — sombra colorida nos pés + holofote a convergir de
 // cima, como uma luz de destaque. A posição atualiza a cada fotograma
 // real do ecrã (requestAnimationFrame, a ler o vídeo diretamente), não
@@ -68,18 +94,10 @@ function MarcadorTrajetoria({ videoRef, pontos }) {
   const largBase = 2.2;  // metade da largura mesmo por cima dos pés — mais estreito, não converge num ponto
   return (
     <g style={{ pointerEvents: 'none' }}>
-      <defs>
-        <linearGradient id="gradienteHolofote" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={T.crimsonBright} stopOpacity="0" />
-          <stop offset="100%" stopColor={T.crimsonBright} stopOpacity="0.3" />
-        </linearGradient>
-      </defs>
-      {/* holofote — um tubo de luz, não um leque largo: quase da mesma
-         largura de cima a baixo, só um pouco mais estreito junto aos pés */}
-      <polygon points={`${px - largTopo},0 ${px + largTopo},0 ${px + largBase},${py} ${px - largBase},${py}`} fill="url(#gradienteHolofote)" />
-      {/* a "roda" nos pés — um anel, não uma mancha cheia; o jogador
-         fica sempre exatamente no centro dela */}
-      <ellipse cx={px} cy={py} rx={2.3} ry={0.78} fill="none" stroke={T.crimsonBright} strokeWidth={0.45} opacity={0.95} />
+      {/* holofote — um tubo de luz, transparência igual de cima a baixo,
+         a tocar no relvado mesmo por baixo dos pés do jogador (que
+         ficam sempre exatamente ao centro, na horizontal) */}
+      <polygon points={`${px - largTopo},0 ${px + largTopo},0 ${px + largBase},${py} ${px - largBase},${py}`} fill={T.crimsonBright} opacity={0.22} />
     </g>
   );
 }
@@ -425,21 +443,15 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
     const tInicial = modoSeguir === 'a_corrigir' ? (videoRef.current?.currentTime || 0) : 0;
     setModoSeguir('a_processar');
     try {
-      const resp = await fetch('/api/seguir-jogador', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_url: clip.publicUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial }),
-      });
-      const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error || 'Falha ao seguir o jogador');
-      let novosPontos = json.pontos || [];
+      const resultado = await seguirJogadorAssincrono({ video_url: clip.publicUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial });
+      let novosPontos = resultado.pontos || [];
       if (tInicial > 0 && clip.trajetoriaFoco?.pontos) {
         // um reancorar a meio — mantém a trajetória antiga até este
         // instante, e substitui-a a partir daqui pela nova
         const antigos = clip.trajetoriaFoco.pontos.filter(p => p.t < tInicial);
         novosPontos = [...antigos, ...novosPontos];
       }
-      onChangeTrajetoria({ pontos: novosPontos, duracao: json.duracao });
+      onChangeTrajetoria({ pontos: novosPontos, duracao: resultado.duracao });
       setModoSeguir('normal');
     } catch (e) {
       setErroSeguir(`Não consegui seguir o jogador: ${e.message || e}`);
@@ -843,19 +855,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setProcessandoFoco(true);
     setErroSeguirFoco('');
     try {
-      const resp = await fetch('/api/seguir-jogador', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_url: signedUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial, t_fim: tFim }),
-      });
-      const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error || 'Falha ao seguir o jogador');
+      const resultado = await seguirJogadorAssincrono({ video_url: signedUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial, t_fim: tFim });
       setTrajetoriaFocoPendente(prev => {
-        const novosPontos = json.pontos || [];
+        const novosPontos = resultado.pontos || [];
         // se já havia uma trajetória pendente, este toque conta como
         // reancorar a partir daqui — mantém a parte anterior a tInicial
         const anteriores = prev ? prev.pontos.filter(p => p.t < tInicial) : [];
-        return { pontos: [...anteriores, ...novosPontos], duracao: json.duracao };
+        return { pontos: [...anteriores, ...novosPontos], duracao: resultado.duracao };
       });
     } catch (e) {
       setErroSeguirFoco(`Não consegui seguir o jogador: ${e.message || e}`);
