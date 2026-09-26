@@ -42,31 +42,44 @@ function posicaoNaTrajetoria(pontos, tempo) {
   return pontos[pontos.length - 1];
 }
 
-// O seguimento é lento (1 a 3 minutos) — em vez de a app ficar ligada
-// à espera de uma única resposta, entrega-se o pedido a uma fila
-// (/api/seguir-jogador-iniciar) e vai-se perguntando de tempos a
-// tempos se já está pronto (/api/seguir-jogador-estado). Fechar a
-// página a meio já não perde o trabalho.
+// TEMPORÁRIO — enquanto o Upstash não estiver configurado (ver
+// seguir-jogador-iniciar.js / seguir-jogador-estado.js), chama-se
+// diretamente o endpoint antigo (/api/seguir-jogador), que espera pela
+// resposta toda de uma vez. Quando o Upstash estiver pronto, troca-se
+// só o corpo desta função pela versão com fila (guardada mais abaixo,
+// em comentário) — nada mais precisa de mudar.
 async function seguirJogadorAssincrono(pedido) {
-  const respInicio = await fetch('/api/seguir-jogador-iniciar', {
+  const resp = await fetch('/api/seguir-jogador', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(pedido),
   });
-  const jsonInicio = await respInicio.json();
-  if (!respInicio.ok) throw new Error(jsonInicio.error || 'Falha ao iniciar o seguimento');
-  const { jobId } = jsonInicio;
-
-  for (let tentativa = 0; tentativa < 200; tentativa++) { // 200 × 3s ≈ 10 minutos, bem mais do que devia demorar
-    await new Promise(r => setTimeout(r, 3000));
-    const respEstado = await fetch(`/api/seguir-jogador-estado?jobId=${jobId}`);
-    const estado = await respEstado.json();
-    if (estado.estado === 'concluido') return estado;
-    if (estado.estado === 'erro') throw new Error(estado.mensagem || 'Falha ao seguir o jogador');
-    // 'pendente' ou 'a_processar' — continua a perguntar
-  }
-  throw new Error('O seguimento está a demorar demasiado tempo.');
+  const json = await resp.json();
+  if (!resp.ok) throw new Error(json.error || 'Falha ao seguir o jogador');
+  return json; // { pontos, duracao }
 }
+
+// ---- versão com fila (Upstash) — usar quando estiver configurado ----
+// async function seguirJogadorAssincrono(pedido) {
+//   const respInicio = await fetch('/api/seguir-jogador-iniciar', {
+//     method: 'POST',
+//     headers: { 'Content-Type': 'application/json' },
+//     body: JSON.stringify(pedido),
+//   });
+//   const jsonInicio = await respInicio.json();
+//   if (!respInicio.ok) throw new Error(jsonInicio.error || 'Falha ao iniciar o seguimento');
+//   const { jobId } = jsonInicio;
+//
+//   for (let tentativa = 0; tentativa < 200; tentativa++) { // 200 × 3s ≈ 10 minutos, bem mais do que devia demorar
+//     await new Promise(r => setTimeout(r, 3000));
+//     const respEstado = await fetch(`/api/seguir-jogador-estado?jobId=${jobId}`);
+//     const estado = await respEstado.json();
+//     if (estado.estado === 'concluido') return estado;
+//     if (estado.estado === 'erro') throw new Error(estado.mensagem || 'Falha ao seguir o jogador');
+//     // 'pendente' ou 'a_processar' — continua a perguntar
+//   }
+//   throw new Error('O seguimento está a demorar demasiado tempo.');
+// }
 
 // O jogador em foco — sombra colorida nos pés + holofote a convergir de
 // cima, como uma luz de destaque. A posição atualiza a cada fotograma
