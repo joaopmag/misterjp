@@ -34108,6 +34108,10 @@ function FichaAdversarioRapida({ adversarios, equipasCompeticao, equipasIniciais
 }
 
 function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', semCatalogo, modoCanal, matches, adversarios, iniciais, equipasCompeticao }) {
+  // Só para acertar o recuo do rodapé fixo (ver o botão Guardar mais
+  // abaixo) com o padding do Modal, que muda entre telemóvel e ecrã
+  // largo — tem de ser o mesmo valor dos dois lados.
+  const estreito = useIsMobile(620);
   const initialSource = item
     ? (item.drive ? 'drive' : ((item.youtubeId || item.social) ? 'link' : 'file'))
     : 'link';
@@ -34409,7 +34413,20 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
       ]} />
 
       {error && <p style={{ fontSize: 12, color: T.bad, margin: '0 0 12px' }}>{error}</p>}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+      {/* Rodapé fixo — este formulário tem bastantes campos (Canal, Jogo,
+         Título, Jornada, link...) e antes disto era fácil perder de vista
+         o botão de Guardar lá em baixo, sem se dar conta de que precisava
+         de rolar para o encontrar. Fica sempre visível, o resto é que
+         rola por baixo dele. O recuo negativo (-14/-22, o mesmo padding
+         do Modal) é o que faz colar mesmo ao fundo da janela, sem deixar
+         uma faixa escura a aparecer por baixo. */}
+      <div style={{
+        position: 'sticky', bottom: estreito ? -14 : -22,
+        margin: estreito ? '10px -14px -14px' : '10px -22px -22px',
+        padding: estreito ? '10px 14px' : '12px 22px',
+        background: T.surfaceRaise, borderTop: `1px solid ${T.line}`,
+        display: 'flex', justifyContent: 'flex-end', gap: 10,
+      }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         {/* A fonte "Google Drive" só precisa do link — antes o botão exigia
             um ficheiro carregado (dataUrl) e ficava sempre desativado. */}
