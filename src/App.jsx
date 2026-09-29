@@ -31904,6 +31904,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const pausaEmCursoRef = useRef(null); // trava para não disparar a mesma pausa duas vezes seguidas
   const aAbrirDesenhoAposFullscreenRef = useRef(false); // "Desenhar" pediu ecrã inteiro — só abre as ferramentas quando ele estiver mesmo ativo
   const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
+  const arrastoCorpoBib = useRef(null); // { indiceForma, ultimoPonto } enquanto se arrasta uma forma inteira (não só um vértice)
+  const [hoverFormaBib, setHoverFormaBib] = useState(false); // true quando o cursor está perto de uma forma já feita — muda para "mover"
   const overlayRefBib = useRef(null);
 
   const getPontoBib = (e) => {
@@ -32021,12 +32023,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         return;
       }
     }
-    // Um toque em cima de uma forma já feita seleciona-a (para a mover),
-    // em vez de desenhar uma forma nova ali.
+    // Um toque em cima de uma forma já feita seleciona-a E já começa a
+    // arrastá-la — um único gesto (toca e arrasta), sem ser preciso
+    // largar e voltar a tocar.
     let indiceAcertado = -1, melhorDist = Infinity;
     shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_TOQUE && d < melhorDist) { melhorDist = d; indiceAcertado = i; } });
     if (indiceAcertado !== -1) {
       setFormaSelecionadaBib(indiceAcertado);
+      arrastoCorpoBib.current = { indiceForma: indiceAcertado, ultimoPonto: p, historicoEmpurrado: false };
       return;
     }
     setFormaSelecionadaBib(null);
@@ -32039,11 +32043,27 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setShapesRascunho(prev => prev.map((sh, i) => (i !== indiceForma ? sh : { ...sh, points: sh.points.map((pt, pi) => (pi === indicePonto ? p : pt)) })));
       return;
     }
-    if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') return;
+    if (arrastoCorpoBib.current) {
+      const estado = arrastoCorpoBib.current;
+      if (!estado.historicoEmpurrado) { pushHistoricoBib(); estado.historicoEmpurrado = true; } // só regista no undo quando SE MEXE mesmo, não só ao tocar
+      const dx = p.x - estado.ultimoPonto.x, dy = p.y - estado.ultimoPonto.y;
+      setShapesRascunho(prev => prev.map((sh, i) => (i !== estado.indiceForma ? sh : { ...sh, points: sh.points.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) })));
+      estado.ultimoPonto = p;
+      return;
+    }
+    if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') {
+      // Nada a arrastar — só verifica se o cursor está perto de uma
+      // forma já feita, para o cursor mudar para "mover" (mãozinha).
+      if (toolBib !== 'apagar' && toolBib !== 'texto' && toolBib !== 'zonalivre' && toolBib !== 'linhaPontos') {
+        setHoverFormaBib(shapesRascunho.some(sh => distanciaShape(sh, p) < RAIO_TOQUE));
+      }
+      return;
+    }
     setFormaEmCursoBib(prev => (prev.tool === 'livre' ? { ...prev, points: [...prev.points, p] } : { ...prev, points: [prev.points[0], p] }));
   };
   const terminarFormaBib = () => {
     if (arrastoVerticeBib.current) { arrastoVerticeBib.current = null; return; }
+    if (arrastoCorpoBib.current) { arrastoCorpoBib.current = null; return; }
     if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') return; // essas só terminam com "Concluído"
     const { tool, color, points } = formaEmCursoBib;
     const pequenoDemais = tool === 'livre' ? points.length < 2 : Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 1;
@@ -33708,15 +33728,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           title={active.title}
                         />
                       )}
-                      {/* Esconde o símbolo de play/pausa do YouTube
-                         enquanto uma pausa de desenho está a segurar o
-                         vídeo — só um leve escurecer, sem bloquear nada. */}
-                      {pausaAtivaBib && (
-                        <div style={{
-                          position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none',
-                          background: 'radial-gradient(circle at 50% 50%, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.92) 9%, rgba(0,0,0,0) 22%)',
-                        }} />
-                      )}
                       {/* DESENHOS por cima do clipe — só em clipes do YouTube
                          (ver `ativoEClipe`), onde já temos o tempo real do
                          vídeo (`liveTime`). Fora do modo de desenho, só
@@ -33731,7 +33742,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           style={{
                             position: 'absolute', inset: 0, width: '100%', height: '100%',
                             pointerEvents: modoDesenhoBib ? 'auto' : 'none',
-                            cursor: modoDesenhoBib ? (toolBib === 'apagar' ? 'crosshair' : 'crosshair') : 'default',
+                            cursor: modoDesenhoBib ? (hoverFormaBib && !['apagar', 'texto', 'zonalivre', 'linhaPontos'].includes(toolBib) ? 'move' : 'crosshair') : 'default',
                           }}
                           onPointerDown={iniciarFormaBib}
                           onPointerMove={moverFormaBib}
@@ -33785,10 +33796,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           background: 'rgba(17,17,17,0.88)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, padding: 6,
                         }}>
                           {FERRAMENTAS_DESENHO.map(([id, Icon, titulo]) => (
-                            <ToolBtn key={id} icon={Icon} label={titulo} active={toolBib === id} onClick={() => { setToolBib(id); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
+                            <ToolBtn key={id} icon={Icon} label={titulo} active={toolBib === id} onClick={() => { setToolBib(id); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setHoverFormaBib(false); }} />
                           ))}
-                          <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => { setToolBib('texto'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
-                          <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => { setToolBib('apagar'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
+                          <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => { setToolBib('texto'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setHoverFormaBib(false); }} />
+                          <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => { setToolBib('apagar'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setHoverFormaBib(false); }} />
                         </div>
                         <div style={{
                           position: 'absolute', top: 0, right: 0, bottom: 0, width: 78, zIndex: 5,
@@ -33811,10 +33822,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           <Btn variant="ghost" onClick={() => { if (shapesRascunho.length > 0) { pushHistoricoBib(); setShapesRascunho([]); setFormaSelecionadaBib(null); } }} disabled={shapesRascunho.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <Trash2 size={14} /> Limpar
                           </Btn>
-                          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
-                            <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10.5 }}>Cancelar</Btn>
-                            <Btn onClick={guardarDesenhoBib} disabled={shapesRascunho.length === 0} style={{ padding: '6px 2px', fontSize: 10.5 }}><Check size={12} /> Guardar</Btn>
-                          </div>
+                          <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
+                            <X size={14} /> Cancelar
+                          </Btn>
+                          <Btn variant="solid" onClick={guardarDesenhoBib} disabled={shapesRascunho.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
+                            <Check size={14} /> Guardar
+                          </Btn>
                         </div>
                         {/* Menu da pausa — por cima do vídeo, não na
                            lateral, para ficar sempre bem à vista enquanto
@@ -33830,6 +33843,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             {anotacaoIdEmEdicaoBib && (
                               <Btn variant="ghost" onClick={apagarAnotacaoAtualBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar pausa</Btn>
                             )}
+                            <Btn onClick={guardarDesenhoBib} disabled={shapesRascunho.length === 0} style={{ padding: '4px 10px', fontSize: 11 }}>Concluído</Btn>
                           </div>
                         </div>
                         {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
