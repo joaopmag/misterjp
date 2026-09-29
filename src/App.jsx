@@ -32678,14 +32678,23 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const primeira = anotacoes.find(a => liveTime >= a.tempoVideo && liveTime < a.tempoVideo + 0.25);
     if (!primeira) return;
     const grupo = anotacoes.filter(a => Math.abs(a.tempoVideo - primeira.tempoVideo) < 2);
-    const duracaoComum = Math.max(...grupo.map(a => a.duracaoSegundos));
-    const todasAsFormas = grupo.flatMap(a => a.shapes);
+    // Math.max com um valor sempre válido — se por algum motivo uma
+    // duração viesse estragada (undefined/NaN), nunca deixar isso
+    // transformar-se numa pausa sem fim.
+    const duracaoComum = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || 5));
+    const todasAsFormas = grupo.flatMap(a => a.shapes || []);
     pausaEmCursoRef.current = primeira.id;
     enviarComandoYoutube('pauseVideo');
     setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
     setTimeout(() => {
       setPausaAtivaBib(null);
+      // Manda "continuar" mais do que uma vez, com um pequeno intervalo
+      // — já vimos o vídeo ficar preso porque o primeiro pedido não
+      // chegou a ser aceite pelo YouTube; isto não custa nada quando
+      // corre bem, e evita ficar preso quando não corre.
       enviarComandoYoutube('playVideo');
+      setTimeout(() => enviarComandoYoutube('playVideo'), 400);
+      setTimeout(() => enviarComandoYoutube('playVideo'), 1200);
       pausaEmCursoRef.current = null;
     }, duracaoComum * 1000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
