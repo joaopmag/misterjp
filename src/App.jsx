@@ -33560,7 +33560,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   <div
                     ref={ytBoxRef}
                     style={{
-                      overflow: 'hidden', background: '#000', display: 'flex', flexDirection: 'column',
+                      position: 'relative', overflow: 'hidden', background: '#000', display: 'flex', flexDirection: 'column',
                       ...(ytFull
                         ? {
                             // Em ecrã inteiro a caixa ocupa tudo: vídeo em
@@ -33647,70 +33647,88 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           ))}
                         </svg>
                       )}
-                    </div>
-                    {/* FERRAMENTAS DE DESENHO — só nos clipes do YouTube (ver
-                       `ativoEClipe`). Fora do modo de desenho, só um botão
-                       para o ligar; a desenhar, a barra toda aparece aqui
-                       por baixo do vídeo (mais simples do que sobrepor à
-                       própria caixa, que já tem bastante coisa). */}
-                    {ativoEClipe && !isBlocked && (
-                      modoDesenhoBib ? (
-                        <div style={{ padding: '8px 10px', background: '#111', borderTop: `1px solid ${T.line}` }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                            {FERRAMENTAS_DESENHO.map(([id, Icon, titulo]) => (
-                              <ToolBtn key={id} icon={Icon} label={titulo} active={toolBib === id} onClick={() => { setToolBib(id); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
-                            ))}
-                            <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => { setToolBib('texto'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
-                            <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => { setToolBib('apagar'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              {PALETA_DESENHO.map(p => (
-                                <button key={p.id} onClick={() => setCorBib(p.cor)} title={p.id}
-                                  style={{
-                                    width: 22, height: 22, borderRadius: '50%', cursor: 'pointer', padding: 0,
-                                    background: p.cor, border: corBib === p.cor ? `2px solid ${T.gold}` : `1px solid ${T.line}`,
-                                  }} />
-                              ))}
-                            </div>
-                            {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
-                              <Btn variant="ghost" onClick={concluirFormaMultiplaBib} style={{ padding: '6px 10px', fontSize: 12.5 }}>Concluído</Btn>
-                            )}
-                            <Btn variant="ghost" onClick={retrocederBib} disabled={historicoBib.length === 0} style={{ padding: '6px 10px', fontSize: 12.5 }}>
-                              <Undo2 size={13} /> Retroceder
-                            </Btn>
-                            <Btn variant="ghost" onClick={() => { if (shapesRascunho.length > 0) { pushHistoricoBib(); setShapesRascunho([]); setFormaSelecionadaBib(null); } }} disabled={shapesRascunho.length === 0} style={{ padding: '6px 10px', fontSize: 12.5 }}>
-                              <Trash2 size={13} /> Limpar tudo
-                            </Btn>
-                            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                              <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 12px', fontSize: 12.5 }}>Cancelar</Btn>
-                              <Btn onClick={guardarDesenhoBib} style={{ padding: '6px 12px', fontSize: 12.5 }}><Check size={13} /> Guardar</Btn>
-                            </div>
-                          </div>
-                          {/* Forma selecionada — arrasta os pontinhos no vídeo
-                             para a mover; aqui só a duração e o apagar. */}
-                          {formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8, padding: '6px 8px', background: T.surfaceRaise, borderRadius: 8 }}>
-                              <span style={{ fontSize: 12, color: T.mutedDim }}>
-                                Selecionada — visível {shapesRascunho[formaSelecionadaBib].mostrarAte != null ? `até ${fmtMMSS(shapesRascunho[formaSelecionadaBib].mostrarAte)}` : 'até ao fim do corte'}
-                              </span>
-                              <Btn variant="ghost" onClick={definirDuracaoAgoraBib} style={{ padding: '5px 9px', fontSize: 11.5 }}>Usar este momento</Btn>
-                              {shapesRascunho[formaSelecionadaBib].mostrarAte != null && (
-                                <Btn variant="ghost" onClick={limparDuracaoBib} style={{ padding: '5px 9px', fontSize: 11.5 }}>Sempre visível</Btn>
-                              )}
-                              <Btn variant="ghost" onClick={apagarSelecionadaBib} style={{ padding: '5px 9px', fontSize: 11.5 }}><Trash2 size={12} /> Apagar</Btn>
-                              <Btn variant="ghost" onClick={() => setFormaSelecionadaBib(null)} style={{ padding: '5px 9px', fontSize: 11.5 }}>Fechar</Btn>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div style={{ padding: '8px 10px', background: '#111', borderTop: `1px solid ${T.line}` }}>
-                          <Btn variant="ghost" onClick={comecarDesenhoBib} style={{ padding: '6px 12px', fontSize: 12.5 }}>
-                            <Pencil size={13} /> Desenhar {active.shapes && active.shapes.length > 0 ? `(${active.shapes.length})` : ''}
-                          </Btn>
-                        </div>
-                      )
+                    {/* "Desenhar" — canto do vídeo, nunca empurra nada por
+                       baixo. Só nos clipes do YouTube (`ativoEClipe`). */}
+                    {ativoEClipe && !isBlocked && !modoDesenhoBib && (
+                      <button onClick={comecarDesenhoBib} style={{
+                        position: 'absolute', top: 8, left: 8, zIndex: 5,
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        background: 'rgba(0,0,0,0.7)', color: '#fff', border: `1px solid ${T.line}`,
+                        borderRadius: 8, padding: '6px 10px', fontSize: 12.5, cursor: 'pointer', ...body,
+                      }}>
+                        <Pencil size={13} /> Desenhar {active.shapes && active.shapes.length > 0 ? `(${active.shapes.length})` : ''}
+                      </button>
                     )}
+                    {/* A desenhar: ferramentas à esquerda, cores/ações à
+                       direita — sobrepostas ao vídeo (tal como na Análise de
+                       Vídeo), em vez de uma barra por baixo que empurraria a
+                       página e mudaria o tamanho do vídeo a cada vez que se
+                       liga/desliga o desenho. */}
+                    {ativoEClipe && !isBlocked && modoDesenhoBib && (
+                      <>
+                        <div style={{
+                          position: 'absolute', top: 0, left: 0, bottom: 0, width: 78, zIndex: 5,
+                          background: 'rgba(17,17,17,0.88)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, padding: 6,
+                        }}>
+                          {FERRAMENTAS_DESENHO.map(([id, Icon, titulo]) => (
+                            <ToolBtn key={id} icon={Icon} label={titulo} active={toolBib === id} onClick={() => { setToolBib(id); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
+                          ))}
+                          <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => { setToolBib('texto'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
+                          <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => { setToolBib('apagar'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
+                        </div>
+                        <div style={{
+                          position: 'absolute', top: 0, right: 0, bottom: 0, width: 78, zIndex: 5,
+                          background: 'rgba(17,17,17,0.88)', overflowY: 'auto',
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: 8,
+                        }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {PALETA_DESENHO.map(p => (
+                              <button key={p.id} onClick={() => setCorBib(p.cor)} title={p.id}
+                                style={{
+                                  width: 22, height: 22, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                                  background: p.cor, border: corBib === p.cor ? `2px solid ${T.gold}` : `1px solid ${T.line}`,
+                                }} />
+                            ))}
+                          </div>
+                          <div style={{ height: 1, alignSelf: 'stretch', background: T.line }} />
+                          <Btn variant="ghost" onClick={retrocederBib} disabled={historicoBib.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
+                            <Undo2 size={14} /> Recuar
+                          </Btn>
+                          <Btn variant="ghost" onClick={() => { if (shapesRascunho.length > 0) { pushHistoricoBib(); setShapesRascunho([]); setFormaSelecionadaBib(null); } }} disabled={shapesRascunho.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
+                            <Trash2 size={14} /> Limpar
+                          </Btn>
+                          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                            <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10.5 }}>Cancelar</Btn>
+                            <Btn onClick={guardarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10.5 }}><Check size={12} /> Guardar</Btn>
+                          </div>
+                        </div>
+                        {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
+                          <div style={{ position: 'absolute', top: 8, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
+                            <Btn onClick={concluirFormaMultiplaBib} style={{ padding: '6px 14px', fontSize: 12.5 }}>Concluído</Btn>
+                          </div>
+                        )}
+                        {/* Forma selecionada — arrasta os pontinhos no vídeo
+                           para a mover; aqui só a duração e o apagar. */}
+                        {formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && (
+                          <div style={{
+                            position: 'absolute', bottom: 8, left: 86, right: 86, zIndex: 5,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap',
+                            background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 8px',
+                          }}>
+                            <span style={{ fontSize: 11.5, color: T.mutedDim }}>
+                              Visível {shapesRascunho[formaSelecionadaBib].mostrarAte != null ? `até ${fmtMMSS(shapesRascunho[formaSelecionadaBib].mostrarAte)}` : 'até ao fim do corte'}
+                            </span>
+                            <Btn variant="ghost" onClick={definirDuracaoAgoraBib} style={{ padding: '4px 8px', fontSize: 11 }}>Usar este momento</Btn>
+                            {shapesRascunho[formaSelecionadaBib].mostrarAte != null && (
+                              <Btn variant="ghost" onClick={limparDuracaoBib} style={{ padding: '4px 8px', fontSize: 11 }}>Sempre visível</Btn>
+                            )}
+                            <Btn variant="ghost" onClick={apagarSelecionadaBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /></Btn>
+                            <Btn variant="ghost" onClick={() => setFormaSelecionadaBib(null)} style={{ padding: '4px 8px', fontSize: 11 }}>✕</Btn>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    </div>
                     {/* BARRA DO CLIPE — só nos clipes. Vai do início ao fim
                         do corte, e nada mais: não há como ver o resto do
                         jogo a partir de um clipe. */}
