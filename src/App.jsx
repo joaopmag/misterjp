@@ -31902,6 +31902,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [historicoBib, setHistoricoBib] = useState([]); // pilha para "Retroceder" — cada entrada é um shapesRascunho anterior
   const [pausaAtivaBib, setPausaAtivaBib] = useState(null); // a pausa (id) que está agora a "segurar" o vídeo, fora do modo de desenho
   const pausaEmCursoRef = useRef(null); // trava para não disparar a mesma pausa duas vezes seguidas
+  const aAbrirDesenhoAposFullscreenRef = useRef(false); // "Desenhar" pediu ecrã inteiro — só abre as ferramentas quando ele estiver mesmo ativo
   const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
   const overlayRefBib = useRef(null);
 
@@ -31943,8 +31944,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaSelecionadaBib(null);
     setFormaTextoBib(null);
     setHistoricoBib([]);
-    if (!ytFull) toggleYtFull(); // ecrã pequeno não dá espaço às ferramentas sem rolar
-    setModoDesenhoBib(true);
+    if (ytFull) {
+      setModoDesenhoBib(true);
+    } else {
+      // Ainda não está em ecrã inteiro — só se abrem as ferramentas
+      // quando ele estiver mesmo ativo (ver o efeito mais abaixo, que
+      // vigia `ytFull`); pedir os dois ao mesmo tempo fazia a barra
+      // aparecer um instante antes do ecrã mudar, como um erro.
+      aAbrirDesenhoAposFullscreenRef.current = true;
+      toggleYtFull();
+    }
   };
   const cancelarDesenhoBib = () => { setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setFormaTextoBib(null); };
   const guardarDesenhoBib = () => {
@@ -32289,12 +32298,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
   // Sair do ecrã inteiro (Esc, gesto do telemóvel, etc.) enquanto se
   // desenha cancela o desenho — como o desenho só faz sentido em ecrã
-  // inteiro, não faria sentido continuar "a meio" fora dele.
+  // inteiro, não faria sentido continuar "a meio" fora dele. E ao
+  // contrário: se foi "Desenhar" que pediu o ecrã inteiro, as
+  // ferramentas só abrem quando ele ficar mesmo ativo (nunca antes).
   const ytFullAntesRef = useRef(ytFull);
   useEffect(() => {
     const anterior = ytFullAntesRef.current;
     ytFullAntesRef.current = ytFull;
     if (modoDesenhoBib && anterior && !ytFull) cancelarDesenhoBib();
+    if (ytFull && aAbrirDesenhoAposFullscreenRef.current) {
+      aAbrirDesenhoAposFullscreenRef.current = false;
+      setModoDesenhoBib(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ytFull]);
 
