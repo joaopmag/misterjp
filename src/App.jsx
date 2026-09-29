@@ -31959,7 +31959,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
   const cancelarDesenhoBib = () => { setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setFormaTextoBib(null); };
   const guardarDesenhoBib = () => {
-    if (shapesRascunho.length === 0) { cancelarDesenhoBib(); return; } // nada desenhado — não faz sentido guardar uma pausa vazia
+    if (shapesRascunho.length === 0) {
+      // Limpaste tudo e gravaste por cima — se isto era uma pausa já
+      // existente, conta como quereres apagá-la a sério (não só sair
+      // sem gravar, que deixaria a pausa antiga como estava).
+      if (anotacaoIdEmEdicaoBib) {
+        setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: (v.anotacoesPausa || []).filter(a => a.id !== anotacaoIdEmEdicaoBib) } : v)));
+      }
+      setModoDesenhoBib(false);
+      setFormaEmCursoBib(null);
+      setFormaSelecionadaBib(null);
+      setFormaTextoBib(null);
+      return;
+    }
     const novaAnotacao = { id: anotacaoIdEmEdicaoBib || uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(1, duracaoPausaBib), shapes: shapesRascunho };
     setItems(prev => prev.map(v => {
       if (v.id !== active.id) return v;
@@ -33825,7 +33837,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <X size={14} /> Cancelar
                           </Btn>
-                          <Btn variant="solid" onClick={guardarDesenhoBib} disabled={shapesRascunho.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
+                          <Btn variant="solid" onClick={guardarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <Check size={14} /> Guardar
                           </Btn>
                         </div>
@@ -33843,7 +33855,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             {anotacaoIdEmEdicaoBib && (
                               <Btn variant="ghost" onClick={apagarAnotacaoAtualBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar pausa</Btn>
                             )}
-                            <Btn onClick={guardarDesenhoBib} disabled={shapesRascunho.length === 0} style={{ padding: '4px 10px', fontSize: 11 }}>Concluído</Btn>
+                            <Btn onClick={guardarDesenhoBib} style={{ padding: '4px 10px', fontSize: 11 }}>Concluído</Btn>
                           </div>
                         </div>
                         {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
