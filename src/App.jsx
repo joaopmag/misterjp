@@ -31919,16 +31919,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (!ytFull) toggleYtFull(); // ecrã pequeno não dá espaço às ferramentas sem rolar
     setModoDesenhoBib(true);
   };
-  // Sair do ecrã inteiro (Esc, gesto do telemóvel, etc.) enquanto se
-  // desenha cancela o desenho — como o desenho só faz sentido em ecrã
-  // inteiro, não faria sentido continuar "a meio" fora dele.
-  const ytFullAntesRef = useRef(ytFull);
-  useEffect(() => {
-    const anterior = ytFullAntesRef.current;
-    ytFullAntesRef.current = ytFull;
-    if (modoDesenhoBib && anterior && !ytFull) cancelarDesenhoBib();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytFull]);
   const cancelarDesenhoBib = () => { setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setFormaTextoBib(null); };
   const guardarDesenhoBib = () => {
     setItems(prev => prev.map(v => (v.id === active.id ? { ...v, shapes: shapesRascunho } : v)));
@@ -32267,6 +32257,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setYtFull('css');
     }
   };
+
+  // Sair do ecrã inteiro (Esc, gesto do telemóvel, etc.) enquanto se
+  // desenha cancela o desenho — como o desenho só faz sentido em ecrã
+  // inteiro, não faria sentido continuar "a meio" fora dele.
+  const ytFullAntesRef = useRef(ytFull);
+  useEffect(() => {
+    const anterior = ytFullAntesRef.current;
+    ytFullAntesRef.current = ytFull;
+    if (modoDesenhoBib && anterior && !ytFull) cancelarDesenhoBib();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ytFull]);
 
   // Envia o "handshake" ao iframe assim que carrega, para o player começar
   // a reportar-nos eventos (incluindo onError) por postMessage. Fábrica em
