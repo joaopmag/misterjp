@@ -31927,7 +31927,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // para editar, em vez de criar uma nova ao lado (a 1s de distância
     // já conta como "a mesma", para não ser preciso acertar ao segundo).
     const anotacoes = active.anotacoesPausa || [];
-    const existente = anotacoes.find(a => Math.abs(a.tempoVideo - liveTime) < 1);
+    const existente = anotacoes.find(a => Math.abs(a.tempoVideo - liveTime) < 2);
     if (existente) {
       setShapesRascunho(existente.shapes);
       setDuracaoPausaBib(existente.duracaoSegundos);
@@ -32635,19 +32635,27 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // vídeo pára sozinho, mostra os desenhos dela durante os segundos
   // definidos, e depois retoma sozinho — sem se repetir a cada
   // pequeno "tick" do tempo ao vivo, graças à trava `pausaEmCursoRef`.
+  //
+  // Pausas muito próximas no tempo (menos de 2s de diferença) juntam-se
+  // numa só, com a MAIOR duração entre elas para todas — em vez de
+  // pausar várias vezes seguidas quase no mesmo sítio (o que parecia
+  // um erro/travamento), usa-se sempre um tempo consistente.
   useEffect(() => {
     if (!ativoEClipe || modoDesenhoBib || pausaEmCursoRef.current) return;
     const anotacoes = active.anotacoesPausa || [];
-    const alvo = anotacoes.find(a => liveTime >= a.tempoVideo && liveTime < a.tempoVideo + 0.25);
-    if (!alvo) return;
-    pausaEmCursoRef.current = alvo.id;
+    const primeira = anotacoes.find(a => liveTime >= a.tempoVideo && liveTime < a.tempoVideo + 0.25);
+    if (!primeira) return;
+    const grupo = anotacoes.filter(a => Math.abs(a.tempoVideo - primeira.tempoVideo) < 2);
+    const duracaoComum = Math.max(...grupo.map(a => a.duracaoSegundos));
+    const todasAsFormas = grupo.flatMap(a => a.shapes);
+    pausaEmCursoRef.current = primeira.id;
     enviarComandoYoutube('pauseVideo');
-    setPausaAtivaBib(alvo);
+    setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
     setTimeout(() => {
       setPausaAtivaBib(null);
       enviarComandoYoutube('playVideo');
       pausaEmCursoRef.current = null;
-    }, alvo.duracaoSegundos * 1000);
+    }, duracaoComum * 1000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveTime, active && active.id]);
 
@@ -33700,6 +33708,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           title={active.title}
                         />
                       )}
+                      {/* Esconde o símbolo de play/pausa do YouTube
+                         enquanto uma pausa de desenho está a segurar o
+                         vídeo — só um leve escurecer, sem bloquear nada. */}
+                      {pausaAtivaBib && (
+                        <div style={{
+                          position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none',
+                          background: 'radial-gradient(circle at 50% 50%, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.92) 9%, rgba(0,0,0,0) 22%)',
+                        }} />
+                      )}
                       {/* DESENHOS por cima do clipe — só em clipes do YouTube
                          (ver `ativoEClipe`), onde já temos o tempo real do
                          vídeo (`liveTime`). Fora do modo de desenho, só
@@ -33788,18 +33805,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             ))}
                           </div>
                           <div style={{ height: 1, alignSelf: 'stretch', background: T.line }} />
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: '100%' }}>
-                            <span style={{ fontSize: 9, color: T.mutedDim, textAlign: 'center' }}>Pausa (seg)</span>
-                            <input type="number" min={1} max={60} value={duracaoPausaBib}
-                              onChange={e => setDuracaoPausaBib(Math.max(1, Math.min(60, Number(e.target.value) || 1)))}
-                              style={{ width: '100%', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 2px', color: T.cream, fontSize: 12, textAlign: 'center', boxSizing: 'border-box' }} />
-                          </div>
-                          {anotacaoIdEmEdicaoBib && (
-                            <Btn variant="ghost" onClick={apagarAnotacaoAtualBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
-                              <Trash2 size={14} /> Apagar pausa
-                            </Btn>
-                          )}
-                          <div style={{ height: 1, alignSelf: 'stretch', background: T.line }} />
                           <Btn variant="ghost" onClick={retrocederBib} disabled={historicoBib.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <Undo2 size={14} /> Recuar
                           </Btn>
@@ -33811,8 +33816,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             <Btn onClick={guardarDesenhoBib} disabled={shapesRascunho.length === 0} style={{ padding: '6px 2px', fontSize: 10.5 }}><Check size={12} /> Guardar</Btn>
                           </div>
                         </div>
+                        {/* Menu da pausa — por cima do vídeo, não na
+                           lateral, para ficar sempre bem à vista enquanto
+                           se decide quanto tempo o vídeo fica parado. */}
+                        <div style={{ position: 'absolute', top: 8, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 10px' }}>
+                            <span style={{ fontSize: 11.5, color: T.mutedDim }}>Pausa:</span>
+                            <button onClick={() => setDuracaoPausaBib(d => Math.max(1, d - 1))}
+                              style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>−</button>
+                            <span style={{ fontSize: 13, color: '#fff', minWidth: 30, textAlign: 'center', ...mono }}>{duracaoPausaBib}s</span>
+                            <button onClick={() => setDuracaoPausaBib(d => Math.min(60, d + 1))}
+                              style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>+</button>
+                            {anotacaoIdEmEdicaoBib && (
+                              <Btn variant="ghost" onClick={apagarAnotacaoAtualBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar pausa</Btn>
+                            )}
+                          </div>
+                        </div>
                         {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
-                          <div style={{ position: 'absolute', top: 8, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
+                          <div style={{ position: 'absolute', top: 48, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
                             <Btn onClick={concluirFormaMultiplaBib} style={{ padding: '6px 14px', fontSize: 12.5 }}>Concluído</Btn>
                           </div>
                         )}
