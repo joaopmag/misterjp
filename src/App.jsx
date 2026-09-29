@@ -7,7 +7,10 @@ import ReactDOMServer from 'react-dom/server';
 // (cores, brasões, estilos). Precisa de `npm install jszip`.
 import JSZip from 'jszip';
 import * as tus from 'tus-js-client';
-import AnalisadorVideo from './AnalisadorVideo';
+import AnalisadorVideo, {
+  FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
+  RAIO_TOQUE, distanciaShape, renderShape, shapeVisivelEm,
+} from './AnalisadorVideo';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
@@ -31872,6 +31875,147 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // fora de null enquanto o modo está ativo; `tituloClipe` é preenchido
   // ao gravar.
   const [clipMode, setClipMode] = useState(false);
+
+  // DESENHAR POR CIMA DE UM CLIPE (Biblioteca) — por agora só nos
+  // clipes do YouTube (é onde já temos o tempo real ligado, ver
+  // `liveTime`/`enviarComandoYoutube` mais abaixo). `shapesRascunho` é
+  // uma cópia de trabalho: só se grava em `active.shapes` a sério ao
+  // tocar em "Guardar" — cancelar não deixa rasto.
+  const [modoDesenhoBib, setModoDesenhoBib] = useState(false);
+  const [toolBib, setToolBib] = useState('seta');
+  const [corBib, setCorBib] = useState(COR_DESENHO);
+  const [shapesRascunho, setShapesRascunho] = useState([]);
+  const [formaEmCursoBib, setFormaEmCursoBib] = useState(null); // { tool, points } — enquanto se arrasta ou se vão acrescentando pontos
+  const [formaSelecionadaBib, setFormaSelecionadaBib] = useState(null); // índice em shapesRascunho, para mover/definir duração
+  const [historicoBib, setHistoricoBib] = useState([]); // pilha para "Retroceder" — cada entrada é um shapesRascunho anterior
+  const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
+  const overlayRefBib = useRef(null);
+
+  const getPontoBib = (e) => {
+    const rect = overlayRefBib.current.getBoundingClientRect();
+    return { x: ((e.clientX - rect.left) / rect.width) * 100, y: ((e.clientY - rect.top) / rect.height) * 56.25 };
+  };
+  // Chamar SEMPRE antes de mudar shapesRascunho a sério (criar, apagar,
+  // mover, mudar duração) — nunca antes de um rascunho ainda a meio
+  // (formaEmCursoBib), senão "Retroceder" desfazia passos a mais de
+  // cada vez.
+  const pushHistoricoBib = () => setHistoricoBib(h => [...h.slice(-19), shapesRascunho]);
+  const retrocederBib = () => {
+    if (historicoBib.length === 0) return;
+    setShapesRascunho(historicoBib[historicoBib.length - 1]);
+    setHistoricoBib(h => h.slice(0, -1));
+    setFormaSelecionadaBib(null);
+    setFormaEmCursoBib(null);
+  };
+  const comecarDesenhoBib = () => {
+    setShapesRascunho(active.shapes || []);
+    setToolBib('seta');
+    setFormaEmCursoBib(null);
+    setFormaSelecionadaBib(null);
+    setHistoricoBib([]);
+    enviarComandoYoutube('pauseVideo');
+    setModoDesenhoBib(true);
+  };
+  const cancelarDesenhoBib = () => { setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); };
+  const guardarDesenhoBib = () => {
+    setItems(prev => prev.map(v => (v.id === active.id ? { ...v, shapes: shapesRascunho } : v)));
+    setModoDesenhoBib(false);
+    setFormaEmCursoBib(null);
+    setFormaSelecionadaBib(null);
+  };
+  const iniciarFormaBib = (e) => {
+    const p = getPontoBib(e);
+    if (toolBib === 'apagar') {
+      let alvo = -1, melhor = Infinity;
+      shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_TOQUE && d < melhor) { melhor = d; alvo = i; } });
+      if (alvo !== -1) {
+        pushHistoricoBib();
+        setShapesRascunho(prev => prev.filter((_, i) => i !== alvo));
+        if (formaSelecionadaBib === alvo) setFormaSelecionadaBib(null);
+      }
+      return;
+    }
+    if (toolBib === 'texto') {
+      const texto = window.prompt('Texto:');
+      if (texto && texto.trim()) {
+        pushHistoricoBib();
+        setShapesRascunho(prev => [...prev, { id: uid(), tool: 'texto', texto: texto.trim(), color: corBib, points: [p], criadoEmTempo: liveTime, mostrarAte: null }]);
+      }
+      return;
+    }
+    if (toolBib === 'zonalivre' || toolBib === 'linhaPontos') {
+      setFormaEmCursoBib(prev => ({
+        tool: toolBib, color: corBib,
+        points: prev && prev.tool === toolBib ? [...prev.points, p] : [p],
+      }));
+      return;
+    }
+    // Antes de começar a desenhar uma forma nova: se houver uma forma
+    // selecionada, um toque num dos vértices dela move-o, em vez de
+    // criar uma forma nova por cima.
+    if (formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib]) {
+      const forma = shapesRascunho[formaSelecionadaBib];
+      const iVertice = forma.points.findIndex(pt => Math.hypot(pt.x - p.x, pt.y - p.y) < RAIO_TOQUE);
+      if (iVertice !== -1) {
+        pushHistoricoBib();
+        arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: iVertice };
+        return;
+      }
+    }
+    // Um toque em cima de uma forma já feita seleciona-a (para a mover
+    // ou mudar a duração), em vez de desenhar uma forma nova ali.
+    let indiceAcertado = -1, melhorDist = Infinity;
+    shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_TOQUE && d < melhorDist) { melhorDist = d; indiceAcertado = i; } });
+    if (indiceAcertado !== -1) {
+      setFormaSelecionadaBib(indiceAcertado);
+      return;
+    }
+    setFormaSelecionadaBib(null);
+    setFormaEmCursoBib({ tool: toolBib, color: corBib, points: toolBib === 'livre' ? [p] : [p, p] });
+  };
+  const moverFormaBib = (e) => {
+    const p = getPontoBib(e);
+    if (arrastoVerticeBib.current) {
+      const { indiceForma, indicePonto } = arrastoVerticeBib.current;
+      setShapesRascunho(prev => prev.map((sh, i) => (i !== indiceForma ? sh : { ...sh, points: sh.points.map((pt, pi) => (pi === indicePonto ? p : pt)) })));
+      return;
+    }
+    if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') return;
+    setFormaEmCursoBib(prev => (prev.tool === 'livre' ? { ...prev, points: [...prev.points, p] } : { ...prev, points: [prev.points[0], p] }));
+  };
+  const terminarFormaBib = () => {
+    if (arrastoVerticeBib.current) { arrastoVerticeBib.current = null; return; }
+    if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') return; // essas só terminam com "Concluído"
+    const { tool, color, points } = formaEmCursoBib;
+    const pequenoDemais = tool === 'livre' ? points.length < 2 : Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 1;
+    if (pequenoDemais) { setFormaEmCursoBib(null); return; } // só um toque, sem arrastar — ignora
+    pushHistoricoBib();
+    setShapesRascunho(prev => [...prev, { id: uid(), tool, color, points, criadoEmTempo: liveTime, mostrarAte: null }]);
+    setFormaEmCursoBib(null);
+  };
+  const concluirFormaMultiplaBib = () => {
+    if (formaEmCursoBib && formaEmCursoBib.points.length >= 2) {
+      pushHistoricoBib();
+      setShapesRascunho(prev => [...prev, { id: uid(), tool: formaEmCursoBib.tool, color: formaEmCursoBib.color, points: formaEmCursoBib.points, criadoEmTempo: liveTime, mostrarAte: null }]);
+    }
+    setFormaEmCursoBib(null);
+  };
+  const definirDuracaoAgoraBib = () => {
+    if (formaSelecionadaBib == null) return;
+    pushHistoricoBib();
+    setShapesRascunho(prev => prev.map((sh, i) => (i === formaSelecionadaBib ? { ...sh, mostrarAte: liveTime } : sh)));
+  };
+  const limparDuracaoBib = () => {
+    if (formaSelecionadaBib == null) return;
+    pushHistoricoBib();
+    setShapesRascunho(prev => prev.map((sh, i) => (i === formaSelecionadaBib ? { ...sh, mostrarAte: null } : sh)));
+  };
+  const apagarSelecionadaBib = () => {
+    if (formaSelecionadaBib == null) return;
+    pushHistoricoBib();
+    setShapesRascunho(prev => prev.filter((_, i) => i !== formaSelecionadaBib));
+    setFormaSelecionadaBib(null);
+  };
   const [clipMarcas, setClipMarcas] = useState({ inicio: null, fim: null });
   const [tituloClipe, setTituloClipe] = useState('');
   /* CLIPE DO ATLETA (Portal) — só existe quando o Portal passa
@@ -33469,7 +33613,104 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           title={active.title}
                         />
                       )}
+                      {/* DESENHOS por cima do clipe — só em clipes do YouTube
+                         (ver `ativoEClipe`), onde já temos o tempo real do
+                         vídeo (`liveTime`). Fora do modo de desenho, só
+                         mostra o que já está guardado (`active.shapes`); a
+                         desenhar, mostra o rascunho (`shapesRascunho`), que
+                         só é gravado a sério ao tocar em "Guardar". */}
+                      {ativoEClipe && !isBlocked && (
+                        <svg
+                          ref={overlayRefBib}
+                          viewBox="0 0 100 56.25" preserveAspectRatio="none"
+                          style={{
+                            position: 'absolute', inset: 0, width: '100%', height: '100%',
+                            pointerEvents: modoDesenhoBib ? 'auto' : 'none',
+                            cursor: modoDesenhoBib ? (toolBib === 'apagar' ? 'crosshair' : 'crosshair') : 'default',
+                          }}
+                          onPointerDown={iniciarFormaBib}
+                          onPointerMove={moverFormaBib}
+                          onPointerUp={terminarFormaBib}
+                          onPointerLeave={terminarFormaBib}
+                        >
+                          {(modoDesenhoBib ? shapesRascunho : (active.shapes || []))
+                            .map((sh, i) => ({ sh, i }))
+                            .filter(({ sh, i }) => (modoDesenhoBib && i === formaSelecionadaBib) || shapeVisivelEm(sh, liveTime))
+                            .map(({ sh, i }) => renderShape(sh, sh.id || i))}
+                          {formaEmCursoBib && renderShape(formaEmCursoBib, 'rascunho')}
+                          {/* Pontinhos arrastáveis da forma selecionada — tocar
+                             e arrastar um deles move essa ponta da forma. */}
+                          {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].points.map((pt, pi) => (
+                            <circle key={`vertice-${pi}`} cx={pt.x} cy={pt.y} r={0.6} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
+                              onPointerDown={e => { e.stopPropagation(); pushHistoricoBib(); arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: pi }; }}
+                              style={{ cursor: 'grab', touchAction: 'none' }} />
+                          ))}
+                        </svg>
+                      )}
                     </div>
+                    {/* FERRAMENTAS DE DESENHO — só nos clipes do YouTube (ver
+                       `ativoEClipe`). Fora do modo de desenho, só um botão
+                       para o ligar; a desenhar, a barra toda aparece aqui
+                       por baixo do vídeo (mais simples do que sobrepor à
+                       própria caixa, que já tem bastante coisa). */}
+                    {ativoEClipe && !isBlocked && (
+                      modoDesenhoBib ? (
+                        <div style={{ padding: '8px 10px', background: '#111', borderTop: `1px solid ${T.line}` }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                            {FERRAMENTAS_DESENHO.map(([id, Icon, titulo]) => (
+                              <ToolBtn key={id} icon={Icon} label={titulo} active={toolBib === id} onClick={() => { setToolBib(id); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
+                            ))}
+                            <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => { setToolBib('texto'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
+                            <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => { setToolBib('apagar'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); }} />
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              {PALETA_DESENHO.map(p => (
+                                <button key={p.id} onClick={() => setCorBib(p.cor)} title={p.id}
+                                  style={{
+                                    width: 22, height: 22, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                                    background: p.cor, border: corBib === p.cor ? `2px solid ${T.gold}` : `1px solid ${T.line}`,
+                                  }} />
+                              ))}
+                            </div>
+                            {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
+                              <Btn variant="ghost" onClick={concluirFormaMultiplaBib} style={{ padding: '6px 10px', fontSize: 12.5 }}>Concluído</Btn>
+                            )}
+                            <Btn variant="ghost" onClick={retrocederBib} disabled={historicoBib.length === 0} style={{ padding: '6px 10px', fontSize: 12.5 }}>
+                              <Undo2 size={13} /> Retroceder
+                            </Btn>
+                            <Btn variant="ghost" onClick={() => { if (shapesRascunho.length > 0) { pushHistoricoBib(); setShapesRascunho([]); setFormaSelecionadaBib(null); } }} disabled={shapesRascunho.length === 0} style={{ padding: '6px 10px', fontSize: 12.5 }}>
+                              <Trash2 size={13} /> Limpar tudo
+                            </Btn>
+                            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                              <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 12px', fontSize: 12.5 }}>Cancelar</Btn>
+                              <Btn onClick={guardarDesenhoBib} style={{ padding: '6px 12px', fontSize: 12.5 }}><Check size={13} /> Guardar</Btn>
+                            </div>
+                          </div>
+                          {/* Forma selecionada — arrasta os pontinhos no vídeo
+                             para a mover; aqui só a duração e o apagar. */}
+                          {formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8, padding: '6px 8px', background: T.surfaceRaise, borderRadius: 8 }}>
+                              <span style={{ fontSize: 12, color: T.mutedDim }}>
+                                Selecionada — visível {shapesRascunho[formaSelecionadaBib].mostrarAte != null ? `até ${fmtMMSS(shapesRascunho[formaSelecionadaBib].mostrarAte)}` : 'até ao fim do corte'}
+                              </span>
+                              <Btn variant="ghost" onClick={definirDuracaoAgoraBib} style={{ padding: '5px 9px', fontSize: 11.5 }}>Usar este momento</Btn>
+                              {shapesRascunho[formaSelecionadaBib].mostrarAte != null && (
+                                <Btn variant="ghost" onClick={limparDuracaoBib} style={{ padding: '5px 9px', fontSize: 11.5 }}>Sempre visível</Btn>
+                              )}
+                              <Btn variant="ghost" onClick={apagarSelecionadaBib} style={{ padding: '5px 9px', fontSize: 11.5 }}><Trash2 size={12} /> Apagar</Btn>
+                              <Btn variant="ghost" onClick={() => setFormaSelecionadaBib(null)} style={{ padding: '5px 9px', fontSize: 11.5 }}>Fechar</Btn>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ padding: '8px 10px', background: '#111', borderTop: `1px solid ${T.line}` }}>
+                          <Btn variant="ghost" onClick={comecarDesenhoBib} style={{ padding: '6px 12px', fontSize: 12.5 }}>
+                            <Pencil size={13} /> Desenhar {active.shapes && active.shapes.length > 0 ? `(${active.shapes.length})` : ''}
+                          </Btn>
+                        </div>
+                      )
+                    )}
                     {/* BARRA DO CLIPE — só nos clipes. Vai do início ao fim
                         do corte, e nada mais: não há como ver o resto do
                         jogo a partir de um clipe. */}

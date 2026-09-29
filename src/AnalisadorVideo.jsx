@@ -18,7 +18,21 @@ const T = {
   teamB: '#3A6FC4', teamC: '#D9A72E', teamD: '#8C3F9E',
 };
 const TEXT_ON_ACCENT = '#FBF3F0';
-const COR_DESENHO = '#FFFFFF'; // branco — antes era vermelho por omissão
+
+// As ferramentas de desenho em si — estático, não depende de nada do
+// componente, por isso também dá para reaproveitar noutros sítios que
+// precisem de desenhar por cima de vídeo (ver a Biblioteca).
+export const FERRAMENTAS = [
+  ['seta', ArrowUpRight, 'Seta'],
+  ['linha', Minus, 'Linha'],
+  ['circulo', Circle, 'Círculo'],
+  ['retangulo', Square, 'Zona'],
+  ['cone', Eye, 'Visão'],
+  ['livre', Pencil, 'Traço'],
+  ['zonalivre', Lasso, 'Zona livre'],
+  ['linhaPontos', Waypoints, 'Ligar pontos'],
+];
+export const COR_DESENHO = '#FFFFFF'; // branco — antes era vermelho por omissão
 
 // O serviço de seguimento automático de jogador é chamado através do
 // "porteiro" (/api/seguir-jogador) — a app nunca fala diretamente com
@@ -135,7 +149,7 @@ const TAGS = [
 
 // Cores à escolha para os desenhos — útil para distinguir, por exemplo,
 // os movimentos da nossa equipa (branco) dos do adversário (vermelho).
-const PALETA_DESENHO = [
+export const PALETA_DESENHO = [
   { id: 'branco', cor: '#FFFFFF' },
   { id: 'vermelho', cor: T.crimsonBright },
   { id: 'amarelo', cor: T.gold },
@@ -176,7 +190,7 @@ function Btn({ children, onClick, variant = 'ghost', active, disabled, style, ti
 
 // Botão de ferramenta de desenho — ícone + etiqueta sempre visível (não
 // só tooltip, que não aparece ao toque) e área de toque generosa.
-function ToolBtn({ icon: Icon, label, active, onClick }) {
+export function ToolBtn({ icon: Icon, label, active, onClick }) {
   return (
     <button onClick={onClick} title={label}
       style={{
@@ -211,7 +225,7 @@ function girar(p, centro, graus) {
     y: centro.y + dx * Math.sin(rad) + dy * Math.cos(rad),
   };
 }
-function distanciaShape(sh, p) {
+export function distanciaShape(sh, p) {
   const pts = sh.points || [];
   const [a, b] = pts;
   if (!a) return Infinity;
@@ -244,10 +258,10 @@ function distanciaShape(sh, p) {
 
 /* Desenha uma forma no SVG — usado tanto no editor como na reprodução do
    clipe já guardado (por isso vive fora do componente principal). */
-const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
-const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um toque "acertar" num desenho já feito — mais exato ainda, tem de se tocar mesmo em cima
+export const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
+export const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um toque "acertar" num desenho já feito — mais exato ainda, tem de se tocar mesmo em cima
 
-function renderShape(sh, i) {
+export function renderShape(sh, i) {
   if (!sh || !sh.points || sh.points.length === 0) return null;
   const [a, b] = sh.points;
   if (!a) return null;
@@ -310,7 +324,7 @@ function renderShape(sh, i) {
     <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} M ${b.x} ${b.y} L ${p2.x} ${p2.y}`} style={cor} strokeWidth={ESPESSURA} strokeLinecap="round" /></g>;
 }
 
-function shapeVisivelEm(sh, tempo) {
+export function shapeVisivelEm(sh, tempo) {
   const inicio = sh.criadoEmTempo ?? 0;
   if (tempo < inicio) return false;
   if (sh.mostrarAte != null) return tempo <= sh.mostrarAte;
@@ -1446,17 +1460,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // aberto: essa fica sempre visível, para não desaparecer a meio de a
   // estares a ajustar.
   const shapesVisiveis = shapes.filter((sh, i) => editandoDuracaoIndex === i || shapeVisivelEm(sh, current));
-
-  const FERRAMENTAS = [
-    ['seta', ArrowUpRight, 'Seta'],
-    ['linha', Minus, 'Linha'],
-    ['circulo', Circle, 'Círculo'],
-    ['retangulo', Square, 'Zona'],
-    ['cone', Eye, 'Visão'],
-    ['livre', Pencil, 'Traço'],
-    ['zonalivre', Lasso, 'Zona livre'],
-    ['linhaPontos', Waypoints, 'Ligar pontos'],
-  ];
 
   return (
     <div>
