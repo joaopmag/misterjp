@@ -31887,6 +31887,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [shapesRascunho, setShapesRascunho] = useState([]);
   const [formaEmCursoBib, setFormaEmCursoBib] = useState(null); // { tool, points } — enquanto se arrasta ou se vão acrescentando pontos
   const [formaSelecionadaBib, setFormaSelecionadaBib] = useState(null); // índice em shapesRascunho, para mover/definir duração
+  const [formaTextoBib, setFormaTextoBib] = useState(null); // { pt, xPix, yPix, valor } — campo de texto a meio de ser escrito
   const [historicoBib, setHistoricoBib] = useState([]); // pilha para "Retroceder" — cada entrada é um shapesRascunho anterior
   const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
   const overlayRefBib = useRef(null);
@@ -31912,19 +31913,42 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setToolBib('seta');
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
+    setFormaTextoBib(null);
     setHistoricoBib([]);
     enviarComandoYoutube('pauseVideo');
+    if (!ytFull) toggleYtFull(); // ecrã pequeno não dá espaço às ferramentas sem rolar
     setModoDesenhoBib(true);
   };
-  const cancelarDesenhoBib = () => { setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); };
+  // Sair do ecrã inteiro (Esc, gesto do telemóvel, etc.) enquanto se
+  // desenha cancela o desenho — como o desenho só faz sentido em ecrã
+  // inteiro, não faria sentido continuar "a meio" fora dele.
+  const ytFullAntesRef = useRef(ytFull);
+  useEffect(() => {
+    const anterior = ytFullAntesRef.current;
+    ytFullAntesRef.current = ytFull;
+    if (modoDesenhoBib && anterior && !ytFull) cancelarDesenhoBib();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ytFull]);
+  const cancelarDesenhoBib = () => { setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setFormaTextoBib(null); };
   const guardarDesenhoBib = () => {
     setItems(prev => prev.map(v => (v.id === active.id ? { ...v, shapes: shapesRascunho } : v)));
     setModoDesenhoBib(false);
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
+    setFormaTextoBib(null);
+  };
+  const confirmarTextoBib = () => {
+    setFormaTextoBib(t => {
+      if (t && t.valor.trim()) {
+        pushHistoricoBib();
+        setShapesRascunho(prev => [...prev, { id: uid(), tool: 'texto', texto: t.valor.trim(), color: corBib, points: [t.pt], criadoEmTempo: liveTime, mostrarAte: null }]);
+      }
+      return null;
+    });
   };
   const iniciarFormaBib = (e) => {
     const p = getPontoBib(e);
+    if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
     if (toolBib === 'apagar') {
       let alvo = -1, melhor = Infinity;
       shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_TOQUE && d < melhor) { melhor = d; alvo = i; } });
@@ -31936,11 +31960,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       return;
     }
     if (toolBib === 'texto') {
-      const texto = window.prompt('Texto:');
-      if (texto && texto.trim()) {
-        pushHistoricoBib();
-        setShapesRascunho(prev => [...prev, { id: uid(), tool: 'texto', texto: texto.trim(), color: corBib, points: [p], criadoEmTempo: liveTime, mostrarAte: null }]);
-      }
+      const rect = overlayRefBib.current.getBoundingClientRect();
+      setFormaTextoBib({ pt: p, xPix: e.clientX - rect.left, yPix: e.clientY - rect.top, valor: '' });
       return;
     }
     if (toolBib === 'zonalivre' || toolBib === 'linhaPontos') {
@@ -33647,18 +33668,29 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           ))}
                         </svg>
                       )}
-                    {/* "Desenhar" — canto do vídeo, nunca empurra nada por
-                       baixo. Só nos clipes do YouTube (`ativoEClipe`). */}
-                    {ativoEClipe && !isBlocked && !modoDesenhoBib && (
-                      <button onClick={comecarDesenhoBib} style={{
-                        position: 'absolute', top: 8, left: 8, zIndex: 5,
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        background: 'rgba(0,0,0,0.7)', color: '#fff', border: `1px solid ${T.line}`,
-                        borderRadius: 8, padding: '6px 10px', fontSize: 12.5, cursor: 'pointer', ...body,
-                      }}>
-                        <Pencil size={13} /> Desenhar {active.shapes && active.shapes.length > 0 ? `(${active.shapes.length})` : ''}
-                      </button>
+                    {/* Campo de texto — aparece exatamente onde se tocou,
+                       tal como na Análise de Vídeo. */}
+                    {formaTextoBib && (
+                      <div onPointerDown={e => e.stopPropagation()}
+                        style={{ position: 'absolute', left: formaTextoBib.xPix, top: formaTextoBib.yPix, transform: 'translate(-4px,-50%)', display: 'flex', gap: 4, zIndex: 6 }}>
+                        <input
+                          autoFocus
+                          value={formaTextoBib.valor}
+                          onChange={e => setFormaTextoBib(t => ({ ...t, valor: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') confirmarTextoBib(); if (e.key === 'Escape') setFormaTextoBib(null); }}
+                          placeholder="Escreve o texto…"
+                          style={{
+                            background: 'rgba(0,0,0,0.85)', color: '#fff',
+                            border: `1px solid ${corBib}`, borderRadius: 4, padding: '3px 7px', fontSize: 14,
+                            minWidth: 100, outline: 'none', ...body,
+                          }}
+                        />
+                        <Btn variant="solid" onClick={confirmarTextoBib} style={{ padding: '4px 8px', fontSize: 12 }}>OK</Btn>
+                      </div>
                     )}
+                    {/* O botão "Desenhar" já não fica aqui sobreposto ao
+                       vídeo — passou para a barra de baixo, ao lado de
+                       "Criar clipe" (ver mais abaixo). */}
                     {/* A desenhar: ferramentas à esquerda, cores/ações à
                        direita — sobrepostas ao vídeo (tal como na Análise de
                        Vídeo), em vez de uma barra por baixo que empurraria a
@@ -33804,6 +33836,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             }}
                           >
                             <Scissors size={13} /> {clipMode ? (edicaoClipeId ? 'Cancelar edição' : 'Cancelar clipe') : 'Criar clipe'}
+                          </button>
+                          )}
+                          {ativoEClipe && (
+                          <button
+                            onClick={modoDesenhoBib ? cancelarDesenhoBib : comecarDesenhoBib}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
+                              color: modoDesenhoBib ? T.warn : '#fff',
+                              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                            }}
+                          >
+                            <Pencil size={13} /> {modoDesenhoBib ? 'Cancelar desenho' : `Desenhar${active.shapes && active.shapes.length > 0 ? ` (${active.shapes.length})` : ''}`}
                           </button>
                           )}
                           <button
