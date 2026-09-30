@@ -8388,19 +8388,19 @@ function Exercicios({ exercises, setExercises, meta }) {
                   </div>
                 )}
               </div>
-              {/* Ícones por baixo da imagem, encostados à direita — igual à
-                  Ideia de Jogo. */}
-              <div style={{ display: 'flex', gap: 16, marginTop: 8, marginBottom: 8, justifyContent: 'flex-end' }}>
+              <p style={{
+                color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '10px 0 0', height: 56,
+                display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              }}>{x.description}</p>
+              {/* Ícones no fundo do cartão, encostados à direita — por baixo
+                  da descrição, a pedido. */}
+              <div style={{ display: 'flex', gap: 16, marginTop: 10, justifyContent: 'flex-end' }}>
                 <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                 <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
                 <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
                 <button onClick={(e) => { e.stopPropagation(); setModal(x); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={14} /></button>
                 <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={14} /></button>
               </div>
-              <p style={{
-                color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: 0, height: 56,
-                display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-              }}>{x.description}</p>
             </div>
             );
           })}
