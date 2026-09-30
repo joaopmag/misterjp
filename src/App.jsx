@@ -31890,7 +31890,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // duracaoSegundos, shapes }, uma por cada sítio do vídeo onde se
   // parou para desenhar.
   const [modoDesenhoBib, setModoDesenhoBib] = useState(false);
-  const [toolBib, setToolBib] = useState('seta');
+  const [toolBib, setToolBib] = useState(null); // null = nenhuma ferramenta: tocar no vídeo reproduz/pausa, tocar numa forma move-a
   const [corBib, setCorBib] = useState(COR_DESENHO);
   const [shapesRascunho, setShapesRascunho] = useState([]);
   const [duracaoPausaBib, setDuracaoPausaBib] = useState(3); // segundos que o vídeo fica parado, depois de "Guardar"
@@ -31954,6 +31954,36 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaTextoBib(null);
     setHistoricoBib([]);
   };
+  // Tempo atual do leitor, garantidamente dentro do corte.
+  const tempoAtualNoCorteBib = () => {
+    const lido = currentTimeRef.current || liveTime;
+    return (lido >= clipIni - 1.25 && lido <= clipFimEf + 0.75)
+      ? Math.min(Math.max(lido, clipIni), clipFimEf)
+      : clipIni;
+  };
+  const alternarReproducaoBib = () => enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo');
+  // Escolher uma ferramenta (tocar outra vez na ativa desliga-a). Se o
+  // vídeo andou desde que se abriu o desenho (sem ferramenta, a tocar no
+  // vídeo), pára-o e muda a pausa para o instante onde ele está agora —
+  // mas só enquanto ainda não se desenhou nada nesta pausa.
+  const escolherFerramentaBib = (id) => {
+    const nova = toolBib === id ? null : id;
+    setToolBib(nova);
+    setFormaEmCursoBib(null);
+    setFormaSelecionadaBib(null);
+    setHoverFormaBib(false);
+    if (!nova) return;
+    const agora = tempoAtualNoCorteBib();
+    if (ytATocarRef.current) {
+      enviarComandoYoutube('pauseVideo');
+      // Volta ao instante exato lido, para a imagem parada ser a mesma
+      // em que a pausa vai disparar mais tarde.
+      enviarComandoYoutube('seekTo', [agora, true]);
+    }
+    if (historicoBib.length > 0 || Math.abs(agora - tempoAnotacaoBib) < 0.3) return;
+    const existente = (active.anotacoesPausa || []).find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
+    abrirPausaBib(existente || null, agora);
+  };
   const escolherPausaBib = (a) => {
     enviarComandoYoutube('seekTo', [tempoPausaNoCorte(a), true]);
     abrirPausaBib(a);
@@ -31964,10 +31994,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // abrir um corte, o tempo ainda vale 0 (é reposto ao trocar de
     // vídeo) até o leitor mandar a primeira leitura — uma pausa gravada
     // nesse intervalo ficava no segundo 0 do jogo e nunca disparava.
-    const lido = currentTimeRef.current || liveTime;
-    const agora = (lido >= clipIni - 1.25 && lido <= clipFimEf + 0.75)
-      ? Math.min(Math.max(lido, clipIni), clipFimEf)
-      : clipIni;
+    const agora = tempoAtualNoCorteBib();
     // Já existe uma pausa guardada bem perto de onde estamos? Abre-a
     // para editar, em vez de criar uma nova ao lado (a 1s de distância
     // já conta como "a mesma", para não ser preciso acertar ao segundo).
@@ -31975,7 +32002,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const anotacoes = active.anotacoesPausa || [];
     const existente = anotacoes.find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
     abrirPausaBib(existente || null, agora);
-    setToolBib('seta');
+    // Entra SEM ferramenta ativa: assim dá para tocar no vídeo para o pôr
+    // a andar/parar e escolher o momento certo antes de desenhar.
+    setToolBib(null);
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
     setFormaTextoBib(null);
@@ -32038,6 +32067,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
   const iniciarFormaBib = (e) => {
     const p = getPontoBib(e);
+    // Prende o ponteiro ao desenho enquanto o dedo/rato estiver em baixo:
+    // um arrasto rápido que saísse por instantes da área deixava de ser
+    // seguido (e parecia que a forma "não queria" mexer).
+    try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
     if (toolBib === 'apagar') {
       let alvo = -1, melhor = Infinity;
@@ -32067,6 +32100,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib]) {
       const forma = shapesRascunho[formaSelecionadaBib];
       const iVertice = forma.points.findIndex(pt => Math.hypot(pt.x - p.x, pt.y - p.y) < RAIO_TOQUE);
+      // No círculo, o ponto do CENTRO move o círculo inteiro (é onde
+      // naturalmente se pega nele). Só o ponto da borda muda o tamanho.
+      // Antes, pegar no centro esticava o círculo em vez de o mover.
+      if (iVertice === 0 && forma.tool === 'circulo') {
+        arrastoCorpoBib.current = { indiceForma: formaSelecionadaBib, ultimoPonto: p, historicoEmpurrado: false };
+        return;
+      }
       if (iVertice !== -1) {
         pushHistoricoBib();
         arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: iVertice };
@@ -32084,6 +32124,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       return;
     }
     setFormaSelecionadaBib(null);
+    // Sem ferramenta: tocar num sítio vazio do vídeo reproduz/pausa.
+    if (!toolBib) { alternarReproducaoBib(); return; }
     setFormaEmCursoBib({ tool: toolBib, color: corBib, points: toolBib === 'livre' ? [p] : [p, p] });
   };
   const moverFormaBib = (e) => {
@@ -33912,14 +33954,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           viewBox="0 0 100 56.25" preserveAspectRatio="none"
                           style={{
                             position: 'absolute', inset: 0, width: '100%', height: '100%',
-                            pointerEvents: modoDesenhoBib ? 'auto' : 'none',
-                            touchAction: 'none', // sem isto, o dedo tenta fazer scroll/zoom em vez de desenhar
-                            cursor: modoDesenhoBib ? (hoverFormaBib && !['apagar', 'texto', 'zonalivre', 'linhaPontos'].includes(toolBib) ? 'move' : 'crosshair') : 'default',
+                            // SEMPRE a apanhar o rato/dedo nos clipes, mesmo fora do
+                            // modo de desenho: se o cursor chegar ao leitor do
+                            // YouTube, ele mostra por cima o título e o botão
+                            // grande de pausa ao centro (sobretudo ao retomar
+                            // depois de uma pausa de desenho). Assim o YouTube
+                            // nunca "vê" o rato, e tocar no vídeo reproduz/pausa
+                            // através da nossa própria lógica.
+                            pointerEvents: 'auto',
+                            touchAction: modoDesenhoBib ? 'none' : 'manipulation', // a desenhar, o dedo não pode fazer scroll/zoom
+                            cursor: modoDesenhoBib
+                              ? (hoverFormaBib && !['apagar', 'texto', 'zonalivre', 'linhaPontos'].includes(toolBib) ? 'move' : (toolBib ? 'crosshair' : 'pointer'))
+                              : 'pointer',
                           }}
-                          onPointerDown={iniciarFormaBib}
-                          onPointerMove={moverFormaBib}
-                          onPointerUp={terminarFormaBib}
-                          onPointerLeave={terminarFormaBib}
+                          onPointerDown={modoDesenhoBib ? iniciarFormaBib : undefined}
+                          onPointerMove={modoDesenhoBib ? moverFormaBib : undefined}
+                          onPointerUp={modoDesenhoBib ? terminarFormaBib : undefined}
+                          onPointerLeave={modoDesenhoBib ? terminarFormaBib : undefined}
+                          onClick={modoDesenhoBib ? undefined : alternarReproducaoBib}
                         >
                           {(modoDesenhoBib ? shapesRascunho : (pausaAtivaBib ? pausaAtivaBib.shapes : []))
                             .map((sh, i) => renderShape(sh, sh.id || i))}
@@ -33928,7 +33980,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                              e arrastar um deles move essa ponta da forma. */}
                           {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].points.map((pt, pi) => (
                             <circle key={`vertice-${pi}`} cx={pt.x} cy={pt.y} r={0.6} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
-                              onPointerDown={e => { e.stopPropagation(); pushHistoricoBib(); arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: pi }; }}
+                              onPointerDown={e => {
+                                e.stopPropagation();
+                                try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
+                                const forma = shapesRascunho[formaSelecionadaBib];
+                                if (pi === 0 && forma && forma.tool === 'circulo') {
+                                  // centro do círculo = mover o círculo inteiro
+                                  arrastoCorpoBib.current = { indiceForma: formaSelecionadaBib, ultimoPonto: getPontoBib(e), historicoEmpurrado: false };
+                                  return;
+                                }
+                                pushHistoricoBib();
+                                arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: pi };
+                              }}
                               style={{ cursor: 'grab', touchAction: 'none' }} />
                           ))}
                         </svg>
@@ -33968,10 +34031,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           background: 'rgba(17,17,17,0.88)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, padding: 6,
                         }}>
                           {FERRAMENTAS_DESENHO.map(([id, Icon, titulo]) => (
-                            <ToolBtn key={id} icon={Icon} label={titulo} active={toolBib === id} onClick={() => { setToolBib(id); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setHoverFormaBib(false); }} />
+                            <ToolBtn key={id} icon={Icon} label={titulo} active={toolBib === id} onClick={() => escolherFerramentaBib(id)} />
                           ))}
-                          <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => { setToolBib('texto'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setHoverFormaBib(false); }} />
-                          <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => { setToolBib('apagar'); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setHoverFormaBib(false); }} />
+                          <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => escolherFerramentaBib('texto')} />
+                          <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => escolherFerramentaBib('apagar')} />
                         </div>
                         <div style={{
                           position: 'absolute', top: 0, right: 0, bottom: 0, width: 78, zIndex: 5,
