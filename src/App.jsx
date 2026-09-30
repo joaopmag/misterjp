@@ -31941,7 +31941,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Chamar SEMPRE antes de mudar shapesRascunho a sério (criar, apagar,
   // mover) — nunca antes de um rascunho ainda a meio (formaEmCursoBib),
   // senão "Retroceder" desfazia passos a mais de cada vez.
-  const pushHistoricoBib = () => setHistoricoBib(h => [...h.slice(-19), shapesRascunho]);
+  // Retoma automática no modo de desenho (ver "MODO DE DESENHO" no efeito
+  // das pausas): qualquer mexida do utilizador durante o congelamento
+  // cancela-a, para o vídeo não arrancar a meio de uma edição.
+  const retomaDesenhoRef = useRef(null);
+  const congeladasDesenhoRef = useRef(new Set()); // pausas já congeladas nesta passagem (modo de desenho) — evita voltar a congelar logo a seguir a retomar
+  const cancelarRetomaDesenhoBib = () => {
+    if (retomaDesenhoRef.current) retomaDesenhoRef.current.cancelado = true;
+    retomaDesenhoRef.current = null;
+  };
+  const pushHistoricoBib = () => { cancelarRetomaDesenhoBib(); setHistoricoBib(h => [...h.slice(-19), shapesRascunho]); };
   const retrocederBib = () => {
     if (historicoBib.length === 0) return;
     setShapesRascunho(historicoBib[historicoBib.length - 1]);
@@ -31979,12 +31988,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       ? Math.min(Math.max(lido, clipIni), clipFimEf)
       : clipIni;
   };
-  const alternarReproducaoBib = () => enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo');
+  const alternarReproducaoBib = () => { cancelarRetomaDesenhoBib(); enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo'); };
   // Escolher uma ferramenta (tocar outra vez na ativa desliga-a). Se o
   // vídeo andou desde que se abriu o desenho (sem ferramenta, a tocar no
   // vídeo), pára-o e muda a pausa para o instante onde ele está agora —
   // mas só enquanto ainda não se desenhou nada nesta pausa.
   const escolherFerramentaBib = (id) => {
+    cancelarRetomaDesenhoBib();
     const nova = toolBib === id ? null : id;
     setToolBib(nova);
     setFormaEmCursoBib(null);
@@ -32003,6 +32013,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     abrirPausaBib(existente || null, agora);
   };
   const escolherPausaBib = (a) => {
+    cancelarRetomaDesenhoBib();
     enviarComandoYoutube('seekTo', [tempoPausaNoCorte(a), true]);
     abrirPausaBib(a);
   };
@@ -32018,7 +32029,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // já conta como "a mesma", para não ser preciso acertar ao segundo).
     // As restantes ficam acessíveis na lista "Pausas neste corte".
     const anotacoes = active.anotacoesPausa || [];
-    const existente = anotacoes.find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
+    const perto = anotacoes.find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
+    // Se o corte já tem desenhos mas nenhum perto de onde o vídeo está,
+    // abre logo o PRIMEIRO (e leva o vídeo a esse instante) — assim os
+    // desenhos ficam à vista e o "Limpar" disponível mal se entra.
+    const primeira = !perto && anotacoes.length > 0
+      ? [...anotacoes].sort((a, b) => tempoPausaNoCorte(a) - tempoPausaNoCorte(b))[0]
+      : null;
+    const existente = perto || primeira;
+    if (primeira) enviarComandoYoutube('seekTo', [tempoPausaNoCorte(primeira), true]);
+    cancelarRetomaDesenhoBib();
+    congeladasDesenhoRef.current = new Set(existente ? [existente.id] : []);
     abrirPausaBib(existente || null, agora);
     // Entra SEM ferramenta ativa: assim dá para tocar no vídeo para o pôr
     // a andar/parar e escolher o momento certo antes de desenhar.
@@ -32094,6 +32115,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // toque seguinte continuava o arrasto antigo em vez de começar outro.
     arrastoVerticeBib.current = null;
     arrastoCorpoBib.current = null;
+    cancelarRetomaDesenhoBib(); // tocou no desenho durante um congelamento: fica parado para editar
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
     if (toolBib === 'apagar') {
       let alvo = -1, melhor = Infinity;
@@ -32811,25 +32833,48 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   useEffect(() => {
     const anterior = tempoAnteriorPausaRef.current;
     tempoAnteriorPausaRef.current = liveTime;
-    // MODO DE DESENHO: aqui as pausas não "disparam" (o vídeo está a ser
-    // preparado, não visto). Mas se se puser o vídeo a andar sem nada
-    // alterado, ao passar por uma pausa já gravada o vídeo pára nela e os
-    // desenhos dela ficam carregados, prontos a ver/editar/limpar. Antes
-    // passava por cima sem mostrar nada — parecia que o corte não tinha
-    // desenhos ("na primeira vez não aparece nada").
+    // MODO DE DESENHO com o vídeo a andar e nada alterado: comporta-se
+    // como a reprodução normal — ao passar por uma pausa gravada, congela
+    // o tempo dela com os desenhos à vista (já carregados, com "Limpar"
+    // disponível) e depois RETOMA sozinho. Se durante o congelamento se
+    // mexer em alguma coisa (ferramenta, forma, Limpar, tocar no vídeo),
+    // a retoma é cancelada e o vídeo fica parado para editar.
     if (ativoEClipe && modoDesenhoBib) {
-      if (anterior == null || !ytATocarRef.current || historicoBib.length > 0 || formaEmCursoBib) return;
+      if (anterior == null || !ytATocarRef.current || historicoBib.length > 0 || formaEmCursoBib || retomaDesenhoRef.current) return;
       const avancoDesenho = liveTime - anterior;
+      if (liveTime < anterior - 0.3) {
+        // recuou (volta do corte): as pausas outra vez à frente podem voltar a congelar
+        (active.anotacoesPausa || []).forEach(a => { if (tempoPausaNoCorte(a) >= liveTime - 0.5) congeladasDesenhoRef.current.delete(a.id); });
+        return;
+      }
       if (avancoDesenho <= 0 || avancoDesenho >= 2) return;
+      // Já saiu do instante da pausa que estava aberta (sem alterações):
+      // tira-lhe os desenhos do ecrã enquanto o vídeo anda.
+      if (anotacaoIdEmEdicaoBib && Math.abs(liveTime - tempoAnotacaoBib) > 0.6) {
+        abrirPausaBib(null, liveTime);
+      }
       const alvo = (active.anotacoesPausa || []).find(a => {
-        if (a.id === anotacaoIdEmEdicaoBib) return false;
+        if (a.id === anotacaoIdEmEdicaoBib || congeladasDesenhoRef.current.has(a.id)) return false;
         const t = tempoPausaNoCorte(a);
         return t >= anterior - 0.3 && t <= liveTime + 0.05;
       });
       if (!alvo) return;
+      const tAlvo = tempoPausaNoCorte(alvo);
+      const grupo = (active.anotacoesPausa || []).filter(a => Math.abs(tempoPausaNoCorte(a) - tAlvo) < 2);
+      grupo.forEach(a => congeladasDesenhoRef.current.add(a.id));
+      const duracao = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || 3));
       enviarComandoYoutube('pauseVideo');
-      enviarComandoYoutube('seekTo', [tempoPausaNoCorte(alvo), true]);
+      enviarComandoYoutube('seekTo', [tAlvo, true]);
       abrirPausaBib(alvo);
+      const retoma = { cancelado: false };
+      retomaDesenhoRef.current = retoma;
+      setTimeout(() => {
+        if (retoma.cancelado) return;
+        retomaDesenhoRef.current = null;
+        abrirPausaBib(null, tAlvo); // os desenhos saem ao retomar
+        mostrarMascaraRetomaBib();
+        enviarComandoYoutube('playVideo');
+      }, duracao * 1000);
       return;
     }
     if (!ativoEClipe || modoDesenhoBib) return;
@@ -32925,6 +32970,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // É isto que impede os desenhos de um corte de aparecerem noutro.
   useEffect(() => {
     return () => {
+      cancelarRetomaDesenhoBib();
       if (pausaControloRef.current) pausaControloRef.current.cancelado = true;
       pausaControloRef.current = null;
       pausaEmCursoRef.current = null;
@@ -33999,7 +34045,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                          no leitor do YouTube (nem de "congelar" a imagem sem
                          pausar), por isso tapa-se só o centro com um desfoque
                          suave nesse tempo. O topo fica sem desfoque (pedido). */}
-                      {ativoEClipe && !isBlocked && mascaraRetomaBib && !modoDesenhoBib && (
+                      {ativoEClipe && !isBlocked && mascaraRetomaBib && (
                         <>
                           <div style={{
                             position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
