@@ -33331,11 +33331,21 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const leitorBib = (() => {
     if (!active || !active.youtubeId) return null;
     const atual = leitorBibRef.current;
-    const reaproveita = atual && ativoEClipe && atual.eClipe && atual.youtubeId === active.youtubeId;
-    if (reaproveita) return atual;
+    // O leitor que já está a mostrar ESTE corte mantém-se sempre (senão,
+    // pausar depois de uma troca "a tocar" recarregava o leitor).
+    if (atual && atual.servindo === active.id) return atual;
+    // Só se reaproveita o leitor quando o vídeo está A TOCAR (ou na
+    // sequência "em seguida"). Com o vídeo parado, saltar dentro do
+    // leitor deixava a pré-visualização PRETA — o YouTube não mostra a
+    // imagem nem a miniatura depois de um salto sem reprodução. Parado,
+    // recarrega-se como antes: aparece logo a miniatura do corte.
+    const emSeqAgora = !!(sequencia && sequencia.includes(active.id));
+    const reaproveita = atual && ativoEClipe && atual.eClipe && atual.youtubeId === active.youtubeId
+      && (ytATocarRef.current || emSeqAgora);
+    if (reaproveita) { atual.servindo = active.id; atual.saltarPara = active.id; return atual; }
     const emSeq = sequencia && sequencia.includes(active.id);
     const novo = {
-      chave: active.id, youtubeId: active.youtubeId, eClipe: ativoEClipe,
+      chave: active.id, servindo: active.id, youtubeId: active.youtubeId, eClipe: ativoEClipe,
       src: youtubeEmbedSrc(active, emSeq ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0'),
     };
     leitorBibRef.current = novo;
@@ -33344,7 +33354,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Corte novo no mesmo leitor: salta para o início dele. Continua a
   // tocar se já estava a tocar (ou se é a sequência "em seguida").
   useEffect(() => {
-    if (!leitorBib || !active || leitorBib.chave === active.id || !ativoEClipe) return;
+    // Só quando o leitor foi reaproveitado para ESTE corte (inclui voltar
+    // ao corte com que o leitor abriu, que antes não saltava).
+    if (!leitorBib || !active || leitorBib.saltarPara !== active.id || !ativoEClipe) return;
+    leitorBib.saltarPara = null;
     const estavaATocar = ytATocarRef.current;
     const emSeq = sequencia && sequencia.includes(active.id);
     enviarComandoYoutube('seekTo', [clipIni, true]);
