@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 import * as tus from 'tus-js-client';
 import AnalisadorVideo, {
   FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
-  RAIO_TOQUE, distanciaShape, renderShape,
+  RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO,
 } from './AnalisadorVideo';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -3443,6 +3443,23 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         .mjp-painel-selecao { scrollbar-width: none; -ms-overflow-style: none; }
         .mjp-painel-selecao::-webkit-scrollbar { display: none; height: 0; }
         .navbtn.active { background: ${T.surfaceRaise}; border-left: 3px solid ${T.gold}; }
+        /* PÁGINAS QUE "SALTAVAM" DE LADO (todas as abas).
+           1) O <main> — quem faz o scroll das páginas em computador — usa a
+              classe .mjp-scroll-fino para NÃO mostrar barra. Só que as
+              regras dessa classe só existiam no ecrã do check-in, não na
+              app principal: a barra aparecia sempre que uma página ficava
+              mais alta do que o ecrã (abrir "Mostrar mais", mudar um filtro
+              nos Exercícios…) e desaparecia ao encolher — e cada vez o
+              conteúdo todo encolhia/alargava uns 15px. Agora não há barra:
+              o scroll continua igual (roda do rato, trackpad, teclado).
+           2) Listas e painéis com scroll próprio (lista de cortes, painéis,
+              janelas): passam a reservar SEMPRE o espaço da barra, apareça
+              ela ou não — o conteúdo lá dentro deixa de mexer. Apanha
+              qualquer contentor com overflow automático, também os que
+              venham a ser criados. */
+        .mjp-scroll-fino::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        .mjp-scroll-fino { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+        [style*="overflow-y: auto"], [style*="overflow-y: scroll"], [style*="overflow: auto"] { scrollbar-gutter: stable; }
         input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
         table { border-collapse: collapse; width: 100%; }
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
@@ -31915,14 +31932,47 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const aAbrirDesenhoAposFullscreenRef = useRef(false); // "Desenhar" pediu ecrã inteiro — só abre as ferramentas quando ele estiver mesmo ativo
   const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
   const arrastoCorpoBib = useRef(null); // { indiceForma, ultimoPonto } enquanto se arrasta uma forma inteira (não só um vértice)
-  const [hoverFormaBib, setHoverFormaBib] = useState(false); // true quando o cursor está perto de uma forma já feita — muda para "mover"
+  const [hoverFormaBib, setHoverFormaBib] = useState(null); // índice da forma que o cursor está a apontar (null = nenhuma) — é essa que se destaca e que se move ao carregar
   const overlayRefBib = useRef(null);
   // Distância para "acertar" numa forma ao MOVER/selecionar. O RAIO_TOQUE
   // partilhado (1,5) é tão exato que, depois do primeiro arrasto, o toque
   // seguinte falhava muitas vezes a forma e começava a desenhar outra —
   // parecia que ela tinha ficado presa.
-  const RAIO_MOVER_BIB = 3.2;
-  const RAIO_PEGA_BIB = 1.8; // pegas (pontinhos) de uma forma selecionada
+  const RAIO_MOVER_BIB = 2.2; // mais preciso do que antes (3,2): com itens perto uns dos outros, apanhava o errado. O destaque ao passar o rato mostra qual vai ser.
+  const RAIO_PEGA_BIB = 1.8;
+  // CURSORES FINOS — os do sistema (mira grossa, setas de mover grandes)
+  // tapavam o sítio exato onde se ia tocar. Estes são linhas de 1px com
+  // contorno escuro (vêem-se em relva clara e em fundo escuro), e o ponto
+  // quente fica mesmo no centro.
+  const cursorSvg = (svg, fallback) => `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, ${fallback}`;
+  const CURSOR_MIRA_FINA = cursorSvg(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
+    + '<g stroke="#000" stroke-opacity=".55" stroke-width="3"><path d="M12 2v7M12 15v7M2 12h7M15 12h7"/></g>'
+    + '<g stroke="#fff" stroke-width="1"><path d="M12 2v7M12 15v7M2 12h7M15 12h7"/></g>'
+    + '<circle cx="12" cy="12" r="1" fill="#fff" stroke="#000" stroke-opacity=".55" stroke-width=".8"/></svg>',
+    'crosshair');
+  const CURSOR_MOVER_FINO = cursorSvg(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">'
+    + '<g fill="none" stroke="#000" stroke-opacity=".55" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M9.5 5.5 12 3l2.5 2.5M9.5 18.5 12 21l2.5-2.5M5.5 9.5 3 12l2.5 2.5M18.5 9.5 21 12l-2.5 2.5"/></g>'
+    + '<g fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M9.5 5.5 12 3l2.5 2.5M9.5 18.5 12 21l2.5-2.5M5.5 9.5 3 12l2.5 2.5M18.5 9.5 21 12l-2.5 2.5"/></g></svg>',
+    'move');
+  // Caixa à volta de uma forma, para o destaque "é esta que vais mover".
+  const caixaFormaBib = (sh) => {
+    const pts = sh.points || [];
+    if (!pts.length) return null;
+    const [a, b] = pts;
+    if (sh.tool === 'texto') {
+      const largura = Math.max(TAMANHO_FONTE_TEXTO, (sh.texto || '').length * TAMANHO_FONTE_TEXTO * 0.55);
+      return { x: a.x, y: a.y - TAMANHO_FONTE_TEXTO, w: largura, h: TAMANHO_FONTE_TEXTO };
+    }
+    if (sh.tool === 'circulo' && b) {
+      const r = Math.hypot(b.x - a.x, b.y - a.y);
+      return { x: a.x - r, y: a.y - r, w: 2 * r, h: 2 * r };
+    }
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }; // pegas (pontinhos) de uma forma selecionada
   // Tapa o botão de pausa que o próprio YouTube mostra ao centro
   // durante ~2s sempre que o vídeo recomeça a tocar —
   // não há parâmetro do YouTube para o desligar. Ver "MÁSCARA DE RETOMA".
@@ -32024,13 +32074,35 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // vídeo andou desde que se abriu o desenho (sem ferramenta, a tocar no
   // vídeo), pára-o e muda a pausa para o instante onde ele está agora —
   // mas só enquanto ainda não se desenhou nada nesta pausa.
+  // BARRA DE ESPAÇO = reproduzir / pausar o vídeo da Biblioteca.
+  // Ignorada enquanto se escreve (campos de texto, texto num desenho) e
+  // com Ctrl/Alt/Cmd. preventDefault: sem isto o espaço também fazia a
+  // página descer, ou "carregava" no último botão clicado.
+  const alternarReproducaoBibRef = useRef(null);
+  alternarReproducaoBibRef.current = () => alternarReproducaoBib();
+  const temVideoBibRef = useRef(false); // atualizado mais abaixo, depois de `active`/`isBlocked` existirem
+  useEffect(() => {
+    const aoTeclar = (e) => {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      if (e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+      const alvo = e.target;
+      const tag = alvo && alvo.tagName ? alvo.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (alvo && alvo.isContentEditable)) return;
+      if (!temVideoBibRef.current) return;
+      e.preventDefault();
+      alternarReproducaoBibRef.current && alternarReproducaoBibRef.current();
+    };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, []);
+
   const escolherFerramentaBib = (id) => {
     cancelarRetomaDesenhoBib();
     const nova = toolBib === id ? null : id;
     setToolBib(nova);
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
-    setHoverFormaBib(false);
+    setHoverFormaBib(null);
     if (!nova) return;
     const agora = tempoAtualNoCorteBib();
     if (ytATocarRef.current) {
@@ -32078,7 +32150,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
     setFormaTextoBib(null);
-    setHoverFormaBib(false);
+    setHoverFormaBib(null);
     setHistoricoBib([]);
     if (ytFull) {
       setModoDesenhoBib(true);
@@ -32272,7 +32344,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       // Nada a arrastar — só verifica se o cursor está perto de uma
       // forma já feita, para o cursor mudar para "mover" (mãozinha).
       if (toolBib !== 'apagar' && toolBib !== 'zonalivre' && toolBib !== 'linhaPontos') {
-        setHoverFormaBib(shapesRascunho.some(sh => distanciaShape(sh, p) < RAIO_MOVER_BIB));
+        let iPerto = null, dPerto = Infinity;
+        shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_MOVER_BIB && d < dPerto) { dPerto = d; iPerto = i; } });
+        setHoverFormaBib(iPerto);
       }
       return;
     }
@@ -33295,6 +33369,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
 
   const isBlocked = active && active.youtubeId && blockedIds[active.youtubeId];
+  temVideoBibRef.current = !!(active && active.youtubeId && !isBlocked); // para a barra de espaço
   const kindIcon = { pdf: BookOpen, video: Play, pptx: Presentation, drive: ExternalLink, image: ImageIcon };
 
   useEffect(() => {
@@ -34218,7 +34293,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             // arrastável pelo browser (ver iniciarFormaBib).
                             userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none',
                             cursor: modoDesenhoBib
-                              ? (hoverFormaBib && !['apagar', 'zonalivre', 'linhaPontos'].includes(toolBib) ? 'move' : (toolBib ? 'crosshair' : 'pointer'))
+                              ? (hoverFormaBib != null && !['apagar', 'zonalivre', 'linhaPontos'].includes(toolBib) ? CURSOR_MOVER_FINO : (toolBib ? CURSOR_MIRA_FINA : 'pointer'))
                               : 'pointer',
                           }}
                           onPointerDown={modoDesenhoBib ? iniciarFormaBib : undefined}
@@ -34233,6 +34308,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {(modoDesenhoBib ? shapesRascunho : (pausaAtivaBib ? pausaAtivaBib.shapes : []))
                             .map((sh, i) => renderShape(sh, sh.id || i))}
                           {formaEmCursoBib && renderShape(formaEmCursoBib, 'rascunho')}
+                          {/* DESTAQUE ao passar o rato: moldura tracejada fina à
+                             volta da forma que vai ser agarrada — acaba com a
+                             dúvida de "qual delas vou mover". */}
+                          {modoDesenhoBib && hoverFormaBib != null && hoverFormaBib !== formaSelecionadaBib && shapesRascunho[hoverFormaBib]
+                            && !['apagar', 'zonalivre', 'linhaPontos'].includes(toolBib) && (() => {
+                              const c = caixaFormaBib(shapesRascunho[hoverFormaBib]);
+                              if (!c) return null;
+                              const m = 0.8;
+                              return (
+                                <rect x={c.x - m} y={c.y - m} width={c.w + 2 * m} height={c.h + 2 * m} rx={0.6}
+                                  fill="rgba(255,255,255,0.06)" stroke="#fff" strokeOpacity={0.85} strokeWidth={0.15}
+                                  strokeDasharray="0.8 0.6" style={{ pointerEvents: 'none' }} />
+                              );
+                            })()}
                           {/* Pontinhos arrastáveis da forma selecionada — tocar
                              e arrastar um deles move essa ponta da forma. */}
                           {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].points.map((pt, pi) => (
