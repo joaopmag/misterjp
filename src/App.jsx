@@ -31921,9 +31921,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // parecia que ela tinha ficado presa.
   const RAIO_MOVER_BIB = 3.2;
   const RAIO_PEGA_BIB = 1.8; // pegas (pontinhos) de uma forma selecionada
-  // Tapa o botão de pausa que o próprio YouTube mostra ao centro (e o
-  // título no topo) durante ~2s sempre que o vídeo recomeça a tocar —
+  // Tapa o botão de pausa que o próprio YouTube mostra ao centro
+  // durante ~2s sempre que o vídeo recomeça a tocar —
   // não há parâmetro do YouTube para o desligar. Ver "MÁSCARA DE RETOMA".
+  // Só no centro — a faixa do topo foi retirada a pedido.
   const [mascaraRetomaBib, setMascaraRetomaBib] = useState(false);
   const mascaraRetomaTimerRef = useRef(null);
   const mostrarMascaraRetomaBib = () => {
@@ -32810,6 +32811,27 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   useEffect(() => {
     const anterior = tempoAnteriorPausaRef.current;
     tempoAnteriorPausaRef.current = liveTime;
+    // MODO DE DESENHO: aqui as pausas não "disparam" (o vídeo está a ser
+    // preparado, não visto). Mas se se puser o vídeo a andar sem nada
+    // alterado, ao passar por uma pausa já gravada o vídeo pára nela e os
+    // desenhos dela ficam carregados, prontos a ver/editar/limpar. Antes
+    // passava por cima sem mostrar nada — parecia que o corte não tinha
+    // desenhos ("na primeira vez não aparece nada").
+    if (ativoEClipe && modoDesenhoBib) {
+      if (anterior == null || !ytATocarRef.current || historicoBib.length > 0 || formaEmCursoBib) return;
+      const avancoDesenho = liveTime - anterior;
+      if (avancoDesenho <= 0 || avancoDesenho >= 2) return;
+      const alvo = (active.anotacoesPausa || []).find(a => {
+        if (a.id === anotacaoIdEmEdicaoBib) return false;
+        const t = tempoPausaNoCorte(a);
+        return t >= anterior - 0.3 && t <= liveTime + 0.05;
+      });
+      if (!alvo) return;
+      enviarComandoYoutube('pauseVideo');
+      enviarComandoYoutube('seekTo', [tempoPausaNoCorte(alvo), true]);
+      abrirPausaBib(alvo);
+      return;
+    }
     if (!ativoEClipe || modoDesenhoBib) return;
     const anotacoes = active.anotacoesPausa || [];
     if (anotacoes.length === 0) return;
@@ -33973,10 +33995,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                          sério ao tocar em "Guardar". */}
                       {/* MÁSCARA DE RETOMA — quando o vídeo recomeça depois de
                          uma pausa de desenho, o YouTube mostra durante ~2s um
-                         botão de pausa ao centro e o título no topo. Não há
-                         forma de o desligar no leitor do YouTube (nem de
-                         "congelar" a imagem sem pausar), por isso tapa-se só
-                         essas duas zonas com um desfoque suave nesse tempo. */}
+                         botão de pausa ao centro. Não há forma de o desligar
+                         no leitor do YouTube (nem de "congelar" a imagem sem
+                         pausar), por isso tapa-se só o centro com um desfoque
+                         suave nesse tempo. O topo fica sem desfoque (pedido). */}
                       {ativoEClipe && !isBlocked && mascaraRetomaBib && !modoDesenhoBib && (
                         <>
                           <div style={{
@@ -33985,13 +34007,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
                             WebkitMaskImage: 'radial-gradient(circle, #000 55%, transparent 72%)',
                             maskImage: 'radial-gradient(circle, #000 55%, transparent 72%)',
-                            pointerEvents: 'none', zIndex: 1,
-                          }} />
-                          <div style={{
-                            position: 'absolute', left: 0, right: 0, top: 0, height: 'clamp(48px, 13%, 110px)',
-                            backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
-                            WebkitMaskImage: 'linear-gradient(#000 60%, transparent)',
-                            maskImage: 'linear-gradient(#000 60%, transparent)',
                             pointerEvents: 'none', zIndex: 1,
                           }} />
                         </>
