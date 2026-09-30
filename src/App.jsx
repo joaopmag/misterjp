@@ -8354,7 +8354,6 @@ function Exercicios({ exercises, setExercises, meta }) {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {visible.map(x => {
-            const m = meta && meta[x.id];
             return (
             <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
               {/* Nome sozinho na primeira linha; a fase e os ícones ficam
@@ -8368,53 +8367,40 @@ function Exercicios({ exercises, setExercises, meta }) {
               <div style={{ marginBottom: 8 }}>
                 <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
               </div>
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ display: 'flex', gap: 16 }}>
-                  <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Share2 size={14} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Printer size={14} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Clock size={14} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); setModal(x); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
-                  <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
-                </div>
-              </div>
-              {/* Sem recorte aqui (ao contrário do Portal do Atleta) —
-                  a caixa de espaço desenhada (o retângulo tracejado) é a
-                  informação principal do exercício, e recortar podia
-                  cortá-la fora. Tamanho mais pequeno do que na Ideia de
-                  Jogo, porque aqui o cartão já tem mais conteúdo a seguir
-                  (descrição, material) — é o que faz os dois ficarem do
-                  mesmo tamanho final. */}
-              {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
-                <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={130} />
-              ) : !x.attachment && (
-                <div style={{
-                  width: '100%', height: 130, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
-                }}>Sem esquema</div>
-              )}
-              {x.attachment && (
-                x.attachment.type === 'image' ? (
-                  <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: 95, objectFit: 'cover', borderRadius: 6, marginBottom: 8 }} />
+              {/* CARTÃO SIMPLIFICADO — sem espaço, nº de jogadores, material
+                  nem "editado por" (continuam no detalhe e no histórico).
+                  Todas as zonas têm altura fixa (título 2 linhas, imagem
+                  130px, ícones, descrição 3 linhas), por isso os cartões
+                  ficam todos do mesmo tamanho, tenham ou não descrição,
+                  anexo ou esquema. */}
+              <div style={{ width: '100%', height: 130, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+                {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
+                  <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={130} />
+                ) : (x.attachment && x.attachment.type === 'image') ? (
+                  <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.mutedDim, background: T.surfaceRaise, borderRadius: 6, padding: '6px 10px', marginBottom: 8 }}>
-                    <BookOpen size={13} /> {x.attachment.name}
+                  <div style={{
+                    width: '100%', height: 130, background: '#1e3a24',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 12px',
+                    fontSize: 11.5, color: T.mutedDim, textAlign: 'center',
+                  }}>
+                    {x.attachment ? (<><BookOpen size={13} style={{ flexShrink: 0 }} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.attachment.name}</span></>) : 'Sem esquema'}
                   </div>
-                )
-              )}
+                )}
+              </div>
+              {/* Ícones por baixo da imagem, encostados à direita — igual à
+                  Ideia de Jogo. */}
+              <div style={{ display: 'flex', gap: 16, marginTop: 8, marginBottom: 8, justifyContent: 'flex-end' }}>
+                <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
+                <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
+                <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
+                <button onClick={(e) => { e.stopPropagation(); setModal(x); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={14} /></button>
+                <button onClick={(e) => { e.stopPropagation(); remove(x.id); }} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={14} /></button>
+              </div>
               <p style={{
-                color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: '0 0 8px', height: 56,
+                color: T.mutedDim, fontSize: 12.5, lineHeight: 1.5, margin: 0, height: 56,
                 display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
               }}>{x.description}</p>
-              <div style={{ display: 'flex', gap: 14, fontSize: 11.5, color: T.mutedDim, ...mono }}>
-                {x.space && <span>📐 {x.space}</span>}
-                {x.playersCount && <span>👥 {x.playersCount}</span>}
-                {x.material && <span>🎒 {x.material}</span>}
-              </div>
-              {m && m.email && (
-                <div style={{ fontSize: 10.5, color: T.mutedDim, borderTop: `1px solid ${T.line}`, marginTop: 'auto', paddingTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  Adicionado/editado por {m.email} · {timeAgo(m.at)}
-                </div>
-              )}
             </div>
             );
           })}
