@@ -32131,6 +32131,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     });
   };
   const iniciarFormaBib = (e) => {
+    // CAUSA DO "FICA PRESO": o texto (e as letras dos desenhos) são texto
+    // a sério dentro do desenho. Ao carregar e arrastar, o browser às
+    // vezes começava o arrasto NATIVO dele (cursor de proibido 🚫 com a
+    // letra agarrada), que rouba o gesto à app — a forma parava de
+    // seguir o rato. preventDefault aqui desliga a seleção/arrasto nativo.
+    if (e.cancelable) e.preventDefault();
     const p = getPontoBib(e);
     // Prende o ponteiro ao desenho enquanto o dedo/rato estiver em baixo:
     // um arrasto rápido que saísse por instantes da área deixava de ser
@@ -32209,8 +32215,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (!toolBib) { alternarReproducaoBib(); return; }
     setFormaEmCursoBib({ tool: toolBib, color: corBib, points: toolBib === 'livre' ? [p] : [p, p] });
   };
-  const moverFormaBib = (e) => {
-    const p = getPontoBib(e);
+  // ARRASTO FLUIDO — o rato manda dezenas de movimentos por segundo, e
+  // cada um redesenhava a Biblioteca inteira (um ecrã muito grande), o
+  // que dava solavancos. Agora guarda-se só o último ponto e aplica-se
+  // uma vez por fotograma do ecrã (requestAnimationFrame).
+  const pontoPendenteBib = useRef(null);
+  const rafArrastoBib = useRef(null);
+  const aplicarArrastoBib = () => {
+    rafArrastoBib.current = null;
+    const p = pontoPendenteBib.current;
+    pontoPendenteBib.current = null;
+    if (!p) return;
     if (arrastoVerticeBib.current) {
       const { indiceForma, indicePonto } = arrastoVerticeBib.current;
       setShapesRascunho(prev => prev.map((sh, i) => (i !== indiceForma ? sh : { ...sh, points: sh.points.map((pt, pi) => (pi === indicePonto ? p : pt)) })));
@@ -32218,10 +32233,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     }
     if (arrastoCorpoBib.current) {
       const estado = arrastoCorpoBib.current;
-      if (!estado.historicoEmpurrado) { pushHistoricoBib(); estado.historicoEmpurrado = true; } // só regista no undo quando SE MEXE mesmo, não só ao tocar
       const dx = p.x - estado.ultimoPonto.x, dy = p.y - estado.ultimoPonto.y;
-      setShapesRascunho(prev => prev.map((sh, i) => (i !== estado.indiceForma ? sh : { ...sh, points: sh.points.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) })));
       estado.ultimoPonto = p;
+      if (dx === 0 && dy === 0) return;
+      setShapesRascunho(prev => prev.map((sh, i) => (i !== estado.indiceForma ? sh : { ...sh, points: sh.points.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) })));
+    }
+  };
+  const moverFormaBib = (e) => {
+    const p = getPontoBib(e);
+    if (arrastoVerticeBib.current || arrastoCorpoBib.current) {
+      const estado = arrastoCorpoBib.current;
+      if (estado && !estado.historicoEmpurrado) { pushHistoricoBib(); estado.historicoEmpurrado = true; } // só regista no undo quando SE MEXE mesmo, não só ao tocar
+      pontoPendenteBib.current = p;
+      if (!rafArrastoBib.current) rafArrastoBib.current = requestAnimationFrame(aplicarArrastoBib);
       return;
     }
     if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') {
@@ -32235,6 +32259,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaEmCursoBib(prev => (prev.tool === 'livre' ? { ...prev, points: [...prev.points, p] } : { ...prev, points: [prev.points[0], p] }));
   };
   const terminarFormaBib = () => {
+    // Aplica já o último movimento que ainda estava à espera do fotograma,
+    // para a forma ficar exatamente onde se largou.
+    if (rafArrastoBib.current) { cancelAnimationFrame(rafArrastoBib.current); aplicarArrastoBib(); }
     if (arrastoVerticeBib.current) { arrastoVerticeBib.current = null; return; }
     if (arrastoCorpoBib.current) { arrastoCorpoBib.current = null; return; }
     if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') return; // essas só terminam com "Concluído"
@@ -34138,6 +34165,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             // através da nossa própria lógica.
                             pointerEvents: 'auto',
                             touchAction: modoDesenhoBib ? 'none' : 'manipulation', // a desenhar, o dedo não pode fazer scroll/zoom
+                            // Nada no desenho é selecionável como texto nem
+                            // arrastável pelo browser (ver iniciarFormaBib).
+                            userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none',
                             cursor: modoDesenhoBib
                               ? (hoverFormaBib && !['apagar', 'zonalivre', 'linhaPontos'].includes(toolBib) ? 'move' : (toolBib ? 'crosshair' : 'pointer'))
                               : 'pointer',
@@ -34148,6 +34178,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           onPointerLeave={modoDesenhoBib ? terminarFormaBib : undefined}
                           onPointerCancel={modoDesenhoBib ? terminarFormaBib : undefined}
                           onLostPointerCapture={modoDesenhoBib ? terminarFormaBib : undefined}
+                          onDragStart={e => e.preventDefault()}
                           onClick={modoDesenhoBib ? undefined : alternarReproducaoBib}
                         >
                           {(modoDesenhoBib ? shapesRascunho : (pausaAtivaBib ? pausaAtivaBib.shapes : []))
@@ -34162,6 +34193,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               <circle cx={pt.x} cy={pt.y} r={RAIO_PEGA_BIB} fill="transparent"
                                 onPointerDown={e => {
                                   e.stopPropagation();
+                                  if (e.cancelable) e.preventDefault(); // sem arrasto/seleção nativa do browser
                                   try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
                                   arrastoVerticeBib.current = null;
                                   arrastoCorpoBib.current = null;
