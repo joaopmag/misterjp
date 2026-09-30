@@ -668,6 +668,21 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
    "Análise individual em clipes", com um cartão por jogador. */
 const ehClipeAtleta = (c) => !!c && c.origem === 'atleta';
 
+/* JOGO DE UM CLIPE DE ATLETA — para catalogar os clipes por jogo. O
+   clipe guarda o título do vídeo onde foi feito (`originalTitulo`, ex.:
+   "SC Salgueiros vs UD Lavrense_Parte_1"). As partes do mesmo jogo
+   (Parte_1, Parte_2…) são o MESMO jogo, por isso tira-se o "_Parte_N"
+   (a mesma regra de `tituloSemParte` no App). Sem título, agrupa-se pelo
+   vídeo do YouTube. */
+function jogoDoClipeAtleta(c) {
+  const nome = String((c && c.originalTitulo) || '').replace(/\s*[-_–]?\s*parte[\s_]*\d+\s*$/i, '').replace(/_/g, ' ').trim();
+  if (nome) {
+    const chave = 'j:' + nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ');
+    return { chave, nome };
+  }
+  return { chave: 'yt:' + ((c && c.youtubeId) || 'sem-video'), nome: 'Jogo sem nome' };
+}
+
 function mmss(seg) {
   const s = Math.max(0, Math.round(Number(seg) || 0));
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -977,6 +992,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // "Ver seguidos": { clipes, indice } — todos os clipes de um jogador,
   // um atrás do outro, na ordem do cartão.
   const [sequenciaAtleta, setSequenciaAtleta] = useState(null);
+  const [jogoFiltroAtletas, setJogoFiltroAtletas] = useState('todos'); // 'todos' ou a chave de um jogo (ver jogoDoClipeAtleta)
   // Cartões sem barra de scroll: mostram os primeiros CLIPES_VISIVEIS e
   // um botão "Mostrar mais" que abre o cartão inteiro.
   const CLIPES_VISIVEIS = 3;
@@ -1013,15 +1029,41 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const clipesAtletas = clipes.filter(ehClipeAtleta);
   // Um cartão por jogador, criado sozinho a partir do primeiro clipe
   // dele. Ordem alfabética; dentro do cartão, o clipe mais recente primeiro.
+  // Jogos com clipes de atletas — mais recente primeiro (o do último clipe
+  // feito). Alimenta o filtro "Jogo" e a ordem dos clipes em cada cartão.
+  const jogosAtletas = (() => {
+    const m = new Map();
+    clipesAtletas.forEach(c => {
+      const j = jogoDoClipeAtleta(c);
+      if (!m.has(j.chave)) m.set(j.chave, { ...j, total: 0, recente: '' });
+      const e = m.get(j.chave);
+      e.total += 1;
+      if (String(c.criadoEm || '') > e.recente) e.recente = String(c.criadoEm || '');
+    });
+    return [...m.values()].sort((a, b) => b.recente.localeCompare(a.recente));
+  })();
+  const ordemJogo = new Map(jogosAtletas.map((j, i) => [j.chave, i]));
+  const jogoFiltroEfetivo = jogosAtletas.some(j => j.chave === jogoFiltroAtletas) ? jogoFiltroAtletas : 'todos';
   const cartoesAtletas = (() => {
     const porAtleta = new Map();
-    clipesAtletas.forEach(c => {
+    clipesAtletas
+      .filter(c => jogoFiltroEfetivo === 'todos' || jogoDoClipeAtleta(c).chave === jogoFiltroEfetivo)
+      .forEach(c => {
       const chave = c.atletaId || c.atletaNome || 'sem-atleta';
       if (!porAtleta.has(chave)) porAtleta.set(chave, { chave, nome: c.atletaNome || 'Atleta sem nome', clipes: [] });
       porAtleta.get(chave).clipes.push(c);
     });
     const lista = [...porAtleta.values()];
-    lista.forEach(g => g.clipes.sort((a, b) => String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''))));
+    // Dentro do cartão: agrupado por jogo (o mais recente primeiro) e, em
+    // cada jogo, o clipe mais recente primeiro.
+    lista.forEach(g => {
+      g.clipes.sort((a, b) => {
+        const ja = ordemJogo.get(jogoDoClipeAtleta(a).chave) ?? 0, jb = ordemJogo.get(jogoDoClipeAtleta(b).chave) ?? 0;
+        if (ja !== jb) return ja - jb;
+        return String(b.criadoEm || '').localeCompare(String(a.criadoEm || ''));
+      });
+      g.nJogos = new Set(g.clipes.map(c => jogoDoClipeAtleta(c).chave)).size;
+    });
     return lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
   })();
 
@@ -2007,10 +2049,34 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               Ainda nenhum jogador criou clipes. No Portal do Atleta, em Biblioteca, os jogadores podem marcar lances nos vídeos dos jogos. Cada jogador que gravar um clipe ganha aqui o seu cartão.
             </div>
           ) : (
-            // alignItems 'start': abrir um cartão já não estica o do lado.
-            // overflowAnchor 'none': o browser deixa de "corrigir" o scroll
-            // sozinho quando a lista cresce (era isso que fazia a página
-            // mexer toda ao carregar em "Mostrar mais").
+            <>
+            {/* FILTRO POR JOGO — um botão por jogo com clipes (mais recente
+               primeiro, com o nº de clipes). Escolher um jogo deixa em
+               cada cartão só os clipes desse jogo, e o play do cartão passa
+               a ver só esses. */}
+            {jogosAtletas.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <span style={{ fontSize: 11, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em', ...body, marginRight: 2 }}>Jogo</span>
+                {[{ chave: 'todos', nome: 'Todos', total: clipesAtletas.length }, ...jogosAtletas].map(j => {
+                  const ativo = jogoFiltroEfetivo === j.chave;
+                  return (
+                    <button key={j.chave} onClick={() => setJogoFiltroAtletas(j.chave)} title={j.nome}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 300, cursor: 'pointer', ...body,
+                        background: ativo ? T.gold : 'transparent', color: ativo ? '#111' : T.muted,
+                        border: `1px solid ${ativo ? T.gold : T.line}`, borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: ativo ? 700 : 500,
+                      }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.nome}</span>
+                      <span style={{ fontSize: 11, opacity: 0.75, ...mono }}>{j.total}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* alignItems 'start': abrir um cartão já não estica o do lado.
+                overflowAnchor 'none': o browser deixa de "corrigir" o scroll
+                sozinho quando a lista cresce (era isso que fazia a página
+                mexer toda ao carregar em "Mostrar mais"). */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start', overflowAnchor: 'none' }}>
               {cartoesAtletas.map(g => (
                 <div key={g.chave} ref={el => { if (el) cartaoRefs.current[g.chave] = el; else delete cartaoRefs.current[g.chave]; }}
@@ -2028,7 +2094,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </span>
                     <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                       <span style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{g.nome}</span>
-                      <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>{g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}</span>
+                      <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>
+                        {g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}
+                        {g.nJogos > 1 && <> · {g.nJogos} jogos</>}
+                      </span>
                     </span>
                     {g.clipes.length > 1 && (
                       <button onClick={() => setSequenciaAtleta({ clipes: g.clipes, indice: 0 })}
@@ -2045,8 +2114,31 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     )}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {(cartoesAbertos.has(g.chave) ? g.clipes : g.clipes.slice(0, CLIPES_VISIVEIS)).map(c => (
-                      <div key={c.id} style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}` }}>
+                    {(cartoesAbertos.has(g.chave) ? g.clipes : g.clipes.slice(0, CLIPES_VISIVEIS)).map((c, ci, arr) => {
+                      // Separador de jogo: quando o jogador tem clipes de
+                      // mais de um jogo, cada bloco começa com o nome do
+                      // jogo e um play que vê só os clipes dele desse jogo.
+                      const jogo = jogoDoClipeAtleta(c);
+                      const novoJogo = g.nJogos > 1 && (ci === 0 || jogoDoClipeAtleta(arr[ci - 1]).chave !== jogo.chave);
+                      const doJogo = novoJogo ? g.clipes.filter(x => jogoDoClipeAtleta(x).chave === jogo.chave) : null;
+                      return (
+                      <React.Fragment key={c.id}>
+                      {novoJogo && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px 6px 14px', background: T.surfaceRaise, borderBottom: `1px solid ${T.line}` }}>
+                          <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: T.gold, flexShrink: 0 }} />
+                          <span title={jogo.nome} style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: T.cream, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jogo.nome}</span>
+                          <button onClick={() => setSequenciaAtleta({ clipes: doJogo, indice: 0 })}
+                            title={`Ver os ${doJogo.length} clipes de ${g.nome} neste jogo`}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer', ...body,
+                              background: 'transparent', border: `1px solid ${T.gold}`, color: T.gold,
+                              borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 600,
+                            }}>
+                            <Play size={10} fill={T.gold} /> {doJogo.length}
+                          </button>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}` }}>
                       <button onClick={() => setClipeAtletaAberto(c)}
                         style={{
                           flex: 1, minWidth: 0, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 4px 9px 12px', cursor: 'pointer',
@@ -2072,7 +2164,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                         {copiedId === c.id ? <Check size={15} color={T.good} /> : <Share2 size={15} color={T.muted} />}
                       </button>
                       </div>
-                    ))}
+                      </React.Fragment>
+                      );
+                    })}
                   </div>
                   {g.clipes.length > CLIPES_VISIVEIS && (
                     <button onClick={() => alternarCartao(g.chave)}
@@ -2088,6 +2182,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
               ))}
             </div>
+            </>
           )
         )}
 
