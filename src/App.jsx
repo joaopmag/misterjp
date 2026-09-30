@@ -31945,6 +31945,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
     setFormaTextoBib(null);
+    setHoverFormaBib(false);
     setHistoricoBib([]);
     if (ytFull) {
       setModoDesenhoBib(true);

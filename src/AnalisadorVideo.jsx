@@ -225,11 +225,25 @@ function girar(p, centro, graus) {
     y: centro.y + dx * Math.sin(rad) + dy * Math.cos(rad),
   };
 }
+export const TAMANHO_FONTE_TEXTO = 3.4;
+
 export function distanciaShape(sh, p) {
   const pts = sh.points || [];
   const [a, b] = pts;
   if (!a) return Infinity;
-  if (sh.tool === 'texto') return Math.hypot(p.x - a.x, p.y - a.y);
+  if (sh.tool === 'texto') {
+    // Uma caixa à volta do texto todo (não só o pontinho onde começa a
+    // escrever-se) — sem isto, só dava para lhe tocar bem no início da
+    // palavra, nunca no meio ou no fim, o que parecia "não se conseguir
+    // mover". Não há como saber a largura exata sem medir no ecrã, por
+    // isso usa-se uma estimativa a partir do nº de letras.
+    const largura = Math.max(TAMANHO_FONTE_TEXTO, (sh.texto || '').length * TAMANHO_FONTE_TEXTO * 0.55);
+    const x1 = a.x, x2 = a.x + largura, y1 = a.y - TAMANHO_FONTE_TEXTO, y2 = a.y;
+    if (p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2) return 0;
+    const dx = p.x < x1 ? x1 - p.x : (p.x > x2 ? p.x - x2 : 0);
+    const dy = p.y < y1 ? y1 - p.y : (p.y > y2 ? p.y - y2 : 0);
+    return Math.hypot(dx, dy);
+  }
   if (sh.tool === 'circulo' && b) {
     const r = Math.hypot(b.x - a.x, b.y - a.y);
     const dCentro = Math.hypot(p.x - a.x, p.y - a.y);
@@ -267,7 +281,7 @@ export function renderShape(sh, i) {
   if (!a) return null;
   const cor = { stroke: sh.color || COR_DESENHO, fill: 'none' };
   if (sh.tool === 'texto') {
-    return <text key={i} x={a.x} y={a.y} fill={sh.color || COR_DESENHO} fontSize={3.4} fontWeight={700} style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#00000099', strokeWidth: 0.5 }}>{sh.texto}</text>;
+    return <text key={i} x={a.x} y={a.y} fill={sh.color || COR_DESENHO} fontSize={TAMANHO_FONTE_TEXTO} fontWeight={700} style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#00000099', strokeWidth: 0.5 }}>{sh.texto}</text>;
   }
   if (sh.tool === 'livre' || sh.tool === 'zonalivre' || sh.tool === 'linhaPontos') {
     const fechado = sh.tool === 'zonalivre';
