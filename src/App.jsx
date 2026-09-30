@@ -31915,6 +31915,23 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const arrastoCorpoBib = useRef(null); // { indiceForma, ultimoPonto } enquanto se arrasta uma forma inteira (não só um vértice)
   const [hoverFormaBib, setHoverFormaBib] = useState(false); // true quando o cursor está perto de uma forma já feita — muda para "mover"
   const overlayRefBib = useRef(null);
+  // Distância para "acertar" numa forma ao MOVER/selecionar. O RAIO_TOQUE
+  // partilhado (1,5) é tão exato que, depois do primeiro arrasto, o toque
+  // seguinte falhava muitas vezes a forma e começava a desenhar outra —
+  // parecia que ela tinha ficado presa.
+  const RAIO_MOVER_BIB = 3.2;
+  const RAIO_PEGA_BIB = 1.8; // pegas (pontinhos) de uma forma selecionada
+  // Tapa o botão de pausa que o próprio YouTube mostra ao centro (e o
+  // título no topo) durante ~2s sempre que o vídeo recomeça a tocar —
+  // não há parâmetro do YouTube para o desligar. Ver "MÁSCARA DE RETOMA".
+  const [mascaraRetomaBib, setMascaraRetomaBib] = useState(false);
+  const mascaraRetomaTimerRef = useRef(null);
+  const mostrarMascaraRetomaBib = () => {
+    setMascaraRetomaBib(true);
+    clearTimeout(mascaraRetomaTimerRef.current);
+    mascaraRetomaTimerRef.current = setTimeout(() => setMascaraRetomaBib(false), 2800);
+  };
+  useEffect(() => () => clearTimeout(mascaraRetomaTimerRef.current), []);
 
   const getPontoBib = (e) => {
     const rect = overlayRefBib.current.getBoundingClientRect();
@@ -32071,6 +32088,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // um arrasto rápido que saísse por instantes da área deixava de ser
     // seguido (e parecia que a forma "não queria" mexer).
     try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
+    // Qualquer arrasto que tenha ficado "pendurado" (largar fora da
+    // janela, gesto cancelado pelo telemóvel) é descartado aqui — senão o
+    // toque seguinte continuava o arrasto antigo em vez de começar outro.
+    arrastoVerticeBib.current = null;
+    arrastoCorpoBib.current = null;
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
     if (toolBib === 'apagar') {
       let alvo = -1, melhor = Infinity;
@@ -32099,25 +32121,25 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // criar uma forma nova por cima.
     if (formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib]) {
       const forma = shapesRascunho[formaSelecionadaBib];
-      const iVertice = forma.points.findIndex(pt => Math.hypot(pt.x - p.x, pt.y - p.y) < RAIO_TOQUE);
+      const iVertice = forma.points.findIndex(pt => Math.hypot(pt.x - p.x, pt.y - p.y) < RAIO_PEGA_BIB);
       // No círculo, o ponto do CENTRO move o círculo inteiro (é onde
       // naturalmente se pega nele). Só o ponto da borda muda o tamanho.
-      // Antes, pegar no centro esticava o círculo em vez de o mover.
-      if (iVertice === 0 && forma.tool === 'circulo') {
-        arrastoCorpoBib.current = { indiceForma: formaSelecionadaBib, ultimoPonto: p, historicoEmpurrado: false };
-        return;
-      }
-      if (iVertice !== -1) {
+      if (iVertice !== -1 && !(iVertice === 0 && forma.tool === 'circulo')) {
         pushHistoricoBib();
         arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: iVertice };
         return;
       }
+      // A forma que JÁ está selecionada tem prioridade: um toque perto
+      // dela move-a, mesmo que haja outra forma ainda mais perto.
+      if (iVertice !== -1 || distanciaShape(forma, p) < RAIO_MOVER_BIB) {
+        arrastoCorpoBib.current = { indiceForma: formaSelecionadaBib, ultimoPonto: p, historicoEmpurrado: false };
+        return;
+      }
     }
-    // Um toque em cima de uma forma já feita seleciona-a E já começa a
-    // arrastá-la — um único gesto (toca e arrasta), sem ser preciso
-    // largar e voltar a tocar.
+    // Um toque em cima (ou perto) de uma forma já feita seleciona-a E já
+    // começa a arrastá-la — um único gesto (toca e arrasta).
     let indiceAcertado = -1, melhorDist = Infinity;
-    shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_TOQUE && d < melhorDist) { melhorDist = d; indiceAcertado = i; } });
+    shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_MOVER_BIB && d < melhorDist) { melhorDist = d; indiceAcertado = i; } });
     if (indiceAcertado !== -1) {
       setFormaSelecionadaBib(indiceAcertado);
       arrastoCorpoBib.current = { indiceForma: indiceAcertado, ultimoPonto: p, historicoEmpurrado: false };
@@ -32147,7 +32169,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       // Nada a arrastar — só verifica se o cursor está perto de uma
       // forma já feita, para o cursor mudar para "mover" (mãozinha).
       if (toolBib !== 'apagar' && toolBib !== 'texto' && toolBib !== 'zonalivre' && toolBib !== 'linhaPontos') {
-        setHoverFormaBib(shapesRascunho.some(sh => distanciaShape(sh, p) < RAIO_TOQUE));
+        setHoverFormaBib(shapesRascunho.some(sh => distanciaShape(sh, p) < RAIO_MOVER_BIB));
       }
       return;
     }
@@ -32864,6 +32886,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         setTimeout(() => {
           if (controlo.cancelado) return;
           setPausaAtivaBib(null);
+          mostrarMascaraRetomaBib();
           enviarComandoYoutube('playVideo');
           confirmarEstado(true, () => {
             if (pausaControloRef.current === controlo) pausaControloRef.current = null;
@@ -33948,6 +33971,31 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                          vídeo agora (`pausaAtivaBib`); a desenhar, mostra o
                          rascunho (`shapesRascunho`), que só é gravado a
                          sério ao tocar em "Guardar". */}
+                      {/* MÁSCARA DE RETOMA — quando o vídeo recomeça depois de
+                         uma pausa de desenho, o YouTube mostra durante ~2s um
+                         botão de pausa ao centro e o título no topo. Não há
+                         forma de o desligar no leitor do YouTube (nem de
+                         "congelar" a imagem sem pausar), por isso tapa-se só
+                         essas duas zonas com um desfoque suave nesse tempo. */}
+                      {ativoEClipe && !isBlocked && mascaraRetomaBib && !modoDesenhoBib && (
+                        <>
+                          <div style={{
+                            position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+                            width: 'clamp(90px, 16%, 190px)', aspectRatio: '1 / 1', borderRadius: '50%',
+                            backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
+                            WebkitMaskImage: 'radial-gradient(circle, #000 55%, transparent 72%)',
+                            maskImage: 'radial-gradient(circle, #000 55%, transparent 72%)',
+                            pointerEvents: 'none', zIndex: 1,
+                          }} />
+                          <div style={{
+                            position: 'absolute', left: 0, right: 0, top: 0, height: 'clamp(48px, 13%, 110px)',
+                            backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
+                            WebkitMaskImage: 'linear-gradient(#000 60%, transparent)',
+                            maskImage: 'linear-gradient(#000 60%, transparent)',
+                            pointerEvents: 'none', zIndex: 1,
+                          }} />
+                        </>
+                      )}
                       {ativoEClipe && !isBlocked && (
                         <svg
                           ref={overlayRefBib}
@@ -33971,6 +34019,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           onPointerMove={modoDesenhoBib ? moverFormaBib : undefined}
                           onPointerUp={modoDesenhoBib ? terminarFormaBib : undefined}
                           onPointerLeave={modoDesenhoBib ? terminarFormaBib : undefined}
+                          onPointerCancel={modoDesenhoBib ? terminarFormaBib : undefined}
+                          onLostPointerCapture={modoDesenhoBib ? terminarFormaBib : undefined}
                           onClick={modoDesenhoBib ? undefined : alternarReproducaoBib}
                         >
                           {(modoDesenhoBib ? shapesRascunho : (pausaAtivaBib ? pausaAtivaBib.shapes : []))
@@ -33979,20 +34029,26 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {/* Pontinhos arrastáveis da forma selecionada — tocar
                              e arrastar um deles move essa ponta da forma. */}
                           {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].points.map((pt, pi) => (
-                            <circle key={`vertice-${pi}`} cx={pt.x} cy={pt.y} r={0.6} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
-                              onPointerDown={e => {
-                                e.stopPropagation();
-                                try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
-                                const forma = shapesRascunho[formaSelecionadaBib];
-                                if (pi === 0 && forma && forma.tool === 'circulo') {
-                                  // centro do círculo = mover o círculo inteiro
-                                  arrastoCorpoBib.current = { indiceForma: formaSelecionadaBib, ultimoPonto: getPontoBib(e), historicoEmpurrado: false };
-                                  return;
-                                }
-                                pushHistoricoBib();
-                                arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: pi };
-                              }}
-                              style={{ cursor: 'grab', touchAction: 'none' }} />
+                            <g key={`vertice-${pi}`}>
+                              <circle cx={pt.x} cy={pt.y} r={0.6} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
+                              {/* Área de toque invisível, bem maior do que o pontinho. */}
+                              <circle cx={pt.x} cy={pt.y} r={RAIO_PEGA_BIB} fill="transparent"
+                                onPointerDown={e => {
+                                  e.stopPropagation();
+                                  try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
+                                  arrastoVerticeBib.current = null;
+                                  arrastoCorpoBib.current = null;
+                                  const forma = shapesRascunho[formaSelecionadaBib];
+                                  if (pi === 0 && forma && forma.tool === 'circulo') {
+                                    // centro do círculo = mover o círculo inteiro
+                                    arrastoCorpoBib.current = { indiceForma: formaSelecionadaBib, ultimoPonto: getPontoBib(e), historicoEmpurrado: false };
+                                    return;
+                                  }
+                                  pushHistoricoBib();
+                                  arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: pi };
+                                }}
+                                style={{ cursor: pi === 0 && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].tool === 'circulo' ? 'move' : 'grab', touchAction: 'none', pointerEvents: 'all' }} />
+                            </g>
                           ))}
                         </svg>
                       )}
