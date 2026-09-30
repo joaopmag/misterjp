@@ -31946,7 +31946,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // das pausas): qualquer mexida do utilizador durante o congelamento
   // cancela-a, para o vídeo não arrancar a meio de uma edição.
   const retomaDesenhoRef = useRef(null);
-  const congeladasDesenhoRef = useRef(new Set()); // pausas já congeladas nesta passagem (modo de desenho) — evita voltar a congelar logo a seguir a retomar
+  const congeladasDesenhoRef = useRef(new Set());
+  const [apagarTodasBib, setApagarTodasBib] = useState(false); // "Limpar" sem pausa aberta: apagar todos os desenhos do corte ao Guardar // pausas já congeladas nesta passagem (modo de desenho) — evita voltar a congelar logo a seguir a retomar
   const cancelarRetomaDesenhoBib = () => {
     if (retomaDesenhoRef.current) retomaDesenhoRef.current.cancelado = true;
     retomaDesenhoRef.current = null;
@@ -31989,7 +31990,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       ? Math.min(Math.max(lido, clipIni), clipFimEf)
       : clipIni;
   };
-  const alternarReproducaoBib = () => { cancelarRetomaDesenhoBib(); enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo'); };
+  const alternarReproducaoBib = () => {
+    cancelarRetomaDesenhoBib();
+    if (!ytATocarRef.current && modoDesenhoBib && anotacaoIdEmEdicaoBib) {
+      // Carregar em play PARADO numa pausa já aberta: segue em frente sem
+      // voltar a congelar nela no mesmo instante.
+      const t = currentTimeRef.current || liveTime;
+      if (t >= tempoAnotacaoBib - 0.3) congeladasDesenhoRef.current.add(anotacaoIdEmEdicaoBib);
+    }
+    enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo');
+  };
   // Escolher uma ferramenta (tocar outra vez na ativa desliga-a). Se o
   // vídeo andou desde que se abriu o desenho (sem ferramenta, a tocar no
   // vídeo), pára-o e muda a pausa para o instante onde ele está agora —
@@ -32030,17 +32040,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // já conta como "a mesma", para não ser preciso acertar ao segundo).
     // As restantes ficam acessíveis na lista "Pausas neste corte".
     const anotacoes = active.anotacoesPausa || [];
-    const perto = anotacoes.find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
-    // Se o corte já tem desenhos mas nenhum perto de onde o vídeo está,
-    // abre logo o PRIMEIRO (e leva o vídeo a esse instante) — assim os
-    // desenhos ficam à vista e o "Limpar" disponível mal se entra.
-    const primeira = !perto && anotacoes.length > 0
-      ? [...anotacoes].sort((a, b) => tempoPausaNoCorte(a) - tempoPausaNoCorte(b))[0]
-      : null;
-    const existente = perto || primeira;
-    if (primeira) enviarComandoYoutube('seekTo', [tempoPausaNoCorte(primeira), true]);
+    // O vídeo fica onde está (já não salta para a primeira pausa). O
+    // "Limpar" está disponível logo à entrada sempre que o corte tenha
+    // desenhos: sem nenhuma pausa aberta, apaga TODOS os do corte (só a
+    // sério ao Guardar — ver `apagarTodasBib`).
+    const existente = anotacoes.find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
     cancelarRetomaDesenhoBib();
-    congeladasDesenhoRef.current = new Set(existente ? [existente.id] : []);
+    // Nenhuma pausa fica de fora: a 1ª reprodução no modo de desenho
+    // congela em todas (antes, a pausa aberta à entrada era saltada na 1ª
+    // volta — "na primeira reprodução não dá nada").
+    congeladasDesenhoRef.current = new Set();
+    setApagarTodasBib(false);
     abrirPausaBib(existente || null, agora);
     // Entra SEM ferramenta ativa: assim dá para tocar no vídeo para o pôr
     // a andar/parar e escolher o momento certo antes de desenhar.
@@ -32061,8 +32071,23 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       toggleYtFull();
     }
   };
-  const cancelarDesenhoBib = () => { setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setFormaTextoBib(null); };
+  const cancelarDesenhoBib = () => { setApagarTodasBib(false); setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setFormaTextoBib(null); };
   const guardarDesenhoBib = () => {
+    if (apagarTodasBib) {
+      // "Limpar" à entrada: saem todos os desenhos do corte. Se entretanto
+      // se desenhou algo novo, fica só essa pausa nova.
+      const nova = shapesRascunho.length > 0
+        ? [{ id: uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(1, duracaoPausaBib), shapes: shapesRascunho }]
+        : [];
+      nova.forEach(a => pausasJaMostradasRef.current.add(a.id));
+      setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: nova } : v)));
+      setApagarTodasBib(false);
+      setModoDesenhoBib(false);
+      setFormaEmCursoBib(null);
+      setFormaSelecionadaBib(null);
+      setFormaTextoBib(null);
+      return;
+    }
     if (shapesRascunho.length === 0) {
       // Limpaste tudo e gravaste por cima — se isto era uma pausa já
       // existente, conta como quereres apagá-la a sério (não só sair
@@ -32129,6 +32154,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       return;
     }
     if (toolBib === 'texto') {
+      // Tocar em cima de um item já feito (incluindo um texto) seleciona-o
+      // e arrasta-o, como nas outras ferramentas; só num sítio vazio é que
+      // começa um texto novo. Antes, com o Texto ativo, nada se movia.
+      let iTexto = -1, dTexto = Infinity;
+      shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_MOVER_BIB && d < dTexto) { dTexto = d; iTexto = i; } });
+      if (iTexto !== -1) {
+        setFormaSelecionadaBib(iTexto);
+        arrastoCorpoBib.current = { indiceForma: iTexto, ultimoPonto: p, historicoEmpurrado: false };
+        return;
+      }
       const rect = overlayRefBib.current.getBoundingClientRect();
       setFormaTextoBib({ pt: p, xPix: e.clientX - rect.left, yPix: e.clientY - rect.top, valor: '' });
       return;
@@ -32192,7 +32227,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') {
       // Nada a arrastar — só verifica se o cursor está perto de uma
       // forma já feita, para o cursor mudar para "mover" (mãozinha).
-      if (toolBib !== 'apagar' && toolBib !== 'texto' && toolBib !== 'zonalivre' && toolBib !== 'linhaPontos') {
+      if (toolBib !== 'apagar' && toolBib !== 'zonalivre' && toolBib !== 'linhaPontos') {
         setHoverFormaBib(shapesRascunho.some(sh => distanciaShape(sh, p) < RAIO_MOVER_BIB));
       }
       return;
@@ -32841,7 +32876,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // mexer em alguma coisa (ferramenta, forma, Limpar, tocar no vídeo),
     // a retoma é cancelada e o vídeo fica parado para editar.
     if (ativoEClipe && modoDesenhoBib) {
-      if (anterior == null || !ytATocarRef.current || historicoBib.length > 0 || formaEmCursoBib || retomaDesenhoRef.current) return;
+      if (anterior == null || !ytATocarRef.current || historicoBib.length > 0 || formaEmCursoBib || retomaDesenhoRef.current || apagarTodasBib) return;
       const avancoDesenho = liveTime - anterior;
       if (liveTime < anterior - 0.3) {
         // recuou (volta do corte): as pausas outra vez à frente podem voltar a congelar
@@ -32855,7 +32890,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         abrirPausaBib(null, liveTime);
       }
       const alvo = (active.anotacoesPausa || []).find(a => {
-        if (a.id === anotacaoIdEmEdicaoBib || congeladasDesenhoRef.current.has(a.id)) return false;
+        if (congeladasDesenhoRef.current.has(a.id)) return false;
         const t = tempoPausaNoCorte(a);
         return t >= anterior - 0.3 && t <= liveTime + 0.05;
       });
@@ -32873,7 +32908,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         if (retoma.cancelado) return;
         retomaDesenhoRef.current = null;
         abrirPausaBib(null, tAlvo); // os desenhos saem ao retomar
-        mostrarMascaraRetomaBib();
         enviarComandoYoutube('playVideo');
       }, duracao * 1000);
       return;
@@ -32959,8 +32993,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         setTimeout(() => {
           if (controlo.cancelado) return;
           setPausaAtivaBib(null);
-          mostrarMascaraRetomaBib();
-          enviarComandoYoutube('playVideo');
+            enviarComandoYoutube('playVideo');
           confirmarEstado(true, () => {
             if (pausaControloRef.current === controlo) pausaControloRef.current = null;
             pausaEmCursoRef.current = null;
@@ -34090,31 +34123,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                          vídeo agora (`pausaAtivaBib`); a desenhar, mostra o
                          rascunho (`shapesRascunho`), que só é gravado a
                          sério ao tocar em "Guardar". */}
-                      {/* MÁSCARA DE RETOMA — quando o vídeo recomeça depois de
-                         uma pausa de desenho, o YouTube mostra durante uns
-                         segundos o botão de pausa dele ao centro. Não há
-                         forma de o desligar, nem de "congelar" a imagem sem
-                         pausar. O desfoque ficava mal e era curto; agora o
-                         botão do YouTube fica por baixo de um disco opaco
-                         da própria app (fundo escuro, anel dourado a rodar,
-                         como um "a retomar"), durante 4,5s. */}
-                      {ativoEClipe && !isBlocked && mascaraRetomaBib && (
-                        <div style={{
-                          position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-                          width: 'clamp(84px, 12%, 150px)', aspectRatio: '1 / 1', borderRadius: '50%',
-                          background: 'rgba(12, 18, 12, 0.94)', boxShadow: '0 0 0 1px rgba(255,255,255,0.08), 0 4px 18px rgba(0,0,0,0.45)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          pointerEvents: 'none', zIndex: 1,
-                        }}>
-                          <svg viewBox="0 0 100 100" style={{ width: '78%', height: '78%' }}>
-                            <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="5" />
-                            <circle cx="50" cy="50" r="44" fill="none" stroke={T.gold} strokeWidth="5" strokeLinecap="round" strokeDasharray="70 207">
-                              <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="1.1s" repeatCount="indefinite" />
-                            </circle>
-                            <path d="M42 34 L68 50 L42 66 Z" fill={T.gold} />
-                          </svg>
-                        </div>
-                      )}
                       {ativoEClipe && !isBlocked && (
                         <svg
                           ref={overlayRefBib}
@@ -34131,7 +34139,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             pointerEvents: 'auto',
                             touchAction: modoDesenhoBib ? 'none' : 'manipulation', // a desenhar, o dedo não pode fazer scroll/zoom
                             cursor: modoDesenhoBib
-                              ? (hoverFormaBib && !['apagar', 'texto', 'zonalivre', 'linhaPontos'].includes(toolBib) ? 'move' : (toolBib ? 'crosshair' : 'pointer'))
+                              ? (hoverFormaBib && !['apagar', 'zonalivre', 'linhaPontos'].includes(toolBib) ? 'move' : (toolBib ? 'crosshair' : 'pointer'))
                               : 'pointer',
                           }}
                           onPointerDown={modoDesenhoBib ? iniciarFormaBib : undefined}
@@ -34233,7 +34241,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                              as que já estavam gravadas. Só fica definitivo ao
                              tocar em Guardar/Concluído (Recuar desfaz, Cancelar
                              sai sem mexer no que estava gravado). */}
-                          <Btn variant="ghost" onClick={() => { if (shapesRascunho.length > 0) { pushHistoricoBib(); setShapesRascunho([]); setFormaSelecionadaBib(null); } }} disabled={shapesRascunho.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
+                          {/* Sem pausa aberta mas com desenhos no corte, Limpar
+                             marca TODOS os desenhos do corte para apagar (só a
+                             sério ao Guardar; Cancelar ou "Anular" desfazem). */}
+                          <Btn variant="ghost" onClick={() => {
+                            if (shapesRascunho.length > 0) { pushHistoricoBib(); setShapesRascunho([]); setFormaSelecionadaBib(null); return; }
+                            if ((active.anotacoesPausa || []).length > 0) { cancelarRetomaDesenhoBib(); setApagarTodasBib(true); }
+                          }} disabled={shapesRascunho.length === 0 && ((active.anotacoesPausa || []).length === 0 || apagarTodasBib)} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <Trash2 size={14} /> Limpar
                           </Btn>
                           <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
@@ -34252,7 +34266,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                              uma, esteja o vídeo onde estiver. */}
                           {(active.anotacoesPausa || []).length > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '5px 10px' }}>
-                              <span style={{ fontSize: 11.5, color: T.mutedDim }}>Pausas neste corte:</span>
+                              {apagarTodasBib ? (
+                                <>
+                                  <span style={{ fontSize: 11.5, color: T.warn }}>Os desenhos deste corte vão ser apagados ao Guardar.</span>
+                                  <button onClick={() => setApagarTodasBib(false)} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>Anular</button>
+                                </>
+                              ) : <span style={{ fontSize: 11.5, color: T.mutedDim }}>Pausas neste corte:</span>}
                               {[...(active.anotacoesPausa || [])]
                                 .sort((a, b) => tempoPausaNoCorte(a) - tempoPausaNoCorte(b))
                                 .map(a => {
