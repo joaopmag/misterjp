@@ -401,7 +401,7 @@ function useFecharComEsc(onClose, ativo = true) {
   }, [onClose, ativo]);
 }
 
-function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria }) {
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir }) {
   const [t, setT] = useState(0);
   // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
   const [aEditar, setAEditar] = useState(false);
@@ -433,6 +433,11 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
     setFimEd(novo);
     if (inicioEd >= novo) setInicioEd(Math.max(0, novo - 1));
   };
+  // Aberto pelo lápis do cartão: entra logo no modo de edição.
+  useEffect(() => {
+    if (editarAoAbrir) abrirEdicao();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const guardarEdicao = async () => {
     if (fimEd - inicioEd < 1) { setErroEd('O fim tem de ser pelo menos 1 segundo depois do início.'); return; }
     setAGuardar(true); setErroEd('');
@@ -984,6 +989,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const [copiedId, setCopiedId] = useState(null);
   const [clipeAReproduzir, setClipeAReproduzir] = useState(null);
+  const [editarClipeAoAbrir, setEditarClipeAoAbrir] = useState(false); // lápis no cartão: abre o clipe já em edição
   const [filtroTag, setFiltroTag] = useState(null);
   // Separador da biblioteca de clipes: 'staff' (os clipes cortados aqui)
   // ou 'atletas' (Análise individual em clipes, criados no Portal).
@@ -2064,29 +2070,6 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             </div>
           ) : (
             <>
-            {/* FILTRO POR JOGO — um botão por jogo com clipes (mais recente
-               primeiro, com o nº de clipes). Escolher um jogo deixa em
-               cada cartão só os clipes desse jogo, e o play do cartão passa
-               a ver só esses. */}
-            {jogosAtletas.length > 1 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                <span style={{ fontSize: 11, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em', ...body, marginRight: 2 }}>Jogo</span>
-                {[{ chave: 'todos', nome: 'Todos', total: clipesAtletas.length }, ...jogosAtletas].map(j => {
-                  const ativo = jogoFiltroEfetivo === j.chave;
-                  return (
-                    <button key={j.chave} onClick={() => { setJogoFiltroAtletas(j.chave); setAlturaReservadaGrelha(0); }} title={j.nome}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 300, cursor: 'pointer', ...body,
-                        background: ativo ? T.gold : 'transparent', color: ativo ? '#111' : T.muted,
-                        border: `1px solid ${ativo ? T.gold : T.line}`, borderRadius: 999, padding: '5px 12px', fontSize: 12.5, fontWeight: ativo ? 700 : 500,
-                      }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.nome}</span>
-                      <span style={{ fontSize: 11, opacity: 0.75, ...mono }}>{j.total}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
             {/* alignItems 'start': abrir um cartão já não estica o do lado.
                 overflowAnchor 'none': o browser deixa de "corrigir" o scroll
                 sozinho quando a lista cresce (era isso que fazia a página
@@ -2188,6 +2171,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', display: 'flex', flexShrink: 0 }}>
                         {copiedId === c.id ? <Check size={15} color={T.good} /> : <Share2 size={15} color={T.muted} />}
                       </button>
+                      <button
+                        onClick={() => removerClipe(c)}
+                        title="Apagar o clipe (também desaparece para o jogador)" aria-label={`Apagar o clipe ${c.titulo || ''}`}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px 10px 2px', display: 'flex', flexShrink: 0 }}>
+                        <Trash2 size={15} color={T.muted} />
+                      </button>
                       </div>
                       </React.Fragment>
                       );
@@ -2244,7 +2233,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 const tag = TAGS.find(t => t.id === clip.tagId);
                 return (
                   <div key={clip.id} style={{ position: 'relative', flex: '0 0 auto', width: 148, scrollSnapAlign: 'start' }}>
-                  <button onClick={() => setClipeAReproduzir(clip)}
+                  <button onClick={() => { setEditarClipeAoAbrir(false); setClipeAReproduzir(clip); }}
                     style={{
                       width: '100%', textAlign: 'left', cursor: 'pointer', padding: 0, display: 'block',
                       background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', ...body,
@@ -2279,6 +2268,25 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
                     }}>
                     {copiedId === clip.id ? <Check size={13} color={T.good} /> : <Share2 size={13} color="#fff" />}
+                  </button>
+                  {/* Editar e apagar, ao lado do partilhar (mesmo estilo). */}
+                  <button
+                    onClick={() => { setEditarClipeAoAbrir(true); setClipeAReproduzir(clip); }}
+                    title="Editar o clipe" aria-label="Editar o clipe"
+                    style={{
+                      position: 'absolute', top: 7, left: 38, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
+                      background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                    }}>
+                    <Pencil size={13} color="#fff" />
+                  </button>
+                  <button
+                    onClick={() => removerClipe(clip)}
+                    title="Apagar o clipe" aria-label="Apagar o clipe"
+                    style={{
+                      position: 'absolute', top: 7, left: 70, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
+                      background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                    }}>
+                    <Trash2 size={13} color="#fff" />
                   </button>
                   </div>
                 );
@@ -2322,10 +2330,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         <ClipPlayerModal
           clip={clipeAReproduzir}
           tag={TAGS.find(t => t.id === clipeAReproduzir.tagId)}
-          onClose={() => setClipeAReproduzir(null)}
+          onClose={() => { setClipeAReproduzir(null); setEditarClipeAoAbrir(false); }}
           copied={copiedId === clipeAReproduzir.id}
           onShare={async () => { if (await partilharClipeFicheiro(clipeAReproduzir) === 'copiado') { setCopiedId(clipeAReproduzir.id); setTimeout(() => setCopiedId(null), 1600); } }}
           onSaveEdit={(dados) => editarClipeFicheiro(clipeAReproduzir, dados)}
+          editarAoAbrir={editarClipeAoAbrir}
           originais={videosOriginais.filter(v => v.storagePath)}
           originalSugeridoId={(originalDoClipe(clipeAReproduzir) || {}).id || null}
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
