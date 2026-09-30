@@ -33809,6 +33809,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               <Scissors size={14} /> Mover {g.cortesCanal} {g.cortesCanal === 1 ? 'corte' : 'cortes'} para a ficha
             </Btn>
           )}
+          {/* O botão "Ver cortes em seguida" passou para junto da secção
+             dos cortes (na lista). Aqui em cima fica só o controlo da
+             sequência enquanto ela está a correr. */}
           {cortesDoGrupo.length > 0 && (
             posSeq >= 0 ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -33817,9 +33820,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                 <button title="Corte seguinte" disabled={posSeq === sequencia.length - 1} onClick={() => setActiveId(sequencia[posSeq + 1])} style={{ ...btnIcone, opacity: posSeq === sequencia.length - 1 ? 0.4 : 1 }}><SkipForward size={14} /></button>
                 <Btn variant="ghost" onClick={() => setSequencia(null)}><X size={14} /> Parar</Btn>
               </div>
-            ) : (
-              <Btn variant="ghost" onClick={iniciarSequencia}><Play size={14} /> Ver cortes em seguida</Btn>
-            )
+            ) : null
           )}
         </div>
         {!eJogos && !soLeitura && (
@@ -34554,12 +34555,30 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     // Dentro de um cartão: um bloco por secção — "Jogo
                     // completo"/"Cortes" numa jornada, ou um bloco por jogo
                     // nos Amigáveis e nos adversários.
-                    grupoAtual.secoes.flatMap((s, si) => [
-                      <div key={`h-${s.key}`} style={{ fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', margin: si ? '8px 0 0' : 0 }}>
-                        {s.titulo}
+                    grupoAtual.secoes.flatMap((s, si) => {
+                      // "Ver cortes em seguida" junto dos cortes: no título da
+                      // PRIMEIRA secção que tem cortes ("Cortes" numa jornada;
+                      // o primeiro jogo com cortes nos Amigáveis/adversários).
+                      const iPrimeiraComCortes = grupoAtual.secoes.findIndex(x => x.itens.some(v => ehClipe(v) && v.youtubeId));
+                      const comBotao = si === iPrimeiraComCortes && cortesDoGrupo.length > 0 && posSeq < 0;
+                      return [
+                      <div key={`h-${s.key}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, margin: si ? '8px 0 0' : 0 }}>
+                        <span style={{ fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em' }}>{s.titulo}</span>
+                        {comBotao && (
+                          <button onClick={iniciarSequencia}
+                            title={`Ver os ${cortesDoGrupo.length} cortes um atrás do outro`}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, cursor: 'pointer', ...body,
+                              background: 'transparent', border: `1px solid ${T.gold}`, color: T.gold,
+                              borderRadius: 999, padding: '4px 10px', fontSize: 11.5, fontWeight: 600,
+                            }}>
+                            <Play size={12} /> Ver cortes em seguida
+                          </button>
+                        )}
                       </div>,
                       ...s.itens.map(renderRow),
-                    ])
+                      ];
+                    })
                   ) : visibleItems.map(renderRow)}
                 </div>
               </>
