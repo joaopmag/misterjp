@@ -31893,7 +31893,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [toolBib, setToolBib] = useState(null); // null = nenhuma ferramenta: tocar no vídeo reproduz/pausa, tocar numa forma move-a
   const [corBib, setCorBib] = useState(COR_DESENHO);
   const [shapesRascunho, setShapesRascunho] = useState([]);
-  const [duracaoPausaBib, setDuracaoPausaBib] = useState(3); // segundos que o vídeo fica parado, depois de "Guardar"
+  const DURACAO_PADRAO_BIB = 5; // segundos por defeito de cada desenho (antes 3)
+  const [duracaoPausaBib, setDuracaoPausaBib] = useState(DURACAO_PADRAO_BIB); // segundos que o vídeo fica parado, depois de "Guardar"
   const [anotacaoIdEmEdicaoBib, setAnotacaoIdEmEdicaoBib] = useState(null); // null = pausa nova; senão, a editar uma já existente
   const [tempoAnotacaoBib, setTempoAnotacaoBib] = useState(0); // o instante do vídeo a que esta pausa fica ligada
   const [formaEmCursoBib, setFormaEmCursoBib] = useState(null); // { tool, points } — enquanto se arrasta ou se vão acrescentando pontos
@@ -31985,7 +31986,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const abrirPausaBib = (existente, tempo) => {
     if (existente) {
       setShapesRascunho((existente.shapes || []).map(sh => (sh.id ? sh : { ...sh, id: uid() })));
-      setDuracaoPausaBib(Number(existente.duracaoSegundos) || 3);
+      setDuracaoPausaBib(Number(existente.duracaoSegundos) || DURACAO_PADRAO_BIB);
       setAnotacaoIdEmEdicaoBib(existente.id);
       // Grava-se com o instante já corrigido para dentro do corte (ver
       // tempoPausaNoCorte) — assim uma pausa antiga, gravada fora do
@@ -31993,7 +31994,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setTempoAnotacaoBib(tempoPausaNoCorte(existente));
     } else {
       setShapesRascunho([]);
-      setDuracaoPausaBib(3);
+      setDuracaoPausaBib(DURACAO_PADRAO_BIB);
       setAnotacaoIdEmEdicaoBib(null);
       setTempoAnotacaoBib(tempo);
     }
@@ -32944,7 +32945,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       const tAlvo = tempoPausaNoCorte(alvo);
       const grupo = (active.anotacoesPausa || []).filter(a => Math.abs(tempoPausaNoCorte(a) - tAlvo) < 2);
       grupo.forEach(a => congeladasDesenhoRef.current.add(a.id));
-      const duracao = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || 3));
+      const duracao = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || DURACAO_PADRAO_BIB));
       const lento = MODO_SEGURAR_BIB === 'lento';
       if (liveTime - tAlvo > 0.3) enviarComandoYoutube('seekTo', [tAlvo, true]);
       if (lento) enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
@@ -33009,7 +33010,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Math.max com um valor sempre válido — se por algum motivo uma
     // duração viesse estragada (undefined/NaN), nunca deixar isso
     // transformar-se numa pausa sem fim.
-    const duracaoComum = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || 3));
+    const duracaoComum = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || DURACAO_PADRAO_BIB));
     const todasAsFormas = grupo.flatMap(a => a.shapes || []);
     pausaEmCursoRef.current = primeira.id;
     const controlo = { cancelado: false };
