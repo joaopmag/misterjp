@@ -4,7 +4,7 @@ import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
-  Target, Crosshair,
+  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -734,7 +734,12 @@ function partilharClipeFicheiro(clip) {
   return partilharLink({ titulo, texto, url: `${URL_PUBLICA_APP}?clipe=${encodeURIComponent(clip.id)}` });
 }
 
-function ClipAtletaModal({ clip, onClose, onRemove }) {
+/* SEQUÊNCIA ("Ver seguidos"): com `posicao` = { indice, total }, o
+   modal mostra "Clipe X de N", os botões anterior/seguinte e, ao chegar
+   ao fim de um clipe, passa sozinho ao seguinte (`onFimClipe`) em vez
+   de voltar ao início. Sem `posicao`, é o comportamento de sempre (um
+   clipe só, em ciclo). */
+function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSeguinte, onFimClipe }) {
   const iframeRef = useRef(null);
   const inicio = Math.max(0, Number(clip.clipInicio) || 0);
   const fim = Math.max(inicio + 1, Number(clip.clipFim) || 0);
@@ -742,6 +747,30 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
   const [aTocar, setATocar] = useState(false);
   const saltoRef = useRef(0); // evita pedir vários saltos seguidos enquanto o primeiro não chega
   const [copiado, setCopiado] = useState(false);
+  const emSequencia = !!posicao;
+  const onFimClipeRef = useRef(onFimClipe);
+  onFimClipeRef.current = onFimClipe;
+
+  // O leitor só é recarregado quando o clipe seguinte é de OUTRO vídeo.
+  // No mesmo jogo, salta-se dentro do leitor já aberto — a passagem de
+  // um clipe para o outro fica quase imediata, sem ecrã preto.
+  const [clipeDoLeitor, setClipeDoLeitor] = useState(clip);
+  useEffect(() => {
+    saltoRef.current = Date.now();
+    setTempo(inicio);
+    if (clip.youtubeId === clipeDoLeitor.youtubeId) {
+      if (clip.id !== clipeDoLeitor.id) {
+        const win = iframeRef.current && iframeRef.current.contentWindow;
+        if (win) {
+          win.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [inicio, true] }), '*');
+          win.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+        }
+      }
+    } else {
+      setClipeDoLeitor(clip);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clip.id]);
 
   const partilhar = async () => {
     const r = await partilharClipeAtleta(clip);
@@ -768,7 +797,10 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
         const t = data.info.currentTime;
         if (typeof t === 'number') {
           const aSaltar = Date.now() - saltoRef.current < 800;
-          if (!aSaltar && (t >= fim - 0.15 || t < inicio - 0.5)) irPara(inicio);
+          if (!aSaltar && t >= fim - 0.15 && emSequencia && onFimClipeRef.current) {
+            saltoRef.current = Date.now(); // não pedir a passagem duas vezes
+            onFimClipeRef.current();
+          } else if (!aSaltar && (t >= fim - 0.15 || t < inicio - 0.5)) irPara(inicio);
           else setTempo(Math.min(fim, Math.max(inicio, t)));
         }
       }
@@ -776,14 +808,14 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clip.id, inicio, fim]);
+  }, [clip.id, inicio, fim, emSequencia]);
 
   const aoCarregar = () => {
     const win = iframeRef.current && iframeRef.current.contentWindow;
     if (win) win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
   };
 
-  const src = `https://www.youtube.com/embed/${clip.youtubeId}?start=${Math.floor(inicio)}&autoplay=1&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`;
+  const src = `https://www.youtube.com/embed/${clipeDoLeitor.youtubeId}?start=${Math.floor(Math.max(0, Number(clipeDoLeitor.clipInicio) || 0))}&autoplay=1&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`;
   const duracao = fim - inicio;
   const [areaRef, caixa] = useCaixaNaArea(16 / 9);
   const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();
@@ -794,9 +826,16 @@ function ClipAtletaModal({ clip, onClose, onRemove }) {
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))', borderBottom: `1px solid ${T.line}`, background: T.surface, flexShrink: 0 }}>
           <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {emSequencia && <strong style={{ color: T.gold, fontWeight: 700 }}>Clipe {posicao.indice + 1} de {posicao.total} · </strong>}
             {clip.atletaNome || 'Atleta'} · {mmss(inicio)}–{mmss(fim)} ({Math.round(duracao)}s)
           </span>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            {emSequencia && (
+              <>
+                <Btn variant="ghost" onClick={onAnterior} disabled={posicao.indice === 0} style={{ padding: '6px 10px' }} title="Clipe anterior"><SkipBack size={14} /></Btn>
+                <Btn variant="ghost" onClick={onSeguinte} disabled={posicao.indice >= posicao.total - 1} style={{ padding: '6px 10px' }} title="Clipe seguinte"><SkipForward size={14} /></Btn>
+              </>
+            )}
             <Btn variant="ghost" onClick={partilhar} style={{ padding: '6px 10px' }} title="Partilhar só o corte">
               {copiado ? <Check size={14} color={T.good} /> : <Share2 size={14} />}
             </Btn>
@@ -935,6 +974,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // ou 'atletas' (Análise individual em clipes, criados no Portal).
   const [separadorClipes, setSeparadorClipes] = useState('staff');
   const [clipeAtletaAberto, setClipeAtletaAberto] = useState(null);
+  // "Ver seguidos": { clipes, indice } — todos os clipes de um jogador,
+  // um atrás do outro, na ordem do cartão.
+  const [sequenciaAtleta, setSequenciaAtleta] = useState(null);
+  // Cartões sem barra de scroll: mostram os primeiros CLIPES_VISIVEIS e
+  // um botão "Mostrar mais" que abre o cartão inteiro.
+  const CLIPES_VISIVEIS = 3;
+  const [cartoesAbertos, setCartoesAbertos] = useState(() => new Set());
+  const alternarCartao = (chave) => setCartoesAbertos(prev => {
+    const n = new Set(prev);
+    if (n.has(chave)) n.delete(chave); else n.add(chave);
+    return n;
+  });
 
   const clipesStaff = clipes.filter(c => !ehClipeAtleta(c));
   const clipesAtletas = clipes.filter(ehClipeAtleta);
@@ -1946,9 +1997,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </span>
                     <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: T.cream, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.nome}</span>
                     <span style={{ fontSize: 12, color: T.mutedDim, ...body, flexShrink: 0 }}>{g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}</span>
+                    {g.clipes.length > 1 && (
+                      <button onClick={() => setSequenciaAtleta({ clipes: g.clipes, indice: 0 })}
+                        title={`Ver os ${g.clipes.length} clipes de ${g.nome} seguidos`}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0, cursor: 'pointer', ...body,
+                          background: 'transparent', border: `1px solid ${T.gold}`, color: T.gold,
+                          borderRadius: 999, padding: '5px 10px', fontSize: 12, fontWeight: 600,
+                        }}>
+                        <Play size={12} /> Ver seguidos
+                      </button>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 340, overflowY: 'auto' }}>
-                    {g.clipes.map(c => (
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {(cartoesAbertos.has(g.chave) ? g.clipes : g.clipes.slice(0, CLIPES_VISIVEIS)).map(c => (
                       <div key={c.id} style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}` }}>
                       <button onClick={() => setClipeAtletaAberto(c)}
                         style={{
@@ -1977,6 +2039,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       </div>
                     ))}
                   </div>
+                  {g.clipes.length > CLIPES_VISIVEIS && (
+                    <button onClick={() => alternarCartao(g.chave)}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', ...body,
+                        background: 'transparent', border: 'none', color: T.muted, padding: '9px 12px', fontSize: 12.5, fontWeight: 600,
+                      }}>
+                      {cartoesAbertos.has(g.chave)
+                        ? <><ChevronUp size={14} /> Mostrar menos</>
+                        : <><ChevronDown size={14} /> Mostrar mais {g.clipes.length - CLIPES_VISIVEIS}</>}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -2059,6 +2132,28 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </>
         )}
       </div>
+
+      {sequenciaAtleta && sequenciaAtleta.clipes[sequenciaAtleta.indice] && (
+        <ClipAtletaModal
+          clip={sequenciaAtleta.clipes[sequenciaAtleta.indice]}
+          posicao={{ indice: sequenciaAtleta.indice, total: sequenciaAtleta.clipes.length }}
+          onAnterior={() => setSequenciaAtleta(s => ({ ...s, indice: Math.max(0, s.indice - 1) }))}
+          onSeguinte={() => setSequenciaAtleta(s => ({ ...s, indice: Math.min(s.clipes.length - 1, s.indice + 1) }))}
+          // No fim do último clipe, recomeça do primeiro (fica em ciclo,
+          // como um clipe sozinho) — dá para deixar a correr numa conversa.
+          onFimClipe={() => setSequenciaAtleta(s => ({ ...s, indice: s.indice + 1 < s.clipes.length ? s.indice + 1 : 0 }))}
+          onClose={() => setSequenciaAtleta(null)}
+          onRemove={() => {
+            const alvo = sequenciaAtleta.clipes[sequenciaAtleta.indice];
+            removerClipe(alvo, () => setSequenciaAtleta(s => {
+              if (!s) return s;
+              const restantes = s.clipes.filter(c => c.id !== alvo.id);
+              if (restantes.length === 0) return null;
+              return { clipes: restantes, indice: Math.min(s.indice, restantes.length - 1) };
+            }));
+          }}
+        />
+      )}
 
       {clipeAtletaAberto && (
         <ClipAtletaModal
