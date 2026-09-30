@@ -31910,7 +31910,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const pausaControloRef = useRef(null);
   const pausasJaMostradasRef = useRef(new Set()); // ids já mostrados nesta passagem pelo corte (limpa-se ao recuar ou ao voltar ao início)
   const tempoAnteriorPausaRef = useRef(null); // última leitura do tempo, para detetar a passagem pelo instante da pausa
-  const [idsGuardadosBib, setIdsGuardadosBib] = useState(() => new Set()); // formas que já vinham gravadas na pausa aberta — "Limpar" não lhes toca
   const aAbrirDesenhoAposFullscreenRef = useRef(false); // "Desenhar" pediu ecrã inteiro — só abre as ferramentas quando ele estiver mesmo ativo
   const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
   const arrastoCorpoBib = useRef(null); // { indiceForma, ultimoPonto } enquanto se arrasta uma forma inteira (não só um vértice)
@@ -31932,6 +31931,33 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaSelecionadaBib(null);
     setFormaEmCursoBib(null);
   };
+  // Carrega uma pausa para o rascunho (existente = editar; null = nova
+  // no instante `tempo`). Usado ao abrir o desenho e ao escolher uma
+  // pausa na lista "Pausas neste corte".
+  const abrirPausaBib = (existente, tempo) => {
+    if (existente) {
+      setShapesRascunho((existente.shapes || []).map(sh => (sh.id ? sh : { ...sh, id: uid() })));
+      setDuracaoPausaBib(Number(existente.duracaoSegundos) || 3);
+      setAnotacaoIdEmEdicaoBib(existente.id);
+      // Grava-se com o instante já corrigido para dentro do corte (ver
+      // tempoPausaNoCorte) — assim uma pausa antiga, gravada fora do
+      // corte, fica reparada assim que é aberta e guardada.
+      setTempoAnotacaoBib(tempoPausaNoCorte(existente));
+    } else {
+      setShapesRascunho([]);
+      setDuracaoPausaBib(3);
+      setAnotacaoIdEmEdicaoBib(null);
+      setTempoAnotacaoBib(tempo);
+    }
+    setFormaEmCursoBib(null);
+    setFormaSelecionadaBib(null);
+    setFormaTextoBib(null);
+    setHistoricoBib([]);
+  };
+  const escolherPausaBib = (a) => {
+    enviarComandoYoutube('seekTo', [tempoPausaNoCorte(a), true]);
+    abrirPausaBib(a);
+  };
   const comecarDesenhoBib = () => {
     enviarComandoYoutube('pauseVideo');
     // O instante da pausa tem de ficar DENTRO do corte. Logo a seguir a
@@ -31945,24 +31971,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Já existe uma pausa guardada bem perto de onde estamos? Abre-a
     // para editar, em vez de criar uma nova ao lado (a 1s de distância
     // já conta como "a mesma", para não ser preciso acertar ao segundo).
+    // As restantes ficam acessíveis na lista "Pausas neste corte".
     const anotacoes = active.anotacoesPausa || [];
-    const existente = anotacoes.find(a => Math.abs(a.tempoVideo - agora) < 2);
-    if (existente) {
-      // Garante que todas as formas gravadas têm id — é por ele que
-      // "Limpar" distingue o que já estava gravado do que é novo.
-      const formas = (existente.shapes || []).map(sh => (sh.id ? sh : { ...sh, id: uid() }));
-      setShapesRascunho(formas);
-      setIdsGuardadosBib(new Set(formas.map(sh => sh.id)));
-      setDuracaoPausaBib(existente.duracaoSegundos);
-      setAnotacaoIdEmEdicaoBib(existente.id);
-      setTempoAnotacaoBib(existente.tempoVideo);
-    } else {
-      setShapesRascunho([]);
-      setIdsGuardadosBib(new Set());
-      setDuracaoPausaBib(3);
-      setAnotacaoIdEmEdicaoBib(null);
-      setTempoAnotacaoBib(agora);
-    }
+    const existente = anotacoes.find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
+    abrirPausaBib(existente || null, agora);
     setToolBib('seta');
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
@@ -32684,6 +32696,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const clipFimEf = ativoEClipe
     ? (typeof active.clipFim === 'number' ? active.clipFim : active.clipInicio + 30)
     : 0;
+  // Instante EFETIVO de uma pausa, sempre dentro do corte. Pausas
+  // gravadas antes da correção podem ter ficado com o tempo errado
+  // (segundo 0 do jogo, ou o tempo de outro vídeo) — essas contam como
+  // estando no início do corte, em vez de nunca dispararem. E o leitor
+  // começa no segundo inteiro antes do corte (start= só aceita inteiros),
+  // por isso uma pausa gravada aí também é puxada para o início real.
+  const tempoPausaNoCorte = (a) => {
+    const t = Number(a && a.tempoVideo);
+    if (!Number.isFinite(t) || t < clipIni - 1.25 || t > clipFimEf + 0.75) return clipIni;
+    return Math.min(Math.max(t, clipIni), clipFimEf);
+  };
 
   // Só liga os re-renders de tempo ao vivo (ver `precisaTempoAoVivoRef`
   // mais acima) quando há mesmo alguma coisa a vigiar: um clipe a
@@ -32725,25 +32748,44 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     tempoAnteriorPausaRef.current = liveTime;
     if (!ativoEClipe || modoDesenhoBib) return;
     const anotacoes = active.anotacoesPausa || [];
-    if (anotacoes.length === 0 || anterior == null) return;
+    if (anotacoes.length === 0) return;
+    const dentroDoCorte = (t) => t != null && t >= clipIni - 1.25 && t <= clipFimEf + 0.75;
+    if (!dentroDoCorte(liveTime)) return;
+
+    // PRIMEIRA LEITURA dentro do corte (acabou de abrir, ou o tempo
+    // ainda vinha a 0 / de outro vídeo). Antes, este salto era lido como
+    // "saltou para a frente" e a pausa do início do corte era ignorada
+    // na primeira reprodução — só aparecia nas voltas seguintes.
+    // Agora conta como se o vídeo viesse do início do corte.
+    const entrouAgora = !dentroDoCorte(anterior);
+    if (entrouAgora && !ytATocarRef.current) {
+      // Ainda parado (só abriu): não dispara já (senão o corte começava
+      // a tocar sozinho no fim da pausa). Fica preparado para disparar
+      // assim que se carregar em reproduzir.
+      tempoAnteriorPausaRef.current = Math.min(liveTime, clipIni);
+      return;
+    }
 
     // Recuou (fim do corte → início, -2s, barra arrastada para trás):
     // as pausas que ficaram outra vez à frente voltam a poder disparar.
-    if (liveTime < anterior - 0.3) {
-      anotacoes.forEach(a => { if (a.tempoVideo >= liveTime - 0.5) pausasJaMostradasRef.current.delete(a.id); });
+    if (!entrouAgora && liveTime < anterior - 0.3) {
+      anotacoes.forEach(a => { if (tempoPausaNoCorte(a) >= liveTime - 0.5) pausasJaMostradasRef.current.delete(a.id); });
       return;
     }
     if (pausaEmCursoRef.current) return;
-    const avanco = liveTime - anterior;
-    if (avanco <= 0 || avanco >= 2) return; // parado, ou salto para a frente — não é passagem
+    const desde = entrouAgora ? Math.min(liveTime, clipIni) : anterior;
+    const avanco = liveTime - desde;
+    if (!entrouAgora && (avanco <= 0 || avanco >= 2)) return; // parado, ou salto para a frente — não é passagem
 
-    const primeira = anotacoes.find(a =>
-      !pausasJaMostradasRef.current.has(a.id)
-      && a.tempoVideo >= anterior - 0.5
-      && a.tempoVideo <= liveTime + 0.05
-    );
+    const primeira = anotacoes.find(a => {
+      if (pausasJaMostradasRef.current.has(a.id)) return false;
+      const t = tempoPausaNoCorte(a);
+      if (t < desde - 0.5 || t > liveTime + 0.05) return false;
+      // Ao entrar já a tocar, só apanha o que ficou mesmo agora para trás.
+      return !entrouAgora || liveTime - t < 1.5;
+    });
     if (!primeira) return;
-    const grupo = anotacoes.filter(a => Math.abs(a.tempoVideo - primeira.tempoVideo) < 2);
+    const grupo = anotacoes.filter(a => Math.abs(tempoPausaNoCorte(a) - tempoPausaNoCorte(primeira)) < 2);
     grupo.forEach(a => pausasJaMostradasRef.current.add(a.id));
     // Math.max com um valor sempre válido — se por algum motivo uma
     // duração viesse estragada (undefined/NaN), nunca deixar isso
@@ -33949,12 +33991,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           <Btn variant="ghost" onClick={retrocederBib} disabled={historicoBib.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <Undo2 size={14} /> Recuar
                           </Btn>
-                          {/* LIMPAR — só apaga o que se desenhou AGORA. As formas
-                             que já vinham gravadas nesta pausa ficam; para as
-                             tirar, usa-se a Borracha (uma a uma) ou "Apagar
-                             pausa" (a pausa inteira). Antes limpava tudo e,
-                             ao gravar, apagava os desenhos já feitos. */}
-                          <Btn variant="ghost" onClick={() => { if (shapesRascunho.some(sh => !idsGuardadosBib.has(sh.id))) { pushHistoricoBib(); setShapesRascunho(prev => prev.filter(sh => idsGuardadosBib.has(sh.id))); setFormaSelecionadaBib(null); } }} disabled={!shapesRascunho.some(sh => !idsGuardadosBib.has(sh.id))} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
+                          {/* LIMPAR — tira todas as formas desta pausa, incluindo
+                             as que já estavam gravadas. Só fica definitivo ao
+                             tocar em Guardar/Concluído (Recuar desfaz, Cancelar
+                             sai sem mexer no que estava gravado). */}
+                          <Btn variant="ghost" onClick={() => { if (shapesRascunho.length > 0) { pushHistoricoBib(); setShapesRascunho([]); setFormaSelecionadaBib(null); } }} disabled={shapesRascunho.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <Trash2 size={14} /> Limpar
                           </Btn>
                           <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
@@ -33967,7 +34008,31 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         {/* Menu da pausa — por cima do vídeo, não na
                            lateral, para ficar sempre bem à vista enquanto
                            se decide quanto tempo o vídeo fica parado. */}
-                        <div style={{ position: 'absolute', top: 8, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
+                        <div style={{ position: 'absolute', top: 8, left: 86, right: 86, zIndex: 5, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                          {/* PAUSAS NESTE CORTE — todas as que já existem,
+                             para se poder abrir (e limpar/apagar) qualquer
+                             uma, esteja o vídeo onde estiver. */}
+                          {(active.anotacoesPausa || []).length > 0 && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '5px 10px' }}>
+                              <span style={{ fontSize: 11.5, color: T.mutedDim }}>Pausas neste corte:</span>
+                              {[...(active.anotacoesPausa || [])]
+                                .sort((a, b) => tempoPausaNoCorte(a) - tempoPausaNoCorte(b))
+                                .map(a => {
+                                  const emEdicao = a.id === anotacaoIdEmEdicaoBib;
+                                  return (
+                                    <button key={a.id} onClick={() => escolherPausaBib(a)}
+                                      title={`Abrir esta pausa (${(a.shapes || []).length} ${(a.shapes || []).length === 1 ? 'forma' : 'formas'})`}
+                                      style={{
+                                        background: emEdicao ? T.gold : 'none', color: emEdicao ? '#111' : '#fff',
+                                        border: `1px solid ${emEdicao ? T.gold : T.line}`, borderRadius: 4,
+                                        padding: '2px 8px', fontSize: 12, cursor: 'pointer', ...mono,
+                                      }}>
+                                      {fmtMMSS(tempoPausaNoCorte(a) - clipIni)}
+                                    </button>
+                                  );
+                                })}
+                            </div>
+                          )}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 10px' }}>
                             <span style={{ fontSize: 11.5, color: T.mutedDim }}>Pausa:</span>
                             <button onClick={() => setDuracaoPausaBib(d => Math.max(1, d - 1))}
@@ -33982,7 +34047,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           </div>
                         </div>
                         {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
-                          <div style={{ position: 'absolute', top: 48, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
+                          <div style={{ position: 'absolute', top: (active.anotacoesPausa || []).length > 0 ? 84 : 48, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
                             <Btn onClick={concluirFormaMultiplaBib} style={{ padding: '6px 14px', fontSize: 12.5 }}>Concluído</Btn>
                           </div>
                         )}
