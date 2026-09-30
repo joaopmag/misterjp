@@ -21706,6 +21706,7 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
      visível e clicável, substituindo a barra em vez de a trazer de
      volta. */
   const scrollRef = React.useRef(null);
+  const molduraRef = React.useRef(null); // a caixa de fora (corta a barra) — nunca deve ficar deslocada
   const scrollPor = (dx) => { if (scrollRef.current) scrollRef.current.scrollBy({ left: dx, behavior: 'smooth' }); };
   // Referência a cada coluna de dia, só para se poder saltar direto para
   // ela — ver o efeito mais abaixo, que traz "hoje" para a vista assim
@@ -21741,7 +21742,17 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
     if (!alvo) return;
     const key = alvo.match ? `m-${alvo.match.id}` : alvo.date;
     const el = thRefs.current[key];
-    if (el) el.scrollIntoView({ inline: 'center', block: 'nearest' });
+    const cont = scrollRef.current;
+    // Desloca SÓ a caixa da tabela. Antes usava-se scrollIntoView, que
+    // desloca também TODAS as caixas à volta — incluindo a moldura de
+    // fora (overflow escondido, 20px mais estreita de propósito, ver SBAR).
+    // Essa moldura ficava deslocada uns pixéis para a esquerda e cortava
+    // o início da coluna dos jogadores ("GR", "DC" meio comidos).
+    if (el && cont) {
+      const cr = cont.getBoundingClientRect(), er = el.getBoundingClientRect();
+      cont.scrollLeft += (er.left - cr.left) - (cont.clientWidth - er.width) / 2;
+    }
+    if (molduraRef.current) { molduraRef.current.scrollLeft = 0; molduraRef.current.scrollTop = 0; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diasKey]);
 
@@ -21790,7 +21801,8 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
 
           Mas sem barra, precisa dos botões ◀ ▶ ali em cima para andar
           para os lados — ver `scrollRef`/`scrollPor`. */}
-      <div style={{ overflow: 'hidden', maxHeight: 'calc(100vh - 220px)' }}>
+      <div ref={molduraRef} onScroll={e => { if (e.currentTarget.scrollLeft || e.currentTarget.scrollTop) { e.currentTarget.scrollLeft = 0; e.currentTarget.scrollTop = 0; } }}
+        style={{ overflow: 'hidden', maxHeight: 'calc(100vh - 220px)' }}>
         <div ref={scrollRef} className="mjp-scroll-fino" style={{
           overflow: 'auto', maxHeight: `calc(100vh - 220px + ${SBAR}px)`,
           width: `calc(100% + ${SBAR}px)`,
