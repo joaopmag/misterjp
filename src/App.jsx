@@ -31910,6 +31910,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const pausaControloRef = useRef(null);
   const pausasJaMostradasRef = useRef(new Set()); // ids já mostrados nesta passagem pelo corte (limpa-se ao recuar ou ao voltar ao início)
   const tempoAnteriorPausaRef = useRef(null); // última leitura do tempo, para detetar a passagem pelo instante da pausa
+  const passagemDesdeRef = useRef(null); // ponto a partir do qual a próxima leitura (a tocar) conta como passagem, sem limite de salto
   const aAbrirDesenhoAposFullscreenRef = useRef(false); // "Desenhar" pediu ecrã inteiro — só abre as ferramentas quando ele estiver mesmo ativo
   const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
   const arrastoCorpoBib = useRef(null); // { indiceForma, ultimoPonto } enquanto se arrasta uma forma inteira (não só um vértice)
@@ -31930,7 +31931,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const mostrarMascaraRetomaBib = () => {
     setMascaraRetomaBib(true);
     clearTimeout(mascaraRetomaTimerRef.current);
-    mascaraRetomaTimerRef.current = setTimeout(() => setMascaraRetomaBib(false), 2800);
+    mascaraRetomaTimerRef.current = setTimeout(() => setMascaraRetomaBib(false), 4500);
   };
   useEffect(() => () => clearTimeout(mascaraRetomaTimerRef.current), []);
 
@@ -32883,39 +32884,44 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const dentroDoCorte = (t) => t != null && t >= clipIni - 1.25 && t <= clipFimEf + 0.75;
     if (!dentroDoCorte(liveTime)) return;
 
-    // PRIMEIRA LEITURA dentro do corte (acabou de abrir, ou o tempo
-    // ainda vinha a 0 / de outro vídeo). Antes, este salto era lido como
-    // "saltou para a frente" e a pausa do início do corte era ignorada
-    // na primeira reprodução — só aparecia nas voltas seguintes.
-    // Agora conta como se o vídeo viesse do início do corte.
-    const entrouAgora = !dentroDoCorte(anterior);
-    if (entrouAgora && !ytATocarRef.current) {
-      // Ainda parado (só abriu): não dispara já (senão o corte começava
-      // a tocar sozinho no fim da pausa). Fica preparado para disparar
-      // assim que se carregar em reproduzir.
-      tempoAnteriorPausaRef.current = Math.min(liveTime, clipIni);
-      return;
-    }
-
-    // Recuou (fim do corte → início, -2s, barra arrastada para trás):
-    // as pausas que ficaram outra vez à frente voltam a poder disparar.
-    if (!entrouAgora && liveTime < anterior - 0.3) {
+    // PRIMEIRA PASSAGEM. Ao abrir um corte (ou ao voltar ao início dele),
+    // a primeira leitura do tempo pode chegar já bem depois do instante da
+    // pausa — o leitor demora a carregar e só depois começa a reportar.
+    // Antes, esse atraso fazia a pausa ser ignorada na 1ª visualização
+    // (só aparecia numa 2ª, com o vídeo já em cache e a leitura a chegar
+    // mais cedo). Agora, a primeira leitura A TOCAR depois de entrar/recuar
+    // apanha qualquer pausa desde esse ponto — e, se o vídeo já a passou,
+    // volta atrás até ela antes de congelar.
+    if (!dentroDoCorte(anterior)) {
+      passagemDesdeRef.current = clipIni;
+    } else if (liveTime < anterior - 0.3) {
+      // Recuou (fim do corte → início, -2s, barra para trás): as pausas
+      // que ficaram outra vez à frente voltam a poder disparar.
       anotacoes.forEach(a => { if (tempoPausaNoCorte(a) >= liveTime - 0.5) pausasJaMostradasRef.current.delete(a.id); });
+      passagemDesdeRef.current = liveTime;
       return;
     }
+    if (!ytATocarRef.current) return; // parado: espera pelo play (a passagem fica guardada)
     if (pausaEmCursoRef.current) return;
-    const desde = entrouAgora ? Math.min(liveTime, clipIni) : anterior;
-    const avanco = liveTime - desde;
-    if (!entrouAgora && (avanco <= 0 || avanco >= 2)) return; // parado, ou salto para a frente — não é passagem
+    let desde;
+    if (passagemDesdeRef.current != null) {
+      desde = passagemDesdeRef.current;
+      passagemDesdeRef.current = null;
+    } else {
+      const avanco = liveTime - anterior;
+      if (avanco <= 0 || avanco >= 2) return; // parado, ou salto para a frente (barra) — não é passagem
+      desde = anterior;
+    }
 
-    const primeira = anotacoes.find(a => {
-      if (pausasJaMostradasRef.current.has(a.id)) return false;
-      const t = tempoPausaNoCorte(a);
-      if (t < desde - 0.5 || t > liveTime + 0.05) return false;
-      // Ao entrar já a tocar, só apanha o que ficou mesmo agora para trás.
-      return !entrouAgora || liveTime - t < 1.5;
-    });
+    const primeira = anotacoes
+      .filter(a => !pausasJaMostradasRef.current.has(a.id))
+      .map(a => ({ a, t: tempoPausaNoCorte(a) }))
+      .filter(x => x.t >= desde - 0.5 && x.t <= liveTime + 0.05)
+      .sort((x, y) => x.t - y.t)
+      .map(x => x.a)[0];
     if (!primeira) return;
+    // O vídeo já passou do instante da pausa (leitura atrasada)? Volta lá.
+    if (liveTime - tempoPausaNoCorte(primeira) > 0.3) enviarComandoYoutube('seekTo', [tempoPausaNoCorte(primeira), true]);
     const grupo = anotacoes.filter(a => Math.abs(tempoPausaNoCorte(a) - tempoPausaNoCorte(primeira)) < 2);
     grupo.forEach(a => pausasJaMostradasRef.current.add(a.id));
     // Math.max com um valor sempre válido — se por algum motivo uma
@@ -32981,6 +32987,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   useEffect(() => {
     pausasJaMostradasRef.current = new Set();
     tempoAnteriorPausaRef.current = null;
+    passagemDesdeRef.current = null;
   }, [active && active.id]);
 
   /* O CLIPE SÓ MOSTRA O CLIPE.
@@ -33215,6 +33222,45 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setYtATocar(false);
     setArrastoClipe(null);
     tempoAnteriorClipeRef.current = null;
+  }, [activeId]);
+
+  // LEITOR REAPROVEITADO — antes, cada corte tinha o seu próprio leitor
+  // (key = id do corte, start= no endereço), por isso trocar de corte
+  // recarregava o YouTube inteiro: ecrã preto uns segundos, e a primeira
+  // leitura do tempo chegava tarde (ver "PRIMEIRA PASSAGEM"). Agora, se o
+  // corte novo é do mesmo vídeo do YouTube que já está aberto, fica o
+  // mesmo leitor e salta-se para o início do corte. Calculado durante o
+  // render (e guardado numa ref) para o iframe nunca receber, nem por um
+  // instante, o endereço do corte anterior.
+  const leitorBibRef = useRef(null);
+  const leitorBib = (() => {
+    if (!active || !active.youtubeId) return null;
+    const atual = leitorBibRef.current;
+    const reaproveita = atual && ativoEClipe && atual.eClipe && atual.youtubeId === active.youtubeId;
+    if (reaproveita) return atual;
+    const emSeq = sequencia && sequencia.includes(active.id);
+    const novo = {
+      chave: active.id, youtubeId: active.youtubeId, eClipe: ativoEClipe,
+      src: youtubeEmbedSrc(active, emSeq ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0'),
+    };
+    leitorBibRef.current = novo;
+    return novo;
+  })();
+  // Corte novo no mesmo leitor: salta para o início dele. Continua a
+  // tocar se já estava a tocar (ou se é a sequência "em seguida").
+  useEffect(() => {
+    if (!leitorBib || !active || leitorBib.chave === active.id || !ativoEClipe) return;
+    const estavaATocar = ytATocarRef.current;
+    const emSeq = sequencia && sequencia.includes(active.id);
+    enviarComandoYoutube('seekTo', [clipIni, true]);
+    if (estavaATocar || emSeq) {
+      enviarComandoYoutube('playVideo');
+      // A troca de corte repõe "a tocar" a falso (pensado para um leitor
+      // novo). Com o mesmo leitor, que continua a tocar, o YouTube não
+      // volta a avisar — por isso repõe-se aqui o estado verdadeiro.
+      setYtATocar(true);
+    } else enviarComandoYoutube('pauseVideo');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
   const marcarInicio = () => setClipMarcas(prev => ({ ...prev, inicio: currentTimeRef.current }));
@@ -34020,13 +34066,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         </div>
                       ) : (
                         <iframe
-                          key={active.id}
+                          // Chave e endereço vêm de `leitorBib`: entre cortes do
+                          // MESMO jogo o leitor não é recarregado (salta-se
+                          // dentro dele) — acabou o ecrã preto de ~4s a cada
+                          // troca de corte.
+                          key={leitorBib ? leitorBib.chave : active.id}
                           ref={inlineIframeRef}
                           onLoad={handleIframeLoad(inlineIframeRef)}
                           // fs=0: sem o ecrã inteiro nativo do YouTube — o
                           // nosso (botão abaixo) mantém o Criar clipe e a
                           // barra do clipe à mão.
-                          src={youtubeEmbedSrc(active, sequencia && sequencia.includes(active.id) ? 'enablejsapi=1&fs=0&autoplay=1' : 'enablejsapi=1&fs=0')}
+                          src={leitorBib ? leitorBib.src : youtubeEmbedSrc(active, 'enablejsapi=1&fs=0')}
                           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           referrerPolicy="strict-origin-when-cross-origin"
@@ -34041,22 +34091,29 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                          rascunho (`shapesRascunho`), que só é gravado a
                          sério ao tocar em "Guardar". */}
                       {/* MÁSCARA DE RETOMA — quando o vídeo recomeça depois de
-                         uma pausa de desenho, o YouTube mostra durante ~2s um
-                         botão de pausa ao centro. Não há forma de o desligar
-                         no leitor do YouTube (nem de "congelar" a imagem sem
-                         pausar), por isso tapa-se só o centro com um desfoque
-                         suave nesse tempo. O topo fica sem desfoque (pedido). */}
+                         uma pausa de desenho, o YouTube mostra durante uns
+                         segundos o botão de pausa dele ao centro. Não há
+                         forma de o desligar, nem de "congelar" a imagem sem
+                         pausar. O desfoque ficava mal e era curto; agora o
+                         botão do YouTube fica por baixo de um disco opaco
+                         da própria app (fundo escuro, anel dourado a rodar,
+                         como um "a retomar"), durante 4,5s. */}
                       {ativoEClipe && !isBlocked && mascaraRetomaBib && (
-                        <>
-                          <div style={{
-                            position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-                            width: 'clamp(90px, 16%, 190px)', aspectRatio: '1 / 1', borderRadius: '50%',
-                            backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
-                            WebkitMaskImage: 'radial-gradient(circle, #000 55%, transparent 72%)',
-                            maskImage: 'radial-gradient(circle, #000 55%, transparent 72%)',
-                            pointerEvents: 'none', zIndex: 1,
-                          }} />
-                        </>
+                        <div style={{
+                          position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
+                          width: 'clamp(84px, 12%, 150px)', aspectRatio: '1 / 1', borderRadius: '50%',
+                          background: 'rgba(12, 18, 12, 0.94)', boxShadow: '0 0 0 1px rgba(255,255,255,0.08), 0 4px 18px rgba(0,0,0,0.45)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          pointerEvents: 'none', zIndex: 1,
+                        }}>
+                          <svg viewBox="0 0 100 100" style={{ width: '78%', height: '78%' }}>
+                            <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="5" />
+                            <circle cx="50" cy="50" r="44" fill="none" stroke={T.gold} strokeWidth="5" strokeLinecap="round" strokeDasharray="70 207">
+                              <animateTransform attributeName="transform" type="rotate" from="0 50 50" to="360 50 50" dur="1.1s" repeatCount="indefinite" />
+                            </circle>
+                            <path d="M42 34 L68 50 L42 66 Z" fill={T.gold} />
+                          </svg>
+                        </div>
                       )}
                       {ativoEClipe && !isBlocked && (
                         <svg
