@@ -1002,9 +1002,23 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // compensa-se o scroll (da janela ou do contentor com scroll mais
   // próximo) para o cabeçalho ficar exatamente no mesmo sítio.
   const cartaoRefs = useRef({});
+  // FECHAR UM CARTÃO SEM A PÁGINA SUBIR. Ao fechar, a página fica mais
+  // curta; se se estava perto do fundo, o browser é obrigado a subir a
+  // página (já não há conteúdo para mostrar ali) e tudo mexe. Por isso,
+  // ao fechar, a grelha guarda a altura que tinha (min-height) — a página
+  // não encolhe e nada sobe. A reserva sai ao abrir outro cartão ou ao
+  // mudar o filtro de jogo (aí a página muda de qualquer forma).
+  const grelhaAtletasRef = useRef(null);
+  const [alturaReservadaGrelha, setAlturaReservadaGrelha] = useState(0);
   const alternarCartao = (chave) => {
     const el = cartaoRefs.current[chave];
     const antes = el ? el.getBoundingClientRect().top : null;
+    const aFechar = cartoesAbertos.has(chave);
+    if (aFechar && grelhaAtletasRef.current) {
+      setAlturaReservadaGrelha(Math.max(alturaReservadaGrelha, grelhaAtletasRef.current.getBoundingClientRect().height));
+    } else if (!aFechar) {
+      setAlturaReservadaGrelha(0);
+    }
     setCartoesAbertos(prev => {
       const n = new Set(prev);
       if (n.has(chave)) n.delete(chave); else n.add(chave);
@@ -2060,7 +2074,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {[{ chave: 'todos', nome: 'Todos', total: clipesAtletas.length }, ...jogosAtletas].map(j => {
                   const ativo = jogoFiltroEfetivo === j.chave;
                   return (
-                    <button key={j.chave} onClick={() => setJogoFiltroAtletas(j.chave)} title={j.nome}
+                    <button key={j.chave} onClick={() => { setJogoFiltroAtletas(j.chave); setAlturaReservadaGrelha(0); }} title={j.nome}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 300, cursor: 'pointer', ...body,
                         background: ativo ? T.gold : 'transparent', color: ativo ? '#111' : T.muted,
@@ -2077,7 +2091,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 overflowAnchor 'none': o browser deixa de "corrigir" o scroll
                 sozinho quando a lista cresce (era isso que fazia a página
                 mexer toda ao carregar em "Mostrar mais"). */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start', overflowAnchor: 'none' }}>
+            <div ref={grelhaAtletasRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start', overflowAnchor: 'none', minHeight: alturaReservadaGrelha || undefined }}>
               {cartoesAtletas.map(g => (
                 <div key={g.chave} ref={el => { if (el) cartaoRefs.current[g.chave] = el; else delete cartaoRefs.current[g.chave]; }}
                   style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -2147,7 +2161,18 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                         <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
                           style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
                         <span style={{ minWidth: 0, flex: 1 }}>
-                          <span style={{ display: 'block', fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.titulo || '(sem título)'}</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                            <span style={{ fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{c.titulo || '(sem título)'}</span>
+                            {/* O jogador apagou-o no Portal: para ele desaparece,
+                               mas o treinador continua a tê-lo (marcado pelo
+                               servidor em `apagadoPeloAtleta`). */}
+                            {c.apagadoPeloAtleta && (
+                              <span title="O jogador apagou este clipe no Portal. Continua disponível aqui para o treinador."
+                                style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 600, color: T.mutedDim, border: `1px solid ${T.line}`, borderRadius: 4, padding: '0 5px', lineHeight: '15px' }}>
+                                Apagado no Portal
+                              </span>
+                            )}
+                          </span>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.mutedDim, ...mono, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                             <Scissors size={10} style={{ flexShrink: 0 }} /> {mmss(c.clipInicio)}–{mmss(c.clipFim)}
                             {dataCurta(c.criadoEm) && <span style={{ ...body, marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis' }}>· {dataCurta(c.criadoEm)}</span>}
