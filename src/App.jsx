@@ -31893,7 +31893,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [toolBib, setToolBib] = useState('seta');
   const [corBib, setCorBib] = useState(COR_DESENHO);
   const [shapesRascunho, setShapesRascunho] = useState([]);
-  const [duracaoPausaBib, setDuracaoPausaBib] = useState(5); // segundos que o vídeo fica parado, depois de "Guardar"
+  const [duracaoPausaBib, setDuracaoPausaBib] = useState(3); // segundos que o vídeo fica parado, depois de "Guardar"
   const [anotacaoIdEmEdicaoBib, setAnotacaoIdEmEdicaoBib] = useState(null); // null = pausa nova; senão, a editar uma já existente
   const [tempoAnotacaoBib, setTempoAnotacaoBib] = useState(0); // o instante do vídeo a que esta pausa fica ligada
   const [formaEmCursoBib, setFormaEmCursoBib] = useState(null); // { tool, points } — enquanto se arrasta ou se vão acrescentando pontos
@@ -31937,7 +31937,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setTempoAnotacaoBib(existente.tempoVideo);
     } else {
       setShapesRascunho([]);
-      setDuracaoPausaBib(5);
+      setDuracaoPausaBib(3);
       setAnotacaoIdEmEdicaoBib(null);
       setTempoAnotacaoBib(liveTime);
     }
@@ -32232,6 +32232,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Estado do leitor (1 = a tocar, 3 = a carregar) — só para o botão
   // reproduzir/pausar da barra do clipe mostrar o ícone certo.
   const [ytATocar, setYtATocar] = useState(false);
+  // Versão em ref do mesmo valor — para o código dentro de setTimeout
+  // conseguir ler o estado REAL no momento em que corre, não o valor
+  // "congelado" de quando a função foi criada.
+  const ytATocarRef = useRef(false);
+  useEffect(() => { ytATocarRef.current = ytATocar; }, [ytATocar]);
   // Existe agora um único iframe do YouTube (o ecrã inteiro usa o MESMO
   // leitor, ver "ECRÃ INTEIRO" abaixo) — as mensagens de outros iframes
   // do YouTube na página (ex.: vista em coluna) são ignoradas.
@@ -32665,13 +32670,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // PAUSAS DE DESENHO, durante a reprodução normal (fora do modo de
   // desenho): ao passar pelo instante de uma pausa já guardada, o
   // vídeo pára sozinho, mostra os desenhos dela durante os segundos
-  // definidos, e depois retoma sozinho — sem se repetir a cada
-  // pequeno "tick" do tempo ao vivo, graças à trava `pausaEmCursoRef`.
+  // definidos, e depois retoma sozinho.
+  //
+  // Em vez de mandar "pausa"/"continua" ao YouTube e confiar às cegas
+  // que resultou (foi isso que deixava o vídeo preso, com o símbolo de
+  // "a carregar" às vezes visível), confirma-se a sério junto do
+  // próprio leitor (`ytATocarRef`, atualizado pelos eventos que ele
+  // nos manda) antes de avançar — e só volta a tentar o comando se de
+  // facto ainda não tiver resultado.
   //
   // Pausas muito próximas no tempo (menos de 2s de diferença) juntam-se
-  // numa só, com a MAIOR duração entre elas para todas — em vez de
-  // pausar várias vezes seguidas quase no mesmo sítio (o que parecia
-  // um erro/travamento), usa-se sempre um tempo consistente.
+  // numa só, com a MAIOR duração entre elas para todas.
   useEffect(() => {
     if (!ativoEClipe || modoDesenhoBib || pausaEmCursoRef.current) return;
     const anotacoes = active.anotacoesPausa || [];
@@ -32681,16 +32690,44 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Math.max com um valor sempre válido — se por algum motivo uma
     // duração viesse estragada (undefined/NaN), nunca deixar isso
     // transformar-se numa pausa sem fim.
-    const duracaoComum = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || 5));
+    const duracaoComum = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || 3));
     const todasAsFormas = grupo.flatMap(a => a.shapes || []);
     pausaEmCursoRef.current = primeira.id;
+    let cancelado = false;
+
+    const confirmarEstado = (querACorrer, aoConfirmar, tentativasRestantes) => {
+      if (cancelado) return;
+      if (ytATocarRef.current === querACorrer) {
+        aoConfirmar();
+        return;
+      }
+      if (tentativasRestantes <= 0) {
+        // Nunca chegou a confirmação — segue em frente na mesma, em vez
+        // de arriscar ficar preso para sempre à espera.
+        aoConfirmar();
+        return;
+      }
+      enviarComandoYoutube(querACorrer ? 'playVideo' : 'pauseVideo');
+      setTimeout(() => confirmarEstado(querACorrer, aoConfirmar, tentativasRestantes - 1), 300);
+    };
+
     enviarComandoYoutube('pauseVideo');
-    setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
     setTimeout(() => {
-      setPausaAtivaBib(null);
-      enviarComandoYoutube('playVideo');
-      pausaEmCursoRef.current = null;
-    }, duracaoComum * 1000);
+      confirmarEstado(false, () => {
+        if (cancelado) return;
+        // Confirmado que pausou (ytATocarRef já é false) — só agora
+        // começa a contagem a sério, e só agora mostra os desenhos.
+        setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
+        setTimeout(() => {
+          if (cancelado) return;
+          setPausaAtivaBib(null);
+          enviarComandoYoutube('playVideo');
+          confirmarEstado(true, () => { pausaEmCursoRef.current = null; }, 5);
+        }, duracaoComum * 1000);
+      }, 5);
+    }, 150); // um instante para o 1º pedido ter hipótese de chegar, antes de o confirmar
+
+    return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveTime, active && active.id]);
 
@@ -33757,6 +33794,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           style={{
                             position: 'absolute', inset: 0, width: '100%', height: '100%',
                             pointerEvents: modoDesenhoBib ? 'auto' : 'none',
+                            touchAction: 'none', // sem isto, o dedo tenta fazer scroll/zoom em vez de desenhar
                             cursor: modoDesenhoBib ? (hoverFormaBib && !['apagar', 'texto', 'zonalivre', 'linhaPontos'].includes(toolBib) ? 'move' : 'crosshair') : 'default',
                           }}
                           onPointerDown={iniciarFormaBib}
