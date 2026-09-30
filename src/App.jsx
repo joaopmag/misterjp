@@ -31945,11 +31945,30 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Retoma automática no modo de desenho (ver "MODO DE DESENHO" no efeito
   // das pausas): qualquer mexida do utilizador durante o congelamento
   // cancela-a, para o vídeo não arrancar a meio de uma edição.
+  // COMO SE "SEGURA" O VÍDEO NUM DESENHO (opção B, em teste):
+  // 'lento' = em vez de pausar, o vídeo passa a VELOCIDADE_LENTA_BIB
+  //           durante os segundos do desenho e depois volta a 1x. Como o
+  //           YouTube nunca entra em pausa, não desenha o botão de
+  //           pausa/play ao centro quando retoma.
+  // 'pausa' = o comportamento anterior (pausa + play). Para voltar atrás,
+  //           basta mudar esta linha.
+  const MODO_SEGURAR_BIB = 'lento';
+  const VELOCIDADE_LENTA_BIB = 0.25; // o mínimo que o YouTube aceita
   const retomaDesenhoRef = useRef(null);
   const congeladasDesenhoRef = useRef(new Set());
   const [apagarTodasBib, setApagarTodasBib] = useState(false); // "Limpar" sem pausa aberta: apagar todos os desenhos do corte ao Guardar // pausas já congeladas nesta passagem (modo de desenho) — evita voltar a congelar logo a seguir a retomar
   const cancelarRetomaDesenhoBib = () => {
-    if (retomaDesenhoRef.current) retomaDesenhoRef.current.cancelado = true;
+    const r = retomaDesenhoRef.current;
+    if (r) {
+      r.cancelado = true;
+      if (r.lento) {
+        // Mexeu-se em algo durante a câmara lenta: volta a 1x e pára no
+        // instante do desenho, para se poder editar com a imagem certa.
+        enviarComandoYoutube('setPlaybackRate', [1]);
+        enviarComandoYoutube('pauseVideo');
+        enviarComandoYoutube('seekTo', [r.t, true]);
+      }
+    }
     retomaDesenhoRef.current = null;
   };
   const pushHistoricoBib = () => { cancelarRetomaDesenhoBib(); setHistoricoBib(h => [...h.slice(-19), shapesRascunho]); };
@@ -32926,16 +32945,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       const grupo = (active.anotacoesPausa || []).filter(a => Math.abs(tempoPausaNoCorte(a) - tAlvo) < 2);
       grupo.forEach(a => congeladasDesenhoRef.current.add(a.id));
       const duracao = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || 3));
-      enviarComandoYoutube('pauseVideo');
-      enviarComandoYoutube('seekTo', [tAlvo, true]);
+      const lento = MODO_SEGURAR_BIB === 'lento';
+      if (liveTime - tAlvo > 0.3) enviarComandoYoutube('seekTo', [tAlvo, true]);
+      if (lento) enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
+      else { enviarComandoYoutube('pauseVideo'); enviarComandoYoutube('seekTo', [tAlvo, true]); }
       abrirPausaBib(alvo);
-      const retoma = { cancelado: false };
+      const retoma = { cancelado: false, lento, t: tAlvo };
       retomaDesenhoRef.current = retoma;
       setTimeout(() => {
         if (retoma.cancelado) return;
         retomaDesenhoRef.current = null;
         abrirPausaBib(null, tAlvo); // os desenhos saem ao retomar
-        enviarComandoYoutube('playVideo');
+        enviarComandoYoutube(lento ? 'setPlaybackRate' : 'playVideo', lento ? [1] : undefined);
       }, duracao * 1000);
       return;
     }
@@ -33010,6 +33031,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setTimeout(() => confirmarEstado(querACorrer, aoConfirmar, tentativasRestantes - 1), 300);
     };
 
+    if (MODO_SEGURAR_BIB === 'lento') {
+      // Câmara lenta: sem pausa, sem play — o YouTube continua "a tocar".
+      enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
+      setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
+      setTimeout(() => {
+        if (controlo.cancelado) return;
+        setPausaAtivaBib(null);
+        enviarComandoYoutube('setPlaybackRate', [1]);
+        if (pausaControloRef.current === controlo) pausaControloRef.current = null;
+        pausaEmCursoRef.current = null;
+      }, duracaoComum * 1000);
+      return;
+    }
     enviarComandoYoutube('pauseVideo');
     setTimeout(() => {
       confirmarEstado(false, () => {
@@ -33037,6 +33071,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   useEffect(() => {
     return () => {
       cancelarRetomaDesenhoBib();
+      if (pausaControloRef.current && MODO_SEGURAR_BIB === 'lento') enviarComandoYoutube('setPlaybackRate', [1]);
       if (pausaControloRef.current) pausaControloRef.current.cancelado = true;
       pausaControloRef.current = null;
       pausaEmCursoRef.current = null;
