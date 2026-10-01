@@ -3982,6 +3982,12 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           )}
         </Panel>
 
+        <Panel title="Classificação">
+          <div onClick={() => setStandingsOpen(true)} title="Ver classificação completa" style={{ cursor: 'pointer' }}>
+            <StandingsSummary standings={standings} season={season} />
+          </div>
+        </Panel>
+
         <Panel title="Estatuto de Plantel">
           {players.length === 0 ? (
             <EmptyState text="Adiciona jogadores no separador Plantel." />
@@ -3990,12 +3996,6 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
               <PlantelStatusSummary players={players} />
             </div>
           )}
-        </Panel>
-
-        <Panel title="Classificação">
-          <div onClick={() => setStandingsOpen(true)} title="Ver classificação completa" style={{ cursor: 'pointer' }}>
-            <StandingsSummary standings={standings} season={season} />
-          </div>
         </Panel>
 
         <Panel title="Última atividade">
