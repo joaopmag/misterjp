@@ -483,13 +483,26 @@ function diaAutoLesionado(jogadorId, data, clinico) {
   return (clinico || []).some(o => (
     o.playerId === jogadorId && nivelNoDia(o, data) === 'indisponivel'
     && o.inicio && o.inicio <= data
-    // Enquanto a ocorrência não tem `fim` (alta), o jogador continua
-    // indisponível — mesmo que já se tenha passado a previsão de
-    // regresso que se escreveu na altura (era só uma estimativa). Sem
-    // isto, um treino ou jogo criado depois dessa data ficava por
-    // preencher (NP) em vez de L, como se a lesão já não existisse.
-    && (!o.fim || data <= o.fim)
+    && dentroDaParagem(o, data)
   ));
+}
+
+/* Até onde vai o L automático de uma ocorrência:
+   · Com alta (`fim`), até ao dia da alta, inclusive.
+   · Sem alta, nos dias que JÁ PASSARAM (até hoje) o jogador continua
+     indisponível, mesmo que a previsão de regresso tenha ficado para
+     trás — era só uma estimativa, e um treino de ontem sem alta dada
+     é um treino em que ele não esteve (o boletim avisa da previsão
+     atrasada).
+   · Sem alta, nos dias FUTUROS só até à véspera da previsão de
+     regresso: no dia previsto ele já conta para o plantel. Sem
+     previsão, o futuro fica por preencher — não se marca L em jogos de
+     novembro por causa de uma paragem sem fim à vista. Antes, sem alta,
+     o L ia até ao fim do calendário. */
+function dentroDaParagem(o, data) {
+  if (o.fim) return data <= o.fim;
+  if (data <= todayStr()) return true;
+  return !!o.previsaoRetorno && data < o.previsaoRetorno;
 }
 
 function estadoClinicoEm(jogadorId, data, clinico) {
@@ -20695,7 +20708,9 @@ function diasDaOcorrencia({ ocorrencia, sessions, matches, playerId }) {
   /* Até onde vai a paragem: a alta manda; sem alta, a previsão de
      retorno; sem nenhuma das duas, até hoje — não se marcam dias que
      ainda não aconteceram por causa de uma paragem sem fim previsto. */
-  const fim = o.fim || o.previsaoRetorno || todayStr();
+  // A previsão de retorno é o dia em que ele VOLTA: o último dia de L
+  // é a véspera (o mesmo critério do L automático, `dentroDaParagem`).
+  const fim = o.fim || (o.previsaoRetorno ? proximoDiaIso(o.previsaoRetorno, -1) : todayStr());
   const idsDeJogos = new Set((matches || []).map(m => m.id));
 
   const alvos = [];
