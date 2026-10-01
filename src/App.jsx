@@ -4364,8 +4364,8 @@ function LastActivity({ lastEdits }) {
    servidor guarda só QUAIS campos mudaram, nunca os valores — o lance
    diz "editou a lesão de Rios · previsão de retorno", sem a data.
 
-   O período vai ao servidor; pessoa, secção e pesquisa filtram aqui,
-   sobre o que já veio. */
+   Mostra sempre tudo, do mais recente para trás, às páginas de 500.
+   Pessoa e pesquisa filtram aqui, sobre o que já veio. */
 const RELATO_SECOES = {
   players: { label: 'Plantel', tab: 'plantel', icon: Users, art: 'o jogador' },
   exercises: { label: 'Exercícios', tab: 'exercicios', icon: Dumbbell, art: 'o exercício' },
@@ -4420,12 +4420,6 @@ const RELATO_ACOES = {
   editou: { verbo: 'editou', cor: '#D9A72E' },
   apagou: { verbo: 'apagou', cor: '#C25A5A' },
 };
-const RELATO_PERIODOS = [
-  { id: 'hoje', label: 'Hoje' },
-  { id: '7', label: '7 dias' },
-  { id: '30', label: '30 dias' },
-  { id: 'tudo', label: 'Tudo' },
-];
 const RELATO_PAGINA = 500;
 const QUIOSQUE = '__quiosque';
 
@@ -4561,38 +4555,32 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
   const scrollRef = useRef(null);
   useModalHistory(onClose);
 
-  const [periodo, setPeriodo] = useState('7');
   const [linhas, setLinhas] = useState(null); // null = a carregar
   const [erro, setErro] = useState('');
   const [semTabela, setSemTabela] = useState(false);
   const [haMais, setHaMais] = useState(false);
   const [aCarregarMais, setACarregarMais] = useState(false);
   const [pessoa, setPessoa] = useState('');
-  const [secao, setSecao] = useState('');
   const [busca, setBusca] = useState('');
-  const [comQuiosque, setComQuiosque] = useState(false);
   const [aberto, setAberto] = useState(null);
-
-  const desdeIso = useCallback(() => {
-    if (periodo === 'tudo') return null;
-    const d = new Date(); d.setHours(0, 0, 0, 0);
-    if (periodo !== 'hoje') d.setDate(d.getDate() - (Number(periodo) - 1));
-    return d.toISOString();
-  }, [periodo]);
+  const [aAtualizar, setAAtualizar] = useState(false);
 
   const buscar = useCallback(async (offset) => {
     await ensureSession();
-    let q = supabase.from('activity_log')
+    // Sempre tudo, do mais recente para trás, às páginas.
+    return supabase.from('activity_log')
       .select('id, tabela, registo_id, acao, ator_id, ator_email, em, info, campos, origem')
-      .eq('team_id', String(teamId));
-    const desde = desdeIso();
-    if (desde) q = q.gte('em', desde);
-    return q.order('em', { ascending: false }).order('id', { ascending: false })
+      .eq('team_id', String(teamId))
+      .order('em', { ascending: false }).order('id', { ascending: false })
       .range(offset, offset + RELATO_PAGINA - 1);
-  }, [teamId, desdeIso]);
+  }, [teamId]);
 
+  /* A PÁGINA NÃO MEXE AO CARREGAR. A primeira vez mostra a roda só
+     no sítio da lista (o cabeçalho, a pesquisa e as pessoas já estão no
+     lugar). O "Atualizar" troca a lista por cima da que lá está, sem a
+     esvaziar — antes desaparecia tudo e a página saltava para cima. */
   const carregar = useCallback(async () => {
-    setLinhas(null); setErro(''); setAberto(null);
+    setErro(''); setAAtualizar(true);
     try {
       const { data, error } = await buscar(0);
       if (error) throw error;
@@ -4603,7 +4591,9 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
       const msg = String((e && e.message) || e);
       if ((e && (e.code === '42P01' || e.code === 'PGRST205')) || /activity_log/.test(msg)) setSemTabela(true);
       else setErro(msg);
-      setLinhas([]);
+      setLinhas(prev => prev || []);
+    } finally {
+      setAAtualizar(false);
     }
   }, [buscar]);
 
@@ -4651,16 +4641,15 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
 
   const chaveDe = useCallback((e) => (e.ator_email ? e.ator_email.toLowerCase() : (e.ator_id || QUIOSQUE)), []);
   const quemE = useCallback((chave) => {
-    if (chave === QUIOSQUE) return { nome: 'Atletas · quiosque', cor: T.mutedDim, eu: false, quiosque: true };
+    if (chave === QUIOSQUE) return { nome: 'Jogadores', cor: T.mutedDim, eu: false, quiosque: true };
     const id = chave.includes('@') ? pessoasInfo.idPorEmail[chave] : chave;
     const m = id && pessoasInfo.membroPorId[id];
     const nomeEmail = chave.includes('@') ? chave.split('@')[0].replace(/[._-]+/g, ' ') : 'Alguém da equipa';
     return { nome: (m && m.nome) || nomeEmail, email: chave.includes('@') ? chave : '', cor: relatoCor(chave), eu: !!euId && id === euId, quiosque: false };
   }, [pessoasInfo, euId]);
 
-  // Período (servidor) + quiosque. Pessoa, secção e pesquisa filtram por cima.
-  const base = React.useMemo(() => (linhas || []).filter(e => comQuiosque || chaveDe(e) !== QUIOSQUE), [linhas, comQuiosque, chaveDe]);
-  const nQuiosque = React.useMemo(() => (linhas || []).filter(e => chaveDe(e) === QUIOSQUE).length, [linhas, chaveDe]);
+  // Tudo o que veio; pessoa e pesquisa filtram por cima.
+  const base = linhas || [];
   const lancesBase = React.useMemo(() => agruparLances(base, chaveDe), [base, chaveDe]);
 
   const fraseDe = useCallback((l) => {
@@ -4677,10 +4666,16 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
       case 'sessions': alvo = nome || (adv ? `vs ${adv}` : '') || i.phase || ''; break;
       default: alvo = nome || jog;
     }
-    if (l.chave === QUIOSQUE && l.tabela === 'monitoring') {
+    /* Pelo quiosque quem faz é o próprio jogador: "Rios respondeu ao
+       wellness", e não "Jogadores editou o registo de Rios". */
+    if (l.chave === QUIOSQUE) {
       const ks = (l.campos || []).map(c => c.k);
-      const oQue = ks.includes('pse') || i.type === 'rpe' ? 'ao PSE' : (ks.includes('sono') || i.type === 'wellness' ? 'ao wellness' : 'ao questionário');
-      return { sujeito: jog || 'Um atleta', verbo: 'respondeu', art: oQue, alvo: '', dia, secao: sec };
+      let oQue;
+      if (l.tabela === 'monitoring') oQue = ks.includes('pse') || i.type === 'rpe' ? 'ao PSE' : (ks.includes('sono') || i.type === 'wellness' ? 'ao wellness' : 'ao questionário');
+      else if (l.tabela === 'desenvolvimento') oQue = 'ao questionário de desenvolvimento';
+      else if (l.tabela === 'tarefas') oQue = 'à tarefa';
+      if (oQue) return { sujeito: jog || 'Um jogador', verbo: 'respondeu', art: oQue, alvo: l.tabela === 'tarefas' ? nome : '', dia, secao: sec };
+      return { sujeito: jog || null, verbo: (RELATO_ACOES[l.acao] || RELATO_ACOES.editou).verbo, art: sec.art, alvo: jog ? nome : alvo, dia, secao: sec };
     }
     return { sujeito: null, verbo: (RELATO_ACOES[l.acao] || RELATO_ACOES.editou).verbo, art: sec.art, alvo, dia, secao: sec };
   }, [nomeJogador]);
@@ -4694,9 +4689,8 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
   const filtrados = React.useMemo(() => {
     const b = busca.trim().toLowerCase();
     return lancesBase.filter(l => (!pessoa || l.chave === pessoa)
-      && (!secao || l.tabela === secao)
       && (!b || textoDe(l).includes(b)));
-  }, [lancesBase, pessoa, secao, busca, textoDe]);
+  }, [lancesBase, pessoa, busca, textoDe]);
 
   // Contagens dos filtros sobre a base, para não sumirem ao filtrar.
   const contar = (campo) => {
@@ -4705,7 +4699,6 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     return Object.entries(m).sort((a, b) => b[1] - a[1]);
   };
   const porPessoa = React.useMemo(() => contar('chave'), [lancesBase]); // eslint-disable-line react-hooks/exhaustive-deps
-  const porSecao = React.useMemo(() => contar('tabela'), [lancesBase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const porDia = React.useMemo(() => {
     const dias = [];
@@ -4724,8 +4717,8 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     return `${sem.charAt(0).toUpperCase()}${sem.slice(1)}, ${ddmm(k)}`;
   };
 
-  const temFiltro = !!(pessoa || secao || busca.trim());
-  const limparFiltros = () => { setPessoa(''); setSecao(''); setBusca(''); };
+  const temFiltro = !!(pessoa || busca.trim());
+  const limparFiltros = () => { setPessoa(''); setBusca(''); };
 
   /* ---------- peças ---------- */
   const pill = (on, onClick, conteudo, key, title) => (
@@ -4737,9 +4730,9 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
       border: `1px solid ${on ? '#B5393F' : T.line}`,
     }}>{conteudo}</button>
   );
-  // Telemóvel: uma fila que desliza. Computador: as pílulas partem linha.
+  // Uma só fila, que desliza: altura sempre igual, venha o que vier.
   const fila = (filhos) => (
-    <div style={{ display: 'flex', gap: 6, marginBottom: 8, ...(isMobile ? { overflowX: 'auto', paddingBottom: 4 } : { flexWrap: 'wrap' }) }}>{filhos}</div>
+    <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, minHeight: 36, alignItems: 'center' }}>{filhos}</div>
   );
 
   const lance = (l) => {
@@ -4824,52 +4817,42 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
         <div style={{ textAlign: 'left' }}><LastActivity lastEdits={lastEdits || {}} /></div>
       </div>
     );
-  } else if (linhas === null) {
-    corpo = <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Loader2 className="animate-spin" color={T.warn} size={22} /></div>;
   } else {
     const ultimo = lancesBase[0];
     const nPessoas = porPessoa.filter(([k]) => k !== QUIOSQUE).length;
+    const aCarregar = linhas === null;
     corpo = (
       <>
-        <div style={{ color: T.muted, fontSize: 12.5, marginBottom: 14 }}>
-          <span style={{ ...mono, color: T.cream }}>{lancesBase.length}{haMais ? '+' : ''}</span> {lancesBase.length === 1 ? 'lance' : 'lances'}
-          {' · '}<span style={{ ...mono, color: T.cream }}>{nPessoas}</span> {nPessoas === 1 ? 'pessoa' : 'pessoas'}
-          {ultimo && <> · último {timeAgo(ultimo.ate)}</>}
+        <div style={{ color: T.muted, fontSize: 12.5, marginBottom: 14, height: 18 }}>
+          {aCarregar ? <span style={{ color: T.mutedDim }}>A carregar…</span> : (<>
+            <span style={{ ...mono, color: T.cream }}>{lancesBase.length}{haMais ? '+' : ''}</span> {lancesBase.length === 1 ? 'lance' : 'lances'}
+            {' · '}<span style={{ ...mono, color: T.cream }}>{nPessoas}</span> {nPessoas === 1 ? 'pessoa' : 'pessoas'}
+            {ultimo && <> · último {timeAgo(ultimo.ate)}</>}
+          </>)}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {RELATO_PERIODOS.map(p => pill(periodo === p.id, () => setPeriodo(p.id), p.label, p.id))}
-          </div>
-          <div style={{ flex: 1, minWidth: isMobile ? '100%' : 220, position: 'relative' }}>
-            <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
-            <Input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Procurar jogador, sessão, adversário, campo…" style={{ paddingLeft: 30, width: '100%', boxSizing: 'border-box' }} />
-          </div>
+        <div style={{ position: 'relative', marginBottom: 10 }}>
+          <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+          <Input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Procurar jogador, sessão, adversário, campo…" style={{ paddingLeft: 30, width: '100%', boxSizing: 'border-box' }} />
         </div>
 
-        {fila(<>
-          {porPessoa.map(([k, n]) => {
-            const q = quemE(k);
-            return pill(pessoa === k, () => setPessoa(pessoa === k ? '' : k), <>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: q.cor }} />
-              <span style={{ textTransform: q.quiosque ? 'none' : 'capitalize' }}>{q.nome}</span>
-              {q.eu && <span style={{ fontSize: 10, opacity: .8 }}>(tu)</span>}
-              <span style={{ ...mono, opacity: .75 }}>{n}</span>
-            </>, k, q.email || undefined);
-          })}
-          {nQuiosque > 0 && pill(false, () => { setComQuiosque(v => !v); if (pessoa === QUIOSQUE) setPessoa(''); },
-            <>{comQuiosque ? <EyeOff size={13} /> : <Eye size={13} />}{comQuiosque ? 'Esconder' : 'Mostrar'} quiosque<span style={{ ...mono, opacity: .75 }}>{nQuiosque}</span></>,
-            'quiosque', 'Respostas dos atletas no quiosque (wellness / PSE)')}
-        </>)}
-        {fila(porSecao.map(([t, n]) => {
-          const s = relatoSecao(t); const Ic = s.icon;
-          return pill(secao === t, () => setSecao(secao === t ? '' : t), <><Ic size={13} />{s.label}<span style={{ ...mono, opacity: .75 }}>{n}</span></>, t);
+        {/* Só pessoas: a equipa técnica e, juntos, os jogadores (quiosque). */}
+        {fila(porPessoa.map(([k, n]) => {
+          const q = quemE(k);
+          return pill(pessoa === k, () => setPessoa(pessoa === k ? '' : k), <>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: q.cor }} />
+            <span style={{ textTransform: q.quiosque ? 'none' : 'capitalize' }}>{q.nome}</span>
+            {q.eu && <span style={{ fontSize: 10, opacity: .8 }}>(tu)</span>}
+            <span style={{ ...mono, opacity: .75 }}>{n}</span>
+          </>, k, q.quiosque ? 'Respostas dos jogadores no quiosque' : (q.email || undefined));
         }))}
 
-        <div style={{ marginTop: 10 }}>
+        <div style={{ marginTop: 10, minHeight: '60vh' }}>
           {erro && <div style={{ color: T.bad, fontSize: 12.5, marginBottom: 10 }}>{erro}</div>}
-          {porDia.length === 0 ? (
-            <EmptyState text={temFiltro ? 'Nenhum lance com estes filtros.' : 'Sem alterações neste período.'}
+          {aCarregar ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Loader2 className="animate-spin" color={T.warn} size={22} /></div>
+          ) : porDia.length === 0 ? (
+            <EmptyState text={temFiltro ? 'Nenhum lance com estes filtros.' : 'Ainda sem alterações registadas.'}
               action={temFiltro ? <Btn variant="ghost" onClick={limparFiltros}>Limpar filtros</Btn> : null} />
           ) : porDia.map(dia => (
             <div key={dia.k} style={{ marginBottom: 8 }}>
@@ -4881,7 +4864,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
               {dia.itens.map(lance)}
             </div>
           ))}
-          {haMais && (
+          {!aCarregar && haMais && (
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
               <Btn variant="ghost" onClick={carregarMais} disabled={aCarregarMais}>
                 {aCarregarMais ? <Loader2 size={14} className="animate-spin" /> : <ChevronDown size={14} />} Carregar mais antigos
@@ -4894,7 +4877,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
   }
 
   const pagina = (
-    <div ref={scrollRef} style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 55, overflowY: 'auto', overflowX: 'hidden', ...body }}>
+    <div ref={scrollRef} style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 55, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable', ...body }}>
       <div style={{ maxWidth: 880, margin: '0 auto', padding: isMobile ? 14 : 24, paddingBottom: 70 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 6 }}>
           <div style={{ minWidth: 0 }}>
@@ -4903,8 +4886,8 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             {!semTabela && (
-              <button type="button" onClick={carregar} title="Atualizar" style={{ background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, color: T.muted, cursor: 'pointer', padding: 8, display: 'flex' }}>
-                <RefreshCw size={16} />
+              <button type="button" onClick={carregar} disabled={aAtualizar} title="Atualizar" style={{ background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, color: T.muted, cursor: aAtualizar ? 'default' : 'pointer', padding: 8, display: 'flex' }}>
+                <RefreshCw size={16} className={aAtualizar ? 'animate-spin' : undefined} />
               </button>
             )}
             <button type="button" onClick={onClose} title="Fechar" style={{ background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, cursor: 'pointer', padding: 8, display: 'flex' }}>
