@@ -3903,17 +3903,6 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         display: 'grid', gap: 20,
         gridTemplateColumns: isWide ? 'repeat(3, minmax(0, 1fr))' : isMedium ? 'repeat(2, minmax(0, 1fr))' : '1fr',
       }}>
-        {/* A matriz Wellness × Esforço abre a página: é o que se quer ver
-            primeiro todos os dias. As tarefas saíram daqui (continuam no
-            separador Tarefas). */}
-        <Panel title="Estado do plantel">
-          {players.length === 0 ? (
-            <EmptyState text="Adiciona jogadores no separador Plantel." />
-          ) : (
-            <WellnessLoadMatrix players={players} monitoring={monitoring} />
-          )}
-        </Panel>
-
         <Panel title="Próximas sessões">
           {upcoming.length === 0 ? (
             <EmptyState text="Ainda não há sessões planeadas." />
@@ -3968,6 +3957,17 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           )}
         </Panel>
 
+
+        {/* 1.ª linha: Próximas sessões, Próximos jogos, Estado do plantel
+            (matriz Wellness × Esforço). As tarefas saíram da Visão Geral
+            (continuam no separador Tarefas). */}
+        <Panel title="Estado do plantel">
+          {players.length === 0 ? (
+            <EmptyState text="Adiciona jogadores no separador Plantel." />
+          ) : (
+            <WellnessLoadMatrix players={players} monitoring={monitoring} />
+          )}
+        </Panel>
 
         <Panel title="Estatuto de Plantel">
           {players.length === 0 ? (
