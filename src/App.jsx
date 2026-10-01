@@ -2263,11 +2263,19 @@ function EmptyState({ text, action }) {
   );
 }
 
-const AUDIT_ACTION_LABEL = { insert: 'Criado', update: 'Editado', delete: 'Apagado' };
+const AUDIT_ACTION_LABEL = { criou: 'Criado', editou: 'Editado', apagou: 'Apagado' };
 
-// Histórico completo de um registo (jogador, sessão, jogo, ...): quem
-// criou/editou/apagou, quando, e o que mudou de uma versão para a outra.
-// Reutilizável em qualquer tabela — basta passar table + recordId.
+/* Histórico de UM registo (exercício, ideia de jogo…): quem criou,
+   editou ou apagou, quando, e o que mudou.
+
+   Lê o `activity_log` (o mesmo do Relato): leve, só com as diferenças.
+   Antes lia o `audit_log`, que traz cópias inteiras de cada versão — um
+   exercício com diagrama eram centenas de KB por linha — e que nem
+   sequer tinha gatilho na tabela das ideias, por isso o histórico delas
+   aparecia sempre vazio.
+
+   Se o `activity_log` ainda não existir (SQL por correr), volta ao
+   `audit_log` como antes, convertido para o mesmo formato. */
 function HistoryModal({ table, recordId, title, onClose }) {
   const [entries, setEntries] = useState(null); // null = a carregar
   const [openId, setOpenId] = useState(null);
@@ -2275,35 +2283,40 @@ function HistoryModal({ table, recordId, title, onClose }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
+      await ensureSession();
+      const novo = await supabase
+        .from('activity_log')
+        .select('id, acao, ator_email, em, campos, origem')
+        .eq('tabela', table).eq('registo_id', String(recordId))
+        .order('em', { ascending: false }).limit(300);
+      if (cancelled) return;
+      if (!novo.error) { setEntries(novo.data || []); return; }
+
+      // Plano B: o audit_log antigo, convertido.
+      const velho = await supabase
         .from('audit_log')
         .select('id, action, changed_by_email, changed_at, old_data, new_data')
         .eq('table_name', table).eq('record_id', recordId)
-        .order('changed_at', { ascending: false });
+        .order('changed_at', { ascending: false }).limit(100);
       if (cancelled) return;
-      if (error) { console.error(error); setEntries([]); return; }
-      setEntries(data || []);
+      if (velho.error) { console.error(velho.error); setEntries([]); return; }
+      const soData = (x) => (x && typeof x === 'object' && 'data' in x && 'id' in x ? x.data : x);
+      setEntries((velho.data || []).map(r => {
+        const acao = /^ins/i.test(r.action) ? 'criou' : (/^del/i.test(r.action) ? 'apagou' : 'editou');
+        let campos = null;
+        if (acao === 'editou') {
+          const a = soData(r.old_data) || {}; const b = soData(r.new_data) || {};
+          campos = [...new Set([...Object.keys(a), ...Object.keys(b)])]
+            .filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]))
+            .map(k => ({ k, ...(a[k] !== undefined ? { de: a[k] } : {}), ...(b[k] !== undefined ? { para: b[k] } : {}) }));
+        }
+        return { id: r.id, acao, ator_email: r.changed_by_email, em: r.changed_at, campos };
+      }));
     })();
     return () => { cancelled = true; };
   }, [table, recordId]);
 
-  // Diferenças campo a campo entre a versão anterior e a nova.
-  const diffFields = (oldData, newData) => {
-    const keys = new Set([...Object.keys(oldData || {}), ...Object.keys(newData || {})]);
-    const changes = [];
-    keys.forEach(k => {
-      const a = oldData ? oldData[k] : undefined;
-      const b = newData ? newData[k] : undefined;
-      if (JSON.stringify(a) !== JSON.stringify(b)) changes.push({ field: k, from: a, to: b });
-    });
-    return changes;
-  };
-  const fmtVal = (v) => {
-    if (v === undefined || v === null || v === '') return '—';
-    if (Array.isArray(v)) return `${v.length} item(ns)`;
-    if (typeof v === 'object') return '(objeto)';
-    return String(v);
-  };
+  const semNome = () => null;
 
   return (
     <Modal title={title || 'Histórico de alterações'} onClose={onClose}>
@@ -2314,33 +2327,32 @@ function HistoryModal({ table, recordId, title, onClose }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {entries.map(e => {
-            const changes = e.action === 'update' ? diffFields(e.old_data, e.new_data) : [];
+            const campos = (e.campos || []).map(c => ({ ...c, temDe: c.de !== undefined }));
             const isOpen = openId === e.id;
+            const cor = (RELATO_ACOES[e.acao] || RELATO_ACOES.editou).cor;
             return (
               <div key={e.id} style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '10px 12px' }}>
                 <div
-                  onClick={() => changes.length && setOpenId(isOpen ? null : e.id)}
-                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, cursor: changes.length ? 'pointer' : 'default' }}
+                  onClick={() => campos.length && setOpenId(isOpen ? null : e.id)}
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, cursor: campos.length ? 'pointer' : 'default' }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <span style={{ color: T.warn, fontSize: 12.5, fontWeight: 600 }}>{AUDIT_ACTION_LABEL[e.action] || e.action}</span>
-                    <span style={{ color: T.mutedDim, fontSize: 12, marginLeft: 8 }}>{e.changed_by_email || '—'}</span>
+                    <span style={{ color: cor, fontSize: 12.5, fontWeight: 600 }}>{AUDIT_ACTION_LABEL[e.acao] || e.acao}</span>
+                    <span style={{ color: T.mutedDim, fontSize: 12, marginLeft: 8 }}>{e.ator_email || 'quiosque / automático'}</span>
+                    {!isOpen && campos.length > 0 && (
+                      <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {campos.slice(0, 4).map(c => relatoCampoLabel(c.k)).join(', ')}{campos.length > 4 ? ` +${campos.length - 4}` : ''}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                    <span style={{ ...mono, color: T.mutedDim, fontSize: 11 }}>{timeAgo(e.changed_at)}</span>
-                    {changes.length > 0 && (isOpen ? <ChevronLeft size={13} color={T.mutedDim} style={{ transform: 'rotate(-90deg)' }} /> : <ChevronRight size={13} color={T.mutedDim} style={{ transform: 'rotate(90deg)' }} />)}
+                    <span style={{ ...mono, color: T.mutedDim, fontSize: 11 }} title={new Date(e.em).toLocaleString('pt-PT')}>{timeAgo(e.em)}</span>
+                    {campos.length > 0 && <ChevronDown size={13} color={T.mutedDim} style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }} />}
                   </div>
                 </div>
-                {isOpen && changes.length > 0 && (
-                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {changes.map(c => (
-                      <div key={c.field} style={{ fontSize: 12 }}>
-                        <span style={{ color: T.cream }}>{c.field}</span>{': '}
-                        <span style={{ color: T.bad, textDecoration: 'line-through' }}>{fmtVal(c.from)}</span>
-                        {' → '}
-                        <span style={{ color: T.good }}>{fmtVal(c.to)}</span>
-                      </div>
-                    ))}
+                {isOpen && campos.length > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}`, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {campos.map(c => <RelatoCampo key={c.k} c={c} nomeJogador={semNome} />)}
                   </div>
                 )}
               </div>
@@ -3713,7 +3725,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} />}
           {tab === 'plantel' && (
             <Plantel
               players={players} setPlayers={setPlayers}
@@ -3856,7 +3868,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas }) {
+function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas, teamId, onIr }) {
+  const [relatoOpen, setRelatoOpen] = useState(false);
   // Cartões clicáveis: sessão e jogo abrem a respetiva janela de edição
   // aqui mesmo, sem obrigar a ir ao Planeamento ou aos Jogos.
   const [sessionModal, setSessionModal] = useState(null);
@@ -3998,8 +4011,15 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           )}
         </Panel>
 
-        <Panel title="Última atividade">
-          <LastActivity lastEdits={lastEdits} />
+        <Panel title="Última atividade" action={(
+          <button type="button" onClick={() => setRelatoOpen(true)} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', cursor: 'pointer', ...body,
+            border: `1px solid ${T.line}`, borderRadius: 8, color: T.warn, fontSize: 11.5, padding: '4px 9px',
+          }}>Relato completo <ArrowRight size={12} /></button>
+        )}>
+          <div onClick={() => setRelatoOpen(true)} title="Ver toda a atividade" style={{ cursor: 'pointer' }}>
+            <LastActivity lastEdits={lastEdits} />
+          </div>
         </Panel>
       </div>
 
@@ -4020,6 +4040,12 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
             setMatchModal(null);
           }}
+        />
+      )}
+      {relatoOpen && (
+        <RelatoPagina
+          teamId={teamId} players={players} membros={membros} euId={euId} lastEdits={lastEdits}
+          onClose={() => setRelatoOpen(false)} onIr={onIr}
         />
       )}
       {standingsOpen && (
@@ -4317,6 +4343,582 @@ function LastActivity({ lastEdits }) {
       ))}
     </div>
   );
+}
+
+/* ================================================================
+   RELATO — tudo o que a equipa técnica mexeu, minuto a minuto
+   ================================================================
+
+   Abre a partir da "Última atividade" da Visão Geral, em ecrã inteiro.
+   Lê a tabela `activity_log` (ver activity_log.sql): uma linha por
+   alteração, já com a diferença calculada no servidor — nunca cópias
+   inteiras dos registos, que com as fotografias dos jogadores davam
+   centenas de KB por linha.
+
+   Lê-se como um relato: dia a dia, hora a hora. Vinte toques seguidos
+   nas presenças da mesma sessão são UM lance ("×20, desde 14:02"), não
+   vinte linhas iguais. Abrir um lance mostra o que mudou, com nomes de
+   jogadores em vez de ids ("+ Rios, − Passos", "nota de Reis 6 → 7").
+
+   No Boletim Clínico e na Monitorização (dados de saúde de menores) o
+   servidor guarda só QUAIS campos mudaram, nunca os valores — o lance
+   diz "editou a lesão de Rios · previsão de retorno", sem a data.
+
+   O período vai ao servidor; pessoa, secção e pesquisa filtram aqui,
+   sobre o que já veio. */
+const RELATO_SECOES = {
+  players: { label: 'Plantel', tab: 'plantel', icon: Users, art: 'o jogador' },
+  exercises: { label: 'Exercícios', tab: 'exercicios', icon: Dumbbell, art: 'o exercício' },
+  ideias: { label: 'Ideia de Jogo', tab: 'ideiajogo', icon: Lightbulb, art: 'a ideia' },
+  sessions: { label: 'Planeamento', tab: 'planeamento', icon: CalendarDays, art: 'a sessão' },
+  monitoring: { label: 'Monitorização', tab: 'monitorizacao', icon: Activity, art: 'o registo de' },
+  matches: { label: 'Jogos', tab: 'jogos', icon: Trophy, art: 'o jogo' },
+  scouting: { label: 'Scouting', tab: 'scouting', icon: Search, art: 'o observado' },
+  adversarios: { label: 'Adversários', tab: 'jogos', icon: Shield, art: 'o adversário' },
+  videos: { label: 'Canal', tab: 'biblioteca', icon: Tv, art: 'o vídeo' },
+  documentos: { label: 'Documentos', tab: 'biblioteca', icon: FileSpreadsheet, art: 'o documento' },
+  video_originais: { label: 'Análise de Vídeo', tab: 'analise', icon: Video, art: 'o vídeo' },
+  video_clips: { label: 'Clipes', tab: 'analise', icon: Scissors, art: 'o clipe' },
+  apresentacoes: { label: 'Apresentações', tab: 'biblioteca', icon: Presentation, art: 'a apresentação' },
+  convocatorias: { label: 'Convocatórias', tab: 'jogos', icon: ListOrdered, art: 'a convocatória' },
+  diario: { label: 'Diário', tab: 'diario', icon: BookOpen, art: 'a entrada do diário' },
+  clinico: { label: 'Boletim Clínico', tab: 'clinico', icon: Stethoscope, art: 'a lesão de' },
+  tarefas: { label: 'Tarefas', tab: 'tarefas', icon: ClipboardList, art: 'a tarefa' },
+  desenvolvimento: { label: 'Desenvolvimento', tab: 'desenvolvimento', icon: TrendingUp, art: 'a avaliação de' },
+  league_standings: { label: 'Classificação', tab: 'jogos', icon: ListOrdered, art: 'a classificação' },
+  quadro_tatico: { label: 'Quadro Tático', tab: null, icon: PenTool, art: 'o quadro tático' },
+  season_config: { label: 'Época', tab: 'geral', icon: LayoutGrid, art: 'a configuração da época' },
+};
+const relatoSecao = (t) => RELATO_SECOES[t] || { label: ACTIVITY_LABELS[t] || t, tab: null, icon: FileText, art: 'o registo' };
+
+const RELATO_CAMPOS = {
+  attendance: 'Presentes', faltas: 'Faltas', lesionados: 'Lesionados', escalao: 'Outro escalão',
+  convocados: 'Convocados', ratings: 'Notas', attendanceClosed: 'Dia guardado',
+  name: 'Nome', nome: 'Nome', position: 'Posição', number: 'Número', photo: 'Fotografia', foto: 'Fotografia',
+  status: 'Estatuto', estatuto: 'Estatuto', birthDate: 'Data de nascimento', nascimento: 'Data de nascimento',
+  date: 'Data', hora: 'Hora', focus: 'Tema', phase: 'Fase', intensity: 'Intensidade', opponent: 'Adversário',
+  exerciseIds: 'Exercícios', competition: 'Competição', result: 'Resultado', golosPro: 'Golos marcados',
+  golosContra: 'Golos sofridos', minutos: 'Minutos', titulo: 'Título', title: 'Título', estado: 'Estado',
+  responsavel: 'Responsável', notas: 'Notas', nota: 'Nota', texto: 'Texto', previsaoRetorno: 'Previsão de retorno',
+  nivel: 'Nível', fim: 'Alta', inicio: 'Início', evolucao: 'Evolução', tipo: 'Tipo', zona: 'Zona',
+  restricoes: 'Restrições', sono: 'Sono', fadiga: 'Fadiga', dor: 'Dor muscular', stress: 'Stress',
+  humor: 'Humor', pse: 'PSE', duracao: 'Duração', diagram: 'Diagrama', diagrama: 'Diagrama',
+  description: 'Descrição', descricao: 'Descrição', teams: 'Equipas', rounds: 'Jornadas',
+  convocatoriaVisivelAtletas: 'Visível no Portal', visivel: 'Visível', recorrencia: 'Recorrência',
+};
+const relatoCampoLabel = (k) => RELATO_CAMPOS[k]
+  || String(k).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+
+const RELATO_CORES = ['#D14056', '#3A6FC4', '#C9A227', '#4CA86B', '#8C3F9E', '#3FA7A0', '#D9792E'];
+const relatoCor = (chave) => {
+  let h = 0;
+  for (let i = 0; i < String(chave).length; i++) h = (h * 31 + String(chave).charCodeAt(i)) >>> 0;
+  return RELATO_CORES[h % RELATO_CORES.length];
+};
+const RELATO_ACOES = {
+  criou: { verbo: 'criou', cor: '#4CA86B' },
+  editou: { verbo: 'editou', cor: '#D9A72E' },
+  apagou: { verbo: 'apagou', cor: '#C25A5A' },
+};
+const RELATO_PERIODOS = [
+  { id: 'hoje', label: 'Hoje' },
+  { id: '7', label: '7 dias' },
+  { id: '30', label: '30 dias' },
+  { id: 'tudo', label: 'Tudo' },
+];
+const RELATO_PAGINA = 500;
+const QUIOSQUE = '__quiosque';
+
+const isoDia = (d) => /^\d{4}-\d{2}-\d{2}/.test(String(d || '')) ? String(d).slice(0, 10) : '';
+const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
+const horaMin = (ts) => {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/* Junta toques seguidos da mesma pessoa no mesmo registo (até 15 min
+   entre o primeiro e o último) num só lance. A lista chega do mais
+   recente para o mais antigo. Nos campos fica o "para" mais recente e o
+   "de" mais antigo — o que interessa é como estava e como ficou. */
+function agruparLances(lista, chaveDe) {
+  const JANELA = 15 * 60000;
+  const lances = [];
+  lista.forEach(e => {
+    const chave = chaveDe(e);
+    const ult = lances[lances.length - 1];
+    const junta = ult && ult.chave === chave && ult.tabela === e.tabela && ult.registo_id && ult.registo_id === e.registo_id
+      && ult.acao !== 'apagou' && (e.acao === 'editou' || e.acao === 'criou') && (ult.acao === 'editou' || ult.acao === 'criou')
+      && (new Date(ult.ate) - new Date(e.em)) <= JANELA;
+    if (junta) {
+      ult.n += 1;
+      ult.de = e.em;
+      if (e.acao === 'criou') ult.acao = 'criou';
+      (e.campos || []).forEach(c => {
+        const ja = ult.campos.find(x => x.k === c.k);
+        if (ja) { ja.de = c.de; ja.temDe = c.de !== undefined; ja.grande = ja.grande || c.grande; } else ult.campos.push({ ...c, temDe: c.de !== undefined });
+      });
+      return;
+    }
+    lances.push({
+      id: e.id, chave, tabela: e.tabela, registo_id: e.registo_id, acao: e.acao,
+      ator_id: e.ator_id, ator_email: e.ator_email, origem: e.origem,
+      info: e.info || {}, ate: e.em, de: e.em, n: 1,
+      campos: (e.campos || []).map(c => ({ ...c, temDe: c.de !== undefined })),
+    });
+  });
+  return lances;
+}
+
+/* Um campo alterado, legível. */
+function RelatoCampo({ c, nomeJogador }) {
+  const label = relatoCampoLabel(c.k);
+  const linha = (conteudo) => (
+    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 12.5, lineHeight: 1.5 }}>
+      <span style={{ color: T.muted, minWidth: 110, flexShrink: 0 }}>{label}</span>
+      <span style={{ color: T.cream, minWidth: 0, flex: 1, display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>{conteudo}</span>
+    </div>
+  );
+  const chip = (txt, cor, sinal) => (
+    <span key={`${sinal}${txt}`} style={{
+      padding: '1px 8px', borderRadius: 10, fontSize: 11.5, whiteSpace: 'nowrap',
+      background: `${cor}26`, border: `1px solid ${cor}66`, color: cor,
+    }}>{sinal} {txt}</span>
+  );
+  const fmt = (v) => {
+    if (v === undefined || v === null || v === '') return '—';
+    if (typeof v === 'boolean') return v ? 'sim' : 'não';
+    if (typeof v === 'string' && isoDia(v) && v.length <= 25) return ddmm(isoDia(v));
+    if (typeof v === 'string') return v.length > 80 ? `${v.slice(0, 80)}…` : v;
+    if (typeof v === 'number') return String(v);
+    if (Array.isArray(v)) return `${v.length} ${v.length === 1 ? 'item' : 'itens'}`;
+    return '…';
+  };
+  const antes = (v) => <span style={{ color: T.mutedDim, textDecoration: 'line-through' }}>{fmt(v)}</span>;
+  const seta = <ArrowRight size={11} color={T.mutedDim} />;
+
+  // Só o nome do campo (dados de saúde: o servidor não guarda valores).
+  if (!c.grande && c.de === undefined && c.para === undefined) return linha(<span style={{ color: T.muted }}>alterado</span>);
+  if (c.grande) return linha(<span style={{ color: T.muted }}>alterado <span style={{ color: T.mutedDim }}>(conteúdo extenso)</span></span>);
+
+  const a = c.de; const b = c.para;
+  const ehLista = (v) => v === undefined || Array.isArray(v);
+  if (ehLista(a) && ehLista(b) && (Array.isArray(a) || Array.isArray(b))) {
+    const A = (a || []); const B = (b || []);
+    const simples = [...A, ...B].every(x => typeof x === 'string' || typeof x === 'number');
+    if (simples) {
+      const sa = new Set(A.map(String)); const sb = new Set(B.map(String));
+      const mais = B.map(String).filter(x => !sa.has(x));
+      const menos = A.map(String).filter(x => !sb.has(x));
+      const nome = (x) => nomeJogador(x) || (x.length > 24 ? `${x.slice(0, 24)}…` : x);
+      if (!mais.length && !menos.length) return linha(<span style={{ color: T.muted }}>reordenado</span>);
+      return linha(<>
+        {mais.slice(0, 14).map(x => chip(nome(x), T.good, '+'))}
+        {menos.slice(0, 14).map(x => chip(nome(x), T.bad, '−'))}
+        {(mais.length + menos.length) > 28 && <span style={{ color: T.mutedDim, fontSize: 11.5 }}>e mais {(mais.length + menos.length) - 28}</span>}
+      </>);
+    }
+    return linha(<>{antes(A)}{seta}<span>{fmt(B)}</span></>);
+  }
+
+  const ehObj = (v) => v === undefined || (v && typeof v === 'object' && !Array.isArray(v));
+  if (ehObj(a) && ehObj(b) && (a || b)) {
+    const A = a || {}; const B = b || {};
+    const ks = [...new Set([...Object.keys(A), ...Object.keys(B)])]
+      .filter(k => JSON.stringify(A[k]) !== JSON.stringify(B[k]));
+    const primitivos = ks.every(k => [A[k], B[k]].every(v => v === undefined || v === null || typeof v !== 'object'));
+    if (!ks.length || !primitivos) return linha(<span style={{ color: T.muted }}>alterado{ks.length ? ` (${ks.length} ${ks.length === 1 ? 'parte' : 'partes'})` : ''}</span>);
+    return linha(<>
+      {ks.slice(0, 10).map(k => (
+        <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '1px 8px', borderRadius: 10, background: T.bg, border: `1px solid ${T.line}`, fontSize: 11.5 }}>
+          <span style={{ color: T.muted }}>{nomeJogador(k) || relatoCampoLabel(k)}</span>
+          {A[k] !== undefined && antes(A[k])}{A[k] !== undefined && seta}
+          <span style={{ ...mono }}>{B[k] === undefined ? 'removido' : fmt(B[k])}</span>
+        </span>
+      ))}
+      {ks.length > 10 && <span style={{ color: T.mutedDim, fontSize: 11.5 }}>e mais {ks.length - 10}</span>}
+    </>);
+  }
+
+  if (!c.temDe) return linha(<><span style={{ color: T.mutedDim }}>definido</span>{seta}<span>{fmt(b)}</span></>);
+  if (b === undefined) return linha(<><span>{antes(a)}</span><span style={{ color: T.mutedDim }}>removido</span></>);
+  return linha(<>{antes(a)}{seta}<span>{fmt(b)}</span></>);
+}
+
+function RelatoAvatar({ nome, cor, size = 30 }) {
+  const iniciais = String(nome || '?').split(/[\s.@_-]+/).filter(Boolean).slice(0, 2).map(s => s[0].toUpperCase()).join('') || '?';
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      background: `${cor}33`, border: `1.5px solid ${cor}`, color: cor,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      ...display, fontSize: size * 0.4, fontWeight: 600, letterSpacing: '.02em',
+    }}>{iniciais}</div>
+  );
+}
+
+function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr }) {
+  const isMobile = useIsMobile(900);
+  const scrollRef = useRef(null);
+  useModalHistory(onClose);
+
+  const [periodo, setPeriodo] = useState('7');
+  const [linhas, setLinhas] = useState(null); // null = a carregar
+  const [erro, setErro] = useState('');
+  const [semTabela, setSemTabela] = useState(false);
+  const [haMais, setHaMais] = useState(false);
+  const [aCarregarMais, setACarregarMais] = useState(false);
+  const [pessoa, setPessoa] = useState('');
+  const [secao, setSecao] = useState('');
+  const [busca, setBusca] = useState('');
+  const [comQuiosque, setComQuiosque] = useState(false);
+  const [aberto, setAberto] = useState(null);
+
+  const desdeIso = useCallback(() => {
+    if (periodo === 'tudo') return null;
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    if (periodo !== 'hoje') d.setDate(d.getDate() - (Number(periodo) - 1));
+    return d.toISOString();
+  }, [periodo]);
+
+  const buscar = useCallback(async (offset) => {
+    await ensureSession();
+    let q = supabase.from('activity_log')
+      .select('id, tabela, registo_id, acao, ator_id, ator_email, em, info, campos, origem')
+      .eq('team_id', String(teamId));
+    const desde = desdeIso();
+    if (desde) q = q.gte('em', desde);
+    return q.order('em', { ascending: false }).order('id', { ascending: false })
+      .range(offset, offset + RELATO_PAGINA - 1);
+  }, [teamId, desdeIso]);
+
+  const carregar = useCallback(async () => {
+    setLinhas(null); setErro(''); setAberto(null);
+    try {
+      const { data, error } = await buscar(0);
+      if (error) throw error;
+      setLinhas(data || []);
+      setHaMais((data || []).length === RELATO_PAGINA);
+      setSemTabela(false);
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      if ((e && (e.code === '42P01' || e.code === 'PGRST205')) || /activity_log/.test(msg)) setSemTabela(true);
+      else setErro(msg);
+      setLinhas([]);
+    }
+  }, [buscar]);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  const carregarMais = async () => {
+    if (aCarregarMais || !linhas) return;
+    setACarregarMais(true);
+    try {
+      const { data, error } = await buscar(linhas.length);
+      if (error) throw error;
+      setLinhas(prev => {
+        const vistos = new Set((prev || []).map(x => x.id));
+        return [...(prev || []), ...(data || []).filter(x => !vistos.has(x.id))];
+      });
+      setHaMais((data || []).length === RELATO_PAGINA);
+    } catch (e) {
+      setErro(String((e && e.message) || e));
+    } finally {
+      setACarregarMais(false);
+    }
+  };
+
+  /* QUEM É QUEM. A chave de cada pessoa é o email (o histórico antigo
+     só tem email); o nome vem da equipa, ligando email → id pelas linhas
+     que trazem os dois. Sem email nem id é o quiosque dos atletas (ou uma
+     gravação automática). */
+  const jogadoresPorId = React.useMemo(() => {
+    const m = {};
+    (players || []).forEach(p => { m[p.id] = p; });
+    return m;
+  }, [players]);
+  const nomeJogador = useCallback((id) => {
+    const p = jogadoresPorId[id];
+    return p ? p.name : null;
+  }, [jogadoresPorId]);
+
+  const pessoasInfo = React.useMemo(() => {
+    const idPorEmail = {};
+    (linhas || []).forEach(e => { if (e.ator_email && e.ator_id) idPorEmail[e.ator_email.toLowerCase()] = e.ator_id; });
+    const membroPorId = {};
+    (membros || []).forEach(m => { membroPorId[m.user_id] = m; });
+    return { idPorEmail, membroPorId };
+  }, [linhas, membros]);
+
+  const chaveDe = useCallback((e) => (e.ator_email ? e.ator_email.toLowerCase() : (e.ator_id || QUIOSQUE)), []);
+  const quemE = useCallback((chave) => {
+    if (chave === QUIOSQUE) return { nome: 'Atletas · quiosque', cor: T.mutedDim, eu: false, quiosque: true };
+    const id = chave.includes('@') ? pessoasInfo.idPorEmail[chave] : chave;
+    const m = id && pessoasInfo.membroPorId[id];
+    const nomeEmail = chave.includes('@') ? chave.split('@')[0].replace(/[._-]+/g, ' ') : 'Alguém da equipa';
+    return { nome: (m && m.nome) || nomeEmail, email: chave.includes('@') ? chave : '', cor: relatoCor(chave), eu: !!euId && id === euId, quiosque: false };
+  }, [pessoasInfo, euId]);
+
+  // Período (servidor) + quiosque. Pessoa, secção e pesquisa filtram por cima.
+  const base = React.useMemo(() => (linhas || []).filter(e => comQuiosque || chaveDe(e) !== QUIOSQUE), [linhas, comQuiosque, chaveDe]);
+  const nQuiosque = React.useMemo(() => (linhas || []).filter(e => chaveDe(e) === QUIOSQUE).length, [linhas, chaveDe]);
+  const lancesBase = React.useMemo(() => agruparLances(base, chaveDe), [base, chaveDe]);
+
+  const fraseDe = useCallback((l) => {
+    const sec = relatoSecao(l.tabela);
+    const i = l.info || {};
+    const jog = i.playerId ? nomeJogador(i.playerId) : '';
+    const nome = i.name || i.nome || i.titulo || i.title || i.label || i.tema || i.focus || '';
+    const adv = i.opponent || i.adversario || '';
+    const dia = isoDia(i.date) || isoDia(i.inicio) || isoDia(i.data);
+    let alvo;
+    switch (l.tabela) {
+      case 'matches': case 'convocatorias': alvo = adv ? `vs ${adv}` : nome; break;
+      case 'clinico': case 'monitoring': case 'desenvolvimento': alvo = jog || nome; break;
+      case 'sessions': alvo = nome || (adv ? `vs ${adv}` : '') || i.phase || ''; break;
+      default: alvo = nome || jog;
+    }
+    if (l.chave === QUIOSQUE && l.tabela === 'monitoring') {
+      const ks = (l.campos || []).map(c => c.k);
+      const oQue = ks.includes('pse') || i.type === 'rpe' ? 'ao PSE' : (ks.includes('sono') || i.type === 'wellness' ? 'ao wellness' : 'ao questionário');
+      return { sujeito: jog || 'Um atleta', verbo: 'respondeu', art: oQue, alvo: '', dia, secao: sec };
+    }
+    return { sujeito: null, verbo: (RELATO_ACOES[l.acao] || RELATO_ACOES.editou).verbo, art: sec.art, alvo, dia, secao: sec };
+  }, [nomeJogador]);
+
+  const textoDe = useCallback((l) => {
+    const f = fraseDe(l);
+    return [quemE(l.chave).nome, f.sujeito, f.verbo, f.art, f.alvo, f.secao.label, ...(l.campos || []).map(c => relatoCampoLabel(c.k))]
+      .filter(Boolean).join(' ').toLowerCase();
+  }, [fraseDe, quemE]);
+
+  const filtrados = React.useMemo(() => {
+    const b = busca.trim().toLowerCase();
+    return lancesBase.filter(l => (!pessoa || l.chave === pessoa)
+      && (!secao || l.tabela === secao)
+      && (!b || textoDe(l).includes(b)));
+  }, [lancesBase, pessoa, secao, busca, textoDe]);
+
+  // Contagens dos filtros sobre a base, para não sumirem ao filtrar.
+  const contar = (campo) => {
+    const m = {};
+    lancesBase.forEach(l => { m[l[campo]] = (m[l[campo]] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  };
+  const porPessoa = React.useMemo(() => contar('chave'), [lancesBase]); // eslint-disable-line react-hooks/exhaustive-deps
+  const porSecao = React.useMemo(() => contar('tabela'), [lancesBase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const porDia = React.useMemo(() => {
+    const dias = [];
+    filtrados.forEach(l => {
+      const k = toLocalISODate(new Date(l.ate));
+      const ult = dias[dias.length - 1];
+      if (ult && ult.k === k) ult.itens.push(l); else dias.push({ k, itens: [l] });
+    });
+    return dias;
+  }, [filtrados]);
+  const tituloDia = (k) => {
+    const hoje = todayStr();
+    if (k === hoje) return 'Hoje';
+    if (k === proximoDiaIso(hoje, -1)) return 'Ontem';
+    const sem = new Date(`${k}T00:00:00`).toLocaleDateString('pt-PT', { weekday: 'long' });
+    return `${sem.charAt(0).toUpperCase()}${sem.slice(1)}, ${ddmm(k)}`;
+  };
+
+  const temFiltro = !!(pessoa || secao || busca.trim());
+  const limparFiltros = () => { setPessoa(''); setSecao(''); setBusca(''); };
+
+  /* ---------- peças ---------- */
+  const pill = (on, onClick, conteudo, key, title) => (
+    <button key={key} type="button" onClick={onClick} title={title} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0,
+      padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+      fontWeight: on ? 600 : 500, whiteSpace: 'nowrap',
+      background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
+      border: `1px solid ${on ? '#B5393F' : T.line}`,
+    }}>{conteudo}</button>
+  );
+  // Telemóvel: uma fila que desliza. Computador: as pílulas partem linha.
+  const fila = (filhos) => (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 8, ...(isMobile ? { overflowX: 'auto', paddingBottom: 4 } : { flexWrap: 'wrap' }) }}>{filhos}</div>
+  );
+
+  const lance = (l) => {
+    const q = quemE(l.chave);
+    const f = fraseDe(l);
+    const ac = RELATO_ACOES[l.acao] || RELATO_ACOES.editou;
+    const abre = aberto === l.id;
+    const temDetalhe = l.campos.length > 0 || !!f.secao.tab;
+    const Ic = f.secao.icon;
+    return (
+      <div key={l.id} style={{ display: 'flex', gap: isMobile ? 10 : 14 }}>
+        <div style={{ width: isMobile ? 40 : 46, flexShrink: 0, textAlign: 'right', paddingTop: 11 }}>
+          <div style={{ ...mono, color: T.cream, fontSize: 12.5 }}>{horaMin(l.ate)}</div>
+          {l.n > 1 && horaMin(l.de) !== horaMin(l.ate) && <div style={{ ...mono, color: T.mutedDim, fontSize: 9.5, marginTop: 2 }}>desde {horaMin(l.de)}</div>}
+        </div>
+        <div style={{ position: 'relative', width: 12, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+          <div style={{ position: 'absolute', top: 0, bottom: 0, width: 2, background: T.line }} />
+          <div style={{ position: 'relative', marginTop: 14, width: 10, height: 10, borderRadius: '50%', background: ac.cor, boxShadow: `0 0 0 3px ${T.bg}` }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0, paddingBottom: 10 }}>
+          <div
+            onClick={() => temDetalhe && setAberto(abre ? null : l.id)}
+            style={{
+              background: abre ? T.surfaceRaise : T.surface, border: `1px solid ${abre ? '#4A6250' : T.line}`, borderRadius: 10,
+              padding: '9px 12px', cursor: temDetalhe ? 'pointer' : 'default',
+            }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <RelatoAvatar nome={f.sujeito || q.nome} cor={q.cor} size={28} />
+              <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, lineHeight: 1.45, color: T.muted }}>
+                <span style={{ color: T.cream, fontWeight: 600, textTransform: f.sujeito || q.quiosque ? 'none' : 'capitalize' }}>{f.sujeito || q.nome}</span>
+                {' '}<span style={{ color: ac.cor }}>{f.verbo}</span>{' '}{f.art}
+                {f.alvo && <> <span style={{ color: T.cream }}>{f.alvo}</span></>}
+                {f.dia && <span style={{ color: T.mutedDim }}> · {ddmm(f.dia)}</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4, fontSize: 11.5, color: T.mutedDim }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Ic size={12} />{f.secao.label}</span>
+                  {l.n > 1 && <span style={{ ...mono, color: T.warn }}>×{l.n} toques</span>}
+                  {l.campos.length > 0 && !abre && (
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
+                      {l.campos.slice(0, 3).map(c => relatoCampoLabel(c.k)).join(', ')}{l.campos.length > 3 ? ` +${l.campos.length - 3}` : ''}
+                    </span>
+                  )}
+                  {l.origem === 'instantaneo' && <span title="De antes do relato existir: só se sabe a última alteração deste registo.">última alteração conhecida</span>}
+                </div>
+              </div>
+              {temDetalhe && <ChevronDown size={15} color={T.mutedDim} style={{ flexShrink: 0, marginTop: 3, transform: abre ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
+            </div>
+            {abre && (
+              <div onClick={e => e.stopPropagation()} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}`, display: 'flex', flexDirection: 'column', gap: 7, cursor: 'default' }}>
+                {l.campos.map(c => <RelatoCampo key={c.k} c={c} nomeJogador={nomeJogador} />)}
+                {l.acao === 'criou' && !l.campos.length && <div style={{ fontSize: 12.5, color: T.muted }}>Registo novo.</div>}
+                {l.acao === 'apagou' && <div style={{ fontSize: 12.5, color: T.muted }}>O registo foi apagado.</div>}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
+                  <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>
+                    {new Date(l.ate).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {q.email ? ` · ${q.email}` : ''}
+                  </span>
+                  {f.secao.tab && onIr && l.acao !== 'apagou' && (
+                    <button type="button" onClick={() => { onIr(f.secao.tab); onClose(); }} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', cursor: 'pointer', ...body,
+                      border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, fontSize: 12, padding: '5px 10px',
+                    }}>Ir para {f.secao.label} <ArrowRight size={12} /></button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  /* ---------- estados ---------- */
+  let corpo;
+  if (semTabela) {
+    corpo = (
+      <div style={{ maxWidth: 560, margin: '30px auto', textAlign: 'center' }}>
+        <div style={{ ...display, color: T.warn, fontSize: 20, marginBottom: 8 }}>O relato ainda não está ligado</div>
+        <div style={{ color: T.muted, fontSize: 13.5, lineHeight: 1.6, marginBottom: 20 }}>
+          Falta correr o <span style={{ ...mono, color: T.cream }}>1a_activity_log_estrutura.sql</span> no SQL Editor do Supabase.
+          A partir daí cada alteração, em qualquer secção, fica registada aqui. Para já, o resumo que existe:
+        </div>
+        <div style={{ textAlign: 'left' }}><LastActivity lastEdits={lastEdits || {}} /></div>
+      </div>
+    );
+  } else if (linhas === null) {
+    corpo = <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Loader2 className="animate-spin" color={T.warn} size={22} /></div>;
+  } else {
+    const ultimo = lancesBase[0];
+    const nPessoas = porPessoa.filter(([k]) => k !== QUIOSQUE).length;
+    corpo = (
+      <>
+        <div style={{ color: T.muted, fontSize: 12.5, marginBottom: 14 }}>
+          <span style={{ ...mono, color: T.cream }}>{lancesBase.length}{haMais ? '+' : ''}</span> {lancesBase.length === 1 ? 'lance' : 'lances'}
+          {' · '}<span style={{ ...mono, color: T.cream }}>{nPessoas}</span> {nPessoas === 1 ? 'pessoa' : 'pessoas'}
+          {ultimo && <> · último {timeAgo(ultimo.ate)}</>}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {RELATO_PERIODOS.map(p => pill(periodo === p.id, () => setPeriodo(p.id), p.label, p.id))}
+          </div>
+          <div style={{ flex: 1, minWidth: isMobile ? '100%' : 220, position: 'relative' }}>
+            <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+            <Input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Procurar jogador, sessão, adversário, campo…" style={{ paddingLeft: 30, width: '100%', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+
+        {fila(<>
+          {porPessoa.map(([k, n]) => {
+            const q = quemE(k);
+            return pill(pessoa === k, () => setPessoa(pessoa === k ? '' : k), <>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: q.cor }} />
+              <span style={{ textTransform: q.quiosque ? 'none' : 'capitalize' }}>{q.nome}</span>
+              {q.eu && <span style={{ fontSize: 10, opacity: .8 }}>(tu)</span>}
+              <span style={{ ...mono, opacity: .75 }}>{n}</span>
+            </>, k, q.email || undefined);
+          })}
+          {nQuiosque > 0 && pill(false, () => { setComQuiosque(v => !v); if (pessoa === QUIOSQUE) setPessoa(''); },
+            <>{comQuiosque ? <EyeOff size={13} /> : <Eye size={13} />}{comQuiosque ? 'Esconder' : 'Mostrar'} quiosque<span style={{ ...mono, opacity: .75 }}>{nQuiosque}</span></>,
+            'quiosque', 'Respostas dos atletas no quiosque (wellness / PSE)')}
+        </>)}
+        {fila(porSecao.map(([t, n]) => {
+          const s = relatoSecao(t); const Ic = s.icon;
+          return pill(secao === t, () => setSecao(secao === t ? '' : t), <><Ic size={13} />{s.label}<span style={{ ...mono, opacity: .75 }}>{n}</span></>, t);
+        }))}
+
+        <div style={{ marginTop: 10 }}>
+          {erro && <div style={{ color: T.bad, fontSize: 12.5, marginBottom: 10 }}>{erro}</div>}
+          {porDia.length === 0 ? (
+            <EmptyState text={temFiltro ? 'Nenhum lance com estes filtros.' : 'Sem alterações neste período.'}
+              action={temFiltro ? <Btn variant="ghost" onClick={limparFiltros}>Limpar filtros</Btn> : null} />
+          ) : porDia.map(dia => (
+            <div key={dia.k} style={{ marginBottom: 8 }}>
+              <div style={{ position: 'sticky', top: 0, zIndex: 2, background: T.bg, padding: '8px 0 10px', display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                <span style={{ ...display, color: T.cream, fontSize: 16, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>{tituloDia(dia.k)}</span>
+                <span style={{ ...mono, color: T.mutedDim, fontSize: 11.5 }}>{dia.itens.length} {dia.itens.length === 1 ? 'lance' : 'lances'}</span>
+                <div style={{ flex: 1, height: 1, background: T.line, alignSelf: 'center' }} />
+              </div>
+              {dia.itens.map(lance)}
+            </div>
+          ))}
+          {haMais && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+              <Btn variant="ghost" onClick={carregarMais} disabled={aCarregarMais}>
+                {aCarregarMais ? <Loader2 size={14} className="animate-spin" /> : <ChevronDown size={14} />} Carregar mais antigos
+              </Btn>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  const pagina = (
+    <div ref={scrollRef} style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 55, overflowY: 'auto', overflowX: 'hidden', ...body }}>
+      <div style={{ maxWidth: 880, margin: '0 auto', padding: isMobile ? 14 : 24, paddingBottom: 70 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 6 }}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ ...display, color: T.cream, fontSize: isMobile ? 24 : 28, fontWeight: 600, margin: 0 }}>Toda a atividade</h1>
+            <div style={{ color: T.mutedDim, fontSize: 13, marginTop: 3 }}>Quem mexeu, onde e o quê.</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            {!semTabela && (
+              <button type="button" onClick={carregar} title="Atualizar" style={{ background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, color: T.muted, cursor: 'pointer', padding: 8, display: 'flex' }}>
+                <RefreshCw size={16} />
+              </button>
+            )}
+            <button type="button" onClick={onClose} title="Fechar" style={{ background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, cursor: 'pointer', padding: 8, display: 'flex' }}>
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <div style={{ height: 12 }} />
+        {corpo}
+      </div>
+      <BotaoTopo alvoRef={scrollRef} isMobile={isMobile} />
+    </div>
+  );
+  return typeof document !== 'undefined' ? createPortal(pagina, document.body) : pagina;
 }
 
 /* Exportar / importar — vive no rodapé da barra lateral. */
