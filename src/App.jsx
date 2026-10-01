@@ -3903,47 +3903,16 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         display: 'grid', gap: 20,
         gridTemplateColumns: isWide ? 'repeat(3, minmax(0, 1fr))' : isMedium ? 'repeat(2, minmax(0, 1fr))' : '1fr',
       }}>
-        {/* AS MINHAS TAREFAS, ONDE SE ENTRA.
-
-            Um quadro que só existe num separador próprio é um quadro que
-            se esquece. Aqui aparece o que é meu e já está atrasado ou é
-            para hoje — nada mais, ou deixava de se distinguir do resto da
-            página. Fecha-se com um clique, sem sair daqui. */}
-        {(() => {
-          const hoje = todayStr();
-          const ctx = { sessions, matches, players, monitoring };
-          const minhas = (tarefas || [])
-            .filter(t => (t.responsavel === euId || !t.responsavel) && (
-              t.recorrencia
-                ? tarefaAtivaHoje(t, hoje, ctx) && !tarefaFeitaHoje(t, hoje)
-                : t.estado !== 'feita' && t.prazo && t.prazo <= hoje
-            ))
-            .sort((a, b) => String(a.prazo || hoje).localeCompare(String(b.prazo || hoje)));
-          if (!minhas.length) return null;
-          return (
-            <Panel
-              title="As minhas tarefas"
-              action={<Btn variant="ghost" onClick={onVerTarefas}>Ver todas</Btn>}
-            >
-              {minhas.slice(0, 6).map(t => (
-                <LinhaTarefa
-                  key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
-                  onAbrir={onVerTarefas}
-                  onAlternar={(x) => setTarefas(prev => prev.map(y => {
-                    if (y.id !== x.id) return y;
-                    if (y.recorrencia) return { ...y, concluidasEm: [...(y.concluidasEm || []), hoje] };
-                    return { ...y, estado: 'feita', feitaEm: new Date().toISOString() };
-                  }))}
-                />
-              ))}
-              {minhas.length > 6 && (
-                <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 4 }}>
-                  e mais {minhas.length - 6}.
-                </div>
-              )}
-            </Panel>
-          );
-        })()}
+        {/* A matriz Wellness × Esforço abre a página: é o que se quer ver
+            primeiro todos os dias. As tarefas saíram daqui (continuam no
+            separador Tarefas). */}
+        <Panel title="Estado do plantel">
+          {players.length === 0 ? (
+            <EmptyState text="Adiciona jogadores no separador Plantel." />
+          ) : (
+            <WellnessLoadMatrix players={players} monitoring={monitoring} />
+          )}
+        </Panel>
 
         <Panel title="Próximas sessões">
           {upcoming.length === 0 ? (
@@ -3999,13 +3968,6 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           )}
         </Panel>
 
-        <Panel title="Estado do plantel">
-          {players.length === 0 ? (
-            <EmptyState text="Adiciona jogadores no separador Plantel." />
-          ) : (
-            <WellnessLoadMatrix players={players} monitoring={monitoring} />
-          )}
-        </Panel>
 
         <Panel title="Estatuto de Plantel">
           {players.length === 0 ? (
