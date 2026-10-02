@@ -38620,8 +38620,88 @@ function PaginaCorte() {
   );
 }
 
+/* ECRÃ SEMPRE LIGADO ENQUANTO SE VÊ UM VÍDEO EM ECRÃ INTEIRO.
+
+   Vale para toda a app de uma vez (Biblioteca, Jogos, Adversários,
+   Análise de Vídeo, Portal do Atleta, cortes partilhados…), sem mexer em
+   cada leitor: escuta o documento.
+
+   · Ecrã inteiro com um <video> nosso: mantém o ecrã ligado enquanto o
+     vídeo está a tocar; em pausa ou no fim, deixa-o apagar como sempre.
+   · Ecrã inteiro com o YouTube (iframe): de fora não se sabe se está a
+     tocar ou em pausa, por isso mantém ligado enquanto estiver em ecrã
+     inteiro. Sair do ecrã inteiro devolve o comportamento normal.
+   · Ecrã inteiro sem vídeo (o Quadro Tático) fica como sempre esteve.
+   · iPhone: o leitor nativo em ecrã inteiro não dispara o
+     "fullscreenchange" — apanha-se pelos eventos webkit*fullscreen do
+     próprio <video>.
+
+   Usa a Screen Wake Lock API. O sistema solta o pedido quando a app vai
+   para segundo plano; ao voltar, volta a pedir se ainda estiver a ver.
+   Em browsers sem esta API (iPhone com iOS anterior a 16.4) não faz
+   nada — mas aí o leitor nativo do iPhone já impede o ecrã de apagar. */
+function useEcraLigadoEmVideo() {
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return undefined;
+    let lock = null;
+    let aPedir = false;
+    let nativoIOS = null;
+
+    const elementoEcraInteiro = () => document.fullscreenElement || document.webkitFullscreenElement || nativoIOS;
+    const deveManter = () => {
+      if (document.visibilityState !== 'visible') return false;
+      const el = elementoEcraInteiro();
+      if (!el) return false;
+      const procurar = (sel) => Array.from(el.querySelectorAll ? el.querySelectorAll(sel) : []);
+      const videos = el.tagName === 'VIDEO' ? [el] : procurar('video');
+      if (videos.length) return videos.some(v => !v.paused && !v.ended);
+      // YouTube (iframe): em ecrã inteiro conta como a ver. Ecrã inteiro
+      // sem vídeo nenhum (o Quadro Tático, por exemplo) não conta.
+      return el.tagName === 'IFRAME' || procurar('iframe').length > 0;
+    };
+    const soltar = () => {
+      const l = lock; lock = null;
+      if (l) l.release().catch(() => {});
+    };
+    const atualizar = async () => {
+      if (!deveManter()) { soltar(); return; }
+      if (lock || aPedir) return;
+      aPedir = true;
+      try {
+        const l = await navigator.wakeLock.request('screen');
+        l.addEventListener('release', () => { if (lock === l) lock = null; });
+        lock = l;
+      } catch (e) {
+        /* recusado (bateria fraca, separador escondido…) — segue sem ele */
+      } finally {
+        aPedir = false;
+      }
+      // Pode ter saído do ecrã inteiro ou posto em pausa durante o pedido.
+      if (!deveManter()) soltar();
+    };
+    const inicioIOS = (e) => { nativoIOS = e.target; atualizar(); };
+    const fimIOS = () => { nativoIOS = null; atualizar(); };
+
+    const doc = ['fullscreenchange', 'webkitfullscreenchange', 'visibilitychange'];
+    // Os eventos de <video> não sobem na árvore: apanham-se na captura.
+    const media = ['play', 'playing', 'pause', 'ended', 'emptied'];
+    doc.forEach(ev => document.addEventListener(ev, atualizar));
+    media.forEach(ev => document.addEventListener(ev, atualizar, true));
+    document.addEventListener('webkitbeginfullscreen', inicioIOS, true);
+    document.addEventListener('webkitendfullscreen', fimIOS, true);
+    return () => {
+      doc.forEach(ev => document.removeEventListener(ev, atualizar));
+      media.forEach(ev => document.removeEventListener(ev, atualizar, true));
+      document.removeEventListener('webkitbeginfullscreen', inicioIOS, true);
+      document.removeEventListener('webkitendfullscreen', fimIOS, true);
+      soltar();
+    };
+  }, []);
+}
+
 export default function AppRoot() {
   const [session, setSession] = useState(undefined); // undefined = a verificar
+  useEcraLigadoEmVideo();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
