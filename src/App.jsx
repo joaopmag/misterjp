@@ -33633,27 +33633,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // "congelado" de quando a função foi criada.
   const ytATocarRef = useRef(false);
   useEffect(() => { ytATocarRef.current = ytATocar; }, [ytATocar]);
-  /* PRECISÃO. O YouTube só diz o tempo de ~¼ em ¼ de segundo; a paragem
-     disparava na leitura SEGUINTE ao minuto dela — já passado — e o vídeo
-     tinha de voltar atrás (salto visível, zoom a falhar o momento). Agora,
-     quando falta menos de 1s para uma paragem, marca-se um relógio para
-     o instante exato e a paragem começa a tempo, sem voltar atrás. */
-  useEffect(() => {
-    if (modoDesenhoBib || !ativoEClipe || !ytATocar || pausaEmCursoRef.current || !active) return undefined;
-    const proxima = (active.anotacoesPausa || [])
-      .filter(x => !pausasJaMostradasRef.current.has(x.id))
-      .map(x => tempoPausaNoCorte(x))
-      .filter(t => t > liveTime + 0.02 && t - liveTime < 1)
-      .sort((x, y) => x - y)[0];
-    if (proxima == null) return undefined;
-    const h = setTimeout(() => {
-      if (!ytATocarRef.current || pausaEmCursoRef.current) return;
-      currentTimeRef.current = proxima;
-      setLiveTime(proxima);
-    }, (proxima - liveTime) * 1000);
-    return () => clearTimeout(h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveTime, ytATocar, modoDesenhoBib, active && active.id]);
   // Pausa / play durante uma paragem com desenhos: o tempo dos itens
   // acompanha o vídeo.
   useEffect(() => {
@@ -34078,6 +34057,30 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
 
   const ativoEClipe = !!(active && active.youtubeId && typeof active.clipInicio === 'number');
+  /* (Fica DEPOIS de `active`/`ativoEClipe`: as dependências do efeito
+     leem-se ao desenhar — antes deles dava "Cannot access … before
+     initialization".)
+     PRECISÃO. O YouTube só diz o tempo de ~¼ em ¼ de segundo; a paragem
+     disparava na leitura SEGUINTE ao minuto dela — já passado — e o vídeo
+     tinha de voltar atrás (salto visível, zoom a falhar o momento). Agora,
+     quando falta menos de 1s para uma paragem, marca-se um relógio para
+     o instante exato e a paragem começa a tempo, sem voltar atrás. */
+  useEffect(() => {
+    if (modoDesenhoBib || !ativoEClipe || !ytATocar || pausaEmCursoRef.current || !active) return undefined;
+    const proxima = (active.anotacoesPausa || [])
+      .filter(x => !pausasJaMostradasRef.current.has(x.id))
+      .map(x => tempoPausaNoCorte(x))
+      .filter(t => t > liveTime + 0.02 && t - liveTime < 1)
+      .sort((x, y) => x - y)[0];
+    if (proxima == null) return undefined;
+    const h = setTimeout(() => {
+      if (!ytATocarRef.current || pausaEmCursoRef.current) return;
+      currentTimeRef.current = proxima;
+      setLiveTime(proxima);
+    }, (proxima - liveTime) * 1000);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTime, ytATocar, modoDesenhoBib, active && active.id]);
   const clipIni = ativoEClipe ? active.clipInicio : 0;
   const clipFimEf = ativoEClipe
     ? (typeof active.clipFim === 'number' ? active.clipFim : active.clipInicio + 30)
