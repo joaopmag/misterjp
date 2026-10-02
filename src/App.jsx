@@ -9644,6 +9644,51 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
 }
 
 
+/* FECHAR SEM SALTAR. Quando uma secção grande se fecha (a lista de
+   cartões para copiar), o conteúdo encolhe por baixo e o browser, sem
+   página suficiente para manter o scroll onde estava, puxa tudo para
+   cima — perde-se o sítio onde se estava. Aqui, mesmo antes de fechar,
+   põe-se um espaço vazio no fim da janela do tamanho do ecrã: o scroll
+   não tem de recuar e nada mexe. Depois o espaço encolhe sozinho à
+   medida que se sobe, e desaparece — nunca se chega a ver.
+
+   Uso: const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
+        fecharSemSaltar(elementoQueFicaParado, () => setAberto(false));
+        … e {espacoSemSaltar} no fim do conteúdo da janela. */
+function useFecharSemSaltar() {
+  const espacoRef = useRef(null);
+  const fechar = useCallback((ancora, fn) => {
+    const esp = espacoRef.current;
+    if (!ancora || !esp || typeof window === 'undefined') { fn(); return; }
+    let sc = ancora.parentElement;
+    while (sc && sc !== document.body) {
+      const oy = getComputedStyle(sc).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && sc.scrollHeight > sc.clientHeight) break;
+      sc = sc.parentElement;
+    }
+    const pagina = !sc || sc === document.body;
+    if (pagina) sc = document.scrollingElement || document.documentElement;
+    const alvo = pagina ? window : sc;
+    const st0 = sc.scrollTop;
+    esp.style.height = `${sc.clientHeight}px`;
+    fn();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (sc.scrollTop !== st0) sc.scrollTop = st0;
+      const ajustar = () => {
+        const atual = esp.offsetHeight;
+        const semEspaco = sc.scrollHeight - atual;
+        const preciso = Math.max(0, Math.ceil(sc.scrollTop + sc.clientHeight - semEspaco));
+        if (preciso < atual) esp.style.height = `${preciso}px`;
+        if (preciso <= 0) alvo.removeEventListener('scroll', ajustar);
+      };
+      ajustar();
+      alvo.addEventListener('scroll', ajustar, { passive: true });
+    }));
+  }, []);
+  const espaco = <div ref={espacoRef} aria-hidden="true" style={{ height: 0, flexShrink: 0 }} />;
+  return [fechar, espaco];
+}
+
 /* ESCOLHER DE ONDE COPIAR — ideias e exercícios.
 
    Só aparecem os da FASE DE JOGO que está escolhida no formulário: quem
@@ -9742,7 +9787,6 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
       ) : (
         <div style={{
           display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 140 : 180}px, 1fr))`, gap: 8,
-          maxHeight: isMobile ? 380 : 420, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2,
         }}>
           {visiveis.map(x => {
             const det = detalhesDe ? detalhesDe(x) : [];
@@ -9789,6 +9833,13 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
 
   // Só as da mesma fase de jogo que está escolhida aqui.
   const importable = allIdeias.filter(x => x && x.id !== (ideia && ideia.id) && x.diagram && x.phase === f.phase);
+  const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
+  const botaoCopiarRef = useRef(null);
+  const alternarCopiar = () => {
+    setImportNotice('');
+    if (importOpen) fecharSemSaltar(botaoCopiarRef.current, () => setImportOpen(false));
+    else setImportOpen(true);
+  };
   const nomeIdeia = (x) => (x.name && x.name.trim()) || `Ideia ${allIdeias.findIndex(i => i.id === x.id) + 1}`;
   const desenhoAtualIdeia = !!(f.diagram && ((f.diagram.elements || []).length || (f.diagram.arrows || []).length));
 
@@ -9854,8 +9905,9 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
       <div style={{ marginBottom: 16 }}>
         <Field label="Partir de uma ideia existente">
           <button
+            ref={botaoCopiarRef}
             type="button"
-            onClick={() => { setImportOpen(o => !o); setImportNotice(''); }}
+            onClick={alternarCopiar}
             disabled={importable.length === 0}
             title={importable.length === 0 ? `Ainda não há outras ideias de ${f.phase}.` : 'Copiar o esquema de uma ideia já criada desta fase'}
             style={{
@@ -9886,7 +9938,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
               meta={meta}
               nomeDe={nomeIdeia}
               temDesenhoAtual={desenhoAtualIdeia}
-              onUsar={(x) => importFromIdeia(x, nomeIdeia(x))}
+              onUsar={(x) => fecharSemSaltar(botaoCopiarRef.current, () => importFromIdeia(x, nomeIdeia(x)))}
             />
           )}
         </Field>
@@ -9927,6 +9979,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn disabled={!f.name || !f.name.trim()} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar</Btn>
       </div>
+      {espacoSemSaltar}
     </Modal>
   );
 }
@@ -14467,6 +14520,13 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
   // Só faz sentido copiar de outros exercícios — nunca do próprio.
   // ... e só os da mesma fase de jogo que está escolhida aqui.
   const importable = allExercises.filter(x => x && x.id !== (exercise && exercise.id) && x.name && x.phase === f.phase);
+  const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
+  const botaoCopiarRef = useRef(null);
+  const alternarCopiar = () => {
+    setImportNotice('');
+    if (importOpen) fecharSemSaltar(botaoCopiarRef.current, () => setImportOpen(false));
+    else setImportOpen(true);
+  };
   const detalhesExercicio = (x) => [x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration}'`, x.material].filter(Boolean);
   const desenhoAtualExercicio = !!(f.diagram && ((f.diagram.elements || []).length || (f.diagram.arrows || []).length));
 
@@ -14672,8 +14732,9 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
                 informação dele (fase, descrição, espaço, jogadores, material,
                 duração, esquema tático e anexo) para este formulário. */}
             <button
+              ref={botaoCopiarRef}
               type="button"
-              onClick={() => { setImportOpen(o => !o); setImportNotice(''); }}
+              onClick={alternarCopiar}
               disabled={importable.length === 0}
               title={importable.length === 0 ? `Ainda não há outros exercícios de ${f.phase}.` : 'Copiar a informação de um exercício já criado desta fase'}
               style={{
@@ -14721,7 +14782,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
               nomeDe={(x) => x.name}
               detalhesDe={detalhesExercicio}
               temDesenhoAtual={desenhoAtualExercicio}
-              onUsar={importFromExercise}
+              onUsar={(x) => fecharSemSaltar(botaoCopiarRef.current, () => importFromExercise(x))}
             />
           )}
         </Field>
@@ -14730,6 +14791,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn disabled={!f.name} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar</Btn>
       </div>
+      {espacoSemSaltar}
     </Modal>
   );
 }
