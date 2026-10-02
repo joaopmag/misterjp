@@ -4758,6 +4758,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
      o número de lances) e abrem-se com um toque. A pesquisa e o filtro
      por pessoa abrem tudo — senão os resultados ficavam escondidos. */
   const [diasAbertos, setDiasAbertos] = useState(() => new Set([todayStr()]));
+  const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
   const alternarDia = (k) => setDiasAbertos(prev => {
     const n = new Set(prev);
     if (n.has(k)) n.delete(k); else n.add(k);
@@ -4906,7 +4907,14 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
                 const aberto = temFiltro || diasAbertos.has(dia.k);
                 return (
                   <>
-                    <button type="button" onClick={() => alternarDia(dia.k)} disabled={temFiltro} style={{
+                    <button type="button" disabled={temFiltro}
+                      onClick={(e) => {
+                        // Fechar um dia: o cabeçalho fica onde está, a página não salta.
+                        const el = e.currentTarget;
+                        if (aberto) fecharSemSaltar(el, () => alternarDia(dia.k));
+                        else alternarDia(dia.k);
+                      }}
+                      style={{
                       position: 'sticky', top: 0, zIndex: 2, background: T.bg, padding: '8px 0 10px', width: '100%',
                       display: 'flex', alignItems: 'baseline', gap: 10, border: 'none', cursor: temFiltro ? 'default' : 'pointer', textAlign: 'left', ...body,
                     }}>
@@ -4954,6 +4962,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
         </div>
         <div style={{ height: 12 }} />
         {corpo}
+        {espacoSemSaltar}
       </div>
       <BotaoTopo alvoRef={scrollRef} isMobile={isMobile} onFechar={onClose} soAlvo />
     </div>
@@ -9729,10 +9738,18 @@ function useFecharSemSaltar() {
     if (pagina) sc = document.scrollingElement || document.documentElement;
     const alvo = pagina ? window : sc;
     const st0 = sc.scrollTop;
+    const a0 = ancora.getBoundingClientRect().top;
     esp.style.height = `${sc.clientHeight}px`;
     fn();
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (sc.scrollTop !== st0) sc.scrollTop = st0;
+      // E o elemento tocado fica no MESMO sítio do ecrã (um cabeçalho
+      // "pegajoso" que se fecha, por exemplo, voltava ao lugar dele lá
+      // em cima e a página saltava).
+      if (ancora.isConnected) {
+        const d = ancora.getBoundingClientRect().top - a0;
+        if (Math.abs(d) > 0.5) sc.scrollTop += d;
+      }
       const ajustar = () => {
         const atual = esp.offsetHeight;
         const semEspaco = sc.scrollHeight - atual;
