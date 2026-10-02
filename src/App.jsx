@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 import * as tus from 'tus-js-client';
 import AnalisadorVideo, {
   FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
-  RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO,
+  RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, afinarLaco,
 } from './AnalisadorVideo';
 import {
   Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -32950,7 +32950,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Carrega uma pausa para o rascunho (existente = editar; null = nova
   // no instante `tempo`). Usado ao abrir o desenho e ao escolher uma
   // pausa na lista "Pausas neste corte".
-  const [pausaNovaForcadaBib, setPausaNovaForcadaBib] = useState(false); // "+ Nova pausa aqui": não juntar à pausa que já existe
   // Uma pausa mesmo no fim do corte nunca chegava a parar o vídeo: o
   // ciclo do corte voltava ao início no mesmo instante, e os desenhos
   // apareciam por cima do arranque seguinte. Fica sempre meio segundo
@@ -32960,14 +32959,22 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (!Number.isFinite(n)) return clipIni;
     return Math.max(clipIni, Math.min(n, clipFimEf - 0.5));
   };
-  // A pausa que já existe neste corte mais perto de `t` (ou null).
+  /* MESMO MOMENTO = MESMA PAUSA; OUTRO MOMENTO = PAUSA NOVA. Desenhar
+     onde já há uma pausa (até 2s de distância) junta-se a ela — tudo
+     aparece na mesma paragem. Noutro momento do corte, sem nada a ver
+     com essa, nasce uma pausa nova nesse instante. As duas disparam na
+     mesma reprodução do corte. */
+  const JANELA_MESMA_PAUSA_BIB = 2;
   const pausaMaisPertoBib = (t) => {
     const lista = (active && active.anotacoesPausa) || [];
-    if (!lista.length) return null;
-    return lista.reduce((m, x) => (Math.abs(tempoPausaNoCorte(x) - t) < Math.abs(tempoPausaNoCorte(m) - t) ? x : m), lista[0]);
+    let melhor = null;
+    lista.forEach(x => {
+      const d = Math.abs(tempoPausaNoCorte(x) - t);
+      if (d < JANELA_MESMA_PAUSA_BIB && (!melhor || d < Math.abs(tempoPausaNoCorte(melhor) - t))) melhor = x;
+    });
+    return melhor;
   };
   const abrirPausaBib = (existente, tempo) => {
-    setPausaNovaForcadaBib(false);
     if (existente) {
       // As formas que já lá estavam ficam com o tempo delas; o contador
       // de segundos começa no valor de sempre, e vale só para as novas.
@@ -33047,23 +33054,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       // em que a pausa vai disparar mais tarde.
       enviarComandoYoutube('seekTo', [agora, true]);
     }
-    if (historicoBib.length > 0 || anotacaoIdEmEdicaoBib || pausaNovaForcadaBib || Math.abs(agora - tempoAnotacaoBib) < 0.3) return;
-    /* JUNTA À PAUSA QUE JÁ EXISTE. Desenhar num corte que já tem uma
-       pausa acrescenta à MESMA pausa (o vídeo vai lá) — assim tudo
-       aparece na mesma paragem, e não é preciso ver o corte duas vezes
-       para ver os dois desenhos. Para uma paragem noutro momento há o
-       "+ Nova pausa aqui". */
+    // Ainda com o que se desenhou por gravar, ou no mesmo instante: fica.
+    if (historicoBib.length > 0 || Math.abs(agora - tempoAnotacaoBib) < 0.3) return;
+    // Mudou de momento: a pausa que lá houver (até 2s), ou uma nova aqui.
     const existente = pausaMaisPertoBib(agora);
-    if (existente) enviarComandoYoutube('seekTo', [tempoPausaNoCorte(existente), true]);
     abrirPausaBib(existente || null, agora);
-  };
-  const novaPausaAquiBib = () => {
-    cancelarRetomaDesenhoBib();
-    const agora = tempoAtualNoCorteBib();
-    if (ytATocarRef.current) enviarComandoYoutube('pauseVideo');
-    enviarComandoYoutube('seekTo', [tempoSeguroNoCorte(agora), true]);
-    abrirPausaBib(null, agora);
-    setPausaNovaForcadaBib(true);
   };
   const escolherPausaBib = (a) => {
     cancelarRetomaDesenhoBib();
@@ -33086,10 +33081,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // "Limpar" está disponível logo à entrada sempre que o corte tenha
     // desenhos: sem nenhuma pausa aberta, apaga TODOS os do corte (só a
     // sério ao Guardar — ver `apagarTodasBib`).
-    // Se o corte já tem pausa, abre essa (a mais próxima) e o vídeo vai
-    // até ela: o que se desenhar agora junta-se à mesma paragem.
+    // Uma pausa já neste momento (até 2s)? Junta-se a ela. Noutro
+    // momento, começa uma nova aqui.
     const existente = anotacoes.length ? pausaMaisPertoBib(agora) : null;
-    if (existente) enviarComandoYoutube('seekTo', [tempoPausaNoCorte(existente), true]);
     cancelarRetomaDesenhoBib();
     // Nenhuma pausa fica de fora: a 1ª reprodução no modo de desenho
     // congela em todas (antes, a pausa aberta à entrada era saltada na 1ª
@@ -33224,7 +33218,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setFormaTextoBib({ pt: p, xPix: e.clientX - rect.left, yPix: e.clientY - rect.top, valor: '' });
       return;
     }
-    if (toolBib === 'zonalivre' || toolBib === 'linhaPontos') {
+    if (toolBib === 'linhaPontos') {
       setFormaEmCursoBib(prev => ({
         tool: toolBib, color: corBib,
         points: prev && prev.tool === toolBib ? [...prev.points, p] : [p],
@@ -33236,7 +33230,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // criar uma forma nova por cima.
     if (formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib]) {
       const forma = shapesRascunho[formaSelecionadaBib];
-      const iVertice = forma.points.findIndex(pt => Math.hypot(pt.x - p.x, pt.y - p.y) < RAIO_PEGA_BIB);
+      const iVertice = forma.tool === 'zonalivre' ? -1 : forma.points.findIndex(pt => Math.hypot(pt.x - p.x, pt.y - p.y) < RAIO_PEGA_BIB);
       // No círculo, o ponto do CENTRO move o círculo inteiro (é onde
       // naturalmente se pega nele). Só o ponto da borda muda o tamanho.
       if (iVertice !== -1 && !(iVertice === 0 && forma.tool === 'circulo')) {
@@ -33263,7 +33257,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaSelecionadaBib(null);
     // Sem ferramenta: tocar num sítio vazio do vídeo reproduz/pausa.
     if (!toolBib) { alternarReproducaoBib(); return; }
-    setFormaEmCursoBib({ tool: toolBib, color: corBib, points: toolBib === 'livre' ? [p] : [p, p] });
+    /* ZONA LIVRE = laço: carrega, contorna a zona a arrastar e larga — a
+       zona fecha-se sozinha, como qualquer outra forma. Antes era ponto a
+       ponto com um "Concluído" à parte, e com ela ativa não se podia
+       agarrar nem mover os itens já feitos. */
+    const aMao = toolBib === 'livre' || toolBib === 'zonalivre';
+    setFormaEmCursoBib({ tool: toolBib, color: corBib, points: aMao ? [p] : [p, p] });
   };
   // ARRASTO FLUIDO — o rato manda dezenas de movimentos por segundo, e
   // cada um redesenhava a Biblioteca inteira (um ecrã muito grande), o
@@ -33298,17 +33297,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       if (!rafArrastoBib.current) rafArrastoBib.current = requestAnimationFrame(aplicarArrastoBib);
       return;
     }
-    if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') {
+    if (!formaEmCursoBib || formaEmCursoBib.tool === 'linhaPontos') {
       // Nada a arrastar — só verifica se o cursor está perto de uma
       // forma já feita, para o cursor mudar para "mover" (mãozinha).
-      if (toolBib !== 'apagar' && toolBib !== 'zonalivre' && toolBib !== 'linhaPontos') {
+      if (toolBib !== 'apagar' && toolBib !== 'linhaPontos') {
         let iPerto = null, dPerto = Infinity;
         shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_MOVER_BIB && d < dPerto) { dPerto = d; iPerto = i; } });
         setHoverFormaBib(iPerto);
       }
       return;
     }
-    setFormaEmCursoBib(prev => (prev.tool === 'livre' ? { ...prev, points: [...prev.points, p] } : { ...prev, points: [prev.points[0], p] }));
+    setFormaEmCursoBib(prev => ((prev.tool === 'livre' || prev.tool === 'zonalivre') ? { ...prev, points: [...prev.points, p] } : { ...prev, points: [prev.points[0], p] }));
   };
   const terminarFormaBib = () => {
     // Aplica já o último movimento que ainda estava à espera do fotograma,
@@ -33316,9 +33315,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (rafArrastoBib.current) { cancelAnimationFrame(rafArrastoBib.current); aplicarArrastoBib(); }
     if (arrastoVerticeBib.current) { arrastoVerticeBib.current = null; return; }
     if (arrastoCorpoBib.current) { arrastoCorpoBib.current = null; return; }
-    if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') return; // essas só terminam com "Concluído"
-    const { tool, color, points } = formaEmCursoBib;
-    const pequenoDemais = tool === 'livre' ? points.length < 2 : Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 1;
+    if (!formaEmCursoBib || formaEmCursoBib.tool === 'linhaPontos') return; // essa só termina com "Concluído"
+    const { tool, color } = formaEmCursoBib;
+    let { points } = formaEmCursoBib;
+    // Laço: tira pontos repetidos/colados (o rato manda dezenas por
+    // segundo) — a zona fica igual, mais leve de guardar e de mover.
+    if (tool === 'zonalivre') points = afinarLaco(points);
+    const pequenoDemais = tool === 'livre' ? points.length < 2
+      : tool === 'zonalivre' ? points.length < 3
+      : Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 1;
     if (pequenoDemais) { setFormaEmCursoBib(null); return; } // só um toque, sem arrastar — ignora
     pushHistoricoBib();
     setShapesRascunho(prev => [...prev, { id: uid(), tool, color, points }]);
@@ -35264,7 +35269,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             // arrastável pelo browser (ver iniciarFormaBib).
                             userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none',
                             cursor: modoDesenhoBib
-                              ? (hoverFormaBib != null && !['apagar', 'zonalivre', 'linhaPontos'].includes(toolBib) ? CURSOR_MOVER_FINO : (toolBib ? CURSOR_MIRA_FINA : 'pointer'))
+                              ? (hoverFormaBib != null && !['apagar', 'linhaPontos'].includes(toolBib) ? CURSOR_MOVER_FINO : (toolBib ? CURSOR_MIRA_FINA : 'pointer'))
                               : 'pointer',
                           }}
                           onPointerDown={modoDesenhoBib ? iniciarFormaBib : undefined}
@@ -35283,7 +35288,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                              volta da forma que vai ser agarrada — acaba com a
                              dúvida de "qual delas vou mover". */}
                           {modoDesenhoBib && hoverFormaBib != null && hoverFormaBib !== formaSelecionadaBib && shapesRascunho[hoverFormaBib]
-                            && !['apagar', 'zonalivre', 'linhaPontos'].includes(toolBib) && (() => {
+                            && !['apagar', 'linhaPontos'].includes(toolBib) && (() => {
                               const c = caixaFormaBib(shapesRascunho[hoverFormaBib]);
                               if (!c) return null;
                               const m = 0.8;
@@ -35295,7 +35300,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             })()}
                           {/* Pontinhos arrastáveis da forma selecionada — tocar
                              e arrastar um deles move essa ponta da forma. */}
-                          {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].points.map((pt, pi) => (
+                          {/* (A zona livre não tem pontinhos: são dezenas — move-se inteira.) */}
+                          {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].tool !== 'zonalivre' && shapesRascunho[formaSelecionadaBib].points.map((pt, pi) => (
                             <g key={`vertice-${pi}`}>
                               <circle cx={pt.x} cy={pt.y} r={0.6} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
                               {/* Área de toque invisível, bem maior do que o pontinho. */}
@@ -35429,17 +35435,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                     </button>
                                   );
                                 })}
-                              {!apagarTodasBib && (
-                                <button onClick={novaPausaAquiBib}
-                                  title="Criar outra paragem, no instante em que o vídeo está agora (em vez de juntar à que já existe)"
-                                  style={{
-                                    background: pausaNovaForcadaBib ? T.gold : 'none', color: pausaNovaForcadaBib ? '#111' : T.mutedDim,
-                                    border: `1px dashed ${pausaNovaForcadaBib ? T.gold : T.line}`, borderRadius: 4,
-                                    padding: '2px 8px', fontSize: 12, cursor: 'pointer', ...body,
-                                  }}>
-                                  + Nova pausa aqui
-                                </button>
-                              )}
                             </div>
                           )}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 10px' }}>
@@ -35457,7 +35452,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             <Btn onClick={guardarDesenhoBib} style={{ padding: '4px 10px', fontSize: 11 }}>Concluído</Btn>
                           </div>
                         </div>
-                        {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
+                        {toolBib === 'linhaPontos' && formaEmCursoBib && (
                           <div style={{ position: 'absolute', top: (active.anotacoesPausa || []).length > 0 ? 84 : 48, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
                             <Btn onClick={concluirFormaMultiplaBib} style={{ padding: '6px 14px', fontSize: 12.5 }}>Concluído</Btn>
                           </div>

@@ -260,6 +260,16 @@ export function distanciaShape(sh, p) {
     const c = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
     return Math.min(distPontoSegmento(pLocal, c[0], c[1]), distPontoSegmento(pLocal, c[1], c[2]), distPontoSegmento(pLocal, c[2], c[3]), distPontoSegmento(pLocal, c[3], c[0]));
   }
+  if (sh.tool === 'zonalivre' && pts.length > 2) {
+    // Zona livre é uma área preenchida: tocar DENTRO dela também a agarra,
+    // tal como na Zona (retângulo).
+    let dentro = false;
+    for (let k = 0, j = pts.length - 1; k < pts.length; j = k++) {
+      const pk = pts[k], pj = pts[j];
+      if (((pk.y > p.y) !== (pj.y > p.y)) && (p.x < ((pj.x - pk.x) * (p.y - pk.y)) / ((pj.y - pk.y) || 1e-9) + pk.x)) dentro = !dentro;
+    }
+    if (dentro) return 0;
+  }
   if (sh.tool === 'livre' || sh.tool === 'zonalivre' || sh.tool === 'linhaPontos') {
     let min = Infinity;
     for (let k = 0; k < pts.length - 1; k++) min = Math.min(min, distPontoSegmento(p, pts[k], pts[k + 1]));
@@ -272,6 +282,16 @@ export function distanciaShape(sh, p) {
 
 /* Desenha uma forma no SVG — usado tanto no editor como na reprodução do
    clipe já guardado (por isso vive fora do componente principal). */
+/* Laço (Zona livre): o rato manda dezenas de pontos por segundo — fica
+   só um a cada ~0,4 unidades. A zona é a mesma, mais leve de guardar. */
+export function afinarLaco(pontos) {
+  return (pontos || []).reduce((acc, pt) => {
+    const ult = acc[acc.length - 1];
+    if (!ult || Math.hypot(pt.x - ult.x, pt.y - ult.y) >= 0.4) acc.push(pt);
+    return acc;
+  }, []);
+}
+
 export const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
 export const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um toque "acertar" num desenho já feito — mais exato ainda, tem de se tocar mesmo em cima
 
@@ -1423,8 +1443,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     });
   };
 
-  // "Zona livre" e "Ligar pontos" constroem-se por toques sucessivos —
-  // cada toque acrescenta um vértice, e "Concluir" fecha a forma.
+  // "Ligar pontos" constrói-se por toques sucessivos — cada toque
+  // acrescenta um vértice, e "Concluir" fecha a forma. (A "Zona livre"
+  // passou a ser um laço: carrega, contorna e larga — como as outras.)
   const concluirPontos = () => {
     if (!pontosEmCurso) return;
     const minimo = pontosEmCurso.tool === 'zonalivre' ? 3 : 2;
@@ -1520,7 +1541,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })), moveu: false };
       return;
     }
-    if (tool === 'zonalivre' || tool === 'linhaPontos') { setPontosEmCurso({ tool, points: [pt] }); return; }
+    if (tool === 'linhaPontos') { setPontosEmCurso({ tool, points: [pt] }); return; }
     pushHistorico();
     drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
     setShapes(s => [...s, drawState.current]);
@@ -1575,7 +1596,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     if (drawState.current) {
       const pt = getPoint(e); const st = drawState.current;
-      if (st.tool === 'livre') st.points.push(pt); else st.points[1] = pt;
+      if (st.tool === 'livre' || st.tool === 'zonalivre') st.points.push(pt); else st.points[1] = pt;
       // Substitui SEMPRE a mesma entrada (pelo id, criado uma única vez em
       // startDraw) — nunca acrescenta uma cópia nova.
       setShapes(s => s.map(sh => (sh.id === st.id ? { ...st, points: [...st.points] } : sh)));
@@ -1599,7 +1620,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       if (!moveu) abrirPopupDuracao(index); // foi um toque simples, sem arrastar — abre o tempo desse desenho (e mostra as pegas, se a forma tiver)
       return;
     }
+    const st = drawState.current;
     drawState.current = null; // a forma já está no array e atualizada — nada mais a fazer
+    if (st && st.tool === 'zonalivre') {
+      // Laço: tira pontos colados; menos de 3 não é zona — sai.
+      const pts = afinarLaco(st.points);
+      setShapes(s => (pts.length < 3 ? s.filter(sh => sh.id !== st.id) : s.map(sh => (sh.id === st.id ? { ...sh, points: pts } : sh))));
+    }
   };
 
   const pct = (t) => (duration ? (t / duration) * 100 : 0);
@@ -1859,7 +1886,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </g>
                   );
                 })()}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
                   shapes[editandoDuracaoIndex].points.map((p, pi) => (
                     <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.4 : 0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
                       onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
