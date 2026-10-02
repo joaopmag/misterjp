@@ -32853,9 +32853,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // A saída do zoom começa ANTES de o círculo sair (ver a paragem): o
   // vídeo só volta a andar já com a imagem no tamanho normal.
   const [zoomSaidaBib, setZoomSaidaBib] = useState(null); // id da paragem cujo zoom já está a sair
+  /* A DESENHAR, A PARAGEM TAMBÉM RESPEITA O TEMPO DE CADA ITEM. Quando o
+     vídeo pára sozinho numa pausa com o modo de desenho aberto, cada item
+     sai no tempo DELE (antes ficavam todos até ao maior) — assim vê-se
+     logo como ficou um tempo mudado (5s → 1s), sem sair do desenho.
+     `decorridoCongelBib` = segundos já passados nessa paragem. */
+  const [decorridoCongelBib, setDecorridoCongelBib] = useState(0);
+  const formasDesenhoVisiveisBib = congeladoDesenhoBib
+    ? shapesRascunho.filter(f => (Number(f.seg) || DURACAO_PADRAO_BIB) > decorridoCongelBib)
+    : shapesRascunho;
   const circuloZoom = zoomPreviewBib
     || (!modoDesenhoBib && pausaAtivaBib && zoomSaidaBib !== pausaAtivaBib.id ? formaComZoom(pausaAtivaBib.shapes) : null)
-    || (modoDesenhoBib && congeladoDesenhoBib ? formaComZoom(shapesRascunho) : null);
+    || (modoDesenhoBib && congeladoDesenhoBib && zoomSaidaBib !== 'congelado' ? formaComZoom(formasDesenhoVisiveisBib) : null);
   const zoomBib = circuloZoom ? { f: Number(circuloZoom.zoom) } : null;
   /* SAÍDA DO ZOOM EM "MERGULHO". O vídeo do YouTube vive noutro processo
      do browser; ao REDUZIR a ampliação de forma animada, o browser às
@@ -32864,17 +32873,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      Por isso a entrada continua suave, mas a saída é como na televisão:
      um escurecer muito rápido, a imagem volta ao tamanho normal por
      baixo (sem animação), e clareia. Nunca se vê o fotograma estragado. */
+  /* (Revisto) O escurecer da saída ficava preto demais. Agora a saída é
+     animada e suave, mas acontece com o vídeo ainda em câmara lenta e
+     acaba ANTES de ele retomar (é marcada ~0,9s antes de o círculo sair)
+     — era o retomar a meio do afastamento que estragava a imagem. Só um
+     corte brusco (mexer na barra a meio) volta ao normal sem animação. */
   const [zoomVisivelBib, setZoomVisivelBib] = useState(null); // ampliação que está de facto no ecrã
-  const [mergulhoBib, setMergulhoBib] = useState(false);
+  const saidaSuaveZoomRef = useRef(true);
   const zoomAlvoF = zoomBib ? zoomBib.f : 0;
   useEffect(() => {
-    if (zoomAlvoF > 1) { setMergulhoBib(false); setZoomVisivelBib(zoomAlvoF); return undefined; }
-    if (!zoomVisivelBib) return undefined;
-    setMergulhoBib(true);
-    const t1 = setTimeout(() => setZoomVisivelBib(null), 170);
-    const t2 = setTimeout(() => setMergulhoBib(false), 230);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (zoomAlvoF > 1) { saidaSuaveZoomRef.current = true; setZoomVisivelBib(zoomAlvoF); return; }
+    setZoomVisivelBib(null);
   }, [zoomAlvoF]);
   if (circuloZoom) {
     const c = circuloZoom.points[0];
@@ -34203,8 +34212,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       else { enviarComandoYoutube('pauseVideo'); enviarComandoYoutube('seekTo', [tAlvo, true]); }
       abrirPausaBib(alvo);
       setCongeladoDesenhoBib(true);
+      setDecorridoCongelBib(0);
+      setZoomSaidaBib(null);
       const retoma = { cancelado: false, lento, t: tAlvo };
       retomaDesenhoRef.current = retoma;
+      // Cada item sai no tempo dele; o zoom sai ~0,9s antes do círculo.
+      const formasGrupo = grupo.flatMap(a => (a.shapes || []).map(f => ({ ...f, seg: segDaForma(f, a) })));
+      [...new Set(formasGrupo.map(f => f.seg))].filter(s => s < duracao).forEach(s => {
+        setTimeout(() => { if (!retoma.cancelado) setDecorridoCongelBib(d => Math.max(d, s)); }, s * 1000);
+      });
+      const circZ = formasGrupo.find(f => f.tool === 'circulo' && Number(f.zoom) > 1);
+      if (circZ) {
+        setTimeout(() => { if (!retoma.cancelado) setZoomSaidaBib('congelado'); }, Math.max(0.4, circZ.seg - 0.9) * 1000);
+      }
       setTimeout(() => {
         if (retoma.cancelado) return;
         retomaDesenhoRef.current = null;
@@ -34322,7 +34342,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       /* Paragem com zoom: câmara lenta como as outras (pôr o vídeo em
          PAUSA fazia aparecer o botão grande de play do YouTube, ampliado
          3×, por cima da jogada). O zoom sai um instante antes do círculo,
-         com o "mergulho" (ver `mergulhoBib`). */
+         com a saída suave (ver `saidaSuaveZoomRef`). */
       const circZoom = todasAsFormas.find(f => f.tool === 'circulo' && Number(f.zoom) > 1);
       const relogio = criarRelogioBib();
       controlo.relogio = relogio;
@@ -34333,7 +34353,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       // parado e retomam o tempo que lhes faltava ao carregar em play.
       if (!ytATocarRef.current) relogio.pausar();
       if (circZoom) {
-        relogio.agendar(Math.max(0.4, circZoom.seg - 0.3) * 1000, () => {
+        relogio.agendar(Math.max(0.4, circZoom.seg - 0.9) * 1000, () => {
           if (!controlo.cancelado) setZoomSaidaBib(primeira.id);
         });
       }
@@ -34458,6 +34478,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       else if (MODO_SEGURAR_BIB === 'lento') enviarComandoYoutube('setPlaybackRate', [1]);
     }
     setZoomSaidaBib(null);
+    saidaSuaveZoomRef.current = false; // corte brusco: volta ao normal sem animação
     pausaControloRef.current = null;
     pausaEmCursoRef.current = null;
     setPausaAtivaBib(null);
@@ -35514,8 +35535,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         // desacelerar, saída suave nos dois extremos.
                         transform: zoomVisivelBib ? `translate3d(0,0,0) scale(${zoomVisivelBib})` : 'translate3d(0,0,0) scale(1)',
                         transformOrigin: zoomOrigemBib.current,
-                        // Entrada suave; saída sem animação (escondida pelo mergulho).
-                        transition: zoomVisivelBib ? 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
+                        // Entrada suave; saída suave (ou imediata num corte brusco).
+                        transition: zoomVisivelBib
+                          ? 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)'
+                          : (saidaSuaveZoomRef.current ? 'transform 0.75s cubic-bezier(0.65, 0, 0.35, 1)' : 'none'),
                         willChange: 'transform',
                       }}>
                       {isBlocked ? (
@@ -35593,7 +35616,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           onDragStart={e => e.preventDefault()}
                           onClick={modoDesenhoBib ? undefined : alternarReproducaoBib}
                         >
-                          {(modoDesenhoBib ? shapesRascunho : (pausaAtivaBib ? pausaAtivaBib.shapes : []))
+                          {(modoDesenhoBib ? formasDesenhoVisiveisBib : (pausaAtivaBib ? pausaAtivaBib.shapes : []))
                             .map((sh, i) => renderShape(sh, sh.id || i))}
                           {formaEmCursoBib && renderShape(formaEmCursoBib, 'rascunho')}
                           {/* A desenhar: os círculos com zoom levam a etiqueta, para se saber quais são. */}
@@ -35708,11 +35731,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         </svg>
                       )}
                       </div>
-                      {/* Mergulho da saída do zoom (ver `mergulhoBib`). */}
-                      <div aria-hidden="true" style={{
-                        position: 'absolute', inset: 0, background: '#000', pointerEvents: 'none', zIndex: 2,
-                        opacity: mergulhoBib ? 1 : 0, transition: mergulhoBib ? 'opacity 160ms ease-in' : 'opacity 220ms ease-out',
-                      }} />
                     {/* Campo de texto — aparece exatamente onde se tocou,
                        tal como na Análise de Vídeo. */}
                     {formaTextoBib && (
