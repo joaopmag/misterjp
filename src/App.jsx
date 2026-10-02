@@ -2685,8 +2685,8 @@ function BotaoTopo({ alvoRef, isMobile, onFechar, soAlvo }) {
      obrigava a subir tudo primeiro. Aparece com a mesma regra da seta —
      no topo o X normal está à vista e este não faz falta — e faz
      exatamente o mesmo que o X (nos formulários, o rascunho automático
-     continua a guardar o que estava escrito). No computador leva o texto
-     "Fechar", para não se confundir com a seta.
+     continua a guardar o que estava escrito). Só o X, redondo como a
+     seta (o nome aparece ao passar o rato).
 
      `soAlvo`: numa janela por cima da app, só conta o scroll DA JANELA —
      a página por trás pode estar lá em baixo, e isso não é motivo para
@@ -2757,12 +2757,12 @@ function BotaoTopo({ alvoRef, isMobile, onFechar, soAlvo }) {
           aria-label="Fechar"
           title="Fechar"
           style={{
-            height: lado, minWidth: lado, borderRadius: lado / 2, padding: isMobile ? 0 : '0 14px 0 12px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            width: lado, height: lado, borderRadius: '50%', padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: T.surfaceRaise, border: `1px solid ${T.line}`,
-            color: T.cream, cursor: 'pointer', boxShadow: sombra, fontSize: 13, ...body,
+            color: T.cream, cursor: 'pointer', boxShadow: sombra,
           }}
-        ><X size={isMobile ? 20 : 16} />{!isMobile && 'Fechar'}</button>
+        ><X size={isMobile ? 20 : 18} /></button>
       )}
     </div>
   );
@@ -4754,6 +4754,15 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     return `${sem.charAt(0).toUpperCase()}${sem.slice(1)}, ${ddmm(k)}`;
   };
 
+  /* Só HOJE vem aberto; os outros dias ficam fechados (o cabeçalho com
+     o número de lances) e abrem-se com um toque. A pesquisa e o filtro
+     por pessoa abrem tudo — senão os resultados ficavam escondidos. */
+  const [diasAbertos, setDiasAbertos] = useState(() => new Set([todayStr()]));
+  const alternarDia = (k) => setDiasAbertos(prev => {
+    const n = new Set(prev);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  });
   const temFiltro = !!(pessoa || busca.trim());
   const limparFiltros = () => { setPessoa(''); setBusca(''); };
 
@@ -4893,12 +4902,23 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
               action={temFiltro ? <Btn variant="ghost" onClick={limparFiltros}>Limpar filtros</Btn> : null} />
           ) : porDia.map(dia => (
             <div key={dia.k} style={{ marginBottom: 8 }}>
-              <div style={{ position: 'sticky', top: 0, zIndex: 2, background: T.bg, padding: '8px 0 10px', display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                <span style={{ ...display, color: T.cream, fontSize: 16, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>{tituloDia(dia.k)}</span>
-                <span style={{ ...mono, color: T.mutedDim, fontSize: 11.5 }}>{dia.itens.length} {dia.itens.length === 1 ? 'lance' : 'lances'}</span>
-                <div style={{ flex: 1, height: 1, background: T.line, alignSelf: 'center' }} />
-              </div>
-              {dia.itens.map(lance)}
+              {(() => {
+                const aberto = temFiltro || diasAbertos.has(dia.k);
+                return (
+                  <>
+                    <button type="button" onClick={() => alternarDia(dia.k)} disabled={temFiltro} style={{
+                      position: 'sticky', top: 0, zIndex: 2, background: T.bg, padding: '8px 0 10px', width: '100%',
+                      display: 'flex', alignItems: 'baseline', gap: 10, border: 'none', cursor: temFiltro ? 'default' : 'pointer', textAlign: 'left', ...body,
+                    }}>
+                      <span style={{ ...display, color: T.cream, fontSize: 16, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em' }}>{tituloDia(dia.k)}</span>
+                      <span style={{ ...mono, color: T.mutedDim, fontSize: 11.5 }}>{dia.itens.length} {dia.itens.length === 1 ? 'lance' : 'lances'}</span>
+                      <div style={{ flex: 1, height: 1, background: T.line, alignSelf: 'center' }} />
+                      {!temFiltro && <ChevronDown size={16} color={T.mutedDim} style={{ alignSelf: 'center', transform: aberto ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
+                    </button>
+                    {aberto && dia.itens.map(lance)}
+                  </>
+                );
+              })()}
             </div>
           ))}
           {!aCarregar && haMais && (
