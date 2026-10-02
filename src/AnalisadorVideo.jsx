@@ -282,16 +282,6 @@ export function distanciaShape(sh, p) {
 
 /* Desenha uma forma no SVG — usado tanto no editor como na reprodução do
    clipe já guardado (por isso vive fora do componente principal). */
-/* Laço (Zona livre): o rato manda dezenas de pontos por segundo — fica
-   só um a cada ~0,4 unidades. A zona é a mesma, mais leve de guardar. */
-export function afinarLaco(pontos) {
-  return (pontos || []).reduce((acc, pt) => {
-    const ult = acc[acc.length - 1];
-    if (!ult || Math.hypot(pt.x - ult.x, pt.y - ult.y) >= 0.4) acc.push(pt);
-    return acc;
-  }, []);
-}
-
 export const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
 export const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um toque "acertar" num desenho já feito — mais exato ainda, tem de se tocar mesmo em cima
 
@@ -322,20 +312,57 @@ export function renderShape(sh, i) {
   if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} style={cor} strokeWidth={ESPESSURA} />;
   if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={ESPESSURA} />;
   if (sh.tool === 'retangulo') {
+    /* ZONA PINTADA NO RELVADO. Em vez de um retângulo chapado por cima da
+       imagem, desenha-se em perspetiva, como as marcações das transmissões
+       de TV: o lado de baixo (mais perto da câmara) é o mais largo e o de
+       cima estreita; por dentro, faixas como a relva cortada — as que
+       fogem para o fundo convergem, as atravessadas ficam mais juntas e
+       mais finas à medida que se afastam. A caixa que se arrasta continua
+       a ser a mesma (os cantos e a rotação não mudam). */
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
     const corZona = sh.color || COR_DESENHO;
-    const idPadrao = `hachura-${sh.id || i}`;
     const cx = x + w / 2, cy = y + h / 2;
+    const recolha = Math.min(w * 0.17, h * 0.9); // quanto o lado do fundo estreita de cada lado
+    const BL = { x, y: y + h }, BR = { x: x + w, y: y + h }, TR = { x: x + w - recolha, y }, TL = { x: x + recolha, y };
+    const naAltura = (f) => ({ // f: 0 = perto (baixo) … 1 = fundo (cima)
+      yy: y + h - h * f,
+      xl: BL.x + (TL.x - BL.x) * f,
+      xr: BR.x + (TR.x - BR.x) * f,
+    });
+    const linhas = [];
+    const NL = 5; // faixas que fogem para o fundo
+    for (let k = 1; k < NL; k++) {
+      const u = k / NL;
+      linhas.push(<line key={`l${k}`} x1={BL.x + w * u} y1={BL.y} x2={TL.x + (TR.x - TL.x) * u} y2={TL.y}
+        stroke={corZona} strokeOpacity={0.35} strokeWidth={0.14} />);
+    }
+    const NT = 5; // faixas atravessadas, cada vez mais juntas lá ao fundo
+    for (let k = 1; k < NT; k++) {
+      const f = 1 - Math.pow(1 - k / NT, 1.6);
+      const p = naAltura(f);
+      linhas.push(<line key={`t${k}`} x1={p.xl} y1={p.yy} x2={p.xr} y2={p.yy}
+        stroke={corZona} strokeOpacity={0.32 - 0.12 * f} strokeWidth={0.16 - 0.07 * f} />);
+    }
+    const pts = `${BL.x},${BL.y} ${BR.x},${BR.y} ${TR.x},${TR.y} ${TL.x},${TL.y}`;
+    const idGrad = `relva-${sh.id || i}`;
     return (
-      <g key={i}>
+      <g key={i} transform={sh.rotacao ? `rotate(${sh.rotacao} ${cx} ${cy})` : undefined}>
         <defs>
-          <pattern id={idPadrao} patternUnits="userSpaceOnUse" width={2.2} height={2.2} patternTransform="rotate(45)">
-            <line x1={0} y1={0} x2={0} y2={2.2} stroke={corZona} strokeWidth={0.35} />
-          </pattern>
+          {/* Mais forte perto da câmara, a desvanecer para o fundo. */}
+          <linearGradient id={idGrad} x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stopColor={corZona} stopOpacity={0.30} />
+            <stop offset="100%" stopColor={corZona} stopOpacity={0.12} />
+          </linearGradient>
         </defs>
-        <rect x={x} y={y} width={w} height={h} fill={`url(#${idPadrao})`} fillOpacity={0.6}
-          stroke={sh.semContorno ? 'none' : corZona} strokeWidth={sh.semContorno ? 0 : ESPESSURA}
-          transform={sh.rotacao ? `rotate(${sh.rotacao} ${cx} ${cy})` : undefined} />
+        <polygon points={pts} fill={`url(#${idGrad})`} stroke="none" />
+        {linhas}
+        {!sh.semContorno && (
+          <>
+            {/* brilho por baixo do traço, como tinta no relvado */}
+            <polygon points={pts} fill="none" stroke={corZona} strokeOpacity={0.25} strokeWidth={ESPESSURA * 2.6} strokeLinejoin="round" />
+            <polygon points={pts} fill="none" stroke={corZona} strokeWidth={ESPESSURA} strokeLinejoin="round" />
+          </>
+        )}
       </g>
     );
   }
@@ -1443,9 +1470,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     });
   };
 
-  // "Ligar pontos" constrói-se por toques sucessivos — cada toque
-  // acrescenta um vértice, e "Concluir" fecha a forma. (A "Zona livre"
-  // passou a ser um laço: carrega, contorna e larga — como as outras.)
+  // "Zona livre" e "Ligar pontos" constroem-se por toques sucessivos —
+  // cada toque acrescenta um vértice, e "Concluir" fecha a forma.
   const concluirPontos = () => {
     if (!pontosEmCurso) return;
     const minimo = pontosEmCurso.tool === 'zonalivre' ? 3 : 2;
@@ -1456,8 +1482,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
   const apagarUltimoPonto = () => setPontosEmCurso(p => (p && p.points.length > 1 ? { ...p, points: p.points.slice(0, -1) } : null));
 
-  // Cancela uma construção por pontos a meio, se se mudar de ferramenta.
-  useEffect(() => { setPontosEmCurso(null); }, [tool]);
+  // Mudar de ferramenta com uma zona livre / ligar pontos a meio: se já
+  // tiver pontos que cheguem, fica feita (junta-se aos outros desenhos)
+  // em vez de se perder; se não, cancela-se.
+  useEffect(() => {
+    if (pontosEmCurso && pontosEmCurso.points.length >= (pontosEmCurso.tool === 'zonalivre' ? 3 : 2)) concluirPontos();
+    else setPontosEmCurso(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool]);
 
   // Abre-se ao clicar (sem arrastar) num desenho já existente, para
   // definir ou ajustar até quando fica visível.
@@ -1541,7 +1573,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })), moveu: false };
       return;
     }
-    if (tool === 'linhaPontos') { setPontosEmCurso({ tool, points: [pt] }); return; }
+    if (tool === 'zonalivre' || tool === 'linhaPontos') { setPontosEmCurso({ tool, points: [pt] }); return; }
     pushHistorico();
     drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
     setShapes(s => [...s, drawState.current]);
@@ -1596,7 +1628,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
     if (drawState.current) {
       const pt = getPoint(e); const st = drawState.current;
-      if (st.tool === 'livre' || st.tool === 'zonalivre') st.points.push(pt); else st.points[1] = pt;
+      if (st.tool === 'livre') st.points.push(pt); else st.points[1] = pt;
       // Substitui SEMPRE a mesma entrada (pelo id, criado uma única vez em
       // startDraw) — nunca acrescenta uma cópia nova.
       setShapes(s => s.map(sh => (sh.id === st.id ? { ...st, points: [...st.points] } : sh)));
@@ -1620,13 +1652,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       if (!moveu) abrirPopupDuracao(index); // foi um toque simples, sem arrastar — abre o tempo desse desenho (e mostra as pegas, se a forma tiver)
       return;
     }
-    const st = drawState.current;
     drawState.current = null; // a forma já está no array e atualizada — nada mais a fazer
-    if (st && st.tool === 'zonalivre') {
-      // Laço: tira pontos colados; menos de 3 não é zona — sai.
-      const pts = afinarLaco(st.points);
-      setShapes(s => (pts.length < 3 ? s.filter(sh => sh.id !== st.id) : s.map(sh => (sh.id === st.id ? { ...sh, points: pts } : sh))));
-    }
   };
 
   const pct = (t) => (duration ? (t / duration) * 100 : 0);
@@ -1886,7 +1912,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </g>
                   );
                 })()}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
                   shapes[editandoDuracaoIndex].points.map((p, pi) => (
                     <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.4 : 0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
                       onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
