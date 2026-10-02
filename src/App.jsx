@@ -2169,7 +2169,7 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larg
           </div>
           {children}
         </div>
-        <BotaoTopo alvoRef={scrollRef} isMobile={estreito} />
+        <BotaoTopo alvoRef={scrollRef} isMobile={estreito} onFechar={onClose} soAlvo />
       </div>
     );
   }
@@ -2181,6 +2181,7 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larg
       padding: estreito ? 8 : 16,
     }}>
       <div
+        ref={scrollRef}
         onClick={e => e.stopPropagation()}
         style={{
           background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10,
@@ -2213,6 +2214,7 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larg
         </div>
         {children}
       </div>
+      <BotaoTopo alvoRef={scrollRef} isMobile={estreito} onFechar={onClose} soAlvo />
     </div>
   );
 }
@@ -2666,7 +2668,7 @@ function useModalHistory(onClose) {
   }, []);
 }
 
-function BotaoTopo({ alvoRef, isMobile }) {
+function BotaoTopo({ alvoRef, isMobile, onFechar, soAlvo }) {
   /* VOLTAR AO TOPO.
 
      Numa lista de exercícios ou de jogos de uma época inteira, descer
@@ -2676,7 +2678,19 @@ function BotaoTopo({ alvoRef, isMobile }) {
 
      Aparece em telemóvel E em desktop: em desktop fica mais junto ao
      canto (sem reservar espaço para a barra de navegação inferior, que
-     só existe no telemóvel). */
+     só existe no telemóvel).
+
+     E FECHAR, logo por baixo (`onFechar`). Nas janelas e páginas
+     compridas, o X está lá no topo; depois de descer um ecrã, sair
+     obrigava a subir tudo primeiro. Aparece com a mesma regra da seta —
+     no topo o X normal está à vista e este não faz falta — e faz
+     exatamente o mesmo que o X (nos formulários, o rascunho automático
+     continua a guardar o que estava escrito). No computador leva o texto
+     "Fechar", para não se confundir com a seta.
+
+     `soAlvo`: numa janela por cima da app, só conta o scroll DA JANELA —
+     a página por trás pode estar lá em baixo, e isso não é motivo para
+     os botões aparecerem mal a janela abre. */
   const [visivel, setVisivel] = useState(false);
 
   useEffect(() => {
@@ -2693,18 +2707,22 @@ function BotaoTopo({ alvoRef, isMobile }) {
     const el = (alvoRef && alvoRef.current) || null;
     const ler = () => {
       const elY = el ? el.scrollTop : 0;
+      if (soAlvo) return elY;
       const winY = window.scrollY || document.documentElement.scrollTop || 0;
       return Math.max(elY, winY);
     };
-    const aoRolar = () => setVisivel(ler() > window.innerHeight * 0.9);
+    // "Um ecrã": a altura de quem rola (uma janela flutuante é mais baixa
+    // que o ecrã — com a altura do ecrã os botões quase nunca apareciam).
+    const altura = () => (soAlvo && el && el.clientHeight ? el.clientHeight : window.innerHeight);
+    const aoRolar = () => setVisivel(ler() > altura() * 0.9);
     aoRolar();
-    window.addEventListener('scroll', aoRolar, { passive: true });
+    if (!soAlvo) window.addEventListener('scroll', aoRolar, { passive: true });
     if (el) el.addEventListener('scroll', aoRolar, { passive: true });
     return () => {
-      window.removeEventListener('scroll', aoRolar);
+      if (!soAlvo) window.removeEventListener('scroll', aoRolar);
       if (el) el.removeEventListener('scroll', aoRolar);
     };
-  }, [alvoRef]);
+  }, [alvoRef, soAlvo]);
 
   if (!visivel) return null;
 
@@ -2715,19 +2733,38 @@ function BotaoTopo({ alvoRef, isMobile }) {
     else window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const lado = isMobile ? 44 : 40;
+  const sombra = '0 4px 14px rgba(0,0,0,0.45)';
   return (
-    <button
-      onClick={subir}
-      aria-label="Voltar ao topo"
-      style={{
-        position: 'fixed', right: 16, bottom: isMobile ? 78 : 24, zIndex: 40,
-        width: isMobile ? 44 : 40, height: isMobile ? 44 : 40, borderRadius: '50%',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: T.surfaceRaise, border: `1px solid ${T.line}`,
-        color: T.cream, cursor: 'pointer',
-        boxShadow: '0 4px 14px rgba(0,0,0,0.45)',
-      }}
-    ><ChevronLeft size={isMobile ? 20 : 18} style={{ transform: 'rotate(90deg)' }} /></button>
+    <div style={{
+      position: 'fixed', right: 16, bottom: isMobile ? 78 : 24, zIndex: 40,
+      display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10,
+    }}>
+      <button
+        onClick={subir}
+        aria-label="Voltar ao topo"
+        title="Voltar ao topo"
+        style={{
+          width: lado, height: lado, borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: T.surfaceRaise, border: `1px solid ${T.line}`,
+          color: T.cream, cursor: 'pointer', boxShadow: sombra,
+        }}
+      ><ChevronLeft size={isMobile ? 20 : 18} style={{ transform: 'rotate(90deg)' }} /></button>
+      {onFechar && (
+        <button
+          onClick={onFechar}
+          aria-label="Fechar"
+          title="Fechar"
+          style={{
+            height: lado, minWidth: lado, borderRadius: lado / 2, padding: isMobile ? 0 : '0 14px 0 12px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            background: T.surfaceRaise, border: `1px solid ${T.line}`,
+            color: T.cream, cursor: 'pointer', boxShadow: sombra, fontSize: 13, ...body,
+          }}
+        ><X size={isMobile ? 20 : 16} />{!isMobile && 'Fechar'}</button>
+      )}
+    </div>
   );
 }
 
@@ -4898,7 +4935,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
         <div style={{ height: 12 }} />
         {corpo}
       </div>
-      <BotaoTopo alvoRef={scrollRef} isMobile={isMobile} />
+      <BotaoTopo alvoRef={scrollRef} isMobile={isMobile} onFechar={onClose} soAlvo />
     </div>
   );
   return typeof document !== 'undefined' ? createPortal(pagina, document.body) : pagina;
@@ -20198,7 +20235,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               diaInicial={simuladorDia}
             />
           </div>
-          <BotaoTopo alvoRef={simuladorScrollRef} isMobile={isMobile} />
+          <BotaoTopo alvoRef={simuladorScrollRef} isMobile={isMobile} onFechar={fecharSimulador} soAlvo />
         </div>
       )}
 
@@ -27536,12 +27573,16 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
     return true;
   };
 
-  const shell = (children) => (
-    <div style={{
+  // `comFechar`: só na grelha do plantel. A meio do questionário de um
+  // jogador, fechar deitava fora as respostas — aí sai-se pelo "Voltar".
+  const shellRef = useRef(null);
+  const shell = (children, comFechar) => (
+    <div ref={shellRef} style={{
       position: 'fixed', inset: 0, background: T.bg, zIndex: 60, overflowY: 'auto', overflowX: 'hidden',
       ...body, WebkitOverflowScrolling: 'touch',
     }}>
       {children}
+      {comFechar && <BotaoTopo alvoRef={shellRef} isMobile={typeof window !== 'undefined' && window.innerWidth < 760} onFechar={onClose} soAlvo />}
     </div>
   );
 
@@ -27674,7 +27715,8 @@ function ManualCheckinBoard({ players, monitoring, sessions, matches = [], onClo
         O registo manual não tem restrição de horário — podes preencher qualquer dia, a qualquer hora.
         Se o jogador já tiver respondido, um novo registo substitui o anterior desse dia.
       </div>
-    </div>
+    </div>,
+    true
   );
 }
 
