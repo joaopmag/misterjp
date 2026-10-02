@@ -7436,7 +7436,9 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
   const gente = [
     ...(players || [])
       .filter(p => (attendance || []).includes(p.id))
-      .map(p => ({ chave: p.id, nome: nomeCurtoNaPrancheta(p.name), pos: p.position || '', exp: false })),
+      // `camisola`: só os jogadores do Scouting (adversários) a têm — o
+      // nosso plantel continua a aparecer só com o nome, como sempre.
+      .map(p => ({ chave: p.id, nome: nomeCurtoNaPrancheta(p.name), pos: p.position || '', exp: false, numero: p.camisola || '' })),
     ...(convidados || []).map(c => ({
       chave: `c:${c.id}`, nome: nomeCurtoNaPrancheta(c.nome), pos: c.position || '', exp: true,
     })),
@@ -7572,7 +7574,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
             } : undefined}
             style={{ ...nomeStyle(selecionado === j.chave), touchAction: editavel ? 'none' : undefined, ...(editavel ? arrasto.estiloArrasto(j.chave) : {}) }}
           >
-            {j.nome}{j.exp ? <span style={{ opacity: 0.6 }}> exp</span> : null}
+            {j.numero ? <span style={{ color: '#E84A5F', fontWeight: 800, marginRight: '0.25em' }}>{j.numero}</span> : null}{j.nome}{j.exp ? <span style={{ opacity: 0.6 }}> exp</span> : null}
           </div>
         ))}
       </div>
@@ -29361,7 +29363,9 @@ function PlayerAdversarioTab({ code, teamId }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
               {chave.map(x => (
                 <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
-                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {x.camisola ? <span style={{ color: '#E84A5F', fontWeight: 800, marginRight: 6, ...mono }}>{x.camisola}</span> : null}{x.name}
+                  </div>
                   <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
                 </div>
               ))}
@@ -31052,11 +31056,23 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
       if (!nome) return;
       const idx = scoutingFinal.findIndex(x => (x.name || '').trim().toLowerCase() === nome.toLowerCase());
       let idFinal;
+      const clube = String((dados && dados.nome) || '').trim();
+      const camisola = String(l.camisola || '').trim();
       if (idx >= 0) {
-        if (!scoutingFinal[idx].position && l.posicao) scoutingFinal[idx] = { ...scoutingFinal[idx], position: l.posicao };
-        idFinal = scoutingFinal[idx].id;
+        // Ficha que já existe: completa o que faltar (posição, clube) e o
+        // número, que é o que se escreveu agora.
+        const x = scoutingFinal[idx];
+        const novaX = {
+          ...x,
+          ...(!x.position && l.posicao ? { position: l.posicao } : {}),
+          ...(!x.club && clube ? { club: clube } : {}),
+          ...(camisola !== String(x.camisola || '') ? { camisola } : {}),
+        };
+        if (Object.keys(novaX).some(k => novaX[k] !== x[k])) scoutingFinal[idx] = novaX;
+        idFinal = x.id;
       } else {
-        const novo = { id: uid(), name: nome, position: l.posicao || '' };
+        // Ficha nova no Scouting: o clube é este adversário.
+        const novo = { id: uid(), name: nome, position: l.posicao || '', club: clube, camisola };
         scoutingFinal.push(novo);
         idFinal = novo.id;
       }
@@ -31344,7 +31360,9 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
               {chave.map(x => (
                 <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
-                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
+                  <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {x.camisola ? <span style={{ color: '#E84A5F', fontWeight: 800, marginRight: 6, ...mono }}>{x.camisola}</span> : null}{x.name}
+                  </div>
                   <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
                 </div>
               ))}
@@ -31476,8 +31494,8 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
       .filter(Boolean)
       // O id real da ficha já existente serve logo como `localId` — é
       // estável e não muda ao guardar, ao contrário de uma linha nova.
-      .map(x => ({ localId: x.id, nome: x.name || '', posicao: x.position || '' }));
-    return iniciais.length ? iniciais : [{ localId: uid(), nome: '', posicao: '' }];
+      .map(x => ({ localId: x.id, nome: x.name || '', posicao: x.position || '', camisola: x.camisola || '' }));
+    return iniciais.length ? iniciais : [{ localId: uid(), nome: '', posicao: '', camisola: '' }];
   });
   // O quadro de posições precisa de UM id por jogador para arrumar os
   // "mexidos à mão" — mas os jogadores-chave só ganham um id real (o da
@@ -31572,8 +31590,8 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
         Jogadores-chave
       </div>
       <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
-        Um nome que já exista em "Jogadores" liga-se a essa ficha; um nome novo cria lá uma ficha, só com nome e
-        posição — prontos a completar mais tarde (clube, características…), por exemplo depois de o veres jogar.
+        Um nome que já exista em "Jogadores" liga-se a essa ficha; um nome novo cria lá uma ficha com nome, número,
+        posição e o clube (este adversário) — pronta a completar mais tarde, por exemplo depois de o veres jogar.
       </div>
       <datalist id="jogadores-scouting-existentes">
         {nomesExistentes.map(nome => <option key={nome} value={nome} />)}
@@ -31581,6 +31599,12 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {linhas.map((l, i) => (
           <div key={l.localId} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {/* Nº da camisola — aparece no campo, à frente do nome. */}
+            <Input
+              type="number" inputMode="numeric" min={1} max={99} value={l.camisola || ''}
+              onChange={e => atualizarLinha(i, 'camisola', e.target.value.replace(/\D/g, '').slice(0, 2))}
+              placeholder="Nº" title="Número da camisola" style={{ width: 58, flexShrink: 0, textAlign: 'center' }}
+            />
             <Input
               list="jogadores-scouting-existentes" value={l.nome} onChange={e => atualizarLinha(i, 'nome', e.target.value)}
               placeholder="Nome do jogador" style={{ flex: 2, minWidth: 0 }}
@@ -31595,7 +31619,7 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
           </div>
         ))}
       </div>
-      <Btn variant="ghost" onClick={() => setLinhas([...linhas, { localId: uid(), nome: '', posicao: '' }])}>
+      <Btn variant="ghost" onClick={() => setLinhas([...linhas, { localId: uid(), nome: '', posicao: '', camisola: '' }])}>
         <Plus size={14} /> Adicionar jogador-chave
       </Btn>
 
@@ -31611,7 +31635,7 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
       <div style={{ marginTop: 24 }}>
         <EditorPrancheta
           titulo="Estrutura habitual"
-          players={linhas.filter(l => l.nome.trim()).map(l => ({ id: l.localId, name: l.nome.trim(), position: l.posicao }))}
+          players={linhas.filter(l => l.nome.trim()).map(l => ({ id: l.localId, name: l.nome.trim(), position: l.posicao, camisola: l.camisola }))}
           attendance={linhas.filter(l => l.nome.trim()).map(l => l.localId)}
           convidados={[]}
           overrides={quadroOverrides}
@@ -31973,6 +31997,10 @@ function ScoutPlayerForm({ player, onBack, onSave }) {
           <Input value={playerAge !== null ? `${playerAge} anos` : '—'} readOnly disabled />
         </Field>
         <Field label="Clube atual"><Input value={f.club} onChange={e => setF({ ...f, club: e.target.value })} placeholder="Clube atual" /></Field>
+        <Field label="Nº camisola">
+          <Input type="number" inputMode="numeric" min={1} max={99} value={f.camisola || ''}
+            onChange={e => setF({ ...f, camisola: e.target.value.replace(/\D/g, '').slice(0, 2) })} placeholder="Ex.: 18" />
+        </Field>
         <Field label="Fim de contrato"><Input type="date" value={f.contractEnd} onChange={e => setF({ ...f, contractEnd: e.target.value })} /></Field>
         <Field label="Posição principal">
           <Select value={f.position} onChange={e => setF({ ...f, position: e.target.value })}>
