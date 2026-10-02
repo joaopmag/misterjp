@@ -8971,6 +8971,7 @@ function Exercicios({ exercises, setExercises, meta }) {
         <ExerciseModal
           exercise={modal === 'new' ? null : modal}
           allExercises={exercises}
+          meta={meta}
           onClose={() => (modal === 'new' ? setModal(null) : trocarJanela(() => setModal(null), () => setViewing(modal)))}
           onSave={save}
         />
@@ -9386,6 +9387,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
         <IdeiaModal
           ideia={modal === 'new' ? null : modal}
           allIdeias={ideias}
+          meta={meta}
           onClose={() => (modal === 'new' ? setModal(null) : trocarJanela(() => setModal(null), () => setViewing(modal)))}
           onSave={save}
         />
@@ -9642,7 +9644,141 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
 }
 
 
-function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
+/* ESCOLHER DE ONDE COPIAR — ideias e exercícios.
+
+   Só aparecem os da FASE DE JOGO que está escolhida no formulário: quem
+   está a criar uma ideia de Organização Defensiva não quer ver as de
+   Transição Ofensiva.
+
+   Os nomes, sozinhos, enganam ("Pressão alta…", "Pressão quebrada…"):
+   o que um treinador reconhece de relance é o DESENHO. Por isso cada
+   opção é um cartão com o esquema tático em miniatura, o nome, quando
+   foi mexido pela última vez e, nos exercícios, espaço / jogadores /
+   duração.
+
+   Tocar num cartão NÃO copia logo — abre a pré-visualização em grande
+   (com a descrição) e só o "Usar" copia. Copiar substitui o esquema que
+   já estiver desenhado; um toque ao lado não pode deitar isso fora. */
+function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar }) {
+  const isMobile = useIsMobile(700);
+  const [busca, setBusca] = useState('');
+  const [escolhido, setEscolhido] = useState(null);
+  const [aberto, setAberto] = useState(null); // id do cartão aberto
+
+  const ordenados = React.useMemo(() => {
+    const quando = (x) => (meta && meta[x.id] && meta[x.id].at) || '';
+    return [...itens].sort((a, b) => String(quando(b)).localeCompare(String(quando(a))));
+  }, [itens, meta]);
+  const q = busca.trim().toLowerCase();
+  const visiveis = q
+    ? ordenados.filter(x => [nomeDe(x), x.description, ...(detalhesDe ? detalhesDe(x) : [])].filter(Boolean).join(' ').toLowerCase().includes(q))
+    : ordenados;
+
+  const atual = escolhido && itens.find(x => x.id === escolhido);
+  const editadoHa = (x) => {
+    const m = meta && meta[x.id];
+    return m && m.at ? `editado ${timeAgo(m.at)}` : '';
+  };
+  const temEsquema = (x) => !!(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length));
+
+  if (atual) {
+    const det = detalhesDe ? detalhesDe(atual) : [];
+    return (
+      <div style={{ marginTop: 10, border: `1px solid ${T.gold}`, borderRadius: 10, background: T.surface, padding: 12 }}>
+        <div style={{ display: 'flex', gap: 14, flexDirection: isMobile ? 'column' : 'row' }}>
+          <div style={{ flex: isMobile ? 'none' : '0 0 46%' }}>
+            {temEsquema(atual)
+              ? <DiagramThumb diagram={atual.diagram} space={atual.space} phase={atual.phase} height={isMobile ? 200 : 240} />
+              : <div style={{ height: 120, borderRadius: 6, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 12 }}>Sem esquema desenhado</div>}
+          </div>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ color: T.cream, fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>{nomeDe(atual)}</div>
+            <div style={{ color: T.mutedDim, fontSize: 12 }}>{[atual.phase, editadoHa(atual)].filter(Boolean).join(' · ')}</div>
+            {det.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {det.map(d => <span key={d} style={{ fontSize: 11.5, color: T.cream, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 10, padding: '2px 8px' }}>{d}</span>)}
+              </div>
+            )}
+            {atual.description && (
+              <div style={{ color: T.muted, fontSize: 12.5, lineHeight: 1.5, maxHeight: 140, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>{atual.description}</div>
+            )}
+            <div style={{ flex: 1 }} />
+            {temDesenhoAtual && (
+              <div style={{ fontSize: 11.5, color: T.warn }}>O esquema que já desenhaste aqui vai ser substituído por este.</div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <Btn variant="ghost" onClick={() => setEscolhido(null)}><ChevronLeft size={14} /> Voltar à lista</Btn>
+              <Btn onClick={() => onUsar(atual)}><Copy size={14} /> Usar {tipo === 'ideia' ? 'esta ideia' : 'este exercício'}</Btn>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 10, background: T.surface, padding: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, color: T.muted }}>
+          {tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}
+        </div>
+        {itens.length > 4 && (
+          <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
+            <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+            <input
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+              placeholder={tipo === 'ideia' ? 'Procurar ideia…' : 'Procurar por nome, material, descrição…'}
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '7px 10px 7px 30px', borderRadius: 8,
+                border: `1px solid ${T.line}`, background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body, outline: 'none',
+              }}
+            />
+          </div>
+        )}
+      </div>
+      {visiveis.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '8px 4px' }}>Nenhum resultado.</div>
+      ) : (
+        <div style={{
+          display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 140 : 180}px, 1fr))`, gap: 8,
+          maxHeight: isMobile ? 380 : 420, overflowY: 'auto', overflowX: 'hidden', paddingRight: 2,
+        }}>
+          {visiveis.map(x => {
+            const det = detalhesDe ? detalhesDe(x) : [];
+            const sobre = aberto === x.id;
+            return (
+              <button
+                key={x.id}
+                type="button"
+                onClick={() => setEscolhido(x.id)}
+                onMouseEnter={() => setAberto(x.id)}
+                onMouseLeave={() => setAberto(a => (a === x.id ? null : a))}
+                style={{
+                  display: 'flex', flexDirection: 'column', textAlign: 'left', padding: 6, borderRadius: 8, cursor: 'pointer', ...body,
+                  border: `1px solid ${sobre ? T.gold : T.line}`, background: T.surfaceRaise, color: T.cream, minWidth: 0,
+                }}
+              >
+                {temEsquema(x)
+                  ? <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={isMobile ? 78 : 92} />
+                  : <div style={{ height: isMobile ? 78 : 92, marginBottom: 8, borderRadius: 6, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 11 }}>Sem esquema</div>}
+                <div style={{
+                  fontSize: 12.5, color: T.cream, lineHeight: 1.3, padding: '0 2px',
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: 33,
+                }}>{nomeDe(x)}</div>
+                <div style={{ fontSize: 10.5, color: T.mutedDim, padding: '3px 2px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {[...det, editadoHa(x)].filter(Boolean).join(' · ') || ' '}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
   const [f, setF] = useState(ideia || { name: '', phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
   const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_ideia_${ideia?.id || 'novo'}`, f, setF);
   // Tal como no ExerciseModal, a cor ativa do editor vive aqui (no modal) e
@@ -9651,7 +9787,10 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
   const [importOpen, setImportOpen] = useState(false);
   const [importNotice, setImportNotice] = useState('');
 
-  const importable = allIdeias.filter(x => x && x.id !== (ideia && ideia.id) && x.diagram);
+  // Só as da mesma fase de jogo que está escolhida aqui.
+  const importable = allIdeias.filter(x => x && x.id !== (ideia && ideia.id) && x.diagram && x.phase === f.phase);
+  const nomeIdeia = (x) => (x.name && x.name.trim()) || `Ideia ${allIdeias.findIndex(i => i.id === x.id) + 1}`;
+  const desenhoAtualIdeia = !!(f.diagram && ((f.diagram.elements || []).length || (f.diagram.arrows || []).length));
 
   // Copia a fase e o esquema tático de outra ideia já criada. Cópia
   // profunda com ids novos, para editar aqui nunca mexer no original; a
@@ -9718,7 +9857,7 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
             type="button"
             onClick={() => { setImportOpen(o => !o); setImportNotice(''); }}
             disabled={importable.length === 0}
-            title={importable.length === 0 ? 'Ainda não há outras ideias criadas.' : 'Copiar a fase e o esquema de uma ideia já criada'}
+            title={importable.length === 0 ? `Ainda não há outras ideias de ${f.phase}.` : 'Copiar o esquema de uma ideia já criada desta fase'}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 6,
               cursor: importable.length === 0 ? 'not-allowed' : 'pointer',
@@ -9731,38 +9870,24 @@ function IdeiaModal({ ideia, allIdeias = [], onClose, onSave }) {
             }}
           >
             <Copy size={14} /> Copiar ideia existente
+            <span style={{ ...mono, fontSize: 11.5, opacity: .7 }}>{importable.length}</span>
           </button>
           {importNotice && (
             <div style={{ fontSize: 12, color: T.warn, marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
               <Check size={13} /> {importNotice}
             </div>
           )}
-          {importOpen && (
-            <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8, background: T.surface, padding: 10 }}>
-              <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {importable.map(x => {
-                  const label = (x.name && x.name.trim()) || `Ideia ${allIdeias.findIndex(i => i.id === x.id) + 1}`;
-                  return (
-                    <button
-                      key={x.id}
-                      type="button"
-                      onClick={() => importFromIdeia(x, label)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
-                        padding: '8px 10px', borderRadius: 8, border: `1px solid ${T.line}`,
-                        background: T.surfaceRaise, color: T.cream, cursor: 'pointer', ...body,
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, color: T.cream }}>{label}</div>
-                        <div style={{ fontSize: 11, color: T.mutedDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.phase}</div>
-                      </div>
-                      <span style={{ fontSize: 11.5, color: T.warn, flexShrink: 0 }}>Usar</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          {importOpen && importable.length > 0 && (
+            <EscolherParaCopiar
+              key={f.phase}
+              itens={importable}
+              tipo="ideia"
+              fase={f.phase}
+              meta={meta}
+              nomeDe={nomeIdeia}
+              temDesenhoAtual={desenhoAtualIdeia}
+              onUsar={(x) => importFromIdeia(x, nomeIdeia(x))}
+            />
           )}
         </Field>
       </div>
@@ -14327,7 +14452,7 @@ function TempoInput({ value, onChange, placeholder }) {
   );
 }
 
-function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
+function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
   const [f, setF] = useState(exercise || { name: '', phase: PHASES[0], description: '', space: '', playersCount: '', material: '', defaultDuration: 15, diagram: { elements: [], arrows: [] }, attachment: null });
   const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_exercicio_${exercise?.id || 'novo'}`, f, setF);
   // A cor ativa do editor tático vive aqui (no modal, que não é recriado
@@ -14337,17 +14462,13 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
   const [attachError, setAttachError] = useState('');
   // Importar de um exercício já existente na biblioteca.
   const [importOpen, setImportOpen] = useState(false);
-  const [importSearch, setImportSearch] = useState('');
   const [importNotice, setImportNotice] = useState('');
 
   // Só faz sentido copiar de outros exercícios — nunca do próprio.
-  const importable = allExercises.filter(x => x && x.id !== (exercise && exercise.id) && x.name);
-  const importMatches = importable.filter(x => {
-    const q = importSearch.trim().toLowerCase();
-    if (!q) return true;
-    return [x.name, x.phase, x.description, x.material, x.space, x.playersCount]
-      .filter(Boolean).join(' ').toLowerCase().includes(q);
-  });
+  // ... e só os da mesma fase de jogo que está escolhida aqui.
+  const importable = allExercises.filter(x => x && x.id !== (exercise && exercise.id) && x.name && x.phase === f.phase);
+  const detalhesExercicio = (x) => [x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration}'`, x.material].filter(Boolean);
+  const desenhoAtualExercicio = !!(f.diagram && ((f.diagram.elements || []).length || (f.diagram.arrows || []).length));
 
   // Copia TODA a informação do exercício escolhido para este formulário:
   // fase, descrição, espaço, nº de jogadores, material, duração, esquema
@@ -14390,7 +14511,6 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
       attachment: clone(src.attachment) || null,
     }));
     setImportOpen(false);
-    setImportSearch('');
     setImportNotice(`Copiado de "${src.name}". Os jogadores ficam nas posições finais e a animação recomeça a partir daqui.`);
   };
 
@@ -14555,7 +14675,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
               type="button"
               onClick={() => { setImportOpen(o => !o); setImportNotice(''); }}
               disabled={importable.length === 0}
-              title={importable.length === 0 ? 'Ainda não há outros exercícios na biblioteca.' : 'Copiar a informação de um exercício já criado'}
+              title={importable.length === 0 ? `Ainda não há outros exercícios de ${f.phase}.` : 'Copiar a informação de um exercício já criado desta fase'}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 cursor: importable.length === 0 ? 'not-allowed' : 'pointer',
@@ -14568,6 +14688,7 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
               }}
             >
               <Copy size={14} /> Anexar exercício existente
+              <span style={{ ...mono, fontSize: 11.5, opacity: .7 }}>{importable.length}</span>
             </button>
             {f.attachment && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -14590,52 +14711,18 @@ function ExerciseModal({ exercise, allExercises = [], onClose, onSave }) {
             </div>
           )}
 
-          {importOpen && (
-            <div style={{
-              marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8,
-              background: T.surface, padding: 10,
-            }}>
-              <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8 }}>
-                Escolhe um exercício da biblioteca.
-              </div>
-              <div style={{ position: 'relative', marginBottom: 8 }}>
-                <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
-                <input
-                  value={importSearch}
-                  onChange={e => setImportSearch(e.target.value)}
-                  placeholder="Procurar por nome, fase, material..."
-                  style={{
-                    width: '100%', boxSizing: 'border-box', padding: '8px 10px 8px 30px',
-                    borderRadius: 8, border: `1px solid ${T.line}`, background: T.surfaceRaise,
-                    color: T.cream, fontSize: 13, ...body, outline: 'none',
-                  }}
-                />
-              </div>
-              <div style={{ maxHeight: 220, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {importMatches.length === 0 ? (
-                  <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '8px 4px' }}>Nenhum exercício encontrado.</div>
-                ) : importMatches.map(x => (
-                  <button
-                    key={x.id}
-                    type="button"
-                    onClick={() => importFromExercise(x)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
-                      padding: '8px 10px', borderRadius: 8, border: `1px solid ${T.line}`,
-                      background: T.surfaceRaise, color: T.cream, cursor: 'pointer', ...body,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</div>
-                      <div style={{ fontSize: 11, color: T.mutedDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {[x.phase, x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean).join(' · ')}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 11.5, color: T.warn, flexShrink: 0 }}>Usar</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          {importOpen && importable.length > 0 && (
+            <EscolherParaCopiar
+              key={f.phase}
+              itens={importable}
+              tipo="exercicio"
+              fase={f.phase}
+              meta={meta}
+              nomeDe={(x) => x.name}
+              detalhesDe={detalhesExercicio}
+              temDesenhoAtual={desenhoAtualExercicio}
+              onUsar={importFromExercise}
+            />
           )}
         </Field>
       </div>
