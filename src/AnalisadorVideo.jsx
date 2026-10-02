@@ -282,6 +282,11 @@ export function distanciaShape(sh, p) {
 
 /* Desenha uma forma no SVG — usado tanto no editor como na reprodução do
    clipe já guardado (por isso vive fora do componente principal). */
+/* Inclinação de uma Zona sem valor guardado (a de sempre). */
+export function inclinacaoPadrao(w, h) {
+  return w > 0 ? Math.min(0.17, (h * 0.9) / w) : 0.17;
+}
+
 export const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
 export const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um toque "acertar" num desenho já feito — mais exato ainda, tem de se tocar mesmo em cima
 
@@ -298,9 +303,18 @@ export function renderShape(sh, i) {
     const d = sh.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + (fechado ? ' Z' : '');
     return (
       <g key={i}>
-        <path d={d}
-          stroke={sh.color || COR_DESENHO} fill={fechado ? (sh.color || COR_DESENHO) : 'none'} fillOpacity={fechado ? 0.22 : undefined}
-          strokeWidth={ESPESSURA} strokeLinecap="round" strokeLinejoin="round" />
+        {fechado ? (
+          <>
+            {/* Zona livre também "pintada no chão" (ver a Zona). */}
+            <path d={d} stroke="none" fill={sh.color || COR_DESENHO} fillOpacity={0.45} style={{ mixBlendMode: 'overlay' }} />
+            <path d={d} fill="none" stroke={sh.color || COR_DESENHO} strokeWidth={ESPESSURA * 2.2} strokeLinejoin="round" style={{ mixBlendMode: 'overlay' }} />
+            <path d={d} fill="none" stroke={sh.color || COR_DESENHO} strokeOpacity={0.55} strokeWidth={ESPESSURA} strokeLinecap="round" strokeLinejoin="round" />
+          </>
+        ) : (
+          <path d={d}
+            stroke={sh.color || COR_DESENHO} fill="none"
+            strokeWidth={ESPESSURA} strokeLinecap="round" strokeLinejoin="round" />
+        )}
         {/* "Ligar pontos" mostra sempre os vértices, para se ver onde estão os pontos ligados */}
         {sh.tool === 'linhaPontos' && sh.points.map((p, pi) => (
           <circle key={pi} cx={p.x} cy={p.y} r={0.4} fill={sh.color || COR_DESENHO} />
@@ -320,8 +334,14 @@ export function renderShape(sh, i) {
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
     const corZona = sh.color || COR_DESENHO;
     const cx = x + w / 2, cy = y + h / 2;
-    const recolha = Math.min(w * 0.17, h * 0.9); // quanto o lado do fundo estreita de cada lado
-    const BL = { x, y: y + h }, BR = { x: x + w, y: y + h }, TR = { x: x + w - recolha, y }, TL = { x: x + recolha, y };
+    /* INCLINAÇÃO (rodar "para cima e para baixo"): quanto um dos lados
+       estreita, em fração da largura. Positivo = o lado de cima fica ao
+       fundo (o normal num relvado visto da bancada); negativo = ao
+       contrário. Sem valor guardado, usa o de sempre. */
+    const inc = Number.isFinite(Number(sh.inclinacao)) ? Number(sh.inclinacao) : inclinacaoPadrao(w, h);
+    const recolhaCima = Math.max(0, inc) * w, recolhaBaixo = Math.max(0, -inc) * w;
+    const BL = { x: x + recolhaBaixo, y: y + h }, BR = { x: x + w - recolhaBaixo, y: y + h };
+    const TR = { x: x + w - recolhaCima, y }, TL = { x: x + recolhaCima, y };
     const naAltura = (f) => ({ // f: 0 = perto (baixo) … 1 = fundo (cima)
       yy: y + h - h * f,
       xl: BL.x + (TL.x - BL.x) * f,
@@ -337,7 +357,7 @@ export function renderShape(sh, i) {
     const larguraTopo = TR.x - TL.x;
     for (let k = 0; k <= N + Math.ceil(N * desvio); k++) {
       const u = k / N;
-      linhas.push(<line key={k} x1={BL.x + w * u} y1={BL.y} x2={TL.x + larguraTopo * (u - desvio)} y2={TL.y}
+      linhas.push(<line key={k} x1={BL.x + (BR.x - BL.x) * u} y1={BL.y} x2={TL.x + larguraTopo * (u - desvio)} y2={TL.y}
         stroke={corZona} strokeOpacity={0.6} strokeWidth={0.3} />);
     }
     const pts = `${BL.x},${BL.y} ${BR.x},${BR.y} ${TR.x},${TR.y} ${TL.x},${TL.y}`;
@@ -347,19 +367,24 @@ export function renderShape(sh, i) {
       <g key={i} transform={sh.rotacao ? `rotate(${sh.rotacao} ${cx} ${cy})` : undefined}>
         <defs>
           {/* Mais forte perto da câmara, a desvanecer para o fundo. */}
-          <linearGradient id={idGrad} x1="0" y1="1" x2="0" y2="0">
+          <linearGradient id={idGrad} x1="0" y1={inc >= 0 ? 1 : 0} x2="0" y2={inc >= 0 ? 0 : 1}>
             <stop offset="0%" stopColor={corZona} stopOpacity={0.14} />
             <stop offset="100%" stopColor={corZona} stopOpacity={0.05} />
           </linearGradient>
           <clipPath id={idClip}><polygon points={pts} /></clipPath>
         </defs>
-        <polygon points={pts} fill={`url(#${idGrad})`} stroke="none" />
-        <g clipPath={`url(#${idClip})`}>{linhas}</g>
+        {/* "Por baixo dos jogadores": o preenchimento e as riscas
+            misturam-se com a imagem (overlay) em vez de a taparem — a
+            relva aclara, mas os jogadores (cores fortes, sombras)
+            continuam a ver-se através, como tinta no chão. */}
+        <g style={{ mixBlendMode: 'overlay' }}>
+          <polygon points={pts} fill={`url(#${idGrad})`} stroke="none" />
+          <g clipPath={`url(#${idClip})`}>{linhas}</g>
+        </g>
         {!sh.semContorno && (
           <>
-            {/* brilho por baixo do traço, como tinta no relvado */}
-            <polygon points={pts} fill="none" stroke={corZona} strokeOpacity={0.25} strokeWidth={ESPESSURA * 2.6} strokeLinejoin="round" />
-            <polygon points={pts} fill="none" stroke={corZona} strokeWidth={ESPESSURA} strokeLinejoin="round" />
+            <polygon points={pts} fill="none" stroke={corZona} strokeWidth={ESPESSURA * 2.2} strokeLinejoin="round" style={{ mixBlendMode: 'overlay' }} />
+            <polygon points={pts} fill="none" stroke={corZona} strokeOpacity={0.55} strokeWidth={ESPESSURA} strokeLinejoin="round" />
           </>
         )}
       </g>

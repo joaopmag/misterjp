@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 import * as tus from 'tus-js-client';
 import AnalisadorVideo, {
   FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
-  RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, girar,
+  RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, girar, inclinacaoPadrao,
 } from './AnalisadorVideo';
 import {
   ZoomIn, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -32871,6 +32871,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
   const arrastoCorpoBib = useRef(null); // { indiceForma, ultimoPonto } enquanto se arrasta uma forma inteira (não só um vértice)
   const arrastoRotacaoBib = useRef(null); // { indiceForma } enquanto se roda uma Zona pela pega de cima
+  const arrastoInclinacaoBib = useRef(null); // { indiceForma, y0, inc0, h } enquanto se inclina uma Zona (cima/baixo)
   // Centro de uma Zona (retângulo) — é à volta dele que roda.
   const centroZonaBib = (sh) => {
     const [pa, pb] = sh.points;
@@ -32967,13 +32968,42 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     retomaDesenhoRef.current = null;
     setCongeladoDesenhoBib(false);
   };
-  const pushHistoricoBib = () => { cancelarRetomaDesenhoBib(); setHistoricoBib(h => [...h.slice(-19), shapesRascunho]); };
+  /* RECUAR / AVANÇAR — para tudo, incluindo os pontos da Zona livre e
+     do Ligar pontos ainda a meio: um ponto no sítio errado tira-se com
+     "Recuar" (sai só esse ponto), e "Avançar" volta a pô-lo. Qualquer
+     coisa nova que se faça depois de recuar apaga o que havia para
+     avançar (como em qualquer editor). */
+  const [futuroBib, setFuturoBib] = useState([]); // { tipo: 'formas', shapes } | { tipo: 'ponto', ponto, tool, color }
+  const pushHistoricoBib = () => { cancelarRetomaDesenhoBib(); setHistoricoBib(h => [...h.slice(-19), shapesRascunho]); setFuturoBib([]); };
+  const podeRecuarBib = historicoBib.length > 0 || !!(formaEmCursoBib && (formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos'));
   const retrocederBib = () => {
+    const f = formaEmCursoBib;
+    if (f && (f.tool === 'zonalivre' || f.tool === 'linhaPontos') && f.points.length > 0) {
+      const ponto = f.points[f.points.length - 1];
+      setFuturoBib(fu => [...fu, { tipo: 'ponto', ponto, tool: f.tool, color: f.color }]);
+      setFormaEmCursoBib(f.points.length > 1 ? { ...f, points: f.points.slice(0, -1) } : null);
+      return;
+    }
     if (historicoBib.length === 0) return;
+    setFuturoBib(fu => [...fu, { tipo: 'formas', shapes: shapesRascunho }]);
     setShapesRascunho(historicoBib[historicoBib.length - 1]);
     setHistoricoBib(h => h.slice(0, -1));
     setFormaSelecionadaBib(null);
     setFormaEmCursoBib(null);
+  };
+  const avancarBib = () => {
+    if (futuroBib.length === 0) return;
+    const ult = futuroBib[futuroBib.length - 1];
+    setFuturoBib(fu => fu.slice(0, -1));
+    if (ult.tipo === 'ponto') {
+      setFormaEmCursoBib(prev => (prev && prev.tool === ult.tool
+        ? { ...prev, points: [...prev.points, ult.ponto] }
+        : { tool: ult.tool, color: ult.color, points: [ult.ponto] }));
+      return;
+    }
+    setHistoricoBib(h => [...h.slice(-19), shapesRascunho]);
+    setShapesRascunho(ult.shapes);
+    setFormaSelecionadaBib(null);
   };
   // Carrega uma pausa para o rascunho (existente = editar; null = nova
   // no instante `tempo`). Usado ao abrir o desenho e ao escolher uma
@@ -33029,6 +33059,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaSelecionadaBib(null);
     setFormaTextoBib(null);
     setHistoricoBib([]);
+    setFuturoBib([]);
   };
   // Tempo atual do leitor, garantidamente dentro do corte.
   const tempoAtualNoCorteBib = () => {
@@ -33135,6 +33166,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaTextoBib(null);
     setHoverFormaBib(null);
     setHistoricoBib([]);
+    setFuturoBib([]);
     if (ytFull) {
       setModoDesenhoBib(true);
     } else {
@@ -33245,6 +33277,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     arrastoVerticeBib.current = null;
     arrastoCorpoBib.current = null;
     arrastoRotacaoBib.current = null;
+    arrastoInclinacaoBib.current = null;
     cancelarRetomaDesenhoBib(); // tocou no desenho durante um congelamento: fica parado para editar
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
     if (toolBib === 'apagar') {
@@ -33273,6 +33306,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       return;
     }
     if (toolBib === 'zonalivre' || toolBib === 'linhaPontos') {
+      setFuturoBib([]);
       setFormaEmCursoBib(prev => ({
         tool: toolBib, color: corBib,
         points: prev && prev.tool === toolBib ? [...prev.points, p] : [p],
@@ -33324,6 +33358,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const p = pontoPendenteBib.current;
     pontoPendenteBib.current = null;
     if (!p) return;
+    if (arrastoInclinacaoBib.current) {
+      // Arrastar para cima = o lado de cima foge para o fundo (mais
+      // perspetiva); para baixo = endireita e, passando o meio, inverte.
+      const { indiceForma, y0, inc0, h } = arrastoInclinacaoBib.current;
+      const inc = Math.max(-0.45, Math.min(0.45, inc0 + ((y0 - p.y) / Math.max(4, h)) * 0.5));
+      setShapesRascunho(prev => prev.map((sh, i) => (i !== indiceForma ? sh : { ...sh, inclinacao: Math.round(inc * 1000) / 1000 })));
+      return;
+    }
     if (arrastoRotacaoBib.current) {
       const { indiceForma } = arrastoRotacaoBib.current;
       setShapesRascunho(prev => prev.map((sh, i) => {
@@ -33355,7 +33397,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
   const moverFormaBib = (e) => {
     const p = getPontoBib(e);
-    if (arrastoVerticeBib.current || arrastoCorpoBib.current || arrastoRotacaoBib.current) {
+    if (arrastoVerticeBib.current || arrastoCorpoBib.current || arrastoRotacaoBib.current || arrastoInclinacaoBib.current) {
       const estado = arrastoCorpoBib.current;
       if (estado && !estado.historicoEmpurrado) { pushHistoricoBib(); estado.historicoEmpurrado = true; } // só regista no undo quando SE MEXE mesmo, não só ao tocar
       pontoPendenteBib.current = p;
@@ -33378,6 +33420,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Aplica já o último movimento que ainda estava à espera do fotograma,
     // para a forma ficar exatamente onde se largou.
     if (rafArrastoBib.current) { cancelAnimationFrame(rafArrastoBib.current); aplicarArrastoBib(); }
+    if (arrastoInclinacaoBib.current) { arrastoInclinacaoBib.current = null; return; }
     if (arrastoRotacaoBib.current) { arrastoRotacaoBib.current = null; return; }
     if (arrastoVerticeBib.current) { arrastoVerticeBib.current = null; return; }
     if (arrastoCorpoBib.current) { arrastoCorpoBib.current = null; return; }
@@ -35455,6 +35498,34 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                     </g>
                                   );
                                 })()}
+                                {/* ZONA: pega de INCLINAR (rodar para cima/baixo), ao lado
+                                    direito — arrasta para cima ou para baixo. */}
+                                {fs.tool === 'retangulo' && c && (() => {
+                                  const [pa, pb] = fs.points;
+                                  const direita = Math.max(pa.x, pb.x) + 2.6;
+                                  const alturaZona = Math.abs(pb.y - pa.y);
+                                  const larguraZona = Math.abs(pb.x - pa.x);
+                                  return (
+                                    <g>
+                                      <rect x={direita - 0.75} y={c.y - 1.6} width={1.5} height={3.2} rx={0.75} fill="#fff" stroke={T.crimsonBright} strokeWidth={0.2} style={{ pointerEvents: 'none' }} />
+                                      <path d={`M ${direita - 0.4} ${c.y - 0.6} L ${direita} ${c.y - 1.1} L ${direita + 0.4} ${c.y - 0.6} M ${direita - 0.4} ${c.y + 0.6} L ${direita} ${c.y + 1.1} L ${direita + 0.4} ${c.y + 0.6}`}
+                                        fill="none" stroke={T.crimsonBright} strokeWidth={0.18} style={{ pointerEvents: 'none' }} />
+                                      <circle cx={direita} cy={c.y} r={RAIO_PEGA_BIB} fill="transparent"
+                                        onPointerDown={e => {
+                                          e.stopPropagation();
+                                          if (e.cancelable) e.preventDefault();
+                                          try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
+                                          arrastoVerticeBib.current = null;
+                                          arrastoCorpoBib.current = null;
+                                          arrastoRotacaoBib.current = null;
+                                          pushHistoricoBib();
+                                          const inc0 = Number.isFinite(Number(fs.inclinacao)) ? Number(fs.inclinacao) : inclinacaoPadrao(larguraZona, alturaZona);
+                                          arrastoInclinacaoBib.current = { indiceForma: formaSelecionadaBib, y0: getPontoBib(e).y, inc0, h: alturaZona };
+                                        }}
+                                        style={{ cursor: 'ns-resize', touchAction: 'none', pointerEvents: 'all' }} />
+                                    </g>
+                                  );
+                                })()}
                               </g>
                             );
                           })()}
@@ -35516,9 +35587,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             ))}
                           </div>
                           <div style={{ height: 1, alignSelf: 'stretch', background: T.line }} />
-                          <Btn variant="ghost" onClick={retrocederBib} disabled={historicoBib.length === 0} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
-                            <Undo2 size={14} /> Recuar
-                          </Btn>
+                          {/* Botões simples (não o Btn): o Btn trava cliques
+                              seguidos, e aqui recuam-se vários pontos de rajada. */}
+                          <div style={{ display: 'flex', gap: 4, width: '100%' }}>
+                            {[
+                              { on: podeRecuarBib, fn: retrocederBib, Ic: Undo2, t: 'Recuar' },
+                              { on: futuroBib.length > 0, fn: avancarBib, Ic: Redo2, t: 'Avançar' },
+                            ].map(({ on, fn, Ic, t }) => (
+                              <button key={t} type="button" onClick={fn} disabled={!on} title={t} aria-label={t} style={{
+                                flex: 1, padding: '8px 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8,
+                                color: on ? T.cream : T.mutedDim, opacity: on ? 1 : 0.45, cursor: on ? 'pointer' : 'default',
+                              }}><Ic size={15} /></button>
+                            ))}
+                          </div>
                           {/* LIMPAR — tira todas as formas desta pausa, incluindo
                              as que já estavam gravadas. Só fica definitivo ao
                              tocar em Guardar/Concluído (Recuar desfaz, Cancelar
