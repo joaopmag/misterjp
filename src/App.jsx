@@ -33132,6 +33132,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     return () => window.removeEventListener('keydown', aoTeclar);
   }, []);
 
+  /* "Fechar zona" / "Terminar linha": fecha e passa logo para a MÃO — a
+     forma acabada fica selecionada e pronta a arrastar, sem ter de
+     escolher outra ferramenta. */
+  const fecharEMoverBib = () => {
+    const n = shapesRascunho.length;
+    if (concluirFormaMultiplaBib()) {
+      setToolBib(null);
+      setFormaSelecionadaBib(n);
+    }
+  };
   const escolherFerramentaBib = (id) => {
     cancelarRetomaDesenhoBib();
     const nova = toolBib === id ? null : id;
@@ -35380,9 +35390,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           nunca ser remontado. */}
                       <div style={{
                         position: 'absolute', inset: 0,
-                        transform: zoomBib ? `scale(${zoomBib.f})` : 'none',
+                        // Mais fluido: camada própria na placa gráfica
+                        // (will-change + translate3d), entrada longa e suave a
+                        // desacelerar, saída suave nos dois extremos.
+                        transform: zoomBib ? `translate3d(0,0,0) scale(${zoomBib.f})` : 'translate3d(0,0,0) scale(1)',
                         transformOrigin: zoomOrigemBib.current,
-                        transition: 'transform .7s cubic-bezier(.2,.7,.2,1)',
+                        transition: zoomBib
+                          ? 'transform 1.2s cubic-bezier(0.22, 1, 0.36, 1)'
+                          : 'transform 1s cubic-bezier(0.65, 0, 0.35, 1)',
+                        willChange: 'transform',
+                        backfaceVisibility: 'hidden',
                       }}>
                       {isBlocked ? (
                         <div style={{
@@ -35696,6 +35713,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                 })}
                             </div>
                           )}
+                          {/* Só aparece quando já há alguma coisa para concluir
+                              (o primeiro item, uma pausa aberta, ou o "Limpar"). */}
+                          {(shapesRascunho.length > 0 || formaEmCursoBib || anotacaoIdEmEdicaoBib || apagarTodasBib) && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 10px' }}>
                             <span style={{ fontSize: 11.5, color: T.mutedDim }} title="Tempo no ecrã dos itens desenhados agora. Os que já lá estavam mantêm o tempo deles.">
                               {shapesRascunho.some(f => Number(f.seg)) ? 'Novos itens:' : 'No ecrã:'}
@@ -35710,10 +35730,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             )}
                             <Btn onClick={guardarDesenhoBib} style={{ padding: '4px 10px', fontSize: 11 }}>Concluído</Btn>
                           </div>
+                          )}
                         </div>
                         {(toolBib === 'zonalivre' || toolBib === 'linhaPontos') && formaEmCursoBib && (
                           <div style={{ position: 'absolute', top: (active.anotacoesPausa || []).length > 0 ? 84 : 48, left: 86, right: 86, zIndex: 5, display: 'flex', justifyContent: 'center' }}>
-                            <Btn onClick={concluirFormaMultiplaBib} style={{ padding: '6px 14px', fontSize: 12.5 }}>{formaEmCursoBib.tool === 'zonalivre' ? 'Fechar zona' : 'Terminar linha'}</Btn>
+                            <Btn onClick={fecharEMoverBib} style={{ padding: '6px 14px', fontSize: 12.5 }}>{formaEmCursoBib.tool === 'zonalivre' ? 'Fechar zona' : 'Terminar linha'}</Btn>
                           </div>
                         )}
                         {/* Forma selecionada — arrasta os pontinhos no vídeo

@@ -287,7 +287,8 @@ export function inclinacaoPadrao(w, h) {
   return w > 0 ? Math.min(0.17, (h * 0.9) / w) : 0.17;
 }
 
-export const ESPESSURA = 0.35; // mais fino do que antes (era 0.6), em todas as formas
+export const ESPESSURA = 0.35;
+export const CONTORNO_FINO = 0.12; // rebordo da Zona e da Zona livre // mais fino do que antes (era 0.6), em todas as formas
 export const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um toque "acertar" num desenho já feito — mais exato ainda, tem de se tocar mesmo em cima
 
 export function renderShape(sh, i) {
@@ -307,8 +308,8 @@ export function renderShape(sh, i) {
           <>
             {/* Zona livre também "pintada no chão" (ver a Zona). */}
             <path d={d} stroke="none" fill={sh.color || COR_DESENHO} fillOpacity={0.45} style={{ mixBlendMode: 'overlay' }} />
-            <path d={d} fill="none" stroke={sh.color || COR_DESENHO} strokeWidth={ESPESSURA * 2.2} strokeLinejoin="round" style={{ mixBlendMode: 'overlay' }} />
-            <path d={d} fill="none" stroke={sh.color || COR_DESENHO} strokeOpacity={0.55} strokeWidth={ESPESSURA} strokeLinecap="round" strokeLinejoin="round" />
+            {/* Rebordo muito fino — não tapa os jogadores. */}
+            <path d={d} fill="none" stroke={sh.color || COR_DESENHO} strokeOpacity={0.85} strokeWidth={CONTORNO_FINO} strokeLinecap="round" strokeLinejoin="round" />
           </>
         ) : (
           <path d={d}
@@ -358,7 +359,7 @@ export function renderShape(sh, i) {
     for (let k = 0; k <= N + Math.ceil(N * desvio); k++) {
       const u = k / N;
       linhas.push(<line key={k} x1={BL.x + (BR.x - BL.x) * u} y1={BL.y} x2={TL.x + larguraTopo * (u - desvio)} y2={TL.y}
-        stroke={corZona} strokeOpacity={0.6} strokeWidth={0.3} />);
+        stroke={corZona} strokeOpacity={0.6} strokeWidth={0.14} />);
     }
     const pts = `${BL.x},${BL.y} ${BR.x},${BR.y} ${TR.x},${TR.y} ${TL.x},${TL.y}`;
     const idGrad = `relva-${sh.id || i}`;
@@ -381,11 +382,9 @@ export function renderShape(sh, i) {
           <polygon points={pts} fill={`url(#${idGrad})`} stroke="none" />
           <g clipPath={`url(#${idClip})`}>{linhas}</g>
         </g>
+        {/* Rebordo muito fino — não tapa os jogadores. */}
         {!sh.semContorno && (
-          <>
-            <polygon points={pts} fill="none" stroke={corZona} strokeWidth={ESPESSURA * 2.2} strokeLinejoin="round" style={{ mixBlendMode: 'overlay' }} />
-            <polygon points={pts} fill="none" stroke={corZona} strokeOpacity={0.55} strokeWidth={ESPESSURA} strokeLinejoin="round" />
-          </>
+          <polygon points={pts} fill="none" stroke={corZona} strokeOpacity={0.85} strokeWidth={CONTORNO_FINO} strokeLinejoin="round" />
         )}
       </g>
     );
