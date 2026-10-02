@@ -9768,6 +9768,16 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   const pag = Math.min(pagina, totalPaginas - 1);
   const daPagina = visiveis.slice(pag * porLinha, pag * porLinha + porLinha);
   const irPara = (p) => setPagina(Math.max(0, Math.min(totalPaginas - 1, p)));
+  const barraRef = useRef(null);
+  const arrastarRef = useRef(false);
+  const [arrastar, setArrastar] = useState(false);
+  const paginaDoX = (clientX) => {
+    const el = barraRef.current;
+    if (!el) return pag;
+    const r = el.getBoundingClientRect();
+    const f = Math.min(0.9999, Math.max(0, (clientX - r.left) / r.width));
+    return Math.floor(f * totalPaginas);
+  };
 
   // Deslizar no telemóvel.
   const toqueX = useRef(null);
@@ -9865,19 +9875,29 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        {visiveis.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {seta(-1)}
-            <span style={{ ...mono, fontSize: 12, color: T.muted, minWidth: 74, textAlign: 'center' }}>
-              {pag * porLinha + 1}–{Math.min(visiveis.length, pag * porLinha + porLinha)} de {visiveis.length}
-            </span>
-            {seta(1)}
-          </div>
-        )}
+        {/* Sempre presente (mesmo sem resultados): a altura não muda. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {seta(-1)}
+          <span style={{ ...mono, fontSize: 12, color: T.muted, minWidth: 74, textAlign: 'center' }}>
+            {visiveis.length ? `${pag * porLinha + 1}–${Math.min(visiveis.length, pag * porLinha + porLinha)}` : '0'} de {visiveis.length}
+          </span>
+          {seta(1)}
+        </div>
       </div>
 
       {visiveis.length === 0 ? (
-        <div ref={gridRef} style={{ fontSize: 12.5, color: T.mutedDim, padding: '8px 4px' }}>Nenhum resultado.</div>
+        /* Sem resultados: um cartão invisível segura a altura da linha,
+           para a página não encolher (e saltar) enquanto se escreve. */
+        <div ref={gridRef} style={{ position: 'relative', display: 'grid', gridTemplateColumns: `repeat(${porLinha}, minmax(0, 1fr))`, gap: GAP }}>
+          <div aria-hidden="true" style={{ visibility: 'hidden', padding: 6, border: '1px solid transparent' }}>
+            <div style={{ height: isMobile ? 78 : 92, marginBottom: 8 }} />
+            <div style={{ fontSize: 12.5, lineHeight: 1.3, minHeight: 33 }}>&nbsp;</div>
+            <div style={{ fontSize: 10.5, padding: '3px 2px 0' }}>&nbsp;</div>
+          </div>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, color: T.mutedDim }}>
+            Nenhum resultado.
+          </div>
+        </div>
       ) : (
         <div
           ref={gridRef}
@@ -9918,24 +9938,39 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
         </div>
       )}
 
-      {/* Barra de progresso: onde estou na lista; tocar salta para lá. */}
-      {totalPaginas > 1 && (
-        <div style={{ marginTop: 10 }}>
-          <div
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              irPara(Math.floor(((e.clientX - r.left) / r.width) * totalPaginas));
-            }}
-            title="Saltar para esta parte da lista"
-            style={{ position: 'relative', height: 6, borderRadius: 3, background: T.bg, cursor: 'pointer' }}
-          >
+      {/* BARRA DE POSIÇÃO — onde estou na lista. Tocar salta para lá; e
+          ARRASTA-SE: carregar e puxar para o lado vai passando as linhas
+          (rato e dedo). Está sempre lá, mesmo com uma página só (cheia e
+          apagada), para a caixa nunca mudar de altura. */}
+      <div style={{ marginTop: 6 }}>
+        <div
+          ref={barraRef}
+          onPointerDown={(e) => {
+            if (totalPaginas <= 1) return;
+            e.preventDefault();
+            arrastarRef.current = true; setArrastar(true);
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* sem captura, segue */ }
+            irPara(paginaDoX(e.clientX));
+          }}
+          onPointerMove={(e) => { if (arrastarRef.current) irPara(paginaDoX(e.clientX)); }}
+          onPointerUp={() => { arrastarRef.current = false; setArrastar(false); }}
+          onPointerCancel={() => { arrastarRef.current = false; setArrastar(false); }}
+          title={totalPaginas > 1 ? 'Arrasta ou toca para andar na lista' : undefined}
+          style={{
+            position: 'relative', height: 18, display: 'flex', alignItems: 'center', touchAction: 'none', userSelect: 'none',
+            cursor: totalPaginas > 1 ? (arrastar ? 'grabbing' : 'pointer') : 'default',
+          }}
+        >
+          <div style={{ position: 'relative', width: '100%', height: 6, borderRadius: 3, background: T.bg }}>
             <div style={{
-              position: 'absolute', top: 0, bottom: 0, borderRadius: 3, background: T.gold,
-              left: `${(pag / totalPaginas) * 100}%`, width: `${Math.max(4, 100 / totalPaginas)}%`, transition: 'left .15s',
+              position: 'absolute', top: arrastar ? -2 : 0, bottom: arrastar ? -2 : 0, borderRadius: 3,
+              background: T.gold, opacity: totalPaginas > 1 ? 1 : 0.25,
+              left: `${(pag / totalPaginas) * 100}%`, width: `${Math.max(4, 100 / totalPaginas)}%`,
+              transition: arrastar ? 'none' : 'left .15s', cursor: totalPaginas > 1 ? (arrastar ? 'grabbing' : 'grab') : 'default',
             }} />
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
