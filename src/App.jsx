@@ -33239,6 +33239,21 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     }
   };
   const cancelarDesenhoBib = () => { setApagarTodasBib(false); setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setFormaTextoBib(null); };
+  // Esc sai do modo de desenho (como "Cancelar desenho"). A escrever um
+  // texto no desenho, o Esc só fecha esse texto.
+  const cancelarDesenhoBibRef = useRef(null);
+  cancelarDesenhoBibRef.current = cancelarDesenhoBib;
+  useEffect(() => {
+    if (!modoDesenhoBib) return undefined;
+    const aoTeclar = (e) => {
+      if (e.key !== 'Escape') return;
+      const alvo = e.target;
+      if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable)) return;
+      cancelarDesenhoBibRef.current();
+    };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, [modoDesenhoBib]);
   // "Concluído": as formas desta vez (sem `seg`) ficam com o tempo
   // escolhido agora; as que já existiam não mudam.
   const fecharFormasBib = (lista) => (lista || []).map(f => (Number(f.seg) ? f : { ...f, seg: Math.max(1, duracaoPausaBib) }));
@@ -33258,10 +33273,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       nova.forEach(a => pausasJaMostradasRef.current.add(a.id));
       setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: nova } : v)));
       setApagarTodasBib(false);
-      setModoDesenhoBib(false);
-      setFormaEmCursoBib(null);
-      setFormaSelecionadaBib(null);
-      setFormaTextoBib(null);
+      abrirPausaBib(nova[0] || null, tempoAnotacaoBib); // fica no desenho
       return;
     }
     if (rascunho.length === 0) {
@@ -33271,10 +33283,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       if (anotacaoIdEmEdicaoBib) {
         setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: (v.anotacoesPausa || []).filter(a => a.id !== anotacaoIdEmEdicaoBib) } : v)));
       }
-      setModoDesenhoBib(false);
-      setFormaEmCursoBib(null);
-      setFormaSelecionadaBib(null);
-      setFormaTextoBib(null);
+      abrirPausaBib(null, tempoAnotacaoBib); // fica no desenho, em branco
       return;
     }
     let formas = fecharFormasBib(rascunho);
@@ -33299,16 +33308,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       const outras = (v.anotacoesPausa || []).filter(a => a.id !== novaAnotacao.id);
       return { ...v, anotacoesPausa: [...outras, novaAnotacao].sort((a, b) => a.tempoVideo - b.tempoVideo) };
     }));
-    setModoDesenhoBib(false);
-    setFormaEmCursoBib(null);
-    setFormaSelecionadaBib(null);
-    setFormaTextoBib(null);
+    /* GRAVAR NÃO SAI DO DESENHO. Fica-se na mesma pausa, agora gravada:
+       os itens continuam no ecrã, prontos a mexer outra vez (posição,
+       cor, tempo…), e pode-se ir a outro minuto desenhar mais. Do modo
+       de desenho só se sai com "Cancelar desenho" ou com Esc. */
+    abrirPausaBib(novaAnotacao);
   };
   const apagarAnotacaoAtualBib = () => {
     if (anotacaoIdEmEdicaoBib) {
       setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: (v.anotacoesPausa || []).filter(a => a.id !== anotacaoIdEmEdicaoBib) } : v)));
     }
-    cancelarDesenhoBib();
+    abrirPausaBib(null, tempoAnotacaoBib); // continua no desenho, em branco
   };
   const confirmarTextoBib = () => {
     setFormaTextoBib(t => {
@@ -35750,7 +35760,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {PALETA_DESENHO.map(p => (
-                              <button key={p.id} onClick={() => setCorBib(p.cor)} title={p.id}
+                              <button key={p.id} onClick={() => {
+                                setCorBib(p.cor);
+                                // Com um item selecionado, muda também a cor dele.
+                                if (formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib]) {
+                                  pushHistoricoBib();
+                                  setShapesRascunho(prev => prev.map((f, i) => (i === formaSelecionadaBib ? { ...f, color: p.cor } : f)));
+                                }
+                              }} title={p.id}
                                 style={{
                                   width: 22, height: 22, borderRadius: '50%', cursor: 'pointer', padding: 0,
                                   background: p.cor, border: corBib === p.cor ? `2px solid ${T.gold}` : `1px solid ${T.line}`,
@@ -35829,14 +35846,33 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               (o primeiro item, uma pausa aberta, ou o "Limpar"). */}
                           {(shapesRascunho.length > 0 || formaEmCursoBib || anotacaoIdEmEdicaoBib || apagarTodasBib) && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 10px' }}>
-                            <span style={{ fontSize: 11.5, color: T.mutedDim }} title="Tempo no ecrã dos itens desenhados agora. Os que já lá estavam mantêm o tempo deles.">
-                              {shapesRascunho.some(f => Number(f.seg)) ? 'Novos itens:' : 'No ecrã:'}
-                            </span>
-                            <button onClick={() => setDuracaoPausaBib(d => Math.max(1, d - 1))}
-                              style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>−</button>
-                            <span style={{ fontSize: 13, color: '#fff', minWidth: 30, textAlign: 'center', ...mono }}>{duracaoPausaBib}s</span>
-                            <button onClick={() => setDuracaoPausaBib(d => Math.min(60, d + 1))}
-                              style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>+</button>
+                            {/* TEMPO NO ECRÃ. Com um item selecionado (novo ou já
+                                gravado), o contador é o DESSE item: muda-se e
+                                "Concluído" grava. Sem seleção, é o tempo que os
+                                itens desenhados agora vão levar. */}
+                            {(() => {
+                              const sel = formaSelecionadaBib != null ? shapesRascunho[formaSelecionadaBib] : null;
+                              const valor = sel ? (Number(sel.seg) || duracaoPausaBib) : duracaoPausaBib;
+                              const mudar = (d) => {
+                                const novo = Math.max(1, Math.min(60, valor + d));
+                                if (sel) {
+                                  pushHistoricoBib();
+                                  setShapesRascunho(prev => prev.map((f, i) => (i === formaSelecionadaBib ? { ...f, seg: novo } : f)));
+                                } else setDuracaoPausaBib(novo);
+                              };
+                              const b = { background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 };
+                              return (
+                                <>
+                                  <span style={{ fontSize: 11.5, color: sel ? T.warn : T.mutedDim }}
+                                    title={sel ? 'Tempo no ecrã do item selecionado' : 'Tempo no ecrã dos itens desenhados agora. Os que já lá estavam mantêm o tempo deles.'}>
+                                    {sel ? 'Item selecionado:' : (shapesRascunho.some(f => Number(f.seg)) ? 'Novos itens:' : 'No ecrã:')}
+                                  </span>
+                                  <button onClick={() => mudar(-1)} style={b}>−</button>
+                                  <span style={{ fontSize: 13, color: '#fff', minWidth: 30, textAlign: 'center', ...mono }}>{valor}s</span>
+                                  <button onClick={() => mudar(1)} style={b}>+</button>
+                                </>
+                              );
+                            })()}
                             {anotacaoIdEmEdicaoBib && (
                               <Btn variant="ghost" onClick={apagarAnotacaoAtualBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar pausa</Btn>
                             )}
@@ -35883,20 +35919,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                       padding: '2px 7px', fontSize: 11.5, cursor: 'pointer', ...body,
                                     }}>Ver zoom</button>
                                   )}
-                                </span>
-                              );
-                            })()}
-                            {Number(shapesRascunho[formaSelecionadaBib].seg) > 0 && (() => {
-                              // Uma forma que já tinha tempo: acerta-se aqui, só a ela.
-                              const s = Number(shapesRascunho[formaSelecionadaBib].seg);
-                              const mudar = (d) => setShapesRascunho(prev => prev.map((f, i) => (i === formaSelecionadaBib ? { ...f, seg: Math.max(1, Math.min(60, s + d)) } : f)));
-                              const b = { background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 };
-                              return (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ fontSize: 11.5, color: T.mutedDim }}>No ecrã:</span>
-                                  <button onClick={() => mudar(-1)} style={b}>−</button>
-                                  <span style={{ fontSize: 13, color: '#fff', minWidth: 26, textAlign: 'center', ...mono }}>{s}s</span>
-                                  <button onClick={() => mudar(1)} style={b}>+</button>
                                 </span>
                               );
                             })()}
