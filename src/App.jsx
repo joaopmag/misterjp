@@ -33633,6 +33633,27 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // "congelado" de quando a função foi criada.
   const ytATocarRef = useRef(false);
   useEffect(() => { ytATocarRef.current = ytATocar; }, [ytATocar]);
+  /* PRECISÃO. O YouTube só diz o tempo de ~¼ em ¼ de segundo; a paragem
+     disparava na leitura SEGUINTE ao minuto dela — já passado — e o vídeo
+     tinha de voltar atrás (salto visível, zoom a falhar o momento). Agora,
+     quando falta menos de 1s para uma paragem, marca-se um relógio para
+     o instante exato e a paragem começa a tempo, sem voltar atrás. */
+  useEffect(() => {
+    if (modoDesenhoBib || !ativoEClipe || !ytATocar || pausaEmCursoRef.current || !active) return undefined;
+    const proxima = (active.anotacoesPausa || [])
+      .filter(x => !pausasJaMostradasRef.current.has(x.id))
+      .map(x => tempoPausaNoCorte(x))
+      .filter(t => t > liveTime + 0.02 && t - liveTime < 1)
+      .sort((x, y) => x - y)[0];
+    if (proxima == null) return undefined;
+    const h = setTimeout(() => {
+      if (!ytATocarRef.current || pausaEmCursoRef.current) return;
+      currentTimeRef.current = proxima;
+      setLiveTime(proxima);
+    }, (proxima - liveTime) * 1000);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTime, ytATocar, modoDesenhoBib, active && active.id]);
   // Pausa / play durante uma paragem com desenhos: o tempo dos itens
   // acompanha o vídeo.
   useEffect(() => {
@@ -34181,6 +34202,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       passagemDesdeRef.current = liveTime;
       return;
     }
+    // Rede de segurança: se o vídeo foi parar longe do minuto da paragem
+    // por outra via (não pela nossa barra), os itens também saem.
+    const cParagem = pausaControloRef.current;
+    if (cParagem && cParagem.tParagem != null && !cParagem.cancelado
+      && (liveTime < cParagem.tParagem - 0.6 || liveTime > cParagem.tParagem + cParagem.margemFrente)) {
+      largarParagemBib();
+      return;
+    }
     if (!ytATocarRef.current) return; // parado: espera pelo play (a passagem fica guardada)
     if (pausaEmCursoRef.current) return;
     let desde;
@@ -34211,7 +34240,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // O vídeo fica parado até sair a última forma.
     const duracaoComum = Math.max(1, ...todasAsFormas.map(f => f.seg));
     pausaEmCursoRef.current = primeira.id;
-    const controlo = { cancelado: false };
+    // Janela onde a paragem é "deste minuto": em câmara lenta o vídeo anda
+    // no máximo duração × velocidade; mais do que isso foi um salto.
+    const controlo = {
+      cancelado: false,
+      tParagem: tempoPausaNoCorte(primeira),
+      margemFrente: duracaoComum * (MODO_SEGURAR_BIB === 'lento' ? VELOCIDADE_LENTA_BIB : 0) + 1.2,
+    };
     pausaControloRef.current = controlo;
 
     // Mostra tudo junto e vai tirando cada forma quando acaba o tempo dela.
@@ -34358,9 +34393,39 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // BARRA DO CLIPE — enquanto se arrasta, mostra a posição do dedo/rato
   // (e não a do leitor, que chega com atraso e faria o cursor saltar).
   const [arrastoClipe, setArrastoClipe] = useState(null);
+  /* ITENS SÓ NO MINUTO DELES. Mexer na barra (ou nos -2s/+2s) durante
+     uma paragem com desenhos acaba com ela NA HORA: os itens saem, o
+     vídeo volta à velocidade normal, e no sítio para onde se foi não
+     fica nada que não seja desse minuto. Antes os itens ficavam presos
+     no ecrã até acabar o tempo deles, mesmo já noutro minuto. */
+  const largarParagemBib = () => {
+    const c = pausaControloRef.current;
+    if (c) {
+      c.cancelado = true;
+      if (MODO_SEGURAR_BIB === 'lento') enviarComandoYoutube('setPlaybackRate', [1]);
+    }
+    pausaControloRef.current = null;
+    pausaEmCursoRef.current = null;
+    setPausaAtivaBib(null);
+    // A desenhar: um congelamento a meio também acaba (sem voltar atrás).
+    const r = retomaDesenhoRef.current;
+    if (r) {
+      r.cancelado = true;
+      if (r.lento) enviarComandoYoutube('setPlaybackRate', [1]);
+      retomaDesenhoRef.current = null;
+      setCongeladoDesenhoBib(false);
+    }
+  };
   const procurarNoClipe = (t) => {
     // Nunca exatamente no fim: aí o ciclo acima recomeçava logo o corte.
     const alvo = Math.min(Math.max(t, clipIni), Math.max(clipIni, clipFimEf - 0.25));
+    largarParagemBib();
+    // A desenhar, sem nada por gravar: os itens da pausa aberta saem se o
+    // destino não for o minuto dela (só aparecem no momento certo).
+    if (modoDesenhoBib && historicoBib.length === 0 && !formaEmCursoBib && Math.abs(alvo - tempoAnotacaoBib) > JANELA_ABRIR_PAUSA_BIB) {
+      const aqui = pausaMaisPertoBib(alvo, JANELA_ABRIR_PAUSA_BIB);
+      abrirPausaBib(aqui || null, alvo);
+    }
     setArrastoClipe(alvo);
     enviarComandoYoutube('seekTo', [alvo, true]);
   };
