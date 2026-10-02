@@ -408,6 +408,26 @@ export function renderShape(sh, i) {
     <path d={`M ${b.x} ${b.y} L ${p1.x} ${p1.y} M ${b.x} ${b.y} L ${p2.x} ${p2.y}`} style={cor} strokeWidth={ESPESSURA} strokeLinecap="round" /></g>;
 }
 
+/* ZOOM NO CÍRCULO (igual ao da Biblioteca): com um círculo com `zoom`
+   visível, a imagem aproxima-se suavemente do centro dele e afasta-se
+   quando ele sai. Aqui o vídeo é nosso (não é o YouTube), por isso a
+   saída também pode ser animada sem problemas. Devolve o estilo para a
+   caixa que contém o vídeo e o desenho. */
+export function useZoomCirculo(formasVisiveis, ativo = true) {
+  const origem = useRef('50% 50%');
+  const c = ativo ? (formasVisiveis || []).find(f => f && f.tool === 'circulo' && Number(f.zoom) > 1 && f.points && f.points[0]) : null;
+  if (c) {
+    const p = c.points[0];
+    origem.current = `${Math.max(0, Math.min(100, p.x))}% ${Math.max(0, Math.min(100, (p.y / 56.25) * 100))}%`;
+  }
+  return {
+    transform: c ? `translate3d(0,0,0) scale(${Number(c.zoom)})` : 'translate3d(0,0,0) scale(1)',
+    transformOrigin: origem.current,
+    transition: c ? 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)' : 'transform 0.9s cubic-bezier(0.65, 0, 0.35, 1)',
+    willChange: 'transform',
+  };
+}
+
 export function shapeVisivelEm(sh, tempo) {
   const inicio = sh.criadoEmTempo ?? 0;
   if (tempo < inicio) return false;
@@ -536,6 +556,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();
   // Em ecrã inteiro, o Esc sai do ecrã inteiro (é o browser que o faz), não fecha o leitor.
   useFecharComEsc(onClose, !aEditar && !emEcraInteiro);
+  const estiloZoomClipe = useZoomCirculo((clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)), !aEditar);
 
   // SEGUIR JOGADOR — deteção automática (serviço à parte, no Modal),
   // com toque para escolher quem seguir e para corrigir a meio.
@@ -600,7 +621,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
         </div>
         <div ref={fsRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
         <div ref={areaRef} style={{ flex: 1, minHeight: '25vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          <div ref={caixaVideoRef} style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto' }}>
+          <div ref={caixaVideoRef} style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto', ...estiloZoomClipe }}>
             <video ref={videoRef} src={clip.publicUrl} autoPlay playsInline onClick={alternar}
               onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
               onLoadedMetadata={e => {
@@ -1466,17 +1487,40 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
   const abrirDesenho = () => { videoRef.current?.pause(); setModoDesenho(true); };
   const fecharDesenho = () => { setModoDesenho(false); setTextoPendente(null); setEditandoDuracaoIndex(null); setPontosEmCurso(null); };
+  /* Como na Biblioteca: do modo de desenho só se sai pelo botão "Sair do
+     desenho" ou com Esc (a escrever um texto, o Esc só fecha o texto). */
+  const fecharDesenhoRef = useRef(null);
+  fecharDesenhoRef.current = fecharDesenho;
+  useEffect(() => {
+    if (!modoDesenho) return undefined;
+    const aoTeclar = (e) => {
+      if (e.key !== 'Escape') return;
+      const alvo = e.target;
+      if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable)) return;
+      fecharDesenhoRef.current();
+    };
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, [modoDesenho]);
 
   // Guarda o estado anterior antes de qualquer alteração (criar, mover,
   // redimensionar, apagar) — o "Retroceder" repõe o último estado guardado.
   // Até 20 passos, para não crescer sem limite. Uma ação nova apaga o que
   // se podia "Avançar", tal como num editor normal.
-  const pushHistorico = () => { setHistorico(h => [...h.slice(-19), shapes]); setFuturo([]); };
+  const pushHistorico = () => { setHistorico(h => [...h.slice(-19), shapes]); setFuturo([]); pontosDesfeitos.current = []; };
+  // Pontos tirados com "Retroceder" a meio de uma Zona livre / Ligar
+  // pontos — o "Avançar" volta a pô-los, um a um.
+  const pontosDesfeitos = useRef([]);
   const retroceder = () => {
     // A meio de colocar pontos (Zona livre / Ligar pontos), "Retroceder"
     // tira o último ponto colocado — voltar a um estado de ANTES de
     // começar a forma não faria sentido, já que a forma ainda nem existe.
-    if (pontosEmCurso) { apagarUltimoPonto(); return; }
+    if (pontosEmCurso) {
+      const ult = pontosEmCurso.points[pontosEmCurso.points.length - 1];
+      if (ult) pontosDesfeitos.current = [...pontosDesfeitos.current, { tool: pontosEmCurso.tool, ponto: ult }];
+      setPontosEmCurso(p => (p && p.points.length > 1 ? { ...p, points: p.points.slice(0, -1) } : null));
+      return;
+    }
     setHistorico(h => {
       if (h.length === 0) return h;
       setFuturo(f => [...f, shapes]);
@@ -1485,6 +1529,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     });
   };
   const avancar = () => {
+    if (pontosDesfeitos.current.length) {
+      const { tool: ft, ponto } = pontosDesfeitos.current[pontosDesfeitos.current.length - 1];
+      pontosDesfeitos.current = pontosDesfeitos.current.slice(0, -1);
+      setPontosEmCurso(p => (p && p.tool === ft ? { ...p, points: [...p.points, ponto] } : { tool: ft, points: [ponto] }));
+      return;
+    }
     setFuturo(f => {
       if (f.length === 0) return f;
       setHistorico(h => [...h, shapes]);
@@ -1495,13 +1545,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   // "Zona livre" e "Ligar pontos" constroem-se por toques sucessivos —
   // cada toque acrescenta um vértice, e "Concluir" fecha a forma.
-  const concluirPontos = () => {
+  const concluirPontos = (selecionar) => {
     if (!pontosEmCurso) return;
     const minimo = pontosEmCurso.tool === 'zonalivre' ? 3 : 2;
     if (pontosEmCurso.points.length < minimo) return;
     pushHistorico();
+    const n = shapes.length;
     setShapes(s => [...s, { id: uid(), tool: pontosEmCurso.tool, color: corAtual, points: pontosEmCurso.points, criadoEmTempo: current, mostrarAte: null }]);
     setPontosEmCurso(null);
+    // "Fechar zona" / "Terminar linha": fica logo selecionada, pronta a
+    // arrastar (como na Biblioteca).
+    if (selecionar === true) abrirPopupDuracao(n);
   };
   const apagarUltimoPonto = () => setPontosEmCurso(p => (p && p.points.length > 1 ? { ...p, points: p.points.slice(0, -1) } : null));
 
@@ -1542,6 +1596,24 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Dá para dar play, deixar correr até ao ponto certo, pausar, e usar esse
   // momento exato — em vez de teres de escrever o minuto de cabeça.
   const usarTempoAtualComoLimite = () => setDuracaoInputTexto(fmt(current));
+  // Cor: com um desenho selecionado, muda também a cor dele.
+  const mudarCor = (cor) => {
+    setCorAtual(cor);
+    if (editandoDuracaoIndex != null && shapes[editandoDuracaoIndex]) {
+      pushHistorico();
+      setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, color: cor } : sh)));
+    }
+  };
+  // Zoom do círculo selecionado (1 = sem zoom).
+  const mudarZoom = (z) => {
+    if (editandoDuracaoIndex == null) return;
+    pushHistorico();
+    setShapes(s => s.map((sh, i) => {
+      if (i !== editandoDuracaoIndex) return sh;
+      const { zoom, ...resto } = sh; // eslint-disable-line no-unused-vars
+      return z > 1 ? { ...resto, zoom: z } : resto;
+    }));
+  };
 
   const confirmarTexto = () => {
     setTextoPendente(t => {
@@ -1596,7 +1668,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })), moveu: false };
       return;
     }
-    if (tool === 'zonalivre' || tool === 'linhaPontos') { setPontosEmCurso({ tool, points: [pt] }); return; }
+    if (tool === 'zonalivre' || tool === 'linhaPontos') { pontosDesfeitos.current = []; setPontosEmCurso({ tool, points: [pt] }); return; }
     pushHistorico();
     drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
     setShapes(s => [...s, drawState.current]);
@@ -1607,7 +1679,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const startHandleDrag = (index, ponto, e, tipo) => {
     e.stopPropagation();
     pushHistorico();
-    handleDragState.current = { index, ponto, tipo };
+    const st = { index, ponto, tipo };
+    if (tipo === 'inclinacao') {
+      const sh = shapes[index];
+      const [pa, pb] = sh.points;
+      const w = Math.abs(pb.x - pa.x), h = Math.abs(pb.y - pa.y);
+      st.y0 = getPoint(e).y;
+      st.h = h;
+      st.inc0 = Number.isFinite(Number(sh.inclinacao)) ? Number(sh.inclinacao) : inclinacaoPadrao(w, h);
+    }
+    handleDragState.current = st;
   };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
@@ -1621,6 +1702,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (handleDragState.current) {
       const pt = getPoint(e);
       const { index, ponto, tipo } = handleDragState.current;
+      if (tipo === 'inclinacao') {
+        // Para cima = o lado de cima foge para o fundo; para baixo endireita e inverte.
+        const { y0, h, inc0 } = handleDragState.current;
+        const inc = Math.max(-0.45, Math.min(0.45, inc0 + ((y0 - pt.y) / Math.max(4, h)) * 0.5));
+        setShapes(s => s.map((sh, i) => (i === index ? { ...sh, inclinacao: Math.round(inc * 1000) / 1000 } : sh)));
+        return;
+      }
       setShapes(s => s.map((sh, i) => {
         if (i !== index) return sh;
         if (tipo === 'rotacao' && sh.points[0] && sh.points[1]) {
@@ -1685,6 +1773,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // aberto: essa fica sempre visível, para não desaparecer a meio de a
   // estares a ajustar.
   const shapesVisiveis = shapes.filter((sh, i) => editandoDuracaoIndex === i || shapeVisivelEm(sh, current));
+  // A ver (fora do desenho), o círculo com zoom aproxima a imagem, como no clipe final.
+  const estiloZoomEditor = useZoomCirculo(shapesVisiveis, !modoDesenho);
 
   return (
     <div>
@@ -1821,13 +1911,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise }}>
               <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <Btn variant="ghost" onClick={retroceder} disabled={historico.length === 0} style={{ padding: 8 }} title="Retroceder">
-                  <Undo2 size={16} />
-                </Btn>
-                <Btn variant="ghost" onClick={avancar} disabled={futuro.length === 0} style={{ padding: 8 }} title="Avançar">
-                  <Redo2 size={16} />
-                </Btn>
-                <Btn variant="solid" onClick={fecharDesenho}><Check size={14} /> Concluído</Btn>
+                {/* Botões simples: o Btn trava cliques seguidos (e aqui recuam-se vários pontos de rajada). */}
+                {[
+                  { on: historico.length > 0 || !!pontosEmCurso, fn: retroceder, Ic: Undo2, t: 'Recuar' },
+                  { on: futuro.length > 0 || pontosDesfeitos.current.length > 0, fn: avancar, Ic: Redo2, t: 'Avançar' },
+                ].map(({ on, fn, Ic, t: rotulo }) => (
+                  <button key={rotulo} type="button" onClick={fn} disabled={!on} title={rotulo} aria-label={rotulo} style={{
+                    padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent',
+                    border: `1px solid ${T.line}`, borderRadius: 8, color: on ? T.cream : T.mutedDim, opacity: on ? 1 : 0.45, cursor: on ? 'pointer' : 'default',
+                  }}><Ic size={16} /></button>
+                ))}
+                <Btn variant="solid" onClick={fecharDesenho} title="Sair do modo de desenho (ou Esc)"><X size={14} /> Sair do desenho</Btn>
               </div>
             </div>
           </div>
@@ -1854,7 +1948,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
                       {PALETA_DESENHO.map(p => (
-                        <button key={p.id} onClick={() => setCorAtual(p.cor)} title={p.id}
+                        <button key={p.id} onClick={() => mudarCor(p.cor)} title={p.id}
                           style={{
                             width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
                             background: p.cor, border: corAtual === p.cor ? `2px solid ${T.crimsonBright}` : `1px solid ${T.line}`,
@@ -1868,8 +1962,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 )}
               </div>
             </div>
-            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto', transition: 'width 0.2s ease, padding 0.2s ease', paddingRight: fullscreen ? 18 : 0, boxSizing: 'border-box' }}
+            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto', transition: 'width 0.2s ease, padding 0.2s ease', paddingRight: fullscreen ? 18 : 0, boxSizing: 'border-box', overflow: 'hidden' }}
               onPointerDown={startDraw} onPointerMove={moveDraw} onPointerUp={endDraw} onPointerLeave={endDraw} onPointerCancel={endDraw}>
+              {/* Vídeo + desenho juntos numa caixa: é ela que se aproxima no zoom do círculo. */}
+              <div style={{ position: 'absolute', inset: 0, right: fullscreen ? 18 : 0, ...estiloZoomEditor }}>
               {originalAtivo?.pronto === false ? (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted, gap: 8, textAlign: 'center', padding: 20 }}>
                   <Loader2 size={20} className="spin" />
@@ -1932,6 +2028,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 1, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
                       <circle cx={pegaRodar.x} cy={pegaRodar.y} r={0.55} fill={T.gold} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, null, e, 'rotacao')} style={{ cursor: 'grab', touchAction: 'none' }} />
+                      {/* Pega de INCLINAR (rodar para cima/baixo), ao lado direito. */}
+                      {(() => {
+                        const pd = girar({ x: x + w + 2.6, y: centro.y }, centro, rot);
+                        return (
+                          <g>
+                            <rect x={pd.x - 0.75} y={pd.y - 1.6} width={1.5} height={3.2} rx={0.75} fill="#fff" stroke={T.crimsonBright} strokeWidth={0.2} style={{ pointerEvents: 'none' }} />
+                            <circle cx={pd.x} cy={pd.y} r={1.6} fill="transparent"
+                              onPointerDown={e => startHandleDrag(editandoDuracaoIndex, null, e, 'inclinacao')} style={{ cursor: 'ns-resize', touchAction: 'none' }} />
+                          </g>
+                        );
+                      })()}
                     </g>
                   );
                 })()}
@@ -1942,6 +2049,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       style={{ cursor: 'pointer', touchAction: 'none' }} />
                   ))}
               </svg>
+              </div>
               {modoDesenho && tool === 'seguir' && !processandoFoco && (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pointerEvents: 'none' }}>
                   <span style={{ marginTop: 12, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, ...body }}>
@@ -1966,8 +2074,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     {pontosEmCurso.points.length} ponto{pontosEmCurso.points.length === 1 ? '' : 's'} — toca no vídeo para acrescentar
                   </span>
                   <Btn variant="ghost" onClick={apagarUltimoPonto} disabled={pontosEmCurso.points.length < 2} style={{ padding: '5px 8px', fontSize: 12 }}>Apagar último</Btn>
-                  <Btn variant="solid" onClick={concluirPontos} disabled={pontosEmCurso.points.length < (pontosEmCurso.tool === 'zonalivre' ? 3 : 2)} style={{ padding: '5px 10px', fontSize: 12 }}>
-                    <Check size={13} /> Concluir
+                  <Btn variant="solid" onClick={() => concluirPontos(true)} disabled={pontosEmCurso.points.length < (pontosEmCurso.tool === 'zonalivre' ? 3 : 2)} style={{ padding: '5px 10px', fontSize: 12 }}>
+                    <Check size={13} /> {pontosEmCurso.tool === 'zonalivre' ? 'Fechar zona' : 'Terminar linha'}
                   </Btn>
                   <Btn variant="ghost" onClick={() => setPontosEmCurso(null)} style={{ padding: '5px 10px', fontSize: 12 }}>Cancelar</Btn>
                 </div>
@@ -2010,6 +2118,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   />
                   <Btn variant="solid" onClick={confirmarDuracaoShape} style={{ padding: '5px 10px', fontSize: 12 }}>OK</Btn>
                   <Btn variant="ghost" onClick={marcarSempreVisivelShape} style={{ padding: '5px 10px', fontSize: 12 }}>Sempre visível</Btn>
+                  {shapes[editandoDuracaoIndex]?.tool === 'circulo' && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Ao reproduzir, a imagem aproxima-se deste círculo enquanto ele estiver visível">
+                      <span style={{ fontSize: 12, color: '#fff', ...body }}>Zoom:</span>
+                      {[[1, 'Sem'], [1.5, '1,5×'], [2, '2×'], [3, '3×']].map(([z, r]) => {
+                        const on = (Number(shapes[editandoDuracaoIndex]?.zoom) || 1) === z;
+                        return (
+                          <button key={z} type="button" onClick={() => mudarZoom(z)} style={{
+                            background: on ? T.gold : 'none', color: on ? '#111' : '#fff', border: `1px solid ${on ? T.gold : T.line}`,
+                            borderRadius: 4, padding: '2px 7px', fontSize: 11.5, cursor: 'pointer', ...mono,
+                          }}>{r}</button>
+                        );
+                      })}
+                    </span>
+                  )}
                   {shapes[editandoDuracaoIndex]?.tool === 'retangulo' && (
                     <Btn variant={shapes[editandoDuracaoIndex]?.semContorno ? 'solid' : 'ghost'} onClick={alternarContornoZona} style={{ padding: '5px 10px', fontSize: 12 }}>
                       {shapes[editandoDuracaoIndex]?.semContorno ? 'Sem contorno' : 'Com contorno'}
@@ -2027,7 +2149,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
                   {PALETA_DESENHO.map(p => (
-                    <button key={p.id} onClick={() => setCorAtual(p.cor)} title={p.id}
+                    <button key={p.id} onClick={() => mudarCor(p.cor)} title={p.id}
                       style={{
                         width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
                         background: p.cor, border: corAtual === p.cor ? `2px solid ${T.crimsonBright}` : `1px solid ${T.line}`,
