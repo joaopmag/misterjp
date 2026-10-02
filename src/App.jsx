@@ -9704,20 +9704,95 @@ function useFecharSemSaltar() {
    Tocar num cartão NÃO copia logo — abre a pré-visualização em grande
    (com a descrição) e só o "Usar" copia. Copiar substitui o esquema que
    já estiver desenhado; um toque ao lado não pode deitar isso fora. */
+const COPIAR_ORDENS = [
+  { id: 'az', label: 'A–Z' },
+  { id: 'criado', label: 'Criados' },
+  { id: 'editado', label: 'Editados' },
+];
+const letraDe = (nome) => {
+  const c = String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().charAt(0).toUpperCase();
+  return /[A-Z]/.test(c) ? c : '#';
+};
+
 function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar }) {
   const isMobile = useIsMobile(700);
   const [busca, setBusca] = useState('');
   const [escolhido, setEscolhido] = useState(null);
-  const [aberto, setAberto] = useState(null); // id do cartão aberto
+  const [aberto, setAberto] = useState(null); // cartão debaixo do rato
+  const [pagina, setPagina] = useState(0);
+
+  /* ORDEM — A–Z, por criação (mais recentes primeiro) ou por última
+     edição. Fica lembrada de uma vez para a outra. A ordem de criação é a
+     própria ordem da lista: as coleções chegam do servidor por
+     created_at, e os novos entram sempre no fim. */
+  const chaveOrdem = 'misterjp:copiar-ordem';
+  const [ordem, setOrdemEstado] = useState(() => {
+    try { return localStorage.getItem(chaveOrdem) || 'az'; } catch (e) { return 'az'; }
+  });
+  const setOrdem = (o) => {
+    setOrdemEstado(o); setPagina(0);
+    try { localStorage.setItem(chaveOrdem, o); } catch (e) { /* sem memória, sem problema */ }
+  };
+
+  /* UMA LINHA DE CADA VEZ. Quantos cartões cabem numa linha depende da
+     largura (2 no telemóvel, até 6 num ecrã largo); mede-se a grelha e
+     mostra-se só essa linha. Com 1000 exercícios na fase, nunca se
+     desenham mais do que esses — o resto está a uma seta (ou um gesto
+     de deslizar) de distância. */
+  const [largura, setLargura] = useState(0);
+  const roRef = useRef(null);
+  const gridRef = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => { setLargura(entries[0].contentRect.width); });
+    ro.observe(el);
+    roRef.current = ro;
+  }, []);
+  useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
+  const GAP = 8;
+  const MIN = isMobile ? 140 : 180;
+  const porLinha = largura ? Math.max(2, Math.min(6, Math.floor((largura + GAP) / (MIN + GAP)))) : (isMobile ? 2 : 5);
 
   const ordenados = React.useMemo(() => {
-    const quando = (x) => (meta && meta[x.id] && meta[x.id].at) || '';
-    return [...itens].sort((a, b) => String(quando(b)).localeCompare(String(quando(a))));
-  }, [itens, meta]);
+    const lista = itens.map((x, i) => ({ x, i }));
+    if (ordem === 'az') {
+      lista.sort((p, q) => String(nomeDe(p.x)).localeCompare(String(nomeDe(q.x)), 'pt', { sensitivity: 'base', numeric: true }));
+    } else if (ordem === 'editado') {
+      const quando = (x) => (meta && meta[x.id] && meta[x.id].at) || '';
+      lista.sort((p, q) => String(quando(q.x)).localeCompare(String(quando(p.x))) || q.i - p.i);
+    } else {
+      lista.sort((p, q) => q.i - p.i);
+    }
+    return lista.map(p => p.x);
+  }, [itens, meta, ordem, nomeDe]);
   const q = busca.trim().toLowerCase();
   const visiveis = q
     ? ordenados.filter(x => [nomeDe(x), x.description, ...(detalhesDe ? detalhesDe(x) : [])].filter(Boolean).join(' ').toLowerCase().includes(q))
     : ordenados;
+
+  const totalPaginas = Math.max(1, Math.ceil(visiveis.length / porLinha));
+  const pag = Math.min(pagina, totalPaginas - 1);
+  const daPagina = visiveis.slice(pag * porLinha, pag * porLinha + porLinha);
+  const irPara = (p) => setPagina(Math.max(0, Math.min(totalPaginas - 1, p)));
+
+  // Índice de letras (só em A–Z): salta direto para a linha dessa letra.
+  const letras = React.useMemo(() => {
+    if (ordem !== 'az') return [];
+    const m = new Map();
+    visiveis.forEach((x, i) => { const l = letraDe(nomeDe(x)); if (!m.has(l)) m.set(l, i); });
+    return [...m.entries()];
+  }, [visiveis, ordem, nomeDe]);
+  const letrasNaPagina = new Set(daPagina.map(x => letraDe(nomeDe(x))));
+
+  // Deslizar no telemóvel.
+  const toqueX = useRef(null);
+  const aoTocar = (e) => { toqueX.current = e.touches[0].clientX; };
+  const aoLargar = (e) => {
+    if (toqueX.current == null) return;
+    const dx = e.changedTouches[0].clientX - toqueX.current;
+    toqueX.current = null;
+    if (Math.abs(dx) > 40) irPara(pag + (dx < 0 ? 1 : -1));
+  };
 
   const atual = escolhido && itens.find(x => x.id === escolhido);
   const editadoHa = (x) => {
@@ -9761,34 +9836,71 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
     );
   }
 
+  const seta = (dir) => {
+    const off = dir < 0 ? pag === 0 : pag >= totalPaginas - 1;
+    const Ic = dir < 0 ? ChevronLeft : ChevronRight;
+    return (
+      <button type="button" disabled={off} onClick={() => irPara(pag + dir)} title={dir < 0 ? 'Anteriores' : 'Seguintes'} style={{
+        width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        border: `1px solid ${T.line}`, background: off ? 'transparent' : T.surfaceRaise, color: off ? T.mutedDim : T.cream,
+        cursor: off ? 'default' : 'pointer', opacity: off ? 0.4 : 1,
+      }}><Ic size={16} /></button>
+    );
+  };
+
   return (
     <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 10, background: T.surface, padding: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 12, color: T.muted }}>
           {tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}
         </div>
-        {itens.length > 4 && (
-          <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
-            <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
-            <input
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-              placeholder={tipo === 'ideia' ? 'Procurar ideia…' : 'Procurar por nome, material, descrição…'}
-              style={{
-                width: '100%', boxSizing: 'border-box', padding: '7px 10px 7px 30px', borderRadius: 8,
-                border: `1px solid ${T.line}`, background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body, outline: 'none',
-              }}
-            />
+        <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
+          <Search size={14} color={T.mutedDim} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+          <input
+            value={busca}
+            onChange={e => { setBusca(e.target.value); setPagina(0); }}
+            placeholder={tipo === 'ideia' ? 'Procurar ideia…' : 'Procurar por nome, material, descrição…'}
+            style={{
+              width: '100%', boxSizing: 'border-box', padding: '7px 10px 7px 30px', borderRadius: 8,
+              border: `1px solid ${T.line}`, background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body, outline: 'none',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Ordem + paginação */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: 3 }}>
+          {COPIAR_ORDENS.map(o => (
+            <button key={o.id} type="button" onClick={() => setOrdem(o.id)} style={{
+              padding: '4px 10px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, ...body,
+              background: ordem === o.id ? T.surfaceRaise : 'transparent', color: ordem === o.id ? T.cream : T.mutedDim,
+              fontWeight: ordem === o.id ? 600 : 400,
+            }}>{o.label}</button>
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        {visiveis.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {seta(-1)}
+            <span style={{ ...mono, fontSize: 12, color: T.muted, minWidth: 74, textAlign: 'center' }}>
+              {pag * porLinha + 1}–{Math.min(visiveis.length, pag * porLinha + porLinha)} de {visiveis.length}
+            </span>
+            {seta(1)}
           </div>
         )}
       </div>
+
       {visiveis.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '8px 4px' }}>Nenhum resultado.</div>
+        <div ref={gridRef} style={{ fontSize: 12.5, color: T.mutedDim, padding: '8px 4px' }}>Nenhum resultado.</div>
       ) : (
-        <div style={{
-          display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isMobile ? 140 : 180}px, 1fr))`, gap: 8,
-        }}>
-          {visiveis.map(x => {
+        <div
+          ref={gridRef}
+          onTouchStart={aoTocar}
+          onTouchEnd={aoLargar}
+          style={{ display: 'grid', gridTemplateColumns: `repeat(${porLinha}, minmax(0, 1fr))`, gap: GAP }}
+        >
+          {daPagina.map(x => {
             const det = detalhesDe ? detalhesDe(x) : [];
             const sobre = aberto === x.id;
             return (
@@ -9816,6 +9928,41 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
               </button>
             );
           })}
+          {/* Lugares vazios na última linha: a altura não muda entre páginas. */}
+          {Array.from({ length: porLinha - daPagina.length }, (_, i) => <div key={`v${i}`} />)}
+        </div>
+      )}
+
+      {/* Barra de progresso (onde estou na lista) + índice de letras em A–Z. */}
+      {totalPaginas > 1 && (
+        <div style={{ marginTop: 10 }}>
+          <div
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              irPara(Math.floor(((e.clientX - r.left) / r.width) * totalPaginas));
+            }}
+            title="Saltar para esta parte da lista"
+            style={{ position: 'relative', height: 6, borderRadius: 3, background: T.bg, cursor: 'pointer' }}
+          >
+            <div style={{
+              position: 'absolute', top: 0, bottom: 0, borderRadius: 3, background: T.gold,
+              left: `${(pag / totalPaginas) * 100}%`, width: `${Math.max(4, 100 / totalPaginas)}%`, transition: 'left .15s',
+            }} />
+          </div>
+          {letras.length > 1 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, marginTop: 8 }}>
+              {letras.map(([l, i]) => {
+                const on = letrasNaPagina.has(l);
+                return (
+                  <button key={l} type="button" onClick={() => irPara(Math.floor(i / porLinha))} title={`Ir para ${l}`} style={{
+                    minWidth: 24, height: 24, padding: '0 4px', borderRadius: 6, cursor: 'pointer', ...mono, fontSize: 11.5,
+                    border: `1px solid ${on ? T.gold : 'transparent'}`, background: on ? `${T.gold}22` : 'transparent',
+                    color: on ? T.cream : T.muted,
+                  }}>{l}</button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
