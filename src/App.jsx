@@ -32949,6 +32949,34 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // 'pausa' = o comportamento anterior (pausa + play). Para voltar atrás,
   //           basta mudar esta linha.
   const MODO_SEGURAR_BIB = 'lento';
+  /* RELÓGIO DA PARAGEM — conta o tempo no ecrã de cada item, mas PÁRA
+     quando se põe o vídeo em pausa e continua de onde ia ao carregar em
+     play. Antes os itens desapareciam com o vídeo parado, porque o tempo
+     corria na mesma. */
+  const criarRelogioBib = () => {
+    const r = { decorrido: 0, desde: Date.now(), parado: false, tarefas: [] };
+    const lancar = (t, jaPassou) => {
+      t.h = setTimeout(() => { t.feito = true; t.fn(); }, Math.max(0, t.ms - jaPassou));
+    };
+    r.agendar = (ms, fn) => {
+      const t = { ms, fn, feito: false, h: null };
+      r.tarefas.push(t);
+      if (!r.parado) lancar(t, r.decorrido + (Date.now() - r.desde));
+    };
+    r.pausar = () => {
+      if (r.parado) return;
+      r.decorrido += Date.now() - r.desde;
+      r.parado = true;
+      r.tarefas.forEach(t => clearTimeout(t.h));
+    };
+    r.retomar = () => {
+      if (!r.parado) return;
+      r.parado = false;
+      r.desde = Date.now();
+      r.tarefas.forEach(t => { if (!t.feito) lancar(t, r.decorrido); });
+    };
+    return r;
+  };
   const VELOCIDADE_LENTA_BIB = 0.25; // o mínimo que o YouTube aceita
   const retomaDesenhoRef = useRef(null);
   const congeladasDesenhoRef = useRef(new Set());
@@ -33595,6 +33623,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // "congelado" de quando a função foi criada.
   const ytATocarRef = useRef(false);
   useEffect(() => { ytATocarRef.current = ytATocar; }, [ytATocar]);
+  // Pausa / play durante uma paragem com desenhos: o tempo dos itens
+  // acompanha o vídeo.
+  useEffect(() => {
+    const c = pausaControloRef.current;
+    if (!c || !c.relogio || c.cancelado) return;
+    if (ytATocar) c.relogio.retomar(); else c.relogio.pausar();
+  }, [ytATocar]);
   // Existe agora um único iframe do YouTube (o ecrã inteiro usa o MESMO
   // leitor, ver "ECRÃ INTEIRO" abaixo) — as mensagens de outros iframes
   // do YouTube na página (ex.: vista em coluna) são ignoradas.
@@ -34170,13 +34205,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     pausaControloRef.current = controlo;
 
     // Mostra tudo junto e vai tirando cada forma quando acaba o tempo dela.
-    const mostrarFormas = () => {
+    // `agendar` é o relógio da paragem (pausável — ver `criarRelogioBib`).
+    const mostrarFormas = (agendar = (ms, fn) => setTimeout(fn, ms)) => {
       setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
       [...new Set(todasAsFormas.map(f => f.seg))].filter(s => s < duracaoComum).forEach(s => {
-        setTimeout(() => {
+        agendar(s * 1000, () => {
           if (controlo.cancelado) return;
           setPausaAtivaBib(p => (p && p.id === primeira.id ? { ...p, shapes: p.shapes.filter(f => f.seg > s) } : p));
-        }, s * 1000);
+        });
       });
     };
     const confirmarEstado = (querACorrer, aoConfirmar, tentativasRestantes) => {
@@ -34198,14 +34234,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (MODO_SEGURAR_BIB === 'lento') {
       // Câmara lenta: sem pausa, sem play — o YouTube continua "a tocar".
       enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
-      mostrarFormas();
-      setTimeout(() => {
+      // Relógio que pára quando o vídeo é posto em pausa (ver o efeito
+      // sobre `ytATocar`): os itens ficam no ecrã enquanto estiver
+      // parado e retomam o tempo que lhes faltava ao carregar em play.
+      const relogio = criarRelogioBib();
+      controlo.relogio = relogio;
+      if (!ytATocarRef.current) relogio.pausar();
+      mostrarFormas(relogio.agendar);
+      relogio.agendar(duracaoComum * 1000, () => {
         if (controlo.cancelado) return;
         setPausaAtivaBib(null);
         enviarComandoYoutube('setPlaybackRate', [1]);
         if (pausaControloRef.current === controlo) pausaControloRef.current = null;
         pausaEmCursoRef.current = null;
-      }, duracaoComum * 1000);
+      });
       return;
     }
     enviarComandoYoutube('pauseVideo');
