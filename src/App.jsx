@@ -9757,9 +9757,11 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
     }
     return lista.map(p => p.x);
   }, [itens, ordem, nomeDe]);
-  const q = busca.trim().toLowerCase();
+  // Sem acentos nem maiúsculas: "pressao" encontra "Pressão".
+  const semAcentos = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const q = semAcentos(busca.trim());
   const visiveis = q
-    ? ordenados.filter(x => [nomeDe(x), x.description, ...(detalhesDe ? detalhesDe(x) : [])].filter(Boolean).join(' ').toLowerCase().includes(q))
+    ? ordenados.filter(x => semAcentos([nomeDe(x), x.description, ...(detalhesDe ? detalhesDe(x) : [])].filter(Boolean).join(' ')).includes(q))
     : ordenados;
 
   const totalPaginas = Math.max(1, Math.ceil(visiveis.length / porLinha));
@@ -10019,7 +10021,12 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <Field label="Partir de uma ideia existente">
+        {/* `bloco`: o Field normal é um <label>, e um <label> passa
+            qualquer clique "no vazio" lá dentro (fundo da caixa, texto,
+            barra de posição…) para o primeiro botão que contém — o
+            "Copiar ideia existente". Era isso que fechava a lista a meio
+            de uma pesquisa. */}
+        <Field label="Partir de uma ideia existente" bloco>
           <button
             ref={botaoCopiarRef}
             type="button"
