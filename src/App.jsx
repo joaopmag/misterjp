@@ -9,7 +9,7 @@ import JSZip from 'jszip';
 import * as tus from 'tus-js-client';
 import AnalisadorVideo, {
   FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
-  RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO,
+  RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, girar,
 } from './AnalisadorVideo';
 import {
   ZoomIn, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -32847,7 +32847,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [zoomPreviewBib, setZoomPreviewBib] = useState(null); // forma do círculo em pré-visualização
   const zoomOrigemBib = useRef('50% 50%');
   const formaComZoom = (lista) => (lista || []).find(f => f && f.tool === 'circulo' && Number(f.zoom) > 1 && f.points && f.points[0]);
-  const circuloZoom = zoomPreviewBib || (!modoDesenhoBib && pausaAtivaBib ? formaComZoom(pausaAtivaBib.shapes) : null);
+  // Também a desenhar, quando o vídeo pára sozinho numa pausa (o
+  // "congelamento"): é a mesma reprodução, tem de se ver igual.
+  const [congeladoDesenhoBib, setCongeladoDesenhoBib] = useState(false);
+  const circuloZoom = zoomPreviewBib
+    || (!modoDesenhoBib && pausaAtivaBib ? formaComZoom(pausaAtivaBib.shapes) : null)
+    || (modoDesenhoBib && congeladoDesenhoBib ? formaComZoom(shapesRascunho) : null);
   const zoomBib = circuloZoom ? { f: Number(circuloZoom.zoom) } : null;
   if (circuloZoom) {
     const c = circuloZoom.points[0];
@@ -32865,6 +32870,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const aAbrirDesenhoAposFullscreenRef = useRef(false); // "Desenhar" pediu ecrã inteiro — só abre as ferramentas quando ele estiver mesmo ativo
   const arrastoVerticeBib = useRef(null); // { indiceForma, indicePonto } enquanto se arrasta um vértice de uma forma selecionada
   const arrastoCorpoBib = useRef(null); // { indiceForma, ultimoPonto } enquanto se arrasta uma forma inteira (não só um vértice)
+  const arrastoRotacaoBib = useRef(null); // { indiceForma } enquanto se roda uma Zona pela pega de cima
+  // Centro de uma Zona (retângulo) — é à volta dele que roda.
+  const centroZonaBib = (sh) => {
+    const [pa, pb] = sh.points;
+    return { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+  };
   const [hoverFormaBib, setHoverFormaBib] = useState(null); // índice da forma que o cursor está a apontar (null = nenhuma) — é essa que se destaca e que se move ao carregar
   const overlayRefBib = useRef(null);
   // Distância para "acertar" numa forma ao MOVER/selecionar. O RAIO_TOQUE
@@ -32954,6 +32965,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       }
     }
     retomaDesenhoRef.current = null;
+    setCongeladoDesenhoBib(false);
   };
   const pushHistoricoBib = () => { cancelarRetomaDesenhoBib(); setHistoricoBib(h => [...h.slice(-19), shapesRascunho]); };
   const retrocederBib = () => {
@@ -32981,12 +32993,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      com essa, nasce uma pausa nova nesse instante. As duas disparam na
      mesma reprodução do corte. */
   const JANELA_MESMA_PAUSA_BIB = 2;
-  const pausaMaisPertoBib = (t) => {
+  /* MAS OS DESENHOS SÓ APARECEM NO MOMENTO DELES. Ao entrar no desenho
+     ou escolher uma ferramenta, a pausa que já existe só é aberta (e os
+     itens dela só aparecem) se o vídeo estiver MESMO nesse instante. A
+     poucos segundos dela começa-se em branco — e é ao gravar que o que
+     se desenhou se junta a essa pausa (ver `guardarDesenhoBib`). */
+  const JANELA_ABRIR_PAUSA_BIB = 0.35;
+  const pausaMaisPertoBib = (t, janela = JANELA_MESMA_PAUSA_BIB) => {
     const lista = (active && active.anotacoesPausa) || [];
     let melhor = null;
     lista.forEach(x => {
       const d = Math.abs(tempoPausaNoCorte(x) - t);
-      if (d < JANELA_MESMA_PAUSA_BIB && (!melhor || d < Math.abs(tempoPausaNoCorte(melhor) - t))) melhor = x;
+      if (d < janela && (!melhor || d < Math.abs(tempoPausaNoCorte(melhor) - t))) melhor = x;
     });
     return melhor;
   };
@@ -33074,8 +33092,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     }
     // Ainda com o que se desenhou por gravar, ou no mesmo instante: fica.
     if (fechouUma || historicoBib.length > 0 || Math.abs(agora - tempoAnotacaoBib) < 0.3) return;
-    // Mudou de momento: a pausa que lá houver (até 2s), ou uma nova aqui.
-    const existente = pausaMaisPertoBib(agora);
+    // Mudou de momento: a pausa que estiver mesmo aqui, ou uma nova.
+    const existente = pausaMaisPertoBib(agora, JANELA_ABRIR_PAUSA_BIB);
     abrirPausaBib(existente || null, agora);
   };
   const escolherPausaBib = (a) => {
@@ -33099,9 +33117,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // "Limpar" está disponível logo à entrada sempre que o corte tenha
     // desenhos: sem nenhuma pausa aberta, apaga TODOS os do corte (só a
     // sério ao Guardar — ver `apagarTodasBib`).
-    // Uma pausa já neste momento (até 2s)? Junta-se a ela. Noutro
-    // momento, começa uma nova aqui.
-    const existente = anotacoes.length ? pausaMaisPertoBib(agora) : null;
+    // Só abre (e mostra) a pausa que estiver mesmo neste instante; fora
+    // dele começa em branco — nada aparece antes do momento certo.
+    const existente = anotacoes.length ? pausaMaisPertoBib(agora, JANELA_ABRIR_PAUSA_BIB) : null;
     cancelarRetomaDesenhoBib();
     // Nenhuma pausa fica de fora: a 1ª reprodução no modo de desenho
     // congela em todas (antes, a pausa aberta à entrada era saltada na 1ª
@@ -33167,8 +33185,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setFormaTextoBib(null);
       return;
     }
-    const formas = fecharFormasBib(rascunho);
-    const novaAnotacao = { id: anotacaoIdEmEdicaoBib || uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas };
+    let formas = fecharFormasBib(rascunho);
+    let idPausa = anotacaoIdEmEdicaoBib;
+    let tempoPausa = tempoAnotacaoBib;
+    // Desenho novo a menos de 2s de uma pausa que já existe: junta-se a
+    // ela (mesmo momento = mesma paragem), sem mexer nos itens dela.
+    if (!idPausa) {
+      const vizinha = pausaMaisPertoBib(tempoAnotacaoBib);
+      if (vizinha) {
+        idPausa = vizinha.id;
+        tempoPausa = vizinha.tempoVideo;
+        formas = [...(vizinha.shapes || []).map(f => ({ ...f, seg: segDaForma(f, vizinha) })), ...formas];
+      }
+    }
+    const novaAnotacao = { id: idPausa || uid(), tempoVideo: tempoPausa, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas };
     // Acabou de a ver ao desenhar — não voltar a parar no mesmo sítio
     // assim que se carrega em reproduzir (só na próxima passagem).
     pausasJaMostradasRef.current.add(novaAnotacao.id);
@@ -33214,6 +33244,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // toque seguinte continuava o arrasto antigo em vez de começar outro.
     arrastoVerticeBib.current = null;
     arrastoCorpoBib.current = null;
+    arrastoRotacaoBib.current = null;
     cancelarRetomaDesenhoBib(); // tocou no desenho durante um congelamento: fica parado para editar
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
     if (toolBib === 'apagar') {
@@ -33293,9 +33324,25 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const p = pontoPendenteBib.current;
     pontoPendenteBib.current = null;
     if (!p) return;
+    if (arrastoRotacaoBib.current) {
+      const { indiceForma } = arrastoRotacaoBib.current;
+      setShapesRascunho(prev => prev.map((sh, i) => {
+        if (i !== indiceForma) return sh;
+        const c = centroZonaBib(sh);
+        const graus = (Math.atan2(p.y - c.y, p.x - c.x) * 180) / Math.PI + 90; // a pega fica por cima do centro
+        return { ...sh, rotacao: Math.round(graus * 10) / 10 };
+      }));
+      return;
+    }
     if (arrastoVerticeBib.current) {
       const { indiceForma, indicePonto } = arrastoVerticeBib.current;
-      setShapesRascunho(prev => prev.map((sh, i) => (i !== indiceForma ? sh : { ...sh, points: sh.points.map((pt, pi) => (pi === indicePonto ? p : pt)) })));
+      setShapesRascunho(prev => prev.map((sh, i) => {
+        if (i !== indiceForma) return sh;
+        // Zona rodada: o canto que se vê está rodado — volta-se ao
+        // referencial dela antes de o guardar.
+        const pLocal = sh.tool === 'retangulo' && sh.rotacao ? girar(p, centroZonaBib(sh), -sh.rotacao) : p;
+        return { ...sh, points: sh.points.map((pt, pi) => (pi === indicePonto ? pLocal : pt)) };
+      }));
       return;
     }
     if (arrastoCorpoBib.current) {
@@ -33308,7 +33355,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
   const moverFormaBib = (e) => {
     const p = getPontoBib(e);
-    if (arrastoVerticeBib.current || arrastoCorpoBib.current) {
+    if (arrastoVerticeBib.current || arrastoCorpoBib.current || arrastoRotacaoBib.current) {
       const estado = arrastoCorpoBib.current;
       if (estado && !estado.historicoEmpurrado) { pushHistoricoBib(); estado.historicoEmpurrado = true; } // só regista no undo quando SE MEXE mesmo, não só ao tocar
       pontoPendenteBib.current = p;
@@ -33331,6 +33378,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Aplica já o último movimento que ainda estava à espera do fotograma,
     // para a forma ficar exatamente onde se largou.
     if (rafArrastoBib.current) { cancelAnimationFrame(rafArrastoBib.current); aplicarArrastoBib(); }
+    if (arrastoRotacaoBib.current) { arrastoRotacaoBib.current = null; return; }
     if (arrastoVerticeBib.current) { arrastoVerticeBib.current = null; return; }
     if (arrastoCorpoBib.current) { arrastoCorpoBib.current = null; return; }
     if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') return; // essas só terminam com "Fechar" (ou ao gravar / mudar de ferramenta)
@@ -34010,11 +34058,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       if (lento) enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
       else { enviarComandoYoutube('pauseVideo'); enviarComandoYoutube('seekTo', [tAlvo, true]); }
       abrirPausaBib(alvo);
+      setCongeladoDesenhoBib(true);
       const retoma = { cancelado: false, lento, t: tAlvo };
       retomaDesenhoRef.current = retoma;
       setTimeout(() => {
         if (retoma.cancelado) return;
         retomaDesenhoRef.current = null;
+        setCongeladoDesenhoBib(false);
         abrirPausaBib(null, tAlvo); // os desenhos saem ao retomar
         enviarComandoYoutube(lento ? 'setPlaybackRate' : 'playVideo', lento ? [1] : undefined);
       }, duracao * 1000);
@@ -35236,13 +35286,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       ...(ytFull
                         ? { position: 'relative', flex: 1, minHeight: 0 }
                         : { position: 'relative', paddingTop: '56.25%' }),
-                      // ZOOM DO CÍRCULO — a imagem aproxima-se do círculo
-                      // (ver `zoomBib`). Só o estilo muda: o iframe nunca é
-                      // remontado. A caixa de fora corta o que sobra.
-                      transform: zoomBib ? `scale(${zoomBib.f})` : 'none',
-                      transformOrigin: zoomOrigemBib.current,
-                      transition: 'transform .7s cubic-bezier(.2,.7,.2,1)',
+                      overflow: 'hidden',
                     }}>
+                      {/* ZOOM DO CÍRCULO — só o vídeo e os desenhos se
+                          aproximam (ver `zoomBib`); as barras de ferramentas,
+                          menus e botões ficam fora, no sítio de sempre. Esta
+                          caixa existe sempre (com ou sem zoom), para o iframe
+                          nunca ser remontado. */}
+                      <div style={{
+                        position: 'absolute', inset: 0,
+                        transform: zoomBib ? `scale(${zoomBib.f})` : 'none',
+                        transformOrigin: zoomOrigemBib.current,
+                        transition: 'transform .7s cubic-bezier(.2,.7,.2,1)',
+                      }}>
                       {isBlocked ? (
                         <div style={{
                           position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 10,
@@ -35348,31 +35404,63 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             })()}
                           {/* Pontinhos arrastáveis da forma selecionada — tocar
                              e arrastar um deles move essa ponta da forma. */}
-                          {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].points.map((pt, pi) => (
-                            <g key={`vertice-${pi}`}>
-                              <circle cx={pt.x} cy={pt.y} r={0.6} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
-                              {/* Área de toque invisível, bem maior do que o pontinho. */}
-                              <circle cx={pt.x} cy={pt.y} r={RAIO_PEGA_BIB} fill="transparent"
-                                onPointerDown={e => {
-                                  e.stopPropagation();
-                                  if (e.cancelable) e.preventDefault(); // sem arrasto/seleção nativa do browser
-                                  try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
-                                  arrastoVerticeBib.current = null;
-                                  arrastoCorpoBib.current = null;
-                                  const forma = shapesRascunho[formaSelecionadaBib];
-                                  if (pi === 0 && forma && forma.tool === 'circulo') {
-                                    // centro do círculo = mover o círculo inteiro
-                                    arrastoCorpoBib.current = { indiceForma: formaSelecionadaBib, ultimoPonto: getPontoBib(e), historicoEmpurrado: false };
-                                    return;
-                                  }
-                                  pushHistoricoBib();
-                                  arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: pi };
-                                }}
-                                style={{ cursor: pi === 0 && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].tool === 'circulo' ? 'move' : 'grab', touchAction: 'none', pointerEvents: 'all' }} />
-                            </g>
-                          ))}
+                          {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && (() => {
+                            const fs = shapesRascunho[formaSelecionadaBib];
+                            const zonaRodada = fs.tool === 'retangulo' && fs.rotacao;
+                            const c = fs.tool === 'retangulo' && fs.points[1] ? centroZonaBib(fs) : null;
+                            return (
+                              <g transform={zonaRodada ? `rotate(${fs.rotacao} ${c.x} ${c.y})` : undefined}>
+                              {fs.points.map((pt, pi) => (
+                                <g key={`vertice-${pi}`}>
+                                  <circle cx={pt.x} cy={pt.y} r={0.6} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
+                                  {/* Área de toque invisível, bem maior do que o pontinho. */}
+                                  <circle cx={pt.x} cy={pt.y} r={RAIO_PEGA_BIB} fill="transparent"
+                                    onPointerDown={e => {
+                                      e.stopPropagation();
+                                      if (e.cancelable) e.preventDefault(); // sem arrasto/seleção nativa do browser
+                                      try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
+                                      arrastoVerticeBib.current = null;
+                                      arrastoCorpoBib.current = null;
+                                      const forma = shapesRascunho[formaSelecionadaBib];
+                                      if (pi === 0 && forma && forma.tool === 'circulo') {
+                                        // centro do círculo = mover o círculo inteiro
+                                        arrastoCorpoBib.current = { indiceForma: formaSelecionadaBib, ultimoPonto: getPontoBib(e), historicoEmpurrado: false };
+                                        return;
+                                      }
+                                      pushHistoricoBib();
+                                      arrastoVerticeBib.current = { indiceForma: formaSelecionadaBib, indicePonto: pi };
+                                    }}
+                                    style={{ cursor: pi === 0 && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].tool === 'circulo' ? 'move' : 'grab', touchAction: 'none', pointerEvents: 'all' }} />
+                                </g>
+                              ))}
+                                {/* ZONA: pega de rodar, por cima do centro (como na Análise de Vídeo). */}
+                                {fs.tool === 'retangulo' && c && (() => {
+                                  const topo = Math.min(fs.points[0].y, fs.points[1].y);
+                                  const yPega = topo - 3;
+                                  return (
+                                    <g>
+                                      <line x1={c.x} y1={topo} x2={c.x} y2={yPega} stroke="#fff" strokeWidth={0.15} strokeDasharray="0.5 0.4" style={{ pointerEvents: 'none' }} />
+                                      <circle cx={c.x} cy={yPega} r={0.75} fill="#fff" stroke={T.crimsonBright} strokeWidth={0.2} style={{ pointerEvents: 'none' }} />
+                                      <circle cx={c.x} cy={yPega} r={RAIO_PEGA_BIB} fill="transparent"
+                                        onPointerDown={e => {
+                                          e.stopPropagation();
+                                          if (e.cancelable) e.preventDefault();
+                                          try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
+                                          arrastoVerticeBib.current = null;
+                                          arrastoCorpoBib.current = null;
+                                          pushHistoricoBib();
+                                          arrastoRotacaoBib.current = { indiceForma: formaSelecionadaBib };
+                                        }}
+                                        style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'all' }} />
+                                    </g>
+                                  );
+                                })()}
+                              </g>
+                            );
+                          })()}
                         </svg>
                       )}
+                      </div>
                     {/* Campo de texto — aparece exatamente onde se tocou,
                        tal como na Análise de Vídeo. */}
                     {formaTextoBib && (

@@ -216,7 +216,7 @@ function distPontoSegmento(p, a, b) {
 }
 // Roda um ponto à volta de um centro, em graus — usado para a Zona
 // rotativa: tanto para desenhar como para saber se um toque lhe acertou.
-function girar(p, centro, graus) {
+export function girar(p, centro, graus) {
   if (!graus) return p;
   const rad = (graus * Math.PI) / 180;
   const dx = p.x - centro.x, dy = p.y - centro.y;
@@ -315,10 +315,8 @@ export function renderShape(sh, i) {
     /* ZONA PINTADA NO RELVADO. Em vez de um retângulo chapado por cima da
        imagem, desenha-se em perspetiva, como as marcações das transmissões
        de TV: o lado de baixo (mais perto da câmara) é o mais largo e o de
-       cima estreita; por dentro, faixas como a relva cortada — as que
-       fogem para o fundo convergem, as atravessadas ficam mais juntas e
-       mais finas à medida que se afastam. A caixa que se arrasta continua
-       a ser a mesma (os cantos e a rotação não mudam). */
+       cima estreita, com as riscas diagonais a acompanhar. A caixa que se
+       arrasta continua a ser a mesma (os cantos e a rotação não mudam). */
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
     const corZona = sh.color || COR_DESENHO;
     const cx = x + w / 2, cy = y + h / 2;
@@ -329,33 +327,34 @@ export function renderShape(sh, i) {
       xl: BL.x + (TL.x - BL.x) * f,
       xr: BR.x + (TR.x - BR.x) * f,
     });
+    /* Riscas DIAGONAIS (como sempre foram), mas em perspetiva: cada
+       risca vai de um ponto do lado de baixo a um ponto do lado de cima
+       deslocado — assim acompanham o estreitar da zona e parecem
+       pintadas no chão. O que sai da zona é cortado (clipPath). */
     const linhas = [];
-    const NL = 5; // faixas que fogem para o fundo
-    for (let k = 1; k < NL; k++) {
-      const u = k / NL;
-      linhas.push(<line key={`l${k}`} x1={BL.x + w * u} y1={BL.y} x2={TL.x + (TR.x - TL.x) * u} y2={TL.y}
-        stroke={corZona} strokeOpacity={0.35} strokeWidth={0.14} />);
-    }
-    const NT = 5; // faixas atravessadas, cada vez mais juntas lá ao fundo
-    for (let k = 1; k < NT; k++) {
-      const f = 1 - Math.pow(1 - k / NT, 1.6);
-      const p = naAltura(f);
-      linhas.push(<line key={`t${k}`} x1={p.xl} y1={p.yy} x2={p.xr} y2={p.yy}
-        stroke={corZona} strokeOpacity={0.32 - 0.12 * f} strokeWidth={0.16 - 0.07 * f} />);
+    const N = Math.max(6, Math.round(w / 2.2)); // densidade parecida com a de antes
+    const desvio = 0.45; // inclinação das riscas
+    const larguraTopo = TR.x - TL.x;
+    for (let k = 0; k <= N + Math.ceil(N * desvio); k++) {
+      const u = k / N;
+      linhas.push(<line key={k} x1={BL.x + w * u} y1={BL.y} x2={TL.x + larguraTopo * (u - desvio)} y2={TL.y}
+        stroke={corZona} strokeOpacity={0.6} strokeWidth={0.3} />);
     }
     const pts = `${BL.x},${BL.y} ${BR.x},${BR.y} ${TR.x},${TR.y} ${TL.x},${TL.y}`;
     const idGrad = `relva-${sh.id || i}`;
+    const idClip = `relva-corte-${sh.id || i}`;
     return (
       <g key={i} transform={sh.rotacao ? `rotate(${sh.rotacao} ${cx} ${cy})` : undefined}>
         <defs>
           {/* Mais forte perto da câmara, a desvanecer para o fundo. */}
           <linearGradient id={idGrad} x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0%" stopColor={corZona} stopOpacity={0.30} />
-            <stop offset="100%" stopColor={corZona} stopOpacity={0.12} />
+            <stop offset="0%" stopColor={corZona} stopOpacity={0.14} />
+            <stop offset="100%" stopColor={corZona} stopOpacity={0.05} />
           </linearGradient>
+          <clipPath id={idClip}><polygon points={pts} /></clipPath>
         </defs>
         <polygon points={pts} fill={`url(#${idGrad})`} stroke="none" />
-        {linhas}
+        <g clipPath={`url(#${idClip})`}>{linhas}</g>
         {!sh.semContorno && (
           <>
             {/* brilho por baixo do traço, como tinta no relvado */}
