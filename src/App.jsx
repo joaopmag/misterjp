@@ -32820,7 +32820,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [corBib, setCorBib] = useState(COR_DESENHO);
   const [shapesRascunho, setShapesRascunho] = useState([]);
   const DURACAO_PADRAO_BIB = 5; // segundos por defeito de cada desenho (antes 3)
-  const [duracaoPausaBib, setDuracaoPausaBib] = useState(DURACAO_PADRAO_BIB); // segundos que o vídeo fica parado, depois de "Guardar"
+  /* TEMPO POR ITEM, NÃO POR PAUSA. Cada forma guarda os seus próprios
+     segundos no ecrã (`seg`). O "Concluído" dá o tempo escolhido só às
+     formas desenhadas DESTA vez (as que ainda não têm `seg`); as que já
+     lá estavam ficam com o tempo que tinham. Na reprodução aparecem
+     todas juntas, cada uma sai quando acaba o seu tempo, e o vídeo
+     retoma quando sai a última. Pausas antigas (sem `seg` nas formas)
+     usam o `duracaoSegundos` da pausa, como antes. */
+  const segDaForma = (f, pausa) => Number(f && f.seg) || Number(pausa && pausa.duracaoSegundos) || DURACAO_PADRAO_BIB;
+  const [duracaoPausaBib, setDuracaoPausaBib] = useState(DURACAO_PADRAO_BIB); // segundos no ecrã dos itens desenhados agora (os novos), ao "Concluído"
   const [anotacaoIdEmEdicaoBib, setAnotacaoIdEmEdicaoBib] = useState(null); // null = pausa nova; senão, a editar uma já existente
   const [tempoAnotacaoBib, setTempoAnotacaoBib] = useState(0); // o instante do vídeo a que esta pausa fica ligada
   const [formaEmCursoBib, setFormaEmCursoBib] = useState(null); // { tool, points } — enquanto se arrasta ou se vão acrescentando pontos
@@ -32942,10 +32950,29 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Carrega uma pausa para o rascunho (existente = editar; null = nova
   // no instante `tempo`). Usado ao abrir o desenho e ao escolher uma
   // pausa na lista "Pausas neste corte".
+  const [pausaNovaForcadaBib, setPausaNovaForcadaBib] = useState(false); // "+ Nova pausa aqui": não juntar à pausa que já existe
+  // Uma pausa mesmo no fim do corte nunca chegava a parar o vídeo: o
+  // ciclo do corte voltava ao início no mesmo instante, e os desenhos
+  // apareciam por cima do arranque seguinte. Fica sempre meio segundo
+  // antes do fim.
+  const tempoSeguroNoCorte = (t) => {
+    const n = Number(t);
+    if (!Number.isFinite(n)) return clipIni;
+    return Math.max(clipIni, Math.min(n, clipFimEf - 0.5));
+  };
+  // A pausa que já existe neste corte mais perto de `t` (ou null).
+  const pausaMaisPertoBib = (t) => {
+    const lista = (active && active.anotacoesPausa) || [];
+    if (!lista.length) return null;
+    return lista.reduce((m, x) => (Math.abs(tempoPausaNoCorte(x) - t) < Math.abs(tempoPausaNoCorte(m) - t) ? x : m), lista[0]);
+  };
   const abrirPausaBib = (existente, tempo) => {
+    setPausaNovaForcadaBib(false);
     if (existente) {
-      setShapesRascunho((existente.shapes || []).map(sh => (sh.id ? sh : { ...sh, id: uid() })));
-      setDuracaoPausaBib(Number(existente.duracaoSegundos) || DURACAO_PADRAO_BIB);
+      // As formas que já lá estavam ficam com o tempo delas; o contador
+      // de segundos começa no valor de sempre, e vale só para as novas.
+      setShapesRascunho((existente.shapes || []).map(sh => ({ ...sh, id: sh.id || uid(), seg: segDaForma(sh, existente) })));
+      setDuracaoPausaBib(DURACAO_PADRAO_BIB);
       setAnotacaoIdEmEdicaoBib(existente.id);
       // Grava-se com o instante já corrigido para dentro do corte (ver
       // tempoPausaNoCorte) — assim uma pausa antiga, gravada fora do
@@ -32955,7 +32982,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setShapesRascunho([]);
       setDuracaoPausaBib(DURACAO_PADRAO_BIB);
       setAnotacaoIdEmEdicaoBib(null);
-      setTempoAnotacaoBib(tempo);
+      setTempoAnotacaoBib(tempoSeguroNoCorte(tempo));
     }
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
@@ -33020,9 +33047,23 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       // em que a pausa vai disparar mais tarde.
       enviarComandoYoutube('seekTo', [agora, true]);
     }
-    if (historicoBib.length > 0 || Math.abs(agora - tempoAnotacaoBib) < 0.3) return;
-    const existente = (active.anotacoesPausa || []).find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
+    if (historicoBib.length > 0 || anotacaoIdEmEdicaoBib || pausaNovaForcadaBib || Math.abs(agora - tempoAnotacaoBib) < 0.3) return;
+    /* JUNTA À PAUSA QUE JÁ EXISTE. Desenhar num corte que já tem uma
+       pausa acrescenta à MESMA pausa (o vídeo vai lá) — assim tudo
+       aparece na mesma paragem, e não é preciso ver o corte duas vezes
+       para ver os dois desenhos. Para uma paragem noutro momento há o
+       "+ Nova pausa aqui". */
+    const existente = pausaMaisPertoBib(agora);
+    if (existente) enviarComandoYoutube('seekTo', [tempoPausaNoCorte(existente), true]);
     abrirPausaBib(existente || null, agora);
+  };
+  const novaPausaAquiBib = () => {
+    cancelarRetomaDesenhoBib();
+    const agora = tempoAtualNoCorteBib();
+    if (ytATocarRef.current) enviarComandoYoutube('pauseVideo');
+    enviarComandoYoutube('seekTo', [tempoSeguroNoCorte(agora), true]);
+    abrirPausaBib(null, agora);
+    setPausaNovaForcadaBib(true);
   };
   const escolherPausaBib = (a) => {
     cancelarRetomaDesenhoBib();
@@ -33045,7 +33086,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // "Limpar" está disponível logo à entrada sempre que o corte tenha
     // desenhos: sem nenhuma pausa aberta, apaga TODOS os do corte (só a
     // sério ao Guardar — ver `apagarTodasBib`).
-    const existente = anotacoes.find(a => Math.abs(tempoPausaNoCorte(a) - agora) < 2);
+    // Se o corte já tem pausa, abre essa (a mais próxima) e o vídeo vai
+    // até ela: o que se desenhar agora junta-se à mesma paragem.
+    const existente = anotacoes.length ? pausaMaisPertoBib(agora) : null;
+    if (existente) enviarComandoYoutube('seekTo', [tempoPausaNoCorte(existente), true]);
     cancelarRetomaDesenhoBib();
     // Nenhuma pausa fica de fora: a 1ª reprodução no modo de desenho
     // congela em todas (antes, a pausa aberta à entrada era saltada na 1ª
@@ -33073,12 +33117,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     }
   };
   const cancelarDesenhoBib = () => { setApagarTodasBib(false); setModoDesenhoBib(false); setFormaEmCursoBib(null); setFormaSelecionadaBib(null); setFormaTextoBib(null); };
+  // "Concluído": as formas desta vez (sem `seg`) ficam com o tempo
+  // escolhido agora; as que já existiam não mudam.
+  const fecharFormasBib = (lista) => (lista || []).map(f => (Number(f.seg) ? f : { ...f, seg: Math.max(1, duracaoPausaBib) }));
   const guardarDesenhoBib = () => {
     if (apagarTodasBib) {
       // "Limpar" à entrada: saem todos os desenhos do corte. Se entretanto
       // se desenhou algo novo, fica só essa pausa nova.
-      const nova = shapesRascunho.length > 0
-        ? [{ id: uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(1, duracaoPausaBib), shapes: shapesRascunho }]
+      const formas = fecharFormasBib(shapesRascunho);
+      const nova = formas.length > 0
+        ? [{ id: uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas }]
         : [];
       nova.forEach(a => pausasJaMostradasRef.current.add(a.id));
       setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: nova } : v)));
@@ -33102,7 +33150,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       setFormaTextoBib(null);
       return;
     }
-    const novaAnotacao = { id: anotacaoIdEmEdicaoBib || uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(1, duracaoPausaBib), shapes: shapesRascunho };
+    const formas = fecharFormasBib(shapesRascunho);
+    const novaAnotacao = { id: anotacaoIdEmEdicaoBib || uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas };
     // Acabou de a ver ao desenhar — não voltar a parar no mesmo sítio
     // assim que se carrega em reproduzir (só na próxima passagem).
     pausasJaMostradasRef.current.add(novaAnotacao.id);
@@ -33928,7 +33977,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       const tAlvo = tempoPausaNoCorte(alvo);
       const grupo = (active.anotacoesPausa || []).filter(a => Math.abs(tempoPausaNoCorte(a) - tAlvo) < 2);
       grupo.forEach(a => congeladasDesenhoRef.current.add(a.id));
-      const duracao = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || DURACAO_PADRAO_BIB));
+      const duracao = Math.max(1, ...grupo.flatMap(a => (a.shapes || []).map(f => segDaForma(f, a))), ...grupo.map(a => ((a.shapes || []).length ? 1 : segDaForma(null, a))));
       const lento = MODO_SEGURAR_BIB === 'lento';
       if (liveTime - tAlvo > 0.3) enviarComandoYoutube('seekTo', [tAlvo, true]);
       if (lento) enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
@@ -33993,12 +34042,23 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Math.max com um valor sempre válido — se por algum motivo uma
     // duração viesse estragada (undefined/NaN), nunca deixar isso
     // transformar-se numa pausa sem fim.
-    const duracaoComum = Math.max(1, ...grupo.map(a => Number(a.duracaoSegundos) || DURACAO_PADRAO_BIB));
-    const todasAsFormas = grupo.flatMap(a => a.shapes || []);
+    const todasAsFormas = grupo.flatMap(a => (a.shapes || []).map(f => ({ ...f, seg: segDaForma(f, a) })));
+    // O vídeo fica parado até sair a última forma.
+    const duracaoComum = Math.max(1, ...todasAsFormas.map(f => f.seg));
     pausaEmCursoRef.current = primeira.id;
     const controlo = { cancelado: false };
     pausaControloRef.current = controlo;
 
+    // Mostra tudo junto e vai tirando cada forma quando acaba o tempo dela.
+    const mostrarFormas = () => {
+      setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
+      [...new Set(todasAsFormas.map(f => f.seg))].filter(s => s < duracaoComum).forEach(s => {
+        setTimeout(() => {
+          if (controlo.cancelado) return;
+          setPausaAtivaBib(p => (p && p.id === primeira.id ? { ...p, shapes: p.shapes.filter(f => f.seg > s) } : p));
+        }, s * 1000);
+      });
+    };
     const confirmarEstado = (querACorrer, aoConfirmar, tentativasRestantes) => {
       if (controlo.cancelado) return;
       if (ytATocarRef.current === querACorrer) {
@@ -34018,7 +34078,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (MODO_SEGURAR_BIB === 'lento') {
       // Câmara lenta: sem pausa, sem play — o YouTube continua "a tocar".
       enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
-      setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
+      mostrarFormas();
       setTimeout(() => {
         if (controlo.cancelado) return;
         setPausaAtivaBib(null);
@@ -34034,7 +34094,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         if (controlo.cancelado) return;
         // Confirmado que pausou (ytATocarRef já é false) — só agora
         // começa a contagem a sério, e só agora mostra os desenhos.
-        setPausaAtivaBib({ id: primeira.id, shapes: todasAsFormas });
+        mostrarFormas();
         setTimeout(() => {
           if (controlo.cancelado) return;
           setPausaAtivaBib(null);
@@ -34104,6 +34164,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       }
       tempoAnteriorClipeRef.current = null;
     } else if (aTocarNormalmente && liveTime >= clipFimEf) {
+      // Uma paragem com desenhos a decorrer mesmo no fim: deixa-a acabar.
+      if (pausaEmCursoRef.current) return;
       enviarComandoYoutube('seekTo', [clipIni, true]);
       enviarComandoYoutube('playVideo');
       tempoAnteriorClipeRef.current = clipIni;
@@ -35367,10 +35429,23 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                     </button>
                                   );
                                 })}
+                              {!apagarTodasBib && (
+                                <button onClick={novaPausaAquiBib}
+                                  title="Criar outra paragem, no instante em que o vídeo está agora (em vez de juntar à que já existe)"
+                                  style={{
+                                    background: pausaNovaForcadaBib ? T.gold : 'none', color: pausaNovaForcadaBib ? '#111' : T.mutedDim,
+                                    border: `1px dashed ${pausaNovaForcadaBib ? T.gold : T.line}`, borderRadius: 4,
+                                    padding: '2px 8px', fontSize: 12, cursor: 'pointer', ...body,
+                                  }}>
+                                  + Nova pausa aqui
+                                </button>
+                              )}
                             </div>
                           )}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 10px' }}>
-                            <span style={{ fontSize: 11.5, color: T.mutedDim }}>Pausa:</span>
+                            <span style={{ fontSize: 11.5, color: T.mutedDim }} title="Tempo no ecrã dos itens desenhados agora. Os que já lá estavam mantêm o tempo deles.">
+                              {shapesRascunho.some(f => Number(f.seg)) ? 'Novos itens:' : 'No ecrã:'}
+                            </span>
                             <button onClick={() => setDuracaoPausaBib(d => Math.max(1, d - 1))}
                               style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>−</button>
                             <span style={{ fontSize: 13, color: '#fff', minWidth: 30, textAlign: 'center', ...mono }}>{duracaoPausaBib}s</span>
@@ -35396,6 +35471,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 8px',
                           }}>
                             <span style={{ fontSize: 11.5, color: T.mutedDim }}>Forma selecionada — arrasta os pontos para a mover</span>
+                            {Number(shapesRascunho[formaSelecionadaBib].seg) > 0 && (() => {
+                              // Uma forma que já tinha tempo: acerta-se aqui, só a ela.
+                              const s = Number(shapesRascunho[formaSelecionadaBib].seg);
+                              const mudar = (d) => setShapesRascunho(prev => prev.map((f, i) => (i === formaSelecionadaBib ? { ...f, seg: Math.max(1, Math.min(60, s + d)) } : f)));
+                              const b = { background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 };
+                              return (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 11.5, color: T.mutedDim }}>No ecrã:</span>
+                                  <button onClick={() => mudar(-1)} style={b}>−</button>
+                                  <span style={{ fontSize: 13, color: '#fff', minWidth: 26, textAlign: 'center', ...mono }}>{s}s</span>
+                                  <button onClick={() => mudar(1)} style={b}>+</button>
+                                </span>
+                              );
+                            })()}
                             <Btn variant="ghost" onClick={apagarSelecionadaBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar</Btn>
                             <Btn variant="ghost" onClick={() => setFormaSelecionadaBib(null)} style={{ padding: '4px 8px', fontSize: 11 }}>Fechar</Btn>
                           </div>
