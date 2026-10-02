@@ -32857,6 +32857,25 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     || (!modoDesenhoBib && pausaAtivaBib && zoomSaidaBib !== pausaAtivaBib.id ? formaComZoom(pausaAtivaBib.shapes) : null)
     || (modoDesenhoBib && congeladoDesenhoBib ? formaComZoom(shapesRascunho) : null);
   const zoomBib = circuloZoom ? { f: Number(circuloZoom.zoom) } : null;
+  /* SAÍDA DO ZOOM EM "MERGULHO". O vídeo do YouTube vive noutro processo
+     do browser; ao REDUZIR a ampliação de forma animada, o browser às
+     vezes mostra um fotograma com a imagem antiga encolhida num canto,
+     com fundo preto (foi o que se viu ao mexer na barra durante o zoom).
+     Por isso a entrada continua suave, mas a saída é como na televisão:
+     um escurecer muito rápido, a imagem volta ao tamanho normal por
+     baixo (sem animação), e clareia. Nunca se vê o fotograma estragado. */
+  const [zoomVisivelBib, setZoomVisivelBib] = useState(null); // ampliação que está de facto no ecrã
+  const [mergulhoBib, setMergulhoBib] = useState(false);
+  const zoomAlvoF = zoomBib ? zoomBib.f : 0;
+  useEffect(() => {
+    if (zoomAlvoF > 1) { setMergulhoBib(false); setZoomVisivelBib(zoomAlvoF); return undefined; }
+    if (!zoomVisivelBib) return undefined;
+    setMergulhoBib(true);
+    const t1 = setTimeout(() => setZoomVisivelBib(null), 170);
+    const t2 = setTimeout(() => setMergulhoBib(false), 230);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomAlvoF]);
   if (circuloZoom) {
     const c = circuloZoom.points[0];
     zoomOrigemBib.current = `${Math.max(0, Math.min(100, c.x))}% ${Math.max(0, Math.min(100, (c.y / 56.25) * 100))}%`;
@@ -34290,30 +34309,29 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
          normal. Ampliar um vídeo a andar, e voltar a pô-lo a andar a meio
          do afastamento, é o que fazia a imagem tremer e, por um instante,
          aparecer pequena num canto. */
+      /* Paragem com zoom: câmara lenta como as outras (pôr o vídeo em
+         PAUSA fazia aparecer o botão grande de play do YouTube, ampliado
+         3×, por cima da jogada). O zoom sai um instante antes do círculo,
+         com o "mergulho" (ver `mergulhoBib`). */
       const circZoom = todasAsFormas.find(f => f.tool === 'circulo' && Number(f.zoom) > 1);
       const relogio = criarRelogioBib();
       controlo.relogio = relogio;
       setZoomSaidaBib(null);
+      enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
+      // Relógio que pára quando o vídeo é posto em pausa (ver o efeito
+      // sobre `ytATocar`): os itens ficam no ecrã enquanto estiver
+      // parado e retomam o tempo que lhes faltava ao carregar em play.
+      if (!ytATocarRef.current) relogio.pausar();
       if (circZoom) {
-        controlo.pausaPropria = true; // a pausa é nossa — o relógio não a segue
-        enviarComandoYoutube('pauseVideo');
-        // Afastamento a começar 1s antes de o círculo sair (dura ~0,9s).
-        relogio.agendar(Math.max(0.4, circZoom.seg - 1) * 1000, () => {
+        relogio.agendar(Math.max(0.4, circZoom.seg - 0.3) * 1000, () => {
           if (!controlo.cancelado) setZoomSaidaBib(primeira.id);
         });
-      } else {
-        enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
-        // Relógio que pára quando o vídeo é posto em pausa (ver o efeito
-        // sobre `ytATocar`): os itens ficam no ecrã enquanto estiver
-        // parado e retomam o tempo que lhes faltava ao carregar em play.
-        if (!ytATocarRef.current) relogio.pausar();
       }
       mostrarFormas(relogio.agendar);
       relogio.agendar(duracaoComum * 1000, () => {
         if (controlo.cancelado) return;
         setPausaAtivaBib(null);
-        if (circZoom) enviarComandoYoutube('playVideo');
-        else enviarComandoYoutube('setPlaybackRate', [1]);
+        enviarComandoYoutube('setPlaybackRate', [1]);
         if (pausaControloRef.current === controlo) pausaControloRef.current = null;
         pausaEmCursoRef.current = null;
       });
@@ -35484,11 +35502,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         // Mais fluido: camada própria na placa gráfica
                         // (will-change + translate3d), entrada longa e suave a
                         // desacelerar, saída suave nos dois extremos.
-                        transform: zoomBib ? `translate3d(0,0,0) scale(${zoomBib.f})` : 'translate3d(0,0,0) scale(1)',
+                        transform: zoomVisivelBib ? `translate3d(0,0,0) scale(${zoomVisivelBib})` : 'translate3d(0,0,0) scale(1)',
                         transformOrigin: zoomOrigemBib.current,
-                        transition: zoomBib
-                          ? 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)'
-                          : 'transform 0.9s cubic-bezier(0.65, 0, 0.35, 1)',
+                        // Entrada suave; saída sem animação (escondida pelo mergulho).
+                        transition: zoomVisivelBib ? 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
                         willChange: 'transform',
                       }}>
                       {isBlocked ? (
@@ -35681,6 +35698,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         </svg>
                       )}
                       </div>
+                      {/* Mergulho da saída do zoom (ver `mergulhoBib`). */}
+                      <div aria-hidden="true" style={{
+                        position: 'absolute', inset: 0, background: '#000', pointerEvents: 'none', zIndex: 2,
+                        opacity: mergulhoBib ? 1 : 0, transition: mergulhoBib ? 'opacity 160ms ease-in' : 'opacity 220ms ease-out',
+                      }} />
                     {/* Campo de texto — aparece exatamente onde se tocou,
                        tal como na Análise de Vídeo. */}
                     {formaTextoBib && (
