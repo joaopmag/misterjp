@@ -32850,8 +32850,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Também a desenhar, quando o vídeo pára sozinho numa pausa (o
   // "congelamento"): é a mesma reprodução, tem de se ver igual.
   const [congeladoDesenhoBib, setCongeladoDesenhoBib] = useState(false);
+  // A saída do zoom começa ANTES de o círculo sair (ver a paragem): o
+  // vídeo só volta a andar já com a imagem no tamanho normal.
+  const [zoomSaidaBib, setZoomSaidaBib] = useState(null); // id da paragem cujo zoom já está a sair
   const circuloZoom = zoomPreviewBib
-    || (!modoDesenhoBib && pausaAtivaBib ? formaComZoom(pausaAtivaBib.shapes) : null)
+    || (!modoDesenhoBib && pausaAtivaBib && zoomSaidaBib !== pausaAtivaBib.id ? formaComZoom(pausaAtivaBib.shapes) : null)
     || (modoDesenhoBib && congeladoDesenhoBib ? formaComZoom(shapesRascunho) : null);
   const zoomBib = circuloZoom ? { f: Number(circuloZoom.zoom) } : null;
   if (circuloZoom) {
@@ -33637,7 +33640,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // acompanha o vídeo.
   useEffect(() => {
     const c = pausaControloRef.current;
-    if (!c || !c.relogio || c.cancelado) return;
+    if (!c || !c.relogio || c.cancelado || c.pausaPropria) return;
     if (ytATocar) c.relogio.retomar(); else c.relogio.pausar();
   }, [ytATocar]);
   // Existe agora um único iframe do YouTube (o ecrã inteiro usa o MESMO
@@ -34281,18 +34284,36 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
 
     if (MODO_SEGURAR_BIB === 'lento') {
       // Câmara lenta: sem pausa, sem play — o YouTube continua "a tocar".
-      enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
-      // Relógio que pára quando o vídeo é posto em pausa (ver o efeito
-      // sobre `ytATocar`): os itens ficam no ecrã enquanto estiver
-      // parado e retomam o tempo que lhes faltava ao carregar em play.
+      /* ZOOM COMO NA TELEVISÃO: numa paragem com círculo de zoom, a
+         imagem fica PARADA (não em câmara lenta) — aproxima-se, segura,
+         e afasta-se ainda parada; só depois o vídeo retoma, já no tamanho
+         normal. Ampliar um vídeo a andar, e voltar a pô-lo a andar a meio
+         do afastamento, é o que fazia a imagem tremer e, por um instante,
+         aparecer pequena num canto. */
+      const circZoom = todasAsFormas.find(f => f.tool === 'circulo' && Number(f.zoom) > 1);
       const relogio = criarRelogioBib();
       controlo.relogio = relogio;
-      if (!ytATocarRef.current) relogio.pausar();
+      setZoomSaidaBib(null);
+      if (circZoom) {
+        controlo.pausaPropria = true; // a pausa é nossa — o relógio não a segue
+        enviarComandoYoutube('pauseVideo');
+        // Afastamento a começar 1s antes de o círculo sair (dura ~0,9s).
+        relogio.agendar(Math.max(0.4, circZoom.seg - 1) * 1000, () => {
+          if (!controlo.cancelado) setZoomSaidaBib(primeira.id);
+        });
+      } else {
+        enviarComandoYoutube('setPlaybackRate', [VELOCIDADE_LENTA_BIB]);
+        // Relógio que pára quando o vídeo é posto em pausa (ver o efeito
+        // sobre `ytATocar`): os itens ficam no ecrã enquanto estiver
+        // parado e retomam o tempo que lhes faltava ao carregar em play.
+        if (!ytATocarRef.current) relogio.pausar();
+      }
       mostrarFormas(relogio.agendar);
       relogio.agendar(duracaoComum * 1000, () => {
         if (controlo.cancelado) return;
         setPausaAtivaBib(null);
-        enviarComandoYoutube('setPlaybackRate', [1]);
+        if (circZoom) enviarComandoYoutube('playVideo');
+        else enviarComandoYoutube('setPlaybackRate', [1]);
         if (pausaControloRef.current === controlo) pausaControloRef.current = null;
         pausaEmCursoRef.current = null;
       });
@@ -34405,8 +34426,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const c = pausaControloRef.current;
     if (c) {
       c.cancelado = true;
-      if (MODO_SEGURAR_BIB === 'lento') enviarComandoYoutube('setPlaybackRate', [1]);
+      if (c.pausaPropria) enviarComandoYoutube('playVideo'); // paragem de zoom: o vídeo estava parado por nós
+      else if (MODO_SEGURAR_BIB === 'lento') enviarComandoYoutube('setPlaybackRate', [1]);
     }
+    setZoomSaidaBib(null);
     pausaControloRef.current = null;
     pausaEmCursoRef.current = null;
     setPausaAtivaBib(null);
@@ -35464,10 +35487,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         transform: zoomBib ? `translate3d(0,0,0) scale(${zoomBib.f})` : 'translate3d(0,0,0) scale(1)',
                         transformOrigin: zoomOrigemBib.current,
                         transition: zoomBib
-                          ? 'transform 1.2s cubic-bezier(0.22, 1, 0.36, 1)'
-                          : 'transform 1s cubic-bezier(0.65, 0, 0.35, 1)',
+                          ? 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)'
+                          : 'transform 0.9s cubic-bezier(0.65, 0, 0.35, 1)',
                         willChange: 'transform',
-                        backfaceVisibility: 'hidden',
                       }}>
                       {isBlocked ? (
                         <div style={{
