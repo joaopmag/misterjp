@@ -9706,13 +9706,8 @@ function useFecharSemSaltar() {
    já estiver desenhado; um toque ao lado não pode deitar isso fora. */
 const COPIAR_ORDENS = [
   { id: 'az', label: 'A–Z' },
-  { id: 'criado', label: 'Criados' },
-  { id: 'editado', label: 'Editados' },
+  { id: 'criado', label: 'Criação' },
 ];
-const letraDe = (nome) => {
-  const c = String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().charAt(0).toUpperCase();
-  return /[A-Z]/.test(c) ? c : '#';
-};
 
 function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDesenhoAtual, onUsar }) {
   const isMobile = useIsMobile(700);
@@ -9721,13 +9716,13 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   const [aberto, setAberto] = useState(null); // cartão debaixo do rato
   const [pagina, setPagina] = useState(0);
 
-  /* ORDEM — A–Z, por criação (mais recentes primeiro) ou por última
-     edição. Fica lembrada de uma vez para a outra. A ordem de criação é a
+  /* ORDEM — A–Z ou por criação (mais recentes primeiro). Fica lembrada
+     de uma vez para a outra. A ordem de criação é a
      própria ordem da lista: as coleções chegam do servidor por
      created_at, e os novos entram sempre no fim. */
   const chaveOrdem = 'misterjp:copiar-ordem';
   const [ordem, setOrdemEstado] = useState(() => {
-    try { return localStorage.getItem(chaveOrdem) || 'az'; } catch (e) { return 'az'; }
+    try { const o = localStorage.getItem(chaveOrdem); return COPIAR_ORDENS.some(x => x.id === o) ? o : 'az'; } catch (e) { return 'az'; }
   });
   const setOrdem = (o) => {
     setOrdemEstado(o); setPagina(0);
@@ -9757,14 +9752,11 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
     const lista = itens.map((x, i) => ({ x, i }));
     if (ordem === 'az') {
       lista.sort((p, q) => String(nomeDe(p.x)).localeCompare(String(nomeDe(q.x)), 'pt', { sensitivity: 'base', numeric: true }));
-    } else if (ordem === 'editado') {
-      const quando = (x) => (meta && meta[x.id] && meta[x.id].at) || '';
-      lista.sort((p, q) => String(quando(q.x)).localeCompare(String(quando(p.x))) || q.i - p.i);
     } else {
       lista.sort((p, q) => q.i - p.i);
     }
     return lista.map(p => p.x);
-  }, [itens, meta, ordem, nomeDe]);
+  }, [itens, ordem, nomeDe]);
   const q = busca.trim().toLowerCase();
   const visiveis = q
     ? ordenados.filter(x => [nomeDe(x), x.description, ...(detalhesDe ? detalhesDe(x) : [])].filter(Boolean).join(' ').toLowerCase().includes(q))
@@ -9774,15 +9766,6 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   const pag = Math.min(pagina, totalPaginas - 1);
   const daPagina = visiveis.slice(pag * porLinha, pag * porLinha + porLinha);
   const irPara = (p) => setPagina(Math.max(0, Math.min(totalPaginas - 1, p)));
-
-  // Índice de letras (só em A–Z): salta direto para a linha dessa letra.
-  const letras = React.useMemo(() => {
-    if (ordem !== 'az') return [];
-    const m = new Map();
-    visiveis.forEach((x, i) => { const l = letraDe(nomeDe(x)); if (!m.has(l)) m.set(l, i); });
-    return [...m.entries()];
-  }, [visiveis, ordem, nomeDe]);
-  const letrasNaPagina = new Set(daPagina.map(x => letraDe(nomeDe(x))));
 
   // Deslizar no telemóvel.
   const toqueX = useRef(null);
@@ -9933,7 +9916,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
         </div>
       )}
 
-      {/* Barra de progresso (onde estou na lista) + índice de letras em A–Z. */}
+      {/* Barra de progresso: onde estou na lista; tocar salta para lá. */}
       {totalPaginas > 1 && (
         <div style={{ marginTop: 10 }}>
           <div
@@ -9949,20 +9932,6 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
               left: `${(pag / totalPaginas) * 100}%`, width: `${Math.max(4, 100 / totalPaginas)}%`, transition: 'left .15s',
             }} />
           </div>
-          {letras.length > 1 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, marginTop: 8 }}>
-              {letras.map(([l, i]) => {
-                const on = letrasNaPagina.has(l);
-                return (
-                  <button key={l} type="button" onClick={() => irPara(Math.floor(i / porLinha))} title={`Ir para ${l}`} style={{
-                    minWidth: 24, height: 24, padding: '0 4px', borderRadius: 6, cursor: 'pointer', ...mono, fontSize: 11.5,
-                    border: `1px solid ${on ? T.gold : 'transparent'}`, background: on ? `${T.gold}22` : 'transparent',
-                    color: on ? T.cream : T.muted,
-                  }}>{l}</button>
-                );
-              })}
-            </div>
-          )}
         </div>
       )}
     </div>
