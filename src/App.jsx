@@ -10,9 +10,11 @@ import * as tus from 'tus-js-client';
 import AnalisadorVideo, {
   FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
   RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, girar, inclinacaoPadrao,
+  MODELOS_CALIBRACAO, matrizDaCalibracao, inverterH, aplicarH, planoDaCalibracao,
+  pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
 } from './AnalisadorVideo';
 import {
-  ZoomIn, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
+  ZoomIn, Ruler, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
   Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
@@ -32968,6 +32970,41 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const arrastoCorpoBib = useRef(null); // { indiceForma, ultimoPonto } enquanto se arrasta uma forma inteira (não só um vértice)
   const arrastoRotacaoBib = useRef(null); // { indiceForma } enquanto se roda uma Zona pela pega de cima
   const arrastoInclinacaoBib = useRef(null); // { indiceForma, y0, inc0, h } enquanto se inclina uma Zona (cima/baixo)
+  /* RELVADO CALIBRADO (por pausa). `calibracaoBib` = { tipo, W, D, img:
+     [4 pontos no ecrã] } — guarda-se na pausa ao gravar. Com ela, a Zona,
+     o Círculo, a Seta e a Linha desenham-se NO CHÃO (ver
+     `geometriaNoChao` em AnalisadorVideo.jsx): cada forma leva consigo a
+     matriz (`chao.H`), por isso desenha-se igual em qualquer reprodução.
+     `calibrandoBib` = a marcar os 4 pontos agora ({ tipo, W, D, pontos }). */
+  const [calibracaoBib, setCalibracaoBib] = useState(null);
+  const [calibrandoBib, setCalibrandoBib] = useState(null);
+  const [painelRelvadoBib, setPainelRelvadoBib] = useState(false);
+  const [grelhaBib, setGrelhaBib] = useState(true);
+  const [noChaoBib, setNoChaoBib] = useState(true);
+  const ultimaCalibracaoBib = useRef(null); // para "usar a calibração anterior" noutro momento
+  const arrastoCalibBib = useRef(null); // índice do ponto de calibração a arrastar
+  const matrizRelvadoBib = calibracaoBib ? matrizDaCalibracao(calibracaoBib) : null;
+  const FERRAMENTAS_NO_CHAO = ['retangulo', 'circulo', 'seta', 'linha'];
+  // As formas novas destas ferramentas nascem no chão, se houver calibração.
+  const chaoParaNova = (tool) => (matrizRelvadoBib && noChaoBib && FERRAMENTAS_NO_CHAO.includes(tool) ? { chao: { H: matrizRelvadoBib } } : {});
+  const comecarCalibracaoBib = (modelo, W, D) => {
+    setCalibrandoBib({ tipo: modelo.id, W: modelo.W || W, D: modelo.D || D, pontos: [] });
+    setToolBib(null);
+    setFormaEmCursoBib(null);
+    setFormaSelecionadaBib(null);
+    cancelarRetomaDesenhoBib();
+    if (ytATocarRef.current) enviarComandoYoutube('pauseVideo');
+  };
+  const confirmarCalibracaoBib = () => {
+    const c = calibrandoBib;
+    if (!c || c.pontos.length !== 4) return;
+    const cal = { tipo: c.tipo, W: c.W, D: c.D, img: c.pontos };
+    if (!matrizDaCalibracao(cal)) return;
+    setCalibracaoBib(cal);
+    ultimaCalibracaoBib.current = cal;
+    setCalibrandoBib(null);
+    setGrelhaBib(true);
+  };
   // Centro de uma Zona (retângulo) — é à volta dele que roda.
   const centroZonaBib = (sh) => {
     const [pa, pb] = sh.points;
@@ -33163,6 +33200,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     return melhor;
   };
   const abrirPausaBib = (existente, tempo) => {
+    setCalibrandoBib(null);
+    // A calibração é de cada pausa (a câmara pode ter mexido entre pausas).
+    setCalibracaoBib(existente && existente.calibracao ? existente.calibracao : null);
     if (existente) {
       // As formas que já lá estavam ficam com o tempo delas; o contador
       // de segundos começa no valor de sempre, e vale só para as novas.
@@ -33342,7 +33382,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       // se desenhou algo novo, fica só essa pausa nova.
       const formas = fecharFormasBib(rascunho);
       const nova = formas.length > 0
-        ? [{ id: uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas }]
+        ? [{ id: uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas, ...(calibracaoBib ? { calibracao: calibracaoBib } : {}) }]
         : [];
       nova.forEach(a => pausasJaMostradasRef.current.add(a.id));
       setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: nova } : v)));
@@ -33373,7 +33413,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         formas = [...(vizinha.shapes || []).map(f => ({ ...f, seg: segDaForma(f, vizinha) })), ...formas];
       }
     }
-    const novaAnotacao = { id: idPausa || uid(), tempoVideo: tempoPausa, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas };
+    const calPausa = calibracaoBib || (idPausa && ((active.anotacoesPausa || []).find(x => x.id === idPausa) || {}).calibracao) || null;
+    const novaAnotacao = { id: idPausa || uid(), tempoVideo: tempoPausa, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas, ...(calPausa ? { calibracao: calPausa } : {}) };
     // Acabou de a ver ao desenhar — não voltar a parar no mesmo sítio
     // assim que se carrega em reproduzir (só na próxima passagem).
     pausasJaMostradasRef.current.add(novaAnotacao.id);
@@ -33423,6 +33464,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     arrastoRotacaoBib.current = null;
     arrastoInclinacaoBib.current = null;
     cancelarRetomaDesenhoBib(); // tocou no desenho durante um congelamento: fica parado para editar
+    // A calibrar: cada toque é um dos 4 cantos (depois arrastam-se para acertar).
+    if (calibrandoBib) {
+      if (calibrandoBib.pontos.length < 4) setCalibrandoBib(c => ({ ...c, pontos: [...c.pontos, p] }));
+      return;
+    }
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
     if (toolBib === 'apagar') {
       let alvo = -1, melhor = Infinity;
@@ -33489,7 +33535,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaSelecionadaBib(null);
     // Sem ferramenta: tocar num sítio vazio do vídeo reproduz/pausa.
     if (!toolBib) { alternarReproducaoBib(); return; }
-    setFormaEmCursoBib({ tool: toolBib, color: corBib, points: toolBib === 'livre' ? [p] : [p, p] });
+    setFormaEmCursoBib({ tool: toolBib, color: corBib, points: toolBib === 'livre' ? [p] : [p, p], ...chaoParaNova(toolBib) });
   };
   // ARRASTO FLUIDO — o rato manda dezenas de movimentos por segundo, e
   // cada um redesenhava a Biblioteca inteira (um ecrã muito grande), o
@@ -33502,6 +33548,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const p = pontoPendenteBib.current;
     pontoPendenteBib.current = null;
     if (!p) return;
+    if (arrastoCalibBib.current != null) {
+      const k = arrastoCalibBib.current;
+      setCalibrandoBib(c => (c ? { ...c, pontos: c.pontos.map((q, i) => (i === k ? p : q)) } : c));
+      return;
+    }
     if (arrastoInclinacaoBib.current) {
       // Arrastar para cima = o lado de cima foge para o fundo (mais
       // perspetiva); para baixo = endireita e, passando o meio, inverte.
@@ -33514,6 +33565,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       const { indiceForma } = arrastoRotacaoBib.current;
       setShapesRascunho(prev => prev.map((sh, i) => {
         if (i !== indiceForma) return sh;
+        // Zona no chão: roda no próprio relvado.
+        if (sh.chao) return { ...sh, rotacao: Math.round(anguloRodarZonaNoChao(sh, p) * 10) / 10 };
         const c = centroZonaBib(sh);
         const graus = (Math.atan2(p.y - c.y, p.x - c.x) * 180) / Math.PI + 90; // a pega fica por cima do centro
         return { ...sh, rotacao: Math.round(graus * 10) / 10 };
@@ -33526,7 +33579,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         if (i !== indiceForma) return sh;
         // Zona rodada: o canto que se vê está rodado — volta-se ao
         // referencial dela antes de o guardar.
-        const pLocal = sh.tool === 'retangulo' && sh.rotacao ? girar(p, centroZonaBib(sh), -sh.rotacao) : p;
+        const pLocal = sh.tool === 'retangulo' && sh.rotacao
+          ? (sh.chao ? desrodarNaZonaNoChao(sh, p) : girar(p, centroZonaBib(sh), -sh.rotacao))
+          : p;
         return { ...sh, points: sh.points.map((pt, pi) => (pi === indicePonto ? pLocal : pt)) };
       }));
       return;
@@ -33541,7 +33596,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
   const moverFormaBib = (e) => {
     const p = getPontoBib(e);
-    if (arrastoVerticeBib.current || arrastoCorpoBib.current || arrastoRotacaoBib.current || arrastoInclinacaoBib.current) {
+    if (arrastoVerticeBib.current || arrastoCorpoBib.current || arrastoRotacaoBib.current || arrastoInclinacaoBib.current || arrastoCalibBib.current != null) {
       const estado = arrastoCorpoBib.current;
       if (estado && !estado.historicoEmpurrado) { pushHistoricoBib(); estado.historicoEmpurrado = true; } // só regista no undo quando SE MEXE mesmo, não só ao tocar
       pontoPendenteBib.current = p;
@@ -33564,6 +33619,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Aplica já o último movimento que ainda estava à espera do fotograma,
     // para a forma ficar exatamente onde se largou.
     if (rafArrastoBib.current) { cancelAnimationFrame(rafArrastoBib.current); aplicarArrastoBib(); }
+    if (arrastoCalibBib.current != null) { arrastoCalibBib.current = null; return; }
     if (arrastoInclinacaoBib.current) { arrastoInclinacaoBib.current = null; return; }
     if (arrastoRotacaoBib.current) { arrastoRotacaoBib.current = null; return; }
     if (arrastoVerticeBib.current) { arrastoVerticeBib.current = null; return; }
@@ -33573,7 +33629,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const pequenoDemais = tool === 'livre' ? points.length < 2 : Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 1;
     if (pequenoDemais) { setFormaEmCursoBib(null); return; } // só um toque, sem arrastar — ignora
     pushHistoricoBib();
-    setShapesRascunho(prev => [...prev, { id: uid(), tool, color, points }]);
+    setShapesRascunho(prev => [...prev, { id: uid(), tool, color, points, ...(formaEmCursoBib.chao ? { chao: formaEmCursoBib.chao } : {}) }]);
     setFormaEmCursoBib(null);
   };
   /* ZONA LIVRE e LIGAR PONTOS acumulam com o resto. Uma destas a meio
@@ -35684,6 +35740,56 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {(modoDesenhoBib ? formasDesenhoVisiveisBib : (pausaAtivaBib ? pausaAtivaBib.shapes : []))
                             .map((sh, i) => renderShape(sh, sh.id || i))}
                           {formaEmCursoBib && renderShape(formaEmCursoBib, 'rascunho')}
+                          {/* RELVADO: grelha de verificação (5 em 5 m) e os 4 pontos a marcar. */}
+                          {modoDesenhoBib && (() => {
+                            const cal = calibrandoBib && calibrandoBib.pontos.length === 4
+                              ? { W: calibrandoBib.W, D: calibrandoBib.D, img: calibrandoBib.pontos }
+                              : (!calibrandoBib && grelhaBib ? calibracaoBib : null);
+                            const H = cal ? matrizDaCalibracao(cal) : null;
+                            const Hi = H ? inverterH(H) : null;
+                            const linhas = [];
+                            if (Hi) {
+                              const W = Number(cal.W), D = Number(cal.D);
+                              const ref = aplicarH(Hi, { x: W / 2, y: D / 2 });
+                              const sinal = ref ? Math.sign(ref.w) : 1;
+                              const proj = (q) => { const r = aplicarH(Hi, q); return r && Math.sign(r.w) === sinal ? r : null; };
+                              const traco = (q1, q2, forte, k) => {
+                                const pts = [];
+                                for (let s = 0; s <= 24; s++) {
+                                  const r = proj({ x: q1.x + ((q2.x - q1.x) * s) / 24, y: q1.y + ((q2.y - q1.y) * s) / 24 });
+                                  if (r) pts.push(`${r.x},${r.y}`);
+                                }
+                                if (pts.length > 1) {
+                                  linhas.push(<polyline key={k} points={pts.join(' ')} fill="none" stroke={forte ? T.gold : '#ffffff'}
+                                    strokeOpacity={forte ? 0.95 : 0.28} strokeWidth={forte ? 0.22 : 0.1} style={{ pointerEvents: 'none' }} />);
+                                }
+                              };
+                              for (let x = -15; x <= W + 15; x += 5) traco({ x, y: -3 }, { x, y: D + 30 }, false, `gx${x}`);
+                              for (let y = 0; y <= D + 30; y += 5) traco({ x: -15, y }, { x: W + 15, y }, false, `gy${y}`);
+                              const r4 = planoDaCalibracao(cal);
+                              r4.forEach((q, k) => traco(q, r4[(k + 1) % 4], true, `r${k}`));
+                            }
+                            return (
+                              <g>
+                                {linhas}
+                                {calibrandoBib && calibrandoBib.pontos.map((q, k) => (
+                                  <g key={`cal${k}`}>
+                                    <circle cx={q.x} cy={q.y} r={0.7} fill={T.gold} stroke="#000" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
+                                    <text x={q.x + 1} y={q.y - 0.9} fill="#fff" fontSize={1.8} fontWeight={700}
+                                      style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#000', strokeWidth: 0.35, pointerEvents: 'none' }}>{k + 1}</text>
+                                    <circle cx={q.x} cy={q.y} r={RAIO_PEGA_BIB} fill="transparent"
+                                      onPointerDown={e => {
+                                        e.stopPropagation();
+                                        if (e.cancelable) e.preventDefault();
+                                        try { overlayRefBib.current && overlayRefBib.current.setPointerCapture(e.pointerId); } catch (err) {}
+                                        arrastoCalibBib.current = k;
+                                      }}
+                                      style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'all' }} />
+                                  </g>
+                                ))}
+                              </g>
+                            );
+                          })()}
                           {/* A desenhar: os círculos com zoom levam a etiqueta, para se saber quais são. */}
                           {modoDesenhoBib && !zoomPreviewBib && shapesRascunho.filter(f => f.tool === 'circulo' && Number(f.zoom) > 1 && f.points && f.points[1]).map(f => {
                             const [c, borda] = f.points;
@@ -35713,11 +35819,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                              e arrastar um deles move essa ponta da forma. */}
                           {modoDesenhoBib && formaSelecionadaBib != null && shapesRascunho[formaSelecionadaBib] && (() => {
                             const fs = shapesRascunho[formaSelecionadaBib];
-                            const zonaRodada = fs.tool === 'retangulo' && fs.rotacao;
+                            const zonaRodada = fs.tool === 'retangulo' && fs.rotacao && !fs.chao; // no chão a rotação já vem no desenho
+                            const zonaChao = fs.tool === 'retangulo' && fs.chao;
                             const c = fs.tool === 'retangulo' && fs.points[1] ? centroZonaBib(fs) : null;
                             return (
                               <g transform={zonaRodada ? `rotate(${fs.rotacao} ${c.x} ${c.y})` : undefined}>
-                              {fs.points.map((pt, pi) => (
+                              {fs.points.map((ptReal, pi) => { const pt = zonaChao ? pegaZonaNoChao(fs, pi) : ptReal; return (
                                 <g key={`vertice-${pi}`}>
                                   <circle cx={pt.x} cy={pt.y} r={0.6} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
                                   {/* Área de toque invisível, bem maior do que o pontinho. */}
@@ -35739,16 +35846,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                     }}
                                     style={{ cursor: pi === 0 && shapesRascunho[formaSelecionadaBib] && shapesRascunho[formaSelecionadaBib].tool === 'circulo' ? 'move' : 'grab', touchAction: 'none', pointerEvents: 'all' }} />
                                 </g>
-                              ))}
+                              ); })}
                                 {/* ZONA: pega de rodar, por cima do centro (como na Análise de Vídeo). */}
                                 {fs.tool === 'retangulo' && c && (() => {
+                                  // No chão, a pega fica uns metros "à frente" da zona, no relvado.
+                                  const rc = zonaChao ? pegaRodarZonaNoChao(fs) : null;
                                   const topo = Math.min(fs.points[0].y, fs.points[1].y);
-                                  const yPega = topo - 3;
+                                  const base = rc && rc.base ? rc.base : { x: c.x, y: topo };
+                                  const pegaP = rc && rc.pega ? rc.pega : { x: c.x, y: topo - 3 };
                                   return (
                                     <g>
-                                      <line x1={c.x} y1={topo} x2={c.x} y2={yPega} stroke="#fff" strokeWidth={0.15} strokeDasharray="0.5 0.4" style={{ pointerEvents: 'none' }} />
-                                      <circle cx={c.x} cy={yPega} r={0.75} fill="#fff" stroke={T.crimsonBright} strokeWidth={0.2} style={{ pointerEvents: 'none' }} />
-                                      <circle cx={c.x} cy={yPega} r={RAIO_PEGA_BIB} fill="transparent"
+                                      <line x1={base.x} y1={base.y} x2={pegaP.x} y2={pegaP.y} stroke="#fff" strokeWidth={0.15} strokeDasharray="0.5 0.4" style={{ pointerEvents: 'none' }} />
+                                      <circle cx={pegaP.x} cy={pegaP.y} r={0.75} fill="#fff" stroke={T.crimsonBright} strokeWidth={0.2} style={{ pointerEvents: 'none' }} />
+                                      <circle cx={pegaP.x} cy={pegaP.y} r={RAIO_PEGA_BIB} fill="transparent"
                                         onPointerDown={e => {
                                           e.stopPropagation();
                                           if (e.cancelable) e.preventDefault();
@@ -35763,8 +35873,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                   );
                                 })()}
                                 {/* ZONA: pega de INCLINAR (rodar para cima/baixo), ao lado
-                                    direito — arrasta para cima ou para baixo. */}
-                                {fs.tool === 'retangulo' && c && (() => {
+                                    direito — arrasta para cima ou para baixo. (No chão não
+                                    faz falta: a perspetiva é a verdadeira.) */}
+                                {fs.tool === 'retangulo' && c && !zonaChao && (() => {
                                   const [pa, pb] = fs.points;
                                   const direita = Math.max(pa.x, pb.x) + 2.6;
                                   const alturaZona = Math.abs(pb.y - pa.y);
@@ -35835,7 +35946,100 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           ))}
                           <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => escolherFerramentaBib('texto')} />
                           <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => escolherFerramentaBib('apagar')} />
+                          <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                          <ToolBtn icon={Ruler} label={calibracaoBib ? 'Relvado ✓' : 'Relvado'} active={painelRelvadoBib || !!calibrandoBib} onClick={() => setPainelRelvadoBib(v => !v)} />
                         </div>
+                        {/* PAINEL DO RELVADO — calibrar, ver a grelha, desenhar no chão. */}
+                        {(painelRelvadoBib || calibrandoBib) && (() => {
+                          const modelo = calibrandoBib ? MODELOS_CALIBRACAO.find(m => m.id === calibrandoBib.tipo) : null;
+                          const n = calibrandoBib ? calibrandoBib.pontos.length : 0;
+                          const caixa = {
+                            position: 'absolute', top: 54, left: 86, zIndex: 7, width: 300, maxWidth: 'calc(100% - 180px)',
+                            background: 'rgba(0,0,0,0.9)', border: `1px solid ${T.line}`, borderRadius: 10, padding: 12,
+                            color: '#fff', fontSize: 12.5, ...body, display: 'flex', flexDirection: 'column', gap: 8,
+                          };
+                          const botao = (rotulo, fn, on, desligado) => (
+                            <button type="button" onClick={fn} disabled={desligado} style={{
+                              background: on ? T.gold : 'transparent', color: on ? '#111' : '#fff', border: `1px solid ${on ? T.gold : T.line}`,
+                              borderRadius: 6, padding: '5px 9px', fontSize: 12, cursor: desligado ? 'default' : 'pointer', opacity: desligado ? 0.4 : 1, ...body,
+                            }}>{rotulo}</button>
+                          );
+                          if (calibrandoBib) {
+                            // Esquema da área com o canto seguinte em destaque.
+                            const esq = [{ x: 10, y: 40 }, { x: 90, y: 40 }, { x: 74, y: 12 }, { x: 26, y: 12 }];
+                            return (
+                              <div style={caixa} onPointerDown={e => e.stopPropagation()}>
+                                <div style={{ fontWeight: 700 }}>Calibrar — {modelo ? modelo.nome : ''}</div>
+                                <svg viewBox="0 0 100 50" style={{ width: '100%', height: 70 }}>
+                                  <polygon points={esq.map(q => `${q.x},${q.y}`).join(' ')} fill="none" stroke="#fff" strokeWidth={1.2} />
+                                  {esq.map((q, k) => (
+                                    <g key={k}>
+                                      <circle cx={q.x} cy={q.y} r={k === n ? 4.2 : 3} fill={k < n ? T.good : (k === n ? T.gold : '#555')} />
+                                      <text x={q.x} y={q.y + 1.6} textAnchor="middle" fontSize={4.2} fontWeight={700} fill="#111">{k + 1}</text>
+                                    </g>
+                                  ))}
+                                  <text x={50} y={48} textAnchor="middle" fontSize={4} fill="#aaa">linha de fundo</text>
+                                </svg>
+                                <div style={{ color: T.cream, lineHeight: 1.4 }}>
+                                  {n < 4
+                                    ? <>Toca no ponto <b>{n + 1}</b>: {modelo ? modelo.passos[n] : ''}</>
+                                    : 'Arrasta os pontos até a grelha amarela bater certo com as linhas do campo. Depois confirma.'}
+                                </div>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                  {botao('Confirmar', confirmarCalibracaoBib, true, n !== 4)}
+                                  {botao('Recomeçar', () => setCalibrandoBib(c => ({ ...c, pontos: [] })), false, n === 0)}
+                                  {botao('Cancelar', () => setCalibrandoBib(null), false, false)}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return (
+                            <div style={caixa} onPointerDown={e => e.stopPropagation()}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontWeight: 700 }}>Relvado</span>
+                                <button type="button" onClick={() => setPainelRelvadoBib(false)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><X size={15} /></button>
+                              </div>
+                              {calibracaoBib ? (
+                                <>
+                                  <div style={{ color: T.good }}>✓ Calibrado nesta pausa ({(MODELOS_CALIBRACAO.find(m => m.id === calibracaoBib.tipo) || {}).nome || 'retângulo'})</div>
+                                  <div style={{ color: T.mutedDim, lineHeight: 1.4 }}>Zona, Círculo, Seta e Linha desenham-se no chão, com a perspetiva do campo.</div>
+                                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {botao(noChaoBib ? 'No chão: sim' : 'No chão: não', () => setNoChaoBib(v => !v), noChaoBib)}
+                                    {botao(grelhaBib ? 'Grelha: sim' : 'Grelha: não', () => setGrelhaBib(v => !v), grelhaBib)}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {botao('Recalibrar', () => comecarCalibracaoBib(MODELOS_CALIBRACAO.find(m => m.id === calibracaoBib.tipo) || MODELOS_CALIBRACAO[0], calibracaoBib.W, calibracaoBib.D))}
+                                    {botao('Tirar calibração', () => setCalibracaoBib(null))}
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div style={{ color: T.mutedDim, lineHeight: 1.4 }}>
+                                    Com o vídeo parado, marca 4 cantos de uma área que se veja bem. A partir daí, as formas ficam assentes no relvado.
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {MODELOS_CALIBRACAO.filter(m => m.W).map(m => <span key={m.id}>{botao(m.nome, () => comecarCalibracaoBib(m))}</span>)}
+                                  </div>
+                                  <form onSubmit={e => {
+                                    e.preventDefault();
+                                    const W = parseFloat(String(e.currentTarget.elements.w.value).replace(',', '.'));
+                                    const D = parseFloat(String(e.currentTarget.elements.d.value).replace(',', '.'));
+                                    if (W > 0 && D > 0) comecarCalibracaoBib(MODELOS_CALIBRACAO.find(m => m.id === 'medida'), W, D);
+                                  }} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <span style={{ color: T.mutedDim }}>À medida:</span>
+                                    <input name="w" placeholder="largura m" inputMode="decimal" style={{ width: 70, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 12 }} />
+                                    <span>×</span>
+                                    <input name="d" placeholder="prof. m" inputMode="decimal" style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 12 }} />
+                                    <button type="submit" style={{ background: 'transparent', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>Marcar</button>
+                                  </form>
+                                  {ultimaCalibracaoBib.current && (
+                                    <div>{botao('Usar a calibração anterior', () => setCalibracaoBib(ultimaCalibracaoBib.current))}</div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <div style={{
                           position: 'absolute', top: 0, right: 0, bottom: 0, width: 78, zIndex: 5,
                           background: 'rgba(17,17,17,0.88)', overflowY: 'auto',

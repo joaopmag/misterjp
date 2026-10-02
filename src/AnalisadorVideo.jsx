@@ -227,7 +227,261 @@ export function girar(p, centro, graus) {
 }
 export const TAMANHO_FONTE_TEXTO = 3.4;
 
+/* ===================================================================
+   RELVADO CALIBRADO — perspetiva real do chão numa imagem parada.
+
+   Tocam-se 4 pontos de um retângulo do campo cuja medida se conhece
+   (os cantos da grande área: 40,32 × 16,5 m). Com esses 4 pares
+   (ponto na imagem ↔ ponto no relvado, em metros) calcula-se uma
+   HOMOGRAFIA: uma matriz 3×3 que traduz qualquer ponto do ecrã para
+   metros no relvado, e a inversa, de metros para o ecrã. Não precisa de
+   ver a imagem (funciona com o YouTube) — é só conta.
+
+   As formas desenhadas "no chão" guardam essa matriz (`chao.H`,
+   imagem → relvado) e desenham-se a partir dela: a Zona é um retângulo
+   verdadeiro no relvado, o Círculo um anel no chão (elipse), a Seta e
+   a Linha ficam pintadas, mais estreitas ao fundo.
+   =================================================================== */
+export const MODELOS_CALIBRACAO = [
+  {
+    id: 'grandeArea', nome: 'Grande área', W: 40.32, D: 16.5,
+    passos: [
+      'Canto da grande área na linha de fundo — o da ESQUERDA (na imagem)',
+      'Canto da grande área na linha de fundo — o da DIREITA',
+      'Canto da frente da grande área — o da DIREITA',
+      'Canto da frente da grande área — o da ESQUERDA',
+    ],
+  },
+  {
+    id: 'pequenaArea', nome: 'Pequena área', W: 18.32, D: 5.5,
+    passos: [
+      'Canto da pequena área na linha de fundo — o da ESQUERDA (na imagem)',
+      'Canto da pequena área na linha de fundo — o da DIREITA',
+      'Canto da frente da pequena área — o da DIREITA',
+      'Canto da frente da pequena área — o da ESQUERDA',
+    ],
+  },
+  {
+    id: 'medida', nome: 'Retângulo à medida', W: null, D: null,
+    passos: [
+      'Canto 1 do retângulo (o mais perto, à esquerda)',
+      'Canto 2 — ao lado do 1, na mesma linha (a "largura")',
+      'Canto 3 — em frente ao 2 (a "profundidade")',
+      'Canto 4 — em frente ao 1',
+    ],
+  },
+];
+
+// Resolve o sistema linear A·x = b (eliminação de Gauss com pivô).
+function resolverLinear(A, b) {
+  const n = b.length;
+  const M = A.map((linha, i) => [...linha, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let piv = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    if (Math.abs(M[piv][c]) < 1e-12) return null;
+    [M[c], M[piv]] = [M[piv], M[c]];
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((linha, i) => linha[n] / linha[i]);
+}
+
+// Homografia que leva os 4 pontos `de` para os 4 pontos `para`.
+export function homografia(de, para) {
+  if (!de || !para || de.length !== 4 || para.length !== 4) return null;
+  /* Os pontos de partida passam primeiro para "à volta do centro deles".
+     Sem isto, quando o horizonte da imagem passa pelo canto (0,0) do
+     ecrã a conta não tinha solução (acontece com uma área de frente,
+     simétrica). Depois desfaz-se a mudança. */
+  const cx = de.reduce((s, p) => s + p.x, 0) / 4, cy = de.reduce((s, p) => s + p.y, 0) / 4;
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const x = de[i].x - cx, y = de[i].y - cy;
+    const { x: u, y: v } = para[i];
+    A.push([x, y, 1, 0, 0, 0, -x * u, -y * u]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -x * v, -y * v]); b.push(v);
+  }
+  const h = resolverLinear(A, b);
+  if (!h) return null;
+  const [a1, b1, c1, d1, e1, f1, g1, h1] = h;
+  // H = H' · T, com T a translação de (−cx, −cy).
+  return [
+    a1, b1, c1 - a1 * cx - b1 * cy,
+    d1, e1, f1 - d1 * cx - e1 * cy,
+    g1, h1, 1 - g1 * cx - h1 * cy,
+  ];
+}
+
+export function inverterH(H) {
+  if (!H) return null;
+  const [a, b, c, d, e, f, g, h, i] = H;
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  if (Math.abs(det) < 1e-12) return null;
+  const inv = [
+    A, -(b * i - c * h), b * f - c * e,
+    B, a * i - c * g, -(a * f - c * d),
+    C, -(a * h - b * g), a * e - b * d,
+  ];
+  return inv.map(v => v / det);
+}
+
+// Aplica H a um ponto. `w` (o denominador) diz de que lado do horizonte
+// o ponto está — pontos "atrás da câmara" não se desenham.
+export function aplicarH(H, p) {
+  const w = H[6] * p.x + H[7] * p.y + H[8];
+  if (!Number.isFinite(w) || Math.abs(w) < 1e-9) return null;
+  return { x: (H[0] * p.x + H[1] * p.y + H[2]) / w, y: (H[3] * p.x + H[4] * p.y + H[5]) / w, w };
+}
+
+// Retângulo do relvado (em metros) que corresponde a uma calibração.
+export function planoDaCalibracao(cal) {
+  const W = Number(cal && cal.W), D = Number(cal && cal.D);
+  if (!(W > 0) || !(D > 0)) return null;
+  return [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: D }, { x: 0, y: D }];
+}
+// Matriz imagem → relvado de uma calibração (4 pontos na imagem).
+export function matrizDaCalibracao(cal) {
+  if (!cal || !cal.img || cal.img.length !== 4) return null;
+  const plano = planoDaCalibracao(cal);
+  return plano ? homografia(cal.img, plano) : null;
+}
+
+/* Projeta pontos do relvado para o ecrã, só se ficarem do lado certo do
+   horizonte (o mesmo lado que o ponto de referência). */
+function projetor(Hi, ref) {
+  const r = aplicarH(Hi, ref);
+  const sinal = r ? Math.sign(r.w) : 1;
+  return (q) => {
+    const p = aplicarH(Hi, q);
+    return p && Math.sign(p.w) === sinal ? { x: p.x, y: p.y } : null;
+  };
+}
+const rodarEm = (q, c, graus) => {
+  if (!graus) return q;
+  const r = (graus * Math.PI) / 180, cs = Math.cos(r), sn = Math.sin(r);
+  return { x: c.x + (q.x - c.x) * cs - (q.y - c.y) * sn, y: c.y + (q.x - c.x) * sn + (q.y - c.y) * cs };
+};
+
+/* GEOMETRIA DE UMA FORMA NO CHÃO — tudo em coordenadas do ecrã, pronto
+   a desenhar e a acertar com o dedo. Devolve null se não der (forma
+   que fugiu para lá do horizonte, matriz inválida…). */
+export function geometriaNoChao(sh) {
+  const H = sh && sh.chao && sh.chao.H;
+  if (!H || !sh.points || !sh.points[0] || !sh.points[1]) return null;
+  const Hi = inverterH(H);
+  if (!Hi) return null;
+  const A = aplicarH(H, sh.points[0]), B = aplicarH(H, sh.points[1]);
+  if (!A || !B) return null;
+  const proj = projetor(Hi, A);
+  const projTodos = (lista) => {
+    const r = lista.map(proj);
+    return r.every(Boolean) ? r : null;
+  };
+  if (sh.tool === 'retangulo') {
+    const x0 = Math.min(A.x, B.x), x1 = Math.max(A.x, B.x), y0 = Math.min(A.y, B.y), y1 = Math.max(A.y, B.y);
+    const c = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+    const rot = sh.rotacao || 0;
+    const cantos = projTodos([{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }].map(q => rodarEm(q, c, rot)));
+    if (!cantos) return null;
+    // Riscas diagonais no próprio relvado (x − y = k), cortadas pela zona.
+    const riscas = [];
+    const passo = Math.max(1.2, Math.min(x1 - x0, y1 - y0) / 5);
+    for (let k = x0 - y1; k <= x1 - y0; k += passo) {
+      const xa = Math.max(x0, y0 + k), xb = Math.min(x1, y1 + k);
+      if (xb - xa < 0.05) continue;
+      const p1 = proj(rodarEm({ x: xa, y: xa - k }, c, rot));
+      const p2 = proj(rodarEm({ x: xb, y: xb - k }, c, rot));
+      if (p1 && p2) riscas.push([p1, p2]);
+    }
+    return { tipo: 'zona', contorno: cantos, riscas, centroChao: c, rot, metros: { w: x1 - x0, d: y1 - y0 }, proj, H, Hi };
+  }
+  if (sh.tool === 'circulo') {
+    const r = Math.hypot(B.x - A.x, B.y - A.y);
+    const pts = [];
+    for (let k = 0; k < 64; k++) {
+      const t = (k / 64) * Math.PI * 2;
+      const q = proj({ x: A.x + r * Math.cos(t), y: A.y + r * Math.sin(t) });
+      if (q) pts.push(q);
+    }
+    return pts.length > 8 ? { tipo: 'anel', contorno: pts, raio: r } : null;
+  }
+  if (sh.tool === 'seta' || sh.tool === 'linha') {
+    const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy);
+    if (len < 0.2) return null;
+    const ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+    const meia = 0.32; // meia-largura do traço, em metros
+    const em = (p, s, n) => ({ x: p.x + nx * n + ux * s, y: p.y + ny * n + uy * s });
+    let poli;
+    if (sh.tool === 'seta') {
+      const cab = Math.min(2.6, len * 0.45), meiaCab = 1.15;
+      const S = { x: B.x - ux * cab, y: B.y - uy * cab };
+      poli = [em(A, 0, meia), em(S, 0, meia), em(S, 0, meiaCab), B, em(S, 0, -meiaCab), em(S, 0, -meia), em(A, 0, -meia)];
+    } else {
+      poli = [em(A, 0, meia), em(B, 0, meia), em(B, 0, -meia), em(A, 0, -meia)];
+    }
+    const contorno = projTodos(poli);
+    return contorno ? { tipo: 'traco', contorno, metros: len } : null;
+  }
+  return null;
+}
+
+// Uma pega de uma Zona no chão rodada: onde aparece no ecrã.
+export function pegaZonaNoChao(sh, indice) {
+  const g = geometriaNoChao(sh);
+  if (!g || g.tipo !== 'zona') return sh.points[indice];
+  const q = aplicarH(g.H, sh.points[indice]);
+  return (q && g.proj(rodarEm(q, g.centroChao, g.rot))) || sh.points[indice];
+}
+// Ponto do ecrã → ponto "sem rotação" da zona (para mover um canto).
+export function desrodarNaZonaNoChao(sh, p) {
+  const g = geometriaNoChao(sh);
+  if (!g || g.tipo !== 'zona' || !g.rot) return p;
+  const q = aplicarH(g.H, p);
+  if (!q) return p;
+  const r = aplicarH(g.Hi, rodarEm(q, g.centroChao, -g.rot));
+  return r ? { x: r.x, y: r.y } : p;
+}
+// Pega de rodar de uma Zona no chão (por cima, a uns metros do lado de cima).
+export function pegaRodarZonaNoChao(sh) {
+  const g = geometriaNoChao(sh);
+  if (!g || g.tipo !== 'zona') return null;
+  const meia = g.metros.d / 2;
+  return { pega: g.proj(rodarEm({ x: g.centroChao.x, y: g.centroChao.y - meia - 3 }, g.centroChao, g.rot)), base: g.proj(rodarEm({ x: g.centroChao.x, y: g.centroChao.y - meia }, g.centroChao, g.rot)), g };
+}
+// Ângulo (em graus) para a pega de rodar estar sob o ponto p.
+export function anguloRodarZonaNoChao(sh, p) {
+  const g = geometriaNoChao(sh);
+  if (!g || g.tipo !== 'zona') return sh.rotacao || 0;
+  const q = aplicarH(g.H, p);
+  if (!q) return sh.rotacao || 0;
+  return (Math.atan2(q.y - g.centroChao.y, q.x - g.centroChao.x) * 180) / Math.PI + 90;
+}
+
+const dentroPoligono = (p, pts) => {
+  let dentro = false;
+  for (let k = 0, j = pts.length - 1; k < pts.length; j = k++) {
+    const pk = pts[k], pj = pts[j];
+    if (((pk.y > p.y) !== (pj.y > p.y)) && (p.x < ((pj.x - pk.x) * (p.y - pk.y)) / ((pj.y - pk.y) || 1e-9) + pk.x)) dentro = !dentro;
+  }
+  return dentro;
+};
+
 export function distanciaShape(sh, p) {
+  // Formas no chão: acerta-se no contorno real (ou dentro dele).
+  if (sh && sh.chao) {
+    const g = geometriaNoChao(sh);
+    if (g) {
+      if (dentroPoligono(p, g.contorno)) return 0;
+      let m = Infinity;
+      for (let k = 0; k < g.contorno.length; k++) m = Math.min(m, distPontoSegmento(p, g.contorno[k], g.contorno[(k + 1) % g.contorno.length]));
+      return m;
+    }
+  }
   const pts = sh.points || [];
   const [a, b] = pts;
   if (!a) return Infinity;
@@ -293,6 +547,10 @@ export const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um t
 
 export function renderShape(sh, i) {
   if (!sh || !sh.points || sh.points.length === 0) return null;
+  if (sh.chao) {
+    const g = geometriaNoChao(sh);
+    if (g) return renderNoChao(sh, g, i);
+  }
   const [a, b] = sh.points;
   if (!a) return null;
   const cor = { stroke: sh.color || COR_DESENHO, fill: 'none' };
@@ -426,6 +684,35 @@ export function useZoomCirculo(formasVisiveis, ativo = true) {
     transition: c ? 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)' : 'transform 0.9s cubic-bezier(0.65, 0, 0.35, 1)',
     willChange: 'transform',
   };
+}
+
+function renderNoChao(sh, g, i) {
+  const cor = sh.color || COR_DESENHO;
+  const pts = g.contorno.map(p => `${p.x},${p.y}`).join(' ');
+  if (g.tipo === 'zona') {
+    return (
+      <g key={i}>
+        <g style={{ mixBlendMode: 'overlay' }}>
+          <polygon points={pts} fill={cor} fillOpacity={0.12} stroke="none" />
+          {g.riscas.map(([p1, p2], k) => (
+            <line key={k} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={cor} strokeOpacity={0.6} strokeWidth={0.14} />
+          ))}
+        </g>
+        {!sh.semContorno && <polygon points={pts} fill="none" stroke={cor} strokeOpacity={0.85} strokeWidth={CONTORNO_FINO} strokeLinejoin="round" />}
+      </g>
+    );
+  }
+  if (g.tipo === 'anel') {
+    // Anel no chão, por baixo do jogador (como nas transmissões).
+    return (
+      <g key={i}>
+        <polygon points={pts} fill={cor} fillOpacity={0.14} stroke="none" style={{ mixBlendMode: 'overlay' }} />
+        <polygon points={pts} fill="none" stroke={cor} strokeWidth={ESPESSURA * 0.8} strokeLinejoin="round" />
+      </g>
+    );
+  }
+  // Seta / linha pintadas no relvado.
+  return <polygon key={i} points={pts} fill={cor} fillOpacity={0.9} stroke="none" />;
 }
 
 export function shapeVisivelEm(sh, tempo) {
