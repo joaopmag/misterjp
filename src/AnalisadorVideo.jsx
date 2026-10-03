@@ -4,7 +4,7 @@ import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
-  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, Download,
+  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, Download, LayoutGrid, Ruler,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -872,7 +872,21 @@ export function renderShape(sh, i) {
     );
   }
   if (!b) return null;
-  if (sh.tool === 'circulo') return <circle key={i} cx={a.x} cy={a.y} r={Math.hypot(b.x - a.x, b.y - a.y)} style={cor} strokeWidth={ESPESSURA} />;
+  if (sh.tool === 'circulo') {
+    /* CÍRCULO A RODAR — como os das transmissões: um anel fino fixo e, por
+       cima, segmentos que dão a volta ao jogador sem parar. */
+    const r = Math.hypot(b.x - a.x, b.y - a.y);
+    const c = sh.color || COR_DESENHO;
+    return (
+      <g key={i}>
+        <circle cx={a.x} cy={a.y} r={r} fill="none" stroke={c} strokeOpacity={0.5} strokeWidth={CONTORNO_FINO * 1.4} />
+        <circle cx={a.x} cy={a.y} r={r} pathLength={100} fill="none" stroke={c} strokeWidth={ESPESSURA}
+          strokeLinecap="round" strokeDasharray="14 11">
+          <animate attributeName="stroke-dashoffset" from="0" to="-100" dur="3.2s" repeatCount="indefinite" />
+        </circle>
+      </g>
+    );
+  }
   if (sh.tool === 'linha') return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} style={cor} strokeWidth={ESPESSURA} />;
   if (sh.tool === 'retangulo') {
     /* ZONA PINTADA NO RELVADO. Em vez de um retângulo chapado por cima da
@@ -1787,6 +1801,242 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
    teamId, videosOriginais, setVideosOriginais, clipes, setClipes
    (os dois últimos pares vêm de `useCollectionSync('video_originais', …)`
    e `useCollectionSync('video_clips', …)` no App principal). */
+/* ===================================================================
+   RELVADO — peças de ecrã (usadas pela Análise de Vídeo).
+   =================================================================== */
+
+// Grelha de verificação, pontos da calibração, linha de baliza e a
+// referência do fora de jogo — tudo dentro do <svg> do vídeo.
+function CamadaRelvado({ calibrando, calibracao, cantosCrus, cantos, refFJ, onAgarrarPonto }) {
+  const cal = cantos ? { W: calibrando.W, D: calibrando.D, img: cantos } : (!calibrando ? calibracao : null);
+  const H = cal ? matrizDaCalibracao(cal) : null;
+  const Hi = H ? inverterH(H) : null;
+  const linhas = [];
+  if (Hi) {
+    const W = Number(cal.W), D = Number(cal.D);
+    const ref = aplicarH(Hi, { x: W / 2, y: D / 2 });
+    const sinal = ref ? Math.sign(ref.w) : 1;
+    const proj = (q) => { const r = aplicarH(Hi, q); return r && Math.sign(r.w) === sinal ? r : null; };
+    const traco = (q1, q2, forte, k) => {
+      const pts = [];
+      for (let s = 0; s <= 24; s++) {
+        const r = proj({ x: q1.x + ((q2.x - q1.x) * s) / 24, y: q1.y + ((q2.y - q1.y) * s) / 24 });
+        if (r) pts.push(`${r.x},${r.y}`);
+      }
+      if (pts.length > 1) {
+        linhas.push(<polyline key={k} points={pts.join(' ')} fill="none" stroke={forte ? T.gold : '#ffffff'}
+          strokeOpacity={forte ? 0.95 : 0.28} strokeWidth={forte ? 0.22 : 0.1} style={{ pointerEvents: 'none' }} />);
+      }
+    };
+    for (let x = -15; x <= W + 15; x += 5) traco({ x, y: -3 }, { x, y: D + 30 }, false, `gx${x}`);
+    for (let y = 0; y <= D + 30; y += 5) traco({ x: -15, y }, { x: W + 15, y }, false, `gy${y}`);
+    const r4 = planoDaCalibracao(cal);
+    r4.forEach((q, k) => traco(q, r4[(k + 1) % 4], true, `r${k}`));
+  }
+  const reta = (p1, p2, cor, k, larg = 0.18) => {
+    const dx = p2.x - p1.x, dy = p2.y - p1.y, len = Math.hypot(dx, dy) || 1;
+    const ex = (dx / len) * 300, ey = (dy / len) * 300;
+    return <line key={k} x1={p1.x - ex} y1={p1.y - ey} x2={p2.x + ex} y2={p2.y + ey} stroke={cor} strokeWidth={larg} strokeDasharray="0.8 0.5" style={{ pointerEvents: 'none' }} />;
+  };
+  const porLinhas = calibrando && calibrando.modo === 'linhas';
+  return (
+    <g>
+      {linhas}
+      {porLinhas && [0, 2, 4, 6].filter(k => calibrando.pontos[k + 1]).map(k => reta(calibrando.pontos[k], calibrando.pontos[k + 1], '#4FC3F7', `rl${k}`))}
+      {/* À espera da linha de baliza: os 4 lados a azul. */}
+      {calibrando && calibrando.ladoBaliza == null && cantosCrus && cantosCrus.map((q, k) => {
+        const r = cantosCrus[(k + 1) % 4];
+        return <line key={`lado${k}`} x1={q.x} y1={q.y} x2={r.x} y2={r.y} stroke="#4FC3F7" strokeWidth={0.45} strokeLinecap="round" style={{ pointerEvents: 'none' }} />;
+      })}
+      {cantos && (
+        <g style={{ pointerEvents: 'none' }}>
+          <line x1={cantos[0].x} y1={cantos[0].y} x2={cantos[1].x} y2={cantos[1].y} stroke={T.crimsonBright} strokeWidth={0.5} strokeLinecap="round" />
+          <text x={(cantos[0].x + cantos[1].x) / 2} y={(cantos[0].y + cantos[1].y) / 2 - 1} textAnchor="middle" fill="#fff" fontSize={1.8} fontWeight={700}
+            style={{ ...body, paintOrder: 'stroke', stroke: '#000', strokeWidth: 0.35 }}>baliza</text>
+        </g>
+      )}
+      {calibrando && calibrando.pontos.map((q, k) => (
+        <g key={`cal${k}`}>
+          <circle cx={q.x} cy={q.y} r={0.7} fill={T.gold} stroke="#000" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
+          <text x={q.x + 1} y={q.y - 0.9} fill="#fff" fontSize={1.8} fontWeight={700}
+            style={{ ...body, paintOrder: 'stroke', stroke: '#000', strokeWidth: 0.35, pointerEvents: 'none' }}>
+            {porLinhas ? `L${Math.floor(k / 2) + 1}` : k + 1}
+          </text>
+          <circle cx={q.x} cy={q.y} r={2.2} fill="transparent" onPointerDown={e => onAgarrarPonto(k, e)}
+            style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'all' }} />
+        </g>
+      ))}
+      {refFJ && [refFJ.l1 || [], refFJ.l2 || []].map((l, k) => (
+        <g key={`refj${k}`} style={{ pointerEvents: 'none' }}>
+          {l.length === 2 && reta(l[0], l[1], '#4FC3F7', `rf${k}`, 0.16)}
+          {l.map((q, j) => <circle key={j} cx={q.x} cy={q.y} r={0.6} fill="#4FC3F7" stroke="#000" strokeWidth={0.12} />)}
+        </g>
+      ))}
+    </g>
+  );
+}
+
+const estiloCaixaRelvado = {
+  position: 'absolute', top: 12, zIndex: 7, width: 300, maxWidth: 'calc(100% - 40px)',
+  background: 'rgba(0,0,0,0.9)', border: `1px solid ${T.line}`, borderRadius: 10, padding: 12,
+  color: '#fff', fontSize: 12.5, ...body, display: 'flex', flexDirection: 'column', gap: 8,
+};
+const BotaoRelvado = ({ rotulo, onClick, on, desligado }) => (
+  <button type="button" onClick={onClick} disabled={desligado} style={{
+    background: on ? T.gold : 'transparent', color: on ? '#111' : '#fff', border: `1px solid ${on ? T.gold : T.line}`,
+    borderRadius: 6, padding: '5px 9px', fontSize: 12, cursor: desligado ? 'default' : 'pointer', opacity: desligado ? 0.4 : 1, ...body,
+  }}>{rotulo}</button>
+);
+
+// Painel: escolher a área, marcar, verificar, confirmar; depois as opções.
+function PainelRelvado({
+  calibrando, setCalibrando, calibracao, setCalibracao, cantos, modoCalib, setModoCalib,
+  noChao, setNoChao, grelha, setGrelha, guias, alternarGuia, comprimentoCampo, setComprimentoCampo,
+  ultimaCalibracao, onComecar, onConfirmar, onFechar,
+}) {
+  // Fica do lado contrário aos pontos, para não tapar a área a marcar.
+  const pts = calibrando ? calibrando.pontos : [];
+  const mediaX = pts.length ? pts.reduce((s, q) => s + q.x, 0) / pts.length : 0;
+  const caixa = { ...estiloCaixaRelvado, ...(pts.length && mediaX < 50 ? { right: 12 } : { left: 12 }) };
+  if (calibrando) {
+    const modelo = MODELOS_CALIBRACAO.find(m => m.id === calibrando.tipo);
+    const porLinhas = calibrando.modo === 'linhas';
+    const total = porLinhas ? 8 : 4;
+    const n = calibrando.pontos.length;
+    const verif = cantos ? validarCalibracao(cantos, calibrando.W, calibrando.D) : null;
+    const linhaAtual = Math.floor(n / 2);
+    return (
+      <div style={caixa} onPointerDown={e => e.stopPropagation()}>
+        <div style={{ fontWeight: 700 }}>Calibrar — {modelo ? modelo.nome : ''} · {porLinhas ? 'por linhas' : 'por cantos'}</div>
+        <div style={{ color: T.cream, lineHeight: 1.4 }}>
+          {n === total && calibrando.ladoBaliza == null
+            ? <><b>Agora toca na linha de baliza</b> — o lado da área colado à baliza (as linhas a azul).</>
+            : n < total
+              ? (porLinhas
+                ? <>Linha <b>{linhaAtual + 1} de 4</b> — {LINHAS_CALIBRACAO[linhaAtual]}: toca no <b>{n % 2 === 0 ? '1.º' : '2.º'} ponto</b>, em qualquer sítio da linha (afasta bem os dois).</>
+                : <>Toca no canto <b>{n + 1} de 4</b>: {modelo ? modelo.passos[n] : ''}</>)
+              : 'Arrasta os pontos até a grelha amarela bater certo com as linhas do campo.'}
+        </div>
+        {verif && verif.ok && <div style={{ color: T.good, lineHeight: 1.4 }}>✓ Bate certo com a {modelo ? modelo.nome.toLowerCase() : 'área'}. A linha de baliza é a vermelha.</div>}
+        {verif && !verif.ok && verif.avisos.map((t, k) => <div key={k} style={{ color: T.warn, lineHeight: 1.4 }}>⚠ {t}</div>)}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <BotaoRelvado rotulo={verif && !verif.ok ? 'Confirmar mesmo assim' : 'Confirmar'} onClick={onConfirmar} on={!(verif && !verif.ok)} desligado={!cantos} />
+          {cantos && <BotaoRelvado rotulo="Mudar linha de baliza" onClick={() => setCalibrando(c => ({ ...c, ladoBaliza: null }))} />}
+          <BotaoRelvado rotulo="Recuar ponto" onClick={() => setCalibrando(c => ({ ...c, pontos: c.pontos.slice(0, -1), ladoBaliza: null }))} desligado={n === 0} />
+          <BotaoRelvado rotulo="Recomeçar" onClick={() => setCalibrando(c => ({ ...c, pontos: [], ladoBaliza: null }))} desligado={n === 0} />
+          <BotaoRelvado rotulo="Cancelar" onClick={() => setCalibrando(null)} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={caixa} onPointerDown={e => e.stopPropagation()}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontWeight: 700 }}>Relvado</span>
+        <button type="button" onClick={onFechar} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><X size={15} /></button>
+      </div>
+      {calibracao ? (
+        <>
+          {calibracao.duvidosa
+            ? <div style={{ color: T.warn, lineHeight: 1.4 }}>⚠ Calibrado com avisos — os desenhos no chão ficaram desligados (sairiam tortos). Recalibra até aparecer o ✓.</div>
+            : <div style={{ color: T.good }}>✓ Calibrado ({(MODELOS_CALIBRACAO.find(m => m.id === calibracao.tipo) || {}).nome || 'retângulo'})</div>}
+          <div style={{ color: T.mutedDim, lineHeight: 1.4 }}>Zona, Círculo, Seta e Linha desenham-se no chão, com a perspetiva do campo.</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <BotaoRelvado rotulo={noChao ? 'No chão: sim' : 'No chão: não'} onClick={() => setNoChao(v => !v)} on={noChao} />
+            <BotaoRelvado rotulo={grelha ? 'Grelha: sim' : 'Grelha: não'} onClick={() => setGrelha(v => !v)} on={grelha} />
+          </div>
+          <div style={{ color: T.mutedDim, marginTop: 2 }}>Linhas de campo:</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <BotaoRelvado rotulo="5 corredores" onClick={() => alternarGuia('corredores')} on={!!(guias && guias.corredores)} />
+            <BotaoRelvado rotulo="Terços" onClick={() => alternarGuia('tercos')} on={!!(guias && guias.tercos)} />
+            <span style={{ color: T.mutedDim, fontSize: 11.5 }}>campo</span>
+            <input value={comprimentoCampo} inputMode="numeric"
+              onChange={e => setComprimentoCampo(Number(String(e.target.value).replace(/\D/g, '').slice(0, 3)) || 0)}
+              style={{ width: 44, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 5px', fontSize: 12, textAlign: 'center' }} />
+            <span style={{ color: T.mutedDim, fontSize: 11.5 }}>m</span>
+          </div>
+          <div style={{ color: T.mutedDim, lineHeight: 1.4, fontSize: 11.5 }}>
+            Na barra: <b style={{ color: T.cream }}>Medir</b> (arrasta entre dois pontos → metros) e <b style={{ color: T.cream }}>Fora de jogo</b> (toca nos pés do jogador).
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <BotaoRelvado rotulo="Recalibrar" onClick={() => onComecar(MODELOS_CALIBRACAO.find(m => m.id === calibracao.tipo) || MODELOS_CALIBRACAO[0], calibracao.W, calibracao.D, calibracao.modo || modoCalib)} />
+            <BotaoRelvado rotulo="Tirar calibração" onClick={() => setCalibracao(null)} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ color: T.mutedDim, lineHeight: 1.4 }}>
+            Com o vídeo parado, marca uma área que se veja bem. A partir daí, as formas ficam assentes no relvado e dá para medir em metros.
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ color: T.mutedDim }}>Marcar por:</span>
+            <BotaoRelvado rotulo="Cantos" onClick={() => setModoCalib('cantos')} on={modoCalib === 'cantos'} />
+            <BotaoRelvado rotulo="Linhas" onClick={() => setModoCalib('linhas')} on={modoCalib === 'linhas'} />
+          </div>
+          <div style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: 1.35 }}>
+            {modoCalib === 'linhas'
+              ? 'Linhas: 2 toques em cada linha da área, a dar a volta — serve com os cantos tapados ou fora do ecrã.'
+              : 'Cantos: os 4 cantos da área, a dar a volta, a começar em qualquer um.'}
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {MODELOS_CALIBRACAO.filter(m => m.W).map(m => <BotaoRelvado key={m.id} rotulo={m.nome} onClick={() => onComecar(m)} />)}
+          </div>
+          <form onSubmit={e => {
+            e.preventDefault();
+            const W = parseFloat(String(e.currentTarget.elements.w.value).replace(',', '.'));
+            const D = parseFloat(String(e.currentTarget.elements.d.value).replace(',', '.'));
+            if (W > 0 && D > 0) onComecar(MODELOS_CALIBRACAO.find(m => m.id === 'medida'), W, D);
+          }} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ color: T.mutedDim }}>À medida:</span>
+            <input name="w" placeholder="largura m" inputMode="decimal" style={{ width: 70, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 12 }} />
+            <span>×</span>
+            <input name="d" placeholder="prof. m" inputMode="decimal" style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 12 }} />
+            <button type="submit" style={{ background: 'transparent', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>Marcar</button>
+          </form>
+          {ultimaCalibracao && <div><BotaoRelvado rotulo="Usar a calibração anterior" onClick={() => setCalibracao(ultimaCalibracao)} /></div>}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Fora de jogo: pedir a referência (se faltar) ou mostrar que está feita.
+function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
+  const pronto = refFJ && refFJ.pronto;
+  if (!pronto && temCalibracaoBoa) return null; // a referência sai da calibração
+  const base = { position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 7, ...body };
+  if (pronto) {
+    return (
+      <div onPointerDown={e => e.stopPropagation()} style={{
+        ...base, background: 'rgba(0,0,0,0.85)', border: `1px solid ${T.line}`, borderRadius: 18, padding: '5px 8px 5px 12px',
+        color: T.cream, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        Referência ✓ ({refFJ.l2 && refFJ.l2.length === 2 ? '2 linhas' : '1 linha'}) — toca nos pés do jogador
+        <BotaoRelvado rotulo="Refazer" onClick={() => setRefFJ(null)} />
+      </div>
+    );
+  }
+  const n1 = refFJ ? refFJ.l1.length : 0;
+  const n2 = refFJ ? refFJ.l2.length : 0;
+  return (
+    <div onPointerDown={e => e.stopPropagation()} style={{
+      ...base, width: 360, maxWidth: 'calc(100% - 40px)', background: 'rgba(0,0,0,0.9)', border: `1px solid ${T.line}`,
+      borderRadius: 10, padding: 12, color: '#fff', fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 8, lineHeight: 1.4,
+    }}>
+      <div style={{ fontWeight: 700 }}>Fora de jogo — referência</div>
+      <div style={{ color: T.cream }}>
+        {n1 < 2
+          ? <>Toca em <b>2 pontos de uma linha paralela à linha de baliza</b> (a linha da grande área, por exemplo) — bem afastados.</>
+          : <>Agora, se se vir, <b>2 pontos noutra linha paralela</b> (linha de baliza ou da pequena área) — fica muito mais certo. Ou usa só esta.</>}
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {n1 === 2 && n2 === 0 && <BotaoRelvado rotulo="Usar só uma linha" on onClick={() => setRefFJ(r => ({ ...r, pronto: true }))} />}
+        {(n1 + n2) > 0 && <BotaoRelvado rotulo="Recomeçar" onClick={() => setRefFJ(null)} />}
+      </div>
+    </div>
+  );
+}
+
 export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
@@ -1846,6 +2096,22 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   const [modoDesenho, setModoDesenho] = useState(false);
+  /* ===== RELVADO — calibração, Medir, Fora de jogo, corredores/terços =====
+     Só aqui, na Análise de Vídeo (o trabalho mais ao pormenor). A
+     calibração vale para o enquadramento atual: cada forma desenhada no
+     chão leva a perspetiva consigo (`chao.H`), por isso continua certa
+     no clipe mesmo depois de a câmara mexer e se recalibrar. */
+  const [calibracao, setCalibracao] = useState(null);
+  const [calibrando, setCalibrando] = useState(null); // { tipo, W, D, modo, pontos, ladoBaliza }
+  const [painelRelvado, setPainelRelvado] = useState(false);
+  const [grelhaRelvado, setGrelhaRelvado] = useState(true);
+  const [noChao, setNoChao] = useState(true);
+  const [modoCalib, setModoCalib] = useState('cantos');
+  const [comprimentoCampo, setComprimentoCampo] = useState(100);
+  const [refFJ, setRefFJ] = useState(null); // { l1:[p,q], l2:[p,q], pronto }
+  const arrastoCalib = useRef(null);
+  const ultimaCalibracao = useRef(null);
+  const matrizRelvado = calibracao ? matrizDaCalibracao(calibracao) : null;
   const [tool, setTool] = useState('seta');
   const [corAtual, setCorAtual] = useState(COR_DESENHO);
   const [shapes, setShapes] = useState([]);
@@ -1963,6 +2229,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   })();
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
+  // Outro vídeo = outro enquadramento: a calibração e a referência recomeçam.
+  useEffect(() => { setCalibracao(null); setCalibrando(null); setRefFJ(null); }, [originalAtivoId]);
 
   // Enquanto houver algum vídeo "a preparar" (pronto: false), confirma-se
   // a cada 15 segundos se já ficou pronto — sem esperar pela rede de
@@ -2380,6 +2648,67 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Dá para dar play, deixar correr até ao ponto certo, pausar, e usar esse
   // momento exato — em vez de teres de escrever o minuto de cabeça.
   const usarTempoAtualComoLimite = () => setDuracaoInputTexto(fmt(current));
+  // ---------- Relvado: funções ----------
+  const cantosCrus = (c) => {
+    if (!c) return null;
+    return c.modo === 'linhas' ? (c.pontos.length === 8 ? cantosDasLinhas(c.pontos) : null) : (c.pontos.length === 4 ? c.pontos : null);
+  };
+  // A linha de baliza escolhe-se com um toque (P1–P2), não se adivinha.
+  const cantosCalib = (c) => {
+    const cr = cantosCrus(c);
+    if (!cr || c.ladoBaliza == null) return null;
+    return [0, 1, 2, 3].map(k => cr[(c.ladoBaliza + k) % 4]);
+  };
+  const comecarCalibracao = (modelo, W, D, modo = modoCalib) => {
+    setCalibrando({ tipo: modelo.id, W: modelo.W || W, D: modelo.D || D, pontos: [], modo, ladoBaliza: null });
+    videoRef.current?.pause();
+    setEditandoDuracaoIndex(null);
+    setPontosEmCurso(null);
+  };
+  const confirmarCalibracao = () => {
+    const c = calibrando;
+    const cantos = cantosCalib(c);
+    if (!cantos) return;
+    const verif = validarCalibracao(cantos, c.W, c.D);
+    const duvidosa = !(verif && verif.ok);
+    const cal = { tipo: c.tipo, W: c.W, D: c.D, img: cantos, modo: c.modo, ...(duvidosa ? { duvidosa: true } : {}) };
+    if (!matrizDaCalibracao(cal)) return;
+    setCalibracao(cal);
+    ultimaCalibracao.current = cal;
+    setCalibrando(null);
+    setGrelhaRelvado(true);
+    setNoChao(!duvidosa); // com avisos, não desenha no chão (sairia torto)
+  };
+  const FERR_CHAO = ['retangulo', 'circulo', 'seta', 'linha', 'medida'];
+  const campoCal = () => ({ cx: calibracao ? Number(calibracao.W) / 2 : 0, L: comprimentoCampo });
+  const chaoParaNova = (t) => (matrizRelvado && (noChao || t === 'medida') && FERR_CHAO.includes(t) ? { chao: { H: matrizRelvado, campo: campoCal() } } : {});
+  // Fora de jogo: referência marcada, ou (se a calibração for boa) tirada dela.
+  const referenciaFJAtual = () => {
+    if (refFJ && refFJ.pronto && refFJ.l1 && refFJ.l1.length === 2) {
+      return referenciaForaDeJogo(refFJ.l1, refFJ.l2 && refFJ.l2.length === 2 ? refFJ.l2 : null);
+    }
+    if (matrizRelvado && calibracao && !calibracao.duvidosa) {
+      const Hi = inverterH(matrizRelvado);
+      const cx = Number(calibracao.W) / 2;
+      const pr = (q) => { const r = Hi && aplicarH(Hi, q); return r ? { x: r.x, y: r.y } : null; };
+      const a1 = pr({ x: cx - 20, y: 0 }), b1 = pr({ x: cx + 20, y: 0 }), a2 = pr({ x: cx - 20, y: 16 }), b2 = pr({ x: cx + 20, y: 16 });
+      if (a1 && b1 && a2 && b2) return referenciaForaDeJogo([a1, b1], [a2, b2]);
+    }
+    return null;
+  };
+  // Corredores / terços: uma forma de fundo (fica por baixo de tudo).
+  const guiasAtuais = shapes.find(f => f.tool === 'guias' && shapeVisivelEm(f, current));
+  const alternarGuia = (chave) => {
+    if (!matrizRelvado) return;
+    pushHistorico();
+    setShapes(prev => {
+      const atual = prev.find(f => f.tool === 'guias' && shapeVisivelEm(f, current));
+      const base = atual || { id: uid(), tool: 'guias', color: '#FFFFFF', points: [{ x: 50, y: 28 }], corredores: false, tercos: false, criadoEmTempo: current, mostrarAte: null };
+      const novo = { ...base, [chave]: !base[chave], chao: { H: matrizRelvado, campo: campoCal() } };
+      const resto = prev.filter(f => f !== atual);
+      return (novo.corredores || novo.tercos) ? [novo, ...resto] : resto;
+    });
+  };
   // Cor: com um desenho selecionado, muda também a cor dele.
   const mudarCor = (cor) => {
     setCorAtual(cor);
@@ -2421,6 +2750,33 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     videoRef.current?.pause();
     const pt = getPoint(e);
 
+    // RELVADO — a calibrar: cada toque é um ponto; depois, um toque na linha de baliza.
+    if (calibrando) {
+      const maximo = calibrando.modo === 'linhas' ? 8 : 4;
+      if (calibrando.pontos.length < maximo) { setCalibrando(c => ({ ...c, pontos: [...c.pontos, pt] })); return; }
+      if (calibrando.ladoBaliza == null) {
+        const cr = cantosCrus(calibrando);
+        if (!cr) return;
+        let melhor = -1, dist = Infinity;
+        for (let k = 0; k < 4; k++) {
+          const d = distPontoSegmento(pt, cr[k], cr[(k + 1) % 4]);
+          if (d < dist) { dist = d; melhor = k; }
+        }
+        if (melhor >= 0 && dist < 8) setCalibrando(c => ({ ...c, ladoBaliza: melhor }));
+      }
+      return;
+    }
+    // FORA DE JOGO — sem referência ainda: os toques marcam-na.
+    if (tool === 'foraDeJogo' && !referenciaFJAtual()) {
+      setRefFJ(prev => {
+        const ref = prev || { l1: [], l2: [], pronto: false };
+        if (ref.l1.length < 2) return { ...ref, l1: [...ref.l1, pt] };
+        if (ref.l2.length < 2) { const l2 = [...ref.l2, pt]; return { ...ref, l2, pronto: l2.length === 2 }; }
+        return ref;
+      });
+      return;
+    }
+
     // A construir uma "Zona livre" ou "Ligar pontos" — cada toque só
     // acrescenta mais um vértice (conclui-se com o botão "Concluir").
     if (pontosEmCurso) {
@@ -2453,8 +2809,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       return;
     }
     if (tool === 'zonalivre' || tool === 'linhaPontos') { pontosDesfeitos.current = []; setPontosEmCurso({ tool, points: [pt] }); return; }
+    // Fora de jogo: um toque nos pés do jogador → a linha.
+    if (tool === 'foraDeJogo') {
+      const r = referenciaFJAtual();
+      if (!r) return;
+      pushHistorico();
+      setShapes(s => [...s, { id: uid(), tool: 'foraDeJogo', color: corAtual, points: [pt], fj: r, criadoEmTempo: current, mostrarAte: null }]);
+      return;
+    }
+    if (tool === 'medida' && !matrizRelvado) return;
     pushHistorico();
-    drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null };
+    drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null, ...chaoParaNova(tool) };
     setShapes(s => [...s, drawState.current]);
   };
   // Arrastar uma das "pegas" de uma forma selecionada (aparecem junto ao
@@ -2476,6 +2841,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
   const moveDraw = (e) => {
     if (!modoDesenho) return;
+    if (arrastoCalib.current != null) {
+      const pt = getPoint(e);
+      const k = arrastoCalib.current;
+      setCalibrando(c => (c ? { ...c, pontos: c.pontos.map((q, i) => (i === k ? pt : q)) } : c));
+      return;
+    }
     if (apagando.current) {
       const pt = getPoint(e);
       let melhorI = -1, melhorD = RAIO_TOQUE;
@@ -2495,6 +2866,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       }
       setShapes(s => s.map((sh, i) => {
         if (i !== index) return sh;
+        // Zona no chão: roda e mexe nos cantos no próprio relvado.
+        if (tipo === 'rotacao' && sh.chao) return { ...sh, rotacao: anguloRodarZonaNoChao(sh, pt) };
+        if (sh.tool === 'retangulo' && sh.chao) {
+          const pLocal = sh.rotacao ? desrodarNaZonaNoChao(sh, pt) : pt;
+          return { ...sh, points: sh.points.map((p, pi) => (pi === ponto ? pLocal : p)) };
+        }
         if (tipo === 'rotacao' && sh.points[0] && sh.points[1]) {
           const [pa, pb] = sh.points;
           const cx = (Math.min(pa.x, pb.x) + Math.max(pa.x, pb.x)) / 2, cy = (Math.min(pa.y, pb.y) + Math.max(pa.y, pb.y)) / 2;
@@ -2539,6 +2916,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
   };
   const endDraw = () => {
+    if (arrastoCalib.current != null) { arrastoCalib.current = null; return; }
     if (apagando.current) { apagando.current = false; return; }
     if (handleDragState.current) { handleDragState.current = null; return; }
     if (dragState.current) {
@@ -2721,6 +3099,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 ))}
                 <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
                 <ToolBtn icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
+                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <ToolBtn icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />
+                {calibracao && <ToolBtn icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
+                <ToolBtn icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />
 
                 {/* Em ecrã inteiro não há coluna à direita (ficaria fora do
                    alcance do rato/dedo num ecrã grande) — texto, cores e
@@ -2774,6 +3156,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? CURSOR_BORRACHA : hoverMove ? 'move' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
                 {trajetoriaFocoPendente && <MarcadorTrajetoria videoRef={videoRef} pontos={trajetoriaFocoPendente.pontos} />}
+                {modoDesenho && (
+                  <CamadaRelvado calibrando={calibrando} calibracao={grelhaRelvado ? calibracao : null}
+                    cantosCrus={cantosCrus(calibrando)} cantos={cantosCalib(calibrando)}
+                    refFJ={tool === 'foraDeJogo' ? refFJ : null}
+                    onAgarrarPonto={(k, e) => { e.stopPropagation(); arrastoCalib.current = k; }} />
+                )}
 
                 {/* Pré-visualização da "Zona livre" / "Ligar pontos" a meio da construção */}
                 {pontosEmCurso && pontosEmCurso.points.length > 0 && (
@@ -2794,7 +3182,26 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {/* Pegas para mover/redimensionar a forma selecionada (a mesma que tem o popup de duração aberto) —
                    para a Zona livre e o Ligar pontos, aparece uma pega por cada vértice já colocado.
                    Mais pequenas e finas do que antes, para não tapar o vídeo. */}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && shapes[editandoDuracaoIndex].tool === 'retangulo' && shapes[editandoDuracaoIndex].points[1] && (() => {
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && shapes[editandoDuracaoIndex].tool === 'retangulo' && shapes[editandoDuracaoIndex].chao && shapes[editandoDuracaoIndex].points[1] && (() => {
+                  // Zona no chão: cantos e pega de rodar na perspetiva do relvado (sem inclinar).
+                  const forma = shapes[editandoDuracaoIndex];
+                  const c0 = pegaZonaNoChao(forma, 0), c1 = pegaZonaNoChao(forma, 1);
+                  const rc = pegaRodarZonaNoChao(forma);
+                  return (
+                    <g>
+                      {rc && rc.base && rc.pega && <line x1={rc.base.x} y1={rc.base.y} x2={rc.pega.x} y2={rc.pega.y} stroke={T.gold} strokeWidth={0.15} />}
+                      <circle cx={c0.x} cy={c0.y} r={0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
+                        onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 0, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
+                      <circle cx={c1.x} cy={c1.y} r={0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
+                        onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 1, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
+                      {rc && rc.pega && (
+                        <circle cx={rc.pega.x} cy={rc.pega.y} r={0.55} fill={T.gold} stroke="#fff" strokeWidth={0.15}
+                          onPointerDown={e => startHandleDrag(editandoDuracaoIndex, null, e, 'rotacao')} style={{ cursor: 'grab', touchAction: 'none' }} />
+                      )}
+                    </g>
+                  );
+                })()}
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && shapes[editandoDuracaoIndex].tool === 'retangulo' && !shapes[editandoDuracaoIndex].chao && shapes[editandoDuracaoIndex].points[1] && (() => {
                   const forma = shapes[editandoDuracaoIndex];
                   const [pa, pb] = forma.points;
                   const x = Math.min(pa.x, pb.x), y = Math.min(pa.y, pb.y), w = Math.abs(pb.x - pa.x), h = Math.abs(pb.y - pa.y);
@@ -2826,7 +3233,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </g>
                   );
                 })()}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) &&
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'zonalivre', 'linhaPontos', 'medida'].includes(shapes[editandoDuracaoIndex].tool) &&
                   shapes[editandoDuracaoIndex].points.map((p, pi) => (
                     <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.4 : 0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
                       onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
@@ -2863,6 +3270,22 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   </Btn>
                   <Btn variant="ghost" onClick={() => setPontosEmCurso(null)} style={{ padding: '5px 10px', fontSize: 12 }}>Cancelar</Btn>
                 </div>
+              )}
+              {modoDesenho && (painelRelvado || calibrando) && (
+                <PainelRelvado
+                  calibrando={calibrando} setCalibrando={setCalibrando} calibracao={calibracao} setCalibracao={setCalibracao}
+                  cantos={cantosCalib(calibrando)} modoCalib={modoCalib} setModoCalib={setModoCalib}
+                  noChao={noChao} setNoChao={setNoChao} grelha={grelhaRelvado} setGrelha={setGrelhaRelvado}
+                  guias={guiasAtuais} alternarGuia={alternarGuia}
+                  comprimentoCampo={comprimentoCampo} setComprimentoCampo={(n) => {
+                    setComprimentoCampo(n);
+                    if (n >= 60) setShapes(prev => prev.map(f => (f.tool === 'guias' && f.chao ? { ...f, chao: { ...f.chao, campo: { ...f.chao.campo, L: n } } } : f)));
+                  }}
+                  ultimaCalibracao={ultimaCalibracao.current}
+                  onComecar={comecarCalibracao} onConfirmar={confirmarCalibracao} onFechar={() => setPainelRelvado(false)} />
+              )}
+              {modoDesenho && tool === 'foraDeJogo' && (
+                <AjudaForaDeJogo refFJ={refFJ} setRefFJ={setRefFJ} temCalibracaoBoa={!!(calibracao && !calibracao.duvidosa)} />
               )}
               {textoPendente && (
                 <div onPointerDown={e => e.stopPropagation()}
