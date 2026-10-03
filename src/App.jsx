@@ -4680,7 +4680,14 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     return { idPorEmail, membroPorId };
   }, [linhas, membros]);
 
-  const chaveDe = useCallback((e) => (e.ator_email ? e.ator_email.toLowerCase() : (e.ator_id || QUIOSQUE)), []);
+  /* Marcas que não são pessoas da equipa técnica: as respostas do Portal
+     do Atleta chegam com "portal-atleta" (ou outra marca sem "@") no lugar
+     do email — contam como o jogador, não como "Alguém da equipa". */
+  const chaveDe = useCallback((e) => {
+    const em = (e.ator_email || '').toLowerCase();
+    if (em && !em.includes('@')) return QUIOSQUE;
+    return em || e.ator_id || QUIOSQUE;
+  }, []);
   const quemE = useCallback((chave) => {
     if (chave === QUIOSQUE) return { nome: 'Jogadores', cor: T.mutedDim, eu: false, quiosque: true };
     const id = chave.includes('@') ? pessoasInfo.idPorEmail[chave] : chave;
