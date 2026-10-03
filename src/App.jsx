@@ -28796,7 +28796,20 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
    · O bloqueio depois de submetido é IMPOSTO NO SERVIDOR (a função
      `checkin_desenvolvimento_responder` recusa qualquer escrita depois
      de `enviado = true`), não só escondido na interface — para não
-     bastar reabrir a página antiga para voltar a editar. */
+     bastar reabrir a página antiga para voltar a editar.
+
+   (REVISTO) RESPONDE-SE DE UMA VEZ E SUBMETE-SE. Antes cada resposta
+   gravava-se logo no servidor — o atleta podia sair a meio e ir mudando
+   respostas ao longo dos dias (e a equipa técnica via essas mudanças a
+   acontecer). Agora:
+   · As respostas ficam só no telemóvel até ao "Submeter": nada chega à
+     equipa técnica antes disso, e o que chega é a versão final.
+   · Não se sai a meio sem aviso: "Voltar"/fechar pergunta "se saíres
+     agora, as respostas perdem-se" — ou se continua e submete, ou se
+     sai e recomeça do zero noutra altura. Fechar o separador também
+     avisa (o browser pergunta).
+   · Ao submeter, as 30 respostas vão de uma vez e o momento fica
+     fechado (o servidor continua a recusar mudanças depois). */
 function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
   const [estado, dados] = usePortalFetch('checkin_desenvolvimento', code, teamId);
   const [auto, setAuto] = useState(null);
@@ -28804,6 +28817,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
   const [confirmar, setConfirmar] = useState(false);
   const [aSubmeter, setASubmeter] = useState(false);
   const [erro, setErro] = useState('');
+  const [confirmarSaida, setConfirmarSaida] = useState(false);
 
   useEffect(() => {
     if (dados && dados.registoId && auto === null) {
@@ -28811,6 +28825,17 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
       setEnviado(!!dados.enviado);
     }
   }, [dados, auto]);
+
+  // A meio do questionário (algo respondido, ainda não submetido)?
+  const aMeio = !!(auto && !enviado && diRespondido(auto) > 0);
+  // Fechar o separador / recarregar a meio: o browser pede confirmação.
+  useEffect(() => {
+    if (!aMeio) return undefined;
+    const aoSair = (e) => { e.preventDefault(); e.returnValue = ''; return ''; };
+    window.addEventListener('beforeunload', aoSair);
+    return () => window.removeEventListener('beforeunload', aoSair);
+  }, [aMeio]);
+  const tentarSair = () => { if (aMeio) setConfirmarSaida(true); else onBack(); };
 
   const voltar = (
     <button onClick={onBack} style={{
@@ -28871,27 +28896,22 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
     );
   }
 
-  const gravarResposta = async (indId, valor) => {
-    const anterior = auto || {};
-    const novo = { ...anterior, [indId]: valor === undefined ? null : valor };
-    setAuto(novo); // otimista — a resposta muda de cor já, sem esperar pela rede
+  // Só no telemóvel — chega ao servidor tudo junto, no "Submeter".
+  const gravarResposta = (indId, valor) => {
+    setAuto(prev => ({ ...(prev || {}), [indId]: valor === undefined ? null : valor }));
     setErro('');
-    try {
-      const { data, error } = await supabase.rpc('checkin_desenvolvimento_responder', {
-        p_code: code, p_team: teamId, p_registo_id: dados.registoId,
-        p_auto: { [indId]: valor === undefined ? null : valor }, p_submeter: false,
-      });
-      if (error || !(data && data.ok)) throw (error || new Error('recusado'));
-    } catch (e) {
-      setAuto(anterior); // não ficou guardado — não se finge que ficou
-      setErro('Essa resposta não ficou guardada. Tenta outra vez.');
-    }
   };
 
   const confirmarSubmissao = async () => {
     setASubmeter(true);
     setErro('');
     try {
+      // 1) as respostas todas de uma vez; 2) fecha o momento.
+      const r1 = await supabase.rpc('checkin_desenvolvimento_responder', {
+        p_code: code, p_team: teamId, p_registo_id: dados.registoId,
+        p_auto: auto || {}, p_submeter: false,
+      });
+      if (r1.error || !(r1.data && r1.data.ok)) throw (r1.error || new Error('recusado'));
       const { data, error } = await supabase.rpc('checkin_desenvolvimento_responder', {
         p_code: code, p_team: teamId, p_registo_id: dados.registoId,
         p_auto: {}, p_submeter: true,
@@ -28918,7 +28938,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
         respostas={auto}
         permitirNA={false}
         onChange={gravarResposta}
-        onClose={onBack}
+        onClose={tentarSair}
         onSubmeter={() => setConfirmar(true)}
         podeSubmeter={podeSubmeter}
         aSubmeter={aSubmeter}
@@ -28929,6 +28949,24 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
           background: T.surfaceRaise, border: `1px solid ${T.bad}`, color: T.bad, borderRadius: 8,
           padding: '9px 16px', fontSize: 12.5, ...body,
         }}>{erro}</div>
+      )}
+      {confirmarSaida && (
+        <div style={{
+          position: 'fixed', inset: 0, background: '#000000aa', zIndex: 60,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div style={{ background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20, maxWidth: 380, width: '100%' }}>
+            <div style={{ ...display, fontSize: 16, color: T.cream, marginBottom: 8 }}>Ainda não submeteste</div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 18, lineHeight: 1.5 }}>
+              Respondeste a {diRespondido(auto)} de {DI_INDICADORES.length}. As respostas só contam depois de submeteres —
+              se saíres agora, perdem-se e tens de começar de novo.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+              <Btn variant="ghost" onClick={() => { setConfirmarSaida(false); onBack(); }}>Sair e perder</Btn>
+              <Btn onClick={() => setConfirmarSaida(false)}>Continuar a responder</Btn>
+            </div>
+          </div>
+        </div>
       )}
       {confirmar && (
         <div style={{
