@@ -33059,13 +33059,22 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (ytATocarRef.current) enviarComandoYoutube('pauseVideo');
   };
   // Os 4 cantos da calibração em curso (pelas linhas, são os cruzamentos).
-  const cantosCalibBib = (c) => {
+  // Os 4 cantos tal como foram marcados (à volta da área, por qualquer ordem).
+  const cantosCrusBib = (c) => {
     if (!c) return null;
-    const crus = c.modo === 'linhas' ? (c.pontos.length === 8 ? cantosDasLinhas(c.pontos) : null) : (c.pontos.length === 4 ? c.pontos : null);
-    if (!crus) return null;
-    // Qualquer orientação: a app descobre qual é a linha de baliza.
-    const o = ordenarCantosAuto(crus, c.W, c.D, !!c.trocar);
-    return o ? o.cantos : crus;
+    return c.modo === 'linhas' ? (c.pontos.length === 8 ? cantosDasLinhas(c.pontos) : null) : (c.pontos.length === 4 ? c.pontos : null);
+  };
+  /* QUAL É A LINHA DE BALIZA — pergunta-se, não se adivinha. Com a câmara
+     na bancada lateral, a área aparece "de lado" e a perspetiva sozinha
+     não chega para saber que lados são a largura; adivinhar dava o campo
+     "em pé" quando ele estava deitado. Depois dos pontos, um toque no lado
+     da área colado à baliza resolve: os cantos passam a contar a partir
+     daí (P1–P2 = linha de baliza). */
+  const cantosCalibBib = (c) => {
+    const crus = cantosCrusBib(c);
+    if (!crus || c.ladoBaliza == null) return null;
+    const k = c.ladoBaliza;
+    return [0, 1, 2, 3].map(i => crus[(k + i) % 4]);
   };
   const confirmarCalibracaoBib = () => {
     const c = calibrandoBib;
@@ -33545,7 +33554,21 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // A calibrar: cada toque é um dos 4 cantos (depois arrastam-se para acertar).
     if (calibrandoBib) {
       const maximo = calibrandoBib.modo === 'linhas' ? 8 : 4;
-      if (calibrandoBib.pontos.length < maximo) setCalibrandoBib(c => ({ ...c, pontos: [...c.pontos, p] }));
+      if (calibrandoBib.pontos.length < maximo) { setCalibrandoBib(c => ({ ...c, pontos: [...c.pontos, p] })); return; }
+      // Pontos todos postos: o toque seguinte escolhe a linha de baliza.
+      if (calibrandoBib.ladoBaliza == null) {
+        const crus = cantosCrusBib(calibrandoBib);
+        if (!crus) return;
+        let melhor = -1, dist = Infinity;
+        for (let k = 0; k < 4; k++) {
+          const p1 = crus[k], p2 = crus[(k + 1) % 4];
+          const dx = p2.x - p1.x, dy = p2.y - p1.y, l2 = dx * dx + dy * dy || 1;
+          const t = Math.max(0, Math.min(1, ((p.x - p1.x) * dx + (p.y - p1.y) * dy) / l2));
+          const d = Math.hypot(p.x - (p1.x + t * dx), p.y - (p1.y + t * dy));
+          if (d < dist) { dist = d; melhor = k; }
+        }
+        if (melhor >= 0 && dist < 8) setCalibrandoBib(c => ({ ...c, ladoBaliza: melhor }));
+      }
       return;
     }
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
@@ -36027,7 +36050,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                   stroke="#4FC3F7" strokeWidth={0.18} strokeDasharray="0.8 0.5" style={{ pointerEvents: 'none' }} />);
                               }
                             }
-                            // A linha de baliza que a app escolheu, a vermelho.
+                            // À espera da linha de baliza: os 4 lados a azul, para se tocar num.
+                            const crusEmCurso = calibrandoBib && calibrandoBib.ladoBaliza == null ? cantosCrusBib(calibrandoBib) : null;
+                            const ladosEscolher = crusEmCurso ? crusEmCurso.map((q, k) => {
+                              const r = crusEmCurso[(k + 1) % 4];
+                              return <line key={`lado${k}`} x1={q.x} y1={q.y} x2={r.x} y2={r.y} stroke="#4FC3F7" strokeWidth={0.45} strokeLinecap="round" style={{ pointerEvents: 'none' }} />;
+                            }) : null;
+                            // A linha de baliza escolhida, a vermelho.
                             const linhaBaliza = cantosEmCurso ? (
                               <g key="baliza" style={{ pointerEvents: 'none' }}>
                                 <line x1={cantosEmCurso[0].x} y1={cantosEmCurso[0].y} x2={cantosEmCurso[1].x} y2={cantosEmCurso[1].y}
@@ -36041,6 +36070,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               <g>
                                 {linhas}
                                 {retasLinhas}
+                                {ladosEscolher}
                                 {linhaBaliza}
                                 {calibrandoBib && calibrandoBib.pontos.map((q, k) => (
                                   <g key={`cal${k}`}>
@@ -36232,8 +36262,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         {(painelRelvadoBib || calibrandoBib) && (() => {
                           const modelo = calibrandoBib ? MODELOS_CALIBRACAO.find(m => m.id === calibrandoBib.tipo) : null;
                           const n = calibrandoBib ? calibrandoBib.pontos.length : 0;
+                          // O painel fica do lado CONTRÁRIO aos pontos — não pode tapar a área que se está a marcar.
+                          const pontosCal = calibrandoBib ? calibrandoBib.pontos : [];
+                          const mediaX = pontosCal.length ? pontosCal.reduce((s, q) => s + q.x, 0) / pontosCal.length : 0;
+                          const ladoPainel = pontosCal.length && mediaX < 50 ? { right: 86 } : { left: 86 };
                           const caixa = {
-                            position: 'absolute', top: 54, left: 86, zIndex: 7, width: 300, maxWidth: 'calc(100% - 180px)',
+                            position: 'absolute', top: 54, ...ladoPainel, zIndex: 7, width: 300, maxWidth: 'calc(100% - 180px)',
                             background: 'rgba(0,0,0,0.9)', border: `1px solid ${T.line}`, borderRadius: 10, padding: 12,
                             color: '#fff', fontSize: 12.5, ...body, display: 'flex', flexDirection: 'column', gap: 8,
                           };
@@ -36272,7 +36306,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                   <text x={50} y={48} textAnchor="middle" fontSize={4} fill="#aaa">a dar a volta à área — a câmara pode estar em qualquer lado</text>
                                 </svg>
                                 <div style={{ color: T.cream, lineHeight: 1.4 }}>
-                                  {n < total
+                                  {n === total && calibrandoBib.ladoBaliza == null
+                                    ? <><b>Agora toca na linha de baliza</b> — o lado da área que está colado à baliza (as linhas a azul).</>
+                                    : n < total
                                     ? (porLinhas
                                       ? <>Linha <b>{linhaAtual + 1} de 4</b> — {LINHAS_CALIBRACAO[linhaAtual]}: toca no <b>{n % 2 === 0 ? '1.º' : '2.º'} ponto</b>, em qualquer sítio da linha (afasta bem os dois).</>
                                       : <>Toca no ponto <b>{n + 1}</b>: {modelo ? modelo.passos[n] : ''}</>)
@@ -36283,16 +36319,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                   <div style={{ color: T.warn, lineHeight: 1.4 }}>As linhas não se cruzam bem — afasta mais os dois pontos de cada linha.</div>
                                 )}
                                 {verif && verif.ok && (
-                                  <div style={{ color: T.good, lineHeight: 1.4 }}>✓ Bate certo com a {modelo ? modelo.nome.toLowerCase() : 'área'}. A linha de baliza é a vermelha — se for a do outro lado, carrega em "Baliza do outro lado".</div>
+                                  <div style={{ color: T.good, lineHeight: 1.4 }}>✓ Bate certo com a {modelo ? modelo.nome.toLowerCase() : 'área'}. A linha de baliza é a vermelha.</div>
                                 )}
                                 {verif && !verif.ok && verif.avisos.map((t, k) => (
                                   <div key={k} style={{ color: T.warn, lineHeight: 1.4 }}>⚠ {t}</div>
                                 ))}
                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                   {botao(verif && !verif.ok ? 'Confirmar mesmo assim' : 'Confirmar', confirmarCalibracaoBib, !(verif && !verif.ok), !cantos)}
-                                  {cantos && botao('Baliza do outro lado', () => setCalibrandoBib(c => ({ ...c, trocar: !c.trocar })), !!calibrandoBib.trocar)}
-                                  {botao('Recuar ponto', () => setCalibrandoBib(c => ({ ...c, pontos: c.pontos.slice(0, -1) })), false, n === 0)}
-                                  {botao('Recomeçar', () => setCalibrandoBib(c => ({ ...c, pontos: [] })), false, n === 0)}
+                                  {cantos && botao('Mudar linha de baliza', () => setCalibrandoBib(c => ({ ...c, ladoBaliza: null })))}
+                                  {botao('Recuar ponto', () => setCalibrandoBib(c => ({ ...c, pontos: c.pontos.slice(0, -1), ladoBaliza: null })), false, n === 0)}
+                                  {botao('Recomeçar', () => setCalibrandoBib(c => ({ ...c, pontos: [], ladoBaliza: null })), false, n === 0)}
                                   {botao('Cancelar', () => setCalibrandoBib(null), false, false)}
                                 </div>
                               </div>
