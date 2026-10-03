@@ -34867,7 +34867,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                logo como sempre. */
             onClick={(e) => {
               e.stopPropagation();
-              if (ehClipe(v) && v.youtubeId) {
+              // No telemóvel (não grava) partilha logo o link, como sempre — sem menu.
+              if (ehClipe(v) && v.youtubeId && podeGravarSeparador()) {
                 if (menuPartilhaId === v.id) { setMenuPartilha(null); return; }
                 const r = e.currentTarget.getBoundingClientRect();
                 const cabeBaixo = window.innerHeight - r.bottom > 150;
@@ -34892,8 +34893,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   fn: () => { setMenuPartilha(null); shareMediaItem(v); }, on: true,
                 },
                 {
-                  k: 'video', Ic: Video, t: 'Gravar e enviar vídeo', s: podeGravarSeparador() ? 'MP4/WebM com desenhos, pausas e zoom' : 'Só no computador (o telemóvel não deixa gravar)',
-                  fn: () => { setMenuPartilha(null); gravarCorteBib(v); }, on: podeGravarSeparador(),
+                  k: 'video', Ic: Video, t: 'Gravar e enviar vídeo', s: 'MP4/WebM com desenhos, pausas e zoom',
+                  fn: () => { setMenuPartilha(null); gravarCorteBib(v); }, on: true,
                 },
               ].map(o => (
                 <button key={o.k} type="button" disabled={!o.on} onClick={o.fn} style={{
