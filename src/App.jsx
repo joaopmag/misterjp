@@ -27884,6 +27884,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // isto, o atleta só saberia que tem uma tarefa depois de já ter entrado
   // no Portal, o que não serve de notificação nenhuma.
   const [estadoTarefas, dadosTarefas] = usePortalFetch('checkin_tarefas', code, teamId);
+  // Autoavaliação já toda respondida mas por submeter: fecha-se sozinha.
+  useEffect(() => {
+    if (code && teamId) submeterAutoavaliacaoSeCompleta(code, teamId);
+  }, [code, teamId]);
   // Ajustes feitos DEPOIS deste pedido (rascunhos gravados, submissões)
   // ficam aqui por cima — sem isto, sair de Tarefas e voltar a entrar
   // mostrava outra vez os dados de quando o quiosque abriu, como se a
@@ -28836,6 +28840,18 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
     return () => window.removeEventListener('beforeunload', aoSair);
   }, [aMeio]);
   const tentarSair = () => { if (aMeio) setConfirmarSaida(true); else onBack(); };
+  /* RESPONDEU ÀS 30 → SUBMETE SOZINHO. Um momento curto ("Todas
+     respondidas — a submeter…") e fecha; sem botão a mais para esquecer. */
+  const completo = !!(auto && !enviado && diRespondido(auto) === DI_INDICADORES.length);
+  const [autoSubmeter, setAutoSubmeter] = useState(false);
+  useEffect(() => {
+    if (!completo || aSubmeter) return undefined;
+    setAutoSubmeter(true);
+    const h = setTimeout(() => { confirmarSubmissaoRef.current && confirmarSubmissaoRef.current(); }, 1500);
+    return () => { clearTimeout(h); setAutoSubmeter(false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completo, auto]);
+  const confirmarSubmissaoRef = useRef(null);
 
   const voltar = (
     <button onClick={onBack} style={{
@@ -28926,6 +28942,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
     }
   };
 
+  confirmarSubmissaoRef.current = confirmarSubmissao;
   const respondidos = diRespondido(auto);
   const podeSubmeter = respondidos === DI_INDICADORES.length;
 
@@ -28949,6 +28966,13 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
           background: T.surfaceRaise, border: `1px solid ${T.bad}`, color: T.bad, borderRadius: 8,
           padding: '9px 16px', fontSize: 12.5, ...body,
         }}>{erro}</div>
+      )}
+      {autoSubmeter && !enviado && (
+        <div style={{
+          position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 70,
+          background: T.surfaceRaise, border: `1px solid ${T.good}`, color: T.good, borderRadius: 8,
+          padding: '10px 18px', fontSize: 13, ...body, display: 'flex', alignItems: 'center', gap: 8,
+        }}><Loader2 size={14} className="animate-spin" /> Todas respondidas — a submeter…</div>
       )}
       {confirmarSaida && (
         <div style={{
@@ -29215,6 +29239,32 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
       )}
     </div>
   );
+}
+
+/* AUTOAVALIAÇÃO COMPLETA = SUBMETIDA. Se as 30 respostas já estão todas
+   dadas e o momento ainda não foi submetido (casos de antes desta regra:
+   atletas que responderam a tudo mas nunca carregaram em "Submeter"),
+   submete-se sozinho. Corre ao entrar no Portal (o atleta entra todos os
+   dias para o wellness), por isso estes casos fecham-se sem ele ter de
+   voltar ao Desenvolvimento. Devolve true se submeteu. */
+async function submeterAutoavaliacaoSeCompleta(code, teamId, dadosConhecidos) {
+  try {
+    let d = dadosConhecidos;
+    if (!d) {
+      const { data, error } = await supabase.rpc('checkin_desenvolvimento', { p_code: code, p_team: teamId });
+      if (error) return false;
+      d = Array.isArray(data) ? data[0] : data;
+      if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return false; } }
+    }
+    if (!d || !d.registoId || d.enviado) return false;
+    if (diRespondido(d.auto) !== DI_INDICADORES.length) return false;
+    const { data, error } = await supabase.rpc('checkin_desenvolvimento_responder', {
+      p_code: code, p_team: teamId, p_registo_id: d.registoId, p_auto: {}, p_submeter: true,
+    });
+    return !error && !!(data && data.ok);
+  } catch (e) {
+    return false;
+  }
 }
 
 function usePortalFetch(rpcName, code, teamId) {
