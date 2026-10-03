@@ -372,16 +372,73 @@ const rodarEm = (q, c, graus) => {
    que fugiu para lá do horizonte, matriz inválida…). */
 export function geometriaNoChao(sh) {
   const H = sh && sh.chao && sh.chao.H;
-  if (!H || !sh.points || !sh.points[0] || !sh.points[1]) return null;
+  if (!H || !sh.points || !sh.points[0]) return null;
   const Hi = inverterH(H);
   if (!Hi) return null;
-  const A = aplicarH(H, sh.points[0]), B = aplicarH(H, sh.points[1]);
-  if (!A || !B) return null;
+  const A = aplicarH(H, sh.points[0]);
+  if (!A) return null;
   const proj = projetor(Hi, A);
   const projTodos = (lista) => {
     const r = lista.map(proj);
     return r.every(Boolean) ? r : null;
   };
+  // Pontos de uma linha comprida no relvado, já no ecrã (corta o que
+  // passar para lá do horizonte, em vez de desenhar disparates).
+  const linhaLonga = (q1, q2, n = 24) => {
+    const pts = [];
+    for (let s = 0; s <= n; s++) {
+      const r = proj({ x: q1.x + ((q2.x - q1.x) * s) / n, y: q1.y + ((q2.y - q1.y) * s) / n });
+      if (r) pts.push(r);
+    }
+    return pts;
+  };
+  const campo = (sh.chao && sh.chao.campo) || {};
+  const cx = Number.isFinite(Number(campo.cx)) ? Number(campo.cx) : A.x; // centro da baliza (largura)
+  /* LINHA DE FORA DE JOGO: um toque nos pés do jogador → a linha
+     paralela à linha de fundo que passa por ali, de lado a lado do campo
+     (68 m), na perspetiva certa. */
+  if (sh.tool === 'foraDeJogo') {
+    const pts = linhaLonga({ x: cx - 36, y: A.y }, { x: cx + 36, y: A.y }, 32);
+    if (pts.length < 2) return null;
+    const faixa = projTodos([{ x: A.x - 1.2, y: A.y - 0.9 }, { x: A.x + 1.2, y: A.y - 0.9 }, { x: A.x + 1.2, y: A.y + 0.9 }, { x: A.x - 1.2, y: A.y + 0.9 }]);
+    return { tipo: 'foraDeJogo', linha: pts, contorno: faixa || pts.slice(0, 4), pe: proj(A) };
+  }
+  /* CORREDORES E TERÇOS: as linhas das áreas prolongadas pelo campo
+     todo (os 5 corredores) e as linhas a 1/3 e 2/3 do comprimento. */
+  if (sh.tool === 'guias') {
+    const L = Number(campo.L) > 0 ? Number(campo.L) : 100;
+    const faixas = [];
+    const xs = [cx - 34, cx - 20.16, cx - 9.16, cx + 9.16, cx + 20.16, cx + 34];
+    if (sh.corredores) {
+      for (let k = 0; k < 5; k++) {
+        if (k % 2 === 1) continue; // corredores 1, 3 e 5 levemente pintados
+        const poli = [];
+        const esq = linhaLonga({ x: xs[k], y: 0 }, { x: xs[k], y: L }, 20);
+        const dir = linhaLonga({ x: xs[k + 1], y: L }, { x: xs[k + 1], y: 0 }, 20);
+        poli.push(...esq, ...dir);
+        if (poli.length > 3) faixas.push(poli);
+      }
+    }
+    const linhas = [];
+    if (sh.corredores) xs.slice(1, 5).forEach(x => { const l = linhaLonga({ x, y: 0 }, { x, y: L }); if (l.length > 1) linhas.push(l); });
+    if (sh.tercos) [L / 3, (2 * L) / 3].forEach(y => { const l = linhaLonga({ x: cx - 34, y }, { x: cx + 34, y }); if (l.length > 1) linhas.push(l); });
+    return { tipo: 'guias', faixas, linhas, contorno: [] };
+  }
+  if (!sh.points[1]) return null;
+  const B = aplicarH(H, sh.points[1]);
+  if (!B) return null;
+  /* MEDIR: distância real entre dois pontos do relvado, em metros. */
+  if (sh.tool === 'medida') {
+    const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy);
+    if (len < 0.05) return null;
+    const nx = -dy / len, ny = dx / len;
+    const pa = proj(A), pb = proj(B);
+    if (!pa || !pb) return null;
+    const tick = (P) => projTodos([{ x: P.x + nx * 0.7, y: P.y + ny * 0.7 }, { x: P.x - nx * 0.7, y: P.y - ny * 0.7 }]);
+    const meio = proj({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 });
+    const contorno = projTodos([{ x: A.x + nx * 0.8, y: A.y + ny * 0.8 }, { x: B.x + nx * 0.8, y: B.y + ny * 0.8 }, { x: B.x - nx * 0.8, y: B.y - ny * 0.8 }, { x: A.x - nx * 0.8, y: A.y - ny * 0.8 }]);
+    return { tipo: 'medida', a: pa, b: pb, ticks: [tick(A), tick(B)].filter(Boolean), meio, metros: len, contorno: contorno || [pa, pb] };
+  }
   if (sh.tool === 'retangulo') {
     const x0 = Math.min(A.x, B.x), x1 = Math.max(A.x, B.x), y0 = Math.min(A.y, B.y), y1 = Math.max(A.y, B.y);
     const c = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
@@ -472,6 +529,8 @@ const dentroPoligono = (p, pts) => {
 };
 
 export function distanciaShape(sh, p) {
+  // As guias (corredores/terços) são fundo: nunca se agarram.
+  if (sh && sh.tool === 'guias') return Infinity;
   // Formas no chão: acerta-se no contorno real (ou dentro dele).
   if (sh && sh.chao) {
     const g = geometriaNoChao(sh);
@@ -550,6 +609,7 @@ export function renderShape(sh, i) {
   if (sh.chao) {
     const g = geometriaNoChao(sh);
     if (g) return renderNoChao(sh, g, i);
+    if (['medida', 'foraDeJogo', 'guias'].includes(sh.tool)) return null; // só existem no chão
   }
   const [a, b] = sh.points;
   if (!a) return null;
@@ -721,6 +781,38 @@ function renderNoChao(sh, g, i) {
           strokeLinecap="round" strokeDasharray="14 11" strokeLinejoin="round">
           <animate attributeName="stroke-dashoffset" from="0" to="-100" dur="3.2s" repeatCount="indefinite" />
         </path>
+      </g>
+    );
+  }
+  if (g.tipo === 'medida') {
+    const etiqueta = `${g.metros.toFixed(1).replace('.', ',')} m`;
+    return (
+      <g key={i}>
+        <line x1={g.a.x} y1={g.a.y} x2={g.b.x} y2={g.b.y} stroke={cor} strokeWidth={0.22} strokeDasharray="0.9 0.6" strokeLinecap="round" />
+        {g.ticks.map((t, k) => <line key={k} x1={t[0].x} y1={t[0].y} x2={t[1].x} y2={t[1].y} stroke={cor} strokeWidth={0.26} strokeLinecap="round" />)}
+        {g.meio && (
+          <text x={g.meio.x} y={g.meio.y - 0.9} textAnchor="middle" fill="#fff" fontSize={2.3} fontWeight={800}
+            style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#000000cc', strokeWidth: 0.55 }}>{etiqueta}</text>
+        )}
+      </g>
+    );
+  }
+  if (g.tipo === 'foraDeJogo') {
+    const d = g.linha.map((p, k) => `${k ? 'L' : 'M'} ${p.x} ${p.y}`).join(' ');
+    return (
+      <g key={i}>
+        <path d={d} fill="none" stroke={cor} strokeOpacity={0.35} strokeWidth={0.9} strokeLinecap="round" style={{ mixBlendMode: 'overlay' }} />
+        <path d={d} fill="none" stroke={cor} strokeWidth={0.26} strokeLinecap="round" />
+        {g.pe && <circle cx={g.pe.x} cy={g.pe.y} r={0.45} fill={cor} stroke="#000" strokeWidth={0.1} />}
+      </g>
+    );
+  }
+  if (g.tipo === 'guias') {
+    const caminho = (l) => l.map((p, k) => `${k ? 'L' : 'M'} ${p.x} ${p.y}`).join(' ');
+    return (
+      <g key={i} style={{ pointerEvents: 'none' }}>
+        {g.faixas.map((f, k) => <polygon key={`f${k}`} points={f.map(p => `${p.x},${p.y}`).join(' ')} fill={cor} fillOpacity={0.16} stroke="none" style={{ mixBlendMode: 'overlay' }} />)}
+        {g.linhas.map((l, k) => <path key={`l${k}`} d={caminho(l)} fill="none" stroke={cor} strokeOpacity={0.7} strokeWidth={0.14} strokeDasharray="1.2 0.8" />)}
       </g>
     );
   }

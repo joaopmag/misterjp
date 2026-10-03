@@ -15,7 +15,7 @@ import AnalisadorVideo, {
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
 } from './AnalisadorVideo';
 import {
-  ZoomIn, Ruler, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
+  ZoomIn, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
   Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
@@ -33021,9 +33021,31 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const ultimaCalibracaoBib = useRef(null); // para "usar a calibração anterior" noutro momento
   const arrastoCalibBib = useRef(null); // índice do ponto de calibração a arrastar
   const matrizRelvadoBib = calibracaoBib ? matrizDaCalibracao(calibracaoBib) : null;
-  const FERRAMENTAS_NO_CHAO = ['retangulo', 'circulo', 'seta', 'linha'];
+  const FERRAMENTAS_NO_CHAO = ['retangulo', 'circulo', 'seta', 'linha', 'medida', 'foraDeJogo'];
+  const FERRAMENTAS_SO_CHAO = ['medida', 'foraDeJogo']; // só existem com o relvado calibrado
+  /* Comprimento do campo (para os terços). Os campos de formação variam;
+     por omissão 100 m, ajustável no painel do Relvado. */
+  const [comprimentoCampoBib, setComprimentoCampoBib] = useState(100);
+  // Onde fica o centro da baliza no referencial da calibração (as áreas
+  // são centradas nela), e o comprimento — para as linhas de campo.
+  const campoDaCalibracaoBib = () => ({ cx: calibracaoBib ? Number(calibracaoBib.W) / 2 : 0, L: comprimentoCampoBib });
   // As formas novas destas ferramentas nascem no chão, se houver calibração.
-  const chaoParaNova = (tool) => (matrizRelvadoBib && noChaoBib && FERRAMENTAS_NO_CHAO.includes(tool) ? { chao: { H: matrizRelvadoBib } } : {});
+  const chaoParaNova = (tool) => (matrizRelvadoBib && (noChaoBib || FERRAMENTAS_SO_CHAO.includes(tool)) && FERRAMENTAS_NO_CHAO.includes(tool)
+    ? { chao: { H: matrizRelvadoBib, campo: campoDaCalibracaoBib() } } : {});
+  // Corredores / terços: uma "forma" de fundo, ligada e desligada no painel.
+  const guiasAtuaisBib = shapesRascunho.find(f => f.tool === 'guias');
+  const alternarGuiaBib = (chave) => {
+    if (!matrizRelvadoBib) return;
+    pushHistoricoBib();
+    setShapesRascunho(prev => {
+      const atual = prev.find(f => f.tool === 'guias');
+      const base = atual || { id: uid(), tool: 'guias', color: '#FFFFFF', points: [{ x: 50, y: 28 }], corredores: false, tercos: false };
+      const novo = { ...base, [chave]: !base[chave], chao: { H: matrizRelvadoBib, campo: campoDaCalibracaoBib() } };
+      const resto = prev.filter(f => f.tool !== 'guias');
+      // Ficam por baixo de tudo (primeiro da lista); sem nada ligado, saem.
+      return (novo.corredores || novo.tercos) ? [novo, ...resto] : resto;
+    });
+  };
   const comecarCalibracaoBib = (modelo, W, D) => {
     setCalibrandoBib({ tipo: modelo.id, W: modelo.W || W, D: modelo.D || D, pontos: [] });
     setToolBib(null);
@@ -33572,6 +33594,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaSelecionadaBib(null);
     // Sem ferramenta: tocar num sítio vazio do vídeo reproduz/pausa.
     if (!toolBib) { alternarReproducaoBib(); return; }
+    // Fora de jogo: um toque nos pés do jogador chega — a linha nasce logo.
+    if (toolBib === 'foraDeJogo') {
+      if (!matrizRelvadoBib) return;
+      pushHistoricoBib();
+      const n = shapesRascunho.length;
+      setShapesRascunho(prev => [...prev, { id: uid(), tool: 'foraDeJogo', color: corBib, points: [p], ...chaoParaNova('foraDeJogo') }]);
+      setFormaSelecionadaBib(n);
+      return;
+    }
+    if (FERRAMENTAS_SO_CHAO.includes(toolBib) && !matrizRelvadoBib) return;
     setFormaEmCursoBib({ tool: toolBib, color: corBib, points: toolBib === 'livre' ? [p] : [p, p], ...chaoParaNova(toolBib) });
   };
   // ARRASTO FLUIDO — o rato manda dezenas de movimentos por segundo, e
@@ -36141,7 +36173,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => escolherFerramentaBib('texto')} />
                           <ToolBtn icon={Eraser} label="Apagar" active={toolBib === 'apagar'} onClick={() => escolherFerramentaBib('apagar')} />
                           <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                          <ToolBtn icon={Ruler} label={calibracaoBib ? 'Relvado ✓' : 'Relvado'} active={painelRelvadoBib || !!calibrandoBib} onClick={() => setPainelRelvadoBib(v => !v)} />
+                          <ToolBtn icon={LayoutGrid} label={calibracaoBib ? 'Relvado ✓' : 'Relvado'} active={painelRelvadoBib || !!calibrandoBib} onClick={() => setPainelRelvadoBib(v => !v)} />
+                          {/* Ferramentas que só existem com o relvado calibrado. */}
+                          {calibracaoBib && (
+                            <>
+                              <ToolBtn icon={Ruler} label="Medir" active={toolBib === 'medida'} onClick={() => escolherFerramentaBib('medida')} />
+                              <ToolBtn icon={Flag} label="Fora de jogo" active={toolBib === 'foraDeJogo'} onClick={() => escolherFerramentaBib('foraDeJogo')} />
+                            </>
+                          )}
                         </div>
                         {/* PAINEL DO RELVADO — calibrar, ver a grelha, desenhar no chão. */}
                         {(painelRelvadoBib || calibrandoBib) && (() => {
@@ -36200,6 +36239,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                     {botao(noChaoBib ? 'No chão: sim' : 'No chão: não', () => setNoChaoBib(v => !v), noChaoBib)}
                                     {botao(grelhaBib ? 'Grelha: sim' : 'Grelha: não', () => setGrelhaBib(v => !v), grelhaBib)}
+                                  </div>
+                                  <div style={{ color: T.mutedDim, marginTop: 2 }}>Linhas de campo (ficam no desenho desta pausa):</div>
+                                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                    {botao('5 corredores', () => alternarGuiaBib('corredores'), !!(guiasAtuaisBib && guiasAtuaisBib.corredores))}
+                                    {botao('Terços', () => alternarGuiaBib('tercos'), !!(guiasAtuaisBib && guiasAtuaisBib.tercos))}
+                                    <span style={{ color: T.mutedDim, fontSize: 11.5 }}>campo</span>
+                                    <input value={comprimentoCampoBib} inputMode="numeric"
+                                      onChange={e => {
+                                        const n = Number(String(e.target.value).replace(/\D/g, '').slice(0, 3)) || 0;
+                                        setComprimentoCampoBib(n);
+                                        // Terços já desenhados acompanham o novo comprimento.
+                                        if (n >= 60) setShapesRascunho(prev => prev.map(f => (f.tool === 'guias' && f.chao ? { ...f, chao: { ...f.chao, campo: { ...f.chao.campo, L: n } } } : f)));
+                                      }}
+                                      style={{ width: 44, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 5px', fontSize: 12, textAlign: 'center' }} />
+                                    <span style={{ color: T.mutedDim, fontSize: 11.5 }}>m</span>
+                                  </div>
+                                  <div style={{ color: T.mutedDim, lineHeight: 1.4, fontSize: 11.5 }}>
+                                    Na barra: <b style={{ color: T.cream }}>Medir</b> (arrasta entre dois pontos → metros) e <b style={{ color: T.cream }}>Fora de jogo</b> (toca nos pés do jogador).
                                   </div>
                                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                     {botao('Recalibrar', () => comecarCalibracaoBib(MODELOS_CALIBRACAO.find(m => m.id === calibracaoBib.tipo) || MODELOS_CALIBRACAO[0], calibracaoBib.W, calibracaoBib.D))}
