@@ -32983,6 +32983,26 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const gravacaoBibRef = useRef(null);
   const areaVideoBibRef = useRef(null);
   const [avisoGravacaoBib, setAvisoGravacaoBib] = useState('');
+  // Menu "como partilhar" de um corte (id do corte com o menu aberto).
+  // Posição fixa no ecrã (a lista tem scroll próprio e cortaria o menu
+  // das últimas linhas); abre para cima quando não há espaço por baixo.
+  const [menuPartilha, setMenuPartilha] = useState(null); // { id, right, top | bottom }
+  const menuPartilhaId = menuPartilha ? menuPartilha.id : null;
+  useEffect(() => {
+    if (!menuPartilha) return undefined;
+    const fechar = () => setMenuPartilha(null);
+    const aoTeclar = (e) => { if (e.key === 'Escape') fechar(); };
+    window.addEventListener('click', fechar);
+    window.addEventListener('keydown', aoTeclar);
+    window.addEventListener('scroll', fechar, true);
+    window.addEventListener('resize', fechar);
+    return () => {
+      window.removeEventListener('click', fechar);
+      window.removeEventListener('keydown', aoTeclar);
+      window.removeEventListener('scroll', fechar, true);
+      window.removeEventListener('resize', fechar);
+    };
+  }, [menuPartilha]);
   // Janela da gravação: { fase: 'antes' } | { fase: 'pronto', blob, nome, url }
   const [janelaGravacaoBib, setJanelaGravacaoBib] = useState(null);
   const fecharJanelaGravacaoBib = () => {
@@ -34839,14 +34859,60 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               não se imprimem (vídeos, links) — senão o lápis e o
               caixote saltavam de linha para linha. */}
           {!soLeitura && (
+          <span style={{ position: 'relative', width: 20, flexShrink: 0, display: 'inline-flex' }}>
           <button
-            /* Num corte do YouTube, "Partilhar" faz o VÍDEO (com desenhos,
-               pausas e zoom), em vez de um link. Fora do computador (onde
-               não se pode gravar) continua a partilhar o link. */
-            onClick={() => ((ehClipe(v) && v.youtubeId && podeGravarSeparador()) ? gravarCorteBib(v) : shareMediaItem(v))}
-            title={(ehClipe(v) && v.youtubeId && podeGravarSeparador()) ? 'Partilhar como vídeo (grava o corte com os desenhos)' : 'Partilhar'}
-            style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
+            /* Num corte do YouTube, "Partilhar" pergunta COMO: o link (abre a
+               página do corte, leve) ou o VÍDEO (grava o corte com desenhos,
+               pausas e zoom e envia o ficheiro). Nos outros itens, partilha
+               logo como sempre. */
+            onClick={(e) => {
+              e.stopPropagation();
+              if (ehClipe(v) && v.youtubeId) {
+                if (menuPartilhaId === v.id) { setMenuPartilha(null); return; }
+                const r = e.currentTarget.getBoundingClientRect();
+                const cabeBaixo = window.innerHeight - r.bottom > 150;
+                setMenuPartilha({
+                  id: v.id, right: Math.max(8, window.innerWidth - r.right),
+                  ...(cabeBaixo ? { top: r.bottom + 6 } : { bottom: window.innerHeight - r.top + 6 }),
+                });
+              } else shareMediaItem(v);
+            }}
+            title="Partilhar"
+            style={{ background: 'none', border: 'none', color: menuPartilhaId === v.id ? T.warn : T.mutedDim, cursor: 'pointer', width: 20, padding: 0 }}
           ><Share2 size={13} /></button>
+          {menuPartilhaId === v.id && (
+            <div onClick={e => e.stopPropagation()} style={{
+              position: 'fixed', right: menuPartilha.right, top: menuPartilha.top, bottom: menuPartilha.bottom, zIndex: 60, width: 236,
+              background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 6,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.45)', display: 'flex', flexDirection: 'column', gap: 2, ...body,
+            }}>
+              {[
+                {
+                  k: 'link', Ic: Share2, t: 'Enviar link', s: 'Abre a página do corte (leve, sem ficheiro)',
+                  fn: () => { setMenuPartilha(null); shareMediaItem(v); }, on: true,
+                },
+                {
+                  k: 'video', Ic: Video, t: 'Gravar e enviar vídeo', s: podeGravarSeparador() ? 'MP4/WebM com desenhos, pausas e zoom' : 'Só no computador (o telemóvel não deixa gravar)',
+                  fn: () => { setMenuPartilha(null); gravarCorteBib(v); }, on: podeGravarSeparador(),
+                },
+              ].map(o => (
+                <button key={o.k} type="button" disabled={!o.on} onClick={o.fn} style={{
+                  display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', width: '100%',
+                  background: 'transparent', border: 'none', borderRadius: 7, padding: '8px 9px',
+                  cursor: o.on ? 'pointer' : 'default', opacity: o.on ? 1 : 0.45, color: T.cream, ...body,
+                }}
+                  onMouseEnter={e => { if (o.on) e.currentTarget.style.background = T.surface; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                  <o.Ic size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{o.t}</span>
+                    <span style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.35 }}>{o.s}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          </span>
           )}
           {(v.kind === 'pdf' || v.kind === 'drive' || v.kind === 'image') ? (
             <button
