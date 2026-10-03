@@ -411,6 +411,35 @@ export function validarCalibracao(img, W, D) {
       avisos.push('A perspetiva resultante não parece a de uma câmara normal — verifica os pontos.');
     }
   }
+  /* 3) Um círculo no relvado tem de aparecer como uma elipse "deitada"
+     (eixo comprido quase na horizontal) — as câmaras de futebol não estão
+     tortas. Se a elipse sair inclinada na diagonal, a perspetiva está
+     errada (foi o caso dos círculos na diagonal). */
+  try {
+    const Hm = homografia(img, [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: D }, { x: 0, y: D }]);
+    const Hi = Hm && inverterH(Hm);
+    if (Hi) {
+      const r = Math.min(W, D) / 3, cxp = W / 2, cyp = D / 2;
+      const pts = [];
+      for (let k = 0; k < 36; k++) {
+        const t = (k / 36) * Math.PI * 2;
+        const q = aplicarH(Hi, { x: cxp + r * Math.cos(t), y: cyp + r * Math.sin(t) });
+        if (q) pts.push(q);
+      }
+      if (pts.length > 20) {
+        const mx = pts.reduce((s, p) => s + p.x, 0) / pts.length, my = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        let sxx = 0, syy = 0, sxy = 0;
+        pts.forEach(p => { sxx += (p.x - mx) ** 2; syy += (p.y - my) ** 2; sxy += (p.x - mx) * (p.y - my); });
+        const ang = Math.abs((0.5 * Math.atan2(2 * sxy, sxx - syy) * 180) / Math.PI);
+        const tr = sxx + syy, det = sxx * syy - sxy * sxy;
+        const l1 = tr / 2 + Math.sqrt(Math.max(0, tr * tr / 4 - det)), l2 = tr / 2 - Math.sqrt(Math.max(0, tr * tr / 4 - det));
+        const alongada = l2 > 0 ? Math.sqrt(l1 / l2) : 99;
+        if (alongada > 1.25 && ang > 25 && ang < 155) {
+          avisos.push('Com estes pontos, um círculo no relvado ficaria inclinado na diagonal — sinal de que os pontos não estão nas linhas certas da área.');
+        }
+      }
+    }
+  } catch (e) { /* verificação extra: se falhar, ignora */ }
   const esperado = W / D;
   const desvio = Math.abs(Math.log(proporcao / esperado));
   if (desvio > tolerancia) {

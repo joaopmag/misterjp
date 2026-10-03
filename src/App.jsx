@@ -33071,7 +33071,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const c = calibrandoBib;
     const cantos = cantosCalibBib(c);
     if (!cantos) return;
-    const cal = { tipo: c.tipo, W: c.W, D: c.D, img: cantos, modo: c.modo || 'cantos', ...(c.modo === 'linhas' ? { pontosLinhas: c.pontos } : {}) };
+    // Confirmada COM avisos: guarda-se, mas os desenhos novos não vão para
+    // o chão (ficariam tortos) até se recalibrar ou ligar à mão.
+    const verif = validarCalibracao(cantos, c.W, c.D);
+    const duvidosa = !(verif && verif.ok);
+    const cal = { tipo: c.tipo, W: c.W, D: c.D, img: cantos, modo: c.modo || 'cantos', ...(c.modo === 'linhas' ? { pontosLinhas: c.pontos } : {}), ...(duvidosa ? { duvidosa: true } : {}) };
+    setNoChaoBib(!duvidosa);
     if (!matrizDaCalibracao(cal)) return;
     setCalibracaoBib(cal);
     ultimaCalibracaoBib.current = cal;
@@ -36301,7 +36306,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               </div>
                               {calibracaoBib ? (
                                 <>
-                                  <div style={{ color: T.good }}>✓ Calibrado nesta pausa ({(MODELOS_CALIBRACAO.find(m => m.id === calibracaoBib.tipo) || {}).nome || 'retângulo'})</div>
+                                  {calibracaoBib.duvidosa ? (
+                                    <div style={{ color: T.warn, lineHeight: 1.4 }}>⚠ Calibrado com avisos — os desenhos no chão ficaram desligados, porque sairiam tortos. Recalibra (confirma que o retângulo amarelo fica em cima das linhas da área).</div>
+                                  ) : (
+                                    <div style={{ color: T.good }}>✓ Calibrado nesta pausa ({(MODELOS_CALIBRACAO.find(m => m.id === calibracaoBib.tipo) || {}).nome || 'retângulo'})</div>
+                                  )}
                                   <div style={{ color: T.mutedDim, lineHeight: 1.4 }}>Zona, Círculo, Seta e Linha desenham-se no chão, com a perspetiva do campo.</div>
                                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                     {botao(noChaoBib ? 'No chão: sim' : 'No chão: não', () => setNoChaoBib(v => !v), noChaoBib)}
