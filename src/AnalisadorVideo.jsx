@@ -4,7 +4,7 @@ import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
   Copy, Check, Video, Upload, Tag, X, Flag, RotateCcw, Loader2, Film,
   Maximize2, Minimize2, Square, Type, Pencil, Lasso, Waypoints, Undo2, Redo2, ArrowLeft, Eye, User, Share2,
-  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp,
+  Target, Crosshair, SkipBack, SkipForward, ChevronDown, ChevronUp, Download,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -857,6 +857,52 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   // Em ecrã inteiro, o Esc sai do ecrã inteiro (é o browser que o faz), não fecha o leitor.
   useFecharComEsc(onClose, !aEditar && !emEcraInteiro);
   const estiloZoomClipe = useZoomCirculo((clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)), !aEditar);
+  const [estadoMp4, setEstadoMp4] = useState(null); // null | 'a-preparar' | 'erro'
+  // Gravação com desenhos: do início ao fim do clipe, uma vez, e entrega.
+  const [gravacaoClipe, setGravacaoClipe] = useState(null);
+  const gravacaoClipeRef = useRef(null);
+  const nomeClipe = () => {
+    const tagC = TAGS.find(x => x.id === clip.tagId);
+    return `${(clip.note || '').trim() || (tagC ? tagC.label : 'Clipe')} (com desenhos)`;
+  };
+  const acabarGravacaoClipe = async () => {
+    const g = gravacaoClipeRef.current;
+    if (!g) return;
+    gravacaoClipeRef.current = null;
+    setGravacaoClipe(null);
+    const v = videoRef.current;
+    if (v) { v.loop = g.loopAntes; v.pause(); }
+    const blob = await g.ctl.parar();
+    await entregarVideo(blob, nomeClipe());
+  };
+  const pararGravacaoClipe = () => { acabarGravacaoClipe(); };
+  const gravarClipeComDesenhos = async () => {
+    const v = videoRef.current;
+    if (!v) return;
+    let ctl;
+    try { ctl = await prepararGravacaoSeparador(caixaVideoRef.current); } catch (e) { return; } // recusou a partilha
+    const g = { ctl, loopAntes: v.loop };
+    gravacaoClipeRef.current = g;
+    setGravacaoClipe(g);
+    ctl.acabou.then(() => { if (gravacaoClipeRef.current === g) acabarGravacaoClipe(); });
+    v.loop = false;
+    v.pause();
+    v.currentTime = 0;
+    setTimeout(() => {
+      if (gravacaoClipeRef.current !== g) return;
+      ctl.comecar();
+      v.play().catch(() => {});
+    }, 600);
+  };
+  // Fim do clipe = fim da gravação.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return undefined;
+    const aoAcabar = () => { if (gravacaoClipeRef.current) acabarGravacaoClipe(); };
+    v.addEventListener('ended', aoAcabar);
+    return () => v.removeEventListener('ended', aoAcabar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clip.id]);
 
   // SEGUIR JOGADOR — deteção automática (serviço à parte, no Modal),
   // com toque para escolher quem seguir e para corrigir a meio.
@@ -909,9 +955,25 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             {tag?.label || 'Sem etiqueta'} · {Math.round(clip.duracao)}s{clip.originalTitulo ? ` · ${clip.originalTitulo}` : ''}
           </span>
           <div style={{ display: 'flex', gap: 6 }}>
-            <Btn variant="ghost" onClick={onShare} style={{ padding: '6px 10px' }} title="Partilhar o clipe">
+            <Btn variant="ghost" onClick={onShare} style={{ padding: '6px 10px' }} title="Partilhar o link do clipe">
               {copied ? <Check size={14} color={T.good} /> : <Share2 size={14} />}
             </Btn>
+            {/* MP4 em qualidade total (sem desenhos). */}
+            <Btn variant="ghost" disabled={estadoMp4 === 'a-preparar'} onClick={async () => {
+              setEstadoMp4('a-preparar');
+              try { await descarregarClipeMp4(clip); setEstadoMp4(null); } catch (e) { setEstadoMp4('erro'); setTimeout(() => setEstadoMp4(null), 2500); }
+            }} style={{ padding: '6px 10px' }} title="Descarregar / partilhar o MP4 (qualidade total, sem desenhos)">
+              {estadoMp4 === 'a-preparar' ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+              <span style={{ fontSize: 11.5 }}>{estadoMp4 === 'erro' ? 'Falhou' : 'MP4'}</span>
+            </Btn>
+            {/* Vídeo COM os desenhos e o zoom: grava o leitor a reproduzir. */}
+            {(clip.shapes || []).length > 0 && podeGravarSeparador() && (
+              <Btn variant="ghost" active={!!gravacaoClipe} onClick={gravacaoClipe ? pararGravacaoClipe : gravarClipeComDesenhos}
+                style={{ padding: '6px 10px' }} title="Gravar um vídeo com os desenhos (grava este ecrã enquanto o clipe toca)">
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: gravacaoClipe ? T.bad : '#fff', display: 'inline-block' }} />
+                <span style={{ fontSize: 11.5 }}>{gravacaoClipe ? 'A gravar… parar' : 'Vídeo c/ desenhos'}</span>
+              </Btn>
+            )}
             <Btn variant="ghost" onClick={aEditar ? () => setAEditar(false) : abrirEdicao} active={aEditar} style={{ padding: '6px 10px' }} title="Editar texto e tempos">
               <Pencil size={14} />
             </Btn>
@@ -1138,6 +1200,106 @@ function partilharClipeAtleta(clip) {
 // Como o id do clipe não muda ao editar, o link continua a funcionar.
 // A mensagem é o texto do clipe (ou a etiqueta, se não tiver texto) e,
 // por baixo, o nome dado ao vídeo quando foi carregado.
+/* ===================================================================
+   EXPORTAR VÍDEO — gravar a área do vídeo deste separador.
+
+   Os cortes do YouTube não são ficheiros (são "do minuto X ao Y" sobre o
+   vídeo de outra pessoa) e o YouTube não deixa descarregá-los nem ler a
+   imagem. A forma legítima de ter um ficheiro é a mesma de uma gravação
+   de ecrã: o browser pede autorização para partilhar ESTE separador com
+   a app, a app reproduz o corte (com desenhos, pausas e zoom) e grava.
+   No Chrome recorta-se só a caixa do vídeo (Region Capture); noutros
+   browsers grava-se o separador inteiro.
+   Sai em MP4 onde o browser o sabe gravar (Safari, Chrome recente) e em
+   WebM no resto — o WhatsApp aceita os dois.
+   =================================================================== */
+export function podeGravarSeparador() {
+  return typeof navigator !== 'undefined' && !!navigator.mediaDevices
+    && typeof navigator.mediaDevices.getDisplayMedia === 'function'
+    && typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
+}
+
+// Pede o separador e prepara a gravação (ainda sem gravar: `comecar()`).
+export async function prepararGravacaoSeparador(elemento) {
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: { displaySurface: 'browser', frameRate: 30, cursor: 'never' },
+    audio: true,
+    preferCurrentTab: true,
+    selfBrowserSurface: 'include',
+    surfaceSwitching: 'exclude',
+  });
+  const [faixa] = stream.getVideoTracks();
+  try {
+    if (elemento && window.CropTarget && faixa && typeof faixa.cropTo === 'function') {
+      const alvo = await window.CropTarget.fromElement(elemento);
+      await faixa.cropTo(alvo);
+    }
+  } catch (e) { /* sem recorte: grava o separador inteiro */ }
+  const tipos = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4',
+    'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  const mime = tipos.find(t => window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t)) || '';
+  const rec = new window.MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 6000000 } : undefined);
+  const partes = [];
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) partes.push(e.data); };
+  let resolver;
+  const acabou = new Promise(res => { resolver = res; });
+  rec.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    resolver(new Blob(partes, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] }));
+  };
+  const terminar = () => {
+    if (rec.state !== 'inactive') rec.stop();
+    else { stream.getTracks().forEach(t => t.stop()); resolver(null); }
+  };
+  // "Parar partilha" na barra do browser também acaba a gravação.
+  if (faixa) faixa.addEventListener('ended', terminar);
+  return {
+    comecar: () => { if (rec.state === 'inactive') rec.start(500); },
+    parar: () => { terminar(); return acabou; },
+    acabou,
+  };
+}
+
+// Entrega o ficheiro: partilha nativa (telemóvel) ou descarga.
+export async function entregarVideo(blob, nomeBase) {
+  if (!blob || !blob.size) return 'vazio';
+  const ext = /mp4/.test(blob.type) ? 'mp4' : 'webm';
+  const nome = `${String(nomeBase || 'video').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'video'}.${ext}`;
+  try {
+    const ficheiro = new File([blob], nome, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [ficheiro] })) {
+      await navigator.share({ files: [ficheiro], title: nomeBase });
+      return 'partilhado';
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return 'cancelado';
+    // Sem gesto do utilizador (gravação longa) o browser recusa — descarrega.
+  }
+  const url = URL.createObjectURL(blob);
+  const ligacao = document.createElement('a');
+  ligacao.href = url;
+  ligacao.download = nome;
+  document.body.appendChild(ligacao);
+  ligacao.click();
+  ligacao.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return 'descarregado';
+}
+
+/* MP4 VERDADEIRO dos clipes da Análise de Vídeo: o ficheiro já existe
+   (foi cortado pelo serviço de vídeo e está no vosso armazenamento) —
+   aqui só se vai buscar e entrega-se tal como está, em qualidade total
+   (sem os desenhos, que vivem por cima do vídeo). */
+async function descarregarClipeMp4(clip) {
+  const tag = TAGS.find(t => t.id === clip.tagId);
+  const titulo = (clip.note || '').trim() || (tag ? tag.label : 'Clipe');
+  const resp = await fetch(clip.publicUrl);
+  if (!resp.ok) throw new Error(`Não foi possível ir buscar o vídeo (${resp.status}).`);
+  const blob = await resp.blob();
+  const tipo = blob.type && blob.type.startsWith('video/') ? blob.type : 'video/mp4';
+  return entregarVideo(new Blob([blob], { type: tipo }), titulo);
+}
+
 function partilharClipeFicheiro(clip) {
   const tag = TAGS.find(t => t.id === clip.tagId);
   const titulo = (clip.note || '').trim() || (tag ? tag.label : 'Clipe');

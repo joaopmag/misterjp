@@ -12,6 +12,7 @@ import AnalisadorVideo, {
   RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, girar, inclinacaoPadrao,
   MODELOS_CALIBRACAO, matrizDaCalibracao, inverterH, aplicarH, planoDaCalibracao,
   pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
+  podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
 } from './AnalisadorVideo';
 import {
   ZoomIn, Ruler, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -32976,6 +32977,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      `geometriaNoChao` em AnalisadorVideo.jsx): cada forma leva consigo a
      matriz (`chao.H`), por isso desenha-se igual em qualquer reprodução.
      `calibrandoBib` = a marcar os 4 pontos agora ({ tipo, W, D, pontos }). */
+  /* GRAVAR VÍDEO DO CORTE (com desenhos, pausas e zoom) — ver
+     `prepararGravacaoSeparador` em AnalisadorVideo.jsx. */
+  const [gravacaoBib, setGravacaoBib] = useState(null);
+  const gravacaoBibRef = useRef(null);
+  const areaVideoBibRef = useRef(null);
+  const [avisoGravacaoBib, setAvisoGravacaoBib] = useState('');
+  useEffect(() => {
+    if (!avisoGravacaoBib) return undefined;
+    const t = setTimeout(() => setAvisoGravacaoBib(''), 5000);
+    return () => clearTimeout(t);
+  }, [avisoGravacaoBib]);
   const [calibracaoBib, setCalibracaoBib] = useState(null);
   const [calibrandoBib, setCalibrandoBib] = useState(null);
   const [painelRelvadoBib, setPainelRelvadoBib] = useState(false);
@@ -34219,6 +34231,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
 
   const ativoEClipe = !!(active && active.youtubeId && typeof active.clipInicio === 'number');
+  // A gravar: chegado o fim do corte (sem paragem a decorrer), acaba e entrega.
+  useEffect(() => {
+    const g = gravacaoBibRef.current;
+    if (!g || !g.comecouEm || Date.now() - g.comecouEm < 1500 || !ativoEClipe) return;
+    if (pausaEmCursoRef.current) return;
+    if (liveTime >= clipFimEf - 0.2) acabarGravacaoBib();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTime]);
   /* (Fica DEPOIS de `active`/`ativoEClipe`: as dependências do efeito
      leem-se ao desenhar — antes deles dava "Cannot access … before
      initialization".)
@@ -34573,6 +34593,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     } else if (aTocarNormalmente && liveTime >= clipFimEf) {
       // Uma paragem com desenhos a decorrer mesmo no fim: deixa-a acabar.
       if (pausaEmCursoRef.current) return;
+      // A gravar o vídeo do corte: não recomeça (a gravação acaba aqui).
+      if (gravacaoBibRef.current) return;
       enviarComandoYoutube('seekTo', [clipIni, true]);
       enviarComandoYoutube('playVideo');
       tempoAnteriorClipeRef.current = clipIni;
@@ -34611,6 +34633,42 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       retomaDesenhoRef.current = null;
       setCongeladoDesenhoBib(false);
     }
+  };
+  const acabarGravacaoBib = async () => {
+    const g = gravacaoBibRef.current;
+    if (!g) return;
+    gravacaoBibRef.current = null;
+    setGravacaoBib(null);
+    enviarComandoYoutube('pauseVideo');
+    const blob = await g.ctl.parar();
+    const r = await entregarVideo(blob, g.nome);
+    if (r === 'descarregado') setAvisoGravacaoBib('Vídeo pronto — ficou nas transferências.');
+    else if (r === 'vazio') setAvisoGravacaoBib('A gravação ficou vazia. Tenta outra vez.');
+  };
+  const gravarCorteBib = async () => {
+    if (!podeGravarSeparador()) {
+      setAvisoGravacaoBib('Gravar vídeo só funciona no computador (Chrome, Edge ou Safari).');
+      return;
+    }
+    if (modoDesenhoBib) cancelarDesenhoBib();
+    largarParagemBib();
+    let ctl;
+    try { ctl = await prepararGravacaoSeparador(areaVideoBibRef.current); } catch (e) { return; } // recusou a partilha
+    const g = { ctl, nome: active.title || 'Corte', comecouEm: 0 };
+    gravacaoBibRef.current = g;
+    setGravacaoBib({ desde: Date.now() });
+    // "Parar partilha" no browser também termina e entrega o que já houver.
+    ctl.acabou.then(() => { if (gravacaoBibRef.current === g) acabarGravacaoBib(); });
+    // Do princípio do corte, com todas as paragens a contar outra vez.
+    pausasJaMostradasRef.current.clear();
+    enviarComandoYoutube('pauseVideo');
+    enviarComandoYoutube('seekTo', [clipIni, true]);
+    setTimeout(() => {
+      if (gravacaoBibRef.current !== g) return;
+      g.comecouEm = Date.now();
+      ctl.comecar();
+      enviarComandoYoutube('playVideo');
+    }, 900);
   };
   const procurarNoClipe = (t) => {
     // Nunca exatamente no fim: aí o ciclo acima recomeçava logo o corte.
@@ -35638,7 +35696,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {/* A estrutura é SEMPRE a mesma dentro e fora do ecrã
                         inteiro — só mudam as medidas — para o React nunca
                         voltar a montar o iframe (o vídeo recomeçaria). */}
-                    <div style={{
+                    <div ref={areaVideoBibRef} style={{
                       ...(ytFull
                         ? { position: 'relative', flex: 1, minHeight: 0 }
                         : { position: 'relative', paddingTop: '56.25%' }),
@@ -36292,6 +36350,23 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           >
                             <Scissors size={13} /> {clipMode ? (edicaoClipeId ? 'Cancelar edição' : 'Cancelar clipe') : 'Criar clipe'}
                           </button>
+                          )}
+                          {ativoEClipe && !modoDesenhoBib && (
+                          <button
+                            onClick={gravacaoBib ? acabarGravacaoBib : gravarCorteBib}
+                            title={gravacaoBib ? 'Parar e entregar o vídeo' : 'Gravar um vídeo do corte com os desenhos, as pausas e o zoom (o browser pede para partilhar este separador)'}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
+                              color: gravacaoBib ? T.bad : '#fff',
+                              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                            }}
+                          >
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: gravacaoBib ? T.bad : '#fff', display: 'inline-block' }} />
+                            {gravacaoBib ? 'A gravar… parar' : 'Gravar vídeo'}
+                          </button>
+                          )}
+                          {avisoGravacaoBib && (
+                            <span style={{ fontSize: 11.5, color: T.warn }}>{avisoGravacaoBib}</span>
                           )}
                           {ativoEClipe && (
                           <button
