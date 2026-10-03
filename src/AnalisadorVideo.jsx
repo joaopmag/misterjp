@@ -344,6 +344,102 @@ export function planoDaCalibracao(cal) {
   if (!(W > 0) || !(D > 0)) return null;
   return [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: D }, { x: 0, y: D }];
 }
+
+/* ---------- VERIFICAÇÃO DA CALIBRAÇÃO ----------
+   Os 4 pontos definem SEMPRE uma perspetiva — mesmo errados. Para apanhar
+   o erro antes de confirmar, usa-se a geometria da própria câmara: num
+   retângulo visto em perspetiva, as direções dos dois pares de lados
+   são perpendiculares no relvado, e isso diz qual é a "distância focal"
+   da câmara e qual é a PROPORÇÃO verdadeira do retângulo marcado
+   (método de Zhang & He). Se essa proporção não bater com a da área
+   escolhida (grande área 2,44 : 1, pequena 3,33 : 1), os pontos não são
+   os cantos certos. Também se apanha a ordem trocada (forma torcida) e
+   perspetivas impossíveis. */
+const cruz = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const esc = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+export function validarCalibracao(img, W, D) {
+  const avisos = [];
+  if (!img || img.length !== 4 || !(W > 0) || !(D > 0)) return { ok: false, avisos: ['Faltam pontos.'] };
+  // 1) Forma convexa e sem se cruzar (ordem dos cantos certa).
+  let sinal = 0, convexo = true;
+  for (let k = 0; k < 4; k++) {
+    const p = img[k], q = img[(k + 1) % 4], r = img[(k + 2) % 4];
+    const z = (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x);
+    if (Math.abs(z) < 1e-6) continue;
+    if (!sinal) sinal = Math.sign(z); else if (Math.sign(z) !== sinal) convexo = false;
+  }
+  if (!convexo) {
+    avisos.push('A forma marcada cruza-se: os cantos estão fora de ordem (segue a ordem do esquema).');
+    return { ok: false, avisos };
+  }
+  // 2) Proporção real do retângulo marcado (centro da imagem = eixo da câmara).
+  const u0 = 50, v0 = 56.25 / 2;
+  const m1 = [img[0].x, img[0].y, 1], m2 = [img[1].x, img[1].y, 1], m3 = [img[3].x, img[3].y, 1], m4 = [img[2].x, img[2].y, 1];
+  const k2 = esc(cruz(m1, m4), m3) / esc(cruz(m2, m4), m3);
+  const k3 = esc(cruz(m1, m4), m2) / esc(cruz(m3, m4), m2);
+  const n2 = [k2 * m2[0] - m1[0], k2 * m2[1] - m1[1], k2 * m2[2] - m1[2]];
+  const n3 = [k3 * m3[0] - m1[0], k3 * m3[1] - m1[1], k3 * m3[2] - m1[2]];
+  let proporcao, focal = null;
+  const denom = n2[2] * n3[2];
+  const tam = Math.hypot(...n2) * Math.hypot(...n3);
+  // Normaliza pela câmara (A⁻¹ n) e compara os comprimentos.
+  const proporcaoCom = (f) => {
+    const norm = (n) => {
+      const x = (n[0] - u0 * n[2]) / f, y = (n[1] - v0 * n[2]) / f, z = n[2];
+      return x * x + y * y + z * z;
+    };
+    return Math.sqrt(norm(n2) / norm(n3));
+  };
+  let tolerancia = 0.28;
+  if (Math.abs(denom) < 1e-4 * tam) {
+    /* Caso comum: a linha de fundo aparece direita na imagem (paralela ao
+       ecrã) — aí a lente não se consegue deduzir. Usa-se uma lente típica
+       (~70°) e uma tolerância mais larga. */
+    proporcao = proporcaoCom(70);
+    tolerancia = 0.42;
+  } else {
+    const f2 = -((n2[0] * n3[0] - (n2[0] * n3[2] + n2[2] * n3[0]) * u0 + n2[2] * n3[2] * u0 * u0)
+      + (n2[1] * n3[1] - (n2[1] * n3[2] + n2[2] * n3[1]) * v0 + n2[2] * n3[2] * v0 * v0)) / denom;
+    if (!(f2 > 0)) {
+      avisos.push('Estes 4 pontos dão uma perspetiva impossível para uma câmara — confirma que são os cantos certos e pela ordem do esquema.');
+      return { ok: false, avisos };
+    }
+    focal = Math.sqrt(f2);
+    proporcao = proporcaoCom(focal);
+    // Lente: campo de visão entre ~8° e ~130° (fora disso, os pontos estão mal).
+    if (focal < 20 || focal > 700) {
+      avisos.push('A perspetiva resultante não parece a de uma câmara normal — verifica os pontos.');
+    }
+  }
+  const esperado = W / D;
+  const desvio = Math.abs(Math.log(proporcao / esperado));
+  if (desvio > tolerancia) {
+    avisos.push(`A forma marcada tem proporção ${proporcao.toFixed(2).replace('.', ',')} : 1, mas a área escolhida tem ${esperado.toFixed(2).replace('.', ',')} : 1. Os pontos não parecem ser os cantos desta área (é a grande ou a pequena?).`);
+  }
+  return { ok: avisos.length === 0, avisos, proporcao, esperado, focal };
+}
+
+/* ---------- CALIBRAR POR LINHAS ----------
+   Em vez dos 4 cantos (muitas vezes tapados por jogadores ou fora do
+   enquadramento), tocam-se 2 pontos em cada uma das 4 linhas da área —
+   em qualquer sítio dela. Os cantos são os cruzamentos dessas linhas,
+   mesmo que fiquem fora do ecrã. Ordem das linhas: linha de fundo, lado
+   direito, linha da frente, lado esquerdo. */
+export const LINHAS_CALIBRACAO = ['Linha de fundo (de baliza)', 'Lado DIREITO da área', 'Linha da FRENTE da área', 'Lado ESQUERDO da área'];
+const retaDe = (p, q) => cruz([p.x, p.y, 1], [q.x, q.y, 1]);
+export function cantosDasLinhas(pontos) {
+  if (!pontos || pontos.length < 8) return null;
+  const L = [0, 1, 2, 3].map(k => retaDe(pontos[2 * k], pontos[2 * k + 1]));
+  const cruzar = (a, b) => {
+    const h = cruz(a, b);
+    if (Math.abs(h[2]) < 1e-9) return null;
+    return { x: h[0] / h[2], y: h[1] / h[2] };
+  };
+  // P1 = fundo∩esquerdo, P2 = fundo∩direito, P3 = frente∩direito, P4 = frente∩esquerdo
+  const c = [cruzar(L[0], L[3]), cruzar(L[0], L[1]), cruzar(L[2], L[1]), cruzar(L[2], L[3])];
+  return c.every(Boolean) && c.every(p => Math.abs(p.x) < 2000 && Math.abs(p.y) < 2000) ? c : null;
+}
+
 // Matriz imagem → relvado de uma calibração (4 pontos na imagem).
 export function matrizDaCalibracao(cal) {
   if (!cal || !cal.img || cal.img.length !== 4) return null;

@@ -11,6 +11,7 @@ import AnalisadorVideo, {
   FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
   RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, girar, inclinacaoPadrao,
   MODELOS_CALIBRACAO, matrizDaCalibracao, inverterH, aplicarH, planoDaCalibracao,
+  validarCalibracao, cantosDasLinhas, LINHAS_CALIBRACAO,
   pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
 } from './AnalisadorVideo';
@@ -33046,18 +33047,28 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       return (novo.corredores || novo.tercos) ? [novo, ...resto] : resto;
     });
   };
-  const comecarCalibracaoBib = (modelo, W, D) => {
-    setCalibrandoBib({ tipo: modelo.id, W: modelo.W || W, D: modelo.D || D, pontos: [] });
+  // Marcar por CANTOS (4 toques) ou por LINHAS (2 toques em cada uma das
+  // 4 linhas da área — para quando os cantos estão tapados ou fora do ecrã).
+  const [modoCalibBib, setModoCalibBib] = useState('cantos');
+  const comecarCalibracaoBib = (modelo, W, D, modo = modoCalibBib) => {
+    setCalibrandoBib({ tipo: modelo.id, W: modelo.W || W, D: modelo.D || D, pontos: [], modo });
     setToolBib(null);
     setFormaEmCursoBib(null);
     setFormaSelecionadaBib(null);
     cancelarRetomaDesenhoBib();
     if (ytATocarRef.current) enviarComandoYoutube('pauseVideo');
   };
+  // Os 4 cantos da calibração em curso (pelas linhas, são os cruzamentos).
+  const cantosCalibBib = (c) => {
+    if (!c) return null;
+    if (c.modo === 'linhas') return c.pontos.length === 8 ? cantosDasLinhas(c.pontos) : null;
+    return c.pontos.length === 4 ? c.pontos : null;
+  };
   const confirmarCalibracaoBib = () => {
     const c = calibrandoBib;
-    if (!c || c.pontos.length !== 4) return;
-    const cal = { tipo: c.tipo, W: c.W, D: c.D, img: c.pontos };
+    const cantos = cantosCalibBib(c);
+    if (!cantos) return;
+    const cal = { tipo: c.tipo, W: c.W, D: c.D, img: cantos, modo: c.modo || 'cantos', ...(c.modo === 'linhas' ? { pontosLinhas: c.pontos } : {}) };
     if (!matrizDaCalibracao(cal)) return;
     setCalibracaoBib(cal);
     ultimaCalibracaoBib.current = cal;
@@ -33525,7 +33536,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     cancelarRetomaDesenhoBib(); // tocou no desenho durante um congelamento: fica parado para editar
     // A calibrar: cada toque é um dos 4 cantos (depois arrastam-se para acertar).
     if (calibrandoBib) {
-      if (calibrandoBib.pontos.length < 4) setCalibrandoBib(c => ({ ...c, pontos: [...c.pontos, p] }));
+      const maximo = calibrandoBib.modo === 'linhas' ? 8 : 4;
+      if (calibrandoBib.pontos.length < maximo) setCalibrandoBib(c => ({ ...c, pontos: [...c.pontos, p] }));
       return;
     }
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
@@ -35968,8 +35980,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {formaEmCursoBib && renderShape(formaEmCursoBib, 'rascunho')}
                           {/* RELVADO: grelha de verificação (5 em 5 m) e os 4 pontos a marcar. */}
                           {modoDesenhoBib && (() => {
-                            const cal = calibrandoBib && calibrandoBib.pontos.length === 4
-                              ? { W: calibrandoBib.W, D: calibrandoBib.D, img: calibrandoBib.pontos }
+                            const cantosEmCurso = cantosCalibBib(calibrandoBib);
+                            const cal = cantosEmCurso
+                              ? { W: calibrandoBib.W, D: calibrandoBib.D, img: cantosEmCurso }
                               : (!calibrandoBib && grelhaBib ? calibracaoBib : null);
                             const H = cal ? matrizDaCalibracao(cal) : null;
                             const Hi = H ? inverterH(H) : null;
@@ -35995,14 +36008,28 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               const r4 = planoDaCalibracao(cal);
                               r4.forEach((q, k) => traco(q, r4[(k + 1) % 4], true, `r${k}`));
                             }
+                            // Por linhas: cada par de toques desenha a linha inteira que passa por eles.
+                            const retasLinhas = [];
+                            if (calibrandoBib && calibrandoBib.modo === 'linhas') {
+                              for (let k = 0; k + 1 < calibrandoBib.pontos.length; k += 2) {
+                                const p1 = calibrandoBib.pontos[k], p2 = calibrandoBib.pontos[k + 1];
+                                const dx = p2.x - p1.x, dy = p2.y - p1.y, len = Math.hypot(dx, dy) || 1;
+                                const ex = (dx / len) * 300, ey = (dy / len) * 300;
+                                retasLinhas.push(<line key={`rl${k}`} x1={p1.x - ex} y1={p1.y - ey} x2={p2.x + ex} y2={p2.y + ey}
+                                  stroke="#4FC3F7" strokeWidth={0.18} strokeDasharray="0.8 0.5" style={{ pointerEvents: 'none' }} />);
+                              }
+                            }
                             return (
                               <g>
                                 {linhas}
+                                {retasLinhas}
                                 {calibrandoBib && calibrandoBib.pontos.map((q, k) => (
                                   <g key={`cal${k}`}>
                                     <circle cx={q.x} cy={q.y} r={0.7} fill={T.gold} stroke="#000" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
                                     <text x={q.x + 1} y={q.y - 0.9} fill="#fff" fontSize={1.8} fontWeight={700}
-                                      style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#000', strokeWidth: 0.35, pointerEvents: 'none' }}>{k + 1}</text>
+                                      style={{ fontFamily: "'Inter', sans-serif", paintOrder: 'stroke', stroke: '#000', strokeWidth: 0.35, pointerEvents: 'none' }}>
+                                      {calibrandoBib.modo === 'linhas' ? `L${Math.floor(k / 2) + 1}` : k + 1}
+                                    </text>
                                     <circle cx={q.x} cy={q.y} r={RAIO_PEGA_BIB} fill="transparent"
                                       onPointerDown={e => {
                                         e.stopPropagation();
@@ -36198,14 +36225,26 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             }}>{rotulo}</button>
                           );
                           if (calibrandoBib) {
-                            // Esquema da área com o canto seguinte em destaque.
+                            const porLinhas = calibrandoBib.modo === 'linhas';
+                            const total = porLinhas ? 8 : 4;
+                            const cantos = cantosCalibBib(calibrandoBib);
+                            const verif = cantos ? validarCalibracao(cantos, calibrandoBib.W, calibrandoBib.D) : null;
+                            const linhaAtual = Math.floor(n / 2); // por linhas
+                            // Esquema da área: o canto (ou a linha) seguinte em destaque.
                             const esq = [{ x: 10, y: 40 }, { x: 90, y: 40 }, { x: 74, y: 12 }, { x: 26, y: 12 }];
+                            const ladosEsq = [[0, 1], [1, 2], [2, 3], [3, 0]]; // fundo, direito, frente, esquerdo
                             return (
                               <div style={caixa} onPointerDown={e => e.stopPropagation()}>
-                                <div style={{ fontWeight: 700 }}>Calibrar — {modelo ? modelo.nome : ''}</div>
+                                <div style={{ fontWeight: 700 }}>Calibrar — {modelo ? modelo.nome : ''} · {porLinhas ? 'por linhas' : 'por cantos'}</div>
                                 <svg viewBox="0 0 100 50" style={{ width: '100%', height: 70 }}>
-                                  <polygon points={esq.map(q => `${q.x},${q.y}`).join(' ')} fill="none" stroke="#fff" strokeWidth={1.2} />
-                                  {esq.map((q, k) => (
+                                  {porLinhas ? ladosEsq.map(([i, j], k) => (
+                                    <line key={k} x1={esq[i].x} y1={esq[i].y} x2={esq[j].x} y2={esq[j].y}
+                                      stroke={k < linhaAtual ? T.good : (k === linhaAtual && n < 8 ? T.gold : '#666')}
+                                      strokeWidth={k === linhaAtual && n < 8 ? 3 : 1.6} strokeLinecap="round" />
+                                  )) : (
+                                    <polygon points={esq.map(q => `${q.x},${q.y}`).join(' ')} fill="none" stroke="#fff" strokeWidth={1.2} />
+                                  )}
+                                  {!porLinhas && esq.map((q, k) => (
                                     <g key={k}>
                                       <circle cx={q.x} cy={q.y} r={k === n ? 4.2 : 3} fill={k < n ? T.good : (k === n ? T.gold : '#555')} />
                                       <text x={q.x} y={q.y + 1.6} textAnchor="middle" fontSize={4.2} fontWeight={700} fill="#111">{k + 1}</text>
@@ -36214,12 +36253,25 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                   <text x={50} y={48} textAnchor="middle" fontSize={4} fill="#aaa">linha de fundo</text>
                                 </svg>
                                 <div style={{ color: T.cream, lineHeight: 1.4 }}>
-                                  {n < 4
-                                    ? <>Toca no ponto <b>{n + 1}</b>: {modelo ? modelo.passos[n] : ''}</>
-                                    : 'Arrasta os pontos até a grelha amarela bater certo com as linhas do campo. Depois confirma.'}
+                                  {n < total
+                                    ? (porLinhas
+                                      ? <>Linha <b>{linhaAtual + 1} de 4</b> — {LINHAS_CALIBRACAO[linhaAtual]}: toca no <b>{n % 2 === 0 ? '1.º' : '2.º'} ponto</b>, em qualquer sítio da linha (afasta bem os dois).</>
+                                      : <>Toca no ponto <b>{n + 1}</b>: {modelo ? modelo.passos[n] : ''}</>)
+                                    : 'Arrasta os pontos até a grelha amarela bater certo com as linhas do campo.'}
                                 </div>
+                                {/* Verificação automática: proporção, ordem, perspetiva possível. */}
+                                {n === total && !cantos && (
+                                  <div style={{ color: T.warn, lineHeight: 1.4 }}>As linhas não se cruzam bem — afasta mais os dois pontos de cada linha.</div>
+                                )}
+                                {verif && verif.ok && (
+                                  <div style={{ color: T.good, lineHeight: 1.4 }}>✓ Bate certo com a {modelo ? modelo.nome.toLowerCase() : 'área'}.</div>
+                                )}
+                                {verif && !verif.ok && verif.avisos.map((t, k) => (
+                                  <div key={k} style={{ color: T.warn, lineHeight: 1.4 }}>⚠ {t}</div>
+                                ))}
                                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                  {botao('Confirmar', confirmarCalibracaoBib, true, n !== 4)}
+                                  {botao(verif && !verif.ok ? 'Confirmar mesmo assim' : 'Confirmar', confirmarCalibracaoBib, !(verif && !verif.ok), !cantos)}
+                                  {botao('Recuar ponto', () => setCalibrandoBib(c => ({ ...c, pontos: c.pontos.slice(0, -1) })), false, n === 0)}
                                   {botao('Recomeçar', () => setCalibrandoBib(c => ({ ...c, pontos: [] })), false, n === 0)}
                                   {botao('Cancelar', () => setCalibrandoBib(null), false, false)}
                                 </div>
@@ -36259,7 +36311,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                     Na barra: <b style={{ color: T.cream }}>Medir</b> (arrasta entre dois pontos → metros) e <b style={{ color: T.cream }}>Fora de jogo</b> (toca nos pés do jogador).
                                   </div>
                                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                    {botao('Recalibrar', () => comecarCalibracaoBib(MODELOS_CALIBRACAO.find(m => m.id === calibracaoBib.tipo) || MODELOS_CALIBRACAO[0], calibracaoBib.W, calibracaoBib.D))}
+                                    {botao('Recalibrar', () => comecarCalibracaoBib(MODELOS_CALIBRACAO.find(m => m.id === calibracaoBib.tipo) || MODELOS_CALIBRACAO[0], calibracaoBib.W, calibracaoBib.D, calibracaoBib.modo || modoCalibBib))}
                                     {botao('Tirar calibração', () => setCalibracaoBib(null))}
                                   </div>
                                 </>
@@ -36267,6 +36319,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                 <>
                                   <div style={{ color: T.mutedDim, lineHeight: 1.4 }}>
                                     Com o vídeo parado, marca 4 cantos de uma área que se veja bem. A partir daí, as formas ficam assentes no relvado.
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <span style={{ color: T.mutedDim }}>Marcar por:</span>
+                                    {botao('Cantos', () => setModoCalibBib('cantos'), modoCalibBib === 'cantos')}
+                                    {botao('Linhas', () => setModoCalibBib('linhas'), modoCalibBib === 'linhas')}
+                                  </div>
+                                  <div style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: 1.35 }}>
+                                    {modoCalibBib === 'linhas'
+                                      ? 'Linhas: 2 toques em cada linha da área (fundo, lados, frente) — serve mesmo com os cantos tapados ou fora do ecrã.'
+                                      : 'Cantos: 4 toques nos cantos da área.'}
                                   </div>
                                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                     {MODELOS_CALIBRACAO.filter(m => m.W).map(m => <span key={m.id}>{botao(m.nome, () => comecarCalibracaoBib(m))}</span>)}
