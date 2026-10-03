@@ -32983,6 +32983,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const gravacaoBibRef = useRef(null);
   const areaVideoBibRef = useRef(null);
   const [avisoGravacaoBib, setAvisoGravacaoBib] = useState('');
+  // Janela da gravação: { fase: 'antes' } | { fase: 'pronto', blob, nome, url }
+  const [janelaGravacaoBib, setJanelaGravacaoBib] = useState(null);
+  const fecharJanelaGravacaoBib = () => {
+    setJanelaGravacaoBib(j => { if (j && j.url) URL.revokeObjectURL(j.url); return null; });
+  };
   useEffect(() => {
     if (!avisoGravacaoBib) return undefined;
     const t = setTimeout(() => setAvisoGravacaoBib(''), 5000);
@@ -34231,6 +34236,21 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
 
   const ativoEClipe = !!(active && active.youtubeId && typeof active.clipInicio === 'number');
+  // A gravar: o início do corte marca o início da gravação (ao instante).
+  useEffect(() => {
+    const g = gravacaoBibRef.current;
+    if (!g || !g.preRoll || !ativoEClipe || clipIni - g.arranque < 1) return undefined;
+    const falta = clipIni - liveTime;
+    if (falta > 1.2) return undefined;
+    const h = setTimeout(() => {
+      if (gravacaoBibRef.current !== g || !g.preRoll) return;
+      g.preRoll = false;
+      g.comecouEm = Date.now();
+      g.ctl.comecar();
+    }, Math.max(0, falta * 1000));
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTime]);
   // A gravar: chegado o fim do corte (sem paragem a decorrer), acaba e entrega.
   useEffect(() => {
     const g = gravacaoBibRef.current;
@@ -34599,6 +34619,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       enviarComandoYoutube('playVideo');
       tempoAnteriorClipeRef.current = clipIni;
     } else if (liveTime < clipIni - 1.25 || liveTime > clipFimEf + 0.75) {
+      // A gravar, os segundos ANTES do corte são de propósito (ver `gravarCorteBib`).
+      if (gravacaoBibRef.current && gravacaoBibRef.current.preRoll) return;
       enviarComandoYoutube('seekTo', [clipIni, true]);
       tempoAnteriorClipeRef.current = clipIni;
     }
@@ -34641,9 +34663,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setGravacaoBib(null);
     enviarComandoYoutube('pauseVideo');
     const blob = await g.ctl.parar();
-    const r = await entregarVideo(blob, g.nome);
-    if (r === 'descarregado') setAvisoGravacaoBib('Vídeo pronto — ficou nas transferências.');
-    else if (r === 'vazio') setAvisoGravacaoBib('A gravação ficou vazia. Tenta outra vez.');
+    if (!blob || !blob.size) { setAvisoGravacaoBib('A gravação ficou vazia. Tenta outra vez.'); return; }
+    // Janela com o resultado: ver, descarregar ou partilhar (o "Partilhar"
+    // do telemóvel precisa de um toque — por isso é um botão aqui).
+    setJanelaGravacaoBib({ fase: 'pronto', blob, nome: g.nome, url: URL.createObjectURL(blob) });
   };
   const gravarCorteBib = async () => {
     if (!podeGravarSeparador()) {
@@ -34654,21 +34677,35 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     largarParagemBib();
     let ctl;
     try { ctl = await prepararGravacaoSeparador(areaVideoBibRef.current); } catch (e) { return; } // recusou a partilha
-    const g = { ctl, nome: active.title || 'Corte', comecouEm: 0 };
+    /* SEM A INFORMAÇÃO DO YOUTUBE NO VÍDEO. Ao arrancar, o YouTube mostra
+       por uns segundos o título, o canal, o botão de pausa e um
+       escurecido por cima da imagem (era o "mais escuro" do início da
+       gravação). Por isso o vídeo arranca uns 4s ANTES do corte, sem
+       gravar; quando chega ao início do corte essa informação já saiu, e
+       só aí começa a gravação. */
+    const PRE_ROLL = 4;
+    const arranque = Math.max(0, clipIni - PRE_ROLL);
+    const g = { ctl, nome: active.title || 'Corte', comecouEm: 0, preRoll: true, arranque };
     gravacaoBibRef.current = g;
     setGravacaoBib({ desde: Date.now() });
     // "Parar partilha" no browser também termina e entrega o que já houver.
     ctl.acabou.then(() => { if (gravacaoBibRef.current === g) acabarGravacaoBib(); });
-    // Do princípio do corte, com todas as paragens a contar outra vez.
+    // Todas as paragens do corte a contar outra vez.
     pausasJaMostradasRef.current.clear();
     enviarComandoYoutube('pauseVideo');
-    enviarComandoYoutube('seekTo', [clipIni, true]);
+    enviarComandoYoutube('seekTo', [arranque, true]);
     setTimeout(() => {
       if (gravacaoBibRef.current !== g) return;
-      g.comecouEm = Date.now();
-      ctl.comecar();
       enviarComandoYoutube('playVideo');
-    }, 900);
+      // Corte logo no início do vídeo (sem 4s antes): espera que a
+      // informação saia e grava a partir daí.
+      if (clipIni - arranque < 1) {
+        setTimeout(() => {
+          if (gravacaoBibRef.current !== g || !g.preRoll) return;
+          g.preRoll = false; g.comecouEm = Date.now(); ctl.comecar();
+        }, 3500);
+      }
+    }, 500);
   };
   const procurarNoClipe = (t) => {
     // Nunca exatamente no fim: aí o ciclo acima recomeçava logo o corte.
@@ -36353,7 +36390,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           )}
                           {ativoEClipe && !modoDesenhoBib && (
                           <button
-                            onClick={gravacaoBib ? acabarGravacaoBib : gravarCorteBib}
+                            onClick={gravacaoBib ? acabarGravacaoBib : () => setJanelaGravacaoBib({ fase: 'antes' })}
                             title={gravacaoBib ? 'Parar e entregar o vídeo' : 'Gravar um vídeo do corte com os desenhos, as pausas e o zoom (o browser pede para partilhar este separador)'}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
@@ -36362,11 +36399,53 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             }}
                           >
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: gravacaoBib ? T.bad : '#fff', display: 'inline-block' }} />
-                            {gravacaoBib ? 'A gravar… parar' : 'Gravar vídeo'}
+                            {gravacaoBib
+                              ? (gravacaoBibRef.current && gravacaoBibRef.current.preRoll
+                                ? 'A preparar… parar'
+                                : `A gravar ${fmtMMSS(Math.max(0, liveTime - clipIni))} / ${fmtMMSS(clipFimEf - clipIni)} · parar`)
+                              : 'Gravar vídeo'}
                           </button>
                           )}
                           {avisoGravacaoBib && (
                             <span style={{ fontSize: 11.5, color: T.warn }}>{avisoGravacaoBib}</span>
+                          )}
+                          {/* JANELA DA GRAVAÇÃO — antes (o que vai acontecer) e depois
+                              (ver, descarregar, partilhar). Durante a gravação não há
+                              janela nenhuma: ficaria gravada por cima do vídeo. */}
+                          {janelaGravacaoBib && janelaGravacaoBib.fase === 'antes' && (
+                            <Modal title="Gravar vídeo do corte" onClose={() => setJanelaGravacaoBib(null)}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13.5, color: T.muted, lineHeight: 1.55 }}>
+                                <div>A app vai reproduzir o corte <span style={{ color: T.cream }}>{active.title}</span> do princípio ao fim, com os desenhos, as pausas e o zoom, e gravá-lo num vídeo.</div>
+                                <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  <li>O browser vai pedir para <span style={{ color: T.cream }}>partilhar este separador</span> — carrega em <span style={{ color: T.cream }}>Permitir</span> (com o áudio ligado, se quiseres som).</li>
+                                  <li>Não mudes de separador nem mexas no vídeo até acabar ({fmtMMSS(clipFimEf - clipIni)}).</li>
+                                  <li>No fim aparece o vídeo, pronto a descarregar ou partilhar.</li>
+                                </ol>
+                                {!podeGravarSeparador() && (
+                                  <div style={{ color: T.warn }}>Este browser não deixa gravar. Usa o computador (Chrome, Edge ou Safari).</div>
+                                )}
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                  <Btn variant="ghost" onClick={() => setJanelaGravacaoBib(null)}>Cancelar</Btn>
+                                  <Btn disabled={!podeGravarSeparador()} onClick={() => { setJanelaGravacaoBib(null); gravarCorteBib(); }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', display: 'inline-block' }} /> Começar gravação
+                                  </Btn>
+                                </div>
+                              </div>
+                            </Modal>
+                          )}
+                          {janelaGravacaoBib && janelaGravacaoBib.fase === 'pronto' && (
+                            <Modal title="Vídeo pronto" onClose={fecharJanelaGravacaoBib} wide>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <video src={janelaGravacaoBib.url} controls playsInline style={{ width: '100%', borderRadius: 8, background: '#000', maxHeight: '55vh' }} />
+                                <div style={{ fontSize: 12, color: T.mutedDim }}>
+                                  {/mp4/.test(janelaGravacaoBib.blob.type) ? 'MP4' : 'WebM'} · {(janelaGravacaoBib.blob.size / 1048576).toFixed(1)} MB
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                                  <Btn variant="ghost" onClick={fecharJanelaGravacaoBib}>Fechar</Btn>
+                                  <Btn variant="ghost" onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome)}><Share2 size={14} /> Partilhar / descarregar</Btn>
+                                </div>
+                              </div>
+                            </Modal>
                           )}
                           {ativoEClipe && (
                           <button
