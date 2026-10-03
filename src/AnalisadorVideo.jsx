@@ -246,19 +246,19 @@ export const MODELOS_CALIBRACAO = [
   {
     id: 'grandeArea', nome: 'Grande área', W: 40.32, D: 16.5,
     passos: [
-      'Canto da grande área na linha de fundo — o da ESQUERDA (na imagem)',
-      'Canto da grande área na linha de fundo — o da DIREITA',
-      'Canto da frente da grande área — o da DIREITA',
-      'Canto da frente da grande área — o da ESQUERDA',
+      'Um canto da grande área (qualquer um)',
+      'O canto SEGUINTE, a dar a volta à área',
+      'O canto seguinte, na mesma volta',
+      'O último canto',
     ],
   },
   {
     id: 'pequenaArea', nome: 'Pequena área', W: 18.32, D: 5.5,
     passos: [
-      'Canto da pequena área na linha de fundo — o da ESQUERDA (na imagem)',
-      'Canto da pequena área na linha de fundo — o da DIREITA',
-      'Canto da frente da pequena área — o da DIREITA',
-      'Canto da frente da pequena área — o da ESQUERDA',
+      'Um canto da pequena área (qualquer um)',
+      'O canto SEGUINTE, a dar a volta à área',
+      'O canto seguinte, na mesma volta',
+      'O último canto',
     ],
   },
   {
@@ -369,8 +369,8 @@ export function validarCalibracao(img, W, D) {
     if (!sinal) sinal = Math.sign(z); else if (Math.sign(z) !== sinal) convexo = false;
   }
   if (!convexo) {
-    avisos.push('A forma marcada cruza-se: os cantos estão fora de ordem (segue a ordem do esquema).');
-    return { ok: false, avisos };
+    avisos.push('A forma marcada cruza-se: toca nos cantos a dar a volta à área, um a seguir ao outro.');
+    return { ok: false, avisos, desvio: Infinity };
   }
   // 2) Proporção real do retângulo marcado (centro da imagem = eixo da câmara).
   const u0 = 50, v0 = 56.25 / 2;
@@ -396,13 +396,13 @@ export function validarCalibracao(img, W, D) {
        ecrã) — aí a lente não se consegue deduzir. Usa-se uma lente típica
        (~70°) e uma tolerância mais larga. */
     proporcao = proporcaoCom(70);
-    tolerancia = 0.42;
+    tolerancia = 0.3;
   } else {
     const f2 = -((n2[0] * n3[0] - (n2[0] * n3[2] + n2[2] * n3[0]) * u0 + n2[2] * n3[2] * u0 * u0)
       + (n2[1] * n3[1] - (n2[1] * n3[2] + n2[2] * n3[1]) * v0 + n2[2] * n3[2] * v0 * v0)) / denom;
     if (!(f2 > 0)) {
-      avisos.push('Estes 4 pontos dão uma perspetiva impossível para uma câmara — confirma que são os cantos certos e pela ordem do esquema.');
-      return { ok: false, avisos };
+      avisos.push('Estes 4 pontos dão uma perspetiva impossível para uma câmara — confirma que são os cantos certos da área.');
+      return { ok: false, avisos, desvio: Infinity };
     }
     focal = Math.sqrt(f2);
     proporcao = proporcaoCom(focal);
@@ -416,7 +416,40 @@ export function validarCalibracao(img, W, D) {
   if (desvio > tolerancia) {
     avisos.push(`A forma marcada tem proporção ${proporcao.toFixed(2).replace('.', ',')} : 1, mas a área escolhida tem ${esperado.toFixed(2).replace('.', ',')} : 1. Os pontos não parecem ser os cantos desta área (é a grande ou a pequena?).`);
   }
-  return { ok: avisos.length === 0, avisos, proporcao, esperado, focal };
+  return { ok: avisos.length === 0, avisos, proporcao, esperado, focal, desvio };
+}
+
+/* QUALQUER ORIENTAÇÃO DO CAMPO. A câmara pode estar atrás da baliza
+   (linha de fundo "deitada") ou na bancada lateral (baliza à esquerda ou
+   à direita, linha de fundo "em pé"). Em vez de obrigar a uma ordem fixa,
+   tocam-se os 4 cantos a dar a volta à área, começando em qualquer um. A
+   app experimenta as maneiras possíveis de os ler e fica com a que dá a
+   proporção certa da área (os lados compridos são a largura). Entre a
+   linha de baliza e a linha da frente (mesma proporção), a de baliza é a
+   que fica mais longe do centro da imagem — a câmara está quase sempre
+   virada para o jogo, não para fora do campo. `trocarBaliza` inverte
+   essa escolha, se for o caso. */
+export function ordenarCantosAuto(img, W, D, trocarBaliza = false) {
+  if (!img || img.length !== 4) return null;
+  const opcoes = [];
+  for (const sentido of [1, -1]) {
+    for (let r = 0; r < 4; r++) {
+      const c = [0, 1, 2, 3].map(k => img[((r + sentido * k) % 4 + 4) % 4]);
+      opcoes.push({ cantos: c, verif: validarCalibracao(c, W, D) });
+    }
+  }
+  const validas = opcoes.filter(o => Number.isFinite(o.verif.desvio));
+  if (!validas.length) return { cantos: img, verif: validarCalibracao(img, W, D) };
+  const melhorDesvio = Math.min(...validas.map(o => o.verif.desvio));
+  // As de proporção certa (empatadas: baliza de um lado ou do outro, e sentido).
+  const boas = validas.filter(o => o.verif.desvio <= melhorDesvio + 1e-6 || Math.abs(o.verif.desvio - melhorDesvio) < 0.02);
+  const longeDoCentro = (o) => {
+    const m = { x: (o.cantos[0].x + o.cantos[1].x) / 2, y: (o.cantos[0].y + o.cantos[1].y) / 2 };
+    return Math.hypot(m.x - 50, m.y - 28.125);
+  };
+  boas.sort((x, y) => longeDoCentro(y) - longeDoCentro(x));
+  const escolhida = trocarBaliza ? (boas.find(o => Math.abs(longeDoCentro(o) - longeDoCentro(boas[0])) > 1) || boas[0]) : boas[0];
+  return escolhida;
 }
 
 /* ---------- CALIBRAR POR LINHAS ----------
@@ -425,7 +458,7 @@ export function validarCalibracao(img, W, D) {
    em qualquer sítio dela. Os cantos são os cruzamentos dessas linhas,
    mesmo que fiquem fora do ecrã. Ordem das linhas: linha de fundo, lado
    direito, linha da frente, lado esquerdo. */
-export const LINHAS_CALIBRACAO = ['Linha de fundo (de baliza)', 'Lado DIREITO da área', 'Linha da FRENTE da área', 'Lado ESQUERDO da área'];
+export const LINHAS_CALIBRACAO = ['uma das linhas da área (qualquer uma)', 'a linha SEGUINTE, a dar a volta à área', 'a linha seguinte, na mesma volta', 'a última linha'];
 const retaDe = (p, q) => cruz([p.x, p.y, 1], [q.x, q.y, 1]);
 export function cantosDasLinhas(pontos) {
   if (!pontos || pontos.length < 8) return null;
