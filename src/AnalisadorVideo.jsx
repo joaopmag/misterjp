@@ -3115,10 +3115,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
               </div>
             </div>
-            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto', transition: 'width 0.2s ease, padding 0.2s ease', paddingRight: fullscreen ? 18 : 0, boxSizing: 'border-box', overflow: 'hidden' }}
+            <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto', transition: 'width 0.2s ease', boxSizing: 'border-box', overflow: 'hidden' }}
               onPointerDown={startDraw} onPointerMove={moveDraw} onPointerUp={endDraw} onPointerLeave={endDraw} onPointerCancel={endDraw}>
               {/* Vídeo + desenho juntos numa caixa: é ela que se aproxima no zoom do círculo. */}
-              <div style={{ position: 'absolute', inset: 0, right: fullscreen ? 18 : 0, ...estiloZoomEditor }}>
+              {/* (Sem a margem de 18px à direita em ecrã inteiro — era a barra preta;
+                 servia quando a coluna da direita desaparecia em ecrã inteiro.) */}
+              <div style={{ position: 'absolute', inset: 0, ...estiloZoomEditor }}>
               {originalAtivo?.pronto === false ? (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted, gap: 8, textAlign: 'center', padding: 20 }}>
                   <Loader2 size={20} className="spin" />
