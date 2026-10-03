@@ -703,11 +703,24 @@ function renderNoChao(sh, g, i) {
     );
   }
   if (g.tipo === 'anel') {
-    // Anel no chão, por baixo do jogador (como nas transmissões).
+    /* ANEL NO CHÃO, A RODAR — como os das transmissões. Três camadas:
+       um brilho suave no relvado que "respira", um anel fino fixo e, por
+       cima, segmentos que dão a volta ao jogador. Os segmentos correm ao
+       longo do próprio contorno (que já está em perspetiva), por isso a
+       rotação acompanha o chão: mais lentos e apertados ao fundo, mais
+       abertos à frente. `pathLength=100` torna os traços independentes do
+       tamanho do anel. */
+    const d = `M ${g.contorno.map(p => `${p.x} ${p.y}`).join(' L ')} Z`;
     return (
       <g key={i}>
-        <polygon points={pts} fill={cor} fillOpacity={0.14} stroke="none" style={{ mixBlendMode: 'overlay' }} />
-        <polygon points={pts} fill="none" stroke={cor} strokeWidth={ESPESSURA * 0.8} strokeLinejoin="round" />
+        <path d={d} fill={cor} stroke="none" style={{ mixBlendMode: 'overlay' }}>
+          <animate attributeName="fill-opacity" values="0.10;0.22;0.10" dur="2.4s" repeatCount="indefinite" />
+        </path>
+        <path d={d} fill="none" stroke={cor} strokeOpacity={0.55} strokeWidth={CONTORNO_FINO * 1.4} strokeLinejoin="round" />
+        <path d={d} pathLength={100} fill="none" stroke={cor} strokeWidth={ESPESSURA * 1.1}
+          strokeLinecap="round" strokeDasharray="14 11" strokeLinejoin="round">
+          <animate attributeName="stroke-dashoffset" from="0" to="-100" dur="3.2s" repeatCount="indefinite" />
+        </path>
       </g>
     );
   }
