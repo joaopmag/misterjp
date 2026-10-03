@@ -38807,7 +38807,11 @@ const EMPTY_NOTA = () => ({ data: todayStr(), titulo: '', nota: '', attachment: 
 
    As duas perguntas reais são "o que falta antes de sábado?" e "quem
    está a dever o quê?". A primeira é a vista por omissão; a segunda é um
-   botão que reagrupa a MESMA lista. */
+   botão que reagrupa a MESMA lista.
+
+   Há uma terceira vista, "Morfociclo", que É um quadro de colunas, mas
+   com o eixo certo: os dias até ao jogo (J-3, J-2, J-1…). Ver a nota
+   junto de `colunasDoMorfociclo`. */
 
 const ESTADOS_TAREFA = ['aberta', 'curso', 'feita'];
 
@@ -39089,6 +39093,234 @@ function TarefaModal({ tarefa, membros, players, euId, onClose, onSave, onRemove
   );
 }
 
+/* ================================================================
+   MORFOCICLO — o quadro de colunas das Tarefas.
+   ================================================================
+
+   A nota lá em cima (junto de `ESTADOS_TAREFA`) continua certa: um
+   kanban por ESTADO mostraria o eixo errado. Mas o formato de quadro,
+   com colunas e arrastar, tem valor quando as colunas são TEMPO, e o
+   tempo de uma equipa técnica não se conta em dias do calendário, conta
+   se a partir do jogo: J+1, J+2, J-3, J-2, J-1, Jogo.
+
+   Por isso as colunas são os dias até ao próximo jogo (e o dia a seguir
+   a ele, onde vive o vídeo da jornada), cada uma com o que já está
+   marcado nesse dia (treino, folga, jogo) por cima das tarefas. Arrastar
+   uma tarefa para outra coluna muda-lhe o PRAZO, e é só isso: não há
+   campo novo nem tabela nova, é o mesmo `prazo` de sempre visto pelo
+   eixo do microciclo.
+
+   Regras:
+   - O rótulo de cada dia é relativo ao jogo MAIS PRÓXIMO dos dois lados:
+     até dois dias depois de um jogo diz J+1/J+2 (recuperação), daí em
+     diante diz J-n até ao jogo seguinte. Sem nenhum jogo à vista, fica o
+     dia da semana.
+   - Mostra no máximo 10 dias. Com uma paragem longa no campeonato, o
+     quadro mostra a próxima semana e o resto cai em "Mais tarde".
+   - As recorrentes ficam sempre em "Hoje" e não se arrastam: não têm
+     prazo, têm uma regra (ver `tarefaAtivaHoje`).
+   - "Atrasadas" e "Mais tarde" só aparecem com tarefas lá dentro e não
+     aceitam largar (uma não tem dia certo, a outra é passado). "Sem
+     prazo" aparece sempre e aceita: largar lá apaga o prazo.
+   - O arrastar nativo do browser não funciona em ecrãs táteis. No
+     telemóvel, cada cartão traz um "Mover para…" em vez disso. */
+const MORFOCICLO_MAX_DIAS = 10;
+const diasEntreDatas = (a, b) => Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}T00:00:00`)) / 86400000);
+
+function rotuloMorfociclo(dia, jogos) {
+  if (jogos.some(m => m.date === dia)) return 'Jogo';
+  const antes = jogos.filter(m => m.date < dia);
+  const depois = jogos.filter(m => m.date > dia);
+  const p = antes.length ? diasEntreDatas(antes[antes.length - 1].date, dia) : Infinity;
+  const n = depois.length ? diasEntreDatas(dia, depois[0].date) : Infinity;
+  if (p <= 2 && p < n) return `J+${p}`;
+  if (n !== Infinity) return `J-${n}`;
+  if (p !== Infinity && p <= 3) return `J+${p}`;
+  return null;
+}
+
+function colunasDoMorfociclo(hoje, matches, sessions) {
+  const jogos = (matches || []).filter(m => m && m.date).sort((a, b) => a.date.localeCompare(b.date));
+  const proximo = jogos.find(m => m.date >= hoje) || null;
+  const distancia = proximo ? diasEntreDatas(hoje, proximo.date) : null;
+  // Até ao J+1 do próximo jogo, se couber; senão, a próxima semana.
+  const nDias = proximo && distancia + 2 <= MORFOCICLO_MAX_DIAS ? Math.max(distancia + 2, 3) : 7;
+  const ultimoDia = addDays(hoje, nDias - 1);
+
+  const cols = [{ id: 'atraso', tipo: 'atraso', titulo: 'Atrasadas', alvo: false }];
+  for (let i = 0; i < nDias; i++) {
+    const d = addDays(hoje, i);
+    const semana = DIAS_SEMANA[new Date(`${d}T00:00:00`).getDay()];
+    const rel = rotuloMorfociclo(d, jogos);
+    const quando = i === 0 ? 'hoje' : (i === 1 ? 'amanhã' : `${semana.slice(0, 3)} ${fmtShort(d)}`);
+    cols.push({
+      id: d, tipo: 'dia', data: d, alvo: true, eHoje: i === 0,
+      titulo: rel || (semana.charAt(0).toUpperCase() + semana.slice(1)),
+      sub: rel ? quando : (i <= 1 ? quando : fmtShort(d)),
+      jogos: jogos.filter(m => m.date === d),
+      sessoes: (sessions || []).filter(s => s.date === d),
+    });
+  }
+  cols.push({ id: 'depois', tipo: 'depois', titulo: 'Mais tarde', sub: `depois de ${fmtShort(ultimoDia)}`, alvo: false });
+  cols.push({ id: 'sem', tipo: 'sem', titulo: 'Sem prazo', alvo: true });
+  return { cols, proximo, ultimoDia };
+}
+
+function colunaDaTarefa(t, hoje, ultimoDia) {
+  if (t.recorrencia) return hoje;
+  if (!t.prazo) return 'sem';
+  if (t.prazo < hoje) return 'atraso';
+  if (t.prazo > ultimoDia) return 'depois';
+  return t.prazo;
+}
+
+function QuadroMorfociclo({ abertas, hoje, sessions, matches, players, membros, euId, onAbrir, onAlternar, onMover }) {
+  const isMobile = useIsMobile();
+  const [arrastada, setArrastada] = useState(null);
+  const [sobre, setSobre] = useState(null);
+  const { cols, proximo, ultimoDia } = colunasDoMorfociclo(hoje, matches, sessions);
+
+  const porColuna = {};
+  cols.forEach(c => { porColuna[c.id] = []; });
+  abertas.forEach(t => {
+    const id = colunaDaTarefa(t, hoje, ultimoDia);
+    (porColuna[id] = porColuna[id] || []).push(t);
+  });
+  Object.values(porColuna).forEach(l => l.sort((a, b) => String(a.prazo || '').localeCompare(String(b.prazo || ''))));
+  const visiveis = cols.filter(c => c.tipo === 'dia' || c.tipo === 'sem' || porColuna[c.id].length > 0);
+  const destinos = cols.filter(c => c.alvo);
+
+  const largar = (e, c) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData('text/plain') || arrastada;
+    setSobre(null); setArrastada(null);
+    if (id && c.alvo) onMover(id, c.tipo === 'sem' ? '' : c.data);
+  };
+
+  return (
+    <div>
+      <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 12, lineHeight: 1.5 }}>
+        {proximo
+          ? <>Próximo jogo: <span style={{ color: T.cream }}>vs {proximo.opponent || 'adversário por definir'}</span>, {prazoTexto(proximo.date, hoje)}.</>
+          : 'Sem jogo marcado. A mostrar os próximos 7 dias.'}
+        <span style={{ color: T.mutedDim }}>
+          {isMobile ? ' Usa «Mover para» em cada tarefa para lhe mudar o dia.' : ' Arrasta uma tarefa para outra coluna para lhe mudar o prazo.'}
+        </span>
+      </div>
+
+      <div style={{
+        display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8,
+        scrollSnapType: isMobile ? 'x mandatory' : 'none', WebkitOverflowScrolling: 'touch',
+      }}>
+        {visiveis.map(c => {
+          const lista = porColuna[c.id] || [];
+          const temJogo = c.jogos && c.jogos.length > 0;
+          const corTitulo = c.tipo === 'atraso' ? T.bad : (temJogo ? T.crimsonBright : (c.eHoje ? T.warn : T.cream));
+          const destacado = sobre === c.id;
+          return (
+            <div
+              key={c.id}
+              onDragOver={e => {
+                if (!c.alvo || !arrastada) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (sobre !== c.id) setSobre(c.id);
+              }}
+              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setSobre(s => (s === c.id ? null : s)); }}
+              onDrop={e => largar(e, c)}
+              style={{
+                flex: `0 0 ${isMobile ? '82%' : '232px'}`, scrollSnapAlign: 'start',
+                display: 'flex', flexDirection: 'column', minHeight: 240, boxSizing: 'border-box',
+                padding: 10, borderRadius: 10,
+                background: destacado ? 'rgba(201,162,39,.08)' : (c.eHoje ? 'rgba(43,64,45,.55)' : 'transparent'),
+                border: `1px ${destacado ? 'dashed' : 'solid'} ${destacado ? T.gold : (temJogo ? T.crimson : T.line)}`,
+                opacity: arrastada && !c.alvo ? 0.5 : 1,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ ...display, fontSize: 17, fontWeight: 600, color: corTitulo }}>{c.titulo}</span>
+                <span style={{ ...mono, fontSize: 11, color: T.mutedDim, marginLeft: 'auto' }}>{lista.length}</span>
+              </div>
+              {c.sub && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 1 }}>{c.sub}</div>}
+
+              {/* O que já está marcado nesse dia, por cima das tarefas. */}
+              {c.tipo === 'dia' && (temJogo || c.sessoes.length > 0) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
+                  {c.jogos.map(m => (
+                    <div key={m.id || m.date} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.crimsonBright }}>
+                      <Trophy size={12} style={{ flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        vs {m.opponent || 'adversário por definir'}{m.atHome === true ? ' (casa)' : (m.atHome === false ? ' (fora)' : '')}
+                      </span>
+                    </div>
+                  ))}
+                  {c.sessoes.filter(s => !(temJogo && s.phase === 'Jogo')).map(s => (
+                    <div key={s.id || `${s.date}-${s.phase}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.muted }}>
+                      {s.phase === 'Descanso' ? <Moon size={12} style={{ flexShrink: 0 }} /> : <Dumbbell size={12} style={{ flexShrink: 0 }} />}
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.phase === 'Descanso' ? 'Folga' : (s.focus || s.phase || 'Treino')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ height: 1, background: T.line, margin: '10px 0' }} />
+
+              <div style={{ flex: 1 }}>
+                {lista.length === 0 ? (
+                  <div style={{ fontSize: 12, color: T.mutedDim, fontStyle: 'italic', padding: '2px 2px 8px' }}>
+                    {arrastada && c.alvo ? 'Larga aqui.' : 'Sem tarefas.'}
+                  </div>
+                ) : lista.map(t => {
+                  const podeMover = !t.recorrencia;
+                  return (
+                    <div
+                      key={t.id}
+                      draggable={!isMobile && podeMover}
+                      onDragStart={e => {
+                        e.dataTransfer.setData('text/plain', t.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                        setArrastada(t.id);
+                      }}
+                      onDragEnd={() => { setArrastada(null); setSobre(null); }}
+                      style={{ opacity: arrastada === t.id ? 0.45 : 1, cursor: !isMobile && podeMover ? 'grab' : undefined }}
+                    >
+                      <LinhaTarefa
+                        tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
+                        onAbrir={onAbrir} onAlternar={onAlternar}
+                      />
+                      {isMobile && podeMover && (
+                        <select
+                          value=""
+                          onChange={e => { const v = e.target.value; if (v) onMover(t.id, v === 'sem' ? '' : v); }}
+                          aria-label="Mover para outro dia"
+                          style={{
+                            ...body, fontSize: 12, color: T.muted, background: 'transparent',
+                            border: `1px solid ${T.line}`, borderRadius: 7, padding: '5px 8px',
+                            margin: '-2px 0 10px', width: '100%',
+                          }}
+                        >
+                          <option value="">Mover para…</option>
+                          {destinos.filter(d => d.id !== c.id).map(d => (
+                            <option key={d.id} value={d.tipo === 'sem' ? 'sem' : d.data}>
+                              {d.tipo === 'sem' ? 'Sem prazo' : `${d.titulo} (${d.sub})`}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* Uma linha. A caixa à esquerda fecha a tarefa sem abrir nada — é o
    gesto mais frequente de todos e não devia custar dois cliques. */
 function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar }) {
@@ -39185,7 +39417,9 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
 
 function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, players, monitoring }) {
   const [modal, setModal] = useState(null); // 'new' | tarefa
-  const [porPessoa, setPorPessoa] = useState(false);
+  // 'prazo' | 'morfociclo' | 'pessoa'
+  const [vista, setVista] = useState('prazo');
+  const porPessoa = vista === 'pessoa';
   const [verFeitas, setVerFeitas] = useState(false);
   const hoje = todayStr();
   const ctx = { sessions, matches, players, monitoring };
@@ -39224,6 +39458,12 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     setTarefas(prev => prev.map(x => (x.id === t.id
       ? { ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString() }
       : x)));
+  };
+
+  /* Mudar o dia a uma tarefa a partir do quadro Morfociclo: mexe só no
+     `prazo`. As recorrentes não têm prazo, por isso ficam de fora. */
+  const mover = (id, prazo) => {
+    setTarefas(prev => prev.map(x => (x.id === id && !x.recorrencia && (x.prazo || '') !== prazo ? { ...x, prazo } : x)));
   };
 
   /* As recorrentes só aparecem nos dias em que a regra delas está
@@ -39281,16 +39521,24 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
       />
 
       <SubTabs
-        value={porPessoa ? 'pessoa' : 'prazo'}
-        onChange={(v) => setPorPessoa(v === 'pessoa')}
+        value={vista}
+        onChange={setVista}
         tabs={[
           { id: 'prazo', label: 'Por prazo', icon: CalendarDays },
+          { id: 'morfociclo', label: 'Morfociclo', icon: Trophy },
           { id: 'pessoa', label: 'Por pessoa', icon: Users },
         ]}
       />
 
-      <Panel title={porPessoa ? 'Quem está com a missão' : 'Quando se executa'}>
-        {abertas.length === 0 ? (
+      <Panel title={vista === 'pessoa' ? 'Quem está com a missão' : (vista === 'morfociclo' ? 'Rumo ao jogo' : 'Quando se executa')}>
+        {vista === 'morfociclo' ? (
+          <QuadroMorfociclo
+            abertas={abertas} hoje={hoje}
+            sessions={sessions} matches={matches} players={players}
+            membros={membros} euId={euId}
+            onAbrir={abrir} onAlternar={alternar} onMover={mover}
+          />
+        ) : abertas.length === 0 ? (
           <EmptyState
             text="Nada por fazer. Cria a primeira tarefa da equipa técnica."
             action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova tarefa</Btn>}
