@@ -36195,7 +36195,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           position: 'absolute', top: 0, left: 0, bottom: 0, width: 78, zIndex: 5,
                           background: 'rgba(17,17,17,0.88)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4, padding: 6,
                         }}>
-                          {FERRAMENTAS_DESENHO.map(([id, Icon, titulo]) => (
+                          {/* Sem a "Linha" (a Seta e o Traço cobrem esse uso), como na Análise de Vídeo. */}
+                          {FERRAMENTAS_DESENHO.filter(([id]) => id !== 'linha').map(([id, Icon, titulo]) => (
                             <ToolBtn key={id} icon={Icon} label={titulo} active={toolBib === id} onClick={() => escolherFerramentaBib(id)} />
                           ))}
                           <ToolBtn icon={Type} label="Texto" active={toolBib === 'texto'} onClick={() => escolherFerramentaBib('texto')} />
