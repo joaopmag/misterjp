@@ -1261,11 +1261,11 @@ export async function prepararGravacaoSeparador(elemento) {
 }
 
 // Entrega o ficheiro: partilha nativa (telemóvel) ou descarga.
-export async function entregarVideo(blob, nomeBase) {
+export async function entregarVideo(blob, nomeBase, { soDescarregar = false } = {}) {
   if (!blob || !blob.size) return 'vazio';
   const ext = /mp4/.test(blob.type) ? 'mp4' : 'webm';
   const nome = `${String(nomeBase || 'video').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'video'}.${ext}`;
-  try {
+  if (!soDescarregar) try {
     const ficheiro = new File([blob], nome, { type: blob.type });
     if (navigator.canShare && navigator.canShare({ files: [ficheiro] })) {
       await navigator.share({ files: [ficheiro], title: nomeBase });

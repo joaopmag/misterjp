@@ -34236,10 +34236,20 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
 
   const ativoEClipe = !!(active && active.youtubeId && typeof active.clipInicio === 'number');
+  // Partilhar um corte que não estava aberto: quando o leitor já o tem, arranca.
+  useEffect(() => {
+    const g = gravacaoBibRef.current;
+    if (!g || !g.pendenteId || !active || active.id !== g.pendenteId || !ativoEClipe) return undefined;
+    const h = setTimeout(() => {
+      if (gravacaoBibRef.current === g && g.pendenteId) arrancarGravacaoBib(g.ctl, g);
+    }, 1500);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active && active.id]);
   // A gravar: o início do corte marca o início da gravação (ao instante).
   useEffect(() => {
     const g = gravacaoBibRef.current;
-    if (!g || !g.preRoll || !ativoEClipe || clipIni - g.arranque < 1) return undefined;
+    if (!g || !g.preRoll || g.pendenteId || !ativoEClipe || clipIni - g.arranque < 1) return undefined;
     const falta = clipIni - liveTime;
     if (falta > 1.2) return undefined;
     const h = setTimeout(() => {
@@ -34668,7 +34678,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // do telemóvel precisa de um toque — por isso é um botão aqui).
     setJanelaGravacaoBib({ fase: 'pronto', blob, nome: g.nome, url: URL.createObjectURL(blob) });
   };
-  const gravarCorteBib = async () => {
+  /* `item`: o corte a gravar (o botão Partilhar da lista manda o corte
+     dessa linha). Se não for o que está aberto, abre-o primeiro e a
+     gravação arranca quando o leitor já o tiver (ver o efeito sobre
+     `active.id`). O pedido do browser vem logo, no próprio clique —
+     depois disso o browser já não o deixaria aparecer. */
+  const gravarCorteBib = async (item) => {
     if (!podeGravarSeparador()) {
       setAvisoGravacaoBib('Gravar vídeo só funciona no computador (Chrome, Edge ou Safari).');
       return;
@@ -34677,6 +34692,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     largarParagemBib();
     let ctl;
     try { ctl = await prepararGravacaoSeparador(areaVideoBibRef.current); } catch (e) { return; } // recusou a partilha
+    if (item && active && item.id !== active.id) {
+      const g = { ctl, nome: item.title || 'Corte', comecouEm: 0, preRoll: true, arranque: 0, pendenteId: item.id };
+      gravacaoBibRef.current = g;
+      setGravacaoBib({ desde: Date.now() });
+      ctl.acabou.then(() => { if (gravacaoBibRef.current === g) acabarGravacaoBib(); });
+      setActiveId(item.id);
+      return;
+    }
+    arrancarGravacaoBib(ctl);
+  };
+  const arrancarGravacaoBib = (ctl, gExistente) => {
     /* SEM A INFORMAÇÃO DO YOUTUBE NO VÍDEO. Ao arrancar, o YouTube mostra
        por uns segundos o título, o canal, o botão de pausa e um
        escurecido por cima da imagem (era o "mais escuro" do início da
@@ -34685,11 +34711,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
        só aí começa a gravação. */
     const PRE_ROLL = 4;
     const arranque = Math.max(0, clipIni - PRE_ROLL);
-    const g = { ctl, nome: active.title || 'Corte', comecouEm: 0, preRoll: true, arranque };
-    gravacaoBibRef.current = g;
-    setGravacaoBib({ desde: Date.now() });
-    // "Parar partilha" no browser também termina e entrega o que já houver.
-    ctl.acabou.then(() => { if (gravacaoBibRef.current === g) acabarGravacaoBib(); });
+    const g = gExistente || { ctl, nome: active.title || 'Corte', comecouEm: 0 };
+    Object.assign(g, { preRoll: true, arranque, pendenteId: null });
+    if (!gExistente) {
+      gravacaoBibRef.current = g;
+      setGravacaoBib({ desde: Date.now() });
+      // "Parar partilha" no browser também termina e entrega o que já houver.
+      ctl.acabou.then(() => { if (gravacaoBibRef.current === g) acabarGravacaoBib(); });
+    }
     // Todas as paragens do corte a contar outra vez.
     pausasJaMostradasRef.current.clear();
     enviarComandoYoutube('pauseVideo');
@@ -34811,8 +34840,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               caixote saltavam de linha para linha. */}
           {!soLeitura && (
           <button
-            onClick={() => shareMediaItem(v)}
-            title="Partilhar"
+            /* Num corte do YouTube, "Partilhar" faz o VÍDEO (com desenhos,
+               pausas e zoom), em vez de um link. Fora do computador (onde
+               não se pode gravar) continua a partilhar o link. */
+            onClick={() => ((ehClipe(v) && v.youtubeId && podeGravarSeparador()) ? gravarCorteBib(v) : shareMediaItem(v))}
+            title={(ehClipe(v) && v.youtubeId && podeGravarSeparador()) ? 'Partilhar como vídeo (grava o corte com os desenhos)' : 'Partilhar'}
             style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', width: 20, flexShrink: 0 }}
           ><Share2 size={13} /></button>
           )}
@@ -36390,7 +36422,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           )}
                           {ativoEClipe && !modoDesenhoBib && (
                           <button
-                            onClick={gravacaoBib ? acabarGravacaoBib : () => setJanelaGravacaoBib({ fase: 'antes' })}
+                            onClick={gravacaoBib ? acabarGravacaoBib : () => gravarCorteBib()}
                             title={gravacaoBib ? 'Parar e entregar o vídeo' : 'Gravar um vídeo do corte com os desenhos, as pausas e o zoom (o browser pede para partilhar este separador)'}
                             style={{
                               display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12,
@@ -36412,27 +36444,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {/* JANELA DA GRAVAÇÃO — antes (o que vai acontecer) e depois
                               (ver, descarregar, partilhar). Durante a gravação não há
                               janela nenhuma: ficaria gravada por cima do vídeo. */}
-                          {janelaGravacaoBib && janelaGravacaoBib.fase === 'antes' && (
-                            <Modal title="Gravar vídeo do corte" onClose={() => setJanelaGravacaoBib(null)}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13.5, color: T.muted, lineHeight: 1.55 }}>
-                                <div>A app vai reproduzir o corte <span style={{ color: T.cream }}>{active.title}</span> do princípio ao fim, com os desenhos, as pausas e o zoom, e gravá-lo num vídeo.</div>
-                                <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  <li>O browser vai pedir para <span style={{ color: T.cream }}>partilhar este separador</span> — carrega em <span style={{ color: T.cream }}>Permitir</span> (com o áudio ligado, se quiseres som).</li>
-                                  <li>Não mudes de separador nem mexas no vídeo até acabar ({fmtMMSS(clipFimEf - clipIni)}).</li>
-                                  <li>No fim aparece o vídeo, pronto a descarregar ou partilhar.</li>
-                                </ol>
-                                {!podeGravarSeparador() && (
-                                  <div style={{ color: T.warn }}>Este browser não deixa gravar. Usa o computador (Chrome, Edge ou Safari).</div>
-                                )}
-                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                                  <Btn variant="ghost" onClick={() => setJanelaGravacaoBib(null)}>Cancelar</Btn>
-                                  <Btn disabled={!podeGravarSeparador()} onClick={() => { setJanelaGravacaoBib(null); gravarCorteBib(); }}>
-                                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', display: 'inline-block' }} /> Começar gravação
-                                  </Btn>
-                                </div>
-                              </div>
-                            </Modal>
-                          )}
                           {janelaGravacaoBib && janelaGravacaoBib.fase === 'pronto' && (
                             <Modal title="Vídeo pronto" onClose={fecharJanelaGravacaoBib} wide>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -36442,7 +36453,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                                   <Btn variant="ghost" onClick={fecharJanelaGravacaoBib}>Fechar</Btn>
-                                  <Btn variant="ghost" onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome)}><Share2 size={14} /> Partilhar / descarregar</Btn>
+                                  <Btn variant="ghost" onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome, { soDescarregar: true })}><Download size={14} /> Descarregar</Btn>
+                                  <Btn onClick={() => entregarVideo(janelaGravacaoBib.blob, janelaGravacaoBib.nome)}><Share2 size={14} /> Partilhar vídeo</Btn>
                                 </div>
                               </div>
                             </Modal>
