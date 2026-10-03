@@ -11,7 +11,7 @@ import AnalisadorVideo, {
   FERRAMENTAS as FERRAMENTAS_DESENHO, ToolBtn, PALETA_DESENHO, COR_DESENHO,
   RAIO_TOQUE, distanciaShape, renderShape, TAMANHO_FONTE_TEXTO, girar, inclinacaoPadrao,
   MODELOS_CALIBRACAO, matrizDaCalibracao, inverterH, aplicarH, planoDaCalibracao,
-  validarCalibracao, cantosDasLinhas, LINHAS_CALIBRACAO, ordenarCantosAuto,
+  validarCalibracao, cantosDasLinhas, LINHAS_CALIBRACAO, ordenarCantosAuto, referenciaForaDeJogo,
   pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
 } from './AnalisadorVideo';
@@ -33022,8 +33022,26 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const ultimaCalibracaoBib = useRef(null); // para "usar a calibração anterior" noutro momento
   const arrastoCalibBib = useRef(null); // índice do ponto de calibração a arrastar
   const matrizRelvadoBib = calibracaoBib ? matrizDaCalibracao(calibracaoBib) : null;
-  const FERRAMENTAS_NO_CHAO = ['retangulo', 'circulo', 'seta', 'linha', 'medida', 'foraDeJogo'];
-  const FERRAMENTAS_SO_CHAO = ['medida', 'foraDeJogo']; // só existem com o relvado calibrado
+  const FERRAMENTAS_NO_CHAO = ['retangulo', 'circulo', 'seta', 'linha', 'medida'];
+  const FERRAMENTAS_SO_CHAO = ['medida']; // só existe com o relvado calibrado
+  /* FORA DE JOGO POR REFERÊNCIA (não precisa de calibração): 2 pontos numa
+     linha paralela à linha de baliza (e, se der, 2 noutra). Fica na pausa.
+     `refFJBib` = { l1: [p,q]?, l2: [p,q]?, pronto } */
+  const [refFJBib, setRefFJBib] = useState(null);
+  const referenciaFJ = () => {
+    if (refFJBib && refFJBib.pronto && refFJBib.l1 && refFJBib.l1.length === 2) {
+      return referenciaForaDeJogo(refFJBib.l1, refFJBib.l2 && refFJBib.l2.length === 2 ? refFJBib.l2 : null);
+    }
+    // Sem referência, mas com o relvado bem calibrado: o ponto de fuga sai da calibração.
+    if (matrizRelvadoBib && calibracaoBib && !calibracaoBib.duvidosa) {
+      const Hi = inverterH(matrizRelvadoBib);
+      const cx = Number(calibracaoBib.W) / 2;
+      const pr = (q) => { const r = aplicarH(Hi, q); return r ? { x: r.x, y: r.y } : null; };
+      const a1 = pr({ x: cx - 20, y: 0 }), b1 = pr({ x: cx + 20, y: 0 }), a2 = pr({ x: cx - 20, y: 16 }), b2 = pr({ x: cx + 20, y: 16 });
+      if (a1 && b1 && a2 && b2) return referenciaForaDeJogo([a1, b1], [a2, b2]);
+    }
+    return null;
+  };
   /* Comprimento do campo (para os terços). Os campos de formação variam;
      por omissão 100 m, ajustável no painel do Relvado. */
   const [comprimentoCampoBib, setComprimentoCampoBib] = useState(100);
@@ -33290,6 +33308,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setCalibrandoBib(null);
     // A calibração é de cada pausa (a câmara pode ter mexido entre pausas).
     setCalibracaoBib(existente && existente.calibracao ? existente.calibracao : null);
+    setRefFJBib(existente && existente.refForaJogo ? { ...existente.refForaJogo, pronto: true } : null);
     if (existente) {
       // As formas que já lá estavam ficam com o tempo delas; o contador
       // de segundos começa no valor de sempre, e vale só para as novas.
@@ -33501,7 +33520,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       }
     }
     const calPausa = calibracaoBib || (idPausa && ((active.anotacoesPausa || []).find(x => x.id === idPausa) || {}).calibracao) || null;
-    const novaAnotacao = { id: idPausa || uid(), tempoVideo: tempoPausa, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas, ...(calPausa ? { calibracao: calPausa } : {}) };
+    const refPausa = refFJBib && refFJBib.pronto ? { l1: refFJBib.l1, l2: refFJBib.l2 } : null;
+    const novaAnotacao = { id: idPausa || uid(), tempoVideo: tempoPausa, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas, ...(calPausa ? { calibracao: calPausa } : {}), ...(refPausa ? { refForaJogo: refPausa } : {}) };
     // Acabou de a ver ao desenhar — não voltar a parar no mesmo sítio
     // assim que se carrega em reproduzir (só na próxima passagem).
     pausasJaMostradasRef.current.add(novaAnotacao.id);
@@ -33637,12 +33657,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     setFormaSelecionadaBib(null);
     // Sem ferramenta: tocar num sítio vazio do vídeo reproduz/pausa.
     if (!toolBib) { alternarReproducaoBib(); return; }
-    // Fora de jogo: um toque nos pés do jogador chega — a linha nasce logo.
+    // Fora de jogo: primeiro a referência (se faltar), depois um toque nos pés.
     if (toolBib === 'foraDeJogo') {
-      if (!matrizRelvadoBib) return;
+      const r = referenciaFJ();
+      if (!r) {
+        setRefFJBib(prev => {
+          const ref = prev || { l1: [], l2: [], pronto: false };
+          if (ref.l1.length < 2) return { ...ref, l1: [...ref.l1, p] };
+          if (ref.l2.length < 2) {
+            const l2 = [...ref.l2, p];
+            return { ...ref, l2, pronto: l2.length === 2 };
+          }
+          return ref;
+        });
+        return;
+      }
       pushHistoricoBib();
       const n = shapesRascunho.length;
-      setShapesRascunho(prev => [...prev, { id: uid(), tool: 'foraDeJogo', color: corBib, points: [p], ...chaoParaNova('foraDeJogo') }]);
+      setShapesRascunho(prev => [...prev, { id: uid(), tool: 'foraDeJogo', color: corBib, points: [p], fj: r }]);
       setFormaSelecionadaBib(n);
       return;
     }
@@ -36009,6 +36041,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {(modoDesenhoBib ? formasDesenhoVisiveisBib : (pausaAtivaBib ? pausaAtivaBib.shapes : []))
                             .map((sh, i) => renderShape(sh, sh.id || i))}
                           {formaEmCursoBib && renderShape(formaEmCursoBib, 'rascunho')}
+                          {/* Referência do fora de jogo: os pontos e as linhas, a azul. */}
+                          {modoDesenhoBib && toolBib === 'foraDeJogo' && refFJBib && [refFJBib.l1, refFJBib.l2].map((l, k) => (
+                            <g key={`refj${k}`} style={{ pointerEvents: 'none' }}>
+                              {l.length === 2 && (() => {
+                                const dx = l[1].x - l[0].x, dy = l[1].y - l[0].y, len = Math.hypot(dx, dy) || 1;
+                                const ex = (dx / len) * 300, ey = (dy / len) * 300;
+                                return <line x1={l[0].x - ex} y1={l[0].y - ey} x2={l[1].x + ex} y2={l[1].y + ey} stroke="#4FC3F7" strokeWidth={0.16} strokeDasharray="0.8 0.5" />;
+                              })()}
+                              {l.map((q, j) => <circle key={j} cx={q.x} cy={q.y} r={0.6} fill="#4FC3F7" stroke="#000" strokeWidth={0.12} />)}
+                            </g>
+                          ))}
                           {/* RELVADO: grelha de verificação (5 em 5 m) e os 4 pontos a marcar. */}
                           {modoDesenhoBib && (() => {
                             const cantosEmCurso = cantosCalibBib(calibrandoBib);
@@ -36252,12 +36295,48 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           <ToolBtn icon={LayoutGrid} label={calibracaoBib ? 'Relvado ✓' : 'Relvado'} active={painelRelvadoBib || !!calibrandoBib} onClick={() => setPainelRelvadoBib(v => !v)} />
                           {/* Ferramentas que só existem com o relvado calibrado. */}
                           {calibracaoBib && (
-                            <>
-                              <ToolBtn icon={Ruler} label="Medir" active={toolBib === 'medida'} onClick={() => escolherFerramentaBib('medida')} />
-                              <ToolBtn icon={Flag} label="Fora de jogo" active={toolBib === 'foraDeJogo'} onClick={() => escolherFerramentaBib('foraDeJogo')} />
-                            </>
+                            <ToolBtn icon={Ruler} label="Medir" active={toolBib === 'medida'} onClick={() => escolherFerramentaBib('medida')} />
                           )}
+                          {/* Fora de jogo funciona SEM calibração (por referência). */}
+                          <ToolBtn icon={Flag} label="Fora de jogo" active={toolBib === 'foraDeJogo'} onClick={() => escolherFerramentaBib('foraDeJogo')} />
                         </div>
+                        {/* AJUDA DO FORA DE JOGO — enquanto falta a referência. */}
+                        {toolBib === 'foraDeJogo' && !(refFJBib && refFJBib.pronto) && !(calibracaoBib && !calibracaoBib.duvidosa) && (() => {
+                          const n1 = refFJBib ? refFJBib.l1.length : 0;
+                          const n2 = refFJBib ? refFJBib.l2.length : 0;
+                          return (
+                            <div onPointerDown={e => e.stopPropagation()} style={{
+                              position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 7, width: 360, maxWidth: 'calc(100% - 180px)',
+                              background: 'rgba(0,0,0,0.9)', border: `1px solid ${T.line}`, borderRadius: 10, padding: 12,
+                              color: '#fff', fontSize: 12.5, ...body, display: 'flex', flexDirection: 'column', gap: 8, lineHeight: 1.4,
+                            }}>
+                              <div style={{ fontWeight: 700 }}>Fora de jogo — referência</div>
+                              <div style={{ color: T.cream }}>
+                                {n1 < 2
+                                  ? <>Toca em <b>2 pontos de uma linha paralela à linha de baliza</b> (a linha da grande área, por exemplo) — bem afastados.</>
+                                  : <>Agora, se se vir, <b>2 pontos noutra linha paralela</b> (linha de baliza ou da pequena área) — fica muito mais certo. Ou usa só esta.</>}
+                              </div>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                {n1 === 2 && n2 === 0 && (
+                                  <button type="button" onClick={() => setRefFJBib(r => ({ ...r, pronto: true }))} style={{ background: T.gold, color: '#111', border: 'none', borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer', ...body }}>Usar só uma linha</button>
+                                )}
+                                {(n1 + n2) > 0 && (
+                                  <button type="button" onClick={() => setRefFJBib(null)} style={{ background: 'transparent', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer', ...body }}>Recomeçar</button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        {toolBib === 'foraDeJogo' && refFJBib && refFJBib.pronto && (
+                          <div onPointerDown={e => e.stopPropagation()} style={{
+                            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 7,
+                            background: 'rgba(0,0,0,0.85)', border: `1px solid ${T.line}`, borderRadius: 18, padding: '5px 8px 5px 12px',
+                            color: T.cream, fontSize: 12, ...body, display: 'flex', alignItems: 'center', gap: 8,
+                          }}>
+                            Referência ✓ ({refFJBib.l2 && refFJBib.l2.length === 2 ? '2 linhas' : '1 linha'}) — toca nos pés do jogador
+                            <button type="button" onClick={() => setRefFJBib(null)} style={{ background: 'transparent', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 12, padding: '3px 9px', fontSize: 11.5, cursor: 'pointer', ...body }}>Refazer</button>
+                          </div>
+                        )}
                         {/* PAINEL DO RELVADO — calibrar, ver a grelha, desenhar no chão. */}
                         {(painelRelvadoBib || calibrandoBib) && (() => {
                           const modelo = calibrandoBib ? MODELOS_CALIBRACAO.find(m => m.id === calibrandoBib.tipo) : null;

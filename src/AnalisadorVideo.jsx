@@ -502,6 +502,56 @@ export function cantosDasLinhas(pontos) {
   return c.every(Boolean) && c.every(p => Math.abs(p.x) < 2000 && Math.abs(p.y) < 2000) ? c : null;
 }
 
+
+/* ---------- FORA DE JOGO POR REFERÊNCIA ----------
+   Não precisa da calibração completa (que exige filmagens "perfeitas").
+   Basta uma ou duas linhas do campo PARALELAS À LINHA DE BALIZA que se
+   vejam na imagem (a linha da grande área, a da pequena área, a própria
+   linha de baliza). Com duas, cruzam-se no "ponto de fuga" dessa
+   direção: a linha de fora de jogo é a reta que vai dos pés do jogador
+   a esse ponto — a perspetiva certa, com a câmara torta ou não. Com uma
+   só, a linha sai paralela a ela (aproximação boa em planos abertos). A
+   forma guarda o ponto de fuga (`fj.V`) ou a direção (`fj.dir`). */
+export function referenciaForaDeJogo(l1, l2) {
+  if (!l1 || l1.length < 2) return null;
+  const d1 = { x: l1[1].x - l1[0].x, y: l1[1].y - l1[0].y };
+  if (Math.hypot(d1.x, d1.y) < 0.5) return null;
+  if (l2 && l2.length === 2) {
+    const r1 = cruz([l1[0].x, l1[0].y, 1], [l1[1].x, l1[1].y, 1]);
+    const r2 = cruz([l2[0].x, l2[0].y, 1], [l2[1].x, l2[1].y, 1]);
+    const v = cruz(r1, r2);
+    if (Math.abs(v[2]) > 1e-9) {
+      const V = { x: v[0] / v[2], y: v[1] / v[2] };
+      // Ponto de fuga muito longe = linhas quase paralelas: usa a direção.
+      if (Math.hypot(V.x - 50, V.y - 28) < 5000) return { V };
+    }
+  }
+  return { dir: d1 };
+}
+// Troço visível da linha de fora de jogo (no ecrã), com a largura nas pontas.
+export function segmentoForaDeJogo(sh) {
+  const P = sh.points && sh.points[0];
+  const fj = sh.fj;
+  if (!P || !fj) return null;
+  const d = fj.V ? { x: fj.V.x - P.x, y: fj.V.y - P.y } : fj.dir;
+  if (!d || Math.hypot(d.x, d.y) < 1e-6) return null;
+  // Interseção da reta P + t·d com a imagem [0,100]×[0,56.25].
+  let t0 = -Infinity, t1 = Infinity;
+  const lim = [[d.x, P.x, 0, 100], [d.y, P.y, 0, 56.25]];
+  for (const [dd, pp, mn, mx] of lim) {
+    if (Math.abs(dd) < 1e-9) { if (pp < mn || pp > mx) return null; continue; }
+    const ta = (mn - pp) / dd, tb = (mx - pp) / dd;
+    t0 = Math.max(t0, Math.min(ta, tb));
+    t1 = Math.min(t1, Math.max(ta, tb));
+  }
+  if (fj.V) t1 = Math.min(t1, 0.98); // não passa do horizonte (o ponto de fuga)
+  if (!(t1 > t0)) return null;
+  const em = (t) => ({ x: P.x + d.x * t, y: P.y + d.y * t });
+  // Mais grossa perto da câmara, mais fina ao fundo (proporcional à distância ao ponto de fuga).
+  const larg = (t) => (fj.V ? Math.min(1.1, Math.max(0.06, 0.34 * (1 - t))) : 0.3);
+  return { a: em(t0), b: em(t1), la: larg(t0), lb: larg(t1), pe: P };
+}
+
 // Matriz imagem → relvado de uma calibração (4 pontos na imagem).
 export function matrizDaCalibracao(cal) {
   if (!cal || !cal.img || cal.img.length !== 4) return null;
@@ -689,6 +739,10 @@ const dentroPoligono = (p, pts) => {
 export function distanciaShape(sh, p) {
   // As guias (corredores/terços) são fundo: nunca se agarram.
   if (sh && sh.tool === 'guias') return Infinity;
+  if (sh && sh.tool === 'foraDeJogo' && sh.fj) {
+    const s = segmentoForaDeJogo(sh);
+    return s ? distPontoSegmento(p, s.a, s.b) : Infinity;
+  }
   // Formas no chão: acerta-se no contorno real (ou dentro dele).
   if (sh && sh.chao) {
     const g = geometriaNoChao(sh);
@@ -764,6 +818,24 @@ export const RAIO_TOQUE = 1.5; // distância máxima (era 6, depois 3) para um t
 
 export function renderShape(sh, i) {
   if (!sh || !sh.points || sh.points.length === 0) return null;
+  if (sh.tool === 'foraDeJogo' && sh.fj) {
+    const s = segmentoForaDeJogo(sh);
+    if (!s) return null;
+    const cor = sh.color || COR_DESENHO;
+    const dx = s.b.x - s.a.x, dy = s.b.y - s.a.y, l = Math.hypot(dx, dy) || 1;
+    const nx = -dy / l, ny = dx / l;
+    const poli = [
+      { x: s.a.x + nx * s.la / 2, y: s.a.y + ny * s.la / 2 }, { x: s.b.x + nx * s.lb / 2, y: s.b.y + ny * s.lb / 2 },
+      { x: s.b.x - nx * s.lb / 2, y: s.b.y - ny * s.lb / 2 }, { x: s.a.x - nx * s.la / 2, y: s.a.y - ny * s.la / 2 },
+    ].map(q => `${q.x},${q.y}`).join(' ');
+    return (
+      <g key={i}>
+        <line x1={s.a.x} y1={s.a.y} x2={s.b.x} y2={s.b.y} stroke={cor} strokeOpacity={0.3} strokeWidth={Math.max(s.la, s.lb) * 2.2} strokeLinecap="round" style={{ mixBlendMode: 'overlay' }} />
+        <polygon points={poli} fill={cor} />
+        <circle cx={s.pe.x} cy={s.pe.y} r={0.45} fill={cor} stroke="#000" strokeWidth={0.1} />
+      </g>
+    );
+  }
   if (sh.chao) {
     const g = geometriaNoChao(sh);
     if (g) return renderNoChao(sh, g, i);
