@@ -190,17 +190,20 @@ function Btn({ children, onClick, variant = 'ghost', active, disabled, style, ti
 
 // Botão de ferramenta de desenho — ícone + etiqueta sempre visível (não
 // só tooltip, que não aparece ao toque) e área de toque generosa.
-export function ToolBtn({ icon: Icon, label, active, onClick }) {
+export function ToolBtn({ icon: Icon, label, active, onClick, compacto }) {
   return (
     <button onClick={onClick} title={label}
       style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-        width: '100%', minHeight: 42, padding: '6px 3px', borderRadius: 8, cursor: 'pointer', ...body,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: compacto ? 3 : 2,
+        width: '100%', minWidth: 0, minHeight: compacto ? 40 : 42, padding: compacto ? '5px 2px' : '6px 3px', borderRadius: 8, cursor: 'pointer', ...body,
         border: `1px solid ${active ? T.crimsonBright : T.line}`,
         background: active ? T.surfaceRaise : 'transparent', color: active ? T.cream : T.muted,
       }}>
-      <Icon size={16} />
-      <span style={{ fontSize: 9, lineHeight: 1, whiteSpace: 'nowrap' }}>{label}</span>
+      <Icon size={compacto ? 15 : 16} />
+      <span style={{
+        fontSize: compacto ? 8.5 : 9, lineHeight: 1.05, whiteSpace: compacto ? 'normal' : 'nowrap', textAlign: 'center',
+        maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>{label}</span>
     </button>
   );
 }
@@ -3089,20 +3092,27 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           </div>
 
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+            {/* BARRA DE FERRAMENTAS EM DUAS COLUNAS — com o Relvado, o Medir
+                e o Fora de jogo já não cabia numa só (ficava cortada em baixo).
+                Botões um pouco mais compactos; se mesmo assim faltar altura
+                (ecrã baixo), a barra desliza. */}
             <div style={{
-              maxWidth: modoDesenho ? 90 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
+              maxWidth: modoDesenho ? 112 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
               transition: 'max-width 0.2s ease, opacity 0.15s ease',
             }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden', width: 90 }}>
+              <div style={{
+                display: 'grid', gridTemplateColumns: '1fr 1fr', gridAutoRows: 'min-content', gap: 5, padding: 8,
+                borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden', width: 112, height: '100%', boxSizing: 'border-box',
+              }}>
                 {FERRAMENTAS.map(([id, Icon, titulo]) => (
-                  <ToolBtn key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
+                  <ToolBtn compacto key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
-                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                <ToolBtn icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
-                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                <ToolBtn icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />
-                {calibracao && <ToolBtn icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
-                <ToolBtn icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />
+                <ToolBtn compacto icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
+                {!fullscreen && <div />}
+                <div style={{ gridColumn: '1 / -1', height: 1, background: T.line, margin: '2px 0' }} />
+                <ToolBtn compacto icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />
+                <ToolBtn compacto icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />
+                {calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
 
                 {/* Em ecrã inteiro não há coluna à direita (ficaria fora do
                    alcance do rato/dedo num ecrã grande) — texto, cores e
@@ -3110,9 +3120,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                    à direita (ver abaixo). */}
                 {fullscreen && (
                   <>
-                    <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
-                    <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
+                    <ToolBtn compacto icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
+                    <div style={{ gridColumn: '1 / -1', height: 1, background: T.line, margin: '2px 0' }} />
+                    <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 7, justifyContent: 'center', padding: '2px 0' }}>
                       {PALETA_DESENHO.map(p => (
                         <button key={p.id} onClick={() => mudarCor(p.cor)} title={p.id}
                           style={{
@@ -3121,9 +3131,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                           }} />
                       ))}
                     </div>
-                    <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
-                    <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
-                    <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
+                    <div style={{ gridColumn: '1 / -1', height: 1, background: T.line, margin: '2px 0' }} />
+                    <ToolBtn compacto icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
+                    <ToolBtn compacto icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
                   </>
                 )}
               </div>
