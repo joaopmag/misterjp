@@ -28569,7 +28569,8 @@ function EcraAniversario({ player, onEntrar }) {
   const [golo, setGolo] = useState(false);
   const nome = String(player.name || '').trim();
   const primeiro = nome.split(/\s+/)[0] || 'Campeão';
-  const apelido = (nome.split(/\s+/).slice(-1)[0] || primeiro).toUpperCase();
+  // Nas costas da camisola, o MESMO nome da mensagem ("Parabéns, Telmo!").
+  const apelido = primeiro.toUpperCase();
   const idade = age(player.birthdate);
   /* GUARDA-REDES: em vez de marcar, DEFENDE. A camisola é de guarda-redes
      (outra cor, como em campo) e o jogo é ao contrário: as luvas estão na
@@ -28612,8 +28613,13 @@ function EcraAniversario({ player, onEntrar }) {
         @keyframes festa-explode { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
         @keyframes festa-pulsar { 0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,.45); } 50% { box-shadow: 0 0 0 12px rgba(255,255,255,0); } }
         @keyframes festa-entrar { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: none; } }
-        @keyframes festa-voo { 0% { transform: translate(0,0) rotate(0); } 100% { transform: translate(94px,-46px) rotate(-28deg) scale(.9); } }
-        @keyframes festa-remate-gr { 0% { transform: translate(0,0) scale(1) rotate(0); } 100% { transform: translate(94px,-140px) scale(.42) rotate(420deg); } }
+        @keyframes festa-voo { 0% { transform: translate(0,0) rotate(0); } 100% { transform: translate(80px,-38px) rotate(-24deg) scale(.88); } }
+        /* o remate vai ao ângulo, bate nas luvas e sai PARA FORA da baliza */
+        @keyframes festa-remate-gr {
+          0% { transform: translate(0,0) scale(1) rotate(0); }
+          55% { transform: translate(80px,-134px) scale(.5) rotate(300deg); }
+          100% { transform: translate(168px,-92px) scale(.42) rotate(520deg); opacity: .9; }
+        }
         @keyframes festa-luvas-espera { 0%,100% { transform: translateX(-6px); } 50% { transform: translateX(6px); } }
       `}</style>
       {/* chuva de papelinhos, sempre */}
@@ -28671,13 +28677,26 @@ function EcraAniversario({ player, onEntrar }) {
               border: 'none', padding: 0, background: 'transparent', cursor: golo ? 'default' : 'pointer',
               animation: golo ? 'festa-voo .42s cubic-bezier(.2,.8,.3,1) forwards' : 'festa-luvas-espera 1.4s ease-in-out infinite',
             }}>
-              <svg viewBox="0 0 84 54" width="84" height="54">
+              {/* Luvas de guarda-redes: dedos separados, polegar ao lado,
+                  palma de látex com as linhas de reforço, punho com a fita. */}
+              <svg viewBox="0 0 100 64" width="84" height="54">
+                <defs>
+                  <linearGradient id="luva-latex" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stopColor="#FFFFFF" /><stop offset="1" stopColor="#C9CDD2" />
+                  </linearGradient>
+                </defs>
                 {[0, 1].map(k => (
-                  <g key={k} transform={k ? 'translate(84,0) scale(-1,1)' : ''}>
-                    <rect x="6" y="40" width="26" height="11" rx="3" fill={T.corEquipa} stroke="#111" strokeWidth="1.5" />
-                    <path d="M6 41 L6 20 Q6 14 10 14 L10 6 Q10 2 13.5 2 Q17 2 17 6 L17 12 L18 4 Q18 0.5 21.5 0.5 Q25 0.5 25 4 L25 12 L26 6 Q26 2.5 29.5 2.5 Q33 2.5 33 6 L33 22 L37 17 Q40 14 42 17 Q43.5 19 41 23 L32 41 Z"
-                      fill="#F4F4F0" stroke="#111" strokeWidth="1.5" strokeLinejoin="round" />
-                    <path d="M10 26 L30 26" stroke={corGR} strokeWidth="3" strokeLinecap="round" />
+                  <g key={k} transform={k ? 'translate(98,0) scale(-1,1)' : 'translate(2,0)'} stroke="#1a1a1a" strokeWidth="1.2">
+                    <rect x="3" y="20" width="8.5" height="22" rx="4.25" fill="url(#luva-latex)" transform="rotate(-28 9 40)" />
+                    <rect x="10" y="7" width="7.4" height="28" rx="3.7" fill="url(#luva-latex)" />
+                    <rect x="18" y="3" width="7.8" height="32" rx="3.9" fill="url(#luva-latex)" />
+                    <rect x="26.6" y="5" width="7.4" height="30" rx="3.7" fill="url(#luva-latex)" />
+                    <rect x="34.6" y="11" width="6.6" height="24" rx="3.3" fill="url(#luva-latex)" />
+                    <rect x="9" y="24" width="32.5" height="23" rx="7" fill="url(#luva-latex)" />
+                    <path d="M13.7 10 L13.7 30 M21.9 6 L21.9 30 M30.3 8 L30.3 30 M37.9 14 L37.9 30" stroke={corGR} strokeWidth="1.4" strokeLinecap="round" opacity=".8" />
+                    <path d="M14 31 Q25 36 38 31" fill="none" stroke={corGR} strokeWidth="2.6" strokeLinecap="round" />
+                    <rect x="10" y="45" width="30.5" height="15" rx="3" fill={T.corEquipa} />
+                    <rect x="10" y="49" width="30.5" height="6" fill="#1f1f1f" stroke="none" />
                   </g>
                 ))}
               </svg>
