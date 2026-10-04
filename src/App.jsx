@@ -28848,14 +28848,15 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
   const Ic = d.icon;
   const fechadoAgora = (d.rota === 'wellness' && janelas.wellness && !janelas.wellness.open)
     || (d.rota === 'rpe' && janelas.rpe && !janelas.rpe.open);
-  const prazo = (() => {
-    if (!t.prazo) return null;
-    const dias = Math.round((new Date(`${t.prazo}T00:00:00`) - new Date(`${todayStr()}T00:00:00`)) / 86400000);
+  const prazoDe = (tt) => {
+    if (!tt.prazo) return null;
+    const dias = Math.round((new Date(`${tt.prazo}T00:00:00`) - new Date(`${todayStr()}T00:00:00`)) / 86400000);
     if (dias < 0) return { txt: 'Atrasada', cor: '#B3261E' };
     if (dias === 0) return { txt: 'Hoje', cor: '#B3261E' };
     if (dias === 1) return { txt: 'Amanhã', cor: '#9A6A00' };
     return { txt: `${dias} dias`, cor: '#2E6B3A' };
-  })();
+  };
+  const prazo = prazoDe(t);
   const titulo = String(t.titulo || '').trim();
   const tituloBonito = titulo ? titulo.charAt(0).toUpperCase() + titulo.slice(1) : d.rotulo;
   const nomeJ = String((player && player.name) || '').trim();
@@ -28987,29 +28988,43 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
             Objetivo
           </div>
 
-          {/* a folha com as instruções */}
-          <div key={`f${folha}`} style={{
+          {/* AS FOLHAS — todas empilhadas no mesmo sítio (só a da missão
+              atual se vê). Assim a prancheta tem sempre a altura da folha
+              mais comprida e a página NÃO MEXE ao passar de uma missão para
+              outra; os botões em baixo também ficam sempre no mesmo sítio. */}
+          <div style={{ display: 'grid', marginTop: 12 }}>
+            {tarefas.map((tt, k) => {
+              const ativa = k === Math.min(i, tarefas.length - 1);
+              const pz = prazoDe(tt);
+              const tit = String(tt.titulo || '').trim();
+              const tb = tit ? tit.charAt(0).toUpperCase() + tit.slice(1) : destinoMissao(tt.destino).rotulo;
+              return (
+          <div key={ativa ? `f${folha}` : `o${tt.id}`} aria-hidden={!ativa} style={{
+            gridArea: '1 / 1', visibility: ativa ? 'visible' : 'hidden',
             /* ESCRITO NAS LINHAS: a folha tem uma linha a cada 26 px e todo o
                texto anda nesse mesmo passo (altura de linha 26 px, sem margens
                soltas) — as letras assentam nas linhas, como à mão. */
-            position: 'relative', marginTop: 12, background: '#FBF8EF', borderRadius: 6, padding: '8px 16px 26px 26px', color: '#1d2a22',
+            position: 'relative', background: '#FBF8EF', borderRadius: 6, padding: '8px 16px 26px 26px', color: '#1d2a22',
             backgroundImage: 'linear-gradient(180deg, transparent 0, transparent 24px, rgba(60,110,170,.24) 24px, rgba(60,110,170,.24) 25px, transparent 25px)',
             backgroundSize: '100% 26px', backgroundPosition: '0 8px', backgroundRepeat: 'repeat-y',
-            boxShadow: '0 2px 0 #e7e1cf, 0 4px 0 #ddd6c2', transformOrigin: '50% 0', animation: 'pr-folha .55s ease-out both',
+            boxShadow: '0 2px 0 #e7e1cf, 0 4px 0 #ddd6c2', transformOrigin: '50% 0', animation: ativa ? 'pr-folha .55s ease-out both' : 'none',
           }}>
             <div style={{ position: 'absolute', left: 14, top: 0, bottom: 0, width: 1.5, background: 'rgba(200,60,60,.45)' }} />
-            {prazo && (
+            {pz && (
               <div style={{
-                position: 'absolute', right: 12, top: 12, border: `2px solid ${prazo.cor}`, color: prazo.cor, borderRadius: 6,
+                position: 'absolute', right: 12, top: 12, border: `2px solid ${pz.cor}`, color: pz.cor, borderRadius: 6,
                 padding: '2px 8px', fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase',
-                animation: 'pr-carimbo .4s ease-out .9s both',
-              }}>Prazo · {prazo.txt}</div>
+                animation: ativa ? 'pr-carimbo .4s ease-out .9s both' : 'none',
+              }}>Prazo · {pz.txt}</div>
             )}
             <div style={{ fontSize: 11, color: '#6b6b5f', letterSpacing: '.12em', textTransform: 'uppercase', lineHeight: '26px' }}>
-              Para {nomeJ ? nomeJ.split(/\s+/)[0] : 'ti'}{t.passoTxt ? ` · ${t.passoTxt}` : ''}
+              Para {nomeJ ? nomeJ.split(/\s+/)[0] : 'ti'}{tt.passoTxt ? ` · ${tt.passoTxt}` : ''}
             </div>
-            <div style={{ ...display, fontSize: 23, lineHeight: '26px', color: '#14231a', paddingRight: prazo ? 92 : 0 }}>{tituloBonito}</div>
-            {t.notas && <div style={{ fontSize: 14.5, lineHeight: '26px', color: '#2b3a30', whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
+            <div style={{ ...display, fontSize: 23, lineHeight: '26px', color: '#14231a', paddingRight: pz ? 92 : 0 }}>{tb}</div>
+            {tt.notas && <div style={{ fontSize: 14.5, lineHeight: '26px', color: '#2b3a30', whiteSpace: 'pre-wrap' }}>{tt.notas}</div>}
+          </div>
+              );
+            })}
           </div>
         </div>
 
@@ -29021,9 +29036,8 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
         }}>
           {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>Bora! {d.acao} <ArrowRight size={18} /></>}
         </button>
-        {d.auto && !fechadoAgora && (
-          <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>Fica feita assim que submeteres.</div>
-        )}
+        {/* sempre no lugar (só se esconde) — para os botões de baixo não saltarem entre missões */}
+        <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6, visibility: d.auto && !fechadoAgora ? 'visible' : 'hidden' }}>Fica feita assim que submeteres.</div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: tarefas.length > 1 ? 'space-between' : 'center', gap: 10 }}>
           <button type="button" onClick={() => { onAdiar(t.id); mudar(0); }} style={{
             background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
