@@ -5033,15 +5033,28 @@ function useEquipas() {
    Enquanto ninguém o preencher, mostra-se "Membro 3f2a…", que é feio mas
    honesto. Passou a ser preciso a sério a partir das Tarefas: atribuir
    trabalho a "Membro 3f2a…" não é utilizável. */
+/* TELEFONE DOS MEMBROS (para lembretes de tarefas por WhatsApp).
+   Coluna nova em team_members. Se a base de dados ainda não a tiver
+   (código 42703, coluna inexistente), carrega-se sem ela, como antes:
+   os nomes e as Tarefas continuam a funcionar, só não há WhatsApp. */
+async function selecionarMembros(teamId) {
+  const comTelefone = await supabase
+    .from('team_members').select('user_id, papel, nome, telefone, created_at')
+    .eq('team_id', teamId).order('created_at');
+  if (!comTelefone.error) return comTelefone;
+  if (comTelefone.error.code !== '42703' && !/telefone/.test(comTelefone.error.message || '')) return comTelefone;
+  return supabase
+    .from('team_members').select('user_id, papel, nome, created_at')
+    .eq('team_id', teamId).order('created_at');
+}
+
 function useMembros(teamId) {
   const [membros, setMembros] = useState(null);
 
   const carregar = useCallback(async () => {
     if (!teamId) { setMembros([]); return; }
     try {
-      const { data, error } = await supabase
-        .from('team_members').select('user_id, papel, nome, created_at')
-        .eq('team_id', teamId).order('created_at');
+      const { data, error } = await selecionarMembros(teamId);
       if (error) throw error;
       setMembros(data || []);
     } catch (e) {
@@ -5451,6 +5464,8 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   const [cor, setCor] = useState(equipa.cor || '#B5393F');
   const [aGuardarCor, setAGuardarCor] = useState(false);
   const [meuNome, setMeuNome] = useState('');
+  const [meuTelefone, setMeuTelefone] = useState('');
+  const [telefoneGuardado, setTelefoneGuardado] = useState(false);
   const [aGuardarLogo, setAGuardarLogo] = useState(false);
   // Códigos de acesso individuais dos atletas — mudou-se para aqui a
   // partir de Monitorização: é informação tão reservada como o próprio
@@ -5506,9 +5521,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
 
   const carregar = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('team_members').select('user_id, papel, nome, created_at')
-        .eq('team_id', equipa.id).order('created_at');
+      const { data, error } = await selecionarMembros(equipa.id);
       if (error) throw error;
       setMembros(data || []);
     } catch (e) {
@@ -5540,6 +5553,28 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   const eu = (membros || []).find(m => m.user_id === euId);
   const souDono = eu && eu.papel === 'owner';
   useEffect(() => { if (eu) setMeuNome(eu.nome || ''); }, [eu && eu.nome]);
+  useEffect(() => { if (eu) setMeuTelefone(eu.telefone || ''); }, [eu && eu.telefone]);
+
+  /* O TELEMÓVEL TAMBÉM É DE CADA UM. Só serve para os colegas poderem
+     mandar um lembrete de tarefa por WhatsApp (ver `lembrar` nas
+     Tarefas). Fica visível aos membros desta equipa, e só a eles. É
+     opcional: sem ele, o lembrete fica só dentro da app. */
+  const guardarTelefone = async () => {
+    setErro(''); setTelefoneGuardado(false);
+    const valor = meuTelefone.trim();
+    if (valor && !linkWhatsApp(valor, '')) { setErro('Esse número não parece válido. Inclui o indicativo, por exemplo +351 912 345 678.'); return; }
+    const { error } = await supabase.from('team_members')
+      .update({ telefone: valor || null })
+      .eq('team_id', equipa.id).eq('user_id', euId);
+    if (error) {
+      setErro(error.code === '42703' || /telefone/.test(error.message || '')
+        ? 'A base de dados ainda não tem o campo do telemóvel. É preciso correr a atualização (coluna "telefone" em team_members).'
+        : error.message);
+      return;
+    }
+    setTelefoneGuardado(true);
+    carregar();
+  };
 
   /* Só se veem os ids dos outros, não os emails: a tabela `auth.users`
      não é legível pelo cliente, e expô-la seria dar a lista de contas da
@@ -5847,6 +5882,23 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
         </div>
         <div style={{ ...barraAcoes, marginBottom: 18 }}>
           <Btn variant="ghost" onClick={guardarNome} style={botaoAcao}>Guardar nome</Btn>
+        </div>
+
+        <Field label="O teu telemóvel (opcional)" bloco solto>
+          <Input
+            type="tel" inputMode="tel" autoComplete="tel"
+            value={meuTelefone}
+            onChange={e => { setMeuTelefone(e.target.value); setTelefoneGuardado(false); }}
+            placeholder="Ex: +351 912 345 678"
+          />
+        </Field>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.6 }}>
+          Serve para os colegas te lembrarem de uma tarefa por WhatsApp, com a mensagem já escrita.
+          Só os membros desta equipa o veem. Sem ele, os lembretes ficam só dentro da app.
+        </div>
+        <div style={{ ...barraAcoes, marginBottom: 18 }}>
+          {telefoneGuardado && <span style={{ fontSize: 12, color: T.good, alignSelf: 'center' }}>Guardado.</span>}
+          <Btn variant="ghost" onClick={guardarTelefone} style={botaoAcao}>Guardar telemóvel</Btn>
         </div>
 
         {membros === null ? (
@@ -39043,6 +39095,38 @@ function podeConcluirTarefa(t, euId, souDono) {
    - quem não é responsável vê "Lembrado há 3h" e o botão fica em pausa
      durante 12 horas, para um lembrete não virar insistência. */
 const LEMBRETE_PAUSA_MS = 12 * 60 * 60 * 1000;
+
+/* LEMBRETE POR WHATSAPP. Se o responsável tiver o telemóvel na sua
+   ficha da equipa, "Lembrar" abre também o WhatsApp de quem lembra, já
+   com a conversa e a mensagem escritas (link wa.me, ver `linkWhatsApp`):
+   só falta tocar em Enviar. Sai do WhatsApp da própria pessoa, por isso
+   a mensagem fala na primeira pessoa e não se apresenta como automática,
+   ao contrário da dos jogadores. Sem telemóvel, o lembrete fica só na app. */
+const telefoneDoMembro = (userId, membros) => {
+  const m = (membros || []).find(x => x.user_id === userId);
+  return m && m.telefone ? m.telefone : '';
+};
+
+function quandoDaTarefa(t, hoje) {
+  let dia = '';
+  if (eSemanal(t)) { const p = semanaisPendentes(t, hoje)[0]; dia = p ? p.dia : ''; }
+  else if (!t.recorrencia) dia = t.prazo || '';
+  else dia = hoje;
+  if (!dia) return '';
+  if (dia === hoje) return 'era para hoje';
+  if (dia < hoje) return `estava marcada para ${DIAS_SEMANA[diaDaSemanaDe(dia)]}, ${fmtShort(dia)}`;
+  return `está marcada para ${prazoTexto(dia, hoje)}`;
+}
+
+function TEXTO_LEMBRETE_TAREFA(t, membros, hoje) {
+  const nome = (membros || []).find(x => x.user_id === t.responsavel);
+  const primeiro = nome && nome.nome ? String(nome.nome).trim().split(/\s+/)[0] : '';
+  const quando = quandoDaTarefa(t, hoje);
+  return `Olá${primeiro ? ` ${primeiro}` : ''}! Só para lembrar a tarefa "${t.titulo}"${quando ? `, que ${quando}` : ''}. `
+    + 'Quando estiver feita, marca-a como concluída na app da equipa. Obrigado! 👍';
+}
+
+const linkLembreteTarefa = (t, membros, hoje) => linkWhatsApp(telefoneDoMembro(t.responsavel, membros), TEXTO_LEMBRETE_TAREFA(t, membros, hoje));
 const lembreteRecente = (t) => !!(t && t.lembrete && t.lembrete.em
   && Date.now() - new Date(t.lembrete.em).getTime() < LEMBRETE_PAUSA_MS);
 
@@ -39337,6 +39421,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
   const lembreteParaMim = !feita && tarefa.lembrete && tarefa.responsavel === euId && !tarefa.lembrete.visto;
   const possoLembrar = !feita && bloqueada && onLembrar && tarefa.responsavel && tarefa.responsavel !== euId;
   const lembrado = lembreteRecente(tarefa);
+  const temWhatsApp = !!linkWhatsApp(telefoneDoMembro(tarefa.responsavel, membros), '.');
 
   return (
     <div
@@ -39392,14 +39477,16 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
           <button
             onClick={e => { e.stopPropagation(); if (!lembrado) onLembrar(tarefa); }}
             disabled={lembrado}
-            title={lembrado ? 'Já foi lembrado nas últimas 12 horas' : `Lembrar ${nome}`}
+            title={lembrado
+              ? 'Já foi lembrado nas últimas 12 horas'
+              : (temWhatsApp ? `Lembrar ${nome} por WhatsApp` : `Lembrar ${nome} na app (sem telemóvel na ficha da equipa)`)}
             style={{
               ...body, display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 4,
               fontSize: 9.5, padding: '1px 6px', borderRadius: 10, background: 'transparent',
               border: `1px solid ${T.line}`, color: lembrado ? T.mutedDim : T.cream,
               cursor: lembrado ? 'default' : 'pointer',
             }}
-          ><Bell size={9} /> {lembrado ? 'Lembrado' : 'Lembrar'}</button>
+          >{temWhatsApp && !lembrado ? <MessageCircle size={9} color="#25D366" /> : <Bell size={9} />} {lembrado ? 'Lembrado' : 'Lembrar'}</button>
         )}
         {mudada && (
           <div style={{ fontSize: 9.5, color: T.warn, marginTop: 3 }}>
@@ -39618,6 +39705,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
   const lembrete = !feita && tarefa.lembrete ? tarefa.lembrete : null;
   const lembreteParaMim = lembrete && tarefa.responsavel === euId && !lembrete.visto;
   const possoLembrar = !feita && !podeConcluir && onLembrar && tarefa.responsavel && tarefa.responsavel !== euId;
+  const temWhatsApp = !!linkWhatsApp(telefoneDoMembro(tarefa.responsavel, membros), '.');
 
   return (
     <div style={{
@@ -39657,7 +39745,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             <Bell size={12} />
             {tarefa.responsavel === euId
               ? `Lembrete de ${nomeDoMembro(lembrete.de, membros, euId)} · ${timeAgo(lembrete.em)}`
-              : `Lembrado ${timeAgo(lembrete.em)}`}
+              : `Lembrado ${timeAgo(lembrete.em)}${lembrete.whatsapp ? ' por WhatsApp' : ''}`}
           </div>
         )}
 
@@ -39705,14 +39793,16 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             <button
               onClick={e => { e.stopPropagation(); if (!lembreteRecente(tarefa)) onLembrar(tarefa); }}
               disabled={lembreteRecente(tarefa)}
-              title={lembreteRecente(tarefa) ? 'Já foi lembrado nas últimas 12 horas' : `Lembrar ${nomeResp}`}
+              title={lembreteRecente(tarefa)
+                ? 'Já foi lembrado nas últimas 12 horas'
+                : (temWhatsApp ? `Lembrar ${nomeResp} por WhatsApp` : `Lembrar ${nomeResp} na app (sem telemóvel na ficha da equipa)`)}
               style={{
                 ...body, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11,
                 padding: '2px 8px', borderRadius: 12, background: 'transparent',
                 border: `1px solid ${T.line}`, color: lembreteRecente(tarefa) ? T.mutedDim : T.cream,
                 cursor: lembreteRecente(tarefa) ? 'default' : 'pointer',
               }}
-            ><Bell size={11} /> {lembreteRecente(tarefa) ? 'Lembrado' : 'Lembrar'}</button>
+            >{temWhatsApp && !lembreteRecente(tarefa) ? <MessageCircle size={11} color="#25D366" /> : <Bell size={11} />} {lembreteRecente(tarefa) ? 'Lembrado' : 'Lembrar'}</button>
           )}
           <span style={{
             ...mono, fontSize: 11, marginLeft: 'auto', flexShrink: 0,
@@ -39748,8 +39838,11 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const podeConcluir = (t) => podeConcluirTarefa(t, euId, souDono);
   const lembrar = (t) => {
     if (podeConcluir(t) || lembreteRecente(t)) return;
+    // Abrir já, ainda dentro do clique: fora dele o browser bloqueia a janela.
+    const link = linkLembreteTarefa(t, membros, hoje);
+    if (link) window.open(link, '_blank', 'noopener');
     setTarefas(prev => prev.map(x => (x.id === t.id
-      ? { ...x, lembrete: { de: euId, em: new Date().toISOString(), visto: false } }
+      ? { ...x, lembrete: { de: euId, em: new Date().toISOString(), visto: false, whatsapp: !!link } }
       : x)));
   };
 
