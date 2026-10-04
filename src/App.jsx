@@ -28511,7 +28511,7 @@ function EcraAniversario({ player, onEntrar }) {
         @keyframes festa-cair { 0% { transform: translateY(-10vh) rotate(0deg); } 100% { transform: translateY(110vh) rotate(720deg); } }
         @keyframes festa-camisola { 0% { transform: perspective(700px) rotateY(-180deg) scale(.6); opacity: 0; } 60% { opacity: 1; } 100% { transform: perspective(700px) rotateY(0deg) scale(1); opacity: 1; } }
         @keyframes festa-flutuar { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-        @keyframes festa-remate { 0% { transform: translate(0,0) scale(1) rotate(0); } 100% { transform: translate(0,-150px) scale(.42) rotate(540deg); } }
+        @keyframes festa-remate { 0% { transform: translate(0,0) scale(1) rotate(0); } 100% { transform: translate(94px,-146px) scale(.42) rotate(540deg); } }
         @keyframes festa-rede { 0%,100% { transform: scaleY(1); } 30% { transform: scaleY(1.08) translateY(-3px); } 60% { transform: scaleY(.96); } }
         @keyframes festa-golo { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
         @keyframes festa-explode { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
@@ -28548,9 +28548,11 @@ function EcraAniversario({ player, onEntrar }) {
           </div>
         </div>
         <div style={{ ...display, fontSize: 34, color: '#fff', lineHeight: 1.05, marginTop: 2 }}>Parabéns, {primeiro}!</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, maxWidth: 330 }}>
-          {idade ? <><b style={{ color: '#fff' }}>{idade} anos</b> — e esta camisola é só tua. </> : null}
-          Toda a equipa técnica te deseja um dia em grande, dentro e fora do campo.
+        {idade ? (
+          <div style={{ ...display, fontSize: 22, color: T.gold, letterSpacing: '.04em', textAlign: 'center' }}>{idade} anos</div>
+        ) : null}
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, maxWidth: 330, textAlign: 'center', margin: '0 auto' }}>
+          Esta camisola é só tua. Toda a equipa técnica te deseja um dia em grande, dentro e fora do campo.
         </div>
 
         {/* O GOLO DOS PARABÉNS */}
