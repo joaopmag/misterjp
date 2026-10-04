@@ -28696,30 +28696,33 @@ function EcraAniversario({ player, onEntrar }) {
           {/* GR: as luvas na baliza (é nelas que se toca) */}
           {eGR && (
             <button type="button" onClick={rematar} aria-label="Defender" style={{
-              position: 'absolute', left: '50%', top: 70, width: 84, height: 54, marginLeft: -42, marginTop: -27, zIndex: 2,
+              position: 'absolute', left: '50%', top: 66, width: 90, height: 57, marginLeft: -45, marginTop: -28, zIndex: 2,
               border: 'none', padding: 0, background: 'transparent', cursor: golo ? 'default' : 'pointer',
               animation: golo ? 'festa-voo .42s cubic-bezier(.2,.8,.3,1) forwards' : 'festa-luvas-espera 1.4s ease-in-out infinite',
             }}>
-              {/* Luvas de guarda-redes: dedos separados, polegar ao lado,
-                  palma de látex com as linhas de reforço, punho com a fita. */}
-              <svg viewBox="0 0 100 64" width="84" height="54">
+              {/* Luvas de guarda-redes vistas de frente (as palmas viradas
+                  para o remate): um só contorno de mão, com dedos largos e
+                  arredondados e o polegar aberto; palma de látex clara com
+                  sombra, o rebordo na cor das luvas (como o "roll finger") e
+                  o punho com a fita na cor do clube. */}
+              <svg viewBox="0 0 120 76" width="90" height="57">
                 <defs>
                   <linearGradient id="luva-latex" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" stopColor="#FFFFFF" /><stop offset="1" stopColor="#C9CDD2" />
+                    <stop offset="0" stopColor="#F7F7F4" /><stop offset=".6" stopColor="#E2E3E0" /><stop offset="1" stopColor="#BFC2C4" />
                   </linearGradient>
+                  <radialGradient id="luva-palma" cx="50%" cy="60%" r="55%">
+                    <stop offset="0" stopColor="rgba(0,0,0,0)" /><stop offset="1" stopColor="rgba(0,0,0,.18)" />
+                  </radialGradient>
                 </defs>
                 {[0, 1].map(k => (
-                  <g key={k} transform={k ? 'translate(98,0) scale(-1,1)' : 'translate(2,0)'} stroke="#1a1a1a" strokeWidth="1.2">
-                    <rect x="3" y="20" width="8.5" height="22" rx="4.25" fill="url(#luva-latex)" transform="rotate(-28 9 40)" />
-                    <rect x="10" y="7" width="7.4" height="28" rx="3.7" fill="url(#luva-latex)" />
-                    <rect x="18" y="3" width="7.8" height="32" rx="3.9" fill="url(#luva-latex)" />
-                    <rect x="26.6" y="5" width="7.4" height="30" rx="3.7" fill="url(#luva-latex)" />
-                    <rect x="34.6" y="11" width="6.6" height="24" rx="3.3" fill="url(#luva-latex)" />
-                    <rect x="9" y="24" width="32.5" height="23" rx="7" fill="url(#luva-latex)" />
-                    <path d="M13.7 10 L13.7 30 M21.9 6 L21.9 30 M30.3 8 L30.3 30 M37.9 14 L37.9 30" stroke={corGR} strokeWidth="1.4" strokeLinecap="round" opacity=".8" />
-                    <path d="M14 31 Q25 36 38 31" fill="none" stroke={corGR} strokeWidth="2.6" strokeLinecap="round" />
-                    <rect x="10" y="45" width="30.5" height="15" rx="3" fill={T.corEquipa} />
-                    <rect x="10" y="49" width="30.5" height="6" fill="#1f1f1f" stroke="none" />
+                  <g key={k} transform={k ? 'translate(118,0) scale(-1,1)' : 'translate(2,0)'}>
+                    <path d="M15 60 C9 56 4 49 4 42 C4 37 6 33 9.5 32.5 C13 32 15 35 16 39 L15.5 13 C15.5 7.5 24.5 7.5 24.5 13 L24.8 24 L25.2 9 C25.2 3 35 3 35 9 L34.8 24 L35.4 12 C35.4 6.5 44.4 6.5 44.4 12 L44.2 27 L44.8 19 C44.8 14.5 52.6 14.5 52.6 19 L52.6 44 C52.6 52 50 57 46.5 60 Z" fill="url(#luva-latex)" stroke={corGR} strokeWidth="3.2" strokeLinejoin="round" style={{ paintOrder: 'stroke' }} />
+                    <path d="M15 60 C9 56 4 49 4 42 C4 37 6 33 9.5 32.5 C13 32 15 35 16 39 L15.5 13 C15.5 7.5 24.5 7.5 24.5 13 L24.8 24 L25.2 9 C25.2 3 35 3 35 9 L34.8 24 L35.4 12 C35.4 6.5 44.4 6.5 44.4 12 L44.2 27 L44.8 19 C44.8 14.5 52.6 14.5 52.6 19 L52.6 44 C52.6 52 50 57 46.5 60 Z" fill="url(#luva-palma)" />
+                    <path d="M15 60 C9 56 4 49 4 42 C4 37 6 33 9.5 32.5 C13 32 15 35 16 39 L15.5 13 C15.5 7.5 24.5 7.5 24.5 13 L24.8 24 L25.2 9 C25.2 3 35 3 35 9 L34.8 24 L35.4 12 C35.4 6.5 44.4 6.5 44.4 12 L44.2 27 L44.8 19 C44.8 14.5 52.6 14.5 52.6 19 L52.6 44 C52.6 52 50 57 46.5 60 Z" fill="none" stroke="#14301f" strokeWidth=".8" strokeLinejoin="round" />
+                    <path d="M24.8 24 L24.8 34 M34.8 24 L34.8 34 M44.2 27 L44.2 36" stroke="#9aa0a3" strokeWidth=".9" strokeLinecap="round" />
+                    <path d="M19 44 Q30 50 46 44" fill="none" stroke="#9aa0a3" strokeWidth=".9" strokeLinecap="round" />
+                    <path d="M14.5 58 L47 58 L48 74 Q31 77 14 74 Z" fill={corGR} stroke="#14301f" strokeWidth=".8" />
+                    <path d="M14.3 63 L47.6 63 L47.9 68 L14.1 68 Z" fill={T.corEquipa} stroke="#14301f" strokeWidth=".6" />
                   </g>
                 ))}
               </svg>
