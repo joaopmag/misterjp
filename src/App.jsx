@@ -28984,13 +28984,17 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
           {/* O objetivo, escrito na madeira por baixo do quadro (dentro do
               quadro ficava em cima da linha lateral e não se lia). */}
           <div style={{ marginTop: 7, textAlign: 'center', fontSize: 10.5, color: 'rgba(255,255,255,.72)', letterSpacing: '.14em', textTransform: 'uppercase' }}>
-            Objetivo · <span style={{ color: T.gold, fontWeight: 700 }}>{d.id === 'nota' ? 'Responder' : d.rotulo}</span>
+            Objetivo
           </div>
 
           {/* a folha com as instruções */}
           <div key={`f${folha}`} style={{
-            position: 'relative', marginTop: 12, background: '#FBF8EF', borderRadius: 6, padding: '16px 16px 18px 26px', color: '#1d2a22',
-            backgroundImage: 'repeating-linear-gradient(180deg, transparent 0, transparent 25px, rgba(60,110,170,.18) 25px, rgba(60,110,170,.18) 26px)',
+            /* ESCRITO NAS LINHAS: a folha tem uma linha a cada 26 px e todo o
+               texto anda nesse mesmo passo (altura de linha 26 px, sem margens
+               soltas) — as letras assentam nas linhas, como à mão. */
+            position: 'relative', marginTop: 12, background: '#FBF8EF', borderRadius: 6, padding: '8px 16px 26px 26px', color: '#1d2a22',
+            backgroundImage: 'linear-gradient(180deg, transparent 0, transparent 24px, rgba(60,110,170,.24) 24px, rgba(60,110,170,.24) 25px, transparent 25px)',
+            backgroundSize: '100% 26px', backgroundPosition: '0 8px', backgroundRepeat: 'repeat-y',
             boxShadow: '0 2px 0 #e7e1cf, 0 4px 0 #ddd6c2', transformOrigin: '50% 0', animation: 'pr-folha .55s ease-out both',
           }}>
             <div style={{ position: 'absolute', left: 14, top: 0, bottom: 0, width: 1.5, background: 'rgba(200,60,60,.45)' }} />
@@ -29001,11 +29005,11 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
                 animation: 'pr-carimbo .4s ease-out .9s both',
               }}>Prazo · {prazo.txt}</div>
             )}
-            <div style={{ fontSize: 11, color: '#6b6b5f', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: '#6b6b5f', letterSpacing: '.12em', textTransform: 'uppercase', lineHeight: '26px' }}>
               Para {nomeJ ? nomeJ.split(/\s+/)[0] : 'ti'}{t.passoTxt ? ` · ${t.passoTxt}` : ''}
             </div>
-            <div style={{ ...display, fontSize: 24, lineHeight: 1.1, color: '#14231a', paddingRight: prazo ? 92 : 0 }}>{tituloBonito}</div>
-            {t.notas && <div style={{ marginTop: 8, fontSize: 14, lineHeight: '26px', color: '#2b3a30', whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
+            <div style={{ ...display, fontSize: 23, lineHeight: '26px', color: '#14231a', paddingRight: prazo ? 92 : 0 }}>{tituloBonito}</div>
+            {t.notas && <div style={{ fontSize: 14.5, lineHeight: '26px', color: '#2b3a30', whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
           </div>
         </div>
 
