@@ -7047,11 +7047,14 @@ function shortFullName(name) {
    escrever ao atleta. Dizer uma hora que não é a hora real do fecho
    só confundia; e a hora real muda se um dia se decidir ajustar as
    janelas, sem que seja preciso lembrar de atualizar o texto aqui. */
+// Rodapé igual em TODAS as mensagens que a app escreve (Wellness, PSE,
+// tarefas), para quem recebe perceber sempre que é o sistema a falar.
+const RODAPE_MENSAGEM_SISTEMA = '\n\n(Mensagem automática enviada pelo sistema de gestão da equipa.)';
 const TEXTO_LEMBRETE_WELLNESS = (p) => (
-  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje. Consegues responder já? 💪\n\n(Mensagem automática enviada pelo sistema de gestão da equipa.)`
+  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje. Consegues responder já? 💪${RODAPE_MENSAGEM_SISTEMA}`
 );
 const TEXTO_LEMBRETE_PSE = (p) => (
-  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao PSE de hoje. Consegues responder já? 💪\n\n(Mensagem automática enviada pelo sistema de gestão da equipa.)`
+  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao PSE de hoje. Consegues responder já? 💪${RODAPE_MENSAGEM_SISTEMA}`
 );
 
 function linkWhatsApp(contact, mensagem) {
@@ -39200,7 +39203,7 @@ function conclusaoPorVerPara(t, euId) {
 function TEXTO_AVISO_CONCLUSAO(t, membros) {
   const m = (membros || []).find(x => x.user_id === t.criadoPor);
   const primeiro = m && m.nome ? String(m.nome).trim().split(/\s+/)[0] : '';
-  return `Olá${primeiro ? ` ${primeiro}` : ''}! A tarefa "${t.titulo}"${eSemanal(t) ? ' desta semana' : ''} já está concluída. 👍`;
+  return `Olá${primeiro ? ` ${primeiro}` : ''}! A tarefa "${t.titulo}"${eSemanal(t) ? ' desta semana' : ''} já está concluída. 👍${RODAPE_MENSAGEM_SISTEMA}`;
 }
 
 /* QUEM PODE CONCLUIR UMA TAREFA.
@@ -39236,12 +39239,17 @@ const LEMBRETE_PAUSA_MS = 12 * 60 * 60 * 1000;
    numa tarefa de jogador (essas têm o lembrete próprio do Portal). */
 const podeLembrarTarefa = (t, euId) => !!(t && t.responsavel && t.responsavel !== euId && !t.jogadorId);
 
-/* LEMBRETE POR WHATSAPP. Se o responsável tiver o telemóvel na sua
-   ficha da equipa, "Lembrar" abre também o WhatsApp de quem lembra, já
+/* LEMBRETE POR WHATSAPP. "Lembrar" abre o WhatsApp de quem lembra, já
    com a conversa e a mensagem escritas (link wa.me, ver `linkWhatsApp`):
-   só falta tocar em Enviar. Sai do WhatsApp da própria pessoa, por isso
-   a mensagem fala na primeira pessoa e não se apresenta como automática,
-   ao contrário da dos jogadores. Sem telemóvel, o lembrete fica só na app. */
+   só falta tocar em Enviar. Todas as mensagens acabam com o mesmo rodapé
+   do Wellness/PSE (`RODAPE_MENSAGEM_SISTEMA`).
+
+   A quem se lembra (ver `alvoDoLembrete`):
+   - Numa tarefa de JOGADOR ainda sem nota submetida: o próprio atleta,
+     pelo Contacto da ficha dele. Sem contacto válido, não há botão (o
+     atleta não tem outra forma de receber o lembrete).
+   - Nas outras: o responsável da equipa técnica, se não for eu. Sem
+     telemóvel na ficha da equipa, o lembrete fica só dentro da app. */
 const telefoneDoMembro = (userId, membros) => {
   const m = (membros || []).find(x => x.user_id === userId);
   return m && m.telefone ? m.telefone : '';
@@ -39263,10 +39271,32 @@ function TEXTO_LEMBRETE_TAREFA(t, membros, hoje) {
   const primeiro = nome && nome.nome ? String(nome.nome).trim().split(/\s+/)[0] : '';
   const quando = quandoDaTarefa(t, hoje);
   return `Olá${primeiro ? ` ${primeiro}` : ''}! Só para lembrar a tarefa "${t.titulo}"${quando ? `, que ${quando}` : ''}. `
-    + 'Quando estiver feita, marca-a como concluída na app da equipa. Obrigado! 👍';
+    + `Quando estiver feita, marca-a como concluída na app da equipa. Obrigado! 👍${RODAPE_MENSAGEM_SISTEMA}`;
 }
 
-const linkLembreteTarefa = (t, membros, hoje) => linkWhatsApp(telefoneDoMembro(t.responsavel, membros), TEXTO_LEMBRETE_TAREFA(t, membros, hoje));
+function TEXTO_LEMBRETE_TAREFA_JOGADOR(p, t, hoje) {
+  const quando = quandoDaTarefa(t, hoje);
+  return `Olá ${firstNameOf(p.name)}! Tens uma tarefa por fazer no Portal do Atleta: "${t.titulo}"${quando ? `, que ${quando}` : ''}. `
+    + `Consegues tratar disso? 💪${RODAPE_MENSAGEM_SISTEMA}`;
+}
+
+function alvoDoLembrete(t, euId, membros, players, hoje) {
+  if (!t) return null;
+  if (t.jogadorId) {
+    if (t.notaSubmetida || t.estado === 'feita') return null;
+    const p = (players || []).find(x => x.id === t.jogadorId);
+    if (!p) return null;
+    const link = linkWhatsApp(p.contact, TEXTO_LEMBRETE_TAREFA_JOGADOR(p, t, hoje));
+    return link ? { tipo: 'jogador', nome: shortPlayerName(p, players), link } : null;
+  }
+  if (!podeLembrarTarefa(t, euId)) return null;
+  return {
+    tipo: 'membro',
+    nome: nomeDoMembro(t.responsavel, membros, euId),
+    link: linkWhatsApp(telefoneDoMembro(t.responsavel, membros), TEXTO_LEMBRETE_TAREFA(t, membros, hoje)),
+  };
+}
+
 const lembreteRecente = (t) => !!(t && t.lembrete && t.lembrete.em
   && Date.now() - new Date(t.lembrete.em).getTime() < LEMBRETE_PAUSA_MS);
 
@@ -39566,10 +39596,12 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
   // ("Cannot access … before initialization").
   const nomeCurto = tarefa.responsavel ? nome.split(' ')[0] : 'Sem responsável';
   const bloqueada = !podeConcluir;
-  const lembreteParaMim = !feita && tarefa.lembrete && tarefa.responsavel === euId && !tarefa.lembrete.visto;
-  const possoLembrar = podeLembrarTarefa(tarefa, euId) && !feita && !!onLembrar;
+  const lembreteParaMim = !feita && tarefa.lembrete && tarefa.lembrete.alvo !== 'jogador'
+    && tarefa.responsavel === euId && !tarefa.lembrete.visto;
+  const alvo = !feita && onLembrar ? alvoDoLembrete(tarefa, euId, membros, players, hoje) : null;
+  const possoLembrar = !!alvo;
   const lembrado = lembreteRecente(tarefa);
-  const temWhatsApp = !!linkWhatsApp(telefoneDoMembro(tarefa.responsavel, membros), '.');
+  const temWhatsApp = !!(alvo && alvo.link);
 
   return (
     <div
@@ -39636,7 +39668,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
             disabled={lembrado}
             title={lembrado
               ? 'Já foi lembrado nas últimas 12 horas'
-              : (temWhatsApp ? `Lembrar ${nome} por WhatsApp` : `Lembrar ${nome} na app (sem telemóvel na ficha da equipa)`)}
+              : (temWhatsApp ? `Lembrar ${alvo.nome} por WhatsApp` : `Lembrar ${alvo.nome} na app (sem telemóvel na ficha da equipa)`)}
             style={{
               ...body, display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 4,
               fontSize: 9.5, padding: '1px 6px', borderRadius: 10, background: 'transparent',
@@ -39860,9 +39892,12 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
   const porRever = tarefa.jogadorId && tarefa.notaSubmetida && !tarefa.notaRevista && tarefa.criadoPor === euId;
   const nomeResp = nomeDoMembro(tarefa.responsavel, membros, euId);
   const lembrete = !feita && tarefa.lembrete ? tarefa.lembrete : null;
-  const lembreteParaMim = lembrete && tarefa.responsavel === euId && !lembrete.visto;
-  const possoLembrar = podeLembrarTarefa(tarefa, euId) && !feita && !!onLembrar;
-  const temWhatsApp = !!linkWhatsApp(telefoneDoMembro(tarefa.responsavel, membros), '.');
+  const lembreteAoJogador = lembrete && lembrete.alvo === 'jogador';
+  const lembreteParaMim = lembrete && !lembreteAoJogador && tarefa.responsavel === euId && !lembrete.visto;
+  const alvo = !feita && onLembrar ? alvoDoLembrete(tarefa, euId, membros, players, hoje) : null;
+  const possoLembrar = !!alvo;
+  const temWhatsApp = !!(alvo && alvo.link);
+  const nomeAlvo = alvo ? alvo.nome : nomeResp;
 
   return (
     <div style={{
@@ -39900,9 +39935,11 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             color: lembreteParaMim ? T.crimsonBright : T.mutedDim, fontWeight: lembreteParaMim ? 600 : 400,
           }}>
             <Bell size={12} />
-            {tarefa.responsavel === euId
-              ? `Lembrete de ${nomeDoMembro(lembrete.de, membros, euId)} · ${timeAgo(lembrete.em)}`
-              : `Lembrado ${timeAgo(lembrete.em)}${lembrete.whatsapp ? ' por WhatsApp' : ''}`}
+            {lembreteAoJogador
+              ? `${jogadorAtribuido ? shortPlayerName(jogadorAtribuido, players) : 'Jogador'} lembrado ${timeAgo(lembrete.em)} por WhatsApp`
+              : tarefa.responsavel === euId
+                ? `Lembrete de ${nomeDoMembro(lembrete.de, membros, euId)} · ${timeAgo(lembrete.em)}`
+                : `Lembrado ${timeAgo(lembrete.em)}${lembrete.whatsapp ? ' por WhatsApp' : ''}`}
           </div>
         )}
 
@@ -39946,15 +39983,23 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             </span>
           )}
           {tarefa.notas ? <FileText size={12} style={{ color: T.mutedDim }} /> : null}
-          {possoLembrar && (
+        </div>
+      </div>
+
+      {/* À DIREITA: o Lembrar em cima, o tempo em baixo. */}
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between',
+        alignSelf: 'stretch', gap: 8, flexShrink: 0,
+      }}>
+        {possoLembrar && (
             <button
               onClick={e => { e.stopPropagation(); if (!lembreteRecente(tarefa)) onLembrar(tarefa); }}
               disabled={lembreteRecente(tarefa)}
               title={lembreteRecente(tarefa)
                 ? 'Já foi lembrado nas últimas 12 horas'
-                : (temWhatsApp ? `Lembrar ${nomeResp} por WhatsApp` : `Lembrar ${nomeResp} na app (sem telemóvel na ficha da equipa)`)}
+                : (temWhatsApp ? `Lembrar ${nomeAlvo} por WhatsApp` : `Lembrar ${nomeAlvo} na app (sem telemóvel na ficha da equipa)`)}
               style={{
-                ...body, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11,
+                ...body, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap',
                 padding: '2px 8px', borderRadius: 12, background: 'transparent',
                 border: `1px solid ${T.line}`, color: lembreteRecente(tarefa) ? T.mutedDim : T.cream,
                 cursor: lembreteRecente(tarefa) ? 'default' : 'pointer',
@@ -39962,7 +40007,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             >{temWhatsApp && !lembreteRecente(tarefa) ? <MessageCircle size={11} color="#25D366" /> : <Bell size={11} />} {lembreteRecente(tarefa) ? 'Lembrado' : 'Lembrar'}</button>
           )}
           <span style={{
-            ...mono, fontSize: 11, marginLeft: 'auto', flexShrink: 0,
+            ...mono, fontSize: 11, marginTop: 'auto', flexShrink: 0,
             color: feita ? T.mutedDim : (atrasada ? T.bad : (paraHoje ? T.warn : T.mutedDim)),
           }}>
             {semanal
@@ -39973,7 +40018,6 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
               ? (feita ? 'concluída hoje' : 'hoje')
               : (feita ? `concluída${tarefa.feitaEm ? ` · ${fmtShort(tarefa.feitaEm.slice(0, 10))}` : ''}` : prazoTexto(tarefa.prazo, hoje))}
           </span>
-        </div>
       </div>
     </div>
   );
@@ -39996,12 +40040,13 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     .sort((a, b) => String(b.conclusaoPorVer.em).localeCompare(String(a.conclusaoPorVer.em)));
   const podeConcluir = (t) => podeConcluirTarefa(t, euId, souDono);
   const lembrar = (t) => {
-    if (!podeLembrarTarefa(t, euId) || lembreteRecente(t)) return;
+    const alvo = alvoDoLembrete(t, euId, membros, players, hoje);
+    if (!alvo || lembreteRecente(t)) return;
     // Abrir já, ainda dentro do clique: fora dele o browser bloqueia a janela.
-    const link = linkLembreteTarefa(t, membros, hoje);
+    const link = alvo.link;
     if (link) window.open(link, '_blank', 'noopener');
     setTarefas(prev => prev.map(x => (x.id === t.id
-      ? { ...x, lembrete: { de: euId, em: new Date().toISOString(), visto: false, whatsapp: !!link } }
+      ? { ...x, lembrete: { de: euId, em: new Date().toISOString(), visto: false, whatsapp: !!link, alvo: alvo.tipo } }
       : x)));
   };
 
