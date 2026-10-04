@@ -40180,6 +40180,8 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
   const missoes = missoesIniciais();
   const setMissoes = (lista) => setF(prev => ({ ...prev, missoes: lista, destino: (lista[0] && lista[0].destino) || 'nota' }));
   const mudarMissao = (k, alteracao) => setMissoes(missoes.map((m, j) => (j === k ? { ...m, ...alteracao } : m)));
+  // Tirar um passo não faz a página saltar (ver useFecharSemSaltar).
+  const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
   const valido = String(f.titulo || '').trim().length > 0;
   const repete = !!f.recorrencia;
   const jogadoresOrdenados = sortByPosition(players || []);
@@ -40420,7 +40422,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
                     }}>{k + 1}</span>
                     <span style={{ fontSize: 13, color: T.cream, fontWeight: 600 }}>{d.id === 'nota' ? 'Responder por escrito' : d.rotulo}</span>
                     {missoes.length > 1 && (
-                      <button type="button" onClick={() => setMissoes(missoes.filter((_, j) => j !== k))} title="Tirar este passo"
+                      <button type="button" onClick={(e) => fecharSemSaltar(e.currentTarget, () => setMissoes(missoes.filter((_, j) => j !== k)))} title="Tirar este passo"
                         style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 2, display: 'flex' }}><X size={15} /></button>
                     )}
                   </div>
@@ -40476,6 +40478,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
           onSave(f.jogadorId ? { ...resto, missoes, destino: (missoes[0] && missoes[0].destino) || 'nota' } : resto);
         }} disabled={!valido}>Guardar</Btn>
       </div>
+      {espacoSemSaltar}
     </Modal>
   );
 }
