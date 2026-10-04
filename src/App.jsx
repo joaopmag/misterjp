@@ -40185,7 +40185,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
   const jogadoresOrdenados = sortByPosition(players || []);
 
   return (
-    <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} larguraMax={1040}>
+    <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} fullPage larguraMax={1100}>
       {/* DUAS COLUNAS — à esquerda a tarefa; à direita o jogador e as
           missões dele. Mais larga e mais baixa: cabe sem scroll. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 22, alignItems: 'start' }}>
@@ -40985,7 +40985,16 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   // Ocorrência semanal de onde a tarefa foi aberta no Calendário ({ base, dia }).
   const [ocorrencia, setOcorrencia] = useState(null);
   // 'calendario' | 'prazo' | 'pessoa' — o Calendário é o primeiro (e abre nele).
-  const [vista, setVista] = useState('calendario');
+  /* Lembra-se do separador em que se estava: abrir uma tarefa (página
+     inteira) e fechá-la volta ao mesmo separador, mesmo que a página das
+     Tarefas tenha sido montada de novo pelo caminho. */
+  const [vista, setVistaEstado] = useState(() => {
+    try { return sessionStorage.getItem('tarefas-vista') || 'calendario'; } catch (e) { return 'calendario'; }
+  });
+  const setVista = (v) => {
+    setVistaEstado(v);
+    try { sessionStorage.setItem('tarefas-vista', v); } catch (e) { /* sem memória: fica só nesta página */ }
+  };
   const porPessoa = vista === 'pessoa';
   const [verFeitas, setVerFeitas] = useState(false);
   const hoje = todayStr();
