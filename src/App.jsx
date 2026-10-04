@@ -28872,18 +28872,25 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
       background: `radial-gradient(circle at 50% 30%, #2b3a2e 0%, ${T.bg} 75%)`,
     }}>
       {marcasGiz.map(m => (
-        <svg key={m.k} viewBox="0 0 24 24" width={m.tam} height={m.tam} style={{
-          position: 'fixed', left: `${m.left}%`, bottom: -40, opacity: m.op, pointerEvents: 'none',
-          animation: `pr-subir ${m.dur}s linear ${m.atraso}s infinite`, '--rot': `${m.rot}deg`,
-        }}>
-          <g fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            {m.tipo === 'x' && <><line x1="5" y1="5" x2="19" y2="19" /><line x1="19" y1="5" x2="5" y2="19" /></>}
-            {m.tipo === 'o' && <circle cx="12" cy="12" r="8" />}
-            {m.tipo === 'seta' && <><path d="M4 18 Q10 6 19 7" /><path d="M14 4 L19 7 L15.5 11.5" /></>}
-            {m.tipo === 'bola' && <><circle cx="12" cy="12" r="9" /><path d="M12 8.2 L15.4 10.6 L14.1 14.4 L9.9 14.4 L8.6 10.6 Z" fill="#fff" stroke="none" /><path d="M12 8.2 L12 3 M15.4 10.6 L20.4 9 M14.1 14.4 L17 18.8 M9.9 14.4 L7 18.8 M8.6 10.6 L3.6 9" strokeWidth="1.6" /></>}
-            {m.tipo === 'cone' && <><path d="M12 3 L18 19 L6 19 Z" /><path d="M8.6 12.5 L15.4 12.5" /><path d="M4 21 L20 21" /></>}
-          </g>
-        </svg>
+        m.tipo === 'bola' ? (
+          // A bola a sério (a mesma dos anos), pequena e quase transparente.
+          <div key={m.k} style={{
+            position: 'fixed', left: `${m.left}%`, bottom: -40, opacity: m.op + 0.08, pointerEvents: 'none', lineHeight: 0,
+            animation: `pr-subir ${m.dur}s linear ${m.atraso}s infinite`, '--rot': `${m.rot}deg`,
+          }}><BolaFutebol tamanho={m.tam} /></div>
+        ) : (
+          <svg key={m.k} viewBox="0 0 24 24" width={m.tam} height={m.tam} style={{
+            position: 'fixed', left: `${m.left}%`, bottom: -40, opacity: m.op, pointerEvents: 'none',
+            animation: `pr-subir ${m.dur}s linear ${m.atraso}s infinite`, '--rot': `${m.rot}deg`,
+          }}>
+            <g fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              {m.tipo === 'x' && <><line x1="5" y1="5" x2="19" y2="19" /><line x1="19" y1="5" x2="5" y2="19" /></>}
+              {m.tipo === 'o' && <circle cx="12" cy="12" r="8" />}
+              {m.tipo === 'seta' && <><path d="M4 18 Q10 6 19 7" /><path d="M14 4 L19 7 L15.5 11.5" /></>}
+              {m.tipo === 'cone' && <><path d="M12 3 L18 19 L6 19 Z" /><path d="M8.6 12.5 L15.4 12.5" /><path d="M4 21 L20 21" /></>}
+            </g>
+          </svg>
+        )
       ))}
       {/* centrado na página (na vertical e na horizontal); com ecrãs
           baixos, desliza normalmente */}
@@ -28902,11 +28909,10 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
 
         {/* A PRANCHETA */}
         <div style={{ position: 'relative', background: 'linear-gradient(160deg, #3b2a1d 0%, #24180f 100%)', borderRadius: 18, padding: '30px 14px 16px', boxShadow: '0 20px 44px rgba(0,0,0,.5)' }}>
-          {/* o separador da prancheta (em vez da mola), a amarelo */}
+          {/* o título no topo da prancheta: só as letras, a amarelo */}
           <div style={{
-            position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap',
-            background: T.gold, color: '#1d1a10', borderRadius: 20, padding: '6px 16px', boxShadow: '0 6px 14px rgba(0,0,0,.4)',
-            fontSize: 11, fontWeight: 800, letterSpacing: '.18em', textTransform: 'uppercase',
+            position: 'absolute', top: 9, left: 0, right: 0, textAlign: 'center', whiteSpace: 'nowrap',
+            color: T.gold, fontSize: 11, fontWeight: 800, letterSpacing: '.22em', textTransform: 'uppercase',
           }}>Instruções do mister{tarefas.length > 1 ? ` · ${i + 1}/${tarefas.length}` : ''}</div>
 
           {/* o quadro verde, com o campo a giz */}
