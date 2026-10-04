@@ -28661,14 +28661,37 @@ function EcraAniversario({ player, onEntrar }) {
 
         {/* O GOLO DOS PARABÉNS */}
         <div style={{ position: 'relative', width: 280, height: 220, marginTop: 14 }}>
-          <svg viewBox="0 0 280 120" width="280" height="120" style={{ position: 'absolute', top: 0, left: 0, transformOrigin: '50% 0', animation: golo && !eGR ? 'festa-rede .7s ease-out .55s 2' : 'none' }}>
-            <rect x="30" y="10" width="220" height="100" fill="rgba(255,255,255,.05)" />
-            {Array.from({ length: 12 }, (_, k) => <line key={`v${k}`} x1={30 + k * 20} y1="10" x2={30 + k * 20} y2="110" stroke="rgba(255,255,255,.25)" strokeWidth="1" />)}
-            {Array.from({ length: 6 }, (_, k) => <line key={`h${k}`} x1="30" y1={10 + k * 20} x2="250" y2={10 + k * 20} stroke="rgba(255,255,255,.25)" strokeWidth="1" />)}
-            <path d="M30 110 L30 10 L250 10 L250 110" fill="none" stroke="#fff" strokeWidth="5" strokeLinejoin="round" />
+          {/* A BALIZA: postes e trave redondos (com luz e sombra), rede em
+              losango com profundidade (fundo e laterais), relva às riscas e
+              a linha de golo. Só a rede abana no golo — os postes ficam. */}
+          <svg viewBox="0 0 280 130" width="280" height="130" style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}>
+            <defs>
+              <linearGradient id="fb-poste" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#FFFFFF" /><stop offset=".6" stopColor="#F1F1EE" /><stop offset="1" stopColor="#B9BDC2" /></linearGradient>
+              <linearGradient id="fb-trave" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#FFFFFF" /><stop offset=".6" stopColor="#F1F1EE" /><stop offset="1" stopColor="#B9BDC2" /></linearGradient>
+              <pattern id="fb-rede" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <path d="M0 0 L0 9 M0 0 L9 0" stroke="rgba(255,255,255,.42)" strokeWidth="1" />
+              </pattern>
+              <linearGradient id="fb-fundo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="rgba(0,0,0,.35)" /><stop offset="1" stopColor="rgba(0,0,0,.15)" /></linearGradient>
+              <linearGradient id="fb-relva" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2f7a3c" /><stop offset="1" stopColor="#1f5a2b" /></linearGradient>
+              <clipPath id="fb-boca"><rect x="30" y="10" width="220" height="100" /></clipPath>
+            </defs>
+            <rect x="0" y="108" width="280" height="22" fill="url(#fb-relva)" />
+            <g opacity=".25">
+              {[0, 80, 160, 240].map(x => <rect key={x} x={x} y="108" width="40" height="22" fill="#5fae5f" />)}
+            </g>
+            <line x1="0" y1="110" x2="280" y2="110" stroke="#fff" strokeWidth="2" />
+            <g style={{ transformOrigin: '50% 0', transformBox: 'fill-box', animation: golo && !eGR ? 'festa-rede .7s ease-out .55s 2' : 'none' }}>
+              <rect x="30" y="10" width="220" height="100" fill="url(#fb-fundo)" />
+              <polygon points="30,10 52,24 52,106 30,110" fill="rgba(255,255,255,.05)" />
+              <polygon points="250,10 228,24 228,106 250,110" fill="rgba(255,255,255,.05)" />
+              <g clipPath="url(#fb-boca)"><rect x="30" y="10" width="220" height="100" fill="url(#fb-rede)" /></g>
+              <path d="M52 24 L228 24 M52 24 L52 106 M228 24 L228 106 M30 10 L52 24 M250 10 L228 24" stroke="rgba(255,255,255,.35)" strokeWidth="1" fill="none" />
+            </g>
+            <ellipse cx="140" cy="113" rx="122" ry="4" fill="rgba(0,0,0,.35)" />
+            <rect x="24" y="6" width="7" height="105" rx="3" fill="url(#fb-poste)" />
+            <rect x="249" y="6" width="7" height="105" rx="3" fill="url(#fb-poste)" />
+            <rect x="24" y="5" width="232" height="7" rx="3" fill="url(#fb-trave)" />
           </svg>
-          {/* relva */}
-          <div style={{ position: 'absolute', left: 0, right: 0, top: 110, height: 2, background: 'rgba(255,255,255,.5)' }} />
           {/* a bola */}
           {/* GR: as luvas na baliza (é nelas que se toca) */}
           {eGR && (
