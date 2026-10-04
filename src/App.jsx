@@ -5048,6 +5048,22 @@ async function selecionarMembros(teamId) {
     .eq('team_id', teamId).order('created_at');
 }
 
+/* Grava o telemóvel de um membro. Devolve null se correu bem, ou a
+   mensagem de erro a mostrar. Usado pelo próprio, pelo dono da equipa
+   para os outros, e logo a seguir a criar ou entrar numa equipa. */
+const telefoneValido = (v) => !String(v || '').trim() || !!linkWhatsApp(v, '');
+async function gravarTelefoneMembro(teamId, userId, valor) {
+  const v = String(valor || '').trim();
+  if (!telefoneValido(v)) return 'Esse número não parece válido. Inclui o indicativo, por exemplo +351 912 345 678.';
+  const { error } = await supabase.from('team_members')
+    .update({ telefone: v || null })
+    .eq('team_id', teamId).eq('user_id', userId);
+  if (!error) return null;
+  return error.code === '42703' || /telefone/.test(error.message || '')
+    ? 'A base de dados ainda não tem o campo do telemóvel. É preciso correr a atualização (coluna "telefone" em team_members).'
+    : error.message;
+}
+
 function useMembros(teamId) {
   const [membros, setMembros] = useState(null);
 
@@ -5132,6 +5148,12 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
      quem é. Pedi-lo aqui é o único momento em que a pessoa está mesmo a
      apresentar-se; pedir depois significa que quase ninguém o faz. */
   const [meuNome, setMeuNome] = useState('');
+  /* O TELEMÓVEL TAMBÉM SE PEDE À ENTRADA, pela mesma razão do nome: é o
+     momento em que a pessoa se apresenta à equipa. Serve para os colegas
+     lhe lembrarem tarefas por WhatsApp. Obrigatório para quem entra com
+     código; opcional para quem cria (pode pô-lo depois, e como dono pode
+     pô-lo também pelos outros em "Gerir equipa"). */
+  const [meuTelefone, setMeuTelefone] = useState('');
   const [aProcessar, setAProcessar] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -5148,7 +5170,24 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
   const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
   const jaExiste = (equipas || []).find(e => igual(e.nome, nome) && igual(e.clube, clube));
 
+  /* Depois de a equipa existir (criada ou com entrada feita): a função
+     do Supabase que cria/entra não conhece o telemóvel, por isso grava-se
+     logo a seguir, na própria linha. Se falhar (por exemplo, a coluna
+     ainda não existir), a pessoa entra na mesma e só fica um aviso na
+     consola; pode pô-lo depois em "Gerir equipa". */
+  const gravarMeuTelefoneDepois = async (teamId) => {
+    if (!teamId || !meuTelefone.trim()) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session && session.user && session.user.id;
+      if (!uid) return;
+      const msg = await gravarTelefoneMembro(teamId, uid, meuTelefone);
+      if (msg) console.error('Não foi possível gravar o telemóvel:', msg);
+    } catch (e) { console.error('Não foi possível gravar o telemóvel:', e); }
+  };
+
   const criarMesmoAssim = async () => {
+    if (!telefoneValido(meuTelefone)) { setErro('Esse telemóvel não parece válido. Inclui o indicativo, por exemplo +351 912 345 678.'); return; }
     setErro(''); setAProcessar(true);
     try {
       const { data, error } = await supabase.rpc('criar_equipa', {
@@ -5165,6 +5204,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
         const { error: erroCor } = await supabase.from('teams').update({ cor }).eq('id', data);
         if (erroCor) console.error('Não foi possível gravar a cor da equipa:', erroCor.message);
       }
+      await gravarMeuTelefoneDepois(data);
       onPronto(data);
     } catch (e) {
       setErro(e.message || 'Não foi possível criar a equipa.');
@@ -5191,12 +5231,15 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
   const entrar = async () => {
     if (!codigo.trim()) { setErro('Escreve o código que te deram.'); return; }
     if (!meuNome.trim()) { setErro('Escreve o teu nome, para a equipa saber quem és.'); return; }
+    if (!meuTelefone.trim()) { setErro('Escreve o teu telemóvel, para os colegas te poderem lembrar de tarefas.'); return; }
+    if (!telefoneValido(meuTelefone)) { setErro('Esse telemóvel não parece válido. Inclui o indicativo, por exemplo +351 912 345 678.'); return; }
     setErro(''); setAProcessar(true);
     try {
       const { data, error } = await supabase.rpc('entrar_na_equipa', {
         p_codigo: codigo.trim(), p_nome: meuNome.trim() || null,
       });
       if (error) throw error;
+      await gravarMeuTelefoneDepois(data);
       onPronto(data);
     } catch (e) {
       setErro(/inválido/i.test(e.message || '') ? 'Código inválido. Confirma as seis letras.' : (e.message || 'Não foi possível entrar.'));
@@ -5308,6 +5351,13 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
             <Field label="O teu nome" bloco solto>
               <Input value={meuNome} onChange={e => setMeuNome(e.target.value)} placeholder="Nome e apelido" />
             </Field>
+            <div style={{ height: 12 }} />
+            <Field label="O teu telemóvel (opcional)" bloco solto>
+              <Input type="tel" inputMode="tel" autoComplete="tel" value={meuTelefone} onChange={e => setMeuTelefone(e.target.value)} placeholder="+351 912 345 678" />
+            </Field>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
+              Para os colegas te lembrarem de tarefas por WhatsApp. Só a equipa o vê.
+            </div>
           </>
         )}
 
@@ -5332,6 +5382,13 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
             </Field>
             <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
               É como apareces para o resto da equipa técnica nas tarefas.
+            </div>
+            <div style={{ height: 12 }} />
+            <Field label="O teu telemóvel" bloco solto>
+              <Input type="tel" inputMode="tel" autoComplete="tel" value={meuTelefone} onChange={e => setMeuTelefone(e.target.value)} placeholder="+351 912 345 678" />
+            </Field>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
+              Para os colegas te lembrarem de tarefas por WhatsApp. Só a equipa o vê.
             </div>
           </>
         )}
@@ -5561,18 +5618,24 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
      opcional: sem ele, o lembrete fica só dentro da app. */
   const guardarTelefone = async () => {
     setErro(''); setTelefoneGuardado(false);
-    const valor = meuTelefone.trim();
-    if (valor && !linkWhatsApp(valor, '')) { setErro('Esse número não parece válido. Inclui o indicativo, por exemplo +351 912 345 678.'); return; }
-    const { error } = await supabase.from('team_members')
-      .update({ telefone: valor || null })
-      .eq('team_id', equipa.id).eq('user_id', euId);
-    if (error) {
-      setErro(error.code === '42703' || /telefone/.test(error.message || '')
-        ? 'A base de dados ainda não tem o campo do telemóvel. É preciso correr a atualização (coluna "telefone" em team_members).'
-        : error.message);
-      return;
-    }
+    const msg = await gravarTelefoneMembro(equipa.id, euId, meuTelefone);
+    if (msg) { setErro(msg); return; }
     setTelefoneGuardado(true);
+    carregar();
+  };
+
+  /* O DONO PODE PÔR O TELEMÓVEL DOS OUTROS. É a exceção à regra "cada um
+     escreve o seu": há quem entre na equipa e nunca o preencha, e sem ele
+     os lembretes por WhatsApp não funcionam. O dono já gere a equipa
+     (código, remover membros, passar a administração), por isso faz
+     sentido que também possa completar este contacto. */
+  const [telOutro, setTelOutro] = useState(null); // { userId, valor }
+  const guardarTelefoneOutro = async () => {
+    if (!telOutro) return;
+    setErro('');
+    const msg = await gravarTelefoneMembro(equipa.id, telOutro.userId, telOutro.valor);
+    if (msg) { setErro(msg); return; }
+    setTelOutro(null);
     carregar();
   };
 
@@ -5918,6 +5981,33 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                     {m.papel === 'owner' ? 'Administrador' : 'Membro'}
                     {m.created_at ? ` · desde ${fmtDate(String(m.created_at).slice(0, 10))}` : ''}
                   </div>
+                  {telOutro && telOutro.userId === m.user_id ? (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+                        <Input
+                          type="tel" inputMode="tel" autoFocus
+                          value={telOutro.valor}
+                          onChange={e => setTelOutro({ ...telOutro, valor: e.target.value })}
+                          onKeyDown={e => { if (e.key === 'Enter') guardarTelefoneOutro(); if (e.key === 'Escape') setTelOutro(null); }}
+                          placeholder="+351 912 345 678"
+                        />
+                      </div>
+                      <Btn onClick={guardarTelefoneOutro}>Guardar</Btn>
+                      <Btn variant="ghost" onClick={() => setTelOutro(null)}>Cancelar</Btn>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12, color: m.telefone ? T.muted : T.mutedDim }}>
+                      <MessageCircle size={12} color={m.telefone ? '#25D366' : undefined} />
+                      <span style={{ ...mono, fontSize: 11.5 }}>{m.telefone || 'Sem telemóvel'}</span>
+                      {souDono && m.user_id !== euId && (
+                        <button
+                          onClick={() => setTelOutro({ userId: m.user_id, valor: m.telefone || '' })}
+                          title={m.telefone ? 'Alterar telemóvel' : 'Adicionar telemóvel'}
+                          style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}
+                        ><Pencil size={12} /></button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {souDono && m.user_id !== euId && (
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
@@ -39416,13 +39506,15 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
      isso aparece primeiro, a dourado; o responsável da equipa técnica
      fica por baixo, como quem acompanha. */
   const jogador = tarefa.jogadorId ? (players || []).find(p => p.id === tarefa.jogadorId) : null;
-  const nomeCurto = tarefa.responsavel ? nome.split(' ')[0] : 'Sem responsável';
   // Numa tarefa de aniversário, quem faz anos NESSE dia (não hoje).
   const aniversariantes = repete && tarefa.recorrencia.tipo === 'aniversario'
     ? aniversariantesEm(players, dia)
     : [];
   const cor = corDoMembro(tarefa.responsavel);
   const nome = nomeDoMembro(tarefa.responsavel, membros, euId);
+  // Depois de `nome` existir: usá-lo antes desta linha rebenta o ecrã
+  // ("Cannot access … before initialization").
+  const nomeCurto = tarefa.responsavel ? nome.split(' ')[0] : 'Sem responsável';
   const bloqueada = !podeConcluir;
   const lembreteParaMim = !feita && tarefa.lembrete && tarefa.responsavel === euId && !tarefa.lembrete.visto;
   const possoLembrar = !feita && bloqueada && onLembrar && tarefa.responsavel && tarefa.responsavel !== euId;
