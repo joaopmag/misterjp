@@ -24,7 +24,7 @@ import {
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
   HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
-  Video,
+  Video, Repeat, Calendar,
   Volume2, VolumeX, CheckCircle2,
 } from 'lucide-react';
 
@@ -38809,9 +38809,10 @@ const EMPTY_NOTA = () => ({ data: todayStr(), titulo: '', nota: '', attachment: 
    está a dever o quê?". A primeira é a vista por omissão; a segunda é um
    botão que reagrupa a MESMA lista.
 
-   Há uma terceira vista, "Morfociclo", que É um quadro de colunas, mas
-   com o eixo certo: os dias até ao jogo (J-3, J-2, J-1…). Ver a nota
-   junto de `colunasDoMorfociclo`. */
+   Há uma terceira vista, "Calendário": a semana de segunda a domingo,
+   igual à agenda semanal do Planeamento, com cada tarefa no seu dia e as
+   que se repetem todas as semanas no dia delas. Ver a nota junto de
+   `TarefasCalendario`. */
 
 const ESTADOS_TAREFA = ['aberta', 'curso', 'feita'];
 
@@ -38862,6 +38863,8 @@ function aniversariantesEm(players, diaStr) {
 function tarefaAtivaHoje(tarefa, hoje, ctx) {
   const r = tarefa.recorrencia;
   if (!r) return true; // tarefa normal, sem regra — está sempre "ativa" no sentido de aparecer
+  // Uma repetição marcada para começar mais à frente ainda não existe.
+  if (r.desde && hoje < r.desde) return false;
   if (r.tipo === 'diaria') return true;
   if (r.tipo === 'semanal') return (r.dias || []).includes(new Date(`${hoje}T00:00:00`).getDay());
   if (r.tipo === 'treino_jogo') {
@@ -38943,9 +38946,10 @@ function tarefasAMinhaPorta(tarefas, euId, ctx) {
   }).length;
 }
 
-function TarefaModal({ tarefa, membros, players, euId, onClose, onSave, onRemove }) {
+function TarefaModal({ tarefa, inicial, membros, players, euId, onClose, onSave, onRemove }) {
   const [f, setF] = useState(tarefa || {
     titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null, jogadorId: '',
+    ...(inicial || {}),
   });
   const valido = String(f.titulo || '').trim().length > 0;
   const repete = !!f.recorrencia;
@@ -38990,6 +38994,28 @@ function TarefaModal({ tarefa, membros, players, euId, onClose, onSave, onRemove
         </Field>
       </div>
 
+      {/* REPETIR TODAS AS SEMANAS NESTE DIA — o atalho para o caso mais
+          comum na equipa técnica ("observar o adversário é sempre à
+          quinta"). Marcar converte a tarefa numa repetição "Dias da
+          semana" só com esse dia, a começar na data escolhida
+          (`recorrencia.desde`), e ela passa a aparecer no Calendário todas
+          as semanas. Desfaz-se em "Repete" > "Não repete", que devolve a
+          data original. */}
+      {!repete && f.prazo && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: -4, marginBottom: 16, fontSize: 13, color: T.cream, cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={false}
+            onChange={() => setF({
+              ...f, prazo: '',
+              recorrencia: { tipo: 'semanal', dias: [new Date(`${f.prazo}T00:00:00`).getDay()], desde: f.prazo },
+            })}
+            style={{ accentColor: T.crimson, width: 16, height: 16 }}
+          />
+          Repetir todas as semanas à {DIAS_SEMANA[new Date(`${f.prazo}T00:00:00`).getDay()]}
+        </label>
+      )}
+
       {/* ATRIBUIR A UM JOGADOR — de propósito, num campo à parte do
           "Responsável" (que é sempre alguém da equipa técnica). Uma
           tarefa pode ter as duas coisas ao mesmo tempo: um membro do
@@ -39017,8 +39043,17 @@ function TarefaModal({ tarefa, membros, players, euId, onClose, onSave, onRemove
             value={f.recorrencia ? f.recorrencia.tipo : ''}
             onChange={e => {
               const tipo = e.target.value;
-              if (!tipo) { setF({ ...f, recorrencia: null }); return; }
-              setF({ ...f, prazo: '', recorrencia: { tipo, dias: (f.recorrencia && f.recorrencia.dias) || [1, 2, 3, 4, 5] } });
+              // Ao deixar de repetir, a tarefa volta a ter o dia em que
+              // a repetição começou (se o houver), em vez de ficar sem dia.
+              if (!tipo) { setF({ ...f, prazo: (f.recorrencia && f.recorrencia.desde) || f.prazo || '', recorrencia: null }); return; }
+              setF({
+                ...f, prazo: '',
+                recorrencia: {
+                  tipo,
+                  dias: (f.recorrencia && f.recorrencia.dias) || [1, 2, 3, 4, 5],
+                  desde: (f.recorrencia && f.recorrencia.desde) || f.prazo || todayStr(),
+                },
+              });
             }}
           >
             <option value="">Não repete — só esta vez</option>
@@ -39051,6 +39086,9 @@ function TarefaModal({ tarefa, membros, players, euId, onClose, onSave, onRemove
             {f.recorrencia.tipo === 'treino_jogo' && 'Aparece sozinha em qualquer dia com treino ou jogo marcado.'}
             {f.recorrencia.tipo === 'wellness_pse' && 'Aparece sozinha enquanto houver algum jogador por responder ao Wellness (ou ao PSE, em dia de treino/jogo). Desaparece assim que todos tiverem respondido.'}
             {f.recorrencia.tipo === 'diaria' && 'Aparece todos os dias, sem exceção.'}
+            {f.recorrencia.tipo === 'semanal' && ((f.recorrencia.dias || []).length
+              ? `Aparece no Calendário todas as semanas, nos dias escolhidos${f.recorrencia.desde ? `, a partir de ${fmtShort(f.recorrencia.desde)}` : ''}.`
+              : 'Escolhe pelo menos um dia da semana.')}
             {f.recorrencia.tipo === 'aniversario' && 'Aparece sozinha em qualquer dia em que um jogador do plantel faça anos (precisa da data de nascimento completa, em Editar Jogador — registos com só o ano não contam).'}
           </div>
         )}
@@ -39094,229 +39132,259 @@ function TarefaModal({ tarefa, membros, players, euId, onClose, onSave, onRemove
 }
 
 /* ================================================================
-   MORFOCICLO — o quadro de colunas das Tarefas.
+   CALENDÁRIO — a semana das Tarefas, de segunda a domingo.
    ================================================================
 
-   A nota lá em cima (junto de `ESTADOS_TAREFA`) continua certa: um
-   kanban por ESTADO mostraria o eixo errado. Mas o formato de quadro,
-   com colunas e arrastar, tem valor quando as colunas são TEMPO, e o
-   tempo de uma equipa técnica não se conta em dias do calendário, conta
-   se a partir do jogo: J+1, J+2, J-3, J-2, J-1, Jogo.
-
-   Por isso as colunas são os dias até ao próximo jogo (e o dia a seguir
-   a ele, onde vive o vídeo da jornada), cada uma com o que já está
-   marcado nesse dia (treino, folga, jogo) por cima das tarefas. Arrastar
-   uma tarefa para outra coluna muda-lhe o PRAZO, e é só isso: não há
-   campo novo nem tabela nova, é o mesmo `prazo` de sempre visto pelo
-   eixo do microciclo.
-
-   Regras:
-   - O rótulo de cada dia é relativo ao jogo MAIS PRÓXIMO dos dois lados:
-     até dois dias depois de um jogo diz J+1/J+2 (recuperação), daí em
-     diante diz J-n até ao jogo seguinte. Sem nenhum jogo à vista, fica o
-     dia da semana.
-   - Mostra no máximo 10 dias. Com uma paragem longa no campeonato, o
-     quadro mostra a próxima semana e o resto cai em "Mais tarde".
-   - As recorrentes ficam sempre em "Hoje" e não se arrastam: não têm
-     prazo, têm uma regra (ver `tarefaAtivaHoje`).
-   - "Atrasadas" e "Mais tarde" só aparecem com tarefas lá dentro e não
-     aceitam largar (uma não tem dia certo, a outra é passado). "Sem
-     prazo" aparece sempre e aceita: largar lá apaga o prazo.
-   - O arrastar nativo do browser não funciona em ecrãs táteis. No
-     telemóvel, cada cartão traz um "Mover para…" em vez disso. */
-const MORFOCICLO_MAX_DIAS = 10;
-const diasEntreDatas = (a, b) => Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}T00:00:00`)) / 86400000);
-
-function rotuloMorfociclo(dia, jogos) {
-  if (jogos.some(m => m.date === dia)) return 'Jogo';
-  const antes = jogos.filter(m => m.date < dia);
-  const depois = jogos.filter(m => m.date > dia);
-  const p = antes.length ? diasEntreDatas(antes[antes.length - 1].date, dia) : Infinity;
-  const n = depois.length ? diasEntreDatas(dia, depois[0].date) : Infinity;
-  if (p <= 2 && p < n) return `J+${p}`;
-  if (n !== Infinity) return `J-${n}`;
-  if (p !== Infinity && p <= 3) return `J+${p}`;
+   A mesma grelha da agenda semanal do Planeamento (7 colunas, 3 no
+   telemóvel), com as tarefas no dia delas:
+   - Uma tarefa normal aparece no dia do seu `prazo`, aberta ou já
+     concluída (riscada), para a semana mostrar o que se fez e o que falta.
+   - Uma tarefa que se repete aparece em TODOS os dias em que a regra
+     dela está ativa, também nas semanas seguintes. É assim que o
+     "observar o adversário à quinta" está sempre lá, semana após semana,
+     sem ninguém o voltar a criar. A conclusão marca-se só para esse dia
+     (`concluidasEm`), como na lista.
+   - Uma repetição só começa no dia em que foi criada (`recorrencia.desde`
+     ou, nas tarefas antigas, `criadoEm`): não enche as semanas passadas
+     de tarefas que ainda não existiam.
+   - Dias futuros de uma tarefa que se repete não se podem dar como
+     feitos: ainda não chegaram.
+   - "Enquanto faltar Wellness/PSE" depende das respostas de HOJE, por
+     isso só aparece no dia de hoje.
+   - No topo de cada dia, sem botões, o jogo e o treino ou folga desse
+     dia, para contexto.
+   - "+ tarefa" no fundo de cada dia abre uma tarefa nova já com esse dia.
+   - No computador, arrastar uma tarefa normal para outro dia muda-lhe o
+     prazo. As que se repetem não se arrastam: o dia delas é a regra.
+   - Por baixo da grelha ficam as que não têm lugar nela: sem prazo e,
+     na semana de hoje, as atrasadas de semanas anteriores. */
+function dataInicioRepeticao(t) {
+  const r = t.recorrencia || {};
+  if (r.desde) return r.desde;
+  if (t.criadoEm) return String(t.criadoEm).slice(0, 10);
   return null;
 }
 
-function colunasDoMorfociclo(hoje, matches, sessions) {
-  const jogos = (matches || []).filter(m => m && m.date).sort((a, b) => a.date.localeCompare(b.date));
-  const proximo = jogos.find(m => m.date >= hoje) || null;
-  const distancia = proximo ? diasEntreDatas(hoje, proximo.date) : null;
-  // Até ao J+1 do próximo jogo, se couber; senão, a próxima semana.
-  const nDias = proximo && distancia + 2 <= MORFOCICLO_MAX_DIAS ? Math.max(distancia + 2, 3) : 7;
-  const ultimoDia = addDays(hoje, nDias - 1);
-
-  const cols = [{ id: 'atraso', tipo: 'atraso', titulo: 'Atrasadas', alvo: false }];
-  for (let i = 0; i < nDias; i++) {
-    const d = addDays(hoje, i);
-    const semana = DIAS_SEMANA[new Date(`${d}T00:00:00`).getDay()];
-    const rel = rotuloMorfociclo(d, jogos);
-    const quando = i === 0 ? 'hoje' : (i === 1 ? 'amanhã' : `${semana.slice(0, 3)} ${fmtShort(d)}`);
-    cols.push({
-      id: d, tipo: 'dia', data: d, alvo: true, eHoje: i === 0,
-      titulo: rel || (semana.charAt(0).toUpperCase() + semana.slice(1)),
-      sub: rel ? quando : (i <= 1 ? quando : fmtShort(d)),
-      jogos: jogos.filter(m => m.date === d),
-      sessoes: (sessions || []).filter(s => s.date === d),
-    });
-  }
-  cols.push({ id: 'depois', tipo: 'depois', titulo: 'Mais tarde', sub: `depois de ${fmtShort(ultimoDia)}`, alvo: false });
-  cols.push({ id: 'sem', tipo: 'sem', titulo: 'Sem prazo', alvo: true });
-  return { cols, proximo, ultimoDia };
+function repeteNoDia(t, dia, hoje, ctx) {
+  if (!t.recorrencia) return false;
+  const inicio = dataInicioRepeticao(t);
+  if (inicio && dia < inicio) return false;
+  if (t.recorrencia.tipo === 'wellness_pse') return dia === hoje && tarefaAtivaHoje(t, hoje, ctx);
+  return tarefaAtivaHoje(t, dia, ctx);
 }
 
-function colunaDaTarefa(t, hoje, ultimoDia) {
-  if (t.recorrencia) return hoje;
-  if (!t.prazo) return 'sem';
-  if (t.prazo < hoje) return 'atraso';
-  if (t.prazo > ultimoDia) return 'depois';
-  return t.prazo;
+function CartaoTarefaCalendario({ tarefa, dia, hoje, membros, euId, onAbrir, onAlternarEm, arrastavel, aArrastar, onDragStart, onDragEnd }) {
+  const repete = !!tarefa.recorrencia;
+  const feita = repete ? (tarefa.concluidasEm || []).includes(dia) : tarefa.estado === 'feita';
+  const futuro = repete && dia > hoje;
+  const atrasada = !repete && !feita && tarefa.prazo && tarefa.prazo < hoje;
+  const cor = corDoMembro(tarefa.responsavel);
+  const nome = nomeDoMembro(tarefa.responsavel, membros, euId);
+
+  return (
+    <div
+      draggable={arrastavel}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      style={{
+        display: 'flex', gap: 6, alignItems: 'flex-start',
+        background: T.bg, borderRadius: 6, padding: '6px 7px',
+        border: `1px solid ${atrasada ? T.bad : T.line}`,
+        opacity: aArrastar ? 0.45 : 1, cursor: arrastavel ? 'grab' : undefined,
+      }}
+    >
+      <button
+        onClick={() => !futuro && onAlternarEm(tarefa, dia)}
+        disabled={futuro}
+        title={futuro ? 'Ainda não chegou este dia' : (feita ? 'Desmarcar' : 'Marcar como concluída')}
+        aria-label={feita ? 'Desmarcar' : 'Marcar como concluída'}
+        style={{
+          width: 14, height: 14, borderRadius: 4, flexShrink: 0, marginTop: 1, padding: 0,
+          cursor: futuro ? 'default' : 'pointer', opacity: futuro ? 0.4 : 1,
+          background: feita ? T.good : 'transparent', border: `1.5px solid ${feita ? T.good : T.line}`,
+          display: 'grid', placeItems: 'center',
+        }}
+      >{feita && <Check size={9} style={{ color: '#0d140e' }} />}</button>
+      <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={() => onAbrir(tarefa)}>
+        <div style={{
+          ...LINHAS(2), fontSize: 11.5, lineHeight: 1.3,
+          color: feita ? T.mutedDim : T.cream, textDecoration: feita ? 'line-through' : 'none',
+        }}>{tarefa.titulo}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 10, color: T.mutedDim, minWidth: 0 }}>
+          <span style={{
+            width: 14, height: 14, borderRadius: '50%', background: cor, flexShrink: 0,
+            display: 'grid', placeItems: 'center', fontSize: 7.5, color: '#0d140e', fontWeight: 600, ...mono,
+          }}>{nome.charAt(0).toUpperCase()}</span>
+          <span style={{ ...LINHAS(1), minWidth: 0 }}>{nome.split(' ')[0]}</span>
+          {repete && <Repeat size={10} style={{ flexShrink: 0, marginLeft: 'auto' }} aria-label="Repete" />}
+          {tarefa.jogadorId && <UserCheck size={10} style={{ flexShrink: 0, marginLeft: repete ? 0 : 'auto', color: T.gold }} />}
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function QuadroMorfociclo({ abertas, hoje, sessions, matches, players, membros, euId, onAbrir, onAlternar, onMover }) {
-  const isMobile = useIsMobile();
+function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir, onAlternarEm, onMover, onNovaNoDia }) {
+  const [weekStart, setWeekStart] = useState(() => getMonday(hoje));
   const [arrastada, setArrastada] = useState(null);
   const [sobre, setSobre] = useState(null);
-  const { cols, proximo, ultimoDia } = colunasDoMorfociclo(hoje, matches, sessions);
+  const isMobile = useIsMobile(700);
+  const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
+  const estaSemana = weekStart === getMonday(hoje);
+  const { sessions, matches } = ctx;
+  const idsDeJogos = new Set((matches || []).map(m => m.id));
 
-  const porColuna = {};
-  cols.forEach(c => { porColuna[c.id] = []; });
-  abertas.forEach(t => {
-    const id = colunaDaTarefa(t, hoje, ultimoDia);
-    (porColuna[id] = porColuna[id] || []).push(t);
-  });
-  Object.values(porColuna).forEach(l => l.sort((a, b) => String(a.prazo || '').localeCompare(String(b.prazo || ''))));
-  const visiveis = cols.filter(c => c.tipo === 'dia' || c.tipo === 'sem' || porColuna[c.id].length > 0);
-  const destinos = cols.filter(c => c.alvo);
-
-  const largar = (e, c) => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData('text/plain') || arrastada;
-    setSobre(null); setArrastada(null);
-    if (id && c.alvo) onMover(id, c.tipo === 'sem' ? '' : c.data);
+  const doDia = (d) => {
+    const normais = tarefas.filter(t => !t.recorrencia && t.prazo === d);
+    const repetidas = tarefas.filter(t => t.recorrencia && t.estado !== 'feita' && repeteNoDia(t, d, hoje, ctx));
+    const feitaNoDia = (t) => (t.recorrencia ? (t.concluidasEm || []).includes(d) : t.estado === 'feita');
+    return [...normais, ...repetidas].sort((a, b) => Number(feitaNoDia(a)) - Number(feitaNoDia(b)));
   };
+
+  const semPrazo = tarefas.filter(t => !t.recorrencia && !t.prazo && t.estado !== 'feita');
+  const atrasadasAntes = estaSemana
+    ? tarefas.filter(t => !t.recorrencia && t.prazo && t.prazo < weekStart && t.estado !== 'feita')
+    : [];
+
+  const navBtn = { background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, color: T.cream, cursor: 'pointer', padding: '4px 6px' };
 
   return (
     <div>
-      <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 12, lineHeight: 1.5 }}>
-        {proximo
-          ? <>Próximo jogo: <span style={{ color: T.cream }}>vs {proximo.opponent || 'adversário por definir'}</span>, {prazoTexto(proximo.date, hoje)}.</>
-          : 'Sem jogo marcado. A mostrar os próximos 7 dias.'}
-        <span style={{ color: T.mutedDim }}>
-          {isMobile ? ' Usa «Mover para» em cada tarefa para lhe mudar o dia.' : ' Arrasta uma tarefa para outra coluna para lhe mudar o prazo.'}
-        </span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 8 }}>
+        <button onClick={() => setWeekStart(addDays(weekStart, -7))} style={navBtn} aria-label="Semana anterior"><ChevronLeft size={16} /></button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ ...display, color: T.warn, fontSize: 15, fontWeight: 600 }}>
+            Semana de {fmtShort(days[0])} a {fmtShort(days[6])}
+          </div>
+          {!estaSemana && (
+            <button onClick={() => setWeekStart(getMonday(hoje))} style={{ ...navBtn, ...body, fontSize: 11.5, padding: '3px 9px', color: T.muted }}>Hoje</button>
+          )}
+        </div>
+        <button onClick={() => setWeekStart(addDays(weekStart, 7))} style={navBtn} aria-label="Semana seguinte"><ChevronRight size={16} /></button>
       </div>
 
       <div style={{
-        display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8,
-        scrollSnapType: isMobile ? 'x mandatory' : 'none', WebkitOverflowScrolling: 'touch',
+        display: 'grid', gap: 8,
+        ...(isMobile
+          ? { gridTemplateColumns: 'repeat(3, 1fr)' }
+          : { gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))', overflowX: 'auto' }),
       }}>
-        {visiveis.map(c => {
-          const lista = porColuna[c.id] || [];
-          const temJogo = c.jogos && c.jogos.length > 0;
-          const corTitulo = c.tipo === 'atraso' ? T.bad : (temJogo ? T.crimsonBright : (c.eHoje ? T.warn : T.cream));
-          const destacado = sobre === c.id;
+        {days.map(d => {
+          const lista = doDia(d);
+          const isToday = d === hoje;
+          const dayMatches = (matches || []).filter(m => m.date === d);
+          const daySessions = (sessions || []).filter(s => s.date === d && !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId)));
+          const destacado = sobre === d;
           return (
             <div
-              key={c.id}
+              key={d}
               onDragOver={e => {
-                if (!c.alvo || !arrastada) return;
+                if (!arrastada) return;
                 e.preventDefault();
                 e.dataTransfer.dropEffect = 'move';
-                if (sobre !== c.id) setSobre(c.id);
+                if (sobre !== d) setSobre(d);
               }}
-              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setSobre(s => (s === c.id ? null : s)); }}
-              onDrop={e => largar(e, c)}
+              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setSobre(s => (s === d ? null : s)); }}
+              onDrop={e => {
+                e.preventDefault();
+                const id = e.dataTransfer.getData('text/plain') || arrastada;
+                setSobre(null); setArrastada(null);
+                if (id) onMover(id, d);
+              }}
               style={{
-                flex: `0 0 ${isMobile ? '82%' : '232px'}`, scrollSnapAlign: 'start',
-                display: 'flex', flexDirection: 'column', minHeight: 240, boxSizing: 'border-box',
-                padding: 10, borderRadius: 10,
-                background: destacado ? 'rgba(201,162,39,.08)' : (c.eHoje ? 'rgba(43,64,45,.55)' : 'transparent'),
-                border: `1px ${destacado ? 'dashed' : 'solid'} ${destacado ? T.gold : (temJogo ? T.crimson : T.line)}`,
-                opacity: arrastada && !c.alvo ? 0.5 : 1,
+                background: destacado ? 'rgba(201,162,39,.08)' : T.surface,
+                border: `1px ${destacado ? 'dashed' : 'solid'} ${destacado || isToday ? T.gold : T.line}`,
+                borderRadius: 8, padding: 8, minHeight: 160, minWidth: 0,
+                display: 'flex', flexDirection: 'column',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ ...display, fontSize: 17, fontWeight: 600, color: corTitulo }}>{c.titulo}</span>
-                <span style={{ ...mono, fontSize: 11, color: T.mutedDim, marginLeft: 'auto' }}>{lista.length}</span>
-              </div>
-              {c.sub && <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 1 }}>{c.sub}</div>}
+              <div style={{ fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.04em' }}>{dayLabel(d)}</div>
+              <div style={{ ...mono, fontSize: 15, color: isToday ? T.warn : T.cream, marginBottom: 6 }}>{new Date(d + 'T00:00:00').getDate()}</div>
 
-              {/* O que já está marcado nesse dia, por cima das tarefas. */}
-              {c.tipo === 'dia' && (temJogo || c.sessoes.length > 0) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
-                  {c.jogos.map(m => (
-                    <div key={m.id || m.date} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.crimsonBright }}>
-                      <Trophy size={12} style={{ flexShrink: 0 }} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        vs {m.opponent || 'adversário por definir'}{m.atHome === true ? ' (casa)' : (m.atHome === false ? ' (fora)' : '')}
-                      </span>
+              {/* Contexto do dia, sem botões: o que já está marcado. */}
+              {(dayMatches.length > 0 || daySessions.length > 0) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 6 }}>
+                  {dayMatches.map(m => (
+                    <div key={m.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600,
+                      color: '#1B241C', background: T.cream, borderRadius: 4, padding: '2px 5px', minWidth: 0,
+                    }}>
+                      <Trophy size={9} color="#1B241C" style={{ flexShrink: 0 }} />
+                      <span style={LINHAS(1)}>vs {m.opponent || 'Adversário'}</span>
                     </div>
                   ))}
-                  {c.sessoes.filter(s => !(temJogo && s.phase === 'Jogo')).map(s => (
-                    <div key={s.id || `${s.date}-${s.phase}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: T.muted }}>
-                      {s.phase === 'Descanso' ? <Moon size={12} style={{ flexShrink: 0 }} /> : <Dumbbell size={12} style={{ flexShrink: 0 }} />}
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {s.phase === 'Descanso' ? 'Folga' : (s.focus || s.phase || 'Treino')}
-                      </span>
+                  {daySessions.map(s => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: T.mutedDim, minWidth: 0 }}>
+                      {s.phase === 'Descanso' ? <Moon size={9} style={{ flexShrink: 0 }} /> : <Dumbbell size={9} style={{ flexShrink: 0 }} />}
+                      <span style={LINHAS(1)}>{s.phase === 'Descanso' ? 'Folga' : (s.focus || s.phase || 'Treino')}</span>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div style={{ height: 1, background: T.line, margin: '10px 0' }} />
-
-              <div style={{ flex: 1 }}>
-                {lista.length === 0 ? (
-                  <div style={{ fontSize: 12, color: T.mutedDim, fontStyle: 'italic', padding: '2px 2px 8px' }}>
-                    {arrastada && c.alvo ? 'Larga aqui.' : 'Sem tarefas.'}
-                  </div>
-                ) : lista.map(t => {
-                  const podeMover = !t.recorrencia;
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6 }}>
+                {lista.map(t => {
+                  const arrastavel = !isMobile && !t.recorrencia;
                   return (
-                    <div
-                      key={t.id}
-                      draggable={!isMobile && podeMover}
-                      onDragStart={e => {
+                    <CartaoTarefaCalendario
+                      key={`${t.id}-${d}`}
+                      tarefa={t} dia={d} hoje={hoje} membros={membros} euId={euId}
+                      onAbrir={onAbrir} onAlternarEm={onAlternarEm}
+                      arrastavel={arrastavel}
+                      aArrastar={arrastada === t.id}
+                      onDragStart={arrastavel ? (e => {
                         e.dataTransfer.setData('text/plain', t.id);
                         e.dataTransfer.effectAllowed = 'move';
                         setArrastada(t.id);
-                      }}
-                      onDragEnd={() => { setArrastada(null); setSobre(null); }}
-                      style={{ opacity: arrastada === t.id ? 0.45 : 1, cursor: !isMobile && podeMover ? 'grab' : undefined }}
-                    >
-                      <LinhaTarefa
-                        tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
-                        onAbrir={onAbrir} onAlternar={onAlternar}
-                      />
-                      {isMobile && podeMover && (
-                        <select
-                          value=""
-                          onChange={e => { const v = e.target.value; if (v) onMover(t.id, v === 'sem' ? '' : v); }}
-                          aria-label="Mover para outro dia"
-                          style={{
-                            ...body, fontSize: 12, color: T.muted, background: 'transparent',
-                            border: `1px solid ${T.line}`, borderRadius: 7, padding: '5px 8px',
-                            margin: '-2px 0 10px', width: '100%',
-                          }}
-                        >
-                          <option value="">Mover para…</option>
-                          {destinos.filter(d => d.id !== c.id).map(d => (
-                            <option key={d.id} value={d.tipo === 'sem' ? 'sem' : d.data}>
-                              {d.tipo === 'sem' ? 'Sem prazo' : `${d.titulo} (${d.sub})`}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
+                      }) : undefined}
+                      onDragEnd={arrastavel ? (() => { setArrastada(null); setSobre(null); }) : undefined}
+                    />
                   );
                 })}
               </div>
+
+              <button onClick={() => onNovaNoDia(d)} style={{
+                marginTop: 'auto', width: '100%', fontSize: 11, color: T.mutedDim, background: 'none',
+                border: `1px dashed ${T.line}`, borderRadius: 6, padding: '4px 0', cursor: 'pointer', ...body,
+              }}>+ tarefa</button>
             </div>
           );
         })}
       </div>
+
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 12, fontSize: 11.5, color: T.mutedDim, alignItems: 'center' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Repeat size={12} /> Repete</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, border: `1.5px solid ${T.bad}` }} /> Atrasada
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: T.cream }} /> Jogo
+        </span>
+        {!isMobile && <span>Arrasta uma tarefa para outro dia para lhe mudar o prazo.</span>}
+      </div>
+
+      {(atrasadasAntes.length > 0 || semPrazo.length > 0) && (
+        <div style={{ marginTop: 20 }}>
+          {atrasadasAntes.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: T.bad, marginBottom: 8, fontWeight: 600 }}>Atrasadas de semanas anteriores · {atrasadasAntes.length}</div>
+              {atrasadasAntes.map(t => (
+                <LinhaTarefa key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
+                  onAbrir={onAbrir} onAlternar={x => onAlternarEm(x, hoje)} />
+              ))}
+            </div>
+          )}
+          {semPrazo.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, fontWeight: 600 }}>Sem dia marcado · {semPrazo.length}</div>
+              {semPrazo.map(t => (
+                <LinhaTarefa key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
+                  onAbrir={onAbrir} onAlternar={x => onAlternarEm(x, hoje)} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -39417,7 +39485,9 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
 
 function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, players, monitoring }) {
   const [modal, setModal] = useState(null); // 'new' | tarefa
-  // 'prazo' | 'morfociclo' | 'pessoa'
+  // Dia já escolhido para uma tarefa nova criada a partir do Calendário.
+  const [novoDia, setNovoDia] = useState('');
+  // 'prazo' | 'pessoa' | 'calendario'
   const [vista, setVista] = useState('prazo');
   const porPessoa = vista === 'pessoa';
   const [verFeitas, setVerFeitas] = useState(false);
@@ -39428,6 +39498,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     if (dados.id) setTarefas(prev => prev.map(t => (t.id === dados.id ? dados : t)));
     else setTarefas(prev => [...prev, { ...dados, id: uid(), criadoPor: euId, criadoEm: new Date().toISOString() }]);
     setModal(null);
+    setNovoDia('');
   };
   const remove = (id) => {
     const t = tarefas.find(x => x.id === id);
@@ -39460,7 +39531,19 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
       : x)));
   };
 
-  /* Mudar o dia a uma tarefa a partir do quadro Morfociclo: mexe só no
+  /* No Calendário, cada dia tem a sua caixa: numa recorrente marca-se
+     ESSE dia (não necessariamente hoje); numa normal é o mesmo que na
+     lista. */
+  const alternarEm = (t, dia) => {
+    if (!t.recorrencia) { alternar(t); return; }
+    const lista = (t.concluidasEm || []).includes(dia)
+      ? (t.concluidasEm || []).filter(d => d !== dia)
+      : [...(t.concluidasEm || []), dia];
+    setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, concluidasEm: lista } : x)));
+  };
+  const novaNoDia = (dia) => { setNovoDia(dia); setModal('new'); };
+
+  /* Mudar o dia a uma tarefa arrastando-a no Calendário: mexe só no
      `prazo`. As recorrentes não têm prazo, por isso ficam de fora. */
   const mover = (id, prazo) => {
     setTarefas(prev => prev.map(x => (x.id === id && !x.recorrencia && (x.prazo || '') !== prazo ? { ...x, prazo } : x)));
@@ -39525,18 +39608,17 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         onChange={setVista}
         tabs={[
           { id: 'prazo', label: 'Por prazo', icon: CalendarDays },
-          { id: 'morfociclo', label: 'Morfociclo', icon: Trophy },
           { id: 'pessoa', label: 'Por pessoa', icon: Users },
+          { id: 'calendario', label: 'Calendário', icon: Calendar },
         ]}
       />
 
-      <Panel title={vista === 'pessoa' ? 'Quem está com a missão' : (vista === 'morfociclo' ? 'Rumo ao jogo' : 'Quando se executa')}>
-        {vista === 'morfociclo' ? (
-          <QuadroMorfociclo
-            abertas={abertas} hoje={hoje}
-            sessions={sessions} matches={matches} players={players}
-            membros={membros} euId={euId}
-            onAbrir={abrir} onAlternar={alternar} onMover={mover}
+      <Panel title={vista === 'pessoa' ? 'Quem está com a missão' : (vista === 'calendario' ? 'Calendário' : 'Quando se executa')}>
+        {vista === 'calendario' ? (
+          <TarefasCalendario
+            tarefas={tarefas} hoje={hoje} ctx={ctx}
+            membros={membros} euId={euId} players={players}
+            onAbrir={abrir} onAlternarEm={alternarEm} onMover={mover} onNovaNoDia={novaNoDia}
           />
         ) : abertas.length === 0 ? (
           <EmptyState
@@ -39590,10 +39672,11 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
       {modal && (
         <TarefaModal
           tarefa={modal === 'new' ? null : modal}
+          inicial={modal === 'new' && novoDia ? { prazo: novoDia } : null}
           membros={membros}
           players={players}
           euId={euId}
-          onClose={() => setModal(null)}
+          onClose={() => { setModal(null); setNovoDia(''); }}
           onSave={save}
           onRemove={modal !== 'new' ? () => remove(modal.id) : null}
         />
