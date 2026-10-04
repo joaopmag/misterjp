@@ -29005,7 +29005,9 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
                texto anda nesse mesmo passo (altura de linha 26 px, sem margens
                soltas) — as letras assentam nas linhas, como à mão. */
             position: 'relative', background: '#FBF8EF', borderRadius: 6, padding: '8px 16px 26px 26px', color: '#1d2a22',
-            backgroundImage: 'linear-gradient(180deg, transparent 0, transparent 24px, rgba(60,110,170,.24) 24px, rgba(60,110,170,.24) 25px, transparent 25px)',
+            /* A risca fica 1 px abaixo da linha de base do texto (≈18 px dentro
+               de cada linha de 26 px), para as letras pousarem nela. */
+            backgroundImage: 'linear-gradient(180deg, transparent 0, transparent 19.5px, rgba(60,110,170,.26) 19.5px, rgba(60,110,170,.26) 20.5px, transparent 20.5px)',
             backgroundSize: '100% 26px', backgroundPosition: '0 8px', backgroundRepeat: 'repeat-y',
             boxShadow: '0 2px 0 #e7e1cf, 0 4px 0 #ddd6c2', transformOrigin: '50% 0', animation: ativa ? 'pr-folha .55s ease-out both' : 'none',
           }}>
@@ -29020,7 +29022,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
             <div style={{ fontSize: 11, color: '#6b6b5f', letterSpacing: '.12em', textTransform: 'uppercase', lineHeight: '26px' }}>
               Para {nomeJ ? nomeJ.split(/\s+/)[0] : 'ti'}{tt.passoTxt ? ` · ${tt.passoTxt}` : ''}
             </div>
-            <div style={{ ...display, fontSize: 23, lineHeight: '26px', color: '#14231a', paddingRight: pz ? 92 : 0 }}>{tb}</div>
+            <div style={{ ...display, fontSize: 23, lineHeight: '26px', color: '#14231a', paddingRight: pz ? 92 : 0, position: 'relative', top: -5 }}>{tb}</div>
             {tt.notas && <div style={{ fontSize: 14.5, lineHeight: '26px', color: '#2b3a30', whiteSpace: 'pre-wrap' }}>{tt.notas}</div>}
           </div>
               );
