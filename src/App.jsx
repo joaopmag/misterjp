@@ -28409,6 +28409,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   const missoesParaMostrar = tarefasPorFazer.filter(t => !missoesAdiadas.includes(t.id));
   const ecraMissao = missoesParaMostrar.length > 0 ? (
     <EcraMissao
+      player={player}
       tarefas={missoesParaMostrar}
       janelas={{ wellness: wellnessWindow, rpe: rpeWindow }}
       onIr={irParaMissao}
@@ -28769,13 +28770,23 @@ function EcraAniversario({ player, onEntrar }) {
   );
 }
 
-/* O ECRÃ DA MISSÃO — uma página própria (fundo opaco, nada por trás),
-   com um cartão ao centro: o destino em destaque no topo (ícone + nome:
-   "Autoavaliação"), o título, as notas, o prazo, e um só botão para o
-   sítio onde a tarefa se faz. Várias missões: pontos em baixo, desliza-se
-   com as setas. */
-function EcraMissao({ tarefas, janelas, onIr, onAdiar }) {
+/* ===================================================================
+   A MISSÃO — "A PRANCHETA DO MISTER"
+   ===================================================================
+   A tarefa chega como chegam as instruções num balneário: numa prancheta.
+   · Em cima, o quadro verde com o campo a giz: o íman do jogador (com o
+     número dele) e, do outro lado, o OBJETIVO — um círculo com o ícone do
+     destino (autoavaliação, wellness, vídeo…). O mister desenha a jogada:
+     uma seta de giz vai-se traçando do jogador até ao objetivo.
+   · Por baixo, a folha da prancheta (papel pautado) com as instruções:
+     o título, as notas, e o prazo carimbado no canto.
+   · O botão "Bora! …" leva ao sítio onde se faz. "Mais tarde" esconde
+     até à próxima entrada no Portal.
+   · Várias missões = várias folhas presas na mola: "1 de 3", e a folha
+     vira-se ao passar à seguinte. */
+function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
   const [i, setI] = useState(0);
+  const [folha, setFolha] = useState(0); // muda a cada página → reinicia as animações
   const t = tarefas[Math.min(i, tarefas.length - 1)];
   if (!t) return null;
   const d = destinoMissao(t.destino);
@@ -28785,69 +28796,133 @@ function EcraMissao({ tarefas, janelas, onIr, onAdiar }) {
   const prazo = (() => {
     if (!t.prazo) return null;
     const dias = Math.round((new Date(`${t.prazo}T00:00:00`) - new Date(`${todayStr()}T00:00:00`)) / 86400000);
-    if (dias < 0) return { txt: 'Prazo ultrapassado', cor: T.bad };
-    if (dias === 0) return { txt: 'Termina hoje', cor: T.bad };
-    return { txt: dias === 1 ? 'Falta 1 dia' : `Faltam ${dias} dias`, cor: T.warn };
+    if (dias < 0) return { txt: 'Atrasada', cor: '#B3261E' };
+    if (dias === 0) return { txt: 'Hoje', cor: '#B3261E' };
+    if (dias === 1) return { txt: 'Amanhã', cor: '#9A6A00' };
+    return { txt: `${dias} dias`, cor: '#2E6B3A' };
   })();
   const titulo = String(t.titulo || '').trim();
   const tituloBonito = titulo ? titulo.charAt(0).toUpperCase() + titulo.slice(1) : d.rotulo;
+  const nomeJ = String((player && player.name) || '').trim();
+  const marca = (player && player.number) ? String(player.number) : (nomeJ ? nomeJ.split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase() : '★');
+  const mudar = (n) => { setI(n); setFolha(f => f + 1); };
+  const giz = 'rgba(255,255,255,.82)';
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', background: T.bg, ...body,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 18px',
+      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', ...body,
+      background: `radial-gradient(circle at 50% 0%, #2b3a2e 0%, ${T.bg} 70%)`,
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '22px 16px 28px',
     }}>
-      <div style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ textAlign: 'center', fontSize: 11, color: T.warn, letterSpacing: '.2em', textTransform: 'uppercase' }}>
-          {tarefas.length > 1 ? `Tens ${tarefas.length} missões` : 'Tens uma missão'}
+      <style>{`
+        @keyframes pr-giz { from { stroke-dashoffset: 260; } to { stroke-dashoffset: 0; } }
+        @keyframes pr-ponta { 0%, 70% { opacity: 0; } 100% { opacity: 1; } }
+        @keyframes pr-alvo { 0%, 55% { transform: scale(.4); opacity: 0; } 80% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes pr-alvo-pulsar { 0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,.35); } 50% { box-shadow: 0 0 0 10px rgba(255,255,255,0); } }
+        @keyframes pr-folha { from { transform: perspective(900px) rotateX(-75deg); opacity: 0; } to { transform: perspective(900px) rotateX(0); opacity: 1; } }
+        @keyframes pr-carimbo { 0% { transform: rotate(-12deg) scale(1.8); opacity: 0; } 100% { transform: rotate(-12deg) scale(1); opacity: .9; } }
+      `}</style>
+      <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ textAlign: 'center', fontSize: 11, color: T.warn, letterSpacing: '.22em', textTransform: 'uppercase' }}>
+          Instruções do mister{tarefas.length > 1 ? ` · ${i + 1} de ${tarefas.length}` : ''}
         </div>
-        <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 18, overflow: 'hidden', boxShadow: '0 18px 40px rgba(0,0,0,0.35)' }}>
-          {/* Topo: o destino */}
+
+        {/* A PRANCHETA */}
+        <div style={{ position: 'relative', background: 'linear-gradient(160deg, #3b2a1d 0%, #24180f 100%)', borderRadius: 18, padding: '30px 14px 16px', boxShadow: '0 20px 44px rgba(0,0,0,.5)' }}>
+          {/* a mola */}
           <div style={{
-            background: `linear-gradient(135deg, ${T.crimson} 0%, #5a1420 100%)`, padding: '22px 22px 18px',
-            display: 'flex', alignItems: 'center', gap: 14,
+            position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', width: 120, height: 34, borderRadius: 8,
+            background: 'linear-gradient(180deg, #E9ECEF 0%, #9AA1A8 100%)', boxShadow: 'inset 0 -3px 0 rgba(0,0,0,.25), 0 4px 8px rgba(0,0,0,.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
+            <div style={{ width: 54, height: 8, borderRadius: 4, background: '#6c737a' }} />
+          </div>
+
+          {/* o quadro verde, com o campo a giz */}
+          <div key={`q${folha}`} style={{ position: 'relative', background: 'linear-gradient(160deg, #2f5d3a 0%, #1f4429 100%)', borderRadius: 10, overflow: 'hidden', border: '3px solid #6b4b2e' }}>
+            <svg viewBox="0 0 300 160" width="100%" style={{ display: 'block' }}>
+              <g stroke={giz} strokeWidth="1.6" fill="none" opacity=".55" strokeLinecap="round">
+                <rect x="10" y="10" width="280" height="140" rx="2" />
+                <line x1="150" y1="10" x2="150" y2="150" />
+                <circle cx="150" cy="80" r="22" />
+                <rect x="10" y="45" width="40" height="70" />
+                <rect x="250" y="45" width="40" height="70" />
+              </g>
+              {/* os adversários (cruzes de giz) */}
+              <g stroke={giz} strokeWidth="2" strokeLinecap="round" opacity=".7">
+                {[[160, 52], [185, 118], [210, 82]].map(([x, y], k) => (
+                  <g key={k}><line x1={x - 5} y1={y - 5} x2={x + 5} y2={y + 5} /><line x1={x + 5} y1={y - 5} x2={x - 5} y2={y + 5} /></g>
+                ))}
+              </g>
+              {/* a jogada: do jogador ao objetivo */}
+              <path d="M78 112 C 120 135, 165 30, 228 64" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"
+                strokeDasharray="6 5" style={{ strokeDasharray: 260, animation: 'pr-giz 1.3s ease-out .35s both' }} />
+              <path d="M219 56 L230 65 L216 69" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"
+                style={{ animation: 'pr-ponta 1.7s ease-out both' }} />
+            </svg>
+            {/* o íman do jogador */}
             <div style={{
-              width: 52, height: 52, borderRadius: 14, background: 'rgba(255,255,255,0.14)', flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}><Ic size={26} color="#fff" /></div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Missão</div>
-              <div style={{ ...display, fontSize: 20, color: '#fff', lineHeight: 1.15 }}>{d.id === 'nota' ? 'Responder à equipa técnica' : d.rotulo}</div>
+              position: 'absolute', left: `${(78 / 300) * 100}%`, top: `${(112 / 160) * 100}%`, transform: 'translate(-50%,-50%)',
+              width: 34, height: 34, borderRadius: '50%', background: `radial-gradient(circle at 35% 30%, #ff6b6b, ${T.corEquipa} 60%, #5c0614)`,
+              border: '2px solid #fff', boxShadow: '0 3px 6px rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 13, fontWeight: 800, ...mono,
+            }}>{marca}</div>
+            {/* o objetivo (o destino da missão) */}
+            <div style={{
+              position: 'absolute', left: `${(242 / 300) * 100}%`, top: `${(60 / 160) * 100}%`, transform: 'translate(-50%,-50%)',
+            }}>
+              <div style={{
+                width: 46, height: 46, borderRadius: '50%', border: '2.5px dashed #fff', background: 'rgba(255,255,255,.12)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                animation: 'pr-alvo 1.9s ease-out both, pr-alvo-pulsar 2s ease-in-out 2s infinite',
+              }}><Ic size={22} color="#fff" /></div>
+            </div>
+            <div style={{ position: 'absolute', right: 10, bottom: 6, fontSize: 10.5, color: 'rgba(255,255,255,.75)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+              Objetivo: {d.id === 'nota' ? 'responder' : d.rotulo}
             </div>
           </div>
-          {/* Corpo */}
-          <div style={{ padding: '18px 22px 22px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 17, color: T.cream, fontWeight: 600, lineHeight: 1.35 }}>{tituloBonito}</div>
-            {t.notas && <div style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
+
+          {/* a folha com as instruções */}
+          <div key={`f${folha}`} style={{
+            position: 'relative', marginTop: 12, background: '#FBF8EF', borderRadius: 6, padding: '16px 16px 18px 26px', color: '#1d2a22',
+            backgroundImage: 'repeating-linear-gradient(180deg, transparent 0, transparent 25px, rgba(60,110,170,.18) 25px, rgba(60,110,170,.18) 26px)',
+            boxShadow: '0 2px 0 #e7e1cf, 0 4px 0 #ddd6c2', transformOrigin: '50% 0', animation: 'pr-folha .55s ease-out both',
+          }}>
+            <div style={{ position: 'absolute', left: 14, top: 0, bottom: 0, width: 1.5, background: 'rgba(200,60,60,.45)' }} />
             {prazo && (
               <div style={{
-                alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: prazo.cor,
-                border: `1px solid ${prazo.cor}66`, background: `${prazo.cor}14`, borderRadius: 20, padding: '4px 10px',
-              }}><Clock size={13} /> {prazo.txt}</div>
+                position: 'absolute', right: 12, top: 12, border: `2px solid ${prazo.cor}`, color: prazo.cor, borderRadius: 6,
+                padding: '2px 8px', fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase',
+                animation: 'pr-carimbo .4s ease-out .9s both',
+              }}>Prazo · {prazo.txt}</div>
             )}
-            <button type="button" onClick={() => onIr(t)} disabled={fechadoAgora} style={{
-              marginTop: 6, width: '100%', padding: '15px 18px', borderRadius: 12, border: 'none', cursor: fechadoAgora ? 'default' : 'pointer',
-              background: fechadoAgora ? T.surfaceRaise : T.crimson, color: fechadoAgora ? T.mutedDim : TEXT_ON_ACCENT,
-              fontSize: 15.5, fontWeight: 700, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            }}>
-              {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>{d.acao} <ArrowRight size={18} /></>}
-            </button>
-            {d.auto && !fechadoAgora && (
-              <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center' }}>Fica feita assim que submeteres.</div>
-            )}
+            <div style={{ fontSize: 11, color: '#6b6b5f', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 4 }}>Para {nomeJ ? nomeJ.split(/\s+/)[0] : 'ti'}</div>
+            <div style={{ ...display, fontSize: 24, lineHeight: 1.1, color: '#14231a', paddingRight: prazo ? 92 : 0 }}>{tituloBonito}</div>
+            {t.notas && <div style={{ marginTop: 8, fontSize: 14, lineHeight: '26px', color: '#2b3a30', whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
           </div>
         </div>
+
+        <button type="button" onClick={() => onIr(t)} disabled={fechadoAgora} style={{
+          width: '100%', padding: '15px 18px', borderRadius: 14, border: 'none', cursor: fechadoAgora ? 'default' : 'pointer',
+          background: fechadoAgora ? T.surfaceRaise : T.crimson, color: fechadoAgora ? T.mutedDim : TEXT_ON_ACCENT,
+          fontSize: 16, fontWeight: 800, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+          boxShadow: fechadoAgora ? 'none' : '0 8px 20px rgba(0,0,0,.35)',
+        }}>
+          {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>Bora! {d.acao} <ArrowRight size={18} /></>}
+        </button>
+        {d.auto && !fechadoAgora && (
+          <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>Fica feita assim que submeteres.</div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-          <button type="button" onClick={() => { onAdiar(t.id); setI(0); }} style={{
+          <button type="button" onClick={() => { onAdiar(t.id); mudar(0); }} style={{
             background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
           }}>Mais tarde</button>
           {tarefas.length > 1 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button type="button" disabled={i === 0} onClick={() => setI(x => Math.max(0, x - 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 6, cursor: 'pointer', opacity: i === 0 ? 0.35 : 1, display: 'flex' }}><ChevronLeft size={15} /></button>
+              <button type="button" disabled={i === 0} onClick={() => mudar(Math.max(0, i - 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 6, cursor: 'pointer', opacity: i === 0 ? 0.35 : 1, display: 'flex' }}><ChevronLeft size={15} /></button>
               <div style={{ display: 'flex', gap: 5 }}>
                 {tarefas.map((x, k) => <span key={x.id} style={{ width: 7, height: 7, borderRadius: '50%', background: k === i ? T.warn : T.line }} />)}
               </div>
-              <button type="button" disabled={i >= tarefas.length - 1} onClick={() => setI(x => Math.min(tarefas.length - 1, x + 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 6, cursor: 'pointer', opacity: i >= tarefas.length - 1 ? 0.35 : 1, display: 'flex' }}><ChevronRight size={15} /></button>
+              <button type="button" disabled={i >= tarefas.length - 1} onClick={() => mudar(Math.min(tarefas.length - 1, i + 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 6, cursor: 'pointer', opacity: i >= tarefas.length - 1 ? 0.35 : 1, display: 'flex' }}><ChevronRight size={15} /></button>
             </div>
           )}
         </div>
