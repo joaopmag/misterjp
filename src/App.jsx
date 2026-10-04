@@ -28125,8 +28125,9 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // no Portal, o que não serve de notificação nenhuma.
   const [estadoTarefas, dadosTarefas] = usePortalFetch('checkin_tarefas', code, teamId);
   // Autoavaliação já toda respondida mas por submeter: fecha-se sozinha.
+  const autoavaliacaoSubmetidaRef = useRef(null);
   useEffect(() => {
-    if (code && teamId) submeterAutoavaliacaoSeCompleta(code, teamId);
+    if (code && teamId) submeterAutoavaliacaoSeCompleta(code, teamId).then(ok => { if (ok && autoavaliacaoSubmetidaRef.current) autoavaliacaoSubmetidaRef.current(); });
   }, [code, teamId]);
   // Ajustes feitos DEPOIS deste pedido (rascunhos gravados, submissões)
   // ficam aqui por cima — sem isto, sair de Tarefas e voltar a entrar
@@ -28140,7 +28141,65 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // marcado a tarefa como concluída — do lado do atleta, a parte dele
   // está feita, não faz sentido continuar a incomodá-lo por causa de uma
   // tarefa que já respondeu.
-  const tarefasPorFazer = listaTarefas.filter(t => t.estado !== 'feita' && !t.notaSubmetida);
+  const tarefasPorFazer0 = listaTarefas.filter(t => t.estado !== 'feita' && !t.notaSubmetida);
+  /* MISSÕES — o destino de cada tarefa chega por uma função própria
+     (`checkin_tarefas_destinos`), que só devolve destinos das tarefas que
+     a `checkin_tarefas` já mostra a este atleta. Sem ela (SQL por correr),
+     tudo funciona como antes. */
+  const [, dadosDestinos] = usePortalFetch('checkin_tarefas_destinos', code, teamId);
+  const destinosTarefas = (dadosDestinos && dadosDestinos.destinos) || {};
+  const tarefasPorFazer = tarefasPorFazer0.map(t => (destinosTarefas[t.id] ? { ...t, destino: destinosTarefas[t.id] } : t));
+  const [missaoAtiva, setMissaoAtiva] = useState(null); // a tarefa cujo destino está aberto
+  const [missaoCumprida, setMissaoCumprida] = useState(null); // título, para o ecrã "Missão cumprida"
+  const [missoesAdiadas, setMissoesAdiadas] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(`missoes-adiadas:${todayStr()}`) || '[]'); } catch (e) { return []; }
+  });
+  const adiarMissao = (id) => {
+    setMissoesAdiadas(prev => {
+      const novo = [...new Set([...prev, id])];
+      try { localStorage.setItem(`missoes-adiadas:${todayStr()}`, JSON.stringify(novo)); } catch (e) { /* sem memória, sem problema */ }
+      return novo;
+    });
+  };
+  const missoesEmCurso = useRef(new Set());
+  const completarMissao = async (t, texto) => {
+    if (!t || missoesEmCurso.current.has(t.id)) return;
+    missoesEmCurso.current.add(t.id);
+    const agora = new Date();
+    const quando = `${String(agora.getDate()).padStart(2, '0')}/${String(agora.getMonth() + 1).padStart(2, '0')} ${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+    const nota = `✓ ${texto || destinoMissao(t.destino).acao} — feito na app (${quando})`;
+    try {
+      const { data, error } = await supabase.rpc('checkin_tarefa_nota', {
+        p_code: code, p_team: teamId, p_tarefa_id: t.id, p_nota: nota, p_submeter: true,
+      });
+      if (error || !(data && data.ok)) throw (error || new Error('recusado'));
+      setTarefasAjustes(prev => ({ ...prev, [t.id]: { ...prev[t.id], notaAtleta: nota, notaSubmetida: true } }));
+      setMissaoAtiva(m => (m && m.id === t.id ? null : m));
+      setMissaoCumprida(t.titulo || 'Missão');
+    } catch (e) {
+      missoesEmCurso.current.delete(t.id);
+    }
+  };
+  // Missões que fecham sozinhas: Wellness / PSE respondidos hoje.
+  const hojeK = todayStr();
+  const fezWellnessHoje = (monitoring || []).some(m => m.playerId === loggedPlayerId && m.date === hojeK && typeof m.sono === 'number');
+  const fezPseHoje = (monitoring || []).some(m => m.playerId === loggedPlayerId && m.date === hojeK && typeof m.pse === 'number');
+  useEffect(() => {
+    tarefasPorFazer.forEach(t => {
+      if (t.destino === 'wellness' && fezWellnessHoje) completarMissao(t, 'Wellness respondido');
+      if (t.destino === 'rpe' && fezPseHoje) completarMissao(t, 'PSE respondido');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fezWellnessHoje, fezPseHoje, tarefasPorFazer.length, Object.keys(destinosTarefas).length]);
+  const autoavaliacaoSubmetida = () => {
+    tarefasPorFazer.filter(t => t.destino === 'autoavaliacao').forEach(t => completarMissao(t, 'Autoavaliação submetida'));
+  };
+  autoavaliacaoSubmetidaRef.current = autoavaliacaoSubmetida;
+  useEffect(() => {
+    if (!missaoCumprida) return undefined;
+    const h = setTimeout(() => setMissaoCumprida(null), 2600);
+    return () => clearTimeout(h);
+  }, [missaoCumprida]);
 
   // Sequência do cartão da chama, calculada no servidor (a mesma regra
   // da tarefa dos 30 dias: Wellness + PSE, autónomo, com o mesmo
@@ -28220,12 +28279,43 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // e se o dia está dentro da janela permitida.
   const upsert = (type, fields) => onSave(type, fields, selectedDate);
 
+  /* BARRA DA MISSÃO — por baixo do sítio para onde a missão levou o
+     jogador: nas que fecham sozinhas lembra que basta submeter; nas
+     outras tem o "Já fiz". */
+  const comBarraMissao = (vista) => {
+    const m = missaoAtiva;
+    // Nas que fecham sozinhas (questionários) não há barra: tapava os
+    // botões do próprio questionário, e basta submeter.
+    if (!m || destinoMissao(m.destino).auto) return vista;
+    const d = destinoMissao(m.destino);
+    return (
+      <>
+        {vista}
+        <div style={{
+          position: 'fixed', left: 12, right: 12, bottom: 12, zIndex: 65, maxWidth: 640, margin: '0 auto',
+          background: T.surfaceRaise, border: `1px solid ${T.gold}`, borderRadius: 12, padding: '10px 12px',
+          display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.45)', ...body,
+        }}>
+          <Flame size={18} color={T.warn} style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.08em' }}>Missão</div>
+            <div style={{ fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.titulo}</div>
+          </div>
+          {d.auto
+            ? <span style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'right' }}>Fecha sozinha<br />quando submeteres</span>
+            : <Btn onClick={() => completarMissao(m, d.acao)}><Check size={14} /> Já fiz</Btn>}
+          <button type="button" onClick={() => setMissaoAtiva(null)} title="Esconder" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4 }}><X size={15} /></button>
+        </div>
+      </>
+    );
+  };
+
   if (activeType === 'wellness') {
     const existing = monitoring.find(m => m.playerId === loggedPlayerId && m.date === selectedDate && typeof m.sono === 'number');
     const lastWellness = existing || monitoring
       .filter(m => m.playerId === loggedPlayerId && typeof m.sono === 'number')
       .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-    return (
+    return comBarraMissao(
       <WellnessWizard
         player={player} initial={lastWellness} date={selectedDate}
         onBack={() => setActiveType(null)}
@@ -28235,7 +28325,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }
 
   if (activeType === 'rpe') {
-    return (
+    return comBarraMissao(
       <RpeWizard
         player={player} session={sessionForDate} date={selectedDate}
         /* O quiosque não conhece a lista de Jogos (ver checkin_rpc.sql:
@@ -28249,19 +28339,19 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }
 
   if (activeType === 'ideiaJogo') {
-    return <PlayerIdeiaJogoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+    return comBarraMissao(<PlayerIdeiaJogoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />);
   }
 
   if (activeType === 'treino') {
-    return <PlayerTreinoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+    return comBarraMissao(<PlayerTreinoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />);
   }
 
   if (activeType === 'biblioteca') {
-    return <PlayerBibliotecaView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+    return comBarraMissao(<PlayerBibliotecaView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />);
   }
 
   if (activeType === 'jogos') {
-    return <PlayerJogosHome code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+    return comBarraMissao(<PlayerJogosHome code={code} teamId={teamId} onBack={() => setActiveType('portal')} />);
   }
 
   if (activeType === 'competicao') {
@@ -28269,7 +28359,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }
 
   if (activeType === 'desenvolvimento') {
-    return <PlayerDesenvolvimentoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+    return comBarraMissao(<PlayerDesenvolvimentoView code={code} teamId={teamId} onBack={() => { setActiveType('portal'); }} onSubmetido={autoavaliacaoSubmetida} />);
   }
 
   if (activeType === 'tarefas') {
@@ -28299,7 +28389,43 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     );
   }
 
+  /* MISSÃO EM ECRÃ INTEIRO — ao entrar, a primeira coisa que o jogador
+     vê é a tarefa por fazer, com um botão para o sítio certo. "Mais
+     tarde" esconde-a até ao dia seguinte (fica o cartão no ecrã inicial). */
+  const missoesParaMostrar = tarefasPorFazer.filter(t => !missoesAdiadas.includes(t.id));
+  const irParaMissao = (t) => {
+    const d = destinoMissao(t.destino);
+    if (!t.destino || t.destino === 'nota' || !d.rota) { setTarefaParaAbrir(t.id); setActiveType('tarefas'); return; }
+    if (d.rota === 'wellness' && !wellnessWindow.open) return;
+    if (d.rota === 'rpe' && !rpeWindow.open) return;
+    setMissaoAtiva(t);
+    setActiveType(d.rota);
+  };
+  const ecraMissao = missoesParaMostrar.length > 0 ? (
+    <EcraMissao
+      tarefas={missoesParaMostrar}
+      janelas={{ wellness: wellnessWindow, rpe: rpeWindow }}
+      onIr={irParaMissao}
+      onAdiar={adiarMissao}
+    />
+  ) : null;
+  const toastCumprida = missaoCumprida ? (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(10,20,12,0.92)', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 10, ...body, padding: 24, textAlign: 'center',
+    }} onClick={() => setMissaoCumprida(null)}>
+      <div style={{ width: 74, height: 74, borderRadius: '50%', background: `${T.good}33`, border: `2px solid ${T.good}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Check size={40} color={T.good} />
+      </div>
+      <div style={{ ...display, fontSize: 26, color: T.cream }}>Missão cumprida</div>
+      <div style={{ fontSize: 14, color: T.muted, maxWidth: 360 }}>{missaoCumprida}</div>
+    </div>
+  ) : null;
+
   return (
+    <>
+    {ecraMissao}
+    {toastCumprida}
     <PlayerKioskHome
       player={player} session={sessionForDate}
       recentDates={recentDates} dayStatus={dayStatus}
@@ -28311,9 +28437,67 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       onOpenPortal={() => setActiveType('portal')}
       onLogout={onLogout}
       tarefasPendentes={tarefasPorFazer}
-      onAbrirTarefa={(t) => { setTarefaParaAbrir(t.id); setActiveType('tarefas'); }}
+      onAbrirTarefa={(t) => irParaMissao(t)}
       diasSequenciaChama={diasSequenciaChama}
     />
+    </>
+  );
+}
+
+/* O ECRÃ DA MISSÃO — página inteira, uma missão de cada vez ("1 de 3"). */
+function EcraMissao({ tarefas, janelas, onIr, onAdiar }) {
+  const [i, setI] = useState(0);
+  const t = tarefas[Math.min(i, tarefas.length - 1)];
+  if (!t) return null;
+  const d = destinoMissao(t.destino);
+  const Ic = d.icon;
+  const fechadoAgora = (d.rota === 'wellness' && janelas.wellness && !janelas.wellness.open)
+    || (d.rota === 'rpe' && janelas.rpe && !janelas.rpe.open);
+  const prazoTxt = (() => {
+    if (!t.prazo) return '';
+    const dias = Math.round((new Date(`${t.prazo}T00:00:00`) - new Date(`${todayStr()}T00:00:00`)) / 86400000);
+    if (dias < 0) return 'Prazo ultrapassado';
+    if (dias === 0) return 'Termina hoje';
+    if (dias === 1) return 'Falta 1 dia';
+    return `Faltam ${dias} dias`;
+  })();
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', ...body,
+      background: `radial-gradient(circle at 50% 18%, ${T.crimson}55 0%, ${T.bg} 55%)`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+    }}>
+      <div style={{ width: '100%', maxWidth: 440, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 14 }}>
+        <div style={{ fontSize: 11, color: T.warn, letterSpacing: '.18em', textTransform: 'uppercase' }}>
+          Missão{tarefas.length > 1 ? ` · ${i + 1} de ${tarefas.length}` : ''}
+        </div>
+        <div style={{
+          width: 86, height: 86, borderRadius: '50%', border: `2px solid ${T.gold}`, background: `${T.gold}22`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}><Ic size={40} color={T.gold} /></div>
+        <div style={{ ...display, fontSize: 28, color: T.cream, lineHeight: 1.15 }}>{t.titulo}</div>
+        {t.notas && <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
+        {prazoTxt && (
+          <div style={{ fontSize: 12.5, color: prazoTxt === 'Termina hoje' || prazoTxt === 'Prazo ultrapassado' ? T.bad : T.warn, ...mono }}>⏱ {prazoTxt}</div>
+        )}
+        <button type="button" onClick={() => onIr(t)} disabled={fechadoAgora} style={{
+          marginTop: 10, width: '100%', padding: '16px 18px', borderRadius: 14, border: 'none', cursor: fechadoAgora ? 'default' : 'pointer',
+          background: fechadoAgora ? T.surfaceRaise : T.crimson, color: fechadoAgora ? T.mutedDim : TEXT_ON_ACCENT,
+          ...display, fontSize: 19, letterSpacing: '.02em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+        }}>
+          {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>{d.acao} <ArrowRight size={20} /></>}
+        </button>
+        <button type="button" onClick={() => { onAdiar(t.id); setI(0); }} style={{
+          background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13, ...body, padding: 6,
+        }}>Mais tarde</button>
+        {tarefas.length > 1 && (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="button" disabled={i === 0} onClick={() => setI(x => Math.max(0, x - 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 8, cursor: 'pointer', opacity: i === 0 ? 0.4 : 1 }}><ChevronLeft size={16} /></button>
+            <button type="button" disabled={i >= tarefas.length - 1} onClick={() => setI(x => Math.min(tarefas.length - 1, x + 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 8, cursor: 'pointer', opacity: i >= tarefas.length - 1 ? 0.4 : 1 }}><ChevronRight size={16} /></button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -29054,7 +29238,7 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
      avisa (o browser pergunta).
    · Ao submeter, as 30 respostas vão de uma vez e o momento fica
      fechado (o servidor continua a recusar mudanças depois). */
-function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
+function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
   const [estado, dados] = usePortalFetch('checkin_desenvolvimento', code, teamId);
   const [auto, setAuto] = useState(null);
   const [enviado, setEnviado] = useState(null);
@@ -29174,6 +29358,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack }) {
       });
       if (error || !(data && data.ok)) throw (error || new Error('recusado'));
       setEnviado(true);
+      if (onSubmetido) onSubmetido(); // missão "Autoavaliação" fecha-se sozinha
       setConfirmar(false);
     } catch (e) {
       setErro('Não foi possível submeter. Tenta outra vez.');
@@ -39407,6 +39592,25 @@ function alvoDoLembrete(t, euId, membros, players, hoje) {
 const lembreteRecente = (t) => !!(t && t.lembrete && t.lembrete.em
   && Date.now() - new Date(t.lembrete.em).getTime() < LEMBRETE_PAUSA_MS);
 
+/* MISSÕES — o destino de uma tarefa atribuída a um jogador.
+   Em vez de "abrir a tarefa e ver o que é", o jogador recebe a tarefa como
+   uma missão em ecrã inteiro com UM botão para o sítio certo (o
+   questionário, o treino, a ideia de jogo…). `auto: true` = a missão fecha
+   sozinha quando a ação acontece (submeter o questionário); nas outras, o
+   jogador carrega em "Já fiz" no próprio sítio. "nota" = o que existia
+   antes (responder por escrito). */
+const DESTINOS_MISSAO = [
+  { id: 'nota', rotulo: 'Responder por escrito', acao: 'Responder', icon: MessageCircle },
+  { id: 'autoavaliacao', rotulo: 'Autoavaliação', acao: 'Fazer a autoavaliação', icon: TrendingUp, auto: true, rota: 'desenvolvimento' },
+  { id: 'wellness', rotulo: 'Wellness', acao: 'Responder ao Wellness', icon: Activity, auto: true, rota: 'wellness' },
+  { id: 'rpe', rotulo: 'PSE', acao: 'Responder ao PSE', icon: HeartPulse, auto: true, rota: 'rpe' },
+  { id: 'treino', rotulo: 'Treino do dia', acao: 'Ver o treino de hoje', icon: CalendarDays, rota: 'treino' },
+  { id: 'jogos', rotulo: 'Jogo / convocatória', acao: 'Ver o plano de jogo', icon: Trophy, rota: 'jogos' },
+  { id: 'ideiaJogo', rotulo: 'Ideia de Jogo', acao: 'Ler a ideia de jogo', icon: Lightbulb, rota: 'ideiaJogo' },
+  { id: 'biblioteca', rotulo: 'Vídeos', acao: 'Ver os vídeos', icon: Tv, rota: 'biblioteca' },
+];
+const destinoMissao = (id) => DESTINOS_MISSAO.find(d => d.id === id) || DESTINOS_MISSAO[0];
+
 function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros, players, euId, onClose, onSave, onRemove }) {
   const [f, setF] = useState(tarefa || {
     titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null, jogadorId: '',
@@ -39532,6 +39736,33 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
           </Select>
         </Field>
       </div>
+      {/* LEVAR O JOGADOR A… — o destino da missão (ver DESTINOS_MISSAO). */}
+      {f.jogadorId && (
+        <div style={{ marginBottom: 14 }}>
+          <Field label="Levar o jogador a…" solto>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {DESTINOS_MISSAO.map(d => {
+                const on = (f.destino || 'nota') === d.id;
+                const Ic = d.icon;
+                return (
+                  <button key={d.id} type="button" onClick={() => setF({ ...f, destino: d.id })} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 18, cursor: 'pointer', ...body,
+                    fontSize: 12.5, background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
+                    border: `1px solid ${on ? T.crimson : T.line}`,
+                  }}><Ic size={13} />{d.rotulo}</button>
+                );
+              })}
+            </div>
+          </Field>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.45 }}>
+            {destinoMissao(f.destino).auto
+              ? `O jogador vê a missão com o botão "${destinoMissao(f.destino).acao}" — e a tarefa fecha sozinha quando ele submeter.`
+              : (f.destino && f.destino !== 'nota'
+                ? `O jogador vê a missão com o botão "${destinoMissao(f.destino).acao}" e, lá, carrega em "Já fiz".`
+                : 'O jogador responde por escrito, como até aqui.')}
+          </div>
+        </div>
+      )}
 
       {/* REPETIÇÃO — ver a nota completa junto de `tarefaAtivaHoje`.
           Resumo rápido: escolhida uma regra, a tarefa passa a aparecer
