@@ -28148,7 +28148,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      tudo funciona como antes. */
   const [, dadosDestinos] = usePortalFetch('checkin_tarefas_destinos', code, teamId);
   const destinosTarefas = (dadosDestinos && dadosDestinos.destinos) || {};
-  const tarefasPorFazer = tarefasPorFazer0.map(t => (destinosTarefas[t.id] ? { ...t, destino: destinosTarefas[t.id] } : t));
+  const tarefasPorFazer = tarefasPorFazer0.map(t => {
+    const destino = destinosTarefas[t.id] || inferirDestinoMissao(`${t.titulo || ''} ${t.notas || ''}`);
+    return destino ? { ...t, destino } : t;
+  });
   const [missaoAtiva, setMissaoAtiva] = useState(null); // a tarefa cujo destino está aberto
   const [missaoCumprida, setMissaoCumprida] = useState(null); // título, para o ecrã "Missão cumprida"
   const [missoesAdiadas, setMissoesAdiadas] = useState(() => {
@@ -28444,7 +28447,11 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   );
 }
 
-/* O ECRÃ DA MISSÃO — página inteira, uma missão de cada vez ("1 de 3"). */
+/* O ECRÃ DA MISSÃO — uma página própria (fundo opaco, nada por trás),
+   com um cartão ao centro: o destino em destaque no topo (ícone + nome:
+   "Autoavaliação"), o título, as notas, o prazo, e um só botão para o
+   sítio onde a tarefa se faz. Várias missões: pontos em baixo, desliza-se
+   com as setas. */
 function EcraMissao({ tarefas, janelas, onIr, onAdiar }) {
   const [i, setI] = useState(0);
   const t = tarefas[Math.min(i, tarefas.length - 1)];
@@ -28453,49 +28460,75 @@ function EcraMissao({ tarefas, janelas, onIr, onAdiar }) {
   const Ic = d.icon;
   const fechadoAgora = (d.rota === 'wellness' && janelas.wellness && !janelas.wellness.open)
     || (d.rota === 'rpe' && janelas.rpe && !janelas.rpe.open);
-  const prazoTxt = (() => {
-    if (!t.prazo) return '';
+  const prazo = (() => {
+    if (!t.prazo) return null;
     const dias = Math.round((new Date(`${t.prazo}T00:00:00`) - new Date(`${todayStr()}T00:00:00`)) / 86400000);
-    if (dias < 0) return 'Prazo ultrapassado';
-    if (dias === 0) return 'Termina hoje';
-    if (dias === 1) return 'Falta 1 dia';
-    return `Faltam ${dias} dias`;
+    if (dias < 0) return { txt: 'Prazo ultrapassado', cor: T.bad };
+    if (dias === 0) return { txt: 'Termina hoje', cor: T.bad };
+    return { txt: dias === 1 ? 'Falta 1 dia' : `Faltam ${dias} dias`, cor: T.warn };
   })();
+  const titulo = String(t.titulo || '').trim();
+  const tituloBonito = titulo ? titulo.charAt(0).toUpperCase() + titulo.slice(1) : d.rotulo;
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', ...body,
-      background: `radial-gradient(circle at 50% 18%, ${T.crimson}55 0%, ${T.bg} 55%)`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', background: T.bg, ...body,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 18px',
     }}>
-      <div style={{ width: '100%', maxWidth: 440, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 14 }}>
-        <div style={{ fontSize: 11, color: T.warn, letterSpacing: '.18em', textTransform: 'uppercase' }}>
-          Missão{tarefas.length > 1 ? ` · ${i + 1} de ${tarefas.length}` : ''}
+      <div style={{ width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ textAlign: 'center', fontSize: 11, color: T.warn, letterSpacing: '.2em', textTransform: 'uppercase' }}>
+          {tarefas.length > 1 ? `Tens ${tarefas.length} missões` : 'Tens uma missão'}
         </div>
-        <div style={{
-          width: 86, height: 86, borderRadius: '50%', border: `2px solid ${T.gold}`, background: `${T.gold}22`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}><Ic size={40} color={T.gold} /></div>
-        <div style={{ ...display, fontSize: 28, color: T.cream, lineHeight: 1.15 }}>{t.titulo}</div>
-        {t.notas && <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
-        {prazoTxt && (
-          <div style={{ fontSize: 12.5, color: prazoTxt === 'Termina hoje' || prazoTxt === 'Prazo ultrapassado' ? T.bad : T.warn, ...mono }}>⏱ {prazoTxt}</div>
-        )}
-        <button type="button" onClick={() => onIr(t)} disabled={fechadoAgora} style={{
-          marginTop: 10, width: '100%', padding: '16px 18px', borderRadius: 14, border: 'none', cursor: fechadoAgora ? 'default' : 'pointer',
-          background: fechadoAgora ? T.surfaceRaise : T.crimson, color: fechadoAgora ? T.mutedDim : TEXT_ON_ACCENT,
-          ...display, fontSize: 19, letterSpacing: '.02em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-        }}>
-          {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>{d.acao} <ArrowRight size={20} /></>}
-        </button>
-        <button type="button" onClick={() => { onAdiar(t.id); setI(0); }} style={{
-          background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13, ...body, padding: 6,
-        }}>Mais tarde</button>
-        {tarefas.length > 1 && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" disabled={i === 0} onClick={() => setI(x => Math.max(0, x - 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 8, cursor: 'pointer', opacity: i === 0 ? 0.4 : 1 }}><ChevronLeft size={16} /></button>
-            <button type="button" disabled={i >= tarefas.length - 1} onClick={() => setI(x => Math.min(tarefas.length - 1, x + 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 8, cursor: 'pointer', opacity: i >= tarefas.length - 1 ? 0.4 : 1 }}><ChevronRight size={16} /></button>
+        <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 18, overflow: 'hidden', boxShadow: '0 18px 40px rgba(0,0,0,0.35)' }}>
+          {/* Topo: o destino */}
+          <div style={{
+            background: `linear-gradient(135deg, ${T.crimson} 0%, #5a1420 100%)`, padding: '22px 22px 18px',
+            display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 14, background: 'rgba(255,255,255,0.14)', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}><Ic size={26} color="#fff" /></div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Missão</div>
+              <div style={{ ...display, fontSize: 20, color: '#fff', lineHeight: 1.15 }}>{d.id === 'nota' ? 'Responder à equipa técnica' : d.rotulo}</div>
+            </div>
           </div>
-        )}
+          {/* Corpo */}
+          <div style={{ padding: '18px 22px 22px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 17, color: T.cream, fontWeight: 600, lineHeight: 1.35 }}>{tituloBonito}</div>
+            {t.notas && <div style={{ fontSize: 13.5, color: T.muted, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
+            {prazo && (
+              <div style={{
+                alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: prazo.cor,
+                border: `1px solid ${prazo.cor}66`, background: `${prazo.cor}14`, borderRadius: 20, padding: '4px 10px',
+              }}><Clock size={13} /> {prazo.txt}</div>
+            )}
+            <button type="button" onClick={() => onIr(t)} disabled={fechadoAgora} style={{
+              marginTop: 6, width: '100%', padding: '15px 18px', borderRadius: 12, border: 'none', cursor: fechadoAgora ? 'default' : 'pointer',
+              background: fechadoAgora ? T.surfaceRaise : T.crimson, color: fechadoAgora ? T.mutedDim : TEXT_ON_ACCENT,
+              fontSize: 15.5, fontWeight: 700, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            }}>
+              {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>{d.acao} <ArrowRight size={18} /></>}
+            </button>
+            {d.auto && !fechadoAgora && (
+              <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center' }}>Fica feita assim que submeteres.</div>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <button type="button" onClick={() => { onAdiar(t.id); setI(0); }} style={{
+            background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
+          }}>Mais tarde</button>
+          {tarefas.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button type="button" disabled={i === 0} onClick={() => setI(x => Math.max(0, x - 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 6, cursor: 'pointer', opacity: i === 0 ? 0.35 : 1, display: 'flex' }}><ChevronLeft size={15} /></button>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {tarefas.map((x, k) => <span key={x.id} style={{ width: 7, height: 7, borderRadius: '50%', background: k === i ? T.warn : T.line }} />)}
+              </div>
+              <button type="button" disabled={i >= tarefas.length - 1} onClick={() => setI(x => Math.min(tarefas.length - 1, x + 1))} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, padding: 6, cursor: 'pointer', opacity: i >= tarefas.length - 1 ? 0.35 : 1, display: 'flex' }}><ChevronRight size={15} /></button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -39610,6 +39643,21 @@ const DESTINOS_MISSAO = [
   { id: 'biblioteca', rotulo: 'Vídeos', acao: 'Ver os vídeos', icon: Tv, rota: 'biblioteca' },
 ];
 const destinoMissao = (id) => DESTINOS_MISSAO.find(d => d.id === id) || DESTINOS_MISSAO[0];
+/* Sem destino escolhido (tarefas antigas, ou esquecido), deduz-se pelo
+   título/notas: "desenvolvimento" ou "autoavaliação" → a autoavaliação;
+   "wellness" → o Wellness; etc. Assim uma tarefa "desenvolvimento" leva
+   ao questionário, não a um editor de notas. */
+function inferirDestinoMissao(texto) {
+  const s = String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/autoavalia|desenvolviment|auto-avalia/.test(s)) return 'autoavaliacao';
+  if (/wellness|bem-estar|bem estar/.test(s)) return 'wellness';
+  if (/\bpse\b|\brpe\b|esforco/.test(s)) return 'rpe';
+  if (/ideia de jogo|ideia\b|principio/.test(s)) return 'ideiaJogo';
+  if (/convocat|plano de jogo|\bjogo\b|adversari/.test(s)) return 'jogos';
+  if (/treino|sessao/.test(s)) return 'treino';
+  if (/video|corte|clip|analis/.test(s)) return 'biblioteca';
+  return null;
+}
 
 function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros, players, euId, onClose, onSave, onRemove }) {
   const [f, setF] = useState(tarefa || {
@@ -39626,7 +39674,12 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
         <Field label="O que é preciso fazer" bloco solto>
           <Input
             value={f.titulo}
-            onChange={e => setF({ ...f, titulo: e.target.value })}
+            onChange={e => {
+              const titulo = e.target.value;
+              // Destino sugerido pelo título, enquanto não for escolhido à mão.
+              const sug = !f.destinoManual ? inferirDestinoMissao(titulo) : null;
+              setF({ ...f, titulo, ...(sug ? { destino: sug } : (!f.destinoManual ? { destino: undefined } : {})) });
+            }}
             placeholder="Ex: análise de adversário"
             autoFocus
           />
@@ -39745,7 +39798,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
                 const on = (f.destino || 'nota') === d.id;
                 const Ic = d.icon;
                 return (
-                  <button key={d.id} type="button" onClick={() => setF({ ...f, destino: d.id })} style={{
+                  <button key={d.id} type="button" onClick={() => setF({ ...f, destino: d.id, destinoManual: true })} style={{
                     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 18, cursor: 'pointer', ...body,
                     fontSize: 12.5, background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
                     border: `1px solid ${on ? T.crimson : T.line}`,
