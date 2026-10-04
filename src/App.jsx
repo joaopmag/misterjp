@@ -28865,6 +28865,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
   // Onde está o íman: o guarda-redes na pequena área; os outros, no meio-campo.
   const eGR = String((player && player.position) || '').toUpperCase() === 'GR';
   const pos = eGR ? { x: 21, y: 80 } : { x: 78, y: 112 };
+  const corIman = coresCamisola(T.corEquipa);
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', overflowX: 'hidden', ...body,
@@ -28957,9 +28958,11 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
             {/* o íman do jogador */}
             <div style={{
               position: 'absolute', left: `${(pos.x / 300) * 100}%`, top: `${(pos.y / 160) * 100}%`, transform: 'translate(-50%,-50%)',
-              width: 34, height: 34, borderRadius: '50%', background: `radial-gradient(circle at 35% 30%, #ff6b6b, ${T.corEquipa} 60%, #5c0614)`,
+              // Íman na cor do clube (a mesma da app): brilho, cor e sombra tirados dela,
+              // e o número a branco ou escuro conforme a cor seja escura ou clara.
+              width: 34, height: 34, borderRadius: '50%', background: `radial-gradient(circle at 35% 30%, ${corIman.claro}, ${corIman.base} 60%, ${corIman.contorno})`,
               border: '2px solid #fff', boxShadow: '0 3px 6px rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#fff', fontSize: 13, fontWeight: 800, ...mono,
+              color: corIman.texto, fontSize: 13, fontWeight: 800, ...mono,
             }}>{marca}</div>
             {/* o objetivo (o destino da missão) */}
             <div style={{
