@@ -1553,6 +1553,12 @@ let undoHandler = null;
 function offerUndo(message, onUndo) {
   if (typeof undoHandler === 'function') undoHandler({ key: uid(), message, onUndo });
 }
+/* A mesma barra, com uma ação extra opcional: um link (por exemplo,
+   WhatsApp com a mensagem escrita). É um <a>, não um window.open, para o
+   browser o tratar como um toque direto da pessoa e não o bloquear. */
+function offerAviso({ message, onUndo, acao }) {
+  if (typeof undoHandler === 'function') undoHandler({ key: uid(), message, onUndo, acao });
+}
 
 /* Pedido de confirmação — a primeira das duas redes. Também é global:
    quem chama não precisa de gerir estado nenhum. */
@@ -1832,14 +1838,25 @@ function UndoBar() {
         boxShadow: '0 14px 44px #000000a0',
       }}>
         <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, ...body }}>{aviso.message}</span>
-        <button
+        {aviso.acao && aviso.acao.href && (
+          <a
+            href={aviso.acao.href} target="_blank" rel="noopener noreferrer"
+            onClick={() => setAviso(null)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, textDecoration: 'none',
+              background: 'transparent', color: T.cream, border: '1px solid #25D366', borderRadius: 7,
+              padding: '6px 11px', fontSize: 12.5, fontWeight: 600, ...body,
+            }}
+          ><MessageCircle size={14} color="#25D366" /> {aviso.acao.label}</a>
+        )}
+        {aviso.onUndo && <button
           onClick={() => { try { aviso.onUndo(); } catch (e) { console.error(e); } setAviso(null); }}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
             background: '#B5393F', color: TEXT_ON_ACCENT, border: 'none', borderRadius: 7,
             padding: '7px 12px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', ...body,
           }}
-        ><Undo2 size={14} /> Anular</button>
+        ><Undo2 size={14} /> Anular</button>}
         <button
           onClick={() => setAviso(null)} title="Dispensar"
           style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}
@@ -39152,12 +39169,38 @@ function prazoTexto(prazo, hoje) {
 function tarefasAMinhaPorta(tarefas, euId, ctx) {
   const hoje = todayStr();
   return (tarefas || []).filter(t => {
+    if (conclusaoPorVerPara(t, euId)) return true;
     if (t.jogadorId) return t.notaSubmetida && !t.notaRevista && t.criadoPor === euId;
     if (t.responsavel !== euId && t.responsavel) return false;
     if (eSemanal(t)) return t.estado !== 'feita' && semanaisPendentes(t, hoje).length > 0;
     if (t.recorrencia) return tarefaAtivaHoje(t, hoje, ctx || {}) && !tarefaFeitaHoje(t, hoje);
     return t.estado !== 'feita';
   }).length;
+}
+
+/* AVISAR QUEM CRIOU QUE A TAREFA ESTÁ CONCLUÍDA.
+
+   Quando a tarefa é concluída por alguém que NÃO a criou, fica marcada
+   com `conclusaoPorVer` ({ por, em }) e:
+   - quem a criou vê-a em "Concluídas por ver" no topo das Tarefas, e ela
+     conta no badge, até a abrir ou carregar em "Visto";
+   - quem concluiu recebe na barra de baixo o botão "Avisar …", que abre
+     o seu WhatsApp com a mensagem escrita (se quem criou tiver telemóvel
+     na ficha da equipa). É opcional: o aviso na app chega sempre.
+   Só para tarefas normais e semanais. As diárias, as de dias de treino e
+   as automáticas (aniversários, Wellness/PSE) avisariam todos os dias e
+   virariam ruído. Reabrir a tarefa apaga o aviso. */
+function avisaCriadorAoConcluir(t, euId) {
+  return !!(t && t.criadoPor && t.criadoPor !== euId && !t.jogadorId && (!t.recorrencia || eSemanal(t)));
+}
+function conclusaoPorVerPara(t, euId) {
+  return !!(t && t.conclusaoPorVer && t.criadoPor === euId && t.conclusaoPorVer.por !== euId);
+}
+
+function TEXTO_AVISO_CONCLUSAO(t, membros) {
+  const m = (membros || []).find(x => x.user_id === t.criadoPor);
+  const primeiro = m && m.nome ? String(m.nome).trim().split(/\s+/)[0] : '';
+  return `Olá${primeiro ? ` ${primeiro}` : ''}! A tarefa "${t.titulo}"${eSemanal(t) ? ' desta semana' : ''} já está concluída. 👍`;
 }
 
 /* QUEM PODE CONCLUIR UMA TAREFA.
@@ -39949,6 +39992,8 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const hoje = todayStr();
   const ctx = { sessions, matches, players, monitoring };
   const souDono = ((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner';
+  const porVer = tarefas.filter(t => conclusaoPorVerPara(t, euId))
+    .sort((a, b) => String(b.conclusaoPorVer.em).localeCompare(String(a.conclusaoPorVer.em)));
   const podeConcluir = (t) => podeConcluirTarefa(t, euId, souDono);
   const lembrar = (t) => {
     if (!podeLembrarTarefa(t, euId) || lembreteRecente(t)) return;
@@ -39961,11 +40006,15 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   };
 
   const save = (dados) => {
+    const antes = dados.id ? tarefas.find(x => x.id === dados.id) : null;
+    const concluiuAgora = !!antes && !antes.recorrencia && antes.estado !== 'feita' && dados.estado === 'feita';
     if (dados.estado === 'feita') dados = { ...dados, lembrete: null };
+    else if (antes && antes.estado === 'feita') dados = { ...dados, conclusaoPorVer: null };
     if (dados.id) setTarefas(prev => prev.map(t => (t.id === dados.id ? dados : t)));
     else setTarefas(prev => [...prev, { ...dados, id: uid(), criadoPor: euId, criadoEm: new Date().toISOString() }]);
     setModal(null);
     setNovoDia('');
+    if (concluiuAgora) aoConcluir(dados, antes);
   };
   const remove = (id) => {
     const t = tarefas.find(x => x.id === id);
@@ -39975,8 +40024,12 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   /* Abrir uma tarefa cuja nota está por rever marca-a logo como revista
      — é a forma mais natural de "marcar como lida": basta abrir para ver
      o que o atleta escreveu, sem precisar de mais nenhum clique. */
+  const marcarConclusaoVista = (ids) => {
+    setTarefas(prev => prev.map(x => (ids.includes(x.id) ? { ...x, conclusaoPorVer: null } : x)));
+  };
   const abrir = (t, oc) => {
     setOcorrencia(oc || null);
+    if (conclusaoPorVerPara(t, euId)) marcarConclusaoVista([t.id]);
     // O responsável abriu a tarefa: o lembrete fica visto (deixa de estar
     // destacado), mas a tarefa continua por fazer até ele a concluir.
     if (t.lembrete && !t.lembrete.visto && t.responsavel === euId) {
@@ -39992,6 +40045,25 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      "aberta". É assim que ela volta sozinha a "por fazer" no dia
      seguinte, sem ninguém ter de a reabrir. Numa tarefa normal,
      continua a ser o `estado` de sempre. */
+  /* Chamar logo a seguir a uma conclusão (não a uma reabertura). Marca o
+     aviso para quem criou e oferece o WhatsApp a quem concluiu. `antes`
+     é a tarefa como estava, para o "Anular". */
+  function aoConcluir(t, antes) {
+    if (!avisaCriadorAoConcluir(t, euId)) {
+      offerUndo('Tarefa concluída.', () => setTarefas(prev => prev.map(x => (x.id === antes.id ? antes : x))));
+      return;
+    }
+    const marca = { por: euId, em: new Date().toISOString() };
+    setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, conclusaoPorVer: marca } : x)));
+    const nomeCriador = nomeDoMembro(t.criadoPor, membros, euId);
+    const href = linkWhatsApp(telefoneDoMembro(t.criadoPor, membros), TEXTO_AVISO_CONCLUSAO(t, membros));
+    offerAviso({
+      message: href ? 'Tarefa concluída.' : `Tarefa concluída. ${nomeCriador} vai ver o aviso na app.`,
+      acao: href ? { label: `Avisar ${nomeCriador.split(' ')[0]}`, href } : null,
+      onUndo: () => setTarefas(prev => prev.map(x => (x.id === antes.id ? antes : x))),
+    });
+  }
+
   const alternar = (t) => {
     if (!podeConcluir(t)) return;
     /* Semanal, na lista: concluir fecha a ocorrência pendente mais
@@ -40011,9 +40083,14 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
       setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, concluidasEm: lista } : x)));
       return;
     }
+    const vaiConcluir = t.estado !== 'feita';
     setTarefas(prev => prev.map(x => (x.id === t.id
-      ? { ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString(), lembrete: null }
+      ? {
+        ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString(), lembrete: null,
+        ...(vaiConcluir ? {} : { conclusaoPorVer: null }),
+      }
       : x)));
+    if (vaiConcluir) aoConcluir(t, t);
   };
 
   /* No Calendário, cada dia tem a sua caixa: numa recorrente marca-se
@@ -40024,10 +40101,14 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     if (!podeConcluir(t)) return;
     if (!t.recorrencia || (eSemanal(t) && !base)) { alternar(t); return; }
     const chave = base || dia;
-    const lista = (t.concluidasEm || []).includes(chave)
-      ? (t.concluidasEm || []).filter(d => d !== chave)
-      : [...(t.concluidasEm || []), chave];
-    setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, concluidasEm: lista, lembrete: null } : x)));
+    const vaiConcluir = !(t.concluidasEm || []).includes(chave);
+    const lista = vaiConcluir
+      ? [...(t.concluidasEm || []), chave]
+      : (t.concluidasEm || []).filter(d => d !== chave);
+    setTarefas(prev => prev.map(x => (x.id === t.id
+      ? { ...x, concluidasEm: lista, lembrete: null, ...(vaiConcluir ? {} : { conclusaoPorVer: null }) }
+      : x)));
+    if (vaiConcluir && eSemanal(t)) aoConcluir(t, t);
   }
   const novaNoDia = (dia) => { setNovoDia(dia); setModal('new'); };
 
@@ -40103,6 +40184,36 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         subtitle="Missões da equipa técnica."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova tarefa</Btn>}
       />
+
+      {/* CONCLUÍDAS POR VER — tarefas que criei e que outra pessoa
+          concluiu. Ficam aqui, e no badge, até eu as abrir ou dar como
+          vistas. */}
+      {porVer.length > 0 && (
+        <>
+          <Panel
+            title={`Concluídas por ver (${porVer.length})`}
+            action={porVer.length > 1 ? <Btn variant="ghost" onClick={() => marcarConclusaoVista(porVer.map(t => t.id))}>Marcar todas como vistas</Btn> : null}
+          >
+            {porVer.map(t => (
+              <div key={t.id} style={{
+                display: 'flex', gap: 11, alignItems: 'center', flexWrap: 'wrap',
+                padding: '10px 13px', background: T.bg, borderRadius: 9,
+                border: `1px solid ${T.good}`, marginBottom: 8,
+              }}>
+                <CheckCircle2 size={17} color={T.good} style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => abrir(t)}>
+                  <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.4 }}>{t.titulo}</div>
+                  <div style={{ fontSize: 11.5, color: T.good, marginTop: 3 }}>
+                    Concluída por {nomeDoMembro(t.conclusaoPorVer.por, membros, euId)} · {timeAgo(t.conclusaoPorVer.em)}
+                  </div>
+                </div>
+                <Btn variant="ghost" onClick={() => marcarConclusaoVista([t.id])}><Check size={14} /> Visto</Btn>
+              </div>
+            ))}
+          </Panel>
+          <div style={{ height: 16 }} />
+        </>
+      )}
 
       <SubTabs
         value={vista}
