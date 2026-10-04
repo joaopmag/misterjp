@@ -39283,7 +39283,7 @@ function repeteNoDia(t, dia, hoje, ctx) {
   return tarefaAtivaHoje(t, dia, ctx);
 }
 
-function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, onAbrir, onAlternarEm, arrastavel, aArrastar, onDragStart, onDragEnd }) {
+function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, players, onAbrir, onAlternarEm, arrastavel, aArrastar, onDragStart, onDragEnd }) {
   const repete = !!tarefa.recorrencia;
   const chave = ocorrencia ? ocorrencia.base : dia;
   const feita = repete ? (tarefa.concluidasEm || []).includes(chave) : tarefa.estado === 'feita';
@@ -39292,6 +39292,10 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
   const futuro = repete && (ocorrencia ? getMonday(dia) > getMonday(hoje) : dia > hoje);
   const atrasada = !feita && (ocorrencia ? dia < hoje : (!repete && tarefa.prazo && tarefa.prazo < hoje));
   const mudada = ocorrencia && ocorrencia.dia !== ocorrencia.base;
+  // Numa tarefa de aniversário, quem faz anos NESSE dia (não hoje).
+  const aniversariantes = repete && tarefa.recorrencia.tipo === 'aniversario'
+    ? aniversariantesEm(players, dia)
+    : [];
   const cor = corDoMembro(tarefa.responsavel);
   const nome = nomeDoMembro(tarefa.responsavel, membros, euId);
 
@@ -39324,6 +39328,15 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
           ...LINHAS(2), fontSize: 11.5, lineHeight: 1.3,
           color: feita ? T.mutedDim : T.cream, textDecoration: feita ? 'line-through' : 'none',
         }}>{tarefa.titulo}</div>
+        {aniversariantes.length > 0 && (
+          <div
+            title={aniversariantes.map(p => p.name).join(', ')}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 3, fontSize: 10.5, color: T.gold, lineHeight: 1.3 }}
+          >
+            <PartyPopper size={10} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={LINHAS(2)}>{aniversariantes.map(p => shortPlayerName(p, players)).join(', ')}</span>
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 10, color: T.mutedDim, minWidth: 0 }}>
           <span style={{
             width: 14, height: 14, borderRadius: '50%', background: cor, flexShrink: 0,
@@ -39460,7 +39473,7 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
                   return (
                     <CartaoTarefaCalendario
                       key={`${t.id}-${oc ? oc.base : d}`}
-                      tarefa={t} dia={d} ocorrencia={oc} hoje={hoje} membros={membros} euId={euId}
+                      tarefa={t} dia={d} ocorrencia={oc} hoje={hoje} membros={membros} euId={euId} players={players}
                       onAbrir={onAbrir} onAlternarEm={onAlternarEm}
                       arrastavel={arrastavel}
                       aArrastar={!!arrastada && arrastada.id === t.id && arrastada.base === chave.base}
