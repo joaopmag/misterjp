@@ -28787,6 +28787,13 @@ function EcraAniversario({ player, onEntrar }) {
 function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
   const [i, setI] = useState(0);
   const [folha, setFolha] = useState(0); // muda a cada página → reinicia as animações
+  /* O FUNDO DA PÁGINA TODA MEXE, como os papelinhos dos anos — mas aqui
+     são as marcas de giz de um quadro tático (cruzes, bolas, setas) a
+     subir devagar, a rodar, quase transparentes. */
+  const marcasGiz = React.useMemo(() => Array.from({ length: 22 }, (_, k) => ({
+    k, tipo: ['x', 'o', 'seta'][k % 3], left: Math.random() * 100, atraso: -Math.random() * 22,
+    dur: 16 + Math.random() * 14, tam: 16 + Math.random() * 18, rot: Math.random() * 360, op: 0.08 + Math.random() * 0.12,
+  })), []);
   const t = tarefas[Math.min(i, tarefas.length - 1)];
   if (!t) return null;
   const d = destinoMissao(t.destino);
@@ -28809,10 +28816,24 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
   const giz = 'rgba(255,255,255,.82)';
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', ...body,
-      background: `radial-gradient(circle at 50% 0%, #2b3a2e 0%, ${T.bg} 70%)`,
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '22px 16px 28px',
+      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', overflowX: 'hidden', ...body,
+      background: `radial-gradient(circle at 50% 30%, #2b3a2e 0%, ${T.bg} 75%)`,
     }}>
+      {marcasGiz.map(m => (
+        <svg key={m.k} viewBox="0 0 24 24" width={m.tam} height={m.tam} style={{
+          position: 'fixed', left: `${m.left}%`, bottom: -40, opacity: m.op, pointerEvents: 'none',
+          animation: `pr-subir ${m.dur}s linear ${m.atraso}s infinite`, '--rot': `${m.rot}deg`,
+        }}>
+          <g fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            {m.tipo === 'x' && <><line x1="5" y1="5" x2="19" y2="19" /><line x1="19" y1="5" x2="5" y2="19" /></>}
+            {m.tipo === 'o' && <circle cx="12" cy="12" r="8" />}
+            {m.tipo === 'seta' && <><path d="M4 18 Q10 6 19 7" /><path d="M14 4 L19 7 L15.5 11.5" /></>}
+          </g>
+        </svg>
+      ))}
+      {/* centrado na página (na vertical e na horizontal); com ecrãs
+          baixos, desliza normalmente */}
+      <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px 28px', boxSizing: 'border-box', position: 'relative' }}>
       <style>{`
         @keyframes pr-giz { from { stroke-dashoffset: 260; } to { stroke-dashoffset: 0; } }
         @keyframes pr-ponta { 0%, 70% { opacity: 0; } 100% { opacity: 1; } }
@@ -28820,22 +28841,19 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
         @keyframes pr-alvo-pulsar { 0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,.35); } 50% { box-shadow: 0 0 0 10px rgba(255,255,255,0); } }
         @keyframes pr-folha { from { transform: perspective(900px) rotateX(-75deg); opacity: 0; } to { transform: perspective(900px) rotateX(0); opacity: 1; } }
         @keyframes pr-carimbo { 0% { transform: rotate(-12deg) scale(1.8); opacity: 0; } 100% { transform: rotate(-12deg) scale(1); opacity: .9; } }
+        @keyframes pr-subir { 0% { transform: translateY(0) rotate(var(--rot)); } 100% { transform: translateY(-120vh) rotate(calc(var(--rot) + 220deg)); } }
+        @keyframes pr-entrar { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
       `}</style>
-      <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ textAlign: 'center', fontSize: 11, color: T.warn, letterSpacing: '.22em', textTransform: 'uppercase' }}>
-          Instruções do mister{tarefas.length > 1 ? ` · ${i + 1} de ${tarefas.length}` : ''}
-        </div>
+      <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14, animation: 'pr-entrar .5s ease-out both' }}>
 
         {/* A PRANCHETA */}
         <div style={{ position: 'relative', background: 'linear-gradient(160deg, #3b2a1d 0%, #24180f 100%)', borderRadius: 18, padding: '30px 14px 16px', boxShadow: '0 20px 44px rgba(0,0,0,.5)' }}>
-          {/* a mola */}
+          {/* o separador da prancheta (em vez da mola), na cor do clube */}
           <div style={{
-            position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', width: 120, height: 34, borderRadius: 8,
-            background: 'linear-gradient(180deg, #E9ECEF 0%, #9AA1A8 100%)', boxShadow: 'inset 0 -3px 0 rgba(0,0,0,.25), 0 4px 8px rgba(0,0,0,.4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <div style={{ width: 54, height: 8, borderRadius: 4, background: '#6c737a' }} />
-          </div>
+            position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap',
+            background: T.corEquipa, color: '#fff', borderRadius: 20, padding: '6px 16px', boxShadow: '0 6px 14px rgba(0,0,0,.4)',
+            fontSize: 11, fontWeight: 800, letterSpacing: '.18em', textTransform: 'uppercase',
+          }}>Instruções do mister{tarefas.length > 1 ? ` · ${i + 1}/${tarefas.length}` : ''}</div>
 
           {/* o quadro verde, com o campo a giz */}
           <div key={`q${folha}`} style={{ position: 'relative', background: 'linear-gradient(160deg, #2f5d3a 0%, #1f4429 100%)', borderRadius: 10, overflow: 'hidden', border: '3px solid #6b4b2e' }}>
@@ -28912,7 +28930,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
         {d.auto && !fechadoAgora && (
           <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>Fica feita assim que submeteres.</div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: tarefas.length > 1 ? 'space-between' : 'center', gap: 10 }}>
           <button type="button" onClick={() => { onAdiar(t.id); mudar(0); }} style={{
             background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
           }}>Mais tarde</button>
@@ -28926,6 +28944,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
