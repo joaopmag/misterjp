@@ -5074,7 +5074,7 @@ async function selecionarMembros(teamId) {
 
 /* GÉNERO DE CADA MEMBRO ('m' | 'f'), só para as mensagens que a app
    escreve em nome dele concordarem ("Obrigado!" / "Obrigada!"). Sem
-   género definido, usa-se uma frase neutra. */
+   género definido, usa-se "Obrigado/a!". */
 const GENEROS = [['m', 'Masculino'], ['f', 'Feminino']];
 async function gravarGeneroMembro(teamId, userId, genero) {
   const { error } = await supabase.from('team_members')
@@ -6030,7 +6030,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
         <div style={{ height: 12 }} />
         <Field label="Género, para o texto das mensagens" bloco solto>
           <Select value={meuGenero} onChange={e => { setMeuGenero(e.target.value); setTelefoneGuardado(false); }}>
-            <option value="">Sem preferência (frase neutra)</option>
+            <option value="">Sem género (Obrigado/a)</option>
             {GENEROS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </Select>
         </Field>
@@ -39351,12 +39351,12 @@ const listaComE = (nomes) => (nomes.length <= 1 ? (nomes[0] || '') : `${nomes.sl
    automáticas diz-se logo o que interessa (quem faz anos, o que falta
    responder), em vez de repetir um título genérico. */
 /* Quem ENVIA agradece no seu próprio género: "Obrigado!" / "Obrigada!".
-   Sem género na ficha da equipa, uma frase neutra. */
+   Sem género na ficha da equipa, "Obrigado/a!". */
 function agradecimentoDe(userId, membros) {
   const m = (membros || []).find(x => x.user_id === userId);
   if (m && m.genero === 'f') return 'Obrigada!';
   if (m && m.genero === 'm') return 'Obrigado!';
-  return 'Agradeço desde já!';
+  return 'Obrigado/a!';
 }
 
 function TEXTO_LEMBRETE_TAREFA(t, membros, hoje, players, remetenteId) {
