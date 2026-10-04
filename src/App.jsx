@@ -39411,6 +39411,12 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
   const futuro = repete && (ocorrencia ? getMonday(dia) > getMonday(hoje) : dia > hoje);
   const atrasada = !feita && (ocorrencia ? dia < hoje : (!repete && tarefa.prazo && tarefa.prazo < hoje));
   const mudada = ocorrencia && ocorrencia.dia !== ocorrencia.base;
+  /* A QUEM ESTÁ ATRIBUÍDA, sempre por nome. Numa tarefa de um jogador o
+     nome que interessa é o do atleta (é ele quem a faz, no Portal), por
+     isso aparece primeiro, a dourado; o responsável da equipa técnica
+     fica por baixo, como quem acompanha. */
+  const jogador = tarefa.jogadorId ? (players || []).find(p => p.id === tarefa.jogadorId) : null;
+  const nomeCurto = tarefa.responsavel ? nome.split(' ')[0] : 'Sem responsável';
   // Numa tarefa de aniversário, quem faz anos NESSE dia (não hoje).
   const aniversariantes = repete && tarefa.recorrencia.tipo === 'aniversario'
     ? aniversariantesEm(players, dia)
@@ -39454,6 +39460,16 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
           ...LINHAS(2), fontSize: 11.5, lineHeight: 1.3,
           color: feita ? T.mutedDim : T.cream, textDecoration: feita ? 'line-through' : 'none',
         }}>{tarefa.titulo}</div>
+        {jogador && (
+          <div
+            title={`Atribuída a ${jogador.name}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 10.5, color: T.gold, fontWeight: 600, minWidth: 0 }}
+          >
+            <UserCheck size={10} style={{ flexShrink: 0 }} />
+            <span style={LINHAS(1)}>{shortPlayerName(jogador, players)}</span>
+            {tarefa.notaSubmetida && <Check size={10} style={{ flexShrink: 0 }} aria-label="Nota submetida" />}
+          </div>
+        )}
         {aniversariantes.length > 0 && (
           <div
             title={aniversariantes.map(p => p.name).join(', ')}
@@ -39468,10 +39484,9 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
             width: 14, height: 14, borderRadius: '50%', background: cor, flexShrink: 0,
             display: 'grid', placeItems: 'center', fontSize: 7.5, color: '#0d140e', fontWeight: 600, ...mono,
           }}>{nome.charAt(0).toUpperCase()}</span>
-          <span style={{ ...LINHAS(1), minWidth: 0 }}>{nome.split(' ')[0]}</span>
+          <span style={{ ...LINHAS(1), minWidth: 0 }} title={jogador ? `Acompanha: ${nome}` : nome}>{nomeCurto}</span>
           {lembreteParaMim && <Bell size={10} style={{ flexShrink: 0, color: T.crimsonBright }} aria-label="Tens um lembrete" />}
           {repete && <Repeat size={10} style={{ flexShrink: 0, marginLeft: 'auto' }} aria-label="Repete" />}
-          {tarefa.jogadorId && <UserCheck size={10} style={{ flexShrink: 0, marginLeft: repete ? 0 : 'auto', color: T.gold }} />}
         </div>
         {possoLembrar && (
           <button
