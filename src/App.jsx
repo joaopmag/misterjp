@@ -38892,10 +38892,81 @@ function tarefaAtivaHoje(tarefa, hoje, ctx) {
 // ativa.
 const tarefaFeitaHoje = (tarefa, hoje) => (tarefa.concluidasEm || []).includes(hoje);
 
+/* TAREFAS SEMANAIS ("Dias da semana") — uma ocorrência por semana.
+
+   As outras repetições vivem só no dia (amanhã é outro dia, e o que
+   ficou por fazer simplesmente desaparece). As semanais funcionam como
+   uma missão da semana, porque é assim que a equipa técnica as usa
+   ("observar o adversário à quinta", "estatísticas à segunda"):
+
+   - Cada semana gera uma OCORRÊNCIA por cada dia escolhido. A ocorrência
+     identifica-se pela data que a regra lhe dá (`base`), mesmo que
+     depois mude de dia.
+   - MUDAR SÓ UMA SEMANA: `recorrencia.mudancas` guarda { base: novoDia }.
+     Arrastar no Calendário (ou escolher no formulário) mexe só nessa
+     ocorrência; a regra e as outras semanas ficam iguais.
+   - A NOTIFICAÇÃO abre no dia em que a ocorrência cai (o novo, se foi
+     mudada) e fica aberta até a pessoa concluir, mesmo que o dia passe:
+     passa a "Atrasada", não desaparece.
+   - CONCLUIR fecha essa ocorrência (`concluidasEm` guarda a `base`). Na
+     semana seguinte a próxima abre sozinha, no dia dela.
+   - Só conta ocorrências a partir do início da repetição
+     (`recorrencia.desde`). As semanais antigas, criadas antes desta
+     lógica e sem `desde`, contam só a partir da semana atual, para não
+     aparecerem de repente com semanas de atraso acumulado. */
+const eSemanal = (t) => !!(t && t.recorrencia && t.recorrencia.tipo === 'semanal');
+const diaDaSemanaDe = (d) => new Date(`${d}T00:00:00`).getDay();
+
+function inicioDasSemanais(t, hoje) {
+  const r = t.recorrencia || {};
+  if (r.desde) return r.desde;
+  const segunda = getMonday(hoje);
+  const criada = t.criadoEm ? String(t.criadoEm).slice(0, 10) : '';
+  return criada > segunda ? criada : segunda;
+}
+
+// Ocorrências cuja data-base cai entre `de` e `ate` (inclusive).
+function ocorrenciasSemanais(t, de, ate, hoje) {
+  const r = t.recorrencia || {};
+  const dias = r.dias || [];
+  if (!dias.length) return [];
+  const inicio = inicioDasSemanais(t, hoje);
+  const mudancas = r.mudancas || {};
+  const out = [];
+  let d = inicio > de ? inicio : de;
+  for (let n = 0; d <= ate && n < 1200; n++, d = addDays(d, 1)) {
+    if (dias.includes(diaDaSemanaDe(d))) out.push({ base: d, dia: mudancas[d] || d });
+  }
+  return out;
+}
+
+// As que já abriram (o dia delas chegou) e ainda não foram concluídas,
+// da mais antiga para a mais recente.
+function semanaisPendentes(t, hoje) {
+  const feitas = t.concluidasEm || [];
+  return ocorrenciasSemanais(t, inicioDasSemanais(t, hoje), addDays(hoje, 7), hoje)
+    .filter(o => o.dia <= hoje && !feitas.includes(o.base))
+    .sort((a, b) => a.dia.localeCompare(b.dia));
+}
+
+// A ocorrência desta semana que já abriu e foi concluída (a mais recente).
+function semanalConcluidaEstaSemana(t, hoje) {
+  const seg = getMonday(hoje);
+  const feitas = t.concluidasEm || [];
+  return ocorrenciasSemanais(t, seg, addDays(seg, 6), hoje)
+    .filter(o => feitas.includes(o.base))
+    .sort((a, b) => b.dia.localeCompare(a.dia))[0] || null;
+}
+
 function grupoDaTarefa(tarefa, hoje) {
   // Uma recorrente não tem prazo — está sempre "para hoje", porque só
   // aparece nos dias em que a regra dela está mesmo ativa (ver
   // `tarefaAtivaHoje`, que já filtra isto antes de chegar aqui).
+  if (eSemanal(tarefa)) {
+    const p = semanaisPendentes(tarefa, hoje)[0];
+    if (p && p.dia < hoje) return { id: 'atraso', rotulo: 'Atrasadas', ordem: 1 };
+    return { id: 'hoje', rotulo: 'Hoje', ordem: 2 };
+  }
   if (tarefa.recorrencia) return { id: 'hoje', rotulo: 'Hoje', ordem: 2 };
   if (tarefa.estado === 'feita') return { id: 'feitas', rotulo: 'Concluídas', ordem: 9 };
   if (!tarefa.prazo) return { id: 'sem', rotulo: 'Sem prazo', ordem: 5 };
@@ -38941,12 +39012,13 @@ function tarefasAMinhaPorta(tarefas, euId, ctx) {
   return (tarefas || []).filter(t => {
     if (t.jogadorId) return t.notaSubmetida && !t.notaRevista && t.criadoPor === euId;
     if (t.responsavel !== euId && t.responsavel) return false;
+    if (eSemanal(t)) return t.estado !== 'feita' && semanaisPendentes(t, hoje).length > 0;
     if (t.recorrencia) return tarefaAtivaHoje(t, hoje, ctx || {}) && !tarefaFeitaHoje(t, hoje);
     return t.estado !== 'feita';
   }).length;
 }
 
-function TarefaModal({ tarefa, inicial, membros, players, euId, onClose, onSave, onRemove }) {
+function TarefaModal({ tarefa, inicial, ocorrencia, membros, players, euId, onClose, onSave, onRemove }) {
   const [f, setF] = useState(tarefa || {
     titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null, jogadorId: '',
     ...(inicial || {}),
@@ -38993,6 +39065,39 @@ function TarefaModal({ tarefa, inicial, membros, players, euId, onClose, onSave,
           </Select>
         </Field>
       </div>
+
+      {/* SÓ ESTA SEMANA — aparece quando a tarefa semanal foi aberta a
+          partir de um dia do Calendário. Muda o dia só dessa ocorrência
+          (`recorrencia.mudancas`), sem tocar na regra. É também a forma
+          de o fazer no telemóvel, onde não há arrastar. */}
+      {ocorrencia && repete && f.recorrencia.tipo === 'semanal' && (() => {
+        const seg = getMonday(ocorrencia.base);
+        const atual = ((f.recorrencia.mudancas || {})[ocorrencia.base]) || ocorrencia.base;
+        return (
+          <div style={{ border: `1px solid ${T.gold}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <Field label={`Só esta semana (dia habitual: ${DIAS_SEMANA[diaDaSemanaDe(ocorrencia.base)]}, ${fmtShort(ocorrencia.base)})`} solto>
+              <Select
+                value={atual}
+                onChange={e => {
+                  const novo = e.target.value;
+                  const mudancas = { ...(f.recorrencia.mudancas || {}) };
+                  if (novo === ocorrencia.base) delete mudancas[ocorrencia.base];
+                  else mudancas[ocorrencia.base] = novo;
+                  setF({ ...f, recorrencia: { ...f.recorrencia, mudancas } });
+                }}
+              >
+                {[...Array(7)].map((_, i) => {
+                  const d = addDays(seg, i);
+                  return <option key={d} value={d}>{DIAS_SEMANA[diaDaSemanaDe(d)]}, {fmtShort(d)}{d === ocorrencia.base ? ' (habitual)' : ''}</option>;
+                })}
+              </Select>
+            </Field>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+              Nas outras semanas continua no dia habitual.
+            </div>
+          </div>
+        );
+      })()}
 
       {/* REPETIR TODAS AS SEMANAS NESTE DIA — o atalho para o caso mais
           comum na equipa técnica ("observar o adversário é sempre à
@@ -39087,7 +39192,7 @@ function TarefaModal({ tarefa, inicial, membros, players, euId, onClose, onSave,
             {f.recorrencia.tipo === 'wellness_pse' && 'Aparece sozinha enquanto houver algum jogador por responder ao Wellness (ou ao PSE, em dia de treino/jogo). Desaparece assim que todos tiverem respondido.'}
             {f.recorrencia.tipo === 'diaria' && 'Aparece todos os dias, sem exceção.'}
             {f.recorrencia.tipo === 'semanal' && ((f.recorrencia.dias || []).length
-              ? `Aparece no Calendário todas as semanas, nos dias escolhidos${f.recorrencia.desde ? `, a partir de ${fmtShort(f.recorrencia.desde)}` : ''}.`
+              ? `Aparece no Calendário todas as semanas, nos dias escolhidos${f.recorrencia.desde ? `, a partir de ${fmtShort(f.recorrencia.desde)}` : ''}. Cada semana fica por fazer, e a notificar o responsável, até ser concluída.`
               : 'Escolhe pelo menos um dia da semana.')}
             {f.recorrencia.tipo === 'aniversario' && 'Aparece sozinha em qualquer dia em que um jogador do plantel faça anos (precisa da data de nascimento completa, em Editar Jogador — registos com só o ano não contam).'}
           </div>
@@ -39155,7 +39260,12 @@ function TarefaModal({ tarefa, inicial, membros, players, euId, onClose, onSave,
      dia, para contexto.
    - "+ tarefa" no fundo de cada dia abre uma tarefa nova já com esse dia.
    - No computador, arrastar uma tarefa normal para outro dia muda-lhe o
-     prazo. As que se repetem não se arrastam: o dia delas é a regra.
+     prazo. Arrastar uma SEMANAL muda só essa semana (ver a nota junto de
+     `eSemanal`); no telemóvel faz-se ao abrir a tarefa, em "Só esta
+     semana". As outras repetições não se arrastam: o dia delas é a regra.
+   - Uma semanal por concluir de dias anteriores fica a vermelho no dia
+     dela, e se for de semanas anteriores aparece também por baixo da
+     grelha, até ser concluída.
    - Por baixo da grelha ficam as que não têm lugar nela: sem prazo e,
      na semana de hoje, as atrasadas de semanas anteriores. */
 function dataInicioRepeticao(t) {
@@ -39173,11 +39283,15 @@ function repeteNoDia(t, dia, hoje, ctx) {
   return tarefaAtivaHoje(t, dia, ctx);
 }
 
-function CartaoTarefaCalendario({ tarefa, dia, hoje, membros, euId, onAbrir, onAlternarEm, arrastavel, aArrastar, onDragStart, onDragEnd }) {
+function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, onAbrir, onAlternarEm, arrastavel, aArrastar, onDragStart, onDragEnd }) {
   const repete = !!tarefa.recorrencia;
-  const feita = repete ? (tarefa.concluidasEm || []).includes(dia) : tarefa.estado === 'feita';
-  const futuro = repete && dia > hoje;
-  const atrasada = !repete && !feita && tarefa.prazo && tarefa.prazo < hoje;
+  const chave = ocorrencia ? ocorrencia.base : dia;
+  const feita = repete ? (tarefa.concluidasEm || []).includes(chave) : tarefa.estado === 'feita';
+  // Uma semanal pode concluir-se antes do dia, dentro da semana de hoje;
+  // as outras repetições só no próprio dia ou depois.
+  const futuro = repete && (ocorrencia ? getMonday(dia) > getMonday(hoje) : dia > hoje);
+  const atrasada = !feita && (ocorrencia ? dia < hoje : (!repete && tarefa.prazo && tarefa.prazo < hoje));
+  const mudada = ocorrencia && ocorrencia.dia !== ocorrencia.base;
   const cor = corDoMembro(tarefa.responsavel);
   const nome = nomeDoMembro(tarefa.responsavel, membros, euId);
 
@@ -39194,7 +39308,7 @@ function CartaoTarefaCalendario({ tarefa, dia, hoje, membros, euId, onAbrir, onA
       }}
     >
       <button
-        onClick={() => !futuro && onAlternarEm(tarefa, dia)}
+        onClick={() => !futuro && onAlternarEm(tarefa, dia, ocorrencia ? ocorrencia.base : undefined)}
         disabled={futuro}
         title={futuro ? 'Ainda não chegou este dia' : (feita ? 'Desmarcar' : 'Marcar como concluída')}
         aria-label={feita ? 'Desmarcar' : 'Marcar como concluída'}
@@ -39205,7 +39319,7 @@ function CartaoTarefaCalendario({ tarefa, dia, hoje, membros, euId, onAbrir, onA
           display: 'grid', placeItems: 'center',
         }}
       >{feita && <Check size={9} style={{ color: '#0d140e' }} />}</button>
-      <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={() => onAbrir(tarefa)}>
+      <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={() => onAbrir(tarefa, ocorrencia)}>
         <div style={{
           ...LINHAS(2), fontSize: 11.5, lineHeight: 1.3,
           color: feita ? T.mutedDim : T.cream, textDecoration: feita ? 'line-through' : 'none',
@@ -39219,12 +39333,17 @@ function CartaoTarefaCalendario({ tarefa, dia, hoje, membros, euId, onAbrir, onA
           {repete && <Repeat size={10} style={{ flexShrink: 0, marginLeft: 'auto' }} aria-label="Repete" />}
           {tarefa.jogadorId && <UserCheck size={10} style={{ flexShrink: 0, marginLeft: repete ? 0 : 'auto', color: T.gold }} />}
         </div>
+        {mudada && (
+          <div style={{ fontSize: 9.5, color: T.warn, marginTop: 3 }}>
+            só esta semana (habitual: {dayLabel(ocorrencia.base)})
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir, onAlternarEm, onMover, onNovaNoDia }) {
+function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir, onAlternarEm, onMover, onMoverOcorrencia, onNovaNoDia }) {
   const [weekStart, setWeekStart] = useState(() => getMonday(hoje));
   const [arrastada, setArrastada] = useState(null);
   const [sobre, setSobre] = useState(null);
@@ -39234,16 +39353,26 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
   const { sessions, matches } = ctx;
   const idsDeJogos = new Set((matches || []).map(m => m.id));
 
+  // Ocorrências semanais desta semana, já no dia onde caem (mudado ou não).
+  const semanais = tarefas
+    .filter(t => eSemanal(t) && t.estado !== 'feita')
+    .flatMap(t => ocorrenciasSemanais(t, weekStart, addDays(weekStart, 6), hoje).map(oc => ({ t, oc })));
+
   const doDia = (d) => {
-    const normais = tarefas.filter(t => !t.recorrencia && t.prazo === d);
-    const repetidas = tarefas.filter(t => t.recorrencia && t.estado !== 'feita' && repeteNoDia(t, d, hoje, ctx));
-    const feitaNoDia = (t) => (t.recorrencia ? (t.concluidasEm || []).includes(d) : t.estado === 'feita');
-    return [...normais, ...repetidas].sort((a, b) => Number(feitaNoDia(a)) - Number(feitaNoDia(b)));
+    const normais = tarefas.filter(t => !t.recorrencia && t.prazo === d).map(t => ({ t, oc: null }));
+    const repetidas = tarefas
+      .filter(t => t.recorrencia && !eSemanal(t) && t.estado !== 'feita' && repeteNoDia(t, d, hoje, ctx))
+      .map(t => ({ t, oc: null }));
+    const destas = semanais.filter(x => x.oc.dia === d);
+    const feitaNoDia = ({ t, oc }) => (t.recorrencia ? (t.concluidasEm || []).includes(oc ? oc.base : d) : t.estado === 'feita');
+    return [...normais, ...destas, ...repetidas].sort((a, b) => Number(feitaNoDia(a)) - Number(feitaNoDia(b)));
   };
 
   const semPrazo = tarefas.filter(t => !t.recorrencia && !t.prazo && t.estado !== 'feita');
   const atrasadasAntes = estaSemana
-    ? tarefas.filter(t => !t.recorrencia && t.prazo && t.prazo < weekStart && t.estado !== 'feita')
+    ? tarefas.filter(t => (eSemanal(t)
+      ? t.estado !== 'feita' && semanaisPendentes(t, hoje).some(o => o.dia < weekStart)
+      : !t.recorrencia && t.prazo && t.prazo < weekStart && t.estado !== 'feita'))
     : [];
 
   const navBtn = { background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, color: T.cream, cursor: 'pointer', padding: '4px 6px' };
@@ -39287,9 +39416,11 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
               onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setSobre(s => (s === d ? null : s)); }}
               onDrop={e => {
                 e.preventDefault();
-                const id = e.dataTransfer.getData('text/plain') || arrastada;
+                const a = arrastada;
                 setSobre(null); setArrastada(null);
-                if (id) onMover(id, d);
+                if (!a) return;
+                if (a.base) onMoverOcorrencia(a.id, a.base, d);
+                else onMover(a.id, d);
               }}
               style={{
                 background: destacado ? 'rgba(201,162,39,.08)' : T.surface,
@@ -39323,19 +39454,21 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6 }}>
-                {lista.map(t => {
-                  const arrastavel = !isMobile && !t.recorrencia;
+                {lista.map(({ t, oc }) => {
+                  const arrastavel = !isMobile && (!t.recorrencia || !!oc);
+                  const chave = { id: t.id, base: oc ? oc.base : null };
                   return (
                     <CartaoTarefaCalendario
-                      key={`${t.id}-${d}`}
-                      tarefa={t} dia={d} hoje={hoje} membros={membros} euId={euId}
+                      key={`${t.id}-${oc ? oc.base : d}`}
+                      tarefa={t} dia={d} ocorrencia={oc} hoje={hoje} membros={membros} euId={euId}
                       onAbrir={onAbrir} onAlternarEm={onAlternarEm}
                       arrastavel={arrastavel}
-                      aArrastar={arrastada === t.id}
+                      aArrastar={!!arrastada && arrastada.id === t.id && arrastada.base === chave.base}
                       onDragStart={arrastavel ? (e => {
+                        // Firefox só começa a arrastar com algum dado lá dentro.
                         e.dataTransfer.setData('text/plain', t.id);
                         e.dataTransfer.effectAllowed = 'move';
-                        setArrastada(t.id);
+                        setArrastada(chave);
                       }) : undefined}
                       onDragEnd={arrastavel ? (() => { setArrastada(null); setSobre(null); }) : undefined}
                     />
@@ -39360,7 +39493,7 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <span style={{ width: 10, height: 10, borderRadius: 3, background: T.cream }} /> Jogo
         </span>
-        {!isMobile && <span>Arrasta uma tarefa para outro dia para lhe mudar o prazo.</span>}
+        {!isMobile && <span>Arrasta uma tarefa para outro dia. Nas que se repetem, muda só essa semana.</span>}
       </div>
 
       {(atrasadasAntes.length > 0 || semPrazo.length > 0) && (
@@ -39392,8 +39525,14 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
 /* Uma linha. A caixa à esquerda fecha a tarefa sem abrir nada — é o
    gesto mais frequente de todos e não devia custar dois cliques. */
 function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar }) {
-  const feita = tarefa.recorrencia ? tarefaFeitaHoje(tarefa, hoje) : tarefa.estado === 'feita';
-  const atrasada = !tarefa.recorrencia && !feita && tarefa.prazo && tarefa.prazo < hoje;
+  const semanal = eSemanal(tarefa);
+  const pendentes = semanal ? semanaisPendentes(tarefa, hoje) : [];
+  const feita = semanal
+    ? pendentes.length === 0
+    : (tarefa.recorrencia ? tarefaFeitaHoje(tarefa, hoje) : tarefa.estado === 'feita');
+  const atrasada = semanal
+    ? !feita && pendentes[0].dia < hoje
+    : !tarefa.recorrencia && !feita && tarefa.prazo && tarefa.prazo < hoje;
   const paraHoje = !tarefa.recorrencia && !feita && tarefa.prazo === hoje;
   const cor = corDoMembro(tarefa.responsavel);
   // Numa tarefa de "Aniversário de jogador", diz-se logo aqui quem faz
@@ -39473,7 +39612,11 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             ...mono, fontSize: 11, marginLeft: 'auto', flexShrink: 0,
             color: feita ? T.mutedDim : (atrasada ? T.bad : (paraHoje ? T.warn : T.mutedDim)),
           }}>
-            {tarefa.recorrencia
+            {semanal
+              ? (feita
+                ? 'concluída esta semana'
+                : `${pendentes[0].dia < hoje ? `desde ${prazoTexto(pendentes[0].dia, hoje)}` : 'hoje'}${pendentes.length > 1 ? ` · ${pendentes.length} por concluir` : ''}`)
+              : tarefa.recorrencia
               ? (feita ? 'concluída hoje' : 'hoje')
               : (feita ? `concluída${tarefa.feitaEm ? ` · ${fmtShort(tarefa.feitaEm.slice(0, 10))}` : ''}` : prazoTexto(tarefa.prazo, hoje))}
           </span>
@@ -39487,6 +39630,8 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const [modal, setModal] = useState(null); // 'new' | tarefa
   // Dia já escolhido para uma tarefa nova criada a partir do Calendário.
   const [novoDia, setNovoDia] = useState('');
+  // Ocorrência semanal de onde a tarefa foi aberta no Calendário ({ base, dia }).
+  const [ocorrencia, setOcorrencia] = useState(null);
   // 'prazo' | 'pessoa' | 'calendario'
   const [vista, setVista] = useState('prazo');
   const porPessoa = vista === 'pessoa';
@@ -39508,7 +39653,8 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   /* Abrir uma tarefa cuja nota está por rever marca-a logo como revista
      — é a forma mais natural de "marcar como lida": basta abrir para ver
      o que o atleta escreveu, sem precisar de mais nenhum clique. */
-  const abrir = (t) => {
+  const abrir = (t, oc) => {
+    setOcorrencia(oc || null);
     if (t.jogadorId && t.notaSubmetida && !t.notaRevista && t.criadoPor === euId) {
       setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, notaRevista: true } : x)));
     }
@@ -39520,6 +39666,17 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      seguinte, sem ninguém ter de a reabrir. Numa tarefa normal,
      continua a ser o `estado` de sempre. */
   const alternar = (t) => {
+    /* Semanal, na lista: concluir fecha a ocorrência pendente mais
+       antiga; se já não há nenhuma (está em "Concluídas"), desfazer
+       reabre a desta semana. */
+    if (eSemanal(t)) {
+      const p = semanaisPendentes(t, hoje)[0];
+      const desta = p ? null : semanalConcluidaEstaSemana(t, hoje);
+      const base = p ? p.base : (desta && desta.base);
+      if (!base) return;
+      alternarEm(t, null, base);
+      return;
+    }
     if (t.recorrencia) {
       const feitaHoje = tarefaFeitaHoje(t, hoje);
       const lista = feitaHoje ? (t.concluidasEm || []).filter(d => d !== hoje) : [...(t.concluidasEm || []), hoje];
@@ -39534,19 +39691,32 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   /* No Calendário, cada dia tem a sua caixa: numa recorrente marca-se
      ESSE dia (não necessariamente hoje); numa normal é o mesmo que na
      lista. */
-  const alternarEm = (t, dia) => {
-    if (!t.recorrencia) { alternar(t); return; }
-    const lista = (t.concluidasEm || []).includes(dia)
-      ? (t.concluidasEm || []).filter(d => d !== dia)
-      : [...(t.concluidasEm || []), dia];
+  // `base`: nas semanais, a ocorrência (pode estar mudada para outro dia).
+  function alternarEm(t, dia, base) {
+    if (!t.recorrencia || (eSemanal(t) && !base)) { alternar(t); return; }
+    const chave = base || dia;
+    const lista = (t.concluidasEm || []).includes(chave)
+      ? (t.concluidasEm || []).filter(d => d !== chave)
+      : [...(t.concluidasEm || []), chave];
     setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, concluidasEm: lista } : x)));
-  };
+  }
   const novaNoDia = (dia) => { setNovoDia(dia); setModal('new'); };
 
   /* Mudar o dia a uma tarefa arrastando-a no Calendário: mexe só no
      `prazo`. As recorrentes não têm prazo, por isso ficam de fora. */
   const mover = (id, prazo) => {
     setTarefas(prev => prev.map(x => (x.id === id && !x.recorrencia && (x.prazo || '') !== prazo ? { ...x, prazo } : x)));
+  };
+  /* Semanal arrastada no Calendário: muda só ESSA semana. Voltar a pô-la
+     no dia habitual apaga a exceção. */
+  const moverOcorrencia = (id, base, novoDia) => {
+    setTarefas(prev => prev.map(x => {
+      if (x.id !== id || !eSemanal(x)) return x;
+      const mudancas = { ...(x.recorrencia.mudancas || {}) };
+      if (novoDia === base) delete mudancas[base];
+      else mudancas[base] = novoDia;
+      return { ...x, recorrencia: { ...x.recorrencia, mudancas } };
+    }));
   };
 
   /* As recorrentes só aparecem nos dias em que a regra delas está
@@ -39558,10 +39728,12 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const abertas = tarefas.filter(t => {
     if (t.estado === 'feita') return false;
     if (!t.recorrencia) return true;
+    if (eSemanal(t)) return semanaisPendentes(t, hoje).length > 0;
     return tarefaAtivaHoje(t, hoje, ctx) && !tarefaFeitaHoje(t, hoje);
   });
   const feitas = [
-    ...tarefas.filter(t => t.recorrencia && tarefaAtivaHoje(t, hoje, ctx) && tarefaFeitaHoje(t, hoje)),
+    ...tarefas.filter(t => eSemanal(t) && t.estado !== 'feita' && semanaisPendentes(t, hoje).length === 0 && semanalConcluidaEstaSemana(t, hoje)),
+    ...tarefas.filter(t => t.recorrencia && !eSemanal(t) && tarefaAtivaHoje(t, hoje, ctx) && tarefaFeitaHoje(t, hoje)),
     ...tarefas.filter(t => !t.recorrencia && t.estado === 'feita'),
   ].sort((a, b) => String(b.feitaEm || hoje).localeCompare(String(a.feitaEm || hoje)));
 
@@ -39618,7 +39790,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           <TarefasCalendario
             tarefas={tarefas} hoje={hoje} ctx={ctx}
             membros={membros} euId={euId} players={players}
-            onAbrir={abrir} onAlternarEm={alternarEm} onMover={mover} onNovaNoDia={novaNoDia}
+            onAbrir={abrir} onAlternarEm={alternarEm} onMover={mover} onMoverOcorrencia={moverOcorrencia} onNovaNoDia={novaNoDia}
           />
         ) : abertas.length === 0 ? (
           <EmptyState
@@ -39673,10 +39845,11 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         <TarefaModal
           tarefa={modal === 'new' ? null : modal}
           inicial={modal === 'new' && novoDia ? { prazo: novoDia } : null}
+          ocorrencia={modal !== 'new' ? ocorrencia : null}
           membros={membros}
           players={players}
           euId={euId}
-          onClose={() => { setModal(null); setNovoDia(''); }}
+          onClose={() => { setModal(null); setNovoDia(''); setOcorrencia(null); }}
           onSave={save}
           onRemove={modal !== 'new' ? () => remove(modal.id) : null}
         />
