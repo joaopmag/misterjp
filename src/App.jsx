@@ -28155,16 +28155,14 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   const tarefasPorFazer = tarefasPorFazer0.map(comDestino);
   const [missaoAtiva, setMissaoAtiva] = useState(null); // a tarefa cujo destino está aberto
   const [missaoCumprida, setMissaoCumprida] = useState(null); // título, para o ecrã "Missão cumprida"
-  const [missoesAdiadas, setMissoesAdiadas] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(`missoes-adiadas:${todayStr()}`) || '[]'); } catch (e) { return []; }
-  });
-  const adiarMissao = (id) => {
-    setMissoesAdiadas(prev => {
-      const novo = [...new Set([...prev, id])];
-      try { localStorage.setItem(`missoes-adiadas:${todayStr()}`, JSON.stringify(novo)); } catch (e) { /* sem memória, sem problema */ }
-      return novo;
-    });
-  };
+  /* "MAIS TARDE" = SÓ AGORA. A missão sai do ecrã nesta entrada no
+     Portal; no próximo login (código), aparece outra vez — até estar
+     feita. Ir à missão e voltar sem a fazer também não a reabre por cima
+     nesta entrada (fica o cartão "Tens uma tarefa nova"). */
+  const [missoesAdiadas, setMissoesAdiadas] = useState([]);
+  const adiarMissao = (id) => setMissoesAdiadas(prev => (prev.includes(id) ? prev : [...prev, id]));
+  // Sair e voltar a entrar (novo código) recomeça: a missão volta a aparecer.
+  useEffect(() => { setMissoesAdiadas([]); }, [loggedPlayerId, code]);
   const missoesEmCurso = useRef(new Set());
   const completarMissao = async (t, texto) => {
     if (!t || missoesEmCurso.current.has(t.id)) return;
@@ -28320,6 +28318,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     if (d.rota === 'wellness' && !wellnessWindow.open) return;
     if (d.rota === 'rpe' && !rpeWindow.open) return;
     setMissaoAtiva(t);
+    adiarMissao(t.id); // ao voltar, não reabre por cima nesta entrada — fica o cartão
     setActiveType(d.rota);
   };
   if (activeType === 'wellness') {
