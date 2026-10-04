@@ -5055,14 +5055,35 @@ function useEquipas() {
    (código 42703, coluna inexistente), carrega-se sem ela, como antes:
    os nomes e as Tarefas continuam a funcionar, só não há WhatsApp. */
 async function selecionarMembros(teamId) {
-  const comTelefone = await supabase
-    .from('team_members').select('user_id, papel, nome, telefone, created_at')
-    .eq('team_id', teamId).order('created_at');
-  if (!comTelefone.error) return comTelefone;
-  if (comTelefone.error.code !== '42703' && !/telefone/.test(comTelefone.error.message || '')) return comTelefone;
-  return supabase
-    .from('team_members').select('user_id, papel, nome, created_at')
-    .eq('team_id', teamId).order('created_at');
+  /* Tenta do mais completo para o mais simples: se a base de dados ainda
+     não tiver uma das colunas novas (código 42703), cai para a seguinte,
+     e a app continua a funcionar só sem essa informação. */
+  const tentativas = [
+    'user_id, papel, nome, telefone, genero, created_at',
+    'user_id, papel, nome, telefone, created_at',
+    'user_id, papel, nome, created_at',
+  ];
+  let ultimo = null;
+  for (const colunas of tentativas) {
+    ultimo = await supabase.from('team_members').select(colunas).eq('team_id', teamId).order('created_at');
+    if (!ultimo.error) return ultimo;
+    if (ultimo.error.code !== '42703' && !/telefone|genero/.test(ultimo.error.message || '')) return ultimo;
+  }
+  return ultimo;
+}
+
+/* GÉNERO DE CADA MEMBRO ('m' | 'f'), só para as mensagens que a app
+   escreve em nome dele concordarem ("Obrigado!" / "Obrigada!"). Sem
+   género definido, usa-se uma frase neutra. */
+const GENEROS = [['m', 'Masculino'], ['f', 'Feminino']];
+async function gravarGeneroMembro(teamId, userId, genero) {
+  const { error } = await supabase.from('team_members')
+    .update({ genero: genero || null })
+    .eq('team_id', teamId).eq('user_id', userId);
+  if (!error) return null;
+  return error.code === '42703' || /genero/.test(error.message || '')
+    ? 'A base de dados ainda não tem o campo do género. É preciso correr a atualização (coluna "genero" em team_members).'
+    : error.message;
 }
 
 /* Grava o telemóvel de um membro. Devolve null se correu bem, ou a
@@ -5171,6 +5192,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
      código; opcional para quem cria (pode pô-lo depois, e como dono pode
      pô-lo também pelos outros em "Gerir equipa"). */
   const [meuTelefone, setMeuTelefone] = useState('');
+  const [meuGenero, setMeuGenero] = useState('');
   const [aProcessar, setAProcessar] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -5193,13 +5215,17 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
      ainda não existir), a pessoa entra na mesma e só fica um aviso na
      consola; pode pô-lo depois em "Gerir equipa". */
   const gravarMeuTelefoneDepois = async (teamId) => {
-    if (!teamId || !meuTelefone.trim()) return;
+    if (!teamId || (!meuTelefone.trim() && !meuGenero)) return;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session && session.user && session.user.id;
       if (!uid) return;
       const msg = await gravarTelefoneMembro(teamId, uid, meuTelefone);
       if (msg) console.error('Não foi possível gravar o telemóvel:', msg);
+      if (meuGenero) {
+        const msgG = await gravarGeneroMembro(teamId, uid, meuGenero);
+        if (msgG) console.error('Não foi possível gravar o género:', msgG);
+      }
     } catch (e) { console.error('Não foi possível gravar o telemóvel:', e); }
   };
 
@@ -5249,6 +5275,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
     if (!codigo.trim()) { setErro('Escreve o código que te deram.'); return; }
     if (!meuNome.trim()) { setErro('Escreve o teu nome, para a equipa saber quem és.'); return; }
     if (!meuTelefone.trim()) { setErro('Escreve o teu telemóvel, para os colegas te poderem lembrar de tarefas.'); return; }
+    if (!meuGenero) { setErro('Escolhe o teu género, para o texto das mensagens.'); return; }
     if (!telefoneValido(meuTelefone)) { setErro('Esse telemóvel não parece válido. Inclui o indicativo, por exemplo +351 912 345 678.'); return; }
     setErro(''); setAProcessar(true);
     try {
@@ -5375,6 +5402,13 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
             <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
               Para os colegas te lembrarem de tarefas por WhatsApp. Só a equipa o vê.
             </div>
+            <div style={{ height: 12 }} />
+            <Field label="Género, para o texto das mensagens (opcional)" bloco solto>
+              <Select value={meuGenero} onChange={e => setMeuGenero(e.target.value)}>
+                <option value="">Escolher…</option>
+                {GENEROS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </Select>
+            </Field>
           </>
         )}
 
@@ -5407,6 +5441,13 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
             <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.6 }}>
               Para os colegas te lembrarem de tarefas por WhatsApp. Só a equipa o vê.
             </div>
+            <div style={{ height: 12 }} />
+            <Field label="Género, para o texto das mensagens" bloco solto>
+              <Select value={meuGenero} onChange={e => setMeuGenero(e.target.value)}>
+                <option value="">Escolher…</option>
+                {GENEROS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </Select>
+            </Field>
           </>
         )}
 
@@ -5539,6 +5580,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   const [aGuardarCor, setAGuardarCor] = useState(false);
   const [meuNome, setMeuNome] = useState('');
   const [meuTelefone, setMeuTelefone] = useState('');
+  const [meuGenero, setMeuGenero] = useState('');
   const [telefoneGuardado, setTelefoneGuardado] = useState(false);
   const [aGuardarLogo, setAGuardarLogo] = useState(false);
   // Códigos de acesso individuais dos atletas — mudou-se para aqui a
@@ -5628,6 +5670,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   const souDono = eu && eu.papel === 'owner';
   useEffect(() => { if (eu) setMeuNome(eu.nome || ''); }, [eu && eu.nome]);
   useEffect(() => { if (eu) setMeuTelefone(eu.telefone || ''); }, [eu && eu.telefone]);
+  useEffect(() => { if (eu) setMeuGenero(eu.genero || ''); }, [eu && eu.genero]);
 
   /* O TELEMÓVEL TAMBÉM É DE CADA UM. Só serve para os colegas poderem
      mandar um lembrete de tarefa por WhatsApp (ver `lembrar` nas
@@ -5637,6 +5680,10 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
     setErro(''); setTelefoneGuardado(false);
     const msg = await gravarTelefoneMembro(equipa.id, euId, meuTelefone);
     if (msg) { setErro(msg); return; }
+    if ((eu && eu.genero || '') !== meuGenero) {
+      const msgG = await gravarGeneroMembro(equipa.id, euId, meuGenero);
+      if (msgG) { setErro(msgG); return; }
+    }
     setTelefoneGuardado(true);
     carregar();
   };
@@ -5646,12 +5693,16 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
      os lembretes por WhatsApp não funcionam. O dono já gere a equipa
      (código, remover membros, passar a administração), por isso faz
      sentido que também possa completar este contacto. */
-  const [telOutro, setTelOutro] = useState(null); // { userId, valor }
+  const [telOutro, setTelOutro] = useState(null); // { userId, valor, genero, generoAntes }
   const guardarTelefoneOutro = async () => {
     if (!telOutro) return;
     setErro('');
     const msg = await gravarTelefoneMembro(equipa.id, telOutro.userId, telOutro.valor);
     if (msg) { setErro(msg); return; }
+    if ((telOutro.genero || '') !== (telOutro.generoAntes || '')) {
+      const msgG = await gravarGeneroMembro(equipa.id, telOutro.userId, telOutro.genero);
+      if (msgG) { setErro(msgG); return; }
+    }
     setTelOutro(null);
     carregar();
   };
@@ -5976,9 +6027,16 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
           Serve para os colegas te lembrarem de uma tarefa por WhatsApp, com a mensagem já escrita.
           Só os membros desta equipa o veem. Sem ele, os lembretes ficam só dentro da app.
         </div>
+        <div style={{ height: 12 }} />
+        <Field label="Género, para o texto das mensagens" bloco solto>
+          <Select value={meuGenero} onChange={e => { setMeuGenero(e.target.value); setTelefoneGuardado(false); }}>
+            <option value="">Sem preferência (frase neutra)</option>
+            {GENEROS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </Select>
+        </Field>
         <div style={{ ...barraAcoes, marginBottom: 18 }}>
           {telefoneGuardado && <span style={{ fontSize: 12, color: T.good, alignSelf: 'center' }}>Guardado.</span>}
-          <Btn variant="ghost" onClick={guardarTelefone} style={botaoAcao}>Guardar telemóvel</Btn>
+          <Btn variant="ghost" onClick={guardarTelefone} style={botaoAcao}>Guardar contacto</Btn>
         </div>
 
         {membros === null ? (
@@ -6009,6 +6067,12 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                           placeholder="+351 912 345 678"
                         />
                       </div>
+                      <div style={{ flex: '0 1 150px' }}>
+                        <Select value={telOutro.genero || ''} onChange={e => setTelOutro({ ...telOutro, genero: e.target.value })} aria-label="Tratamento nas mensagens">
+                          <option value="">Sem género</option>
+                          {GENEROS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        </Select>
+                      </div>
                       <Btn onClick={guardarTelefoneOutro}>Guardar</Btn>
                       <Btn variant="ghost" onClick={() => setTelOutro(null)}>Cancelar</Btn>
                     </div>
@@ -6016,10 +6080,11 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12, color: m.telefone ? T.muted : T.mutedDim }}>
                       <MessageCircle size={12} color={m.telefone ? '#25D366' : undefined} />
                       <span style={{ ...mono, fontSize: 11.5 }}>{m.telefone || 'Sem telemóvel'}</span>
+                      {m.genero && <span style={{ fontSize: 11.5 }}>· {m.genero === 'f' ? 'Feminino' : 'Masculino'}</span>}
                       {souDono && m.user_id !== euId && (
                         <button
-                          onClick={() => setTelOutro({ userId: m.user_id, valor: m.telefone || '' })}
-                          title={m.telefone ? 'Alterar telemóvel' : 'Adicionar telemóvel'}
+                          onClick={() => setTelOutro({ userId: m.user_id, valor: m.telefone || '', genero: m.genero || '', generoAntes: m.genero || '' })}
+                          title="Alterar telemóvel e tratamento nas mensagens"
                           style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}
                         ><Pencil size={12} /></button>
                       )}
@@ -39285,7 +39350,16 @@ const listaComE = (nomes) => (nomes.length <= 1 ? (nomes[0] || '') : `${nomes.sl
 /* O texto do lembrete a um colega depende do tipo de tarefa: nas
    automáticas diz-se logo o que interessa (quem faz anos, o que falta
    responder), em vez de repetir um título genérico. */
-function TEXTO_LEMBRETE_TAREFA(t, membros, hoje, players) {
+/* Quem ENVIA agradece no seu próprio género: "Obrigado!" / "Obrigada!".
+   Sem género na ficha da equipa, uma frase neutra. */
+function agradecimentoDe(userId, membros) {
+  const m = (membros || []).find(x => x.user_id === userId);
+  if (m && m.genero === 'f') return 'Obrigada!';
+  if (m && m.genero === 'm') return 'Obrigado!';
+  return 'Agradeço desde já!';
+}
+
+function TEXTO_LEMBRETE_TAREFA(t, membros, hoje, players, remetenteId) {
   const nome = (membros || []).find(x => x.user_id === t.responsavel);
   const primeiro = nome && nome.nome ? String(nome.nome).trim().split(/\s+/)[0] : '';
   const ola = `Olá${primeiro ? ` ${primeiro}` : ''}!`;
@@ -39304,7 +39378,7 @@ function TEXTO_LEMBRETE_TAREFA(t, membros, hoje, players) {
   }
   const quando = quandoDaTarefa(t, hoje);
   return `${ola} Só para lembrar a tarefa "${semEmojis(t.titulo)}"${quando ? `, que ${quando}` : ''}. `
-    + `Quando estiver feita, marca-a como concluída na app da equipa. Obrigado!${RODAPE_MENSAGEM_SISTEMA}`;
+    + `Quando estiver feita, marca-a como concluída na app da equipa. ${agradecimentoDe(remetenteId, membros)}${RODAPE_MENSAGEM_SISTEMA}`;
 }
 
 function TEXTO_LEMBRETE_TAREFA_JOGADOR(p, t, hoje) {
@@ -39326,7 +39400,7 @@ function alvoDoLembrete(t, euId, membros, players, hoje) {
   return {
     tipo: 'membro',
     nome: nomeDoMembro(t.responsavel, membros, euId),
-    link: linkWhatsApp(telefoneDoMembro(t.responsavel, membros), TEXTO_LEMBRETE_TAREFA(t, membros, hoje, players)),
+    link: linkWhatsApp(telefoneDoMembro(t.responsavel, membros), TEXTO_LEMBRETE_TAREFA(t, membros, hoje, players, euId)),
   };
 }
 
@@ -39700,7 +39774,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
             onClick={e => { e.stopPropagation(); if (!lembrado) onLembrar(tarefa); }}
             disabled={lembrado}
             title={lembrado
-              ? 'Já foi lembrado nas últimas 12 horas'
+              ? 'Já houve um lembrete nas últimas 12 horas'
               : (temWhatsApp ? `Lembrar ${alvo.nome} por WhatsApp` : `Lembrar ${alvo.nome} na app (sem telemóvel na ficha da equipa)`)}
             style={{
               ...body, display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 4,
@@ -39708,7 +39782,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
               border: `1px solid ${T.line}`, color: lembrado ? T.mutedDim : T.cream,
               cursor: lembrado ? 'default' : 'pointer',
             }}
-          >{temWhatsApp && !lembrado ? <MessageCircle size={9} color="#25D366" /> : <Bell size={9} />} {lembrado ? 'Lembrado' : 'Lembrar'}</button>
+          >{temWhatsApp && !lembrado ? <MessageCircle size={9} color="#25D366" /> : <Bell size={9} />} {lembrado ? 'Enviado' : 'Lembrar'}</button>
         )}
         {mudada && (
           <div style={{ fontSize: 9.5, color: T.warn, marginTop: 3 }}>
@@ -39969,10 +40043,10 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
           }}>
             <Bell size={12} />
             {lembreteAoJogador
-              ? `${jogadorAtribuido ? shortPlayerName(jogadorAtribuido, players) : 'Jogador'} lembrado ${timeAgo(lembrete.em)} por WhatsApp`
+              ? `Lembrete enviado a ${jogadorAtribuido ? shortPlayerName(jogadorAtribuido, players) : 'o jogador'} ${timeAgo(lembrete.em)} por WhatsApp`
               : tarefa.responsavel === euId
                 ? `Lembrete de ${nomeDoMembro(lembrete.de, membros, euId)} · ${timeAgo(lembrete.em)}`
-                : `Lembrado ${timeAgo(lembrete.em)}${lembrete.whatsapp ? ' por WhatsApp' : ''}`}
+                : `Lembrete enviado ${timeAgo(lembrete.em)}${lembrete.whatsapp ? ' por WhatsApp' : ''}`}
           </div>
         )}
 
@@ -40019,28 +40093,13 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
         </div>
       </div>
 
-      {/* À DIREITA: o Lembrar em cima, o tempo em baixo. */}
+      {/* À DIREITA: o tempo em cima, o Lembrar em baixo. */}
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between',
         alignSelf: 'stretch', gap: 8, flexShrink: 0,
       }}>
-        {possoLembrar && (
-            <button
-              onClick={e => { e.stopPropagation(); if (!lembreteRecente(tarefa)) onLembrar(tarefa); }}
-              disabled={lembreteRecente(tarefa)}
-              title={lembreteRecente(tarefa)
-                ? 'Já foi lembrado nas últimas 12 horas'
-                : (temWhatsApp ? `Lembrar ${nomeAlvo} por WhatsApp` : `Lembrar ${nomeAlvo} na app (sem telemóvel na ficha da equipa)`)}
-              style={{
-                ...body, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap',
-                padding: '2px 8px', borderRadius: 12, background: 'transparent',
-                border: `1px solid ${T.line}`, color: lembreteRecente(tarefa) ? T.mutedDim : T.cream,
-                cursor: lembreteRecente(tarefa) ? 'default' : 'pointer',
-              }}
-            >{temWhatsApp && !lembreteRecente(tarefa) ? <MessageCircle size={11} color="#25D366" /> : <Bell size={11} />} {lembreteRecente(tarefa) ? 'Lembrado' : 'Lembrar'}</button>
-          )}
           <span style={{
-            ...mono, fontSize: 11, marginTop: 'auto', flexShrink: 0,
+            ...mono, fontSize: 11, flexShrink: 0,
             color: feita ? T.mutedDim : (atrasada ? T.bad : (paraHoje ? T.warn : T.mutedDim)),
           }}>
             {semanal
@@ -40051,6 +40110,21 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
               ? (feita ? 'concluída hoje' : 'hoje')
               : (feita ? `concluída${tarefa.feitaEm ? ` · ${fmtShort(tarefa.feitaEm.slice(0, 10))}` : ''}` : prazoTexto(tarefa.prazo, hoje))}
           </span>
+        {possoLembrar && (
+            <button
+              onClick={e => { e.stopPropagation(); if (!lembreteRecente(tarefa)) onLembrar(tarefa); }}
+              disabled={lembreteRecente(tarefa)}
+              title={lembreteRecente(tarefa)
+                ? 'Já houve um lembrete nas últimas 12 horas'
+                : (temWhatsApp ? `Lembrar ${nomeAlvo} por WhatsApp` : `Lembrar ${nomeAlvo} na app (sem telemóvel na ficha da equipa)`)}
+              style={{
+                ...body, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, whiteSpace: 'nowrap', marginTop: 'auto',
+                padding: '2px 8px', borderRadius: 12, background: 'transparent',
+                border: `1px solid ${T.line}`, color: lembreteRecente(tarefa) ? T.mutedDim : T.cream,
+                cursor: lembreteRecente(tarefa) ? 'default' : 'pointer',
+              }}
+            >{temWhatsApp && !lembreteRecente(tarefa) ? <MessageCircle size={11} color="#25D366" /> : <Bell size={11} />} {lembreteRecente(tarefa) ? 'Enviado' : 'Lembrar'}</button>
+          )}
       </div>
     </div>
   );
