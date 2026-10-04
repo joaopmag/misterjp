@@ -28839,7 +28839,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
      são as marcas de giz de um quadro tático (cruzes, bolas, setas) a
      subir devagar, a rodar, quase transparentes. */
   const marcasGiz = React.useMemo(() => Array.from({ length: 22 }, (_, k) => ({
-    k, tipo: ['x', 'o', 'seta'][k % 3], left: Math.random() * 100, atraso: -Math.random() * 22,
+    k, tipo: ['bola', 'x', 'seta', 'cone', 'o', 'bola'][k % 6], left: Math.random() * 100, atraso: -Math.random() * 22,
     dur: 16 + Math.random() * 14, tam: 16 + Math.random() * 18, rot: Math.random() * 360, op: 0.08 + Math.random() * 0.12,
   })), []);
   const t = tarefas[Math.min(i, tarefas.length - 1)];
@@ -28862,6 +28862,9 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
   const marca = (player && player.number) ? String(player.number) : (nomeJ ? nomeJ.split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase() : '★');
   const mudar = (n) => { setI(n); setFolha(f => f + 1); };
   const giz = 'rgba(255,255,255,.82)';
+  // Onde está o íman: o guarda-redes na pequena área; os outros, no meio-campo.
+  const eGR = String((player && player.position) || '').toUpperCase() === 'GR';
+  const pos = eGR ? { x: 21, y: 80 } : { x: 78, y: 112 };
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', overflowX: 'hidden', ...body,
@@ -28876,6 +28879,8 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
             {m.tipo === 'x' && <><line x1="5" y1="5" x2="19" y2="19" /><line x1="19" y1="5" x2="5" y2="19" /></>}
             {m.tipo === 'o' && <circle cx="12" cy="12" r="8" />}
             {m.tipo === 'seta' && <><path d="M4 18 Q10 6 19 7" /><path d="M14 4 L19 7 L15.5 11.5" /></>}
+            {m.tipo === 'bola' && <><circle cx="12" cy="12" r="9" /><path d="M12 8.2 L15.4 10.6 L14.1 14.4 L9.9 14.4 L8.6 10.6 Z" fill="#fff" stroke="none" /><path d="M12 8.2 L12 3 M15.4 10.6 L20.4 9 M14.1 14.4 L17 18.8 M9.9 14.4 L7 18.8 M8.6 10.6 L3.6 9" strokeWidth="1.6" /></>}
+            {m.tipo === 'cone' && <><path d="M12 3 L18 19 L6 19 Z" /><path d="M8.6 12.5 L15.4 12.5" /><path d="M4 21 L20 21" /></>}
           </g>
         </svg>
       ))}
@@ -28896,22 +28901,46 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
 
         {/* A PRANCHETA */}
         <div style={{ position: 'relative', background: 'linear-gradient(160deg, #3b2a1d 0%, #24180f 100%)', borderRadius: 18, padding: '30px 14px 16px', boxShadow: '0 20px 44px rgba(0,0,0,.5)' }}>
-          {/* o separador da prancheta (em vez da mola), na cor do clube */}
+          {/* o separador da prancheta (em vez da mola), a amarelo */}
           <div style={{
             position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap',
-            background: T.corEquipa, color: '#fff', borderRadius: 20, padding: '6px 16px', boxShadow: '0 6px 14px rgba(0,0,0,.4)',
+            background: T.gold, color: '#1d1a10', borderRadius: 20, padding: '6px 16px', boxShadow: '0 6px 14px rgba(0,0,0,.4)',
             fontSize: 11, fontWeight: 800, letterSpacing: '.18em', textTransform: 'uppercase',
           }}>Instruções do mister{tarefas.length > 1 ? ` · ${i + 1}/${tarefas.length}` : ''}</div>
 
           {/* o quadro verde, com o campo a giz */}
           <div key={`q${folha}`} style={{ position: 'relative', background: 'linear-gradient(160deg, #2f5d3a 0%, #1f4429 100%)', borderRadius: 10, overflow: 'hidden', border: '3px solid #6b4b2e' }}>
             <svg viewBox="0 0 300 160" width="100%" style={{ display: 'block' }}>
+              {/* O campo todo a giz: linhas, meio-campo, grandes e pequenas
+                  áreas, marcas e arcos de penálti, cantos e as balizas. */}
               <g stroke={giz} strokeWidth="1.6" fill="none" opacity=".55" strokeLinecap="round">
-                <rect x="10" y="10" width="280" height="140" rx="2" />
+                <rect x="10" y="10" width="280" height="140" rx="1" />
                 <line x1="150" y1="10" x2="150" y2="150" />
-                <circle cx="150" cy="80" r="22" />
-                <rect x="10" y="45" width="40" height="70" />
-                <rect x="250" y="45" width="40" height="70" />
+                <circle cx="150" cy="80" r="20" />
+                {/* grandes áreas */}
+                <rect x="10" y="44" width="38" height="72" />
+                <rect x="252" y="44" width="38" height="72" />
+                {/* pequenas áreas */}
+                <rect x="10" y="64" width="14" height="32" />
+                <rect x="276" y="64" width="14" height="32" />
+                {/* arcos da grande área */}
+                <path d="M48 69.5 A16 16 0 0 1 48 90.5" />
+                <path d="M252 69.5 A16 16 0 0 0 252 90.5" />
+                {/* cantos */}
+                <path d="M10 15 A5 5 0 0 0 15 10" /><path d="M285 10 A5 5 0 0 0 290 15" />
+                <path d="M10 145 A5 5 0 0 1 15 150" /><path d="M285 150 A5 5 0 0 1 290 145" />
+              </g>
+              {/* marcas de penálti e o centro */}
+              <g fill={giz} opacity=".7">
+                <circle cx="36" cy="80" r="1.6" /><circle cx="264" cy="80" r="1.6" /><circle cx="150" cy="80" r="1.6" />
+              </g>
+              {/* as balizas (fora da linha de fundo, com rede) */}
+              <g stroke={giz} fill="none" opacity=".75" strokeWidth="1.6">
+                <rect x="3" y="70" width="7" height="20" />
+                <rect x="290" y="70" width="7" height="20" />
+              </g>
+              <g stroke={giz} opacity=".3" strokeWidth=".8">
+                {[73.5, 77, 80.5, 84, 87.5].map(y => <g key={y}><line x1="3" y1={y} x2="10" y2={y} /><line x1="290" y1={y} x2="297" y2={y} /></g>)}
               </g>
               {/* os adversários (cruzes de giz) */}
               <g stroke={giz} strokeWidth="2" strokeLinecap="round" opacity=".7">
@@ -28920,14 +28949,14 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
                 ))}
               </g>
               {/* a jogada: do jogador ao objetivo */}
-              <path d="M78 112 C 120 135, 165 30, 228 64" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"
+              <path d={`M${pos.x} ${pos.y} C ${pos.x + 42} ${pos.y + 23}, 165 30, 228 64`} fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"
                 strokeDasharray="6 5" style={{ strokeDasharray: 260, animation: 'pr-giz 1.3s ease-out .35s both' }} />
               <path d="M219 56 L230 65 L216 69" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"
                 style={{ animation: 'pr-ponta 1.7s ease-out both' }} />
             </svg>
             {/* o íman do jogador */}
             <div style={{
-              position: 'absolute', left: `${(78 / 300) * 100}%`, top: `${(112 / 160) * 100}%`, transform: 'translate(-50%,-50%)',
+              position: 'absolute', left: `${(pos.x / 300) * 100}%`, top: `${(pos.y / 160) * 100}%`, transform: 'translate(-50%,-50%)',
               width: 34, height: 34, borderRadius: '50%', background: `radial-gradient(circle at 35% 30%, #ff6b6b, ${T.corEquipa} 60%, #5c0614)`,
               border: '2px solid #fff', boxShadow: '0 3px 6px rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
               color: '#fff', fontSize: 13, fontWeight: 800, ...mono,
