@@ -28161,8 +28161,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      nesta entrada (fica o cartão "Tens uma tarefa nova"). */
   const [missoesAdiadas, setMissoesAdiadas] = useState([]);
   const adiarMissao = (id) => setMissoesAdiadas(prev => (prev.includes(id) ? prev : [...prev, id]));
+  // Aniversário: a página da festa aparece em cada entrada nesse dia.
+  const [aniversarioVisto, setAniversarioVisto] = useState(false);
   // Sair e voltar a entrar (novo código) recomeça: a missão volta a aparecer.
-  useEffect(() => { setMissoesAdiadas([]); }, [loggedPlayerId, code]);
+  useEffect(() => { setMissoesAdiadas([]); setAniversarioVisto(false); }, [loggedPlayerId, code]);
   const missoesEmCurso = useRef(new Set());
   const completarMissao = async (t, texto) => {
     if (!t || missoesEmCurso.current.has(t.id)) return;
@@ -28439,6 +28441,11 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     );
   }
 
+  // DIA DE ANOS: antes de tudo (até da missão), a página da festa.
+  if (player && isBirthdayToday(player.birthdate) && !aniversarioVisto) {
+    return <EcraAniversario player={player} onEntrar={() => setAniversarioVisto(true)} />;
+  }
+
   return (
     <>
     {ecraMissao}
@@ -28458,6 +28465,143 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       diasSequenciaChama={diasSequenciaChama}
     />
     </>
+  );
+}
+
+/* ===================================================================
+   DIA DE ANOS — "A CAMISOLA DOS ANOS" + "O GOLO DOS PARABÉNS"
+   ===================================================================
+   No dia de anos, ao entrar no Portal, o jogador não vê o menu: vê uma
+   página só dele.
+   · A CAMISOLA: uma camisola do clube, vista de costas, entra a rodar —
+     com o nome dele em cima e, no lugar do número, a IDADE que faz hoje.
+   · O GOLO: por baixo, uma baliza e uma bola. "Remata para celebrar":
+     um toque na bola e ela vai ao fundo das redes — a rede abana, o
+     telemóvel vibra, aparece "GOLO!" e rebenta uma chuva de papelinhos
+     nas cores do clube. Só depois aparece o "Entrar no Portal".
+   · A mensagem da equipa técnica.
+   Aparece em cada entrada nesse dia (como a missão), e por cima de tudo. */
+const CORES_FESTA = ['#C8102E', '#FFFFFF', '#C9A227', '#E84A5F', '#F3E3A0'];
+function EcraAniversario({ player, onEntrar }) {
+  const [golo, setGolo] = useState(false);
+  const nome = String(player.name || '').trim();
+  const primeiro = nome.split(/\s+/)[0] || 'Campeão';
+  const apelido = (nome.split(/\s+/).slice(-1)[0] || primeiro).toUpperCase();
+  const idade = age(player.birthdate);
+  const papelinhos = React.useMemo(() => Array.from({ length: 46 }, (_, k) => ({
+    k, left: Math.random() * 100, atraso: Math.random() * 5, dur: 4 + Math.random() * 4,
+    cor: CORES_FESTA[k % CORES_FESTA.length], larg: 6 + Math.random() * 6, rot: Math.random() * 360,
+  })), []);
+  const explosao = React.useMemo(() => Array.from({ length: 60 }, (_, k) => {
+    const ang = (Math.PI * 2 * k) / 60 + Math.random() * 0.3;
+    const dist = 120 + Math.random() * 170;
+    return { k, dx: Math.cos(ang) * dist, dy: Math.sin(ang) * dist - 60, cor: CORES_FESTA[k % CORES_FESTA.length], rot: Math.random() * 720 };
+  }), []);
+  const rematar = () => {
+    if (golo) return;
+    setGolo(true);
+    try { if (navigator.vibrate) navigator.vibrate([60, 40, 120]); } catch (e) { /* sem vibração */ }
+  };
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 90, overflowY: 'auto', overflowX: 'hidden', ...body,
+      background: `radial-gradient(circle at 50% 0%, #6b0f1d 0%, #2a0a10 45%, ${T.bg} 100%)`,
+    }}>
+      <style>{`
+        @keyframes festa-cair { 0% { transform: translateY(-10vh) rotate(0deg); } 100% { transform: translateY(110vh) rotate(720deg); } }
+        @keyframes festa-camisola { 0% { transform: perspective(700px) rotateY(-180deg) scale(.6); opacity: 0; } 60% { opacity: 1; } 100% { transform: perspective(700px) rotateY(0deg) scale(1); opacity: 1; } }
+        @keyframes festa-flutuar { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+        @keyframes festa-remate { 0% { transform: translate(0,0) scale(1) rotate(0); } 100% { transform: translate(0,-150px) scale(.42) rotate(540deg); } }
+        @keyframes festa-rede { 0%,100% { transform: scaleY(1); } 30% { transform: scaleY(1.08) translateY(-3px); } 60% { transform: scaleY(.96); } }
+        @keyframes festa-golo { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes festa-explode { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
+        @keyframes festa-pulsar { 0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,.45); } 50% { box-shadow: 0 0 0 12px rgba(255,255,255,0); } }
+        @keyframes festa-entrar { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: none; } }
+      `}</style>
+      {/* chuva de papelinhos, sempre */}
+      {papelinhos.map(c => (
+        <span key={c.k} style={{
+          position: 'fixed', top: 0, left: `${c.left}%`, width: c.larg, height: c.larg * 0.45, background: c.cor, borderRadius: 1,
+          opacity: 0.85, transform: `rotate(${c.rot}deg)`, animation: `festa-cair ${c.dur}s linear ${c.atraso}s infinite`, pointerEvents: 'none',
+        }} />
+      ))}
+      <div style={{ position: 'relative', maxWidth: 420, margin: '0 auto', padding: '30px 20px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10 }}>
+        <div style={{ fontSize: 11, color: T.gold, letterSpacing: '.24em', textTransform: 'uppercase' }}>Hoje é dia de festa</div>
+        {/* A CAMISOLA DOS ANOS */}
+        <div style={{ animation: 'festa-camisola 1.4s cubic-bezier(.2,.8,.2,1) both' }}>
+          <div style={{ animation: 'festa-flutuar 3s ease-in-out 1.4s infinite' }}>
+            <svg viewBox="0 0 200 210" width="210" height="220" aria-label={`Camisola ${apelido} ${idade ?? ''}`}>
+              <defs>
+                <linearGradient id="festa-tecido" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stopColor="#E0263F" /><stop offset="1" stopColor="#9E0C22" />
+                </linearGradient>
+              </defs>
+              <path d="M60 18 L82 8 Q100 20 118 8 L140 18 L190 48 L172 86 L150 74 L150 200 L50 200 L50 74 L28 86 L10 48 Z"
+                fill="url(#festa-tecido)" stroke="#5c0614" strokeWidth="2" />
+              <path d="M10 48 L28 86 L50 74 L50 60 Z M190 48 L172 86 L150 74 L150 60 Z" fill="#FFFFFF" opacity=".92" />
+              <path d="M82 8 Q100 22 118 8" fill="none" stroke="#FFFFFF" strokeWidth="5" />
+              <text x="100" y="62" textAnchor="middle" fill="#FFFFFF" fontSize={apelido.length > 9 ? 13 : 17} fontWeight="800"
+                style={{ fontFamily: "'Oswald', 'Inter', sans-serif", letterSpacing: '2px' }}>{apelido}</text>
+              <text x="100" y="158" textAnchor="middle" fill="#FFFFFF" fontSize="86" fontWeight="800"
+                style={{ fontFamily: "'Oswald', 'Inter', sans-serif" }} stroke="#5c0614" strokeWidth="2">{idade ?? '🎉'}</text>
+            </svg>
+          </div>
+        </div>
+        <div style={{ ...display, fontSize: 34, color: '#fff', lineHeight: 1.05, marginTop: 2 }}>Parabéns, {primeiro}!</div>
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, maxWidth: 330 }}>
+          {idade ? <><b style={{ color: '#fff' }}>{idade} anos</b> — e esta camisola é só tua. </> : null}
+          Toda a equipa técnica te deseja um dia em grande, dentro e fora do campo.
+        </div>
+
+        {/* O GOLO DOS PARABÉNS */}
+        <div style={{ position: 'relative', width: 280, height: 220, marginTop: 14 }}>
+          <svg viewBox="0 0 280 120" width="280" height="120" style={{ position: 'absolute', top: 0, left: 0, transformOrigin: '50% 0', animation: golo ? 'festa-rede .7s ease-out .55s 2' : 'none' }}>
+            <rect x="30" y="10" width="220" height="100" fill="rgba(255,255,255,.05)" />
+            {Array.from({ length: 12 }, (_, k) => <line key={`v${k}`} x1={30 + k * 20} y1="10" x2={30 + k * 20} y2="110" stroke="rgba(255,255,255,.25)" strokeWidth="1" />)}
+            {Array.from({ length: 6 }, (_, k) => <line key={`h${k}`} x1="30" y1={10 + k * 20} x2="250" y2={10 + k * 20} stroke="rgba(255,255,255,.25)" strokeWidth="1" />)}
+            <path d="M30 110 L30 10 L250 10 L250 110" fill="none" stroke="#fff" strokeWidth="5" strokeLinejoin="round" />
+          </svg>
+          {/* relva */}
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 110, height: 2, background: 'rgba(255,255,255,.5)' }} />
+          {/* a bola */}
+          <button type="button" onClick={rematar} aria-label="Rematar" style={{
+            position: 'absolute', left: '50%', top: 170, width: 46, height: 46, marginLeft: -23, marginTop: -23, borderRadius: '50%',
+            border: 'none', padding: 0, cursor: golo ? 'default' : 'pointer', background: 'transparent',
+            animation: golo ? 'festa-remate .55s cubic-bezier(.3,.6,.4,1) forwards' : 'festa-pulsar 1.6s ease-in-out infinite',
+          }}>
+            <svg viewBox="0 0 46 46" width="46" height="46">
+              <circle cx="23" cy="23" r="21" fill="#fff" stroke="#111" strokeWidth="2" />
+              <path d="M23 13 L31 19 L28 29 L18 29 L15 19 Z" fill="#111" />
+              <path d="M23 13 L23 3 M31 19 L41 15 M28 29 L34 38 M18 29 L12 38 M15 19 L5 15" stroke="#111" strokeWidth="2" />
+            </svg>
+          </button>
+          {/* explosão de papelinhos no golo */}
+          {golo && explosao.map(c => (
+            <span key={`e${c.k}`} style={{
+              position: 'absolute', left: '50%', top: 60, width: 8, height: 4, background: c.cor, borderRadius: 1, pointerEvents: 'none',
+              '--dx': `${c.dx}px`, '--dy': `${c.dy}px`, '--rot': `${c.rot}deg`,
+              animation: 'festa-explode 1.3s cubic-bezier(.1,.7,.3,1) .5s both',
+            }} />
+          ))}
+          {golo ? (
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 30, ...display, fontSize: 44, color: T.gold, animation: 'festa-golo .5s ease-out .55s both', textShadow: '0 3px 0 #5c0614' }}>GOLO!</div>
+          ) : (
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 200, fontSize: 12.5, color: 'rgba(255,255,255,.75)' }}>Toca na bola — remata para celebrar ⚽</div>
+          )}
+        </div>
+
+        {golo && (
+          <button type="button" onClick={onEntrar} style={{
+            marginTop: 18, width: '100%', padding: '15px 18px', borderRadius: 14, border: 'none', cursor: 'pointer',
+            background: '#fff', color: '#7a0c1c', fontSize: 15.5, fontWeight: 800, ...body,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, animation: 'festa-entrar .5s ease-out 1.2s both',
+          }}>Entrar no Portal <ArrowRight size={18} /></button>
+        )}
+        {!golo && (
+          <button type="button" onClick={onEntrar} style={{ marginTop: 16, background: 'none', border: 'none', color: 'rgba(255,255,255,.45)', fontSize: 12, cursor: 'pointer', ...body }}>Saltar</button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -40439,8 +40583,8 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const [novoDia, setNovoDia] = useState('');
   // Ocorrência semanal de onde a tarefa foi aberta no Calendário ({ base, dia }).
   const [ocorrencia, setOcorrencia] = useState(null);
-  // 'prazo' | 'pessoa' | 'calendario'
-  const [vista, setVista] = useState('prazo');
+  // 'calendario' | 'prazo' | 'pessoa' — o Calendário é o primeiro (e abre nele).
+  const [vista, setVista] = useState('calendario');
   const porPessoa = vista === 'pessoa';
   const [verFeitas, setVerFeitas] = useState(false);
   const hoje = todayStr();
@@ -40674,9 +40818,9 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         value={vista}
         onChange={setVista}
         tabs={[
+          { id: 'calendario', label: 'Calendário', icon: Calendar },
           { id: 'prazo', label: 'Por prazo', icon: CalendarDays },
           { id: 'pessoa', label: 'Por pessoa', icon: Users },
-          { id: 'calendario', label: 'Calendário', icon: Calendar },
         ]}
       />
 
