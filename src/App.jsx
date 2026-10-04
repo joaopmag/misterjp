@@ -7051,18 +7051,31 @@ function shortFullName(name) {
 // tarefas), para quem recebe perceber sempre que é o sistema a falar.
 const RODAPE_MENSAGEM_SISTEMA = '\n\n(Mensagem automática enviada pelo sistema de gestão da equipa.)';
 const TEXTO_LEMBRETE_WELLNESS = (p) => (
-  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje. Consegues responder já? 💪${RODAPE_MENSAGEM_SISTEMA}`
+  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao questionário de Wellness de hoje. Consegues responder já?${RODAPE_MENSAGEM_SISTEMA}`
 );
 const TEXTO_LEMBRETE_PSE = (p) => (
-  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao PSE de hoje. Consegues responder já? 💪${RODAPE_MENSAGEM_SISTEMA}`
+  `Olá ${firstNameOf(p.name)}! Ainda não respondeste ao PSE de hoje. Consegues responder já?${RODAPE_MENSAGEM_SISTEMA}`
 );
+
+/* SEM EMOJIS NAS MENSAGENS DE WHATSAPP. Enviados pelo link wa.me a partir
+   do computador, os emojis chegavam como "�" (visto na app de WhatsApp
+   do computador). Em vez de depender de cada versão do WhatsApp, tiram-se
+   todos: dos textos da app e também do que vem de dentro (por exemplo,
+   o título "Há aniversário no plantel 🎉"). */
+function semEmojis(texto) {
+  return String(texto || '')
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}\uFE0F\u200D\u20E3]/gu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
 
 function linkWhatsApp(contact, mensagem) {
   if (!contact) return null;
   const limpo = String(contact).replace(/[^\d+]/g, '');
   const digitos = limpo.replace(/\D/g, '');
   if (digitos.length < 8) return null;
-  return `https://wa.me/${limpo.replace(/^\+/, '')}?text=${encodeURIComponent(mensagem)}`;
+  return `https://wa.me/${limpo.replace(/^\+/, '')}?text=${encodeURIComponent(semEmojis(mensagem))}`;
 }
 
 function shortPlayerName(player, allPlayers) {
@@ -39203,7 +39216,7 @@ function conclusaoPorVerPara(t, euId) {
 function TEXTO_AVISO_CONCLUSAO(t, membros) {
   const m = (membros || []).find(x => x.user_id === t.criadoPor);
   const primeiro = m && m.nome ? String(m.nome).trim().split(/\s+/)[0] : '';
-  return `Olá${primeiro ? ` ${primeiro}` : ''}! A tarefa "${t.titulo}"${eSemanal(t) ? ' desta semana' : ''} já está concluída. 👍${RODAPE_MENSAGEM_SISTEMA}`;
+  return `Olá${primeiro ? ` ${primeiro}` : ''}! A tarefa "${semEmojis(t.titulo)}"${eSemanal(t) ? ' desta semana' : ''} já está concluída.${RODAPE_MENSAGEM_SISTEMA}`;
 }
 
 /* QUEM PODE CONCLUIR UMA TAREFA.
@@ -39261,23 +39274,43 @@ function quandoDaTarefa(t, hoje) {
   else if (!t.recorrencia) dia = t.prazo || '';
   else dia = hoje;
   if (!dia) return '';
-  if (dia === hoje) return 'era para hoje';
+  if (dia === hoje) return 'é para hoje';
   if (dia < hoje) return `estava marcada para ${DIAS_SEMANA[diaDaSemanaDe(dia)]}, ${fmtShort(dia)}`;
   return `está marcada para ${prazoTexto(dia, hoje)}`;
 }
 
-function TEXTO_LEMBRETE_TAREFA(t, membros, hoje) {
+// "A, B e C"
+const listaComE = (nomes) => (nomes.length <= 1 ? (nomes[0] || '') : `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`);
+
+/* O texto do lembrete a um colega depende do tipo de tarefa: nas
+   automáticas diz-se logo o que interessa (quem faz anos, o que falta
+   responder), em vez de repetir um título genérico. */
+function TEXTO_LEMBRETE_TAREFA(t, membros, hoje, players) {
   const nome = (membros || []).find(x => x.user_id === t.responsavel);
   const primeiro = nome && nome.nome ? String(nome.nome).trim().split(/\s+/)[0] : '';
+  const ola = `Olá${primeiro ? ` ${primeiro}` : ''}!`;
+  const tipo = t.recorrencia && t.recorrencia.tipo;
+
+  if (tipo === 'aniversario') {
+    const nomes = aniversariantesEm(players, hoje).map(p => p.name).filter(Boolean);
+    if (nomes.length) {
+      return `${ola} Hoje ${nomes.length > 1 ? 'são os aniversários de' : 'é o aniversário de'} ${listaComE(nomes)}. `
+        + `Não te esqueças de dar os parabéns em nome da equipa e, depois, marca a tarefa como concluída na app.${RODAPE_MENSAGEM_SISTEMA}`;
+    }
+  }
+  if (tipo === 'wellness_pse') {
+    return `${ola} Ainda há jogadores por responder ao Wellness ou ao PSE de hoje. `
+      + `Consegues enviar-lhes o lembrete em Monitorização?${RODAPE_MENSAGEM_SISTEMA}`;
+  }
   const quando = quandoDaTarefa(t, hoje);
-  return `Olá${primeiro ? ` ${primeiro}` : ''}! Só para lembrar a tarefa "${t.titulo}"${quando ? `, que ${quando}` : ''}. `
-    + `Quando estiver feita, marca-a como concluída na app da equipa. Obrigado! 👍${RODAPE_MENSAGEM_SISTEMA}`;
+  return `${ola} Só para lembrar a tarefa "${semEmojis(t.titulo)}"${quando ? `, que ${quando}` : ''}. `
+    + `Quando estiver feita, marca-a como concluída na app da equipa. Obrigado!${RODAPE_MENSAGEM_SISTEMA}`;
 }
 
 function TEXTO_LEMBRETE_TAREFA_JOGADOR(p, t, hoje) {
   const quando = quandoDaTarefa(t, hoje);
-  return `Olá ${firstNameOf(p.name)}! Tens uma tarefa por fazer no Portal do Atleta: "${t.titulo}"${quando ? `, que ${quando}` : ''}. `
-    + `Consegues tratar disso? 💪${RODAPE_MENSAGEM_SISTEMA}`;
+  return `Olá ${firstNameOf(p.name)}! Tens uma tarefa por fazer no Portal do Atleta: "${semEmojis(t.titulo)}"${quando ? `, que ${quando}` : ''}. `
+    + `Consegues tratar disso?${RODAPE_MENSAGEM_SISTEMA}`;
 }
 
 function alvoDoLembrete(t, euId, membros, players, hoje) {
@@ -39293,7 +39326,7 @@ function alvoDoLembrete(t, euId, membros, players, hoje) {
   return {
     tipo: 'membro',
     nome: nomeDoMembro(t.responsavel, membros, euId),
-    link: linkWhatsApp(telefoneDoMembro(t.responsavel, membros), TEXTO_LEMBRETE_TAREFA(t, membros, hoje)),
+    link: linkWhatsApp(telefoneDoMembro(t.responsavel, membros), TEXTO_LEMBRETE_TAREFA(t, membros, hoje, players)),
   };
 }
 
