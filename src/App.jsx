@@ -28571,7 +28571,18 @@ function EcraAniversario({ player, onEntrar }) {
   const primeiro = nome.split(/\s+/)[0] || 'Campeão';
   const apelido = (nome.split(/\s+/).slice(-1)[0] || primeiro).toUpperCase();
   const idade = age(player.birthdate);
-  const cc = coresCamisola(T.corEquipa);
+  /* GUARDA-REDES: em vez de marcar, DEFENDE. A camisola é de guarda-redes
+     (outra cor, como em campo) e o jogo é ao contrário: as luvas estão na
+     baliza, o remate vai ao ângulo e um toque nas luvas faz a defesa —
+     "DEFESA!" em vez de "GOLO!". */
+  const eGR = String(player.position || '').toUpperCase() === 'GR';
+  const corGR = (() => {
+    // verde de guarda-redes; se o clube já for verde, laranja
+    const h = String(T.corEquipa || '').replace('#', '');
+    const r = parseInt(h.slice(0, 2), 16) || 0, g = parseInt(h.slice(2, 4), 16) || 0, b = parseInt(h.slice(4, 6), 16) || 0;
+    return g > r && g > b ? '#E8833A' : '#2FA866';
+  })();
+  const cc = coresCamisola(eGR ? corGR : T.corEquipa);
   const papelinhos = React.useMemo(() => Array.from({ length: 46 }, (_, k) => ({
     k, left: Math.random() * 100, atraso: Math.random() * 5, dur: 4 + Math.random() * 4,
     cor: CORES_FESTA[k % CORES_FESTA.length], larg: 6 + Math.random() * 6, rot: Math.random() * 360,
@@ -28601,6 +28612,9 @@ function EcraAniversario({ player, onEntrar }) {
         @keyframes festa-explode { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
         @keyframes festa-pulsar { 0%,100% { box-shadow: 0 0 0 0 rgba(255,255,255,.45); } 50% { box-shadow: 0 0 0 12px rgba(255,255,255,0); } }
         @keyframes festa-entrar { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: none; } }
+        @keyframes festa-voo { 0% { transform: translate(0,0) rotate(0); } 100% { transform: translate(94px,-46px) rotate(-28deg) scale(.9); } }
+        @keyframes festa-remate-gr { 0% { transform: translate(0,0) scale(1) rotate(0); } 100% { transform: translate(94px,-140px) scale(.42) rotate(420deg); } }
+        @keyframes festa-luvas-espera { 0%,100% { transform: translateX(-6px); } 50% { transform: translateX(6px); } }
       `}</style>
       {/* chuva de papelinhos, sempre */}
       {papelinhos.map(c => (
@@ -28641,7 +28655,7 @@ function EcraAniversario({ player, onEntrar }) {
 
         {/* O GOLO DOS PARABÉNS */}
         <div style={{ position: 'relative', width: 280, height: 220, marginTop: 14 }}>
-          <svg viewBox="0 0 280 120" width="280" height="120" style={{ position: 'absolute', top: 0, left: 0, transformOrigin: '50% 0', animation: golo ? 'festa-rede .7s ease-out .55s 2' : 'none' }}>
+          <svg viewBox="0 0 280 120" width="280" height="120" style={{ position: 'absolute', top: 0, left: 0, transformOrigin: '50% 0', animation: golo && !eGR ? 'festa-rede .7s ease-out .55s 2' : 'none' }}>
             <rect x="30" y="10" width="220" height="100" fill="rgba(255,255,255,.05)" />
             {Array.from({ length: 12 }, (_, k) => <line key={`v${k}`} x1={30 + k * 20} y1="10" x2={30 + k * 20} y2="110" stroke="rgba(255,255,255,.25)" strokeWidth="1" />)}
             {Array.from({ length: 6 }, (_, k) => <line key={`h${k}`} x1="30" y1={10 + k * 20} x2="250" y2={10 + k * 20} stroke="rgba(255,255,255,.25)" strokeWidth="1" />)}
@@ -28650,10 +28664,31 @@ function EcraAniversario({ player, onEntrar }) {
           {/* relva */}
           <div style={{ position: 'absolute', left: 0, right: 0, top: 110, height: 2, background: 'rgba(255,255,255,.5)' }} />
           {/* a bola */}
-          <button type="button" onClick={rematar} aria-label="Rematar" style={{
+          {/* GR: as luvas na baliza (é nelas que se toca) */}
+          {eGR && (
+            <button type="button" onClick={rematar} aria-label="Defender" style={{
+              position: 'absolute', left: '50%', top: 70, width: 84, height: 54, marginLeft: -42, marginTop: -27, zIndex: 2,
+              border: 'none', padding: 0, background: 'transparent', cursor: golo ? 'default' : 'pointer',
+              animation: golo ? 'festa-voo .42s cubic-bezier(.2,.8,.3,1) forwards' : 'festa-luvas-espera 1.4s ease-in-out infinite',
+            }}>
+              <svg viewBox="0 0 84 54" width="84" height="54">
+                {[0, 1].map(k => (
+                  <g key={k} transform={k ? 'translate(84,0) scale(-1,1)' : ''}>
+                    <rect x="6" y="40" width="26" height="11" rx="3" fill={T.corEquipa} stroke="#111" strokeWidth="1.5" />
+                    <path d="M6 41 L6 20 Q6 14 10 14 L10 6 Q10 2 13.5 2 Q17 2 17 6 L17 12 L18 4 Q18 0.5 21.5 0.5 Q25 0.5 25 4 L25 12 L26 6 Q26 2.5 29.5 2.5 Q33 2.5 33 6 L33 22 L37 17 Q40 14 42 17 Q43.5 19 41 23 L32 41 Z"
+                      fill="#F4F4F0" stroke="#111" strokeWidth="1.5" strokeLinejoin="round" />
+                    <path d="M10 26 L30 26" stroke={corGR} strokeWidth="3" strokeLinecap="round" />
+                  </g>
+                ))}
+              </svg>
+            </button>
+          )}
+          <button type="button" onClick={eGR ? undefined : rematar} aria-label={eGR ? 'Bola' : 'Rematar'} style={{
             position: 'absolute', left: '50%', top: 170, width: 46, height: 46, marginLeft: -23, marginTop: -23, borderRadius: '50%',
-            border: 'none', padding: 0, cursor: golo ? 'default' : 'pointer', background: 'transparent',
-            animation: golo ? 'festa-remate .55s cubic-bezier(.3,.6,.4,1) forwards' : 'festa-pulsar 1.6s ease-in-out infinite',
+            border: 'none', padding: 0, cursor: golo || eGR ? 'default' : 'pointer', background: 'transparent',
+            animation: golo
+              ? (eGR ? 'festa-remate-gr .5s cubic-bezier(.3,.6,.4,1) forwards' : 'festa-remate .55s cubic-bezier(.3,.6,.4,1) forwards')
+              : (eGR ? 'none' : 'festa-pulsar 1.6s ease-in-out infinite'),
           }}>
             <BolaFutebol tamanho={46} />
           </button>
@@ -28666,9 +28701,11 @@ function EcraAniversario({ player, onEntrar }) {
             }} />
           ))}
           {golo ? (
-            <div style={{ position: 'absolute', left: 0, right: 0, top: 30, ...display, fontSize: 44, color: T.gold, animation: 'festa-golo .5s ease-out .55s both', textShadow: '0 3px 0 #5c0614' }}>GOLO!</div>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 30, ...display, fontSize: 44, color: T.gold, animation: 'festa-golo .5s ease-out .55s both', textShadow: '0 3px 0 #5c0614' }}>{eGR ? 'DEFESA!' : 'GOLO!'}</div>
           ) : (
-            <div style={{ position: 'absolute', left: 0, right: 0, top: 200, fontSize: 12.5, color: 'rgba(255,255,255,.75)' }}>Toca na bola — remata para celebrar ⚽</div>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 200, fontSize: 12.5, color: 'rgba(255,255,255,.75)' }}>
+              {eGR ? 'Vem aí o remate — toca nas luvas e defende 🧤' : 'Toca na bola — remata para celebrar ⚽'}
+            </div>
           )}
         </div>
 
