@@ -39171,7 +39171,9 @@ function tarefasAMinhaPorta(tarefas, euId, ctx) {
    - tarefas atribuídas a um JOGADOR, que têm o seu próprio circuito
      (o atleta submete a nota no Portal e o staff revê) e por isso ficam
      como estavam.
-   Os outros, em vez de concluir, podem LEMBRAR o responsável. */
+   Qualquer outro membro pode LEMBRAR o responsável, incluindo o dono e
+   quem criou a tarefa: esses podem concluí-la, mas são precisamente quem
+   mais vai querer cobrar. */
 function podeConcluirTarefa(t, euId, souDono) {
   if (!t) return false;
   if (t.jogadorId) return true;
@@ -39185,6 +39187,11 @@ function podeConcluirTarefa(t, euId, souDono) {
    - quem não é responsável vê "Lembrado há 3h" e o botão fica em pausa
      durante 12 horas, para um lembrete não virar insistência. */
 const LEMBRETE_PAUSA_MS = 12 * 60 * 60 * 1000;
+
+/* Lembra-se o responsável da equipa técnica de uma tarefa que não é
+   minha. Não se lembra a si próprio, nem numa tarefa sem responsável, nem
+   numa tarefa de jogador (essas têm o lembrete próprio do Portal). */
+const podeLembrarTarefa = (t, euId) => !!(t && t.responsavel && t.responsavel !== euId && !t.jogadorId);
 
 /* LEMBRETE POR WHATSAPP. Se o responsável tiver o telemóvel na sua
    ficha da equipa, "Lembrar" abre também o WhatsApp de quem lembra, já
@@ -39517,7 +39524,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
   const nomeCurto = tarefa.responsavel ? nome.split(' ')[0] : 'Sem responsável';
   const bloqueada = !podeConcluir;
   const lembreteParaMim = !feita && tarefa.lembrete && tarefa.responsavel === euId && !tarefa.lembrete.visto;
-  const possoLembrar = !feita && bloqueada && onLembrar && tarefa.responsavel && tarefa.responsavel !== euId;
+  const possoLembrar = podeLembrarTarefa(tarefa, euId) && !feita && !!onLembrar;
   const lembrado = lembreteRecente(tarefa);
   const temWhatsApp = !!linkWhatsApp(telefoneDoMembro(tarefa.responsavel, membros), '.');
 
@@ -39811,7 +39818,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
   const nomeResp = nomeDoMembro(tarefa.responsavel, membros, euId);
   const lembrete = !feita && tarefa.lembrete ? tarefa.lembrete : null;
   const lembreteParaMim = lembrete && tarefa.responsavel === euId && !lembrete.visto;
-  const possoLembrar = !feita && !podeConcluir && onLembrar && tarefa.responsavel && tarefa.responsavel !== euId;
+  const possoLembrar = podeLembrarTarefa(tarefa, euId) && !feita && !!onLembrar;
   const temWhatsApp = !!linkWhatsApp(telefoneDoMembro(tarefa.responsavel, membros), '.');
 
   return (
@@ -39944,7 +39951,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const souDono = ((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner';
   const podeConcluir = (t) => podeConcluirTarefa(t, euId, souDono);
   const lembrar = (t) => {
-    if (podeConcluir(t) || lembreteRecente(t)) return;
+    if (!podeLembrarTarefa(t, euId) || lembreteRecente(t)) return;
     // Abrir já, ainda dentro do clique: fora dele o browser bloqueia a janela.
     const link = linkLembreteTarefa(t, membros, hoje);
     if (link) window.open(link, '_blank', 'noopener');
