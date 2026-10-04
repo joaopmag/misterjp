@@ -28148,10 +28148,11 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      tudo funciona como antes. */
   const [, dadosDestinos] = usePortalFetch('checkin_tarefas_destinos', code, teamId);
   const destinosTarefas = (dadosDestinos && dadosDestinos.destinos) || {};
-  const tarefasPorFazer = tarefasPorFazer0.map(t => {
+  const comDestino = (t) => {
     const destino = destinosTarefas[t.id] || inferirDestinoMissao(`${t.titulo || ''} ${t.notas || ''}`);
     return destino ? { ...t, destino } : t;
-  });
+  };
+  const tarefasPorFazer = tarefasPorFazer0.map(comDestino);
   const [missaoAtiva, setMissaoAtiva] = useState(null); // a tarefa cujo destino está aberto
   const [missaoCumprida, setMissaoCumprida] = useState(null); // título, para o ecrã "Missão cumprida"
   const [missoesAdiadas, setMissoesAdiadas] = useState(() => {
@@ -28313,6 +28314,14 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     );
   };
 
+  const irParaMissao = (t) => {
+    const d = destinoMissao(t.destino);
+    if (!t.destino || t.destino === 'nota' || !d.rota) { setTarefaParaAbrir(t.id); setActiveType('tarefas'); return; }
+    if (d.rota === 'wellness' && !wellnessWindow.open) return;
+    if (d.rota === 'rpe' && !rpeWindow.open) return;
+    setMissaoAtiva(t);
+    setActiveType(d.rota);
+  };
   if (activeType === 'wellness') {
     const existing = monitoring.find(m => m.playerId === loggedPlayerId && m.date === selectedDate && typeof m.sono === 'number');
     const lastWellness = existing || monitoring
@@ -28369,7 +28378,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return (
       <PlayerTarefasView
         code={code} teamId={teamId} onBack={() => setActiveType('portal')}
-        tarefas={listaTarefas} estado={estadoTarefas}
+        tarefas={listaTarefas.map(comDestino)} estado={estadoTarefas}
+        onIrMissao={irParaMissao}
         tarefaAbrirId={tarefaParaAbrir} onTarefaAberta={() => setTarefaParaAbrir(null)}
         onNotaGravada={(id, patch) => setTarefasAjustes(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
       />
@@ -28396,14 +28406,6 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      vê é a tarefa por fazer, com um botão para o sítio certo. "Mais
      tarde" esconde-a até ao dia seguinte (fica o cartão no ecrã inicial). */
   const missoesParaMostrar = tarefasPorFazer.filter(t => !missoesAdiadas.includes(t.id));
-  const irParaMissao = (t) => {
-    const d = destinoMissao(t.destino);
-    if (!t.destino || t.destino === 'nota' || !d.rota) { setTarefaParaAbrir(t.id); setActiveType('tarefas'); return; }
-    if (d.rota === 'wellness' && !wellnessWindow.open) return;
-    if (d.rota === 'rpe' && !rpeWindow.open) return;
-    setMissaoAtiva(t);
-    setActiveType(d.rota);
-  };
   const ecraMissao = missoesParaMostrar.length > 0 ? (
     <EcraMissao
       tarefas={missoesParaMostrar}
@@ -28424,6 +28426,19 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       <div style={{ fontSize: 14, color: T.muted, maxWidth: 360 }}>{missaoCumprida}</div>
     </div>
   ) : null;
+
+  /* Enquanto as tarefas ainda estão a chegar, não se mostra o ecrã
+     inicial (senão aparecia primeiro a página e só depois a missão, aos
+     saltos): fica um ecrã de entrada limpo, e a seguir entra-se logo no
+     que interessa — a missão, se houver, ou o ecrã inicial. */
+  if (estadoTarefas === 'a-carregar') {
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, ...body }}>
+        <Loader2 size={26} className="animate-spin" color={T.warn} />
+        <div style={{ fontSize: 13, color: T.mutedDim }}>A entrar…</div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -29481,7 +29496,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
    notificação do ecrã inicial e para este ecrã — não faz sentido pedir
    duas vezes a mesma coisa). Aqui só se guarda localmente a nota que
    vai sendo escrita, otimista, e grava-se ao perder o foco do campo. */
-function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirId, onTarefaAberta, onNotaGravada }) {
+function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirId, onTarefaAberta, onNotaGravada, onIrMissao }) {
   const [abertaId, setAbertaId] = useState(null);
   const [notas, setNotas] = useState({}); // id -> texto local (por cima do que veio do servidor)
   const [aGravar, setAGravar] = useState({});
@@ -29662,7 +29677,12 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
           {lista.map(t => {
             const feita = t.estado === 'feita';
             return (
-              <button key={t.id} onClick={() => setAbertaId(t.id)} style={{
+              <button key={t.id} onClick={() => {
+                // Tarefa com destino (autoavaliação, wellness…): vai direto
+                // ao sítio onde se faz, não ao editor de notas.
+                if (onIrMissao && t.destino && t.destino !== 'nota' && t.estado !== 'feita' && !t.notaSubmetida) onIrMissao(t);
+                else setAbertaId(t.id);
+              }} style={{
                 display: 'flex', alignItems: 'flex-start', gap: 11, textAlign: 'left', width: '100%',
                 padding: '12px 14px', background: T.surface, borderRadius: 10, border: `1px solid ${T.line}`, cursor: 'pointer', ...body,
               }}>
