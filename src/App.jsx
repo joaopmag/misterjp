@@ -24,7 +24,7 @@ import {
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
   HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
-  Video, Repeat, Calendar,
+  Video, Repeat, Calendar, Bell, Lock,
   Volume2, VolumeX, CheckCircle2,
 } from 'lucide-react';
 
@@ -39018,7 +39018,35 @@ function tarefasAMinhaPorta(tarefas, euId, ctx) {
   }).length;
 }
 
-function TarefaModal({ tarefa, inicial, ocorrencia, membros, players, euId, onClose, onSave, onRemove }) {
+/* QUEM PODE CONCLUIR UMA TAREFA.
+
+   A conclusão é de quem tem de fazer a tarefa: só o RESPONSÁVEL a pode
+   marcar como feita (ou reabrir). Exceções, para ninguém ficar refém de
+   uma tarefa quando alguém está ausente ou saiu da equipa:
+   - quem a criou;
+   - o dono da equipa (papel `owner` em team_members);
+   - tarefas sem responsável, que continuam abertas a todos;
+   - tarefas atribuídas a um JOGADOR, que têm o seu próprio circuito
+     (o atleta submete a nota no Portal e o staff revê) e por isso ficam
+     como estavam.
+   Os outros, em vez de concluir, podem LEMBRAR o responsável. */
+function podeConcluirTarefa(t, euId, souDono) {
+  if (!t) return false;
+  if (t.jogadorId) return true;
+  if (!t.responsavel) return true;
+  return t.responsavel === euId || t.criadoPor === euId || !!souDono;
+}
+
+/* LEMBRAR. Fica um único lembrete na tarefa ({ de, em, visto }):
+   - o responsável vê-o destacado até abrir a tarefa (fica `visto`) ou a
+     concluir (é apagado);
+   - quem não é responsável vê "Lembrado há 3h" e o botão fica em pausa
+     durante 12 horas, para um lembrete não virar insistência. */
+const LEMBRETE_PAUSA_MS = 12 * 60 * 60 * 1000;
+const lembreteRecente = (t) => !!(t && t.lembrete && t.lembrete.em
+  && Date.now() - new Date(t.lembrete.em).getTime() < LEMBRETE_PAUSA_MS);
+
+function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros, players, euId, onClose, onSave, onRemove }) {
   const [f, setF] = useState(tarefa || {
     titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null, jogadorId: '',
     ...(inicial || {}),
@@ -39041,8 +39069,10 @@ function TarefaModal({ tarefa, inicial, ocorrencia, membros, players, euId, onCl
       </div>
 
       <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        {/* Quem não pode concluir também não muda o responsável: senão
+            bastava atribuir a tarefa a si próprio para a fechar. */}
         <Field label="Responsável">
-          <Select value={f.responsavel} onChange={e => setF({ ...f, responsavel: e.target.value })}>
+          <Select value={f.responsavel} onChange={e => setF({ ...f, responsavel: e.target.value })} disabled={!podeConcluir}>
             <option value="">Sem responsável</option>
             {(membros || []).map(m => (
               <option key={m.user_id} value={m.user_id}>{nomeDoMembro(m.user_id, membros, euId)}</option>
@@ -39058,10 +39088,15 @@ function TarefaModal({ tarefa, inicial, ocorrencia, membros, players, euId, onCl
           </Field>
         )}
         <Field label="Estado">
-          <Select value={f.estado} onChange={e => setF({ ...f, estado: e.target.value })}>
+          <Select
+            value={f.estado}
+            onChange={e => setF({ ...f, estado: e.target.value })}
+            // Sem permissão para concluir, também não se reabre uma concluída.
+            disabled={!podeConcluir && f.estado === 'feita'}
+          >
             <option value="aberta">Por fazer</option>
             <option value="curso">Iniciada</option>
-            <option value="feita">Concluída</option>
+            <option value="feita" disabled={!podeConcluir}>Concluída{!podeConcluir ? ' (só o responsável)' : ''}</option>
           </Select>
         </Field>
       </div>
@@ -39283,7 +39318,7 @@ function repeteNoDia(t, dia, hoje, ctx) {
   return tarefaAtivaHoje(t, dia, ctx);
 }
 
-function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, players, onAbrir, onAlternarEm, arrastavel, aArrastar, onDragStart, onDragEnd }) {
+function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, players, podeConcluir = true, onLembrar, onAbrir, onAlternarEm, arrastavel, aArrastar, onDragStart, onDragEnd }) {
   const repete = !!tarefa.recorrencia;
   const chave = ocorrencia ? ocorrencia.base : dia;
   const feita = repete ? (tarefa.concluidasEm || []).includes(chave) : tarefa.estado === 'feita';
@@ -39298,6 +39333,10 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
     : [];
   const cor = corDoMembro(tarefa.responsavel);
   const nome = nomeDoMembro(tarefa.responsavel, membros, euId);
+  const bloqueada = !podeConcluir;
+  const lembreteParaMim = !feita && tarefa.lembrete && tarefa.responsavel === euId && !tarefa.lembrete.visto;
+  const possoLembrar = !feita && bloqueada && onLembrar && tarefa.responsavel && tarefa.responsavel !== euId;
+  const lembrado = lembreteRecente(tarefa);
 
   return (
     <div
@@ -39307,22 +39346,24 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
       style={{
         display: 'flex', gap: 6, alignItems: 'flex-start',
         background: T.bg, borderRadius: 6, padding: '6px 7px',
-        border: `1px solid ${atrasada ? T.bad : T.line}`,
+        border: `1px solid ${lembreteParaMim ? T.crimsonBright : (atrasada ? T.bad : T.line)}`,
         opacity: aArrastar ? 0.45 : 1, cursor: arrastavel ? 'grab' : undefined,
       }}
     >
       <button
-        onClick={() => !futuro && onAlternarEm(tarefa, dia, ocorrencia ? ocorrencia.base : undefined)}
-        disabled={futuro}
-        title={futuro ? 'Ainda não chegou este dia' : (feita ? 'Desmarcar' : 'Marcar como concluída')}
-        aria-label={feita ? 'Desmarcar' : 'Marcar como concluída'}
+        onClick={() => !futuro && !bloqueada && onAlternarEm(tarefa, dia, ocorrencia ? ocorrencia.base : undefined)}
+        disabled={futuro || bloqueada}
+        title={bloqueada
+          ? `Só ${nome} pode ${feita ? 'reabrir' : 'concluir'}`
+          : (futuro ? 'Ainda não chegou este dia' : (feita ? 'Desmarcar' : 'Marcar como concluída'))}
+        aria-label={bloqueada ? `Só ${nome} pode concluir` : (feita ? 'Desmarcar' : 'Marcar como concluída')}
         style={{
           width: 14, height: 14, borderRadius: 4, flexShrink: 0, marginTop: 1, padding: 0,
-          cursor: futuro ? 'default' : 'pointer', opacity: futuro ? 0.4 : 1,
+          cursor: futuro ? 'default' : (bloqueada ? 'not-allowed' : 'pointer'), opacity: futuro ? 0.4 : 1,
           background: feita ? T.good : 'transparent', border: `1.5px solid ${feita ? T.good : T.line}`,
           display: 'grid', placeItems: 'center',
         }}
-      >{feita && <Check size={9} style={{ color: '#0d140e' }} />}</button>
+      >{feita ? <Check size={9} style={{ color: '#0d140e' }} /> : (bloqueada && <Lock size={8} style={{ color: T.mutedDim }} />)}</button>
       <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={() => onAbrir(tarefa, ocorrencia)}>
         <div style={{
           ...LINHAS(2), fontSize: 11.5, lineHeight: 1.3,
@@ -39343,9 +39384,23 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
             display: 'grid', placeItems: 'center', fontSize: 7.5, color: '#0d140e', fontWeight: 600, ...mono,
           }}>{nome.charAt(0).toUpperCase()}</span>
           <span style={{ ...LINHAS(1), minWidth: 0 }}>{nome.split(' ')[0]}</span>
+          {lembreteParaMim && <Bell size={10} style={{ flexShrink: 0, color: T.crimsonBright }} aria-label="Tens um lembrete" />}
           {repete && <Repeat size={10} style={{ flexShrink: 0, marginLeft: 'auto' }} aria-label="Repete" />}
           {tarefa.jogadorId && <UserCheck size={10} style={{ flexShrink: 0, marginLeft: repete ? 0 : 'auto', color: T.gold }} />}
         </div>
+        {possoLembrar && (
+          <button
+            onClick={e => { e.stopPropagation(); if (!lembrado) onLembrar(tarefa); }}
+            disabled={lembrado}
+            title={lembrado ? 'Já foi lembrado nas últimas 12 horas' : `Lembrar ${nome}`}
+            style={{
+              ...body, display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 4,
+              fontSize: 9.5, padding: '1px 6px', borderRadius: 10, background: 'transparent',
+              border: `1px solid ${T.line}`, color: lembrado ? T.mutedDim : T.cream,
+              cursor: lembrado ? 'default' : 'pointer',
+            }}
+          ><Bell size={9} /> {lembrado ? 'Lembrado' : 'Lembrar'}</button>
+        )}
         {mudada && (
           <div style={{ fontSize: 9.5, color: T.warn, marginTop: 3 }}>
             só esta semana (habitual: {dayLabel(ocorrencia.base)})
@@ -39356,7 +39411,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
   );
 }
 
-function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir, onAlternarEm, onMover, onMoverOcorrencia, onNovaNoDia }) {
+function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeConcluir, onLembrar, onAbrir, onAlternarEm, onMover, onMoverOcorrencia, onNovaNoDia }) {
   const [weekStart, setWeekStart] = useState(() => getMonday(hoje));
   const [arrastada, setArrastada] = useState(null);
   const [sobre, setSobre] = useState(null);
@@ -39474,6 +39529,7 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
                     <CartaoTarefaCalendario
                       key={`${t.id}-${oc ? oc.base : d}`}
                       tarefa={t} dia={d} ocorrencia={oc} hoje={hoje} membros={membros} euId={euId} players={players}
+                      podeConcluir={podeConcluir(t)} onLembrar={onLembrar}
                       onAbrir={onAbrir} onAlternarEm={onAlternarEm}
                       arrastavel={arrastavel}
                       aArrastar={!!arrastada && arrastada.id === t.id && arrastada.base === chave.base}
@@ -39516,7 +39572,8 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
               <div style={{ fontSize: 12, color: T.bad, marginBottom: 8, fontWeight: 600 }}>Atrasadas de semanas anteriores · {atrasadasAntes.length}</div>
               {atrasadasAntes.map(t => (
                 <LinhaTarefa key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
-                  onAbrir={onAbrir} onAlternar={x => onAlternarEm(x, hoje)} />
+                  onAbrir={onAbrir} onAlternar={x => onAlternarEm(x, hoje)}
+                  podeConcluir={podeConcluir(t)} onLembrar={onLembrar} />
               ))}
             </div>
           )}
@@ -39525,7 +39582,8 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
               <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, fontWeight: 600 }}>Sem dia marcado · {semPrazo.length}</div>
               {semPrazo.map(t => (
                 <LinhaTarefa key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
-                  onAbrir={onAbrir} onAlternar={x => onAlternarEm(x, hoje)} />
+                  onAbrir={onAbrir} onAlternar={x => onAlternarEm(x, hoje)}
+                  podeConcluir={podeConcluir(t)} onLembrar={onLembrar} />
               ))}
             </div>
           )}
@@ -39537,7 +39595,7 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, onAbrir
 
 /* Uma linha. A caixa à esquerda fecha a tarefa sem abrir nada — é o
    gesto mais frequente de todos e não devia custar dois cliques. */
-function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar }) {
+function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar, podeConcluir = true, onLembrar }) {
   const semanal = eSemanal(tarefa);
   const pendentes = semanal ? semanaisPendentes(tarefa, hoje) : [];
   const feita = semanal
@@ -39556,23 +39614,33 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
     : [];
   const jogadorAtribuido = tarefa.jogadorId ? (players || []).find(p => p.id === tarefa.jogadorId) : null;
   const porRever = tarefa.jogadorId && tarefa.notaSubmetida && !tarefa.notaRevista && tarefa.criadoPor === euId;
+  const nomeResp = nomeDoMembro(tarefa.responsavel, membros, euId);
+  const lembrete = !feita && tarefa.lembrete ? tarefa.lembrete : null;
+  const lembreteParaMim = lembrete && tarefa.responsavel === euId && !lembrete.visto;
+  const possoLembrar = !feita && !podeConcluir && onLembrar && tarefa.responsavel && tarefa.responsavel !== euId;
 
   return (
     <div style={{
       display: 'flex', gap: 11, alignItems: 'flex-start',
       padding: '11px 13px', background: T.bg, borderRadius: 9,
-      border: `1px solid ${porRever ? T.crimsonBright : T.line}`, marginBottom: 8,
+      border: `1px solid ${porRever || lembreteParaMim ? T.crimsonBright : T.line}`, marginBottom: 8,
     }}>
       <button
-        onClick={() => onAlternar(tarefa)}
-        title={feita ? (tarefa.recorrencia ? 'Desmarcar hoje' : 'Reabrir') : 'Marcar como concluída'}
+        onClick={() => podeConcluir && onAlternar(tarefa)}
+        disabled={!podeConcluir}
+        title={!podeConcluir
+          ? `Só ${nomeResp} pode ${feita ? 'reabrir' : 'concluir'}`
+          : (feita ? (tarefa.recorrencia ? 'Desmarcar hoje' : 'Reabrir') : 'Marcar como concluída')}
+        aria-label={!podeConcluir ? `Só ${nomeResp} pode concluir` : (feita ? 'Reabrir' : 'Marcar como concluída')}
         style={{
-          width: 17, height: 17, borderRadius: 5, flexShrink: 0, marginTop: 2, cursor: 'pointer',
+          width: 17, height: 17, borderRadius: 5, flexShrink: 0, marginTop: 2,
+          cursor: podeConcluir ? 'pointer' : 'not-allowed',
           background: feita ? T.good : 'transparent',
           border: `1.5px solid ${feita ? T.good : T.line}`,
           display: 'grid', placeItems: 'center', padding: 0,
+          opacity: !podeConcluir && !feita ? 0.7 : 1,
         }}
-      >{feita && <Check size={11} style={{ color: '#0d140e' }} />}</button>
+      >{feita ? <Check size={11} style={{ color: '#0d140e' }} /> : (!podeConcluir && <Lock size={9} style={{ color: T.mutedDim }} />)}</button>
 
       <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onAbrir(tarefa)}>
         <div style={{
@@ -39580,6 +39648,18 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
           color: feita ? T.mutedDim : T.cream,
           textDecoration: feita ? 'line-through' : 'none',
         }}>{tarefa.titulo}</div>
+
+        {lembrete && (
+          <div style={{
+            fontSize: 11.5, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5,
+            color: lembreteParaMim ? T.crimsonBright : T.mutedDim, fontWeight: lembreteParaMim ? 600 : 400,
+          }}>
+            <Bell size={12} />
+            {tarefa.responsavel === euId
+              ? `Lembrete de ${nomeDoMembro(lembrete.de, membros, euId)} · ${timeAgo(lembrete.em)}`
+              : `Lembrado ${timeAgo(lembrete.em)}`}
+          </div>
+        )}
 
         {aniversariantes.length > 0 && (
           <div style={{ fontSize: 11.5, color: T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -39621,6 +39701,19 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             </span>
           )}
           {tarefa.notas ? <FileText size={12} style={{ color: T.mutedDim }} /> : null}
+          {possoLembrar && (
+            <button
+              onClick={e => { e.stopPropagation(); if (!lembreteRecente(tarefa)) onLembrar(tarefa); }}
+              disabled={lembreteRecente(tarefa)}
+              title={lembreteRecente(tarefa) ? 'Já foi lembrado nas últimas 12 horas' : `Lembrar ${nomeResp}`}
+              style={{
+                ...body, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11,
+                padding: '2px 8px', borderRadius: 12, background: 'transparent',
+                border: `1px solid ${T.line}`, color: lembreteRecente(tarefa) ? T.mutedDim : T.cream,
+                cursor: lembreteRecente(tarefa) ? 'default' : 'pointer',
+              }}
+            ><Bell size={11} /> {lembreteRecente(tarefa) ? 'Lembrado' : 'Lembrar'}</button>
+          )}
           <span style={{
             ...mono, fontSize: 11, marginLeft: 'auto', flexShrink: 0,
             color: feita ? T.mutedDim : (atrasada ? T.bad : (paraHoje ? T.warn : T.mutedDim)),
@@ -39651,8 +39744,17 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const [verFeitas, setVerFeitas] = useState(false);
   const hoje = todayStr();
   const ctx = { sessions, matches, players, monitoring };
+  const souDono = ((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner';
+  const podeConcluir = (t) => podeConcluirTarefa(t, euId, souDono);
+  const lembrar = (t) => {
+    if (podeConcluir(t) || lembreteRecente(t)) return;
+    setTarefas(prev => prev.map(x => (x.id === t.id
+      ? { ...x, lembrete: { de: euId, em: new Date().toISOString(), visto: false } }
+      : x)));
+  };
 
   const save = (dados) => {
+    if (dados.estado === 'feita') dados = { ...dados, lembrete: null };
     if (dados.id) setTarefas(prev => prev.map(t => (t.id === dados.id ? dados : t)));
     else setTarefas(prev => [...prev, { ...dados, id: uid(), criadoPor: euId, criadoEm: new Date().toISOString() }]);
     setModal(null);
@@ -39668,6 +39770,11 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      o que o atleta escreveu, sem precisar de mais nenhum clique. */
   const abrir = (t, oc) => {
     setOcorrencia(oc || null);
+    // O responsável abriu a tarefa: o lembrete fica visto (deixa de estar
+    // destacado), mas a tarefa continua por fazer até ele a concluir.
+    if (t.lembrete && !t.lembrete.visto && t.responsavel === euId) {
+      setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, lembrete: { ...x.lembrete, visto: true } } : x)));
+    }
     if (t.jogadorId && t.notaSubmetida && !t.notaRevista && t.criadoPor === euId) {
       setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, notaRevista: true } : x)));
     }
@@ -39679,6 +39786,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      seguinte, sem ninguém ter de a reabrir. Numa tarefa normal,
      continua a ser o `estado` de sempre. */
   const alternar = (t) => {
+    if (!podeConcluir(t)) return;
     /* Semanal, na lista: concluir fecha a ocorrência pendente mais
        antiga; se já não há nenhuma (está em "Concluídas"), desfazer
        reabre a desta semana. */
@@ -39697,7 +39805,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
       return;
     }
     setTarefas(prev => prev.map(x => (x.id === t.id
-      ? { ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString() }
+      ? { ...x, estado: x.estado === 'feita' ? 'aberta' : 'feita', feitaEm: x.estado === 'feita' ? null : new Date().toISOString(), lembrete: null }
       : x)));
   };
 
@@ -39706,12 +39814,13 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      lista. */
   // `base`: nas semanais, a ocorrência (pode estar mudada para outro dia).
   function alternarEm(t, dia, base) {
+    if (!podeConcluir(t)) return;
     if (!t.recorrencia || (eSemanal(t) && !base)) { alternar(t); return; }
     const chave = base || dia;
     const lista = (t.concluidasEm || []).includes(chave)
       ? (t.concluidasEm || []).filter(d => d !== chave)
       : [...(t.concluidasEm || []), chave];
-    setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, concluidasEm: lista } : x)));
+    setTarefas(prev => prev.map(x => (x.id === t.id ? { ...x, concluidasEm: lista, lembrete: null } : x)));
   }
   const novaNoDia = (dia) => { setNovoDia(dia); setModal('new'); };
 
@@ -39803,6 +39912,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           <TarefasCalendario
             tarefas={tarefas} hoje={hoje} ctx={ctx}
             membros={membros} euId={euId} players={players}
+            podeConcluir={podeConcluir} onLembrar={lembrar}
             onAbrir={abrir} onAlternarEm={alternarEm} onMover={mover} onMoverOcorrencia={moverOcorrencia} onNovaNoDia={novaNoDia}
           />
         ) : abertas.length === 0 ? (
@@ -39829,6 +39939,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
                 <LinhaTarefa
                   key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
                   onAbrir={abrir} onAlternar={alternar}
+                  podeConcluir={podeConcluir(t)} onLembrar={lembrar}
                 />
               ))}
             </div>
@@ -39850,6 +39961,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           <LinhaTarefa
             key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
             onAbrir={abrir} onAlternar={alternar}
+            podeConcluir={podeConcluir(t)} onLembrar={lembrar}
           />
         ))}
       </Panel>
@@ -39859,6 +39971,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           tarefa={modal === 'new' ? null : modal}
           inicial={modal === 'new' && novoDia ? { prazo: novoDia } : null}
           ocorrencia={modal !== 'new' ? ocorrencia : null}
+          podeConcluir={modal === 'new' ? true : podeConcluir(modal)}
           membros={membros}
           players={players}
           euId={euId}
