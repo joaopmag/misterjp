@@ -28148,11 +28148,37 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      tudo funciona como antes. */
   const [, dadosDestinos] = usePortalFetch('checkin_tarefas_destinos', code, teamId);
   const destinosTarefas = (dadosDestinos && dadosDestinos.destinos) || {};
+  // A função devolve o destino (texto, versão antiga) ou { destino, missoes }.
   const comDestino = (t) => {
-    const destino = destinosTarefas[t.id] || inferirDestinoMissao(`${t.titulo || ''} ${t.notas || ''}`);
-    return destino ? { ...t, destino } : t;
+    const info = destinosTarefas[t.id];
+    const missoes = info && typeof info === 'object' && Array.isArray(info.missoes) && info.missoes.length ? info.missoes : null;
+    const destino = (info && typeof info === 'object' ? info.destino : info) || (missoes && missoes[0].destino)
+      || inferirDestinoMissao(`${t.titulo || ''} ${t.notas || ''}`);
+    return { ...t, ...(destino ? { destino } : {}), ...(missoes ? { missoes } : {}) };
   };
   const tarefasPorFazer = tarefasPorFazer0.map(comDestino);
+  /* PASSOS de uma tarefa (as várias missões dentro dela). Os feitos ficam
+     marcados na nota do atleta ("✓ Passo 2 · …"), que a equipa técnica lê;
+     a tarefa só é submetida quando o último passo estiver feito. */
+  const passosDe = (t) => {
+    const lista = (Array.isArray(t.missoes) && t.missoes.length)
+      ? t.missoes
+      : [{ id: 'unico', destino: t.destino || 'nota', instrucoes: '' }];
+    const nota = String(t.notaAtleta || '');
+    const varios = lista.length > 1;
+    return lista.map((m, k) => ({
+      ...m, id: m.id || `p${k}`, ordem: k, total: lista.length,
+      feito: varios ? nota.includes(`Passo ${k + 1} ·`) : false,
+    }));
+  };
+  // Cada passo por fazer = uma "missão" (uma folha da prancheta).
+  const itemMissao = (t, passo) => ({
+    id: `${t.id}:${passo.id}`, titulo: t.titulo, prazo: t.prazo, destino: passo.destino || 'nota',
+    notas: passo.instrucoes || (passo.total === 1 ? t.notas : ''),
+    passoTxt: passo.total > 1 ? `Passo ${passo.ordem + 1} de ${passo.total}` : '',
+    _tarefa: t, _passo: passo,
+  });
+  const missoesPorFazer = tarefasPorFazer.flatMap(t => passosDe(t).filter(p => !p.feito).map(p => itemMissao(t, p)));
   const [missaoAtiva, setMissaoAtiva] = useState(null); // a tarefa cujo destino está aberto
   const [missaoCumprida, setMissaoCumprida] = useState(null); // título, para o ecrã "Missão cumprida"
   /* "MAIS TARDE" = SÓ AGORA. A missão sai do ecrã nesta entrada no
@@ -28166,37 +28192,52 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // Sair e voltar a entrar (novo código) recomeça: a missão volta a aparecer.
   useEffect(() => { setMissoesAdiadas([]); setAniversarioVisto(false); }, [loggedPlayerId, code]);
   const missoesEmCurso = useRef(new Set());
-  const completarMissao = async (t, texto) => {
-    if (!t || missoesEmCurso.current.has(t.id)) return;
-    missoesEmCurso.current.add(t.id);
+  // Conclui UM passo (item da missão). Recebe o item ou, por compatibilidade, a tarefa.
+  const completarMissao = async (item, texto) => {
+    if (!item) return;
+    const it = item._tarefa ? item : (() => {
+      const pend = passosDe(item).filter(p => !p.feito);
+      return pend.length ? itemMissao(item, pend[0]) : null;
+    })();
+    if (!it || missoesEmCurso.current.has(it.id)) return;
+    missoesEmCurso.current.add(it.id);
+    const t = it._tarefa, p = it._passo;
     const agora = new Date();
     const quando = `${String(agora.getDate()).padStart(2, '0')}/${String(agora.getMonth() + 1).padStart(2, '0')} ${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
-    const nota = `✓ ${texto || destinoMissao(t.destino).acao} — feito na app (${quando})`;
+    const acao = texto || destinoMissao(p.destino).acao;
+    const linha = p.total > 1 ? `✓ Passo ${p.ordem + 1} · ${acao} — feito na app (${quando})` : `✓ ${acao} — feito na app (${quando})`;
+    const notaAntes = String((tarefasAjustes[t.id] && tarefasAjustes[t.id].notaAtleta) || t.notaAtleta || '').trim();
+    const nota = notaAntes ? `${notaAntes}\n${linha}` : linha;
+    const restantes = passosDe({ ...t, notaAtleta: nota }).filter(x => !x.feito);
+    const submeter = p.total === 1 || restantes.length === 0;
     try {
       const { data, error } = await supabase.rpc('checkin_tarefa_nota', {
-        p_code: code, p_team: teamId, p_tarefa_id: t.id, p_nota: nota, p_submeter: true,
+        p_code: code, p_team: teamId, p_tarefa_id: t.id, p_nota: nota, p_submeter: submeter,
       });
       if (error || !(data && data.ok)) throw (error || new Error('recusado'));
-      setTarefasAjustes(prev => ({ ...prev, [t.id]: { ...prev[t.id], notaAtleta: nota, notaSubmetida: true } }));
-      setMissaoAtiva(m => (m && m.id === t.id ? null : m));
-      setMissaoCumprida(t.titulo || 'Missão');
+      setTarefasAjustes(prev => ({ ...prev, [t.id]: { ...prev[t.id], notaAtleta: nota, ...(submeter ? { notaSubmetida: true } : {}) } }));
+      setMissaoAtiva(m => (m && m.id === it.id ? null : m));
+      setMissaoCumprida(submeter
+        ? (t.titulo || 'Missão')
+        : `${t.titulo || 'Missão'} — passo ${p.ordem + 1} feito. ${restantes.length === 1 ? 'Falta 1 passo.' : `Faltam ${restantes.length} passos.`}`);
     } catch (e) {
-      missoesEmCurso.current.delete(t.id);
+      missoesEmCurso.current.delete(it.id);
     }
   };
   // Missões que fecham sozinhas: Wellness / PSE respondidos hoje.
   const hojeK = todayStr();
   const fezWellnessHoje = (monitoring || []).some(m => m.playerId === loggedPlayerId && m.date === hojeK && typeof m.sono === 'number');
   const fezPseHoje = (monitoring || []).some(m => m.playerId === loggedPlayerId && m.date === hojeK && typeof m.pse === 'number');
+  // Um passo de cada vez (dois passos da mesma tarefa ao mesmo tempo
+  // escreveriam a nota um por cima do outro); o efeito volta a correr.
   useEffect(() => {
-    tarefasPorFazer.forEach(t => {
-      if (t.destino === 'wellness' && fezWellnessHoje) completarMissao(t, 'Wellness respondido');
-      if (t.destino === 'rpe' && fezPseHoje) completarMissao(t, 'PSE respondido');
-    });
+    const it = missoesPorFazer.find(x => (x.destino === 'wellness' && fezWellnessHoje) || (x.destino === 'rpe' && fezPseHoje));
+    if (it) completarMissao(it, it.destino === 'wellness' ? 'Wellness respondido' : 'PSE respondido');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fezWellnessHoje, fezPseHoje, tarefasPorFazer.length, Object.keys(destinosTarefas).length]);
+  }, [fezWellnessHoje, fezPseHoje, missoesPorFazer.length, JSON.stringify(tarefasAjustes), Object.keys(destinosTarefas).length]);
   const autoavaliacaoSubmetida = () => {
-    tarefasPorFazer.filter(t => t.destino === 'autoavaliacao').forEach(t => completarMissao(t, 'Autoavaliação submetida'));
+    const it = missoesPorFazer.find(x => x.destino === 'autoavaliacao');
+    if (it) completarMissao(it, 'Autoavaliação submetida');
   };
   autoavaliacaoSubmetidaRef.current = autoavaliacaoSubmetida;
   useEffect(() => {
@@ -28314,9 +28355,16 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     );
   };
 
-  const irParaMissao = (t) => {
+  const irParaMissao = (alvo) => {
+    // Pode vir um passo (da prancheta) ou uma tarefa (cartão/lista): na
+    // tarefa, vai-se ao primeiro passo por fazer.
+    const t = alvo && alvo._tarefa ? alvo : (() => {
+      const tt = comDestino(alvo);
+      const pend = passosDe(tt).filter(p => !p.feito);
+      return pend.length ? itemMissao(tt, pend[0]) : itemMissao(tt, passosDe(tt)[0]);
+    })();
     const d = destinoMissao(t.destino);
-    if (!t.destino || t.destino === 'nota' || !d.rota) { setTarefaParaAbrir(t.id); setActiveType('tarefas'); return; }
+    if (!t.destino || t.destino === 'nota' || !d.rota) { setTarefaParaAbrir(t._tarefa.id); setActiveType('tarefas'); return; }
     if (d.rota === 'wellness' && !wellnessWindow.open) return;
     if (d.rota === 'rpe' && !rpeWindow.open) return;
     setMissaoAtiva(t);
@@ -28406,7 +28454,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   /* MISSÃO EM ECRÃ INTEIRO — ao entrar, a primeira coisa que o jogador
      vê é a tarefa por fazer, com um botão para o sítio certo. "Mais
      tarde" esconde-a até ao dia seguinte (fica o cartão no ecrã inicial). */
-  const missoesParaMostrar = tarefasPorFazer.filter(t => !missoesAdiadas.includes(t.id));
+  const missoesParaMostrar = missoesPorFazer.filter(t => !missoesAdiadas.includes(t.id) && !missoesAdiadas.includes(t._tarefa.id));
   const ecraMissao = missoesParaMostrar.length > 0 ? (
     <EcraMissao
       player={player}
@@ -28913,7 +28961,9 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
                 animation: 'pr-carimbo .4s ease-out .9s both',
               }}>Prazo · {prazo.txt}</div>
             )}
-            <div style={{ fontSize: 11, color: '#6b6b5f', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 4 }}>Para {nomeJ ? nomeJ.split(/\s+/)[0] : 'ti'}</div>
+            <div style={{ fontSize: 11, color: '#6b6b5f', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 4 }}>
+              Para {nomeJ ? nomeJ.split(/\s+/)[0] : 'ti'}{t.passoTxt ? ` · ${t.passoTxt}` : ''}
+            </div>
             <div style={{ ...display, fontSize: 24, lineHeight: 1.1, color: '#14231a', paddingRight: prazo ? 92 : 0 }}>{tituloBonito}</div>
             {t.notas && <div style={{ marginTop: 8, fontSize: 14, lineHeight: '26px', color: '#2b3a30', whiteSpace: 'pre-wrap' }}>{t.notas}</div>}
           </div>
@@ -40085,12 +40135,29 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
     titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null, jogadorId: '',
     ...(inicial || {}),
   });
+  /* VÁRIAS MISSÕES NA MESMA TAREFA. Uma tarefa para um jogador pode ter
+     vários passos (ex.: 1. fazer a autoavaliação, 2. ver o vídeo do jogo,
+     3. responder ao Wellness amanhã) — cada um com o seu destino e as suas
+     INSTRUÇÕES. No Portal, cada passo é uma folha da prancheta; a tarefa
+     fecha quando o último estiver feito. Tarefas antigas (um só destino)
+     viram uma lista com um passo. */
+  const missoesIniciais = () => {
+    if (Array.isArray(f.missoes) && f.missoes.length) return f.missoes;
+    return [{ id: uid(), destino: f.destino || inferirDestinoMissao(`${f.titulo || ''} ${f.notas || ''}`) || 'nota', instrucoes: '' }];
+  };
+  const missoes = missoesIniciais();
+  const setMissoes = (lista) => setF(prev => ({ ...prev, missoes: lista, destino: (lista[0] && lista[0].destino) || 'nota' }));
+  const mudarMissao = (k, alteracao) => setMissoes(missoes.map((m, j) => (j === k ? { ...m, ...alteracao } : m)));
   const valido = String(f.titulo || '').trim().length > 0;
   const repete = !!f.recorrencia;
   const jogadoresOrdenados = sortByPosition(players || []);
 
   return (
-    <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} wide>
+    <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} larguraMax={1040}>
+      {/* DUAS COLUNAS — à esquerda a tarefa; à direita o jogador e as
+          missões dele. Mais larga e mais baixa: cabe sem scroll. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 22, alignItems: 'start' }}>
+      <div>
       <div style={{ marginBottom: 14 }}>
         <Field label="O que é preciso fazer" bloco solto>
           <Input
@@ -40099,7 +40166,10 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
               const titulo = e.target.value;
               // Destino sugerido pelo título, enquanto não for escolhido à mão.
               const sug = !f.destinoManual ? inferirDestinoMissao(titulo) : null;
-              setF({ ...f, titulo, ...(sug ? { destino: sug } : (!f.destinoManual ? { destino: undefined } : {})) });
+              // Sugere o destino do 1.º passo, enquanto não for escolhido à mão.
+              const lista = missoesIniciais();
+              const novaLista = !f.destinoManual && lista.length === 1 ? [{ ...lista[0], destino: sug || 'nota' }] : lista;
+              setF({ ...f, titulo, missoes: novaLista, destino: novaLista[0].destino });
             }}
             placeholder="Ex: análise de adversário"
             autoFocus
@@ -40200,44 +40270,6 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
           tarefa pode ter as duas coisas ao mesmo tempo: um membro do
           staff responsável por acompanhar, e um jogador a quem a
           tarefa diz respeito e que a vai ver no Portal do Atleta. */}
-      <div style={{ marginBottom: 14 }}>
-        <Field label="Atribuir a um jogador (aparece no Portal do Atleta)" solto>
-          <Select value={f.jogadorId || ''} onChange={e => setF({ ...f, jogadorId: e.target.value })}>
-            <option value="">Nenhum — só uma tarefa interna</option>
-            {jogadoresOrdenados.map(p => (
-              <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, players)}</option>
-            ))}
-          </Select>
-        </Field>
-      </div>
-      {/* LEVAR O JOGADOR A… — o destino da missão (ver DESTINOS_MISSAO). */}
-      {f.jogadorId && (
-        <div style={{ marginBottom: 14 }}>
-          <Field label="Levar o jogador a…" solto>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {DESTINOS_MISSAO.map(d => {
-                const on = (f.destino || 'nota') === d.id;
-                const Ic = d.icon;
-                return (
-                  <button key={d.id} type="button" onClick={() => setF({ ...f, destino: d.id, destinoManual: true })} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 18, cursor: 'pointer', ...body,
-                    fontSize: 12.5, background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
-                    border: `1px solid ${on ? T.crimson : T.line}`,
-                  }}><Ic size={13} />{d.rotulo}</button>
-                );
-              })}
-            </div>
-          </Field>
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6, lineHeight: 1.45 }}>
-            {destinoMissao(f.destino).auto
-              ? `O jogador vê a missão com o botão "${destinoMissao(f.destino).acao}" — e a tarefa fecha sozinha quando ele submeter.`
-              : (f.destino && f.destino !== 'nota'
-                ? `O jogador vê a missão com o botão "${destinoMissao(f.destino).acao}" e, lá, carrega em "Já fiz".`
-                : 'O jogador responde por escrito, como até aqui.')}
-          </div>
-        </div>
-      )}
-
       {/* REPETIÇÃO — ver a nota completa junto de `tarefaAtivaHoje`.
           Resumo rápido: escolhida uma regra, a tarefa passa a aparecer
           sozinha em "Hoje" sempre que essa regra estiver ativa, e a
@@ -40328,10 +40360,89 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
         </div>
       )}
 
+      </div>
+      <div>
+        <div style={{ marginBottom: 14 }}>
+          <Field label="Atribuir a um jogador (aparece no Portal do Atleta)" solto>
+            <Select value={f.jogadorId || ''} onChange={e => setF({ ...f, jogadorId: e.target.value })}>
+              <option value="">Nenhum — só uma tarefa interna</option>
+              {jogadoresOrdenados.map(p => (
+                <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, players)}</option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        {f.jogadorId ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 11.5, color: T.muted, letterSpacing: '.08em', textTransform: 'uppercase' }}>
+              Missões para o jogador {missoes.length > 1 ? `· ${missoes.length} passos` : ''}
+            </div>
+            {missoes.map((m, k) => {
+              const d = destinoMissao(m.destino);
+              return (
+                <div key={m.id} style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, background: T.bg }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{
+                      width: 22, height: 22, borderRadius: '50%', background: T.crimson, color: TEXT_ON_ACCENT, fontSize: 12, fontWeight: 700,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', ...mono,
+                    }}>{k + 1}</span>
+                    <span style={{ fontSize: 13, color: T.cream, fontWeight: 600 }}>{d.id === 'nota' ? 'Responder por escrito' : d.rotulo}</span>
+                    {missoes.length > 1 && (
+                      <button type="button" onClick={() => setMissoes(missoes.filter((_, j) => j !== k))} title="Tirar este passo"
+                        style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 2, display: 'flex' }}><X size={15} /></button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+                    {DESTINOS_MISSAO.map(dd => {
+                      const on = m.destino === dd.id;
+                      const Ic = dd.icon;
+                      return (
+                        <button key={dd.id} type="button" onClick={() => { mudarMissao(k, { destino: dd.id }); setF(prev => ({ ...prev, destinoManual: true })); }} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 16, cursor: 'pointer', ...body,
+                          fontSize: 11.5, background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
+                          border: `1px solid ${on ? T.crimson : T.line}`,
+                        }}><Ic size={12} />{dd.rotulo}</button>
+                      );
+                    })}
+                  </div>
+                  <TextArea
+                    value={m.instrucoes || ''}
+                    onChange={e => mudarMissao(k, { instrucoes: e.target.value })}
+                    placeholder={d.id === 'autoavaliacao' ? 'Instruções (ex.: responde com calma, pensa nos últimos jogos)'
+                      : d.id === 'biblioteca' ? 'Instruções (ex.: vê o corte da pressão alta e repara no teu posicionamento)'
+                        : d.id === 'nota' ? 'O que queres que o jogador te responda'
+                          : 'Instruções para este passo (opcional)'}
+                    style={{ minHeight: 54, fontSize: 13 }}
+                  />
+                  <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 6, lineHeight: 1.4 }}>
+                    {d.auto ? `Botão "${d.acao}" — o passo fica feito quando ele submeter.`
+                      : d.id !== 'nota' ? `Botão "${d.acao}" — lá, ele carrega em "Já fiz".`
+                        : 'Ele responde por escrito.'}
+                  </div>
+                </div>
+              );
+            })}
+            <button type="button" onClick={() => setMissoes([...missoes, { id: uid(), destino: 'nota', instrucoes: '' }])} style={{
+              border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, borderRadius: 10, padding: '9px 12px',
+              cursor: 'pointer', fontSize: 12.5, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}><Plus size={14} /> Acrescentar outra missão para o mesmo jogador</button>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.5 }}>
+            Escolhe um jogador para lhe dares missões — cada uma com o seu destino (autoavaliação, wellness, vídeo…) e as suas instruções.
+          </div>
+        )}
+      </div>
+      </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
         {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> Apagar</Btn>}
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => valido && onSave(f)} disabled={!valido}>Guardar</Btn>
+        <Btn onClick={() => {
+          if (!valido) return;
+          // As missões gravam-se sempre que há jogador (mesmo sem lhes mexer).
+          const { destinoManual, ...resto } = f; // eslint-disable-line no-unused-vars
+          onSave(f.jogadorId ? { ...resto, missoes, destino: (missoes[0] && missoes[0].destino) || 'nota' } : resto);
+        }} disabled={!valido}>Guardar</Btn>
       </div>
     </Modal>
   );
