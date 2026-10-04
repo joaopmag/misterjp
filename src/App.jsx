@@ -28980,9 +28980,11 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
                 animation: 'pr-alvo 1.9s ease-out both, pr-alvo-pulsar 2s ease-in-out 2s infinite',
               }}><Ic size={22} color="#fff" /></div>
             </div>
-            <div style={{ position: 'absolute', right: 10, bottom: 6, fontSize: 10.5, color: 'rgba(255,255,255,.75)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
-              Objetivo: {d.id === 'nota' ? 'responder' : d.rotulo}
-            </div>
+          </div>
+          {/* O objetivo, escrito na madeira por baixo do quadro (dentro do
+              quadro ficava em cima da linha lateral e não se lia). */}
+          <div style={{ marginTop: 7, textAlign: 'center', fontSize: 10.5, color: 'rgba(255,255,255,.72)', letterSpacing: '.14em', textTransform: 'uppercase' }}>
+            Objetivo · <span style={{ color: T.gold, fontWeight: 700 }}>{d.id === 'nota' ? 'Responder' : d.rotulo}</span>
           </div>
 
           {/* a folha com as instruções */}
