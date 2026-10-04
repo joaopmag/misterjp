@@ -28481,13 +28481,97 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      nas cores do clube. Só depois aparece o "Entrar no Portal".
    · A mensagem da equipa técnica.
    Aparece em cada entrada nesse dia (como a missão), e por cima de tudo. */
+// Cores da camisola a partir da cor do clube (T.corEquipa): tecido com
+// um degradê da própria cor, e números/nome em branco — ou em escuro,
+// quando o clube veste uma cor clara (branco, amarelo…).
+function coresCamisola(hex) {
+  const h = String(hex || '#B5393F').replace('#', '');
+  const n = h.length === 3 ? h.split('').map(c => c + c).join('') : h.padEnd(6, '0').slice(0, 6);
+  const r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
+  const misturar = (f) => `#${[r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v * f)))).map(v => v.toString(16).padStart(2, '0')).join('')}`;
+  const luz = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  const clara = luz > 0.62;
+  return {
+    claro: misturar(1.15), base: `#${n}`, escuro: misturar(0.62), contorno: misturar(0.45),
+    texto: clara ? '#1B1B1B' : '#FFFFFF', mangas: clara ? misturar(0.55) : '#FFFFFF',
+  };
+}
 const CORES_FESTA = ['#C8102E', '#FFFFFF', '#C9A227', '#E84A5F', '#F3E3A0'];
+
+/* Bola de futebol "a sério" (o padrão clássico de pentágonos pretos e
+   hexágonos brancos), com sombra para parecer redonda. */
+function BolaFutebol({ tamanho = 46 }) {
+  const c = 50, R = 46;
+  const poli = (cx, cy, r, rot) => Array.from({ length: 5 }, (_, k) => {
+    const a = rot + (k * 2 * Math.PI) / 5;
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  });
+  const centro = poli(c, c, 14, -Math.PI / 2);
+  const fora = Array.from({ length: 5 }, (_, k) => {
+    const a = -Math.PI / 2 + Math.PI / 5 + (k * 2 * Math.PI) / 5;
+    return poli(c + 41 * Math.cos(a), c + 41 * Math.sin(a), 13, a + Math.PI);
+  });
+  const txt = (pts) => pts.map(p => p.map(v => v.toFixed(2)).join(',')).join(' ');
+  return (
+    <svg viewBox="0 0 100 100" width={tamanho} height={tamanho}>
+      <defs>
+        <radialGradient id="bola-luz" cx="38%" cy="32%" r="75%">
+          <stop offset="0" stopColor="#FFFFFF" /><stop offset=".55" stopColor="#ECECEC" /><stop offset="1" stopColor="#9C9C9C" />
+        </radialGradient>
+        <radialGradient id="bola-sombra" cx="50%" cy="50%" r="50%">
+          <stop offset=".72" stopColor="rgba(0,0,0,0)" /><stop offset="1" stopColor="rgba(0,0,0,.38)" />
+        </radialGradient>
+        <clipPath id="bola-corte"><circle cx={c} cy={c} r={R} /></clipPath>
+      </defs>
+      <circle cx={c} cy={c} r={R} fill="url(#bola-luz)" />
+      <g clipPath="url(#bola-corte)">
+        {/* COSTURAS dos hexágonos brancos:
+            · entre cada dois pentágonos de fora, os cantos mais próximos ligam-se;
+            · do meio dessa ligação, uma costura até ao canto do pentágono central;
+            · dos cantos de fora de cada pentágono, costuras para a borda da bola. */}
+        {fora.map((A, k) => {
+          const B = fora[(k + 1) % 5];
+          let melhor = null;
+          A.forEach(pa => B.forEach(pb => {
+            const d = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
+            if (!melhor || d < melhor.d) melhor = { d, pa, pb };
+          }));
+          const meio = [(melhor.pa[0] + melhor.pb[0]) / 2, (melhor.pa[1] + melhor.pb[1]) / 2];
+          // canto do pentágono central virado para este par
+          const ang = Math.atan2(meio[1] - c, meio[0] - c);
+          let canto = centro[0], dm = Infinity;
+          centro.forEach(q => { const dd = Math.abs(Math.atan2(Math.sin(Math.atan2(q[1] - c, q[0] - c) - ang), Math.cos(Math.atan2(q[1] - c, q[0] - c) - ang))); if (dd < dm) { dm = dd; canto = q; } });
+          return (
+            <g key={`c${k}`} stroke="#3A3A3A" strokeWidth="1.6" strokeLinecap="round">
+              <line x1={melhor.pa[0]} y1={melhor.pa[1]} x2={melhor.pb[0]} y2={melhor.pb[1]} />
+              <line x1={canto[0]} y1={canto[1]} x2={meio[0]} y2={meio[1]} />
+            </g>
+          );
+        })}
+        {fora.map((A, k) => {
+          // os dois cantos mais afastados do centro seguem para a borda
+          const ordenados = [...A].sort((p1, p2) => Math.hypot(p2[0] - c, p2[1] - c) - Math.hypot(p1[0] - c, p1[1] - c)).slice(0, 2);
+          return ordenados.map((q, j) => {
+            const a2 = Math.atan2(q[1] - c, q[0] - c);
+            return <line key={`b${k}${j}`} x1={q[0]} y1={q[1]} x2={c + (R + 6) * Math.cos(a2)} y2={c + (R + 6) * Math.sin(a2)} stroke="#3A3A3A" strokeWidth="1.6" />;
+          });
+        })}
+        <polygon points={txt(centro)} fill="#151515" stroke="#151515" strokeWidth="1.5" strokeLinejoin="round" />
+        {fora.map((pts, k) => <polygon key={`p${k}`} points={txt(pts)} fill="#151515" stroke="#151515" strokeWidth="1.5" strokeLinejoin="round" />)}
+      </g>
+      <circle cx={c} cy={c} r={R} fill="url(#bola-sombra)" />
+      <circle cx={c} cy={c} r={R} fill="none" stroke="#2A2A2A" strokeWidth="1.5" />
+      <ellipse cx="36" cy="28" rx="12" ry="7" fill="#FFFFFF" opacity=".55" transform="rotate(-25 36 28)" />
+    </svg>
+  );
+}
 function EcraAniversario({ player, onEntrar }) {
   const [golo, setGolo] = useState(false);
   const nome = String(player.name || '').trim();
   const primeiro = nome.split(/\s+/)[0] || 'Campeão';
   const apelido = (nome.split(/\s+/).slice(-1)[0] || primeiro).toUpperCase();
   const idade = age(player.birthdate);
+  const cc = coresCamisola(T.corEquipa);
   const papelinhos = React.useMemo(() => Array.from({ length: 46 }, (_, k) => ({
     k, left: Math.random() * 100, atraso: Math.random() * 5, dur: 4 + Math.random() * 4,
     cor: CORES_FESTA[k % CORES_FESTA.length], larg: 6 + Math.random() * 6, rot: Math.random() * 360,
@@ -28505,7 +28589,7 @@ function EcraAniversario({ player, onEntrar }) {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 90, overflowY: 'auto', overflowX: 'hidden', ...body,
-      background: `radial-gradient(circle at 50% 0%, #6b0f1d 0%, #2a0a10 45%, ${T.bg} 100%)`,
+      background: `radial-gradient(circle at 50% 0%, ${cc.contorno} 0%, ${T.bg} 70%)`,
     }}>
       <style>{`
         @keyframes festa-cair { 0% { transform: translateY(-10vh) rotate(0deg); } 100% { transform: translateY(110vh) rotate(720deg); } }
@@ -28533,17 +28617,17 @@ function EcraAniversario({ player, onEntrar }) {
             <svg viewBox="0 0 200 210" width="210" height="220" aria-label={`Camisola ${apelido} ${idade ?? ''}`}>
               <defs>
                 <linearGradient id="festa-tecido" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stopColor="#E0263F" /><stop offset="1" stopColor="#9E0C22" />
+                  <stop offset="0" stopColor={cc.claro} /><stop offset=".55" stopColor={cc.base} /><stop offset="1" stopColor={cc.escuro} />
                 </linearGradient>
               </defs>
               <path d="M60 18 L82 8 Q100 20 118 8 L140 18 L190 48 L172 86 L150 74 L150 200 L50 200 L50 74 L28 86 L10 48 Z"
-                fill="url(#festa-tecido)" stroke="#5c0614" strokeWidth="2" />
-              <path d="M10 48 L28 86 L50 74 L50 60 Z M190 48 L172 86 L150 74 L150 60 Z" fill="#FFFFFF" opacity=".92" />
-              <path d="M82 8 Q100 22 118 8" fill="none" stroke="#FFFFFF" strokeWidth="5" />
-              <text x="100" y="62" textAnchor="middle" fill="#FFFFFF" fontSize={apelido.length > 9 ? 13 : 17} fontWeight="800"
+                fill="url(#festa-tecido)" stroke={cc.contorno} strokeWidth="2" />
+              <path d="M10 48 L28 86 L50 74 L50 60 Z M190 48 L172 86 L150 74 L150 60 Z" fill={cc.mangas} opacity=".92" />
+              <path d="M82 8 Q100 22 118 8" fill="none" stroke={cc.mangas} strokeWidth="5" />
+              <text x="100" y="62" textAnchor="middle" fill={cc.texto} fontSize={apelido.length > 9 ? 13 : 17} fontWeight="800"
                 style={{ fontFamily: "'Oswald', 'Inter', sans-serif", letterSpacing: '2px' }}>{apelido}</text>
-              <text x="100" y="158" textAnchor="middle" fill="#FFFFFF" fontSize="86" fontWeight="800"
-                style={{ fontFamily: "'Oswald', 'Inter', sans-serif" }} stroke="#5c0614" strokeWidth="2">{idade ?? '🎉'}</text>
+              <text x="100" y="158" textAnchor="middle" fill={cc.texto} fontSize="86" fontWeight="800"
+                style={{ fontFamily: "'Oswald', 'Inter', sans-serif" }} stroke={cc.contorno} strokeWidth="2">{idade ?? '🎉'}</text>
             </svg>
           </div>
         </div>
@@ -28552,7 +28636,7 @@ function EcraAniversario({ player, onEntrar }) {
           <div style={{ ...display, fontSize: 22, color: T.gold, letterSpacing: '.04em', textAlign: 'center' }}>{idade} anos</div>
         ) : null}
         <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, maxWidth: 330, textAlign: 'center', margin: '0 auto' }}>
-          Esta camisola é só tua. Toda a equipa técnica te deseja um dia em grande, dentro e fora do campo.
+          Esta camisola é só tua. Toda a equipa técnica deseja-te um dia em grande, dentro e fora do campo.
         </div>
 
         {/* O GOLO DOS PARABÉNS */}
@@ -28571,11 +28655,7 @@ function EcraAniversario({ player, onEntrar }) {
             border: 'none', padding: 0, cursor: golo ? 'default' : 'pointer', background: 'transparent',
             animation: golo ? 'festa-remate .55s cubic-bezier(.3,.6,.4,1) forwards' : 'festa-pulsar 1.6s ease-in-out infinite',
           }}>
-            <svg viewBox="0 0 46 46" width="46" height="46">
-              <circle cx="23" cy="23" r="21" fill="#fff" stroke="#111" strokeWidth="2" />
-              <path d="M23 13 L31 19 L28 29 L18 29 L15 19 Z" fill="#111" />
-              <path d="M23 13 L23 3 M31 19 L41 15 M28 29 L34 38 M18 29 L12 38 M15 19 L5 15" stroke="#111" strokeWidth="2" />
-            </svg>
+            <BolaFutebol tamanho={46} />
           </button>
           {/* explosão de papelinhos no golo */}
           {golo && explosao.map(c => (
@@ -41212,7 +41292,13 @@ function CheckinApp() {
     (async () => {
       try {
         const { data, error } = await supabase.rpc('checkin_equipa', { p_team: equipaDoLink });
-        if (!error && data) setEquipa(typeof data === 'string' ? JSON.parse(data) : data);
+        if (!error && data) {
+          const eq = typeof data === 'string' ? JSON.parse(data) : data;
+          // A cor do clube (a mesma das definições da equipa) também no
+          // Portal — a camisola dos anos e afins vestem-se dela.
+          if (eq && eq.cor) T.corEquipa = eq.cor;
+          setEquipa(eq);
+        }
       } catch (e) { /* sem identidade, o ecrã fica neutro — não é impeditivo */ }
     })();
   }, [equipaDoLink]);
