@@ -27276,6 +27276,20 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
         </Field>
         <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
       </div>
+      {/* AMIGÁVEL: a convocatória não nasce sozinha (como nos jogos
+          oficiais). Pergunta-se aqui, que é onde o amigável se cria. */}
+      {eAmigavel && (
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, margin: '-4px 0 16px', fontSize: 13.5, color: T.cream, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!f.comConvocatoria} onChange={e => setF({ ...f, comConvocatoria: e.target.checked })}
+            style={{ accentColor: T.crimson, width: 16, height: 16, marginTop: 2 }} />
+          <span>
+            Gerar convocatória deste amigável
+            <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>
+              Aparece em Convocatórias, para imprimir ou mostrar no Portal (começa escondida dos jogadores).
+            </span>
+          </span>
+        </label>
+      )}
 
       {/* IDEIAS PARA O JOGO — nota interna do treinador (como se quer
           atacar, pressionar, bolas paradas, o que vigiar no adversário).
@@ -40040,6 +40054,8 @@ function syncConvocatoriaMatch(conv, matches, players) {
   const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
   let idx = list.findIndex(m => m.sourceConvocatoriaId === conv.id);
+  // Convocatória de um amigável: está ligada ao jogo pelo id.
+  if (idx < 0 && conv.jogoId) idx = list.findIndex(m => m.id === conv.jogoId);
   if (idx < 0) {
     // Sem ligação explícita: aproveita um jogo da mesma data, desde que o
     // adversário não seja outro (um dos dois pode ainda estar por preencher).
@@ -40136,7 +40152,12 @@ function podarPresencasForaDosConvocados(match) {
 
 function syncMatchConvocatoria(match, convocatorias, season) {
   const lista = convocatorias || [];
-  if (!match || !match.date || isFriendlyMatch(match)) return lista;
+  const amigavel = isFriendlyMatch(match || {});
+  /* AMIGÁVEIS: só têm convocatória se, ao registar o jogo, se marcou
+     "Gerar convocatória" (`comConvocatoria`). Ligam-se ao jogo pelo id
+     (`jogoId`) e nunca pela data, para dois amigáveis no mesmo dia (um
+     torneio de pré-época) não ficarem com a mesma convocatória. */
+  if (!match || !match.date || (amigavel && !match.comConvocatoria)) return lista;
   /* A convocatória nasce COM O JOGO, ainda sem ninguém escolhido.
 
      Antes só era criada depois de haver convocados, o que obrigava o
@@ -40145,7 +40166,8 @@ function syncMatchConvocatoria(match, convocatorias, season) {
      treinador só tem de acrescentar os nomes quando os souber. */
 
   let idx = lista.findIndex(c => c.id === match.sourceConvocatoriaId);
-  if (idx < 0) idx = lista.findIndex(c => c.data === match.date);
+  if (idx < 0 && amigavel) idx = lista.findIndex(c => c.jogoId === match.id);
+  if (idx < 0 && !amigavel) idx = lista.findIndex(c => c.data === match.date);
 
   const base = {
     data: match.date,
@@ -40168,6 +40190,7 @@ function syncMatchConvocatoria(match, convocatorias, season) {
     // cá, ficavam de fora da lista de convocados sempre que se
     // imprimisse ou partilhasse a convocatória a partir DAQUI.
     convidados: match.convidados || [],
+    jogoId: amigavel ? match.id : undefined,
   };
   Object.keys(base).forEach(k => { if (base[k] === undefined) delete base[k]; });
 
@@ -40301,7 +40324,7 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
   return (
     <div>
       <SectionHeader title="Jogos" subtitle="A competição, classificação e os dados de cada jogo."
-        action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Nova convocatória</Btn>} />
+        />
       {subTabs}
 
       {/* Só aparece quando há mesmo o que limpar — não é uma ferramenta
@@ -40340,7 +40363,7 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
       {players.length === 0 ? (
         <EmptyState text="Adiciona jogadores ao plantel antes de criar uma convocatória." />
       ) : list.length === 0 ? (
-        <EmptyState text="Sem convocatórias." action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova convocatória</Btn>} />
+        <EmptyState text="Sem convocatórias. Nascem com cada jogo oficial; para um amigável, marca &quot;Gerar convocatória&quot; ao registar o jogo em Jogos." />
       ) : (
         <div style={{ overflowX: 'auto', border: `1px solid ${T.line}`, borderRadius: 10 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
