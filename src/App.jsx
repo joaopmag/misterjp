@@ -28172,12 +28172,19 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     }));
   };
   // Cada passo por fazer = uma "missão" (uma folha da prancheta).
-  const itemMissao = (t, passo) => ({
-    id: `${t.id}:${passo.id}`, titulo: t.titulo, prazo: t.prazo, destino: passo.destino || 'nota',
-    notas: passo.instrucoes || (passo.total === 1 ? t.notas : ''),
-    passoTxt: passo.total > 1 ? `Passo ${passo.ordem + 1} de ${passo.total}` : '',
-    _tarefa: t, _passo: passo,
-  });
+  /* "Passo X de Y" conta SÓ os passos que ainda faltam. Se ele fez um
+     de dois, saiu e voltou mais tarde, o que sobra aparece como uma
+     missão simples, sem "Passo 2 de 2": para ele já é a única. */
+  const itemMissao = (t, passo) => {
+    const pend = passosDe(t).filter(p => !p.feito);
+    const pos = pend.findIndex(p => p.id === passo.id);
+    return {
+      id: `${t.id}:${passo.id}`, titulo: t.titulo, prazo: t.prazo, destino: passo.destino || 'nota',
+      notas: passo.instrucoes || (passo.total === 1 ? t.notas : ''),
+      passoTxt: pend.length > 1 && pos >= 0 ? `Passo ${pos + 1} de ${pend.length}` : '',
+      _tarefa: t, _passo: passo,
+    };
+  };
   const missoesPorFazer = tarefasPorFazer.flatMap(t => passosDe(t).filter(p => !p.feito).map(p => itemMissao(t, p)));
   const [missaoAtiva, setMissaoAtiva] = useState(null); // a tarefa cujo destino está aberto
   const [missaoCumprida, setMissaoCumprida] = useState(null); // título, para o ecrã "Missão cumprida"
@@ -28224,17 +28231,12 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       missoesEmCurso.current.delete(it.id);
     }
   };
-  // Missões que fecham sozinhas: Wellness / PSE respondidos hoje.
-  const hojeK = todayStr();
-  const fezWellnessHoje = (monitoring || []).some(m => m.playerId === loggedPlayerId && m.date === hojeK && typeof m.sono === 'number');
-  const fezPseHoje = (monitoring || []).some(m => m.playerId === loggedPlayerId && m.date === hojeK && typeof m.pse === 'number');
-  // Um passo de cada vez (dois passos da mesma tarefa ao mesmo tempo
-  // escreveriam a nota um por cima do outro); o efeito volta a correr.
-  useEffect(() => {
-    const it = missoesPorFazer.find(x => (x.destino === 'wellness' && fezWellnessHoje) || (x.destino === 'rpe' && fezPseHoje));
-    if (it) completarMissao(it, it.destino === 'wellness' ? 'Wellness respondido' : 'PSE respondido');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fezWellnessHoje, fezPseHoje, missoesPorFazer.length, JSON.stringify(tarefasAjustes), Object.keys(destinosTarefas).length]);
+  /* CLIPE CRIADO: a missão "Criar um clipe" só fecha quando o clipe fica
+     mesmo gravado no servidor. Não há "Já fiz" para carregar. */
+  const clipeCriado = (titulo) => {
+    const it = missoesPorFazer.find(x => x.destino === 'clipe');
+    if (it) completarMissao(it, `Clipe criado: ${titulo}`);
+  };
   const autoavaliacaoSubmetida = () => {
     const it = missoesPorFazer.find(x => x.destino === 'autoavaliacao');
     if (it) completarMissao(it, 'Autoavaliação submetida');
@@ -28331,7 +28333,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     const m = missaoAtiva;
     // Nas que fecham sozinhas (questionários) não há barra: tapava os
     // botões do próprio questionário, e basta submeter.
-    if (!m || destinoMissao(m.destino).auto) return vista;
+    if (!m || (destinoMissao(m.destino).auto && m.destino !== 'clipe')) return vista;
     const d = destinoMissao(m.destino);
     return (
       <>
@@ -28347,7 +28349,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
             <div style={{ fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.titulo}</div>
           </div>
           {d.auto
-            ? <span style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'right' }}>Fecha sozinha<br />quando submeteres</span>
+            ? <span style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'right' }}>Fecha sozinha<br />{m.destino === 'clipe' ? 'quando gravares o clipe' : 'quando submeteres'}</span>
             : <Btn onClick={() => completarMissao(m, d.acao)}><Check size={14} /> Já fiz</Btn>}
           <button type="button" onClick={() => setMissaoAtiva(null)} title="Esconder" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4 }}><X size={15} /></button>
         </div>
@@ -28408,7 +28410,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }
 
   if (activeType === 'biblioteca') {
-    return comBarraMissao(<PlayerBibliotecaView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />);
+    return comBarraMissao(<PlayerBibliotecaView code={code} teamId={teamId} onBack={() => setActiveType('portal')} onClipeCriado={clipeCriado} />);
   }
 
   if (activeType === 'jogos') {
@@ -28852,7 +28854,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
     if (!tt.prazo) return null;
     const dias = Math.round((new Date(`${tt.prazo}T00:00:00`) - new Date(`${todayStr()}T00:00:00`)) / 86400000);
     if (dias < 0) return { txt: 'Atrasada', cor: '#B3261E' };
-    if (dias === 0) return { txt: 'Hoje', cor: '#B3261E' };
+    if (dias === 0) return { txt: 'Hoje', cor: '#9A6A00' };
     if (dias === 1) return { txt: 'Amanhã', cor: '#9A6A00' };
     return { txt: `${dias} dias`, cor: '#2E6B3A' };
   };
@@ -29223,7 +29225,7 @@ const ERROS_CLIPE_ATLETA = {
   clipe_invalido: 'Este clipe já não existe (pode ter sido apagado pelo treinador).',
 };
 
-function PlayerBibliotecaView({ code, teamId, onBack }) {
+function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
   const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
   const [videos, setVideosState] = useState([]);
   const [meusClipes, setMeusClipes] = useState([]);
@@ -29300,6 +29302,7 @@ function PlayerBibliotecaView({ code, teamId, onBack }) {
     }
     if (resposta.clipe) setMeusClipes(prev => [...prev, clipeAtletaParaCanal(resposta.clipe)]);
     setAvisoClipe({ texto: `Clipe "${titulo}" gravado em "Os meus clipes". O treinador já o pode ver.` });
+    if (onClipeCriado) onClipeCriado(titulo); // missão "Criar um clipe" fecha-se sozinha
   };
 
   // Editar um clipe do próprio jogador (tempos, título e texto).
@@ -40166,14 +40169,42 @@ const lembreteRecente = (t) => !!(t && t.lembrete && t.lembrete.em
 const DESTINOS_MISSAO = [
   { id: 'nota', rotulo: 'Responder por escrito', acao: 'Responder', icon: MessageCircle },
   { id: 'autoavaliacao', rotulo: 'Autoavaliação', acao: 'Fazer a autoavaliação', icon: TrendingUp, auto: true, rota: 'desenvolvimento' },
-  { id: 'wellness', rotulo: 'Wellness', acao: 'Responder ao Wellness', icon: Activity, auto: true, rota: 'wellness' },
-  { id: 'rpe', rotulo: 'PSE', acao: 'Responder ao PSE', icon: HeartPulse, auto: true, rota: 'rpe' },
   { id: 'treino', rotulo: 'Treino do dia', acao: 'Ver o treino de hoje', icon: CalendarDays, rota: 'treino' },
   { id: 'jogos', rotulo: 'Jogo / convocatória', acao: 'Ver o plano de jogo', icon: Trophy, rota: 'jogos' },
   { id: 'ideiaJogo', rotulo: 'Ideia de Jogo', acao: 'Ler a ideia de jogo', icon: Lightbulb, rota: 'ideiaJogo' },
   { id: 'biblioteca', rotulo: 'Vídeos', acao: 'Ver os vídeos', icon: Tv, rota: 'biblioteca' },
+  /* Fecha sozinha quando o jogador grava um clipe em "Os meus clipes":
+     é uma prova real de que fez, ao contrário de um "Já fiz". */
+  { id: 'clipe', rotulo: 'Criar clipe', acao: 'Criar um clipe', icon: Scissors, auto: true, rota: 'biblioteca' },
 ];
 const destinoMissao = (id) => DESTINOS_MISSAO.find(d => d.id === id) || DESTINOS_MISSAO[0];
+/* LIMITE DE MISSÕES EM ABERTO. Um jogador não tem mais do que duas missões
+   por fazer ao mesmo tempo, somando todas as tarefas que lhe estão
+   atribuídas. Mais do que isso deixa de ser uma missão e passa a ser uma
+   lista de trabalhos de casa. */
+const MAX_MISSOES_ABERTAS = 2;
+/* Passos ainda por fazer numa tarefa (a mesma regra do Portal: com vários
+   passos, cada um feito fica marcado na nota do atleta como "Passo N ·").
+   Tarefa concluída ou submetida já não conta. */
+function missoesPorFazerDe(t) {
+  if (!t || !t.jogadorId || t.estado === 'feita' || t.notaSubmetida) return 0;
+  const lista = (Array.isArray(t.missoes) && t.missoes.length) ? t.missoes : [{ destino: t.destino || 'nota' }];
+  if (lista.length === 1) return 1;
+  const nota = String(t.notaAtleta || '');
+  return lista.filter((_, k) => !nota.includes(`Passo ${k + 1} ·`)).length;
+}
+/* "O QUE É PRECISO FAZER" A PARTIR DAS MISSÕES. Ao escolher o tema
+   (Autoavaliação, Vídeos…) o título preenche-se sozinho com a ação
+   ("Fazer a autoavaliação", "Ver os vídeos"); com duas, junta as duas.
+   "Responder por escrito" não dá título: aí é o treinador quem escreve. */
+function tituloDasMissoes(lista) {
+  const acoes = (lista || [])
+    .map(m => m.destino)
+    .filter(id => id && id !== 'nota')
+    .map(id => destinoMissao(id).acao);
+  if (!acoes.length) return '';
+  return acoes.map((a, k) => (k === 0 ? a : a.charAt(0).toLowerCase() + a.slice(1))).join(' e ');
+}
 /* Sem destino escolhido (tarefas antigas, ou esquecido), deduz-se pelo
    título/notas: "desenvolvimento" ou "autoavaliação" → a autoavaliação;
    "wellness" → o Wellness; etc. Assim uma tarefa "desenvolvimento" leva
@@ -40181,16 +40212,15 @@ const destinoMissao = (id) => DESTINOS_MISSAO.find(d => d.id === id) || DESTINOS
 function inferirDestinoMissao(texto) {
   const s = String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (/autoavalia|desenvolviment|auto-avalia/.test(s)) return 'autoavaliacao';
-  if (/wellness|bem-estar|bem estar/.test(s)) return 'wellness';
-  if (/\bpse\b|\brpe\b|esforco/.test(s)) return 'rpe';
   if (/ideia de jogo|ideia\b|principio/.test(s)) return 'ideiaJogo';
   if (/convocat|plano de jogo|\bjogo\b|adversari/.test(s)) return 'jogos';
   if (/treino|sessao/.test(s)) return 'treino';
-  if (/video|corte|clip|analis/.test(s)) return 'biblioteca';
+  if (/clipe|clip\b|cortar|corte/.test(s)) return 'clipe';
+  if (/video|analis/.test(s)) return 'biblioteca';
   return null;
 }
 
-function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros, players, euId, onClose, onSave, onRemove }) {
+function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros, players, euId, tarefas = [], onClose, onSave, onRemove }) {
   const [f, setF] = useState(tarefa || {
     titulo: '', notas: '', responsavel: euId || '', prazo: '', estado: 'aberta', recorrencia: null, jogadorId: '',
     ...(inicial || {}),
@@ -40206,13 +40236,42 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
     return [{ id: uid(), destino: f.destino || inferirDestinoMissao(`${f.titulo || ''} ${f.notas || ''}`) || 'nota', instrucoes: '' }];
   };
   const missoes = missoesIniciais();
-  const setMissoes = (lista) => setF(prev => ({ ...prev, missoes: lista, destino: (lista[0] && lista[0].destino) || 'nota' }));
+  /* Mudar as missões atualiza "O que é preciso fazer", mas só se o campo
+     estiver vazio ou ainda tiver o texto que foi a app a pôr (`tituloAuto`).
+     O que o treinador escreveu à mão nunca é apagado. */
+  const setMissoes = (lista) => setF(prev => {
+    const novo = { ...prev, missoes: lista, destino: (lista[0] && lista[0].destino) || 'nota' };
+    const atual = String(prev.titulo || '').trim();
+    const sugerido = tituloDasMissoes(lista);
+    // Também conta como "automático" um título que seja só o nome de um tema
+    // ("Autoavaliação", "Vídeos") ou o que as missões anteriores davam.
+    const eAuto = !atual || atual === prev.tituloAuto
+      || atual === tituloDasMissoes(prev.missoes || [])
+      || DESTINOS_MISSAO.some(d => d.rotulo.toLowerCase() === atual.toLowerCase() || d.acao.toLowerCase() === atual.toLowerCase());
+    if (sugerido && eAuto) { novo.titulo = sugerido; novo.tituloAuto = sugerido; }
+    return novo;
+  });
   const mudarMissao = (k, alteracao) => setMissoes(missoes.map((m, j) => (j === k ? { ...m, ...alteracao } : m)));
   // Tirar um passo não faz a página saltar (ver useFecharSemSaltar).
   const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
-  const valido = String(f.titulo || '').trim().length > 0;
   const repete = !!f.recorrencia;
   const jogadoresOrdenados = sortByPosition(players || []);
+  /* Missões em aberto do jogador NAS OUTRAS tarefas (esta não conta, senão
+     contava-se duas vezes). */
+  const abertasNoutras = (jogId) => (tarefas || [])
+    .filter(t => t.jogadorId === jogId && (!tarefa || t.id !== tarefa.id))
+    .reduce((n, t) => n + missoesPorFazerDe(t), 0);
+  const abertasFora = f.jogadorId ? abertasNoutras(f.jogadorId) : 0;
+  const pendentesAqui = f.jogadorId ? missoesPorFazerDe({ ...f, jogadorId: f.jogadorId, estado: f.estado, missoes }) : 0;
+  // Quantas este jogador ainda pode ter nesta tarefa.
+  const lugaresLivres = Math.max(0, MAX_MISSOES_ABERTAS - abertasFora);
+  // Uma tarefa antiga que já passava do limite pode ser gravada como está,
+  // só não pode crescer.
+  const pendentesOriginais = (tarefa && tarefa.jogadorId === f.jogadorId) ? missoesPorFazerDe(tarefa) : 0;
+  const passaLimite = !!f.jogadorId && pendentesAqui > lugaresLivres && pendentesAqui > pendentesOriginais;
+  const podeAcrescentar = missoes.length < MAX_MISSOES_ABERTAS && pendentesAqui < lugaresLivres;
+  const nomeJogador = f.jogadorId ? shortPlayerName((players || []).find(p => p.id === f.jogadorId) || {}, players) : '';
+  const valido = String(f.titulo || '').trim().length > 0 && !passaLimite;
 
   return (
     <Modal title={tarefa ? 'Editar tarefa' : 'Nova tarefa'} onClose={onClose} fullPage larguraMax={1100}>
@@ -40231,7 +40290,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
               // Sugere o destino do 1.º passo, enquanto não for escolhido à mão.
               const lista = missoesIniciais();
               const novaLista = !f.destinoManual && lista.length === 1 ? [{ ...lista[0], destino: sug || 'nota' }] : lista;
-              setF({ ...f, titulo, missoes: novaLista, destino: novaLista[0].destino });
+              setF({ ...f, titulo, tituloAuto: titulo === f.tituloAuto ? f.tituloAuto : '', missoes: novaLista, destino: novaLista[0].destino });
             }}
             placeholder="Ex: análise de adversário"
             autoFocus
@@ -40429,7 +40488,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
             <Select value={f.jogadorId || ''} onChange={e => setF({ ...f, jogadorId: e.target.value })}>
               <option value="">Nenhum — só uma tarefa interna</option>
               {jogadoresOrdenados.map(p => (
-                <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, players)}</option>
+                <option key={p.id} value={p.id}>{p.position || '--'} · {shortPlayerName(p, players)}{p.id !== f.jogadorId && abertasNoutras(p.id) >= MAX_MISSOES_ABERTAS ? ` (já tem ${MAX_MISSOES_ABERTAS} missões em aberto)` : ''}</option>
               ))}
             </Select>
           </Field>
@@ -40472,26 +40531,42 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
                     onChange={e => mudarMissao(k, { instrucoes: e.target.value })}
                     placeholder={d.id === 'autoavaliacao' ? 'Instruções (ex.: responde com calma, pensa nos últimos jogos)'
                       : d.id === 'biblioteca' ? 'Instruções (ex.: vê o corte da pressão alta e repara no teu posicionamento)'
+                      : d.id === 'clipe' ? 'Instruções (ex.: no jogo de sábado, corta um lance em que pressionaste bem)'
                         : d.id === 'nota' ? 'O que queres que o jogador te responda'
                           : 'Instruções para este passo (opcional)'}
                     style={{ minHeight: 54, fontSize: 13 }}
                   />
                   <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 6, lineHeight: 1.4 }}>
-                    {d.auto ? `Botão "${d.acao}" — o passo fica feito quando ele submeter.`
+                    {d.id === 'clipe' ? `Botão "${d.acao}" — o passo só fica feito quando ele gravar um clipe.`
+                      : d.auto ? `Botão "${d.acao}" — o passo fica feito quando ele submeter.`
                       : d.id !== 'nota' ? `Botão "${d.acao}" — lá, ele carrega em "Já fiz".`
                         : 'Ele responde por escrito.'}
                   </div>
                 </div>
               );
             })}
-            <button type="button" onClick={() => setMissoes([...missoes, { id: uid(), destino: 'nota', instrucoes: '' }])} style={{
-              border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, borderRadius: 10, padding: '9px 12px',
-              cursor: 'pointer', fontSize: 12.5, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}><Plus size={14} /> Acrescentar outra missão para o mesmo jogador</button>
+            {passaLimite ? (
+              <div style={{ border: `1px solid ${T.warn}`, borderRadius: 10, padding: '10px 12px', fontSize: 12.5, color: T.warn, lineHeight: 1.5 }}>
+                {abertasFora >= MAX_MISSOES_ABERTAS
+                  ? `${nomeJogador} já tem ${MAX_MISSOES_ABERTAS} missões em aberto noutras tarefas. Só pode ter ${MAX_MISSOES_ABERTAS} ao mesmo tempo: espera que conclua uma, ou apaga uma delas, antes de lhe dares esta.`
+                  : `${nomeJogador} já tem ${abertasFora} ${abertasFora === 1 ? 'missão' : 'missões'} em aberto noutra tarefa, por isso aqui só cabe ${lugaresLivres}. Tira um passo para poderes guardar.`}
+              </div>
+            ) : podeAcrescentar ? (
+              <button type="button" onClick={() => setMissoes([...missoes, { id: uid(), destino: 'nota', instrucoes: '' }])} style={{
+                border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, borderRadius: 10, padding: '9px 12px',
+                cursor: 'pointer', fontSize: 12.5, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}><Plus size={14} /> Acrescentar outra missão para o mesmo jogador</button>
+            ) : (
+              <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.5 }}>
+                {abertasFora > 0
+                  ? `${nomeJogador} já tem ${abertasFora} ${abertasFora === 1 ? 'missão' : 'missões'} em aberto noutra tarefa. Máximo de ${MAX_MISSOES_ABERTAS} ao mesmo tempo.`
+                  : `Máximo de ${MAX_MISSOES_ABERTAS} missões em aberto ao mesmo tempo por jogador.`}
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.5 }}>
-            Escolhe um jogador para lhe dares missões — cada uma com o seu destino (autoavaliação, wellness, vídeo…) e as suas instruções.
+            Escolhe um jogador para lhe dares missões — cada uma com o seu destino (autoavaliação, treino, vídeo…) e as suas instruções. Máximo de {MAX_MISSOES_ABERTAS} em aberto ao mesmo tempo por jogador.
           </div>
         )}
       </div>
@@ -40502,7 +40577,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
         <Btn onClick={() => {
           if (!valido) return;
           // As missões gravam-se sempre que há jogador (mesmo sem lhes mexer).
-          const { destinoManual, ...resto } = f; // eslint-disable-line no-unused-vars
+          const { destinoManual, tituloAuto, ...resto } = f; // eslint-disable-line no-unused-vars
           onSave(f.jogadorId ? { ...resto, missoes, destino: (missoes[0] && missoes[0].destino) || 'nota' } : resto);
         }} disabled={!valido}>Guardar</Btn>
       </div>
@@ -41333,6 +41408,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           membros={membros}
           players={players}
           euId={euId}
+          tarefas={tarefas}
           onClose={() => { setModal(null); setNovoDia(''); setOcorrencia(null); }}
           onSave={save}
           onRemove={modal !== 'new' ? () => remove(modal.id) : null}
