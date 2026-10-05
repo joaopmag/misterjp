@@ -539,7 +539,7 @@ function resumoClinico(estado, { comNivel = true } = {}) {
    continuam a abrir alguma coisa em vez de darem página em branco — um
    atalho guardado ou um separador aberto no telemóvel não têm de morrer
    por causa de uma reorganização da navegação. */
-const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', documentos: 'biblioteca' };
+const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', documentos: 'biblioteca', estatisticas: 'jogos' };
 const tabValida = (id) => TABS_ANTIGAS[id] || id;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -2866,6 +2866,14 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     window.scrollTo(0, 0);
   }, [tab]);
 
+  // Missões com caminho: "Ir para …" pede a troca de separador por aqui.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const ir = (e) => { if (e && e.detail) goTab(e.detail); };
+    window.addEventListener('mjp-ir-separador', ir);
+    return () => window.removeEventListener('mjp-ir-separador', ir);
+  });
+
   // Botões de retroceder/avançar do browser.
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -3814,7 +3822,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : 'jogos'} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : 'jogos'} />}
           {/* Sempre montado, escondido com CSS (não desmontado) — o mesmo
              motivo da Biblioteca logo abaixo: sem isto, trocar de separador
              e voltar perdia o vídeo selecionado, a posição de reprodução e
@@ -26364,6 +26372,18 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
      coisa. */
   const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : 'jogos');
   const [modal, setModal] = useState(null);
+  /* Chegou pela missão "Introduzir as estatísticas": abre logo o editor do
+     jogo mais recente que ainda não tem estatísticas (ou, se já estão
+     todas, o último jogo realizado). */
+  useEffect(() => {
+    if (abaInicial !== 'estatisticas') return;
+    const hoje = todayStr();
+    const alvo = jogosSemEstatisticas(matches, addDays(hoje, 1))[0]
+      || [...(matches || [])].filter(m => m.date && m.date <= hoje).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    setAba('jogos');
+    if (alvo) setModal(alvo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abaInicial]);
   const [modalVoltarFicha, setModalVoltarFicha] = useState(false); // true só quando o editor abriu a partir da ficha
   const [ficha, setFicha] = useState(null);
   /* O jogo a imprimir. A folha vive fora da app (montada no body) e só
@@ -40324,7 +40344,21 @@ const RECORRENCIA_LABEL = {
   treino_jogo: 'Dias de treino ou jogo',
   wellness_pse: 'Enquanto faltar Wellness/PSE',
   aniversario: 'Aniversário de jogador',
+  pos_jogo: 'Depois de cada jogo (até haver estatísticas)',
 };
+/* Jogos já realizados (até 14 dias atrás) sem estatísticas: nenhum
+   jogador com minutos registados no relatório do jogo. É isto que mantém
+   viva a missão "Introduzir as estatísticas": aparece no dia a seguir ao
+   jogo (ou no próprio dia, à noite não: só a partir do dia seguinte, para
+   não aparecer antes do apito) e desaparece SOZINHA quando os minutos
+   estiverem lançados. */
+function jogosSemEstatisticas(matches, hoje) {
+  const limite = addDays(hoje, -14);
+  return (matches || [])
+    .filter(m => m && m.date && m.date < hoje && m.date >= limite)
+    .filter(m => !Object.values(m.report || {}).some(r => r && Number(r.minutes) > 0))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
 
 // Jogadores do plantel que fazem anos num dado dia (string 'AAAA-MM-DD').
 function aniversariantesEm(players, diaStr) {
@@ -40355,6 +40389,9 @@ function tarefaAtivaHoje(tarefa, hoje, ctx) {
   }
   if (r.tipo === 'aniversario') {
     return aniversariantesEm(ctx.players, hoje).length > 0;
+  }
+  if (r.tipo === 'pos_jogo') {
+    return jogosSemEstatisticas(ctx.matches, hoje).length > 0;
   }
   return true;
 }
@@ -41647,6 +41684,8 @@ const CAMINHOS_STAFF = [
   { id: 'scouting', rotulo: 'Scouting / adversário', acao: 'Observar o adversário', icon: Search },
   { id: 'planeamento', rotulo: 'Planeamento', acao: 'Planear a semana', icon: CalendarDays },
   { id: 'jogos', rotulo: 'Jogos / convocatória', acao: 'Preparar a convocatória', icon: Trophy },
+  // Abre Jogos já com o editor do último jogo sem estatísticas.
+  { id: 'estatisticas', rotulo: 'Estatísticas do jogo', acao: 'Introduzir as estatísticas do jogo', icon: Pencil },
   { id: 'monitorizacao', rotulo: 'Monitorização', acao: 'Rever a monitorização', icon: Activity },
   { id: 'desenvolvimento', rotulo: 'Desenvolvimento', acao: 'Avaliar o desenvolvimento', icon: TrendingUp },
   { id: 'ideiajogo', rotulo: 'Ideia de Jogo', acao: 'Atualizar a ideia de jogo', icon: Lightbulb },
@@ -41657,7 +41696,12 @@ const CAMINHOS_STAFF = [
 ];
 const caminhoStaff = (id) => CAMINHOS_STAFF.find(c => c.id === (id || '')) || CAMINHOS_STAFF[0];
 // Abrir o separador: a app já segue o #separador do endereço.
-const irParaSeparador = (id) => { if (id && typeof window !== 'undefined') window.location.hash = `#${id}`; };
+// Pede à app para mudar de separador (a app ouve este aviso; alguns
+// caminhos, como "estatisticas", abrem mais do que um separador).
+const irParaSeparador = (id) => {
+  if (!id || typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('mjp-ir-separador', { detail: id }));
+};
 
 /* Junta os registos do mesmo grupo num só cartão (só para mostrar).
    O cartão do grupo tem `_grupo` (os registos) e um id "grupo:…"; as
