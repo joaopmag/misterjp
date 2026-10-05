@@ -42423,7 +42423,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
           por baixo. No telemóvel, uma coluna e os botões presos ao fundo. */}
       <div style={{
         display: 'grid', gridTemplateColumns: estreito ? '1fr' : '1fr 1fr', gap: 22, alignItems: 'stretch',
-        ...(estreito ? {} : { height: 'calc(100dvh - 200px)', minHeight: 420 }),
+        ...(estreito ? {} : { maxHeight: 'calc(100dvh - 190px)' }),
       }}>
 
         {/* ESQUERDA: para quem, quando */}
@@ -42453,16 +42453,8 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                   ...GRUPOS_POSICAO_PRINT.map(g => ({ rotulo: g.label, onClick: () => escolherGrupo(g.posicoes) }))]}
                 onLimpar={() => { setDest([]); setAviso(''); }}
               />
-              <div style={{ fontSize: 11.5, color: aviso ? T.warn : T.mutedDim, marginTop: 4, lineHeight: 1.5, height: 36, overflow: 'hidden' }}>
+              <div style={{ fontSize: 11.5, color: aviso ? T.warn : T.mutedDim, marginTop: 2, lineHeight: 1.5, height: 18, ...LINHAS(1) }}>
                 {aviso || `Cada um recebe a sua cópia no Portal. Máximo de ${MAX_MISSOES_ABERTAS} missões em aberto por jogador.`}
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <Field label="Quem acompanha (equipa técnica)">
-                  <Select value={comum.acompanha} onChange={e => setComum({ ...comum, acompanha: e.target.value })}>
-                    <option value="">Ninguém</option>
-                    {(membros || []).map(m => <option key={m.user_id} value={m.user_id}>{nomeDoMembro(m.user_id, membros, euId)}</option>)}
-                  </Select>
-                </Field>
               </div>
             </div>
           ) : (
@@ -42480,17 +42472,40 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                 atalhos={(membros || []).length > 2 ? [{ rotulo: 'Todos', onClick: () => setDest((membros || []).map(m => m.user_id)) }] : []}
                 onLimpar={() => setDest([])}
               />
-              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4, lineHeight: 1.5, height: 36, overflow: 'hidden' }}>
+              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 2, lineHeight: 1.5, height: 18, ...LINHAS(1) }}>
                 {dest.length === 0 ? 'Sem ninguém escolhido: fica aberta a toda a equipa técnica.' : 'Com mais do que uma pessoa, cada uma recebe a sua cópia e conclui a sua.'}
               </div>
             </div>
           )}
 
-          {/* QUANDO */}
-          <div style={{ ...FIELD_GRID, marginBottom: 12 }}>
-            <Field label={repete ? 'Prazo (a regra de repetição decide)' : 'Prazo'}>
+          {/* QUANDO — numa grelha de duas colunas, para caber tudo sem
+              deslizar: Prazo | Repete, e depois Acompanha | Estado. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 12px', marginBottom: 10 }}>
+            <Field label={repete ? 'Prazo (repete)' : 'Prazo'}>
               <Input type="date" value={repete ? '' : comum.prazo} disabled={repete} onChange={e => setComum({ ...comum, prazo: e.target.value })} style={repete ? { opacity: 0.45 } : undefined} />
             </Field>
+            <Field label="Repete">
+              <Select
+                value={comum.recorrencia ? comum.recorrencia.tipo : ''}
+                onChange={e => {
+                  const tipo = e.target.value;
+                  if (!tipo) { setComum({ ...comum, prazo: (comum.recorrencia && comum.recorrencia.desde) || comum.prazo || '', recorrencia: null }); return; }
+                  const diaDoPrazo = comum.prazo ? [new Date(`${comum.prazo}T00:00:00`).getDay()] : null;
+                  setComum({ ...comum, prazo: '', recorrencia: { ...(comum.recorrencia || {}), tipo, dias: (comum.recorrencia && comum.recorrencia.dias) || diaDoPrazo || [1, 2, 3, 4, 5], desde: (comum.recorrencia && comum.recorrencia.desde) || comum.prazo || todayStr() } });
+                }}
+              >
+                <option value="">Não repete</option>
+                {Object.entries(RECORRENCIA_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </Select>
+            </Field>
+            {modo === 'jogadores' && (
+              <Field label="Quem acompanha">
+                <Select value={comum.acompanha} onChange={e => setComum({ ...comum, acompanha: e.target.value })}>
+                  <option value="">Ninguém</option>
+                  {(membros || []).map(m => <option key={m.user_id} value={m.user_id}>{nomeDoMembro(m.user_id, membros, euId)}</option>)}
+                </Select>
+              </Field>
+            )}
             {editar && !emGrupo && (
               <Field label="Estado">
                 <Select value={comum.estado} onChange={e => setComum({ ...comum, estado: e.target.value })} disabled={!podeConcluir && comum.estado === 'feita'}>
@@ -42503,89 +42518,31 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
               </Field>
             )}
           </div>
-          {/* Sempre no lugar (só se esconde), para nada saltar. */}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12, fontSize: 13, color: T.cream, cursor: 'pointer', height: 22, visibility: !repete && comum.prazo ? 'visible' : 'hidden' }}>
-            <input type="checkbox" checked={false} style={{ accentColor: T.crimson, width: 16, height: 16 }}
-              onChange={() => { if (!comum.prazo) return; setComum({ ...comum, prazo: '', recorrencia: { tipo: 'semanal', dias: [new Date(`${comum.prazo}T00:00:00`).getDay()], desde: comum.prazo } }); }} />
-            Repetir todas as semanas à {comum.prazo ? DIAS_SEMANA[new Date(`${comum.prazo}T00:00:00`).getDay()] : ''}
-          </label>
-          {/* PRIORITÁRIA (só equipa técnica): aparece primeiro e a vermelho no
-              ecrã de entrada e no Balneário. Não bloqueia ninguém (o campo
-              continua a chamar-se `obrigatoria`, para as já marcadas). */}
-          <label style={{
-            display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 12, fontSize: 13, color: T.cream, cursor: 'pointer',
-            minHeight: 40, visibility: modo === 'staff' ? 'visible' : 'hidden',
-          }}>
-            <input type="checkbox" checked={!!comum.obrigatoria} onChange={e => setComum({ ...comum, obrigatoria: e.target.checked })}
-              style={{ accentColor: T.crimson, width: 16, height: 16, marginTop: 2 }} />
-            <span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Flag size={12} /> Prioritária</span>
-              <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>Aparece primeiro, a vermelho, no ecrã de entrada da pessoa.</span>
-            </span>
-          </label>
-          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
-            <Field label="Repete">
-              <Select
-                value={comum.recorrencia ? comum.recorrencia.tipo : ''}
-                onChange={e => {
-                  const tipo = e.target.value;
-                  if (!tipo) { setComum({ ...comum, prazo: (comum.recorrencia && comum.recorrencia.desde) || comum.prazo || '', recorrencia: null }); return; }
-                  setComum({ ...comum, prazo: '', recorrencia: { ...(comum.recorrencia || {}), tipo, dias: (comum.recorrencia && comum.recorrencia.dias) || [1, 2, 3, 4, 5], desde: (comum.recorrencia && comum.recorrencia.desde) || comum.prazo || todayStr() } });
-                }}
-              >
-                <option value="">Não repete, só esta vez</option>
-                {Object.entries(RECORRENCIA_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </Select>
-            </Field>
-            {/* Os dias da semana têm o lugar sempre reservado. */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10, visibility: repete && comum.recorrencia.tipo === 'semanal' ? 'visible' : 'hidden' }}>
-                {DIAS_SEMANA.map((nome, i) => {
-                  const on = !!(comum.recorrencia && (comum.recorrencia.dias || []).includes(i));
-                  return (
-                    <button key={i} type="button" onClick={() => {
-                      if (!comum.recorrencia) return;
-                      const dias = on ? comum.recorrencia.dias.filter(d => d !== i) : [...(comum.recorrencia.dias || []), i];
-                      setComum({ ...comum, recorrencia: { ...comum.recorrencia, dias } });
-                    }} style={chip(on, { fontSize: 12, padding: '5px 10px', textTransform: 'capitalize' })}>{nome.slice(0, 3)}</button>
-                  );
-                })}
+          {/* Dias da semana: só com "Dias da semana" escolhido. */}
+          {repete && comum.recorrencia.tipo === 'semanal' && (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+              {DIAS_SEMANA.map((nome, i) => {
+                const on = !!(comum.recorrencia.dias || []).includes(i);
+                return (
+                  <button key={i} type="button" onClick={() => {
+                    const dias = on ? comum.recorrencia.dias.filter(d => d !== i) : [...(comum.recorrencia.dias || []), i];
+                    setComum({ ...comum, recorrencia: { ...comum.recorrencia, dias } });
+                  }} style={chip(on, { fontSize: 11.5, padding: '4px 9px', textTransform: 'capitalize' })}>{nome.slice(0, 3)}</button>
+                );
+              })}
             </div>
-            {repete && comum.recorrencia.tipo === 'semanal' && ocorrencia && !emGrupo && (
-              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8 }}>Para mudar só esta semana, arrasta-a no Calendário.</div>
-            )}
-          </div>
-
-          {/* RESPOSTAS — no grupo, o estado de cada um (e a nota de quem respondeu). */}
-          {editar && (modo === 'jogadores') && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 11.5, color: T.muted, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-                {emGrupo ? `Quem já fez · ${registos.filter(feitaNoGrupo).length}/${registos.length}` : 'Resposta do jogador'}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {registos.map(r => {
-                  const p = (players || []).find(x => x.id === r.jogadorId) || {};
-                  const fez = feitaNoGrupo(r);
-                  return (
-                    <div key={r.id} style={{ border: `1px solid ${fez ? T.good : T.line}`, borderRadius: 8, padding: '8px 10px', background: T.bg }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.cream }}>
-                        {fez ? <CheckCircle2 size={14} color={T.good} /> : <span style={{ width: 14, height: 14, borderRadius: '50%', border: `1.5px solid ${T.line}`, display: 'inline-block' }} />}
-                        <span style={{ fontWeight: 600 }}>{shortPlayerName(p, players)}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 11, color: fez ? T.good : T.mutedDim }}>
-                          {fez ? `feito${r.notaSubmetidaEm ? ` · ${fmtShort(String(r.notaSubmetidaEm).slice(0, 10))}` : ''}` : (r.notaAtleta ? 'a escrever' : 'por fazer')}
-                        </span>
-                      </div>
-                      {r.notaAtleta && (
-                        <div style={{ fontSize: 12.5, color: T.muted, whiteSpace: 'pre-wrap', lineHeight: 1.5, marginTop: 6 }}>{r.notaAtleta}</div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+          )}
+          {/* PRIORITÁRIA (só equipa técnica): numa linha. */}
+          {modo === 'staff' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10, fontSize: 13, color: T.cream, cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!comum.obrigatoria} onChange={e => setComum({ ...comum, obrigatoria: e.target.checked })}
+                style={{ accentColor: T.crimson, width: 16, height: 16 }} />
+              <Flag size={12} /> Prioritária <span style={{ fontSize: 11.5, color: T.mutedDim }}>aparece primeiro na credencial</span>
+            </label>
           )}
         </div>
 
-        {/* DIREITA: a missão (ou as missões, ao criar) */}
+        {/* DIREITA: a missão (ou as missões, ao criar) e, ao editar, as respostas */}
         <div ref={colunaMissoesRef} style={{ display: 'flex', flexDirection: 'column', gap: 12, ...(estreito ? {} : { overflowY: 'auto', paddingRight: 6, minHeight: 0 }) }}>
           {blocos.map((b, k) => {
             const opcoes = modo === 'jogadores' ? DESTINOS_MISSAO : CAMINHOS_STAFF;
@@ -42658,6 +42615,35 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
               }}>{pode ? <><Plus size={14} /> Acrescentar outra missão (cada uma com o seu título)</> : `Máximo de ${MAX_MISSOES_ABERTAS} missões de cada vez para jogadores`}</button>
             );
           })()}
+          {/* RESPOSTAS — no grupo, o estado de cada um (e a nota de quem respondeu). */}
+          {editar && (modo === 'jogadores') && (
+            <div style={{ flexShrink: 0 }}>
+              <div style={{ fontSize: 11.5, color: T.muted, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+                {emGrupo ? `Quem já fez · ${registos.filter(feitaNoGrupo).length}/${registos.length}` : 'Resposta do jogador'}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {registos.map(r => {
+                  const p = (players || []).find(x => x.id === r.jogadorId) || {};
+                  const fez = feitaNoGrupo(r);
+                  return (
+                    <div key={r.id} style={{ border: `1px solid ${fez ? T.good : T.line}`, borderRadius: 8, padding: '8px 10px', background: T.bg }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.cream }}>
+                        {fez ? <CheckCircle2 size={14} color={T.good} /> : <span style={{ width: 14, height: 14, borderRadius: '50%', border: `1.5px solid ${T.line}`, display: 'inline-block' }} />}
+                        <span style={{ fontWeight: 600 }}>{shortPlayerName(p, players)}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: fez ? T.good : T.mutedDim }}>
+                          {fez ? `feito${r.notaSubmetidaEm ? ` · ${fmtShort(String(r.notaSubmetidaEm).slice(0, 10))}` : ''}` : (r.notaAtleta ? 'a escrever' : 'por fazer')}
+                        </span>
+                      </div>
+                      {r.notaAtleta && (
+                        <div style={{ fontSize: 12.5, color: T.muted, whiteSpace: 'pre-wrap', lineHeight: 1.5, marginTop: 6 }}>{r.notaAtleta}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
 
