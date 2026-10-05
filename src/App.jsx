@@ -42018,7 +42018,9 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
   const hoje = todayStr();
   const chaveVista = `mjp_entrada_${euId}_${hoje}`;
   const teste = (() => { try { return /[?&#]testeentrada\b/i.test(window.location.href); } catch (e) { return false; } })();
-  const [fechado, setFechado] = useState(() => { if (teste) return false; try { return sessionStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
+  // "Uma vez por dia" a sério: guardado no dispositivo (localStorage), não
+  // só no separador. Abrir a app outra vez no mesmo dia não a repete.
+  const [fechado, setFechado] = useState(() => { if (teste) return false; try { return localStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
   const [carimbadas, setCarimbadas] = useState([]); // concluídas aqui (ficam à vista, carimbadas)
   const [fundo] = useState(() => Array.from({ length: 18 }, (_, k) => ({
     k, i: k % 8, left: Math.random() * 100, atraso: -Math.random() * 24, dur: 18 + Math.random() * 14,
@@ -42047,7 +42049,7 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
   const clube = (equipa && (equipa.clube || equipa.nome)) || 'Mister JP';
   const escalao = (equipa && equipa.escalao) || '';
 
-  const fechar = () => { if (!teste) { try { sessionStorage.setItem(chaveVista, '1'); } catch (e) { /* fica só nesta página */ } } setFechado(true); };
+  const fechar = () => { if (!teste) { try { localStorage.setItem(chaveVista, '1'); } catch (e) { /* fica só nesta página */ } } setFechado(true); };
   const concluir = (x) => {
     setCarimbadas(v => [...v, x.t.id]);
     if (teste) return;
