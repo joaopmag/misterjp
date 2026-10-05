@@ -29069,22 +29069,28 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
      nome (o do adversário nunca se pede). */
   const ladoPlacard = (eq) => (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-      <div style={{ fontSize: 9.5, letterSpacing: '.3em', color: 'rgba(255,194,61,.55)', textTransform: 'uppercase', paddingLeft: '.3em' }}>{eq.lado}</div>
-      {/* O nome fica sempre centrado e a barra sublinha-o à largura exata
-          do texto. O emblema (se houver) fica à esquerda, fora dessa conta,
-          para não descentrar o nome nem desalinhar os dois lados. */}
-      <div style={{ position: 'relative', maxWidth: '100%', minWidth: 0, height: 24, display: 'flex', alignItems: 'center' }}>
-        {eq.nosso && info.logo ? <img src={info.logo} alt="" style={{ position: 'absolute', right: '100%', marginRight: 7, top: 1, width: 22, height: 22, objectFit: 'contain' }} /> : null}
-        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'stretch', minWidth: 0, maxWidth: '100%' }}>
-          <div style={{ ...led, fontSize: 14, lineHeight: '18px', letterSpacing: '.06em', textTransform: 'uppercase', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: '.06em' }}>{eq.nome}</div>
-          <div style={{
-            height: 3, borderRadius: 2, marginTop: 3,
-            background: eq.nosso ? cor.base : 'rgba(255,194,61,.18)', boxShadow: eq.nosso ? `0 0 8px ${cor.base}` : 'none',
-          }} />
-        </div>
+      {/* CASA / FORA, e o nosso emblema (se houver) ao lado desta etiqueta:
+          ao lado do nome roubava espaço e o nome cortava no telemóvel. */}
+      <div style={{ height: 18, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {eq.nosso && info.logo ? <img src={info.logo} alt="" style={{ width: 18, height: 18, objectFit: 'contain' }} /> : null}
+        <span style={{ fontSize: 9.5, letterSpacing: '.3em', color: 'rgba(255,194,61,.55)', textTransform: 'uppercase', paddingLeft: '.3em' }}>{eq.lado}</span>
+      </div>
+      {/* O nome NUNCA corta: a letra encolhe com o ecrã e, se mesmo assim
+          não couber, passa para duas linhas (ex.: "SC" / "SALGUEIROS").
+          A barra sublinha o nome à largura do texto, centrada. */}
+      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'stretch', maxWidth: '100%' }}>
+        <div style={{
+          ...led, fontSize: 'clamp(11px, 3.5vw, 14px)', lineHeight: 1.25, letterSpacing: '.04em', textTransform: 'uppercase',
+          textAlign: 'center', whiteSpace: 'normal', overflowWrap: 'anywhere', textWrap: 'balance',
+        }}>{eq.nome}</div>
+        <div style={{
+          height: 3, borderRadius: 2, marginTop: 4,
+          background: eq.nosso ? cor.base : 'rgba(255,194,61,.18)', boxShadow: eq.nosso ? `0 0 8px ${cor.base}` : 'none',
+        }} />
       </div>
     </div>
   );
+
   const linhaBilhete = (rotulo, valor) => valor ? (
     <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 13.5, lineHeight: 1.45 }}>
       <span style={{ minWidth: 92, color: '#7a6f5c', fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase' }}>{rotulo}</span>
@@ -29164,9 +29170,11 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
             background: '#07090a', backgroundImage: 'radial-gradient(rgba(255,194,61,.07) 1px, transparent 1.3px)', backgroundSize: '5px 5px',
             boxShadow: '0 18px 40px rgba(0,0,0,.6), inset 0 0 30px rgba(0,0,0,.8)', animation: 'ej-placard .6s ease-out 1s both',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Os dois lados alinham pelo topo (CASA e FORA à mesma altura,
+                mesmo que um nome passe a duas linhas); o VS fica ao meio. */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
               {ladoPlacard(casa)}
-              <div style={{ ...led, fontSize: 20, fontWeight: 700, animation: 'ej-piscar 1.6s ease-in-out infinite' }} className="ej-anim">VS</div>
+              <div style={{ ...led, alignSelf: 'center', flexShrink: 0, fontSize: 20, fontWeight: 700, animation: 'ej-piscar 1.6s ease-in-out infinite' }} className="ej-anim">VS</div>
               {ladoPlacard(vis)}
             </div>
             <div style={{ height: 1, background: 'rgba(255,194,61,.18)', margin: '14px 0 10px' }} />
