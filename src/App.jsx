@@ -28275,6 +28275,11 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
           ? `\nConcentração: ${[c.horaConcentracao, c.localConcentracao].filter(Boolean).join(' · ')}` : '';
         return {
           id, _jogo: true, destino: 'jogos', prazo: c.data, passoTxt: '',
+          _info: {
+            vespera, nos: nossoClube, adv: c.adversario || 'Adversário', casaFora: c.casaFora || '',
+            data: c.data, hora: c.horaJogo || '', local: c.localJogo || '',
+            horaConc: c.horaConcentracao || '', localConc: c.localConcentracao || '', convocado: c.convocado === true,
+          },
           titulo: vespera ? 'Amanhã há jogo' : 'Hoje é dia de jogo',
           acao: vespera ? 'Preparar o jogo' : 'Ver o jogo de hoje',
           notas: `${jogo}${quando ? `\n${quando}` : ''}${conc}\nVê a convocatória, o plano de jogo e o adversário.`,
@@ -28282,6 +28287,30 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       })
       .filter(m => !missoesJogoVistas.includes(m.id));
   })();
+  /* MODO DE TESTE do ecrã de jogo, sem esperar por um jogo a sério:
+     abrir o Portal com ?testejogo=vespera ou ?testejogo=dia no fim do
+     endereço. Usa a primeira convocatória que houver (ou um jogo de
+     exemplo), não verifica se é oficial e não fica marcada como vista,
+     por isso aparece em todas as entradas enquanto o endereço o tiver. */
+  const modoTesteJogo = (() => {
+    try { return new URLSearchParams(window.location.search).get('testejogo') || ''; } catch (e) { return ''; }
+  })();
+  if (modoTesteJogo && !missoesJogo.length) {
+    const vespera = modoTesteJogo !== 'dia';
+    const c = ((dadosConvJogo && dadosConvJogo.convocatorias) || [])[0] || {};
+    const hoje = todayStr();
+    const daqui = new Date(Date.now() + 3 * 3600000);
+    const horaEx = `${String(daqui.getHours()).padStart(2, '0')}:${String(daqui.getMinutes()).padStart(2, '0')}`;
+    missoesJogo.push({
+      id: `teste:jogo:${modoTesteJogo}`, _jogo: true, _teste: true, destino: 'jogos', prazo: vespera ? addDays(hoje, 1) : hoje, passoTxt: '',
+      titulo: vespera ? 'Amanhã há jogo' : 'Hoje é dia de jogo', acao: vespera ? 'Preparar o jogo' : 'Ver o jogo de hoje',
+      _info: {
+        vespera, nos: (dadosConvJogo && dadosConvJogo.clube) || 'Nós', adv: c.adversario || 'FC Exemplo', casaFora: c.casaFora || 'Casa',
+        data: vespera ? addDays(hoje, 1) : hoje, hora: c.horaJogo || horaEx, local: c.localJogo || 'Estádio de teste',
+        horaConc: c.horaConcentracao || '', localConc: c.localConcentracao || '', convocado: c.convocado !== false,
+      },
+    });
+  }
   const [missaoAtiva, setMissaoAtiva] = useState(null); // a tarefa cujo destino está aberto
   const [missaoCumprida, setMissaoCumprida] = useState(null); // título, para o ecrã "Missão cumprida"
   /* "MAIS TARDE" = SÓ AGORA. A missão sai do ecrã nesta entrada no
@@ -28297,7 +28326,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   /* Missão de jogo que apareceu = vista. Grava-se já no dispositivo (para
      não voltar na próxima entrada), mas não sai do ecrã agora: o jogador
      ainda a está a ler. */
-  const idsJogoNoEcra = missoesJogo.map(m => m.id).join('|');
+  const idsJogoNoEcra = missoesJogo.filter(m => !m._teste).map(m => m.id).join('|');
   useEffect(() => {
     if (!idsJogoNoEcra) return;
     try {
@@ -28578,10 +28607,14 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // A missão de jogo vem primeiro: é a que tem hora marcada.
   const missoesParaMostrar = [...missoesJogo, ...missoesPorFazer]
     .filter(t => !missoesAdiadas.includes(t.id) && !(t._tarefa && missoesAdiadas.includes(t._tarefa.id)));
-  const ecraMissao = missoesParaMostrar.length > 0 ? (
+  const jogoNoEcra = missoesParaMostrar.find(t => t._jogo);
+  const tarefasNoEcra = missoesParaMostrar.filter(t => !t._jogo);
+  const ecraMissao = jogoNoEcra ? (
+    <EcraJogo player={player} missao={jogoNoEcra} onIr={irParaMissao} onAdiar={adiarMissao} />
+  ) : tarefasNoEcra.length > 0 ? (
     <EcraMissao
       player={player}
-      tarefas={missoesParaMostrar}
+      tarefas={tarefasNoEcra}
       janelas={{ wellness: wellnessWindow, rpe: rpeWindow }}
       onIr={irParaMissao}
       onAdiar={adiarMissao}
@@ -28955,6 +28988,219 @@ function EcraAniversario({ player, onEntrar }) {
      até à próxima entrada no Portal.
    · Várias missões = várias folhas presas na mola: "1 de 3", e a folha
      vira-se ao passar à seguinte. */
+/* ECRÃ DE JOGO — véspera e dia de jogo. Tem de ser diferente da
+   prancheta das missões: aquilo é o mister a dar trabalho, isto é o
+   jogo a chegar. A ideia é um estádio à noite:
+   - as luzes dos postes acendem uma a uma ao entrar (com o tremeluzir
+     das lâmpadas de estádio a aquecer);
+   - na bancada, flashes de telemóveis a piscar;
+   - o PLACARD em luzes LED, com os dois clubes e a contagem decrescente
+     para o apito (véspera: horas, minutos e segundos; dia: "apito às");
+   - por baixo, o BILHETE do jogador com o nome e o número, o jogo e a
+     concentração. Ao carregar em "Bora", o canhoto do bilhete rasga-se
+     (como à entrada do estádio) e só depois leva o jogador a Jogo. */
+function EcraJogo({ player, missao, onIr, onAdiar }) {
+  const info = missao._info || {};
+  const [agora, setAgora] = useState(() => Date.now());
+  const [rasgar, setRasgar] = useState(false);
+  useEffect(() => {
+    const h = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(h);
+  }, []);
+  const flashes = React.useMemo(() => Array.from({ length: 46 }, (_, k) => ({
+    k, left: Math.random() * 100, top: Math.random() * 100, atraso: Math.random() * 6, dur: 2.5 + Math.random() * 4,
+    tam: 1.5 + Math.random() * 2.5, dourado: Math.random() < 0.3,
+  })), []);
+
+  const nomeJ = String((player && player.name) || '').trim();
+  const primeiro = nomeJ ? nomeJ.split(/\s+/)[0] : 'Jogador';
+  const numero = player && player.number ? String(player.number) : '';
+  const cor = coresCamisola(T.corEquipa);
+  const fora = info.casaFora === 'Fora';
+  const nos = String(info.nos || 'Nós');
+  const adv = String(info.adv || 'Adversário');
+  const casa = fora ? { nome: adv, nosso: false } : { nome: nos, nosso: true };
+  const vis = fora ? { nome: nos, nosso: true } : { nome: adv, nosso: false };
+
+  // Contagem para o apito. Sem hora marcada, conta para a meia-noite do dia do jogo.
+  const mh = /^(\d{1,2})[:h](\d{2})/.exec(String(info.hora || '').trim());
+  const alvo = info.data ? new Date(`${info.data}T${mh ? `${mh[1].padStart(2, '0')}:${mh[2]}` : '00:00'}:00`).getTime() : null;
+  const falta = alvo ? Math.max(0, alvo - agora) : null;
+  const dois = (n) => String(n).padStart(2, '0');
+  const hh = falta != null ? Math.floor(falta / 3600000) : 0;
+  const mm = falta != null ? Math.floor((falta % 3600000) / 60000) : 0;
+  const ss = falta != null ? Math.floor((falta % 60000) / 1000) : 0;
+  const ledLinha2 = !alvo ? (info.vespera ? 'AMANHÃ' : 'HOJE')
+    : info.vespera ? `${dois(hh)}:${dois(mm)}:${dois(ss)}`
+      : (mh ? `APITO ${dois(mh[1])}:${mh[2]}` : 'HOJE');
+  const ledLegenda = !alvo ? '' : info.vespera ? (mh ? 'para o apito inicial' : 'para o dia do jogo')
+    : (mh ? (falta > 0 ? `faltam ${hh ? `${hh}h ` : ''}${dois(mm)}min` : 'a bola já rola') : '');
+
+  const ir = () => {
+    if (rasgar) return;
+    setRasgar(true);
+    setTimeout(() => onIr(missao), 650);
+  };
+  const led = { fontFamily: "'JetBrains Mono', 'Courier New', monospace", color: '#FFC23D', textShadow: '0 0 6px rgba(255,170,40,.85), 0 0 14px rgba(255,140,20,.45)' };
+  const ladoPlacard = (eq) => (
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+      <div style={{
+        width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: eq.nosso ? `linear-gradient(160deg, ${cor.claro}, ${cor.base})` : 'linear-gradient(160deg, #e9e9e9, #9a9a9a)',
+        border: '1.5px solid rgba(255,255,255,.7)', boxShadow: eq.nosso ? `0 0 12px ${cor.base}` : 'none',
+      }}><Shield size={16} color={eq.nosso ? cor.texto : '#222'} /></div>
+      <div style={{ ...led, fontSize: 14, letterSpacing: '.06em', textTransform: 'uppercase', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eq.nome}</div>
+    </div>
+  );
+  const linhaBilhete = (rotulo, valor) => valor ? (
+    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 13.5, lineHeight: 1.45 }}>
+      <span style={{ minWidth: 92, color: '#7a6f5c', fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase' }}>{rotulo}</span>
+      <span style={{ color: '#1d2018', fontWeight: 600 }}>{valor}</span>
+    </div>
+  ) : null;
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', overflowX: 'hidden', ...body,
+      background: 'linear-gradient(180deg, #05080b 0%, #0b1712 45%, #10261a 100%)',
+    }}>
+      <style>{`
+        @keyframes ej-acender { 0% { opacity: 0; } 8% { opacity: .9; } 12% { opacity: .1; } 20% { opacity: .8; } 26% { opacity: .25; } 40%, 100% { opacity: 1; } }
+        @keyframes ej-flash { 0%, 86%, 100% { opacity: 0; transform: scale(.4); } 90% { opacity: 1; transform: scale(1.4); } 94% { opacity: .2; transform: scale(1); } }
+        @keyframes ej-placard { from { opacity: 0; transform: translateY(-16px) scale(.96); } to { opacity: 1; transform: none; } }
+        @keyframes ej-bilhete { from { opacity: 0; transform: translateY(40px) rotate(3deg); } to { opacity: 1; transform: rotate(-1.2deg); } }
+        @keyframes ej-carimbo { 0% { transform: rotate(-14deg) scale(2); opacity: 0; } 100% { transform: rotate(-14deg) scale(1); opacity: .85; } }
+        @keyframes ej-rasgar { 0% { transform: none; } 30% { transform: translateX(6px) rotate(4deg); } 100% { transform: translate(60px, 140px) rotate(38deg); opacity: 0; } }
+        @keyframes ej-piscar { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+        @media (prefers-reduced-motion: reduce) { .ej-anim { animation: none !important; opacity: 1 !important; } }
+      `}</style>
+
+      {/* A BANCADA: flashes de telemóveis */}
+      <div style={{ position: 'fixed', left: 0, right: 0, top: 0, height: '38%', pointerEvents: 'none', opacity: .9 }}>
+        {flashes.map(f => (
+          <span key={f.k} className="ej-anim" style={{
+            position: 'absolute', left: `${f.left}%`, top: `${f.top}%`, width: f.tam, height: f.tam, borderRadius: '50%',
+            background: f.dourado ? '#FFD27A' : '#fff', boxShadow: `0 0 ${f.tam * 3}px ${f.dourado ? '#FFC23D' : '#fff'}`,
+            opacity: 0, animation: `ej-flash ${f.dur}s ease-in-out ${f.atraso}s infinite`,
+          }} />
+        ))}
+      </div>
+
+      {/* OS POSTES DE LUZ: acendem um de cada vez */}
+      {[{ lado: 'left', atraso: 0.1 }, { lado: 'right', atraso: 0.55 }].map(pl => (
+        <div key={pl.lado} className="ej-anim" style={{
+          position: 'fixed', top: 0, [pl.lado]: 0, width: '62%', height: '78%', pointerEvents: 'none',
+          opacity: 0, animation: `ej-acender 1.4s linear ${pl.atraso}s both`,
+        }}>
+          <div style={{
+            position: 'absolute', top: 18, [pl.lado]: 14, display: 'grid', gridTemplateColumns: 'repeat(4, 7px)', gap: 3,
+            padding: 4, background: '#1a1f22', borderRadius: 3, boxShadow: '0 0 24px rgba(255,250,225,.55)',
+          }}>
+            {Array.from({ length: 8 }, (_, k) => <span key={k} style={{ width: 7, height: 7, borderRadius: 2, background: '#FFFBEA', boxShadow: '0 0 6px #fff' }} />)}
+          </div>
+          <div style={{
+            position: 'absolute', top: 30, [pl.lado]: 0, width: '100%', height: '100%',
+            background: 'linear-gradient(180deg, rgba(255,250,225,.20) 0%, rgba(255,250,225,0) 80%)',
+            clipPath: pl.lado === 'left' ? 'polygon(4% 0, 14% 0, 100% 100%, 20% 100%)' : 'polygon(86% 0, 96% 0, 80% 100%, 0 100%)',
+          }} />
+        </div>
+      ))}
+
+      {/* O RELVADO, em perspetiva, ao fundo */}
+      <div style={{ position: 'fixed', left: '-20%', right: '-20%', bottom: 0, height: '26%', pointerEvents: 'none', perspective: 400 }}>
+        <div style={{
+          position: 'absolute', inset: 0, transform: 'rotateX(55deg)', transformOrigin: '50% 100%',
+          background: 'repeating-linear-gradient(90deg, #1e5130 0 60px, #23603a 60px 120px)',
+          boxShadow: 'inset 0 30px 40px rgba(5,8,11,.9)',
+        }}>
+          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 2, background: 'rgba(255,255,255,.45)' }} />
+          <div style={{ position: 'absolute', left: '50%', top: '40%', width: 120, height: 120, marginLeft: -60, borderRadius: '50%', border: '2px solid rgba(255,255,255,.4)' }} />
+        </div>
+      </div>
+
+      <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '56px 16px 28px', boxSizing: 'border-box', position: 'relative' }}>
+        <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          <div style={{ textAlign: 'center', color: T.gold, fontSize: 11.5, fontWeight: 800, letterSpacing: '.26em', textTransform: 'uppercase' }}>
+            {info.vespera ? 'Véspera de jogo' : 'Dia de jogo'}{missao._teste ? ' · teste' : ''}
+          </div>
+
+          {/* O PLACARD */}
+          <div className="ej-anim" style={{
+            position: 'relative', borderRadius: 12, padding: '16px 14px 14px', border: '3px solid #2a2f33',
+            background: '#07090a', backgroundImage: 'radial-gradient(rgba(255,194,61,.07) 1px, transparent 1.3px)', backgroundSize: '5px 5px',
+            boxShadow: '0 18px 40px rgba(0,0,0,.6), inset 0 0 30px rgba(0,0,0,.8)', animation: 'ej-placard .6s ease-out 1s both',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {ladoPlacard(casa)}
+              <div style={{ ...led, fontSize: 20, fontWeight: 700, animation: 'ej-piscar 1.6s ease-in-out infinite' }} className="ej-anim">VS</div>
+              {ladoPlacard(vis)}
+            </div>
+            <div style={{ height: 1, background: 'rgba(255,194,61,.18)', margin: '14px 0 10px' }} />
+            <div style={{ ...led, textAlign: 'center', fontSize: 30, fontWeight: 700, letterSpacing: '.08em', lineHeight: 1.1 }}>{ledLinha2}</div>
+            {ledLegenda && <div style={{ textAlign: 'center', marginTop: 4, fontSize: 11, color: 'rgba(255,194,61,.7)', letterSpacing: '.18em', textTransform: 'uppercase' }}>{ledLegenda}</div>}
+          </div>
+
+          {/* O BILHETE */}
+          <div className="ej-anim" style={{ display: 'flex', filter: 'drop-shadow(0 14px 26px rgba(0,0,0,.55))', animation: 'ej-bilhete .7s cubic-bezier(.2,.9,.3,1.2) 1.4s both' }}>
+            <div style={{
+              flex: 1, minWidth: 0, position: 'relative', background: '#F6EEDB', borderRadius: '10px 0 0 10px', padding: '14px 14px 14px 16px',
+              backgroundImage: 'repeating-linear-gradient(135deg, rgba(160,130,80,.05) 0 6px, transparent 6px 12px)',
+            }}>
+              <div style={{ fontSize: 10, color: '#8a7a5c', letterSpacing: '.22em', textTransform: 'uppercase' }}>Bilhete de jogador</div>
+              <div style={{ ...display, fontSize: 26, color: '#14231a', lineHeight: 1.15, margin: '2px 0 10px' }}>
+                {primeiro}{numero ? <span style={{ color: cor.base, marginLeft: 8 }}>#{numero}</span> : null}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {linhaBilhete('Jogo', `${info.casaFora === 'Fora' ? 'Fora' : info.casaFora === 'Casa' ? 'Em casa' : ''}${info.casaFora ? ' · ' : ''}vs ${adv}`)}
+                {linhaBilhete('Apito', [info.hora, info.local].filter(Boolean).join(' · '))}
+                {linhaBilhete('Concentração', [info.horaConc, info.localConc].filter(Boolean).join(' · '))}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+                {[{ Ic: ClipboardList, t: 'Convocatória' }, { Ic: FileText, t: 'Plano de jogo' }, { Ic: Shield, t: 'Adversário' }].map(({ Ic, t }) => (
+                  <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#3b3a2c', border: '1px solid #cfc2a4', borderRadius: 999, padding: '3px 9px' }}>
+                    <Ic size={12} /> {t}
+                  </span>
+                ))}
+              </div>
+              {info.convocado && (
+                <div className="ej-anim" style={{
+                  position: 'absolute', right: 10, top: 12, border: '2px solid #2E6B3A', color: '#2E6B3A', borderRadius: 6,
+                  padding: '2px 8px', fontSize: 11, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase',
+                  animation: 'ej-carimbo .35s ease-out 2.1s both',
+                }}>Convocado</div>
+              )}
+            </div>
+            {/* o canhoto, com o picotado entre os dois */}
+            <div className={rasgar ? '' : 'ej-anim'} style={{
+              width: 74, flexShrink: 0, background: '#F6EEDB', borderRadius: '0 10px 10px 0', position: 'relative',
+              borderLeft: '2px dashed #b9aa88', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0',
+              transformOrigin: '0 0', animation: rasgar ? 'ej-rasgar .65s ease-in both' : 'none',
+            }}>
+              <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 10, letterSpacing: '.3em', color: '#8a7a5c', textTransform: 'uppercase' }}>Entrada</div>
+              <div style={{ width: 40, height: 52, background: 'repeating-linear-gradient(90deg, #1d2018 0 2px, transparent 2px 4px, #1d2018 4px 5px, transparent 5px 8px, #1d2018 8px 11px, transparent 11px 12px)' }} />
+              <div style={{ ...display, fontSize: 18, color: cor.base }}>{numero || '★'}</div>
+            </div>
+          </div>
+
+          <button type="button" onClick={ir} style={{
+            width: '100%', padding: '15px 18px', borderRadius: 14, border: 'none', cursor: 'pointer',
+            background: T.crimson, color: TEXT_ON_ACCENT, fontSize: 16, fontWeight: 800, ...body,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 20px rgba(0,0,0,.35)',
+          }}>
+            Bora! {missao.acao || 'Ver o jogo'} <ArrowRight size={18} />
+          </button>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <button type="button" onClick={() => onAdiar(missao.id)} style={{
+              background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
+            }}>Mais tarde</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
   const [i, setI] = useState(0);
   const [folha, setFolha] = useState(0); // muda a cada página → reinicia as animações
