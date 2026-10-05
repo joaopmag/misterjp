@@ -26523,6 +26523,28 @@ const NOME_RESULTADO = { V: 'Vitória', E: 'Empate', D: 'Derrota' };
    "Estatísticas do jogo" da equipa técnica continuam a funcionar igual.
    A missão leva diretamente ao relatório do jogo que falta. */
 const comMinutos = (r) => !!r && Number(r.minutes) > 0;
+/* RESULTADO QUE JÁ ESTÁ NA COMPETIÇÃO. Quando o resultado foi lançado na
+   tabela da competição (jornada), o relatório vai buscá-lo lá: aparece já
+   preenchido e grava-se no jogo ao guardar o relatório. Liga pelo encontro
+   (`sourceGameId`) ou, nos jogos antigos sem essa ligação, pela data e
+   pelo adversário. O formato é o mesmo: "casa-fora". */
+function resultadoDaCompeticao(m, standings) {
+  if (!m) return '';
+  const { competitions } = normalizeStandings(standings);
+  const norm = (x) => String(x || '').trim().toLowerCase();
+  for (const comp of (competitions || [])) {
+    for (const r of (comp.rounds || [])) {
+      for (const g of (r.games || [])) {
+        if (!g || !parseScore(g.score)) continue;
+        const mesmo = (m.sourceGameId && g.id === m.sourceGameId)
+          || (g.date && g.date === m.date && m.opponent && (norm(g.home) === norm(m.opponent) || norm(g.away) === norm(m.opponent)));
+        if (mesmo) { const sc = parseScore(g.score); return `${sc.home}-${sc.away}`; }
+      }
+    }
+  }
+  return '';
+}
+const comResultado = (m, standings) => (String((m && m.result) || '').trim() ? m : { ...m, result: resultadoDaCompeticao(m, standings) });
 function estadoRelatorio(m) {
   const conv = (m.convocados || []);
   const rep = m.report || {};
@@ -26536,12 +26558,12 @@ function estadoRelatorio(m) {
   if (titularesSem || !String(m.result || '').trim()) {
     return { id: 'incompleto', txt: titularesSem ? `Incompleto · ${titularesSem} ${titularesSem === 1 ? 'titular' : 'titulares'} sem minutos` : 'Incompleto · falta o resultado', cor: T.warn };
   }
-  return { id: 'feito', txt: `Preenchido · ${comMin} ${comMin === 1 ? 'jogador' : 'jogadores'}`, cor: T.good };
+  return { id: 'feito', txt: `${comMin} ${comMin === 1 ? 'jogador' : 'jogadores'}`, cor: T.good };
 }
 
-function RelatoriosJogo({ matches, players, season, onSave, abrirId, onAberto }) {
+function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto }) {
   const hoje = todayStr();
-  const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje)
+  const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje).map(m => comResultado(m, standings))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const oficiais = jogados.filter(m => competitionLabel(m.competition) !== FRIENDLY);
   const amigaveis = jogados.filter(m => competitionLabel(m.competition) === FRIENDLY);
@@ -26551,7 +26573,8 @@ function RelatoriosJogo({ matches, players, season, onSave, abrirId, onAberto })
   // Chegou pela missão: abre logo o relatório pedido.
   useEffect(() => {
     if (!abrirId) return;
-    const m = (matches || []).find(x => x.id === abrirId);
+    const m0 = (matches || []).find(x => x.id === abrirId);
+    const m = m0 ? comResultado(m0, standings) : null;
     if (m) { setGrupo(competitionLabel(m.competition) === FRIENDLY ? 'amigavel' : 'oficial'); setAberto(m); }
     if (onAberto) onAberto();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -26842,12 +26865,12 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
     : sorted.filter(m => competitionLabel(m.competition) === compAberta);
 
   // Relatórios por preencher (jogos já realizados), para o número no separador.
-  const relatoriosPorFazer = (matches || []).filter(m => m && m.date && m.date <= todayStr() && estadoRelatorio(m).id !== 'feito').length;
+  const relatoriosPorFazer = (matches || []).filter(m => m && m.date && m.date <= todayStr() && estadoRelatorio(comResultado(m, standings)).id !== 'feito').length;
 
   if (aba === 'relatorios') {
     return (
       <div>
-        <SectionHeader title="Jogos" subtitle="Relatórios de jogo: alimentam as estatísticas dos jogadores." />
+        <SectionHeader title="Relatórios" subtitle="Dados dos jogos." />
         <SubTabs
           value={aba}
           onChange={setAba}
@@ -26858,7 +26881,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
           ]}
         />
         <RelatoriosJogo
-          matches={matches} players={players} season={season}
+          matches={matches} players={players} season={season} standings={standings}
           onSave={save} abrirId={abrirRelatorio} onAberto={() => setAbrirRelatorio(null)}
         />
       </div>
@@ -27299,7 +27322,6 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
           <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
             Relatório de jogo
           </div>
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8 }}>C e SC: capitão e subcapitão, escolhidos na Convocatória.</div>
           <TabelaRelatorio
             jogadores={sortByPosition(convocadoPlayers)} players={players} report={f.report} starters={f.starters}
             capitao={f.capitao} subcapitao={f.subcapitao}
@@ -40220,7 +40242,7 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
 
   return (
     <div>
-      <SectionHeader title="Convocatórias" subtitle={`U19 - ${season?.name || ''}`}
+      <SectionHeader title="Convocatórias" subtitle="Os convocados, titulares e suplentes."
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Nova convocatória</Btn>} />
       {subTabs}
 
