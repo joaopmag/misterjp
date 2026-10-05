@@ -42011,6 +42011,10 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
   const teste = (() => { try { return /[?&#]testeentrada\b/i.test(window.location.href); } catch (e) { return false; } })();
   const [fechado, setFechado] = useState(() => { if (teste) return false; try { return sessionStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
   const [carimbadas, setCarimbadas] = useState([]); // concluídas aqui (ficam à vista, carimbadas)
+  const [fundo] = useState(() => Array.from({ length: 18 }, (_, k) => ({
+    k, i: k % 8, left: Math.random() * 100, atraso: -Math.random() * 24, dur: 18 + Math.random() * 14,
+    tam: 16 + Math.random() * 16, rot: Math.random() * 360, op: 0.07 + Math.random() * 0.1,
+  })));
   const [inicial] = useState(() => euId ? missoesDoCacifo(tarefas, euId, ctx, hoje).filter(x => !x.futura).map(x => x.t.id) : []);
   const reais = euId ? missoesDoCacifo(tarefas, euId, ctx, hoje).filter(x => !x.futura) : [];
   const exemplos = [
@@ -42058,13 +42062,17 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
     fechar();
   };
   const atrasadas = porFazer.filter(x => x.atraso).length;
+  /* O FUNDO MEXE, como no Portal, mas com as ferramentas da equipa
+     técnica (cronómetro, prancheta, vídeo, cone, troféu, bandeirola) a
+     subir devagar, quase transparentes, por trás da credencial. */
+  const ICONES_FUNDO = [Clock, ClipboardList, Video, Dumbbell, Trophy, Flag, Search, Activity];
   const codigoBarras = 'repeating-linear-gradient(90deg, #1a1d1b 0 2px, transparent 2px 4px, #1a1d1b 4px 5px, transparent 5px 8px, #1a1d1b 8px 11px, transparent 11px 12px, #1a1d1b 12px 13px, transparent 13px 16px)';
 
   return (
     /* TUDO NUM ECRÃ: cordão em cima, o cartão a ocupar o resto da altura e
        o botão em baixo. Só a lista das zonas desliza, por dentro do cartão. */
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 90, overflow: 'hidden', ...body, display: 'flex', flexDirection: 'column', alignItems: 'center',
+      position: 'fixed', inset: 0, zIndex: 90, overflow: 'hidden', ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', isolation: 'isolate',
       background: `radial-gradient(ellipse at 50% -10%, #33463a 0%, ${T.bg} 60%)`,
       padding: '0 14px calc(14px + env(safe-area-inset-bottom, 0px))',
     }}>
@@ -42075,15 +42083,37 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
         @keyframes cr-luz { 0%, 100% { opacity: 1; box-shadow: 0 0 8px #ff4a3d; } 50% { opacity: .25; box-shadow: none; } }
         @keyframes cr-carimbo { 0% { transform: rotate(-12deg) scale(2.2); opacity: 0; } 100% { transform: rotate(-12deg) scale(1); opacity: .9; } }
         @keyframes cr-zona { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+        @keyframes cr-subir { 0% { transform: translateY(0) rotate(var(--rot)); } 100% { transform: translateY(-120vh) rotate(calc(var(--rot) + 160deg)); } }
         @media (prefers-reduced-motion: reduce) { .cr-anim { animation: none !important; } }
       `}</style>
 
-      <div className="cr-anim" style={{ flex: '0 1 auto', minHeight: 0, width: 'min(94vw, 400px)', display: 'flex', flexDirection: 'column', animation: 'cr-cair 1.1s cubic-bezier(.25,.8,.35,1) both' }}>
-        <div className="cr-anim" style={{ flex: '0 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', transformOrigin: '50% -60px', animation: 'cr-balancar 5.5s ease-in-out 1.2s infinite' }}>
+      {/* o fundo a mexer */}
+      {fundo.map(f => {
+        const Ic = ICONES_FUNDO[f.i];
+        return (
+          <div key={f.k} className="cr-anim" aria-hidden="true" style={{
+            position: 'absolute', left: `${f.left}%`, bottom: -40, opacity: f.op, pointerEvents: 'none', zIndex: -1, color: '#fff',
+            animation: `cr-subir ${f.dur}s linear ${f.atraso}s infinite`, '--rot': `${f.rot}deg`,
+          }}><Ic size={f.tam} strokeWidth={1.6} /></div>
+        );
+      })}
+
+      {/* O CORDÃO CRESCE para a credencial ficar ao meio da página: ele e o
+          espaço por baixo do cartão repartem a altura que sobra. */}
+      <div className="cr-anim" style={{ flex: '1 1 auto', minHeight: 0, width: 'min(94vw, 400px)', display: 'flex', flexDirection: 'column', animation: 'cr-cair 1.1s cubic-bezier(.25,.8,.35,1) both' }}>
+        <div className="cr-anim" style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', transformOrigin: '50% 0', animation: 'cr-balancar 6s ease-in-out 1.2s infinite' }}>
           {/* o cordão e a mola */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-            <div style={{ width: 28, height: 'calc(34px + env(safe-area-inset-top, 0px))', background: cor, boxShadow: 'inset 5px 0 6px rgba(0,0,0,.25), inset -5px 0 6px rgba(0,0,0,.25)' }} />
-            <div style={{ width: 18, height: 18, marginTop: -1, borderRadius: '5px 5px 8px 8px', background: 'linear-gradient(90deg, #8d9093, #e6e8ea 45%, #7d8083)' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: '1 1 0', minHeight: 'calc(34px + env(safe-area-inset-top, 0px))' }}>
+            <div style={{
+              width: 28, flex: 1, background: cor, position: 'relative', overflow: 'hidden',
+              boxShadow: 'inset 5px 0 6px rgba(0,0,0,.25), inset -5px 0 6px rgba(0,0,0,.25)',
+            }}>
+              <div style={{
+                position: 'absolute', left: 0, right: 0, bottom: 8, writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 8.5, fontWeight: 800,
+                letterSpacing: '.3em', color: 'rgba(255,255,255,.7)', whiteSpace: 'nowrap', lineHeight: '28px', textTransform: 'uppercase',
+              }}>Equipa técnica · {clube} · Equipa técnica</div>
+            </div>
+            <div style={{ width: 18, height: 18, marginTop: -1, flexShrink: 0, borderRadius: '5px 5px 8px 8px', background: 'linear-gradient(90deg, #8d9093, #e6e8ea 45%, #7d8083)' }} />
           </div>
 
           {/* o cartão: ocupa a altura que sobra */}
@@ -42190,7 +42220,7 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
         </div>
       </div>
 
-      <div style={{ flexShrink: 0, paddingTop: 12, textAlign: 'center' }}>
+      <div style={{ flex: '1 1 0', minHeight: 64, paddingTop: 12, textAlign: 'center' }}>
         <Btn variant="ghost" onClick={guardar}>{porFazer.length ? 'Mais tarde' : 'Entrar na app'} <ArrowRight size={14} /></Btn>
       </div>
     </div>
