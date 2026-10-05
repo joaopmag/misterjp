@@ -28970,7 +28970,7 @@ function EcraAniversario({ player, onEntrar }) {
         {idade ? (
           <div style={{ ...display, fontSize: 22, color: T.gold, letterSpacing: '.04em', textAlign: 'center' }}>{idade} anos</div>
         ) : null}
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, maxWidth: 330, textAlign: 'center', margin: '0 auto' }}>
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, maxWidth: 330, textAlign: 'left', margin: '0 auto', alignSelf: 'stretch' }}>
           Esta camisola é só tua. Toda a equipa técnica deseja-te um dia em grande, dentro e fora do campo.
         </div>
 
