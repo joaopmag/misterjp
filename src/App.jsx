@@ -16,7 +16,7 @@ import AnalisadorVideo, {
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
 } from './AnalisadorVideo';
 import {
-  ZoomIn, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
+  ZoomIn, Ruler, Flag, Shirt, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
   Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
@@ -2904,11 +2904,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [monitoring, setMonitoring, monitoringReady, monitoringMeta] = useCollectionSync('monitoring', notifyEdit, teamId);
   const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit, teamId);
   const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit, teamId);
-  const [adversarios, setAdversarios, adversariosReady] = useCollectionSync('adversarios', notifyEdit, teamId);
+  const [adversarios, setAdversarios, adversariosReady, adversariosMeta] = useCollectionSync('adversarios', notifyEdit, teamId);
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
-  const [documentos, setDocumentos, documentosReady] = useCollectionSync('documentos', notifyEdit, teamId);
-  const [videosOriginais, setVideosOriginais] = useCollectionSync('video_originais', notifyEdit, teamId);
-  const [clipes, setClipes] = useCollectionSync('video_clips', notifyEdit, teamId);
+  const [documentos, setDocumentos, documentosReady, documentosMeta] = useCollectionSync('documentos', notifyEdit, teamId);
+  const [videosOriginais, setVideosOriginais, , videosOriginaisMeta] = useCollectionSync('video_originais', notifyEdit, teamId);
+  const [clipes, setClipes, , clipesMeta] = useCollectionSync('video_clips', notifyEdit, teamId);
 
   // Upload de vídeo definido aqui (não dentro de AnalisadorVideo) de propósito:
   // este componente nunca desmonta ao trocar de separador, por isso o
@@ -3154,7 +3154,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   /* O quinto valor autoriza uma remoção em massa. É preciso aqui porque
      apagar um momento apaga também a linha de cada jogador — dezenas de
      registos de uma vez, que o travão de segurança bloquearia. */
-  const [desenvolvimento, setDesenvolvimento, desenvolvimentoReady, , autorizarApagarMomento] = useCollectionSync('desenvolvimento', notifyEdit, teamId);
+  const [desenvolvimento, setDesenvolvimento, desenvolvimentoReady, desenvolvimentoMeta, autorizarApagarMomento] = useCollectionSync('desenvolvimento', notifyEdit, teamId);
   // Classificação/resultados da competição — registo único, atualizado
   // manualmente (jornada a jornada), partilhado por toda a equipa técnica.
   const [standings, setStandings, standingsReady, standingsMeta] = useSingletonSync(
@@ -3363,6 +3363,56 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     if (typeof window === 'undefined') return 'geral';
     return window.location.hash.replace('#', '').trim() || 'geral';
   });
+  /* PROVAS das missões da equipa técnica: em que tabelas procurar, por
+     caminho. Ver `missaoStaffFeita`. */
+  const provasMissoes = {
+    email: userEmail,
+    matches,
+    metas: {
+      analise: [videosMeta, videosOriginaisMeta, clipesMeta],
+      scouting: [scoutingMeta, adversariosMeta],
+      planeamento: [sessionsMeta],
+      presencas: [sessionsMeta, matchesMeta],
+      jogos: [convocatoriasMeta, matchesMeta],
+      monitorizacao: [monitoringMeta],
+      desenvolvimento: [desenvolvimentoMeta],
+      ideiajogo: [ideiasMeta],
+      exercicios: [exercisesMeta],
+      clinico: [clinicoMeta],
+      biblioteca: [videosMeta, apresentacoesMeta, documentosMeta],
+    },
+  };
+  /* FECHO AUTOMÁTICO: na app da pessoa responsável, cada missão sua com
+     caminho fecha-se quando aparece a prova. Grava como concluída (com o
+     aviso a quem criou), e o resto da equipa vê-a fechada. */
+  useEffect(() => {
+    if (!tarefasReady || !euId) return;
+    const hoje = todayStr();
+    const agora = new Date().toISOString();
+    const ctxM = { sessions, matches, players, monitoring };
+    const fechar = new Map(); // id -> { feita } | { bases: [] }
+    (tarefas || []).forEach(t => {
+      if (!t || t.jogadorId || t.responsavel !== euId || !caminhoVerificavel(t)) return;
+      if (eSemanal(t)) {
+        const bases = semanaisPendentes(t, hoje).filter(o => missaoStaffFeita(t, o.base, provasMissoes)).map(o => o.base);
+        if (bases.length) fechar.set(t.id, { bases });
+      } else if (t.recorrencia) {
+        if (tarefaAtivaHoje(t, hoje, ctxM) && !tarefaFeitaHoje(t, hoje) && missaoStaffFeita(t, null, provasMissoes)) fechar.set(t.id, { bases: [hoje] });
+      } else if (t.estado !== 'feita' && missaoStaffFeita(t, null, provasMissoes)) {
+        fechar.set(t.id, { feita: true });
+      }
+    });
+    if (!fechar.size) return;
+    setTarefas(prev => prev.map(r => {
+      const f = fechar.get(r.id);
+      if (!f) return r;
+      const aviso = avisaCriadorAoConcluir(r, euId) ? { conclusaoPorVer: { por: euId, em: agora } } : {};
+      if (f.feita) return { ...r, estado: 'feita', feitaEm: agora, fechoAutomatico: true, lembrete: null, ...aviso };
+      return { ...r, concluidasEm: [...new Set([...(r.concluidasEm || []), ...f.bases])], lembrete: null, ...(eSemanal(r) ? aviso : {}) };
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarefas, tarefasReady, euId, userEmail, matches, videosMeta, videosOriginaisMeta, clipesMeta, scoutingMeta, adversariosMeta, sessionsMeta, matchesMeta, convocatoriasMeta, monitoringMeta, desenvolvimentoMeta, ideiasMeta, exercisesMeta, clinicoMeta, apresentacoesMeta, documentosMeta]);
+
   const goTab = (id) => {
     /* Trocar de separador na barra lateral pode desmontar um ecrã que
        tinha uma "marca" própria no histórico do browser (Portal do
@@ -40567,8 +40617,16 @@ function TEXTO_AVISO_CONCLUSAO(t, membros) {
    Qualquer outro membro pode LEMBRAR o responsável, incluindo o dono e
    quem criou a tarefa: esses podem concluí-la, mas são precisamente quem
    mais vai querer cobrar. */
+function podeGerirTarefa(t, euId, souDono) {
+  if (!t) return false;
+  if (t.jogadorId) return true;
+  if (!t.responsavel) return true;
+  return t.responsavel === euId || t.criadoPor === euId || !!souDono;
+}
 function podeConcluirTarefa(t, euId, souDono) {
   if (!t) return false;
+  // Com caminho verificável, ninguém conclui à mão: fecha quando há prova.
+  if (caminhoVerificavel(t)) return false;
   if (t.jogadorId) return true;
   if (!t.responsavel) return true;
   return t.responsavel === euId || t.criadoPor === euId || !!souDono;
@@ -41597,7 +41655,10 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             <span style={{ fontSize: 11.5, color: T.warn }}>• iniciada</span>
           )}
           {tarefa.obrigatoria && (
-            <span style={{ fontSize: 11, color: T.warn, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock size={10} /> obrigatória</span>
+            <span style={{ fontSize: 11, color: T.bad, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Flag size={10} /> prioritária</span>
+          )}
+          {caminhoVerificavel(tarefa) && !feita && (
+            <span style={{ fontSize: 11, color: T.good }} title={`Fecha sozinha quando ${CRITERIO_STAFF[tarefa.caminho]}`}>• fecha sozinha</span>
           )}
           {/* Quem criou vê quantas vezes a pessoa entrou e adiou. */}
           {!feita && (tarefa.adiadaEm || []).length > 0 && (tarefa.criadoPor === euId || tarefa.responsavel === euId) && (
@@ -41694,6 +41755,56 @@ const CAMINHOS_STAFF = [
   { id: 'clinico', rotulo: 'Boletim Clínico', acao: 'Atualizar o boletim clínico', icon: Stethoscope },
   { id: 'biblioteca', rotulo: 'Biblioteca', acao: 'Organizar a biblioteca', icon: Presentation },
 ];
+/* MISSÕES DA EQUIPA TÉCNICA QUE SE VERIFICAM SOZINHAS.
+   Não há "Concluir" à mão nas missões com caminho: fecham quando a app vê
+   o trabalho feito NO SÍTIO CERTO, pela PRÓPRIA pessoa, DEPOIS de a
+   missão começar. A prova vem do registo de cada tabela (quem gravou e
+   quando: `updated_by_email` / `updated_at`), que a app já guarda.
+   - "Estatísticas do jogo" é mais exigente: só fecha quando o último jogo
+     realizado tem minutos lançados.
+   - Quem verifica é a app da pessoa responsável (só ela sabe o próprio
+     email). Quando vê a prova, grava a missão como concluída e quem a
+     criou recebe o aviso de sempre.
+   - Limite honesto: a app sabe que a pessoa gravou alguma coisa naquele
+     separador depois de a missão começar; não sabe se ficou bem feito.
+   - "Sem caminho" não tem prova possível: fica com "Concluir" à mão. */
+const CRITERIO_STAFF = {
+  analise: 'carregares ou editares um vídeo na Análise de Vídeo',
+  scouting: 'gravares um relatório de scouting ou de adversário',
+  planeamento: 'gravares uma sessão no Planeamento',
+  presencas: 'registares presenças de um treino ou jogo',
+  jogos: 'gravares a convocatória ou o jogo',
+  estatisticas: 'houver minutos lançados no último jogo',
+  monitorizacao: 'registares dados na Monitorização',
+  desenvolvimento: 'gravares uma avaliação no Desenvolvimento',
+  ideiajogo: 'gravares um esquema na Ideia de Jogo',
+  exercicios: 'gravares um exercício',
+  clinico: 'atualizares o Boletim Clínico',
+  biblioteca: 'carregares ou editares algo na Biblioteca',
+};
+const caminhoVerificavel = (t) => !!(t && !t.jogadorId && t.caminho && CRITERIO_STAFF[t.caminho]);
+function inicioDaMissao(t, base) {
+  if (base) return new Date(`${base}T00:00:00`).getTime();
+  if (t.recorrencia) return new Date(`${todayStr()}T00:00:00`).getTime();
+  if (t.criadoEm) return new Date(t.criadoEm).getTime();
+  return new Date(`${t.prazo || todayStr()}T00:00:00`).getTime();
+}
+// provas = { email, metas: { caminho: [meta, …] }, matches }
+function missaoStaffFeita(t, base, provas) {
+  if (!caminhoVerificavel(t) || !provas) return false;
+  if (t.caminho === 'estatisticas') {
+    const hoje = todayStr();
+    const ultimo = [...(provas.matches || [])].filter(m => m && m.date && m.date <= hoje)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    return !!ultimo && Object.values(ultimo.report || {}).some(r => r && Number(r.minutes) > 0);
+  }
+  const email = String(provas.email || '').toLowerCase();
+  if (!email) return false;
+  const ini = inicioDaMissao(t, base);
+  return (provas.metas[t.caminho] || []).some(meta => Object.values(meta || {})
+    .some(x => x && String(x.email || '').toLowerCase() === email && new Date(x.at).getTime() >= ini));
+}
+
 const caminhoStaff = (id) => CAMINHOS_STAFF.find(c => c.id === (id || '')) || CAMINHOS_STAFF[0];
 // Abrir o separador: a app já segue o #separador do endereço.
 // Pede à app para mudar de separador (a app ouve este aviso; alguns
@@ -41863,60 +41974,45 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
 }
 
 /* ================================================================
-   ENTRADA DA EQUIPA TÉCNICA — "O teu dia" (opção B).
+   ENTRADA DA EQUIPA TÉCNICA — "O teu dia": o teu cacifo, aberto.
    ================================================================
-   Ao entrar na app, cada pessoa vê primeiro as missões que são SUAS
-   (responsável = ela) para hoje e as atrasadas, com "Concluir" e o
-   atalho para o sítio onde se fazem.
-   - Normalmente aparece uma vez por dia (por sessão) e tem
-     "Continuar"; carregar aí regista um ADIAMENTO em cada missão que
-     ficou por fazer (no máximo um por dia), que quem a criou vê.
-   - MISSÕES OBRIGATÓRIAS (marcadas por quem cria): depois de passado o
-     prazo, bloqueiam a entrada até serem concluídas. Aparece sempre, em
-     cada entrada, sem "Continuar". "Ir para …" deixa ir fazê-la (até se
-     recarregar a app).
-   - O dono da equipa nunca fica bloqueado: vê o ecrã, mas pode sempre
-     continuar.
-   - Missões sem responsável (abertas a todos) não entram aqui: seriam de
-     toda a gente e de ninguém. */
-function missoesDaEntrada(tarefas, euId, ctx) {
-  const hoje = todayStr();
-  if (!euId) return [];
-  return (tarefas || []).filter(t => t && !t.jogadorId && t.responsavel === euId).map(t => {
-    if (eSemanal(t)) {
-      const pend = semanaisPendentes(t, hoje);
-      if (!pend.length) return null;
-      return { t, base: pend[0].base, dia: pend[0].dia, atraso: pend[0].dia < hoje, n: pend.length };
-    }
-    if (t.recorrencia) {
-      if (!tarefaAtivaHoje(t, hoje, ctx || {}) || tarefaFeitaHoje(t, hoje)) return null;
-      return { t, dia: hoje, atraso: false, n: 1 };
-    }
-    if (t.estado === 'feita' || !t.prazo || t.prazo > hoje) return null;
-    return { t, dia: t.prazo, atraso: t.prazo < hoje, n: 1 };
-  }).filter(Boolean)
-    .map(x => ({ ...x, bloqueia: !!x.t.obrigatoria && x.atraso }))
-    .sort((a, b) => Number(b.bloqueia) - Number(a.bloqueia) || String(a.dia).localeCompare(String(b.dia)));
-}
-
+   Ao entrar, cada pessoa vê primeiro as SUAS missões de hoje e as
+   atrasadas (as prioritárias primeiro), dentro do seu cacifo do
+   Balneário. É um LEMBRETE, não um portão: há sempre "Continuar", que
+   regista um adiamento por missão e por dia (quem criou vê "adiada 3×").
+   Aparece uma vez por dia. As missões com caminho não têm "Concluir":
+   fecham sozinhas quando a app vê o trabalho feito (ver
+   `missaoStaffFeita`). Missões sem responsável não entram aqui. */
 function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr }) {
   const hoje = todayStr();
   const chaveVista = `mjp_entrada_${euId}_${hoje}`;
-  const [fechado, setFechado] = useState(() => { try { return sessionStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
-  const [liberado, setLiberado] = useState(false); // "Ir para…" numa obrigatória
-  const lista = missoesDaEntrada(tarefas, euId, ctx);
-  const souDono = ((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner';
-  const bloqueadas = souDono ? [] : lista.filter(x => x.bloqueia);
-  if (!euId || liberado || !lista.length) return null;
-  if (fechado && !bloqueadas.length) return null;
+  /* MODO DE TESTE: ?testeentrada=1 no endereço mostra o ecrã em todas
+     as entradas, mesmo que já tenha sido visto hoje. Se não tiveres
+     missões para hoje, mostra três de exemplo. Em teste, nada é gravado:
+     nem adiamentos nem conclusões. */
+  const teste = (() => { try { return /[?&#]testeentrada\b/i.test(window.location.href); } catch (e) { return false; } })();
+  const [fechado, setFechado] = useState(() => { if (teste) return false; try { return sessionStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
+  const reais = euId ? missoesDoCacifo(tarefas, euId, ctx, hoje).filter(x => !x.futura) : [];
+  const exemplos = [
+    { t: { id: 'teste-a', titulo: 'Relatório do adversário de sábado', caminho: 'scouting', obrigatoria: true, responsavel: euId, prazo: addDays(hoje, -2), notas: 'Exemplo de missão prioritária e atrasada.' }, dia: addDays(hoje, -2), atraso: true, n: 1, futura: false },
+    { t: { id: 'teste-b', titulo: 'Introduzir as estatísticas do jogo', caminho: 'estatisticas', responsavel: euId, prazo: hoje }, dia: hoje, atraso: false, n: 1, futura: false },
+    { t: { id: 'teste-c', titulo: 'Confirmar o autocarro para Penafiel', caminho: '', responsavel: euId, prazo: hoje, notas: 'Exemplo sem caminho: esta conclui-se à mão.' }, dia: hoje, atraso: false, n: 1, futura: false },
+  ];
+  const [tiradas, setTiradas] = useState([]); // só em teste
+  const lista = (teste && !reais.length ? exemplos : reais).filter(x => !tiradas.includes(x.t.id));
+  if (!euId || fechado || !lista.length) return null;
+  registarCoresMembros(membros);
 
   const meu = (membros || []).find(m => m.user_id === euId);
   const primeiro = meu && meu.nome ? String(meu.nome).trim().split(/\s+/)[0] : '';
   const hora = new Date().getHours();
   const saudacao = hora < 12 ? 'Bom dia' : hora < 20 ? 'Boa tarde' : 'Boa noite';
+  const fechar = () => { if (!teste) { try { sessionStorage.setItem(chaveVista, '1'); } catch (e) { /* fica só nesta página */ } } setFechado(true); };
 
   const concluir = (x) => {
     const t = x.t;
+    if (caminhoVerificavel(t)) return; // essas fecham sozinhas
+    if (teste) { setTiradas(v => [...v, t.id]); return; } // em teste não grava
     const agora = new Date().toISOString();
     setTarefas(prev => prev.map(r => {
       if (r.id !== t.id) return r;
@@ -41926,97 +42022,181 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr }) {
     }));
   };
   const continuar = () => {
-    // Um adiamento por missão e por dia (entrar dez vezes não conta dez).
+    if (teste) { fechar(); return; } // em teste não regista adiamentos
     const ids = new Set(lista.map(x => x.t.id));
     setTarefas(prev => prev.map(r => (ids.has(r.id) && !(r.adiadaEm || []).includes(hoje)
       ? { ...r, adiadaEm: [...(r.adiadaEm || []), hoje].slice(-60) }
       : r)));
-    try { sessionStorage.setItem(chaveVista, '1'); } catch (e) { /* fica só nesta página */ }
-    setFechado(true);
+    fechar();
   };
-  const irPara = (x) => {
-    if (x.bloqueia) setLiberado(true);
-    else { try { sessionStorage.setItem(chaveVista, '1'); } catch (e) { /* idem */ } setFechado(true); }
-    onIr(x.t.caminho);
-  };
+  const irPara = (caminho) => { fechar(); onIr(caminho); };
+  const cor = corDoMembro(euId);
+  const atrasadas = lista.filter(x => x.atraso).length;
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 90, overflowY: 'auto', ...body,
-      background: `radial-gradient(circle at 50% 0%, #24382a 0%, ${T.bg} 70%)`,
+      position: 'fixed', inset: 0, zIndex: 90, overflowY: 'auto', ...body, background: '#151d18',
+      backgroundImage: 'linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px)',
+      backgroundSize: '34px 34px',
     }}>
       <style>{`
-        @keyframes en-entrar { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+        @keyframes en-porta { from { transform: perspective(900px) rotateY(0deg); } to { transform: perspective(900px) rotateY(-72deg); } }
+        @keyframes en-dentro { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) { .en-anim { animation: none !important; } }
       `}</style>
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: 'calc(28px + env(safe-area-inset-top, 0px)) 18px calc(28px + env(safe-area-inset-bottom, 0px))' }}>
+      <div style={{ maxWidth: 760, margin: '0 auto', padding: 'calc(26px + env(safe-area-inset-top, 0px)) 16px calc(26px + env(safe-area-inset-bottom, 0px))' }}>
         <div style={{ color: T.gold, fontSize: 11.5, fontWeight: 800, letterSpacing: '.24em', textTransform: 'uppercase' }}>
-          O teu dia · {fmtShort(hoje)}
+          O teu cacifo · {fmtShort(hoje)}{teste ? ' · teste' : ''}
         </div>
         <h2 style={{ ...display, color: T.cream, fontSize: 28, fontWeight: 600, margin: '6px 0 4px' }}>
           {saudacao}{primeiro ? `, ${primeiro}` : ''}.
         </h2>
         <div style={{ color: T.muted, fontSize: 14, lineHeight: 1.5, marginBottom: 18 }}>
-          {bloqueadas.length
-            ? `Tens ${bloqueadas.length === 1 ? 'uma missão obrigatória' : `${bloqueadas.length} missões obrigatórias`} fora de prazo. Conclui-${bloqueadas.length === 1 ? 'a' : 'as'} para entrares.`
-            : `Tens ${lista.length === 1 ? 'uma missão' : `${lista.length} missões`} para hoje${lista.some(x => x.atraso) ? ' ou em atraso' : ''}.`}
+          {`Tens ${lista.length === 1 ? 'uma missão' : `${lista.length} missões`} para hoje`}{atrasadas ? `, ${atrasadas === 1 ? 'uma atrasada' : `${atrasadas} atrasadas`}` : ''}.
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {lista.map((x, k) => {
-            const c = caminhoStaff(x.t.caminho);
-            const Ic = c.icon;
-            return (
-              <div key={`${x.t.id}:${x.base || ''}`} className="en-anim" style={{
-                background: T.surface, borderRadius: 12, padding: '13px 14px',
-                border: `1px solid ${x.bloqueia ? T.bad : (x.atraso ? T.warn : T.line)}`,
-                animation: `en-entrar .4s ease-out ${0.06 * k}s both`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 9, background: T.bg, border: `1px solid ${T.line}`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                    <Ic size={16} color={T.warn} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
-                      {x.t.obrigatoria && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: x.bloqueia ? T.bad : T.warn }}>
-                          <Lock size={10} /> Obrigatória
-                        </span>
-                      )}
-                      <span style={{ ...mono, fontSize: 11, color: x.atraso ? (x.bloqueia ? T.bad : T.warn) : T.mutedDim }}>
-                        {x.atraso ? `atrasada · ${prazoTexto(x.dia, hoje)}` : 'hoje'}{x.n > 1 ? ` · ${x.n} semanas por concluir` : ''}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 15, color: T.cream, lineHeight: 1.35, fontWeight: 600 }}>{x.t.titulo}</div>
-                    {x.t.notas && <div style={{ fontSize: 12.5, color: T.muted, marginTop: 4, lineHeight: 1.45, ...LINHAS(2) }}>{x.t.notas}</div>}
-                    {x.t.criadoPor && x.t.criadoPor !== euId && (
-                      <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4 }}>Pedida por {nomeDoMembro(x.t.criadoPor, membros, euId)}</div>
-                    )}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 11, flexWrap: 'wrap' }}>
-                  <Btn onClick={() => concluir(x)}><Check size={14} /> Concluir</Btn>
-                  {x.t.caminho && (
-                    <Btn variant="ghost" onClick={() => irPara(x)}>Ir para {c.rotulo} <ArrowRight size={13} /></Btn>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 260 }}>
+          {/* a porta, a abrir */}
+          <div className="en-anim" style={{
+            width: 96, flexShrink: 0, borderRadius: '10px 0 0 10px', transformOrigin: 'left center',
+            background: `linear-gradient(160deg, ${cor} 0%, color-mix(in srgb, ${cor} 55%, #101512) 100%)`,
+            border: '2px solid rgba(0,0,0,.45)', position: 'relative', animation: 'en-porta .7s cubic-bezier(.3,.8,.3,1) .15s both',
+          }}>
+            <div style={{ position: 'absolute', top: 14, left: 12, right: 12, height: 26, background: 'repeating-linear-gradient(180deg, rgba(0,0,0,.45) 0 3px, transparent 3px 7px)' }} />
+          </div>
+          <div className="en-anim" style={{ flex: 1, minWidth: 0, display: 'flex', marginLeft: -50, animation: 'en-dentro .5s ease-out .45s both' }}>
+            <InteriorCacifo
+              itens={lista} hoje={hoje} membros={membros} euId={euId}
+              podeConcluir={(t) => !caminhoVerificavel(t)} onConcluir={concluir} onIr={irPara}
+            />
+          </div>
         </div>
 
         <div style={{ marginTop: 20, textAlign: 'center' }}>
-          {bloqueadas.length ? (
-            <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>
-              As missões obrigatórias fora de prazo têm de ser concluídas antes de entrar. Usa "Ir para…" para ires fazê-la.
-            </div>
+          <Btn variant="ghost" onClick={continuar}>Continuar <ArrowRight size={14} /></Btn>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+            O que ficar por fazer conta como adiado hoje. Encontras tudo no Balneário, em Tarefas.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   O BALNEÁRIO DA EQUIPA TÉCNICA
+   ================================================================
+   As missões da equipa técnica, cada pessoa com o seu CACIFO:
+   - a porta tem a cor da pessoa, a placa com o nome, etiquetas penduradas
+     (atrasadas a vermelho, prioritárias) e, em baixo, os RISCOS DE GIZ das
+     missões fechadas esta semana (||||/, de cinco em cinco);
+   - ao abrir, a porta roda e aparecem as FICHAS penduradas nos ganchos,
+     cada uma com o atalho para o sítio onde se faz;
+   - no topo, o PLACARD DA SEMANA da equipa técnica.
+   O ecrã de entrada ("O teu dia") é o teu próprio cacifo aberto.
+   Só missões da equipa técnica; as dos jogadores ficam no Portal. */
+
+// As missões em aberto no cacifo de uma pessoa ('' = cacifo comum).
+function missoesDoCacifo(tarefas, pessoaId, ctx, hoje) {
+  const quem = pessoaId || '';
+  return (tarefas || []).filter(t => t && !t.jogadorId && (t.responsavel || '') === quem).map(t => {
+    if (eSemanal(t)) {
+      const pend = semanaisPendentes(t, hoje);
+      if (!pend.length) return null;
+      return { t, base: pend[0].base, dia: pend[0].dia, atraso: pend[0].dia < hoje, n: pend.length, futura: false };
+    }
+    if (t.recorrencia) {
+      if (!tarefaAtivaHoje(t, hoje, ctx || {}) || tarefaFeitaHoje(t, hoje)) return null;
+      return { t, dia: hoje, atraso: false, n: 1, futura: false };
+    }
+    if (t.estado === 'feita') return null;
+    return { t, dia: t.prazo || '', atraso: !!t.prazo && t.prazo < hoje, n: 1, futura: !t.prazo || t.prazo > hoje };
+  }).filter(Boolean).sort((a, b) => {
+    const peso = (x) => (x.t.obrigatoria && x.atraso ? 0 : x.atraso ? 1 : x.t.obrigatoria && !x.futura ? 2 : !x.futura ? 3 : 4);
+    return peso(a) - peso(b) || String(a.dia || '9999').localeCompare(String(b.dia || '9999'));
+  });
+}
+// Missões fechadas esta semana por uma pessoa (para os riscos de giz).
+function feitasNaSemana(tarefas, pessoaId, hoje) {
+  const seg = getMonday(hoje);
+  const dom = addDays(seg, 6);
+  const naSemana = (d) => d && d >= seg && d <= dom;
+  return (tarefas || []).filter(t => t && !t.jogadorId && (t.responsavel || '') === (pessoaId || ''))
+    .reduce((n, t) => n + (t.recorrencia
+      ? (t.concluidasEm || []).filter(naSemana).length
+      : (t.estado === 'feita' && naSemana(String(t.feitaEm || '').slice(0, 10)) ? 1 : 0)), 0);
+}
+
+// Riscos de giz: grupos de cinco (quatro de pé e um atravessado).
+function RiscosGiz({ n, cor = 'rgba(245,240,225,.85)' }) {
+  if (!n) return <div style={{ height: 22, fontSize: 10.5, color: 'rgba(245,240,225,.45)', display: 'flex', alignItems: 'center' }}>sem riscos esta semana</div>;
+  const grupos = [];
+  for (let i = 0; i < n; i += 5) grupos.push(Math.min(5, n - i));
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', minHeight: 22 }} title={`${n} ${n === 1 ? 'missão fechada' : 'missões fechadas'} esta semana`}>
+      {grupos.map((g, k) => (
+        <svg key={k} width="26" height="20" viewBox="0 0 26 20" style={{ overflow: 'visible' }}>
+          {Array.from({ length: Math.min(g, 4) }, (_, i) => (
+            <path key={i} d={`M${4 + i * 5} 2 L${3.4 + i * 5} 18`} stroke={cor} strokeWidth="2" strokeLinecap="round" />
+          ))}
+          {g === 5 && <path d="M1 15 L23 4" stroke={cor} strokeWidth="2" strokeLinecap="round" />}
+        </svg>
+      ))}
+    </div>
+  );
+}
+
+// Uma FICHA pendurada no gancho do cacifo.
+function FichaMissao({ x, k, hoje, membros, euId, podeConcluir, onConcluir, onIr, onAbrir }) {
+  const t = x.t;
+  const c = caminhoStaff(t.caminho);
+  const Ic = c.icon;
+  const auto = caminhoVerificavel(t);
+  const cor = x.atraso ? (t.obrigatoria ? T.bad : '#C0563B') : (t.obrigatoria ? T.bad : '#7A6A48');
+  return (
+    <div style={{ position: 'relative', paddingTop: 14, transform: `rotate(${k % 2 ? 0.8 : -0.8}deg)` }}>
+      {/* o fio e o gancho */}
+      <span style={{ position: 'absolute', top: 0, left: 22, width: 2, height: 18, background: 'rgba(220,210,180,.5)' }} />
+      <div style={{
+        background: '#F3ECDA', borderRadius: '4px 4px 8px 8px', padding: '12px 13px 12px 15px', position: 'relative',
+        boxShadow: '0 6px 14px rgba(0,0,0,.35)', borderLeft: `4px solid ${cor}`,
+      }}>
+        <span style={{ position: 'absolute', top: 6, left: 17, width: 8, height: 8, borderRadius: '50%', background: '#2a2f2b', boxShadow: 'inset 0 1px 2px rgba(0,0,0,.6)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginLeft: 18, marginBottom: 3 }}>
+          {t.obrigatoria && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: T.bad }}>
+              <Flag size={10} /> Prioritária
+            </span>
+          )}
+          <span style={{ ...mono, fontSize: 10.5, color: x.atraso ? '#B03A2E' : '#7a6f5c' }}>
+            {x.atraso ? `atrasada · ${prazoTexto(x.dia, hoje)}` : x.futura ? (x.dia ? prazoTexto(x.dia, hoje) : 'sem prazo') : 'hoje'}
+            {x.n > 1 ? ` · ${x.n} semanas` : ''}
+          </span>
+        </div>
+        <button type="button" onClick={() => onAbrir && onAbrir(t)} style={{
+          display: 'block', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: onAbrir ? 'pointer' : 'default',
+          ...display, fontSize: 18, lineHeight: 1.2, color: '#14231a', width: '100%',
+        }}>{t.titulo}</button>
+        {t.notas && <div style={{ fontSize: 12, color: '#4a4a3a', marginTop: 4, lineHeight: 1.45, ...LINHAS(2) }}>{t.notas}</div>}
+        {t.criadoPor && t.criadoPor !== (t.responsavel || '') && (
+          <div style={{ fontSize: 11, color: '#7a6f5c', marginTop: 4 }}>Pedida por {nomeDoMembro(t.criadoPor, membros, euId)}</div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+          {t.caminho && (
+            <button type="button" onClick={() => onIr(t.caminho)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', ...body,
+              background: '#14231a', color: '#F3ECDA', border: 'none', fontSize: 12.5, fontWeight: 600,
+            }}><Ic size={13} /> Ir para {c.rotulo} <ArrowRight size={12} /></button>
+          )}
+          {auto ? (
+            <span style={{ fontSize: 11.5, color: '#2E6B3A', lineHeight: 1.35 }}>Fecha sozinha quando {CRITERIO_STAFF[t.caminho]}.</span>
+          ) : podeConcluir ? (
+            <button type="button" onClick={() => onConcluir(x)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', ...body,
+              background: 'transparent', color: '#14231a', border: '1.5px solid #14231a', fontSize: 12.5, fontWeight: 600,
+            }}><Check size={13} /> Concluir</button>
           ) : (
-            <>
-              <Btn variant="ghost" onClick={continuar}>Continuar sem concluir <ArrowRight size={14} /></Btn>
-              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
-                Fica registado que adiaste{souDono && lista.some(x => x.bloqueia) ? '. Como dono da equipa, nunca ficas bloqueado' : ''}.
-              </div>
-            </>
+            <span style={{ fontSize: 11.5, color: '#7a6f5c' }}>Só quem é responsável conclui.</span>
           )}
         </div>
       </div>
@@ -42024,7 +42204,146 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr }) {
   );
 }
 
-function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefas = [], podeConcluir = true, onClose, onGuardar, onRemove, onAbrirRegisto }) {
+// O interior de um cacifo aberto: prateleira, ganchos e fichas.
+function InteriorCacifo({ itens, hoje, membros, euId, podeConcluir, onConcluir, onIr, onAbrir, vazio }) {
+  return (
+    <div style={{
+      flex: 1, minWidth: 0, borderRadius: '0 10px 10px 0', padding: '14px 14px 18px',
+      background: 'linear-gradient(180deg, #0d1310 0%, #18221c 100%)', boxShadow: 'inset 0 10px 24px rgba(0,0,0,.6)',
+    }}>
+      {/* a prateleira com os ganchos */}
+      <div style={{ height: 8, borderRadius: 2, background: 'linear-gradient(180deg, #6b5a3d, #4a3d28)', marginBottom: 2, position: 'relative' }}>
+        {[12, 38, 64, 90].map(p => <span key={p} style={{ position: 'absolute', left: `${p}%`, top: 6, width: 6, height: 10, borderRadius: '0 0 4px 4px', border: '2px solid #a7a7a0', borderTop: 'none' }} />)}
+      </div>
+      {itens.length === 0 ? (
+        <div style={{ padding: '22px 6px 6px', fontSize: 13, color: T.mutedDim, textAlign: 'center' }}>{vazio || 'Cacifo arrumado: nada em aberto.'}</div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '6px 14px' }}>
+          {itens.map((x, k) => (
+            <FichaMissao key={`${x.t.id}:${x.base || ''}`} x={x} k={k} hoje={hoje} membros={membros} euId={euId}
+              podeConcluir={podeConcluir(x.t)} onConcluir={onConcluir} onIr={onIr} onAbrir={onAbrir} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Balneario({ tarefas, membros, euId, hoje, ctx, podeConcluir, onConcluir, onIr, onAbrir, onNova }) {
+  const [aberto, setAberto] = useState(euId || null);
+  registarCoresMembros(membros);
+  const pessoas = [...(membros || [])].sort((a, b) => (a.user_id === euId ? -1 : b.user_id === euId ? 1 : String(a.nome || '').localeCompare(String(b.nome || ''))));
+  const cacifos = pessoas.map((m, i) => ({ id: m.user_id, nome: nomeDoMembro(m.user_id, membros, euId), cor: corDoMembro(m.user_id), num: i + 1 }));
+  const comum = missoesDoCacifo(tarefas, '', ctx, hoje);
+  if (comum.length) cacifos.push({ id: '', nome: 'Comum', cor: '#6B7A6D', num: cacifos.length + 1, comum: true });
+  const dados = cacifos.map(c => {
+    const itens = missoesDoCacifo(tarefas, c.id, ctx, hoje);
+    return { ...c, itens, atrasadas: itens.filter(x => x.atraso).length, prioritarias: itens.filter(x => x.t.obrigatoria).length, feitas: feitasNaSemana(tarefas, c.id, hoje) };
+  });
+  const tot = dados.reduce((a, d) => ({ abertas: a.abertas + d.itens.length, atrasadas: a.atrasadas + d.atrasadas, feitas: a.feitas + d.feitas }), { abertas: 0, atrasadas: 0, feitas: 0 });
+  const led = { fontFamily: "'JetBrains Mono', 'Courier New', monospace", color: '#FFC23D', textShadow: '0 0 6px rgba(255,170,40,.75)' };
+  const escurecer = (hex) => `color-mix(in srgb, ${hex} 55%, #101512)`;
+
+  return (
+    <div style={{
+      borderRadius: 14, padding: '18px 16px 0', position: 'relative', overflow: 'hidden',
+      background: '#151d18',
+      backgroundImage: 'linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px)',
+      backgroundSize: '34px 34px',
+    }}>
+      <style>{`
+        @keyframes bn-porta { from { transform: perspective(900px) rotateY(0deg); } to { transform: perspective(900px) rotateY(-68deg); } }
+        @keyframes bn-dentro { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .bn-anim { animation: none !important; } }
+      `}</style>
+
+      {/* PLACARD DA SEMANA */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-around', gap: 10, flexWrap: 'wrap', padding: '12px 14px', marginBottom: 18, borderRadius: 10,
+        background: '#07090a', backgroundImage: 'radial-gradient(rgba(255,194,61,.07) 1px, transparent 1.3px)', backgroundSize: '5px 5px', border: '3px solid #2a2f33',
+      }}>
+        {[['Em aberto', tot.abertas], ['Atrasadas', tot.atrasadas], ['Fechadas na semana', tot.feitas]].map(([r, v]) => (
+          <div key={r} style={{ textAlign: 'center', minWidth: 90 }}>
+            <div style={{ ...led, fontSize: 26, fontWeight: 700, color: r === 'Atrasadas' && v ? '#FF6B5A' : '#FFC23D' }}>{String(v).padStart(2, '0')}</div>
+            <div style={{ fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'rgba(255,194,61,.65)' }}>{r}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* A PAREDE DE CACIFOS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, paddingBottom: 26 }}>
+        {dados.map(d => {
+          const estaAberto = aberto === d.id;
+          const porta = (
+            <button type="button" onClick={() => setAberto(estaAberto ? null : d.id)} aria-expanded={estaAberto}
+              className={estaAberto ? 'bn-anim' : ''}
+              style={{
+                position: 'relative', width: estaAberto ? 150 : '100%', flexShrink: 0, height: 250, borderRadius: estaAberto ? '10px 0 0 10px' : 10,
+                cursor: 'pointer', padding: 0, ...body, textAlign: 'left', transformOrigin: 'left center',
+                border: `2px solid ${d.id === euId ? T.gold : 'rgba(0,0,0,.45)'}`,
+                background: `linear-gradient(160deg, ${d.cor} 0%, ${escurecer(d.cor)} 100%)`,
+                boxShadow: estaAberto ? 'none' : '0 10px 18px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.08)',
+                animation: estaAberto ? 'bn-porta .55s cubic-bezier(.3,.8,.3,1) both' : 'none',
+              }}>
+              {/* ventilação */}
+              <div style={{ position: 'absolute', top: 14, left: 18, right: 18, height: 30, background: 'repeating-linear-gradient(180deg, rgba(0,0,0,.45) 0 3px, transparent 3px 7px)', borderRadius: 2 }} />
+              {/* placa do nome */}
+              <div style={{
+                position: 'absolute', top: 54, left: 14, right: 14, background: '#F3ECDA', borderRadius: 4, padding: '5px 8px',
+                boxShadow: '0 2px 0 rgba(0,0,0,.35)', display: 'flex', alignItems: 'baseline', gap: 6,
+              }}>
+                <span style={{ ...mono, fontSize: 10, color: '#7a6f5c' }}>{String(d.num).padStart(2, '0')}</span>
+                <span style={{ ...display, fontSize: 16, color: '#14231a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.nome}</span>
+              </div>
+              {/* puxador */}
+              <span style={{ position: 'absolute', right: 12, top: 118, width: 6, height: 34, borderRadius: 3, background: 'linear-gradient(90deg, #d8d8d0, #8b8b85)', boxShadow: '0 2px 3px rgba(0,0,0,.5)' }} />
+              {/* etiquetas penduradas */}
+              <div style={{ position: 'absolute', top: 100, left: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'rgba(0,0,0,.35)', borderRadius: 4, padding: '2px 7px' }}>
+                  {d.itens.length} {d.itens.length === 1 ? 'missão' : 'missões'}
+                </span>
+                {d.atrasadas > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: T.bad, borderRadius: 4, padding: '2px 7px', transform: 'rotate(-4deg)' }}>
+                    {d.atrasadas} {d.atrasadas === 1 ? 'atrasada' : 'atrasadas'}
+                  </span>
+                )}
+                {d.prioritarias > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#14231a', background: '#FFC23D', borderRadius: 4, padding: '2px 7px', transform: 'rotate(3deg)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <Flag size={10} /> {d.prioritarias}
+                  </span>
+                )}
+              </div>
+              {/* riscos de giz da semana */}
+              <div style={{ position: 'absolute', left: 14, right: 14, bottom: 12 }}>
+                <RiscosGiz n={d.feitas} />
+              </div>
+            </button>
+          );
+          if (!estaAberto) return <div key={d.id || 'comum'}>{porta}</div>;
+          return (
+            <div key={d.id || 'comum'} style={{ gridColumn: '1 / -1', display: 'flex', minHeight: 250, alignItems: 'stretch' }}>
+              {porta}
+              <div className="bn-anim" style={{ flex: 1, minWidth: 0, display: 'flex', marginLeft: -60, animation: 'bn-dentro .45s ease-out .15s both' }}>
+                <InteriorCacifo
+                  itens={d.itens} hoje={hoje} membros={membros} euId={euId}
+                  podeConcluir={podeConcluir} onConcluir={onConcluir} onIr={onIr} onAbrir={onAbrir}
+                  vazio={d.id === euId ? 'O teu cacifo está arrumado. Nada em aberto.' : `O cacifo ${d.comum ? 'comum' : `de ${d.nome}`} está arrumado.`}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* o banco do balneário */}
+      <div style={{ height: 14, margin: '0 -16px', background: 'linear-gradient(180deg, #7a5f3a, #4e3b22)', boxShadow: '0 -2px 0 rgba(0,0,0,.4)' }} />
+      {onNova && (
+        <div style={{ position: 'absolute', top: 18, right: 16 }} />
+      )}
+    </div>
+  );
+}
+
+function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefas = [], podeConcluir = true, podeGerir = true, onClose, onGuardar, onRemove, onAbrirRegisto }) {
   const registos = alvo ? (alvo._grupo || [alvo]) : [];
   const base = registos[0] || null;
   const editar = !!base;
@@ -42210,7 +42529,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
               <ListaMultipla
                 itens={(membros || []).map(m => ({
                   id: m.user_id, rotulo: nomeDoMembro(m.user_id, membros, euId), cor: corDoMembro(m.user_id),
-                  bloqueado: !podeConcluir, motivo: 'só quem é responsável',
+                  bloqueado: !podeGerir, motivo: 'só quem é responsável',
                 }))}
                 escolhidos={dest}
                 onAlternar={alternarDest}
@@ -42236,7 +42555,9 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                 <Select value={comum.estado} onChange={e => setComum({ ...comum, estado: e.target.value })} disabled={!podeConcluir && comum.estado === 'feita'}>
                   <option value="aberta">Por fazer</option>
                   <option value="curso">Iniciada</option>
-                  <option value="feita" disabled={!podeConcluir}>Concluída{!podeConcluir ? ' (só o responsável)' : ''}</option>
+                  <option value="feita" disabled={!podeConcluir || (modo === 'staff' && !!CRITERIO_STAFF[blocos[0].caminho])}>
+                    Concluída{modo === 'staff' && CRITERIO_STAFF[blocos[0].caminho] ? ' (fecha sozinha)' : (!podeConcluir ? ' (só o responsável)' : '')}
+                  </option>
                 </Select>
               </Field>
             )}
@@ -42247,8 +42568,9 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
               onChange={() => { if (!comum.prazo) return; setComum({ ...comum, prazo: '', recorrencia: { tipo: 'semanal', dias: [new Date(`${comum.prazo}T00:00:00`).getDay()], desde: comum.prazo } }); }} />
             Repetir todas as semanas à {comum.prazo ? DIAS_SEMANA[new Date(`${comum.prazo}T00:00:00`).getDay()] : ''}
           </label>
-          {/* OBRIGATÓRIA (só equipa técnica): fora de prazo, bloqueia a entrada
-              na app da pessoa até a concluir. Sempre no lugar, para nada saltar. */}
+          {/* PRIORITÁRIA (só equipa técnica): aparece primeiro e a vermelho no
+              ecrã de entrada e no Balneário. Não bloqueia ninguém (o campo
+              continua a chamar-se `obrigatoria`, para as já marcadas). */}
           <label style={{
             display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 12, fontSize: 13, color: T.cream, cursor: 'pointer',
             minHeight: 40, visibility: modo === 'staff' ? 'visible' : 'hidden',
@@ -42256,8 +42578,8 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
             <input type="checkbox" checked={!!comum.obrigatoria} onChange={e => setComum({ ...comum, obrigatoria: e.target.checked })}
               style={{ accentColor: T.crimson, width: 16, height: 16, marginTop: 2 }} />
             <span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Lock size={12} /> Obrigatória</span>
-              <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>Depois do prazo, a pessoa só entra na app quando a concluir.</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Flag size={12} /> Prioritária</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>Aparece primeiro, a vermelho, no ecrã de entrada da pessoa.</span>
             </span>
           </label>
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
@@ -42366,6 +42688,13 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                           : 'Ele responde por escrito.'}
                   </div>
                 )}
+                {modo === 'staff' && (
+                  <div style={{ fontSize: 11, color: CRITERIO_STAFF[b.caminho] ? T.good : T.mutedDim, marginTop: 6, lineHeight: 1.4 }}>
+                    {CRITERIO_STAFF[b.caminho]
+                      ? `Fecha sozinha quando ${CRITERIO_STAFF[b.caminho]}. Não há "Concluir" à mão.`
+                      : 'Sem caminho, a app não tem como ver se foi feita: conclui-se à mão.'}
+                  </div>
+                )}
                 {modo === 'staff' && editar && b.caminho && (
                   <button type="button" onClick={() => { onClose(); irParaSeparador(b.caminho); }} style={{
                     marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.gold}`,
@@ -42419,7 +42748,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      inteira) e fechá-la volta ao mesmo separador, mesmo que a página das
      Tarefas tenha sido montada de novo pelo caminho. */
   const [vista, setVistaEstado] = useState(() => {
-    try { return sessionStorage.getItem('tarefas-vista') || 'calendario'; } catch (e) { return 'calendario'; }
+    try { return sessionStorage.getItem('tarefas-vista') || 'balneario'; } catch (e) { return 'balneario'; }
   });
   const setVista = (v) => {
     setVistaEstado(v);
@@ -42732,12 +43061,22 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         value={vista}
         onChange={setVista}
         tabs={[
+          { id: 'balneario', label: 'Balneário', icon: Shirt },
           { id: 'calendario', label: 'Calendário', icon: Calendar },
           { id: 'prazo', label: 'Por prazo', icon: CalendarDays },
           { id: 'pessoa', label: 'Por pessoa', icon: Users },
         ]}
       />
 
+      {vista === 'balneario' ? (
+        <Balneario
+          tarefas={tarefas} membros={membros} euId={euId} hoje={hoje} ctx={ctx}
+          podeConcluir={podeConcluir}
+          onConcluir={(x) => alternarEm(x.t, x.dia, x.base)}
+          onIr={(caminho) => irParaSeparador(caminho)}
+          onAbrir={abrir}
+        />
+      ) : (
       <Panel title={vista === 'pessoa' ? 'Quem está com a missão' : (vista === 'calendario' ? 'Calendário' : 'Quando se executa')}>
         {vista === 'calendario' ? (
           <TarefasCalendario
@@ -42777,6 +43116,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           ))
         )}
       </Panel>
+      )}
 
       <div style={{ height: 16 }} />
 
@@ -42803,6 +43143,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           inicial={modal === 'new' && novoDia ? { prazo: novoDia } : null}
           ocorrencia={modal !== 'new' ? ocorrencia : null}
           podeConcluir={modal === 'new' ? true : podeConcluir(modal)}
+          podeGerir={modal === 'new' ? true : doGrupo(modal).every(r => podeGerirTarefa(r, euId, souDono))}
           membros={membros}
           players={players}
           euId={euId}
