@@ -26416,6 +26416,99 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
+/* A TABELA DO RELATÓRIO DE JOGO — a mesma nos dois sítios (Relatórios de
+   jogo e o editor completo do jogo), para se preencher sempre da mesma
+   maneira: jogador, titular/suplente, minutos, golos, assistências,
+   cartão e nota. O capitão e o subcapitão só se MOSTRAM aqui (C / SC ao
+   lado do nome): escolhem-se na Convocatória. */
+const GRELHA_RELATORIO = 'minmax(0,1.6fr) 92px 70px 70px 70px 150px 70px';
+function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcapitao, onReport, onTitular, estreito, alturaMax }) {
+  const comMin = (r) => !!r && Number(r.minutes) > 0;
+  const campo = { padding: '6px 6px', fontSize: 13, textAlign: 'center' };
+  const num = (p, k, ph, max) => (
+    <Input type="number" inputMode="numeric" min="0" max={max} placeholder={ph} value={(report[p.id] || {})[k] ?? ''}
+      onChange={e => onReport(p.id, k, e.target.value)} style={campo} />
+  );
+  const bracadeira = (pid) => (pid === capitao ? 'C' : pid === subcapitao ? 'SC' : null);
+  return (
+    <>
+      {!estreito && (
+        <div style={{ display: 'grid', gridTemplateColumns: GRELHA_RELATORIO, gap: 8, padding: '0 10px 4px', fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+          <span>Jogador</span><span /><span style={{ textAlign: 'center' }}>Min</span><span style={{ textAlign: 'center' }}>Golos</span><span style={{ textAlign: 'center' }}>Ass.</span><span>Cartão</span><span style={{ textAlign: 'center' }}>Nota</span>
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...(estreito || !alturaMax ? {} : { maxHeight: alturaMax, overflowY: 'auto' }) }}>
+        {jogadores.map(p => {
+          const r = report[p.id] || {};
+          const tit = starters.includes(p.id);
+          const b = bracadeira(p.id);
+          const nome = (
+            <span style={{ fontSize: 13.5, color: T.cream, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{p.position || '--'}</span>
+              <span style={LINHAS(1)}>{p.number ? `${p.number} ` : ''}{shortPlayerName(p, players)}</span>
+              {b && (
+                <span title={b === 'C' ? 'Capitão (escolhido na Convocatória)' : 'Subcapitão (escolhido na Convocatória)'} style={{
+                  ...mono, fontSize: 10, fontWeight: 800, padding: '1px 5px', borderRadius: 4, flexShrink: 0,
+                  background: b === 'C' ? T.gold : '#B08A1E', color: '#1A1A1A',
+                }}>{b}</span>
+              )}
+            </span>
+          );
+          const botTit = (
+            <button type="button" onClick={() => onTitular(p.id)} style={{
+              fontSize: 11, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
+              background: tit ? T.crimson : 'transparent', color: tit ? TEXT_ON_ACCENT : T.mutedDim, border: `1px solid ${tit ? T.crimson : T.line}`,
+            }}>{tit ? 'Titular' : 'Suplente'}</button>
+          );
+          const cartao = (
+            <Select value={r.card || 'none'} onChange={e => onReport(p.id, 'card', e.target.value)} style={{ padding: '6px 6px', fontSize: 12.5 }}>
+              {CARD_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </Select>
+          );
+          const borda = comMin(r) ? T.line : (tit ? T.warn : T.line);
+          return estreito ? (
+            <div key={p.id} style={{ background: T.bg, border: `1px solid ${borda}`, borderRadius: 8, padding: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>{nome}</div>{botTit}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 6, marginBottom: 6 }}>
+                {num(p, 'minutes', 'Min', 120)}{num(p, 'goals', 'Golos')}{num(p, 'assists', 'Ass.')}{num(p, 'rating', 'Nota', 10)}
+              </div>
+              {cartao}
+            </div>
+          ) : (
+            <div key={p.id} style={{
+              display: 'grid', gridTemplateColumns: GRELHA_RELATORIO, gap: 8, alignItems: 'center',
+              background: T.bg, border: `1px solid ${borda}`, borderRadius: 8, padding: '6px 10px',
+            }}>
+              {nome}{botTit}{num(p, 'minutes', 'Min', 120)}{num(p, 'goals', '0')}{num(p, 'assists', '0')}{cartao}{num(p, 'rating', '–', 10)}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/* QUEM GANHOU. O resultado guarda-se como "casa-fora" (o mesmo que a
+   tabela da competição usa). Daqui sai o marcador com o nosso nome do
+   lado certo e a letra V / E / D. */
+function marcadorDoJogo(m, season) {
+  const nosso = clubeSemEscalao(season && season.club) || 'Nós';
+  const rival = (m && m.opponent) || 'Adversário';
+  const emCasa = m.atHome !== false;
+  const sc = parseScore(m.result);
+  const casa = emCasa ? nosso : rival;
+  const fora = emCasa ? rival : nosso;
+  if (!sc) return { casa, fora, emCasa, golosCasa: null, golosFora: null, letra: null };
+  const nos = emCasa ? sc.home : sc.away;
+  const eles = emCasa ? sc.away : sc.home;
+  const letra = nos > eles ? 'V' : nos < eles ? 'D' : 'E';
+  return { casa, fora, emCasa, golosCasa: sc.home, golosFora: sc.away, letra };
+}
+const COR_RESULTADO = { V: '#3E9B5F', E: '#9A8A4A', D: '#B3261E' };
+const NOME_RESULTADO = { V: 'Vitória', E: 'Empate', D: 'Derrota' };
+
 /* ================================================================
    RELATÓRIOS DE JOGO — a forma prática de lançar as estatísticas.
    ================================================================
@@ -26496,9 +26589,26 @@ function RelatoriosJogo({ matches, players, season, onSave, abrirId, onAberto })
               }}>
                 <div style={{ ...mono, fontSize: 12, color: T.mutedDim, width: 46, flexShrink: 0 }}>{fmtShort(m.date)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14.5, color: T.cream, fontWeight: 600, ...LINHAS(1) }}>
-                    vs {m.opponent || 'Adversário'}{m.result ? <span style={{ ...mono, color: T.warn, marginLeft: 8 }}>{m.result}</span> : null}
-                  </div>
+                  {/* Quem ganhou: V/E/D a cores e o marcador com os dois
+                      nomes, a equipa da casa primeiro (a nossa a negrito). */}
+                  {(() => {
+                    const mc = marcadorDoJogo(m, season);
+                    const forte = (nome, nosso) => <span style={{ fontWeight: nosso ? 700 : 500, color: nosso ? T.cream : T.muted }}>{nome}</span>;
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14.5, minWidth: 0 }}>
+                        {mc.letra ? (
+                          <span title={NOME_RESULTADO[mc.letra]} style={{ ...mono, fontSize: 11.5, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, width: 22, height: 22, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{mc.letra}</span>
+                        ) : null}
+                        <span style={{ ...LINHAS(1), minWidth: 0 }}>
+                          {forte(mc.casa, mc.emCasa)}
+                          <span style={{ ...mono, color: T.warn, fontWeight: 700, margin: '0 8px' }}>
+                            {mc.letra ? `${mc.golosCasa}-${mc.golosFora}` : (m.result ? m.result : 'vs')}
+                          </span>
+                          {forte(mc.fora, !mc.emCasa)}
+                        </span>
+                      </div>
+                    );
+                  })()}
                   <div style={{ fontSize: 11.5, color: T.mutedDim, ...LINHAS(1) }}>
                     {[competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ')}
                   </div>
@@ -26522,7 +26632,7 @@ function RelatoriosJogo({ matches, players, season, onSave, abrirId, onAberto })
   );
 }
 
-function RelatorioJogoModal({ match, players, onClose, onSave }) {
+function RelatorioJogoModal({ match, players, season, onClose, onSave }) {
   const estreito = useIsMobile(760);
   const [f, setF] = useState(() => ({
     ...match,
@@ -26555,11 +26665,6 @@ function RelatorioJogoModal({ match, players, onClose, onSave }) {
     return { ...prev, report };
   });
   const comMin = conv.filter(p => comMinutos(f.report[p.id])).length;
-  const campo = { padding: '6px 6px', fontSize: 13, textAlign: 'center' };
-  const num = (p, k, ph, max) => (
-    <Input type="number" inputMode="numeric" min="0" max={max} placeholder={ph} value={(f.report[p.id] || {})[k] ?? ''}
-      onChange={e => setR(p.id, k, e.target.value)} style={campo} />
-  );
 
   return (
     <Modal title={`Relatório · vs ${match.opponent || 'Adversário'}`} onClose={onClose} fullPage larguraMax={980}>
@@ -26567,10 +26672,34 @@ function RelatorioJogoModal({ match, players, onClose, onSave }) {
         <div style={{ fontSize: 13, color: T.mutedDim, flex: '1 1 200px' }}>
           {fmtDate(match.date)} · {[competitionLabel(match.competition), match.jornada].filter(Boolean).join(' · ')}
         </div>
-        <div style={{ width: 120 }}>
-          <Field label="Resultado"><Input value={f.result} placeholder="2-1" onChange={e => setF({ ...f, result: e.target.value })} style={{ textAlign: 'center' }} /></Field>
-        </div>
       </div>
+      {/* O RESULTADO num marcador: as duas equipas com o nome, a da casa à
+          esquerda, um campo de golos para cada. Grava-se como "casa-fora". */}
+      {(() => {
+        const mc = marcadorDoJogo({ ...match, result: f.result }, season);
+        const sc = parseScore(f.result);
+        const gol = (lado) => (sc ? String(lado === 'casa' ? sc.home : sc.away) : '');
+        const mudar = (lado, v) => {
+          const limpo = v.replace(/\D/g, '').slice(0, 2);
+          const casa = lado === 'casa' ? limpo : gol('casa');
+          const fora = lado === 'fora' ? limpo : gol('fora');
+          setF({ ...f, result: casa === '' && fora === '' ? '' : `${casa || 0}-${fora || 0}` });
+        };
+        const caixa = { width: 54, textAlign: 'center', fontSize: 20, fontWeight: 700, padding: '6px 4px', ...mono };
+        const nomeEq = (n, nosso) => <span style={{ fontSize: 14, fontWeight: nosso ? 700 : 500, color: nosso ? T.cream : T.muted, ...LINHAS(2), textAlign: 'center' }}>{n}</span>;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '10px 12px', marginBottom: 14 }}>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>{nomeEq(mc.casa, mc.emCasa)}</div>
+            <Input inputMode="numeric" value={gol('casa')} onChange={e => mudar('casa', e.target.value)} placeholder="–" style={caixa} />
+            <span style={{ color: T.mutedDim }}>:</span>
+            <Input inputMode="numeric" value={gol('fora')} onChange={e => mudar('fora', e.target.value)} placeholder="–" style={caixa} />
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {nomeEq(mc.fora, !mc.emCasa)}
+              {mc.letra && <span style={{ ...mono, fontSize: 11.5, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, padding: '2px 7px', flexShrink: 0 }}>{NOME_RESULTADO[mc.letra]}</span>}
+            </div>
+          </div>
+        );
+      })()}
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ flex: '1 1 260px' }}>
@@ -26591,52 +26720,11 @@ function RelatorioJogoModal({ match, players, onClose, onSave }) {
       ) : (
         <>
           <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6 }}>{comMin}/{conv.length} com minutos. Suplentes que não entraram ficam em branco.</div>
-          {!estreito && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 92px 70px 70px 70px 150px 70px', gap: 8, padding: '0 10px 4px', fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-              <span>Jogador</span><span /><span style={{ textAlign: 'center' }}>Min</span><span style={{ textAlign: 'center' }}>Golos</span><span style={{ textAlign: 'center' }}>Ass.</span><span>Cartão</span><span style={{ textAlign: 'center' }}>Nota</span>
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: estreito ? undefined : 'calc(100dvh - 330px)', overflowY: estreito ? 'visible' : 'auto' }}>
-            {conv.map(p => {
-              const r = f.report[p.id] || {};
-              const tit = f.starters.includes(p.id);
-              const nome = (
-                <span style={{ fontSize: 13.5, color: T.cream, ...LINHAS(1) }}>
-                  <span style={{ ...mono, fontSize: 11, color: T.mutedDim, marginRight: 6 }}>{p.position || '--'}</span>{shortPlayerName(p, players)}
-                </span>
-              );
-              const botTit = (
-                <button type="button" onClick={() => alternarTitular(p.id)} style={{
-                  fontSize: 11, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
-                  background: tit ? T.crimson : 'transparent', color: tit ? TEXT_ON_ACCENT : T.mutedDim, border: `1px solid ${tit ? T.crimson : T.line}`,
-                }}>{tit ? 'Titular' : 'Suplente'}</button>
-              );
-              const cartao = (
-                <Select value={r.card || 'none'} onChange={e => setR(p.id, 'card', e.target.value)} style={{ padding: '6px 6px', fontSize: 12.5 }}>
-                  {CARD_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </Select>
-              );
-              const borda = comMinutos(r) ? T.line : (tit ? T.warn : T.line);
-              return estreito ? (
-                <div key={p.id} style={{ background: T.bg, border: `1px solid ${borda}`, borderRadius: 8, padding: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>{nome}</div>{botTit}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 6, marginBottom: 6 }}>
-                    {num(p, 'minutes', 'Min', 120)}{num(p, 'goals', 'Golos')}{num(p, 'assists', 'Ass.')}{num(p, 'rating', 'Nota', 10)}
-                  </div>
-                  {cartao}
-                </div>
-              ) : (
-                <div key={p.id} style={{
-                  display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 92px 70px 70px 70px 150px 70px', gap: 8, alignItems: 'center',
-                  background: T.bg, border: `1px solid ${borda}`, borderRadius: 8, padding: '6px 10px',
-                }}>
-                  {nome}{botTit}{num(p, 'minutes', 'Min', 120)}{num(p, 'goals', '0')}{num(p, 'assists', '0')}{cartao}{num(p, 'rating', '–', 10)}
-                </div>
-              );
-            })}
-          </div>
+          <TabelaRelatorio
+            jogadores={conv} players={players} report={f.report} starters={f.starters}
+            capitao={f.capitao} subcapitao={f.subcapitao}
+            onReport={setR} onTitular={alternarTitular} estreito={estreito} alturaMax="calc(100dvh - 400px)"
+          />
         </>
       )}
 
@@ -27209,58 +27297,14 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
       {convocadoPlayers.length > 0 && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-            Relatório de jogo — titular, capitão, minutos, cartão, golos, assistências, nota
+            Relatório de jogo
           </div>
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto',
-            // No telemóvel, a tabela volta a ter uma largura mínima por
-            // linha e desliza para o lado — 8 colunas a espremer no ecrã
-            // todo (a versão só de grelha, boa no computador) ficava com
-            // nomes cortados a meio e caixas de um dígito de largura.
-            overflowX: isNarrowReport ? 'auto' : 'visible',
-          }}>
-            {convocadoPlayers.map(p => {
-              const r = f.report[p.id] || {};
-              const isStarter = f.starters.includes(p.id);
-              const eCapitao = f.capitao === p.id;
-              const eSub = f.subcapitao === p.id;
-              return (
-                <div key={p.id} style={{
-                  display: 'grid', gridTemplateColumns: '1.4fr auto auto 0.8fr 1.2fr 0.7fr 0.7fr 0.7fr', gap: 10, alignItems: 'center',
-                  padding: '9px 12px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7,
-                  minWidth: isNarrowReport ? 620 : undefined,
-                }}>
-                  <span style={{ fontSize: 12.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.number ? `${p.number} ` : ''}{p.name}
-                  </span>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button type="button" onClick={() => setBracadeira(p.id, 'capitao')} title="Capitão neste jogo" style={{
-                      padding: '3px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, cursor: 'pointer', ...mono,
-                      background: eCapitao ? T.gold : 'transparent', color: eCapitao ? '#1A1A1A' : T.mutedDim,
-                      border: `1px solid ${eCapitao ? T.gold : T.line}`,
-                    }}>C</button>
-                    <button type="button" onClick={() => setBracadeira(p.id, 'subcapitao')} title="Subcapitão neste jogo" style={{
-                      padding: '3px 7px', borderRadius: 5, fontSize: 10, fontWeight: 700, cursor: 'pointer', ...mono,
-                      background: eSub ? '#B08A1E' : 'transparent', color: eSub ? '#1A1A1A' : T.mutedDim,
-                      border: `1px solid ${eSub ? '#B08A1E' : T.line}`,
-                    }}>SC</button>
-                  </div>
-                  <button type="button" onClick={() => toggleStarter(p.id)} title="Titular" style={{
-                    fontSize: 10, padding: '4px 7px', borderRadius: 5, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
-                    background: isStarter ? '#B5393F' : 'transparent', color: isStarter ? TEXT_ON_ACCENT : T.mutedDim,
-                    border: `1px solid ${isStarter ? '#B5393F' : T.line}`,
-                  }}>{isStarter ? 'Titular' : 'Suplente'}</button>
-                  <Input type="number" min="0" max="120" placeholder="Min" value={r.minutes ?? ''} onChange={e => setReport(p.id, 'minutes', e.target.value)} style={{ padding: '4px 6px', fontSize: 11.5 }} />
-                  <Select value={r.card || 'none'} onChange={e => setReport(p.id, 'card', e.target.value)} style={{ padding: '4px 6px', fontSize: 11.5 }}>
-                    {CARD_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </Select>
-                  <Input type="number" min="0" placeholder="Golos" value={r.goals ?? ''} onChange={e => setReport(p.id, 'goals', e.target.value)} style={{ padding: '4px 6px', fontSize: 11.5 }} />
-                  <Input type="number" min="0" placeholder="Ass." value={r.assists ?? ''} onChange={e => setReport(p.id, 'assists', e.target.value)} style={{ padding: '4px 6px', fontSize: 11.5 }} />
-                  <Input type="number" min="0" max="10" placeholder="Nota" value={r.rating ?? ''} onChange={e => setReport(p.id, 'rating', e.target.value)} style={{ padding: '4px 6px', fontSize: 11.5 }} />
-                </div>
-              );
-            })}
-          </div>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8 }}>C e SC: capitão e subcapitão, escolhidos na Convocatória.</div>
+          <TabelaRelatorio
+            jogadores={sortByPosition(convocadoPlayers)} players={players} report={f.report} starters={f.starters}
+            capitao={f.capitao} subcapitao={f.subcapitao}
+            onReport={setReport} onTitular={toggleStarter} estreito={isNarrowReport} alturaMax={360}
+          />
         </div>
       )}
 
