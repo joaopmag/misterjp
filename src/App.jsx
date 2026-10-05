@@ -28970,11 +28970,15 @@ function EcraAniversario({ player, onEntrar }) {
         {idade ? (
           <div style={{ ...display, fontSize: 22, color: T.gold, letterSpacing: '.04em', textAlign: 'center' }}>{idade} anos</div>
         ) : null}
-        {/* O bloco fica ao meio da página (com a largura do próprio texto) e
-            as linhas alinham à esquerda dentro dele, em dois parágrafos. */}
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, width: 'fit-content', maxWidth: 330, textAlign: 'left', margin: '0 auto', alignSelf: 'center' }}>
-          <p style={{ margin: 0 }}>Esta camisola é só tua.</p>
-          <p style={{ margin: '8px 0 0' }}>Toda a equipa técnica deseja-te um dia em grande, dentro e fora do campo.</p>
+        {/* Linhas alinhadas à esquerda, mas o bloco ao meio da página. O
+            `balance` deixa as linhas com comprimentos parecidos: sem isso, a
+            última linha curta deixava um vazio à direita e o texto parecia
+            encostado à esquerda. */}
+        <div style={{
+          fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, width: 'fit-content', maxWidth: 'min(300px, 100%)',
+          textAlign: 'left', textWrap: 'balance', margin: '0 auto', alignSelf: 'center',
+        }}>
+          Esta camisola é só tua. Toda a equipa técnica deseja-te um dia em grande, dentro e fora do campo.
         </div>
 
         {/* O GOLO DOS PARABÉNS */}
