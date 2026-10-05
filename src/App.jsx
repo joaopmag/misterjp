@@ -43087,6 +43087,157 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
   );
 }
 
+/* ARQUIVO DAS CONCLUÍDAS. Com uma época inteira, a lista corrida das
+   concluídas ficava infinita. Agora:
+   1. agrupada por SEMANA em que foi feita ("Esta semana", "Semana
+      passada", e depois por mês), com só "Esta semana" aberta;
+   2. uma LINHA por missão (✓ título · quem · data), e a mesma missão
+      feita por várias pessoas no mesmo dia numa linha só ("4 jogadores"),
+      que abre para mostrar quem;
+   3. FILTROS em cima: quem (todos, equipa técnica, jogadores ou uma pessoa)
+      e pesquisa pelo título. Com um filtro ativo, os grupos abrem sozinhos. */
+function dataDaConclusao(t) {
+  const cands = [t.feitaEm, t.notaSubmetidaEm, (t.concluidasEm || []).slice().sort().pop(), t.prazo];
+  const d = cands.find(Boolean);
+  return d ? String(d).slice(0, 10) : '';
+}
+function ArquivoConcluidas({ feitas, membros, euId, players, hoje, onAbrir, onAlternar, podeConcluir }) {
+  const [quem, setQuem] = useState('todos');
+  const [procura, setProcura] = useState('');
+  const [abertos, setAbertos] = useState(() => new Set(['semana']));
+  const [expandidos, setExpandidos] = useState(() => new Set());
+  const seg = getMonday(hoje);
+  const segPassada = addDays(seg, -7);
+
+  // Os registos de cada item (um grupo tem vários).
+  const registosDe = (t) => (t._grupo ? t._grupo : [t]);
+  const eJog = (r) => !!r.jogadorId;
+  const casaQuem = (t) => {
+    if (quem === 'todos') return true;
+    return registosDe(t).some(r => (quem === 'staff' ? !eJog(r) : quem === 'jogadores' ? eJog(r) : (r.jogadorId === quem || (!r.jogadorId && r.responsavel === quem))));
+  };
+  const termo = semAcentos(procura.trim());
+  const visiveis = feitas.filter(t => casaQuem(t) && (!termo || semAcentos(t.titulo || '').includes(termo)));
+  const filtrado = quem !== 'todos' || !!termo;
+
+  // Grupos por semana / mês.
+  const grupoDe = (d) => {
+    if (!d) return { k: 'sem', rot: 'Sem data', ord: '0000' };
+    if (d >= seg) return { k: 'semana', rot: 'Esta semana', ord: '9999-2' };
+    if (d >= segPassada) return { k: 'passada', rot: 'Semana passada', ord: '9999-1' };
+    const [a, m] = d.split('-');
+    return { k: `${a}-${m}`, rot: `${MESES_PT[Number(m) - 1]}${a !== hoje.slice(0, 4) ? ` ${a}` : ''}`, ord: `${a}-${m}` };
+  };
+  const grupos = new Map();
+  visiveis.forEach(t => {
+    const d = dataDaConclusao(t);
+    const g = grupoDe(d);
+    if (!grupos.has(g.k)) grupos.set(g.k, { ...g, itens: [] });
+    grupos.get(g.k).itens.push({ t, d });
+  });
+  const listaGrupos = [...grupos.values()].sort((a, b) => b.ord.localeCompare(a.ord));
+
+  // Dentro de um grupo: a mesma missão (título) no mesmo dia, junta.
+  const juntar = (itens) => {
+    const m = new Map();
+    itens.forEach(({ t, d }) => {
+      const k = t._grupo ? `g:${t.id}` : `${semAcentos(t.titulo || '')}|${d}|${t.jogadorId ? 'j' : 's'}`;
+      if (!m.has(k)) m.set(k, { k, d, titulo: t.titulo, itens: [] });
+      m.get(k).itens.push(t);
+    });
+    return [...m.values()].sort((a, b) => String(b.d).localeCompare(String(a.d)));
+  };
+  const nomeDe = (r) => (r.jogadorId
+    ? shortPlayerName((players || []).find(p => p.id === r.jogadorId) || {}, players)
+    : nomeDoMembro(r.responsavel, membros, euId));
+  const contagem = (itens) => {
+    const regs = itens.flatMap(registosDe);
+    const nj = regs.filter(eJog).length;
+    const ns = regs.length - nj;
+    return [ns ? `${ns} equipa técnica` : '', nj ? `${nj} ${nj === 1 ? 'jogador' : 'jogadores'}` : ''].filter(Boolean).join(' · ');
+  };
+  const alternar = (setFn, k) => setFn(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+
+  const linha = { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 7, minWidth: 0 };
+  const visto = <CheckCircle2 size={15} color={T.good} style={{ flexShrink: 0 }} />;
+
+  return (
+    <div>
+      {/* FILTROS */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ flex: '0 1 240px', minWidth: 180 }}>
+          <Select value={quem} onChange={e => setQuem(e.target.value)}>
+            <option value="todos">Todos</option>
+            <option value="staff">Equipa técnica</option>
+            <option value="jogadores">Jogadores</option>
+            <optgroup label="Equipa técnica">
+              {(membros || []).map(m => <option key={m.user_id} value={m.user_id}>{nomeDoMembro(m.user_id, membros, euId)}</option>)}
+            </optgroup>
+            <optgroup label="Jogadores">
+              {sortByPosition(players || []).map(p => <option key={p.id} value={p.id}>{shortPlayerName(p, players)}</option>)}
+            </optgroup>
+          </Select>
+        </div>
+        <div style={{ flex: '1 1 200px' }}>
+          <Input value={procura} onChange={e => setProcura(e.target.value)} placeholder="Procurar pelo título" />
+        </div>
+      </div>
+
+      {listaGrupos.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '6px 2px' }}>{filtrado ? 'Nada encontrado com estes filtros.' : 'Ainda sem tarefas concluídas.'}</div>
+      ) : listaGrupos.map(g => {
+        const aberto = filtrado || abertos.has(g.k);
+        const juntos = juntar(g.itens);
+        return (
+          <div key={g.k} style={{ borderTop: `1px solid ${T.line}` }}>
+            <button type="button" onClick={() => alternar(setAbertos, g.k)} style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 4px', background: 'none', border: 'none',
+              cursor: 'pointer', ...body, textAlign: 'left',
+            }}>
+              <ChevronRight size={15} color={T.mutedDim} style={{ transform: aberto ? 'rotate(90deg)' : 'none', transition: 'transform .15s', flexShrink: 0 }} />
+              <span style={{ ...display, fontSize: 14.5, color: T.cream }}>{g.rot}</span>
+              <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim }}>{g.itens.length}</span>
+              <span style={{ fontSize: 11.5, color: T.mutedDim, marginLeft: 'auto', textAlign: 'right' }}>{contagem(g.itens.map(x => x.t))}</span>
+            </button>
+            {aberto && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '0 0 10px 22px' }}>
+                {juntos.map(j => {
+                  const varios = j.itens.length > 1 || (j.itens[0] && j.itens[0]._grupo);
+                  const regs = j.itens.flatMap(registosDe);
+                  const exp = expandidos.has(j.k);
+                  return (
+                    <div key={j.k}>
+                      <div style={{ ...linha, cursor: 'pointer' }}
+                        onClick={() => (varios ? alternar(setExpandidos, j.k) : onAbrir(j.itens[0]))}
+                        onMouseEnter={e => { e.currentTarget.style.background = T.surfaceRaise || 'rgba(255,255,255,.04)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                        {visto}
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: T.muted, ...LINHAS(1) }}>{j.titulo}</span>
+                        <span style={{ fontSize: 12, color: T.gold, flexShrink: 0, maxWidth: '35%', ...LINHAS(1) }}>
+                          {varios ? `${regs.length} ${regs.every(eJog) ? 'jogadores' : regs.some(eJog) ? 'pessoas' : 'pessoas'}` : nomeDe(regs[0])}
+                        </span>
+                        <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0, width: 40, textAlign: 'right' }}>{j.d ? fmtShort(j.d) : ''}</span>
+                        {varios && <ChevronDown size={14} color={T.mutedDim} style={{ flexShrink: 0, transform: exp ? 'rotate(180deg)' : 'none' }} />}
+                      </div>
+                      {varios && exp && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '4px 10px 8px 35px' }}>
+                          {j.itens.map(t => (t._grupo
+                            ? <button key={t.id} type="button" onClick={() => onAbrir(t)} style={{ ...body, fontSize: 12, color: T.cream, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 9px', cursor: 'pointer' }}>Ver o grupo ({t._grupo.length})</button>
+                            : <button key={t.id} type="button" onClick={() => onAbrir(t)} style={{ ...body, fontSize: 12, color: T.cream, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 9px', cursor: 'pointer' }}>{nomeDe(t)}</button>))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, players, monitoring, standings }) {
   registarCoresMembros(membros);
   const [modal, setModal] = useState(null); // 'new' | tarefa
@@ -43484,13 +43635,12 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           <EmptyState text="Ainda sem tarefas concluídas." />
         ) : !verFeitas ? (
           <div style={{ fontSize: 12.5, color: T.mutedDim }}>{feitas.length} {feitas.length === 1 ? 'tarefa concluída' : 'tarefas concluídas'}.</div>
-        ) : feitas.map(t => (
-          <LinhaTarefa
-            key={t.id} tarefa={t} membros={membros} euId={euId} hoje={hoje} players={players}
-            onAbrir={abrir} onAlternar={alternar}
-            podeConcluir={podeConcluir(t)} onLembrar={lembrar}
+        ) : (
+          <ArquivoConcluidas
+            feitas={feitas} membros={membros} euId={euId} players={players} hoje={hoje}
+            onAbrir={abrir} onAlternar={alternar} podeConcluir={podeConcluir}
           />
-        ))}
+        )}
       </Panel>
 
       {modal && (modal === 'new' || modal._grupo || !(Array.isArray(modal.missoes) && modal.missoes.length > 1)) && (
