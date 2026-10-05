@@ -40853,7 +40853,14 @@ function tarefaAtivaHoje(tarefa, hoje, ctx) {
     return aniversariantesEm(ctx.players, hoje).length > 0;
   }
   if (r.tipo === 'pos_jogo') {
-    return jogosSemEstatisticas(ctx.matches, hoje).length > 0;
+    /* No dia a seguir a cada jogo sem estatísticas e, enquanto faltarem,
+       no próprio dia de hoje. Nunca nos dias futuros: antes, o Calendário
+       mostrava-a em todos os dias da semana enquanto faltasse um jogo. */
+    const hj = todayStr();
+    if (hoje > hj) return false;
+    const falta = jogosSemEstatisticas(ctx.matches, hoje);
+    if (hoje === hj) return falta.length > 0;
+    return falta.some(m => addDays(m.date, 1) === hoje);
   }
   return true;
 }
@@ -41780,6 +41787,12 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
   const estaSemana = weekStart === getMonday(hoje);
   const { sessions, matches } = ctx;
   const idsDeJogos = new Set((matches || []).map(m => m.id));
+  const alturaContexto = isMobile ? 0 : Math.max(0, ...days.map(d => {
+    const nm = (matches || []).filter(m => m.date === d).length;
+    const ns = (sessions || []).filter(x => x.date === d && !(x.sourceMatchId && idsDeJogos.has(x.sourceMatchId))).length;
+    const n = nm + ns;
+    return n ? nm * 18 + ns * 15 + (n - 1) * 3 : 0;
+  }));
 
   // Ocorrências semanais desta semana, já no dia onde caem (mudado ou não).
   const semanais = tarefas
@@ -41830,6 +41843,10 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
           ? { gridTemplateColumns: 'repeat(3, 1fr)' }
           : { gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))', overflowX: 'auto' }),
       }}>
+        {/* ALINHAMENTO: o espaço do "contexto do dia" (jogo, treino, folga)
+            tem a mesma altura em todos os dias da semana, a do dia que
+            tiver mais. Assim os cartões das tarefas começam todos à mesma
+            altura, mesmo nos dias sem nada marcado. */}
         {days.map(d => {
           const lista = doDia(d);
           const isToday = d === hoje;
@@ -41865,8 +41882,8 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
               <div style={{ ...mono, fontSize: 15, color: isToday ? T.warn : T.cream, marginBottom: 6 }}>{new Date(d + 'T00:00:00').getDate()}</div>
 
               {/* Contexto do dia, sem botões: o que já está marcado. */}
-              {(dayMatches.length > 0 || daySessions.length > 0) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 6 }}>
+              {(dayMatches.length > 0 || daySessions.length > 0 || alturaContexto > 0) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 6, minHeight: alturaContexto }}>
                   {dayMatches.map(m => (
                     <div key={m.id} style={{
                       display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600,
