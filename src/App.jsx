@@ -1903,7 +1903,7 @@ function Badge({ number, label }) {
   );
 }
 
-function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'button', disabled, title }) {
+function Btn({ children, onClick, onMouseDown, variant = 'primary', style: s = {}, type = 'button', disabled, title }) {
   /* PROTEÇÃO CONTRA CLIQUE DUPLO, PARA TODOS OS BOTÕES DA APP DE UMA VEZ SÓ.
 
      Um "Guardar" que cria um registo novo gera um id novo dentro do
@@ -1939,7 +1939,7 @@ function Btn({ children, onClick, variant = 'primary', style: s = {}, type = 'bu
     danger: { background: 'transparent', color: T.bad, border: `1px solid ${T.bad}55` },
   };
   return (
-    <button type={type} disabled={disabled} title={title} onClick={handleClick} style={{ ...base, ...variants[variant], ...s }}>
+    <button type={type} disabled={disabled} title={title} onMouseDown={onMouseDown} onClick={handleClick} style={{ ...base, ...variants[variant], ...s }}>
       {children}
     </button>
   );
@@ -30650,18 +30650,24 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
                 style={{ minHeight: 120 }}
               />
             </Field>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
-              <span style={{ fontSize: 11.5, color: T.mutedDim }}>
-                {aGravar[aberta.id] ? 'A guardar…' : 'Guarda-se sozinho ao saíres do campo — podes continuar mais tarde.'}
-              </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Btn variant="ghost" onClick={(ev) => { gravarNota(aberta.id, notaAtual); ev.currentTarget.blur(); }} disabled={aGravar[aberta.id]}>
-                  Guardar
-                </Btn>
-                <Btn onClick={(ev) => { setConfirmar(true); ev.currentTarget.blur(); }} disabled={!podeSubmeter}>
-                  <Check size={15} /> Submeter
-                </Btn>
-              </div>
+            {/* O BOTÃO NÃO PODE FUGIR DO DEDO. Antes, ao carregar em Submeter
+                com o cursor ainda no texto, o campo perdia o foco, gravava, e
+                a frase de baixo mudava para "A guardar…" (mais curta): os
+                botões saltavam de linha a meio do clique, e o clique perdia-se
+                (era preciso carregar duas vezes). Agora: a frase tem uma linha
+                só para ela, de altura fixa; os botões ficam sempre no mesmo
+                sítio; e carregar neles já não tira o foco ao texto (o
+                Submeter envia a nota de qualquer forma). */}
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, minHeight: 34, lineHeight: 1.45 }}>
+              {aGravar[aberta.id] ? 'A guardar…' : 'Guarda-se sozinho ao saíres do campo. Podes continuar mais tarde.'}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <Btn variant="ghost" onMouseDown={e => e.preventDefault()} onClick={(ev) => { gravarNota(aberta.id, notaAtual); ev.currentTarget.blur(); }} disabled={aGravar[aberta.id]}>
+                Guardar
+              </Btn>
+              <Btn onMouseDown={e => e.preventDefault()} onClick={(ev) => { setConfirmar(true); ev.currentTarget.blur(); }} disabled={!podeSubmeter}>
+                <Check size={15} /> Submeter
+              </Btn>
             </div>
           </>
         )}
