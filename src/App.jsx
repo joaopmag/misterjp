@@ -3906,6 +3906,13 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               userEmail={session && session.user && session.user.email}
             />
           )}
+          {tarefasReady && membros && (
+            <EcraEntradaEquipa
+              tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId}
+              ctx={{ sessions, matches, players, monitoring }}
+              onIr={(caminho) => goTab(caminho || 'tarefas')}
+            />
+          )}
           {tab === 'tarefas' && (
             <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId}
               sessions={sessions} matches={matches} players={players} monitoring={monitoring} />
@@ -41552,6 +41559,15 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
           {tarefa.estado === 'curso' && (
             <span style={{ fontSize: 11.5, color: T.warn }}>• iniciada</span>
           )}
+          {tarefa.obrigatoria && (
+            <span style={{ fontSize: 11, color: T.warn, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock size={10} /> obrigatória</span>
+          )}
+          {/* Quem criou vê quantas vezes a pessoa entrou e adiou. */}
+          {!feita && (tarefa.adiadaEm || []).length > 0 && (tarefa.criadoPor === euId || tarefa.responsavel === euId) && (
+            <span style={{ fontSize: 11, color: T.mutedDim }} title={(tarefa.adiadaEm || []).map(d => fmtShort(d)).join(', ')}>
+              adiada {(tarefa.adiadaEm || []).length}×
+            </span>
+          )}
           {tarefa.recorrencia && (
             <span style={{ fontSize: 11, color: T.mutedDim, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <RefreshCw size={10} /> {RECORRENCIA_LABEL[tarefa.recorrencia.tipo]}
@@ -41802,6 +41818,168 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
   );
 }
 
+/* ================================================================
+   ENTRADA DA EQUIPA TÉCNICA — "O teu dia" (opção B).
+   ================================================================
+   Ao entrar na app, cada pessoa vê primeiro as missões que são SUAS
+   (responsável = ela) para hoje e as atrasadas, com "Concluir" e o
+   atalho para o sítio onde se fazem.
+   - Normalmente aparece uma vez por dia (por sessão) e tem
+     "Continuar"; carregar aí regista um ADIAMENTO em cada missão que
+     ficou por fazer (no máximo um por dia), que quem a criou vê.
+   - MISSÕES OBRIGATÓRIAS (marcadas por quem cria): depois de passado o
+     prazo, bloqueiam a entrada até serem concluídas. Aparece sempre, em
+     cada entrada, sem "Continuar". "Ir para …" deixa ir fazê-la (até se
+     recarregar a app).
+   - O dono da equipa nunca fica bloqueado: vê o ecrã, mas pode sempre
+     continuar.
+   - Missões sem responsável (abertas a todos) não entram aqui: seriam de
+     toda a gente e de ninguém. */
+function missoesDaEntrada(tarefas, euId, ctx) {
+  const hoje = todayStr();
+  if (!euId) return [];
+  return (tarefas || []).filter(t => t && !t.jogadorId && t.responsavel === euId).map(t => {
+    if (eSemanal(t)) {
+      const pend = semanaisPendentes(t, hoje);
+      if (!pend.length) return null;
+      return { t, base: pend[0].base, dia: pend[0].dia, atraso: pend[0].dia < hoje, n: pend.length };
+    }
+    if (t.recorrencia) {
+      if (!tarefaAtivaHoje(t, hoje, ctx || {}) || tarefaFeitaHoje(t, hoje)) return null;
+      return { t, dia: hoje, atraso: false, n: 1 };
+    }
+    if (t.estado === 'feita' || !t.prazo || t.prazo > hoje) return null;
+    return { t, dia: t.prazo, atraso: t.prazo < hoje, n: 1 };
+  }).filter(Boolean)
+    .map(x => ({ ...x, bloqueia: !!x.t.obrigatoria && x.atraso }))
+    .sort((a, b) => Number(b.bloqueia) - Number(a.bloqueia) || String(a.dia).localeCompare(String(b.dia)));
+}
+
+function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr }) {
+  const hoje = todayStr();
+  const chaveVista = `mjp_entrada_${euId}_${hoje}`;
+  const [fechado, setFechado] = useState(() => { try { return sessionStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
+  const [liberado, setLiberado] = useState(false); // "Ir para…" numa obrigatória
+  const lista = missoesDaEntrada(tarefas, euId, ctx);
+  const souDono = ((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner';
+  const bloqueadas = souDono ? [] : lista.filter(x => x.bloqueia);
+  if (!euId || liberado || !lista.length) return null;
+  if (fechado && !bloqueadas.length) return null;
+
+  const meu = (membros || []).find(m => m.user_id === euId);
+  const primeiro = meu && meu.nome ? String(meu.nome).trim().split(/\s+/)[0] : '';
+  const hora = new Date().getHours();
+  const saudacao = hora < 12 ? 'Bom dia' : hora < 20 ? 'Boa tarde' : 'Boa noite';
+
+  const concluir = (x) => {
+    const t = x.t;
+    const agora = new Date().toISOString();
+    setTarefas(prev => prev.map(r => {
+      if (r.id !== t.id) return r;
+      if (eSemanal(r)) return { ...r, concluidasEm: [...new Set([...(r.concluidasEm || []), x.base])], lembrete: null, ...(avisaCriadorAoConcluir(r, euId) ? { conclusaoPorVer: { por: euId, em: agora } } : {}) };
+      if (r.recorrencia) return { ...r, concluidasEm: [...new Set([...(r.concluidasEm || []), hoje])], lembrete: null };
+      return { ...r, estado: 'feita', feitaEm: agora, lembrete: null, ...(avisaCriadorAoConcluir(r, euId) ? { conclusaoPorVer: { por: euId, em: agora } } : {}) };
+    }));
+  };
+  const continuar = () => {
+    // Um adiamento por missão e por dia (entrar dez vezes não conta dez).
+    const ids = new Set(lista.map(x => x.t.id));
+    setTarefas(prev => prev.map(r => (ids.has(r.id) && !(r.adiadaEm || []).includes(hoje)
+      ? { ...r, adiadaEm: [...(r.adiadaEm || []), hoje].slice(-60) }
+      : r)));
+    try { sessionStorage.setItem(chaveVista, '1'); } catch (e) { /* fica só nesta página */ }
+    setFechado(true);
+  };
+  const irPara = (x) => {
+    if (x.bloqueia) setLiberado(true);
+    else { try { sessionStorage.setItem(chaveVista, '1'); } catch (e) { /* idem */ } setFechado(true); }
+    onIr(x.t.caminho);
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 90, overflowY: 'auto', ...body,
+      background: `radial-gradient(circle at 50% 0%, #24382a 0%, ${T.bg} 70%)`,
+    }}>
+      <style>{`
+        @keyframes en-entrar { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .en-anim { animation: none !important; } }
+      `}</style>
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: 'calc(28px + env(safe-area-inset-top, 0px)) 18px calc(28px + env(safe-area-inset-bottom, 0px))' }}>
+        <div style={{ color: T.gold, fontSize: 11.5, fontWeight: 800, letterSpacing: '.24em', textTransform: 'uppercase' }}>
+          O teu dia · {fmtShort(hoje)}
+        </div>
+        <h2 style={{ ...display, color: T.cream, fontSize: 28, fontWeight: 600, margin: '6px 0 4px' }}>
+          {saudacao}{primeiro ? `, ${primeiro}` : ''}.
+        </h2>
+        <div style={{ color: T.muted, fontSize: 14, lineHeight: 1.5, marginBottom: 18 }}>
+          {bloqueadas.length
+            ? `Tens ${bloqueadas.length === 1 ? 'uma missão obrigatória' : `${bloqueadas.length} missões obrigatórias`} fora de prazo. Conclui-${bloqueadas.length === 1 ? 'a' : 'as'} para entrares.`
+            : `Tens ${lista.length === 1 ? 'uma missão' : `${lista.length} missões`} para hoje${lista.some(x => x.atraso) ? ' ou em atraso' : ''}.`}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {lista.map((x, k) => {
+            const c = caminhoStaff(x.t.caminho);
+            const Ic = c.icon;
+            return (
+              <div key={`${x.t.id}:${x.base || ''}`} className="en-anim" style={{
+                background: T.surface, borderRadius: 12, padding: '13px 14px',
+                border: `1px solid ${x.bloqueia ? T.bad : (x.atraso ? T.warn : T.line)}`,
+                animation: `en-entrar .4s ease-out ${0.06 * k}s both`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 9, background: T.bg, border: `1px solid ${T.line}`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Ic size={16} color={T.warn} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                      {x.t.obrigatoria && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: x.bloqueia ? T.bad : T.warn }}>
+                          <Lock size={10} /> Obrigatória
+                        </span>
+                      )}
+                      <span style={{ ...mono, fontSize: 11, color: x.atraso ? (x.bloqueia ? T.bad : T.warn) : T.mutedDim }}>
+                        {x.atraso ? `atrasada · ${prazoTexto(x.dia, hoje)}` : 'hoje'}{x.n > 1 ? ` · ${x.n} semanas por concluir` : ''}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 15, color: T.cream, lineHeight: 1.35, fontWeight: 600 }}>{x.t.titulo}</div>
+                    {x.t.notas && <div style={{ fontSize: 12.5, color: T.muted, marginTop: 4, lineHeight: 1.45, ...LINHAS(2) }}>{x.t.notas}</div>}
+                    {x.t.criadoPor && x.t.criadoPor !== euId && (
+                      <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4 }}>Pedida por {nomeDoMembro(x.t.criadoPor, membros, euId)}</div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 11, flexWrap: 'wrap' }}>
+                  <Btn onClick={() => concluir(x)}><Check size={14} /> Concluir</Btn>
+                  {x.t.caminho && (
+                    <Btn variant="ghost" onClick={() => irPara(x)}>Ir para {c.rotulo} <ArrowRight size={13} /></Btn>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ marginTop: 20, textAlign: 'center' }}>
+          {bloqueadas.length ? (
+            <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>
+              As missões obrigatórias fora de prazo têm de ser concluídas antes de entrar. Usa "Ir para…" para ires fazê-la.
+            </div>
+          ) : (
+            <>
+              <Btn variant="ghost" onClick={continuar}>Continuar sem concluir <ArrowRight size={14} /></Btn>
+              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+                Fica registado que adiaste{souDono && lista.some(x => x.bloqueia) ? '. Como dono da equipa, nunca ficas bloqueado' : ''}.
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefas = [], podeConcluir = true, onClose, onGuardar, onRemove, onAbrirRegisto }) {
   const registos = alvo ? (alvo._grupo || [alvo]) : [];
   const base = registos[0] || null;
@@ -41816,6 +41994,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
     recorrencia: base ? (base.recorrencia || null) : null,
     acompanha: base ? (base.jogadorId ? (base.responsavel || '') : (euId || '')) : (euId || ''),
     estado: base ? (base.estado || 'aberta') : 'aberta',
+    obrigatoria: base ? !!base.obrigatoria : false,
   }));
   const blocoDe = (t) => {
     const inst = (Array.isArray(t.missoes) && t.missoes[0] && t.missoes[0].instrucoes) || t.notas || '';
@@ -41893,7 +42072,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
       };
       return modo === 'jogadores'
         ? { ...comuns, jogadorId: pessoa, responsavel: comum.acompanha || euId || '', destino: b.destino || 'nota', missoes: [{ id: uid(), destino: b.destino || 'nota', instrucoes: inst }], caminho: '' }
-        : { ...comuns, jogadorId: '', responsavel: pessoa, caminho: b.caminho || '', destino: undefined, missoes: undefined };
+        : { ...comuns, jogadorId: '', responsavel: pessoa, caminho: b.caminho || '', obrigatoria: !!comum.obrigatoria, destino: undefined, missoes: undefined };
     };
     const upserts = [];
     const removidos = [];
@@ -42023,6 +42202,19 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
             <input type="checkbox" checked={false} style={{ accentColor: T.crimson, width: 16, height: 16 }}
               onChange={() => { if (!comum.prazo) return; setComum({ ...comum, prazo: '', recorrencia: { tipo: 'semanal', dias: [new Date(`${comum.prazo}T00:00:00`).getDay()], desde: comum.prazo } }); }} />
             Repetir todas as semanas à {comum.prazo ? DIAS_SEMANA[new Date(`${comum.prazo}T00:00:00`).getDay()] : ''}
+          </label>
+          {/* OBRIGATÓRIA (só equipa técnica): fora de prazo, bloqueia a entrada
+              na app da pessoa até a concluir. Sempre no lugar, para nada saltar. */}
+          <label style={{
+            display: 'flex', alignItems: 'flex-start', gap: 9, marginBottom: 12, fontSize: 13, color: T.cream, cursor: 'pointer',
+            minHeight: 40, visibility: modo === 'staff' ? 'visible' : 'hidden',
+          }}>
+            <input type="checkbox" checked={!!comum.obrigatoria} onChange={e => setComum({ ...comum, obrigatoria: e.target.checked })}
+              style={{ accentColor: T.crimson, width: 16, height: 16, marginTop: 2 }} />
+            <span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><Lock size={12} /> Obrigatória</span>
+              <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>Depois do prazo, a pessoa só entra na app quando a concluir.</span>
+            </span>
           </label>
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
             <Field label="Repete">
