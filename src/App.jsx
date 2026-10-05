@@ -43181,7 +43181,10 @@ function ArquivoConcluidas({ feitas, membros, euId, players, hoje, onAbrir, onAl
   };
   const alternar = (setFn, k) => setFn(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
-  const linha = { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 7, minWidth: 0 };
+  /* Colunas fixas à direita (quem · data · seta), iguais em todas as
+     linhas, para a informação ficar alinhada. A seta tem sempre o seu
+     lugar, mesmo nas linhas que não abrem. */
+  const linha = { display: 'grid', gridTemplateColumns: '18px minmax(0,1fr) 150px 48px 16px', alignItems: 'center', columnGap: 10, padding: '7px 10px', borderRadius: 7 };
   const visto = <CheckCircle2 size={15} color={T.good} style={{ flexShrink: 0 }} />;
 
   return (
@@ -43206,6 +43209,10 @@ function ArquivoConcluidas({ feitas, membros, euId, players, hoje, onAbrir, onAl
         </div>
       </div>
 
+      {/* ALTURA FIXA: abrir e fechar grupos (ou filtrar) muda o que está
+          dentro desta caixa, que desliza por dentro; a página à volta não
+          mexe. */}
+      <div style={{ height: 'min(560px, 65vh)', overflowY: 'auto', paddingRight: 4 }}>
       {listaGrupos.length === 0 ? (
         <div style={{ fontSize: 12.5, color: T.mutedDim, padding: '6px 2px' }}>{filtrado ? 'Nada encontrado com estes filtros.' : 'Ainda sem tarefas concluídas.'}</div>
       ) : listaGrupos.map(g => {
@@ -43235,12 +43242,12 @@ function ArquivoConcluidas({ feitas, membros, euId, players, hoje, onAbrir, onAl
                         onMouseEnter={e => { e.currentTarget.style.background = T.surfaceRaise || 'rgba(255,255,255,.04)'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
                         {visto}
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: T.muted, ...LINHAS(1) }}>{j.titulo}</span>
-                        <span style={{ fontSize: 12, color: T.gold, flexShrink: 0, maxWidth: '35%', ...LINHAS(1) }}>
+                        <span style={{ minWidth: 0, fontSize: 13.5, color: T.muted, ...LINHAS(1) }}>{j.titulo}</span>
+                        <span style={{ fontSize: 12, color: T.gold, textAlign: 'right', ...LINHAS(1) }}>
                           {varios ? `${regs.length} ${regs.every(eJog) ? 'jogadores' : regs.some(eJog) ? 'pessoas' : 'pessoas'}` : nomeDe(regs[0])}
                         </span>
-                        <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0, width: 40, textAlign: 'right' }}>{j.d ? fmtShort(j.d) : ''}</span>
-                        {varios && <ChevronDown size={14} color={T.mutedDim} style={{ flexShrink: 0, transform: exp ? 'rotate(180deg)' : 'none' }} />}
+                        <span style={{ ...mono, fontSize: 11, color: T.mutedDim, textAlign: 'right' }}>{j.d ? fmtShort(j.d) : ''}</span>
+                        {varios ? <ChevronDown size={14} color={T.mutedDim} style={{ transform: exp ? 'rotate(180deg)' : 'none' }} /> : <span />}
                       </div>
                       {varios && exp && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '4px 10px 8px 35px' }}>
@@ -43257,6 +43264,7 @@ function ArquivoConcluidas({ feitas, membros, euId, players, hoje, onAbrir, onAl
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
