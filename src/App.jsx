@@ -42144,11 +42144,7 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
                 <div style={{ ...display, fontSize: 22, lineHeight: 1.1, color: '#14231a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome}</div>
                 <div style={{ fontSize: 11.5, color: '#5a5f58' }}>{funcao}{teste ? ' · teste' : ''}</div>
               </div>
-              <div className="cr-anim" aria-hidden="true" style={{
-                width: 34, height: 34, borderRadius: '50%', flexShrink: 0, opacity: 0.85, display: 'grid', placeItems: 'center',
-                background: 'conic-gradient(from 0deg, #ff9ad5, #9ad8ff, #b6ffb0, #fff3a0, #ffb3a0, #d0a0ff, #ff9ad5)',
-                boxShadow: 'inset 0 0 0 2px rgba(255,255,255,.55)', animation: 'cr-holo 6s linear infinite',
-              }}><Check size={14} color="#fff" strokeWidth={3} /></div>
+
             </div>
 
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '2px 14px 6px' }}>
@@ -42164,29 +42160,35 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
                 const c = caminhoStaff(t.caminho);
                 const Ic = c.icon;
                 const feita = x.feita || carimbadas.includes(t.id);
+                /* A FAIXA da zona diz o estado pela cor, e a palavra por baixo
+                   do título diz o mesmo por extenso:
+                   vermelha = atrasada · preta = prioritária · cor da pessoa = normal. */
+                const estado = feita ? 'feita' : x.atraso ? 'atrasada' : t.obrigatoria ? 'prioritaria' : 'normal';
+                const faixa = { feita: '#9aa39b', atrasada: '#B3261E', prioritaria: '#14231a', normal: cor }[estado];
                 return (
                   <div key={`${t.id}:${x.base || ''}`} className="cr-anim" title={caminhoVerificavel(t) ? `Fecha sozinha quando ${CRITERIO_STAFF[t.caminho]}.` : undefined} style={{
                     position: 'relative', display: 'flex', alignItems: 'center', gap: 10, borderRadius: 10, flexShrink: 0,
                     padding: '8px 8px 8px 0', background: '#fff', overflow: 'hidden',
-                    border: `1.5px solid ${t.obrigatoria && !feita ? '#C9A227' : '#e2dfd4'}`,
+                    border: `1.5px solid ${estado === 'atrasada' ? '#e4b4ae' : '#e2dfd4'}`,
                     animation: `cr-zona .35s ease-out ${1.15 + k * 0.08}s both`, opacity: feita ? 0.6 : 1,
                   }}>
                     {/* código da zona */}
                     <div style={{
                       alignSelf: 'stretch', margin: '-8px 0', width: 44, flexShrink: 0, display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center', gap: 2, background: feita ? '#9aa39b' : cor, color: '#fff',
+                      alignItems: 'center', justifyContent: 'center', gap: 2, background: faixa, color: '#fff',
                     }}>
                       <span style={{ ...mono, fontSize: 13, fontWeight: 700 }}>{ZONA_CODIGO[t.caminho] || 'GL'}</span>
                       <Ic size={11} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: '#14231a', lineHeight: 1.25, ...LINHAS(2) }}>{t.titulo}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-                        {x.atraso && !feita && <span className="cr-anim" style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff4a3d', animation: 'cr-luz 1.1s ease-in-out infinite' }} />}
-                        <span style={{ ...mono, fontSize: 10.5, color: x.atraso && !feita ? '#B3261E' : '#7a7a70' }}>
-                          {feita ? 'feita' : x.atraso ? prazoTexto(x.dia, hoje) : 'hoje'}
-                        </span>
-                        {t.obrigatoria && !feita && <Star size={11} fill="#C9A227" color="#C9A227" />}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                        {estado === 'atrasada' && <span style={{ fontSize: 11, fontWeight: 700, color: '#B3261E' }}>Atrasada · {prazoTexto(x.dia, hoje)}</span>}
+                        {t.obrigatoria && !feita && (
+                          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: '#fff', background: '#14231a', borderRadius: 3, padding: '1px 5px' }}>Prioritária</span>
+                        )}
+                        {estado === 'normal' && <span style={{ fontSize: 11, color: '#7a7a70' }}>Para hoje</span>}
+                        {feita && <span style={{ fontSize: 11, color: '#2E6B3A', fontWeight: 700 }}>Feita</span>}
                       </div>
                     </div>
                     {!feita && (t.caminho ? (
@@ -42211,10 +42213,27 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
               })}
             </div>
 
-            {/* rodapé */}
+            {/* O CÓDIGO DE BARRAS É O DIA DE HOJE: um bloco de barras por zona,
+                pela mesma ordem da lista. Fica verde quando a zona está feita.
+                À direita, quantas estão feitas. Enche-se à medida que o dia
+                avança. */}
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px 12px', borderTop: '1px dashed #d8d6cc' }}>
-              <div style={{ flex: 1, height: 22, background: codigoBarras, opacity: 0.8 }} />
-              <div style={{ ...mono, fontSize: 11.5, color: '#14231a', fontWeight: 700 }}>{fmtShort(hoje)}</div>
+              <div style={{ flex: 1, display: 'flex', gap: 5, height: 24 }} aria-label={`${lista.length - porFazer.length} de ${lista.length} feitas hoje`}>
+                {lista.map(x => {
+                  const feitaB = x.feita || carimbadas.includes(x.t.id);
+                  return (
+                    <div key={`b:${x.t.id}:${x.base || ''}`} style={{
+                      flex: 1, borderRadius: 2, transition: 'opacity .3s',
+                      background: codigoBarras.replace(/#1a1d1b/g, feitaB ? '#2E6B3A' : '#1a1d1b'),
+                      opacity: feitaB ? 1 : 0.3,
+                    }} />
+                  );
+                })}
+              </div>
+              <div style={{ textAlign: 'right', lineHeight: 1.1 }}>
+                <div style={{ ...mono, fontSize: 13, color: '#14231a', fontWeight: 700 }}>{lista.length - porFazer.length}/{lista.length}</div>
+                <div style={{ fontSize: 9, letterSpacing: '.16em', color: '#7a7a70', textTransform: 'uppercase' }}>feitas hoje</div>
+              </div>
             </div>
           </div>
         </div>
