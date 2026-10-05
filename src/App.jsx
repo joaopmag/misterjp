@@ -26925,7 +26925,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   if (aba === 'relatorios') {
     return (
       <div>
-        <SectionHeader title="Relatórios" subtitle="Dados dos jogos." />
+        <SectionHeader title="Jogos" subtitle="A competição, classificação e os dados de cada jogo." />
         <SubTabs
           value={aba}
           onChange={setAba}
@@ -26972,7 +26972,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
 
   return (
     <div>
-      <SectionHeader title="Jogos" subtitle="Resultados e estatísticas."
+      <SectionHeader title="Jogos" subtitle="A competição, classificação e os dados de cada jogo."
         action={<Btn onClick={() => { setModalVoltarFicha(false); setModal('new'); }} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
       <SubTabs
         value={aba}
@@ -40300,7 +40300,7 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
 
   return (
     <div>
-      <SectionHeader title="Convocatórias" subtitle="Os convocados, titulares e suplentes."
+      <SectionHeader title="Jogos" subtitle="A competição, classificação e os dados de cada jogo."
         action={<Btn onClick={() => setModal('new')} disabled={players.length === 0}><Plus size={15} /> Nova convocatória</Btn>} />
       {subTabs}
 
