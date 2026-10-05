@@ -40554,7 +40554,7 @@ function TEXTO_LEMBRETE_TAREFA_JOGADOR(p, t, hoje) {
 }
 
 function alvoDoLembrete(t, euId, membros, players, hoje) {
-  if (!t) return null;
+  if (!t || t._grupo) return null; // num grupo, lembra-se cada um na sua cópia ("Por pessoa")
   if (t.jogadorId) {
     if (t.notaSubmetida || t.estado === 'feita') return null;
     const p = (players || []).find(x => x.id === t.jogadorId);
@@ -41111,6 +41111,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
           ...LINHAS(2), fontSize: 11.5, lineHeight: 1.3,
           color: feita ? T.mutedDim : T.cream, textDecoration: feita ? 'line-through' : 'none',
         }}>{tarefa.titulo}</div>
+        {tarefa._grupo && <ResumoGrupo tarefa={tarefa} membros={membros} euId={euId} players={players} pequeno />}
         {jogador && (
           <div
             title={`Atribuída a ${jogador.name}`}
@@ -41130,7 +41131,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
             <span style={LINHAS(2)}>{aniversariantes.map(p => shortPlayerName(p, players)).join(', ')}</span>
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 10, color: T.mutedDim, minWidth: 0 }}>
+        <div style={{ display: (tarefa._grupo && !tarefa._paraJogadores) ? 'none' : 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 10, color: T.mutedDim, minWidth: 0 }}>
           <span style={{
             width: 14, height: 14, borderRadius: '50%', background: cor, flexShrink: 0,
             display: 'grid', placeItems: 'center', fontSize: 7.5, color: '#0d140e', fontWeight: 600, ...mono,
@@ -41169,6 +41170,39 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
   const [arrastada, setArrastada] = useState(null);
   const [sobre, setSobre] = useState(null);
   const isMobile = useIsMobile(700);
+  /* ARRASTAR PARA OUTRA SEMANA. Leva-se a tarefa até à seta (‹ ou ›) e
+     deixa-se lá parada: ao fim de meio segundo a semana muda, e continua
+     a mudar enquanto ela lá ficar. Depois larga-se no dia certo.
+     Só para tarefas normais: nas que se repetem toda a semana, mover uma
+     ocorrência para outra semana ia chocar com a ocorrência dessa semana,
+     por isso essas continuam a mudar só dentro da própria semana. */
+  const [setaArmada, setSetaArmada] = useState(0); // -1, 0, 1
+  const timerSeta = useRef(null);
+  const pararSeta = () => { if (timerSeta.current) { clearInterval(timerSeta.current); timerSeta.current = null; } setSetaArmada(0); };
+  const podeMudarSemana = !!arrastada && !arrastada.base;
+  const setaDragOver = (dir) => (e) => {
+    if (!podeMudarSemana) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (timerSeta.current) return;
+    setSetaArmada(dir);
+    const passo = () => setWeekStart(w => addDays(w, 7 * dir));
+    timerSeta.current = setTimeout(() => {
+      passo();
+      timerSeta.current = setInterval(passo, 900);
+    }, 550);
+  };
+  // O cartão arrastado sai do ecrã quando a semana muda, e aí o navegador
+  // já não avisa o fim do arrasto ao cartão: limpa-se aqui, na janela.
+  useEffect(() => {
+    if (!arrastada) return undefined;
+    const fim = () => { setArrastada(null); setSobre(null); pararSeta(); };
+    window.addEventListener('dragend', fim);
+    window.addEventListener('drop', fim);
+    return () => { window.removeEventListener('dragend', fim); window.removeEventListener('drop', fim); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrastada]);
+  useEffect(() => () => pararSeta(), []); // eslint-disable-line react-hooks/exhaustive-deps
   const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
   const estaSemana = weekStart === getMonday(hoje);
   const { sessions, matches } = ctx;
@@ -41201,7 +41235,9 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 8 }}>
-        <button onClick={() => setWeekStart(addDays(weekStart, -7))} style={navBtn} aria-label="Semana anterior"><ChevronLeft size={16} /></button>
+        <button onClick={() => setWeekStart(addDays(weekStart, -7))} aria-label="Semana anterior"
+          onDragOver={setaDragOver(-1)} onDragLeave={pararSeta} onDrop={e => { e.preventDefault(); pararSeta(); }}
+          style={{ ...navBtn, ...(podeMudarSemana ? { borderStyle: 'dashed', borderColor: T.gold, color: T.warn, padding: '8px 10px' } : {}), ...(setaArmada === -1 ? { background: 'rgba(201,162,39,.18)' } : {}) }}><ChevronLeft size={16} style={{ pointerEvents: 'none', display: 'block' }} /></button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
           <div style={{ ...display, color: T.warn, fontSize: 15, fontWeight: 600 }}>
             Semana de {fmtShort(days[0])} a {fmtShort(days[6])}
@@ -41210,7 +41246,9 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
             <button onClick={() => setWeekStart(getMonday(hoje))} style={{ ...navBtn, ...body, fontSize: 11.5, padding: '3px 9px', color: T.muted }}>Hoje</button>
           )}
         </div>
-        <button onClick={() => setWeekStart(addDays(weekStart, 7))} style={navBtn} aria-label="Semana seguinte"><ChevronRight size={16} /></button>
+        <button onClick={() => setWeekStart(addDays(weekStart, 7))} aria-label="Semana seguinte"
+          onDragOver={setaDragOver(1)} onDragLeave={pararSeta} onDrop={e => { e.preventDefault(); pararSeta(); }}
+          style={{ ...navBtn, ...(podeMudarSemana ? { borderStyle: 'dashed', borderColor: T.gold, color: T.warn, padding: '8px 10px' } : {}), ...(setaArmada === 1 ? { background: 'rgba(201,162,39,.18)' } : {}) }}><ChevronRight size={16} style={{ pointerEvents: 'none', display: 'block' }} /></button>
       </div>
 
       <div style={{
@@ -41315,7 +41353,7 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <span style={{ width: 10, height: 10, borderRadius: 3, background: T.cream }} /> Jogo
         </span>
-        {!isMobile && <span>Arrasta uma tarefa para outro dia. Nas que se repetem, muda só essa semana.</span>}
+        {!isMobile && <span>Arrasta uma tarefa para outro dia. Para outra semana, leva-a até à seta ‹ ou › e espera. Nas que se repetem, muda só essa semana.</span>}
       </div>
 
       {(atrasadasAntes.length > 0 || semPrazo.length > 0) && (
@@ -41432,6 +41470,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
           </div>
         )}
 
+        {tarefa._grupo && <ResumoGrupo tarefa={tarefa} membros={membros} euId={euId} players={players} />}
         {jogadorAtribuido && (
           <div style={{ fontSize: 11.5, color: porRever ? T.crimsonBright : T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, fontWeight: porRever ? 600 : 400 }}>
             <UserCheck size={12} /> {shortPlayerName(jogadorAtribuido, players)}
@@ -41460,6 +41499,13 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
             </span>
           )}
           {tarefa.notas ? <FileText size={12} style={{ color: T.mutedDim }} /> : null}
+          {/* Missão da equipa técnica com caminho: atalho direto para lá. */}
+          {!tarefa.jogadorId && !tarefa._paraJogadores && tarefa.caminho && (
+            <button type="button" onClick={e => { e.stopPropagation(); irParaSeparador(tarefa.caminho); }} style={{
+              ...body, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '1px 8px', borderRadius: 10,
+              background: 'transparent', border: `1px solid ${T.gold}`, color: T.warn, cursor: 'pointer',
+            }}>{caminhoStaff(tarefa.caminho).rotulo} <ArrowRight size={10} /></button>
+          )}
         </div>
       </div>
 
@@ -41500,6 +41546,454 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
   );
 }
 
+/* ================================================================
+   MISSÕES — o modelo novo das Tarefas.
+   ================================================================
+   Uma missão é a unidade: tem o SEU título, o caminho (para onde leva),
+   instruções, prazo ou repetição, e é para uma pessoa. Acabaram os
+   "passos" dentro de uma tarefa (o jogador ficava preso no primeiro e o
+   título repetia-se em todos).
+
+   A MESMA MISSÃO PARA VÁRIOS: escolhendo vários jogadores (ou várias
+   pessoas da equipa técnica), grava-se um registo por pessoa, todos com
+   o mesmo `grupoId`. Tem de ser um registo por pessoa porque o Portal e
+   as funções do servidor trabalham com um jogador por tarefa. No ecrã
+   das Tarefas (Calendário e Por prazo) os registos do mesmo grupo
+   aparecem juntos num só cartão ("12 jogadores · 3 feitas"); em
+   "Por pessoa" aparece a cópia de cada um.
+
+   As tarefas antigas com vários passos continuam a abrir no editor
+   antigo (TarefaModal) até serem concluídas. */
+
+// Para onde leva uma missão da EQUIPA TÉCNICA: um separador da app.
+const CAMINHOS_STAFF = [
+  { id: '', rotulo: 'Sem caminho', icon: ClipboardList },
+  { id: 'analise', rotulo: 'Análise de Vídeo', acao: 'Análise de vídeo', icon: Video },
+  { id: 'scouting', rotulo: 'Scouting / adversário', acao: 'Observar o adversário', icon: Search },
+  { id: 'planeamento', rotulo: 'Planeamento', acao: 'Planear a semana', icon: CalendarDays },
+  { id: 'jogos', rotulo: 'Jogos / convocatória', acao: 'Preparar a convocatória', icon: Trophy },
+  { id: 'monitorizacao', rotulo: 'Monitorização', acao: 'Rever a monitorização', icon: Activity },
+  { id: 'desenvolvimento', rotulo: 'Desenvolvimento', acao: 'Avaliar o desenvolvimento', icon: TrendingUp },
+  { id: 'ideiajogo', rotulo: 'Ideia de Jogo', acao: 'Atualizar a ideia de jogo', icon: Lightbulb },
+  { id: 'exercicios', rotulo: 'Exercícios', acao: 'Preparar exercícios', icon: Dumbbell },
+  { id: 'presencas', rotulo: 'Presenças', acao: 'Registar presenças', icon: UserCheck },
+  { id: 'clinico', rotulo: 'Boletim Clínico', acao: 'Atualizar o boletim clínico', icon: Stethoscope },
+  { id: 'biblioteca', rotulo: 'Biblioteca', acao: 'Organizar a biblioteca', icon: Presentation },
+];
+const caminhoStaff = (id) => CAMINHOS_STAFF.find(c => c.id === (id || '')) || CAMINHOS_STAFF[0];
+// Abrir o separador: a app já segue o #separador do endereço.
+const irParaSeparador = (id) => { if (id && typeof window !== 'undefined') window.location.hash = `#${id}`; };
+
+/* Junta os registos do mesmo grupo num só cartão (só para mostrar).
+   O cartão do grupo tem `_grupo` (os registos) e um id "grupo:…"; as
+   ações do ecrã (concluir, arrastar, apagar, abrir) aplicam-se a todos. */
+function agruparMissoes(lista) {
+  const porG = new Map();
+  const ordem = [];
+  (lista || []).forEach(t => {
+    if (t.grupoId) {
+      if (!porG.has(t.grupoId)) { porG.set(t.grupoId, []); ordem.push({ __g: t.grupoId }); }
+      porG.get(t.grupoId).push(t);
+    } else ordem.push(t);
+  });
+  return ordem.map(x => {
+    if (!x.__g) return x;
+    const rs = porG.get(x.__g);
+    if (rs.length === 1) return rs[0];
+    const base = rs[0];
+    const fez = (r) => r.estado === 'feita' || (!!r.jogadorId && !!r.notaSubmetida);
+    const todas = rs.every(fez);
+    return {
+      ...base, id: `grupo:${x.__g}`, _grupo: rs, _paraJogadores: rs.some(r => r.jogadorId),
+      jogadorId: '', notaSubmetida: false, lembrete: null,
+      estado: todas ? 'feita' : (rs.some(r => r.estado === 'curso') ? 'curso' : 'aberta'),
+      feitaEm: todas ? (rs.map(r => r.feitaEm || r.notaSubmetidaEm || '').sort().pop() || null) : null,
+      concluidasEm: base.recorrencia
+        ? (base.concluidasEm || []).filter(d => rs.every(r => (r.concluidasEm || []).includes(d)))
+        : base.concluidasEm,
+    };
+  });
+}
+const feitaNoGrupo = (r) => r.estado === 'feita' || (!!r.jogadorId && !!r.notaSubmetida);
+
+// A linha "12 jogadores · 3 feitas" dos cartões de grupo.
+function ResumoGrupo({ tarefa, membros, euId, players, pequeno }) {
+  const rs = tarefa._grupo || [];
+  const feitas = rs.filter(feitaNoGrupo).length;
+  const nomes = tarefa._paraJogadores
+    ? rs.map(r => shortPlayerName((players || []).find(p => p.id === r.jogadorId) || {}, players))
+    : rs.map(r => nomeDoMembro(r.responsavel, membros, euId).split(' ')[0]);
+  const quem = tarefa._paraJogadores ? `${rs.length} jogadores` : `${rs.length} pessoas`;
+  return (
+    <div title={nomes.join(', ')} style={{
+      display: 'flex', alignItems: 'center', gap: 4, marginTop: pequeno ? 4 : 3, fontSize: pequeno ? 10.5 : 11.5,
+      color: T.gold, fontWeight: 600, minWidth: 0,
+    }}>
+      <Users size={pequeno ? 10 : 12} style={{ flexShrink: 0 }} />
+      <span style={LINHAS(1)}>{quem} · {feitas}/{rs.length} {feitas === 1 ? 'feita' : 'feitas'}</span>
+    </div>
+  );
+}
+
+function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefas = [], podeConcluir = true, onClose, onGuardar, onRemove, onAbrirRegisto }) {
+  const registos = alvo ? (alvo._grupo || [alvo]) : [];
+  const base = registos[0] || null;
+  const editar = !!base;
+  const emGrupo = registos.length > 1;
+  const [modo, setModo] = useState(base ? (base.jogadorId ? 'jogadores' : 'staff') : 'staff');
+  const [dest, setDest] = useState(() => (base
+    ? registos.map(r => (r.jogadorId ? r.jogadorId : (r.responsavel || ''))).filter(Boolean)
+    : (euId ? [euId] : [])));
+  const [comum, setComum] = useState(() => ({
+    prazo: (base ? base.prazo : (inicial && inicial.prazo)) || '',
+    recorrencia: base ? (base.recorrencia || null) : null,
+    acompanha: base ? (base.jogadorId ? (base.responsavel || '') : (euId || '')) : (euId || ''),
+    estado: base ? (base.estado || 'aberta') : 'aberta',
+  }));
+  const blocoDe = (t) => {
+    const inst = (Array.isArray(t.missoes) && t.missoes[0] && t.missoes[0].instrucoes) || t.notas || '';
+    return {
+      key: uid(), titulo: t.titulo || '', tituloAuto: '',
+      destino: t.jogadorId ? ((Array.isArray(t.missoes) && t.missoes[0] && t.missoes[0].destino) || t.destino || 'nota') : 'nota',
+      caminho: t.caminho || '', instrucoes: inst,
+    };
+  };
+  const [blocos, setBlocos] = useState(() => (base ? [blocoDe(base)] : [{ key: uid(), titulo: '', tituloAuto: '', destino: 'nota', caminho: '', instrucoes: '' }]));
+  const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
+
+  const jogadoresOrdenados = sortByPosition(players || []);
+  const idsRegistos = new Set(registos.map(r => r.id));
+  const jaNoGrupo = (pid) => registos.some(r => r.jogadorId === pid);
+  const abertasDe = (pid) => (tarefas || [])
+    .filter(t => t.jogadorId === pid && !idsRegistos.has(t.id))
+    .reduce((n, t) => n + missoesPorFazerDe(t), 0);
+  // Quantas missões novas esta gravação dá a cada jogador.
+  const novasPorJogador = editar ? 1 : blocos.length;
+  const cheio = (pid) => modo === 'jogadores' && !(editar && jaNoGrupo(pid))
+    && abertasDe(pid) + novasPorJogador > MAX_MISSOES_ABERTAS;
+
+  const mudarModo = (m) => {
+    if (m === modo) return;
+    setModo(m);
+    setDest(m === 'staff' && euId ? [euId] : []);
+    setBlocos(bs => bs.map(b => ({ ...b, ...(b.titulo === b.tituloAuto ? { titulo: '', tituloAuto: '' } : {}) })));
+  };
+  const alternarDest = (id) => {
+    if (modo === 'jogadores' && cheio(id) && !dest.includes(id)) return;
+    setDest(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
+  };
+  const [aviso, setAviso] = useState('');
+  const escolherGrupo = (posicoes) => {
+    const lista = jogadoresOrdenados.filter(p => !posicoes || posicoes.includes(String(p.position || '').toUpperCase()));
+    const ok = lista.filter(p => !cheio(p.id)).map(p => p.id);
+    const fora = lista.filter(p => cheio(p.id));
+    setDest(prev => [...new Set([...prev, ...ok])]);
+    setAviso(fora.length ? `${fora.length === 1 ? 'Ficou' : 'Ficaram'} de fora ${fora.map(p => shortPlayerName(p, players)).join(', ')}: já ${fora.length === 1 ? 'tem' : 'têm'} ${MAX_MISSOES_ABERTAS} missões em aberto.` : '');
+  };
+
+  // O título preenche-se a partir do caminho enquanto não for escrito à mão.
+  const mudarBloco = (k, alt) => setBlocos(bs => bs.map((b, j) => {
+    if (j !== k) return b;
+    const novo = { ...b, ...alt };
+    const sug = modo === 'jogadores'
+      ? (novo.destino && novo.destino !== 'nota' ? destinoMissao(novo.destino).acao : '')
+      : (novo.caminho ? caminhoStaff(novo.caminho).acao : '');
+    const atual = String(b.titulo || '').trim();
+    const eAuto = !atual || atual === b.tituloAuto
+      || DESTINOS_MISSAO.some(d => d.rotulo === atual || d.acao === atual)
+      || CAMINHOS_STAFF.some(c => c.rotulo === atual || c.acao === atual);
+    if (('destino' in alt || 'caminho' in alt) && eAuto) { novo.titulo = sug; novo.tituloAuto = sug; }
+    return novo;
+  }));
+
+  const repete = !!comum.recorrencia;
+  const titulosOk = blocos.every(b => String(b.titulo || '').trim());
+  // Na equipa técnica pode ficar sem ninguém (fica aberta a todos, como antes).
+  const destFinal = dest.length ? dest : (modo === 'staff' ? [''] : []);
+  const valido = titulosOk && destFinal.length > 0 && !(repete && comum.recorrencia.tipo === 'semanal' && !(comum.recorrencia.dias || []).length);
+
+  const guardar = () => {
+    if (!valido) return;
+    const agora = new Date().toISOString();
+    const camposDe = (b, pessoa) => {
+      const inst = String(b.instrucoes || '');
+      const comuns = {
+        titulo: String(b.titulo).trim(), notas: inst,
+        prazo: comum.recorrencia ? '' : comum.prazo, recorrencia: comum.recorrencia,
+      };
+      return modo === 'jogadores'
+        ? { ...comuns, jogadorId: pessoa, responsavel: comum.acompanha || euId || '', destino: b.destino || 'nota', missoes: [{ id: uid(), destino: b.destino || 'nota', instrucoes: inst }], caminho: '' }
+        : { ...comuns, jogadorId: '', responsavel: pessoa, caminho: b.caminho || '', destino: undefined, missoes: undefined };
+    };
+    const upserts = [];
+    const removidos = [];
+    const dest = destFinal; // eslint-disable-line no-shadow
+    if (editar && registos.length === 1 && dest.length === 1 && (modo === 'jogadores') === !!base.jogadorId) {
+      // Uma missão de uma pessoa, e continua a ser de uma pessoa (mesmo
+      // que outra): atualiza-se o mesmo registo, sem perder o histórico.
+      upserts.push({ ...base, ...camposDe(blocos[0], dest[0]), estado: comum.estado });
+    } else if (editar) {
+      const b = blocos[0];
+      const gid = base.grupoId || (dest.length > 1 ? uid() : null);
+      const chaveDe = (r) => (r.jogadorId ? r.jogadorId : r.responsavel);
+      registos.forEach(r => {
+        const pessoa = chaveDe(r);
+        if (!dest.includes(pessoa) || (modo === 'jogadores') !== !!r.jogadorId) { removidos.push(r.id); return; }
+        const extra = !emGrupo ? { estado: comum.estado } : {};
+        upserts.push({ ...r, ...camposDe(b, pessoa), ...extra, ...(gid ? { grupoId: gid } : {}), ...(ocorrencia && !emGrupo && r.recorrencia ? {} : {}) });
+      });
+      const existentes = new Set(registos.filter(r => !removidos.includes(r.id)).map(chaveDe));
+      dest.filter(p => !existentes.has(p)).forEach(p => {
+        upserts.push({ ...camposDe(b, p), estado: 'aberta', id: uid(), criadoPor: base.criadoPor || euId, criadoEm: agora, ...(gid ? { grupoId: gid } : {}) });
+      });
+    } else {
+      blocos.forEach(b => {
+        const gid = dest.length > 1 ? uid() : null;
+        dest.forEach(p => upserts.push({ ...camposDe(b, p), estado: 'aberta', id: uid(), criadoPor: euId, criadoEm: agora, ...(gid ? { grupoId: gid } : {}) }));
+      });
+    }
+    // Limpa os campos indefinidos (o staff não leva destino/missões).
+    onGuardar({ upserts: upserts.map(u => Object.fromEntries(Object.entries(u).filter(([, v]) => v !== undefined))), removidos });
+  };
+
+  const chip = (on, extra) => ({
+    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 16, cursor: 'pointer', ...body,
+    fontSize: 12, background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
+    border: `1px solid ${on ? T.crimson : T.line}`, ...(extra || {}),
+  });
+  const tituloModal = editar ? (emGrupo ? 'Editar missão de grupo' : 'Editar missão') : 'Nova missão';
+
+  return (
+    <Modal title={tituloModal} onClose={onClose} fullPage larguraMax={1100}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 22, alignItems: 'start' }}>
+
+        {/* ESQUERDA: para quem, quando */}
+        <div>
+          <Field label="Para quem" solto>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              <button type="button" onClick={() => mudarModo('jogadores')} style={chip(modo === 'jogadores')}><UserCheck size={13} /> Jogadores</button>
+              <button type="button" onClick={() => mudarModo('staff')} style={chip(modo === 'staff')}><Users size={13} /> Equipa técnica</button>
+            </div>
+          </Field>
+
+          {modo === 'jogadores' ? (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+                <button type="button" onClick={() => escolherGrupo(null)} style={chip(false, { fontSize: 11.5, padding: '3px 9px' })}>Todos</button>
+                {GRUPOS_POSICAO_PRINT.map(g => (
+                  <button key={g.grupo} type="button" onClick={() => escolherGrupo(g.posicoes)} style={chip(false, { fontSize: 11.5, padding: '3px 9px' })}>{g.label}</button>
+                ))}
+                {dest.length > 0 && <button type="button" onClick={() => { setDest([]); setAviso(''); }} style={chip(false, { fontSize: 11.5, padding: '3px 9px', color: T.mutedDim })}>Limpar</button>}
+              </div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', maxHeight: 220, overflowY: 'auto', padding: 2 }}>
+                {jogadoresOrdenados.map(p => {
+                  const on = dest.includes(p.id);
+                  const bloqueado = !on && cheio(p.id);
+                  return (
+                    <button key={p.id} type="button" onClick={() => alternarDest(p.id)} disabled={bloqueado}
+                      title={bloqueado ? `Já tem ${MAX_MISSOES_ABERTAS} missões em aberto` : undefined}
+                      style={chip(on, { fontSize: 11.5, padding: '4px 9px', opacity: bloqueado ? 0.4 : 1, cursor: bloqueado ? 'not-allowed' : 'pointer' })}>
+                      <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span> {shortPlayerName(p, players)}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11.5, color: aviso ? T.warn : T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+                {aviso || `${dest.length} ${dest.length === 1 ? 'jogador escolhido' : 'jogadores escolhidos'}. Cada um recebe a sua cópia no Portal. Máximo de ${MAX_MISSOES_ABERTAS} missões em aberto por jogador (os que já estão no limite aparecem apagados).`}
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <Field label="Quem acompanha (equipa técnica)">
+                  <Select value={comum.acompanha} onChange={e => setComum({ ...comum, acompanha: e.target.value })}>
+                    <option value="">Ninguém</option>
+                    {(membros || []).map(m => <option key={m.user_id} value={m.user_id}>{nomeDoMembro(m.user_id, membros, euId)}</option>)}
+                  </Select>
+                </Field>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {(membros || []).map(m => {
+                  const on = dest.includes(m.user_id);
+                  return (
+                    <button key={m.user_id} type="button" onClick={() => alternarDest(m.user_id)} disabled={!podeConcluir && !on}
+                      style={chip(on, { fontSize: 12 })}>
+                      <span style={{ width: 14, height: 14, borderRadius: '50%', background: corDoMembro(m.user_id), display: 'inline-block' }} />
+                      {nomeDoMembro(m.user_id, membros, euId)}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+                {dest.length === 0 ? 'Sem ninguém escolhido: fica aberta a toda a equipa técnica.' : 'Com mais do que uma pessoa, cada uma recebe a sua cópia e conclui a sua.'}
+              </div>
+            </div>
+          )}
+
+          {/* QUANDO */}
+          <div style={{ ...FIELD_GRID, marginBottom: 12 }}>
+            {!repete && (
+              <Field label="Prazo">
+                <Input type="date" value={comum.prazo} onChange={e => setComum({ ...comum, prazo: e.target.value })} />
+              </Field>
+            )}
+            {editar && !emGrupo && (
+              <Field label="Estado">
+                <Select value={comum.estado} onChange={e => setComum({ ...comum, estado: e.target.value })} disabled={!podeConcluir && comum.estado === 'feita'}>
+                  <option value="aberta">Por fazer</option>
+                  <option value="curso">Iniciada</option>
+                  <option value="feita" disabled={!podeConcluir}>Concluída{!podeConcluir ? ' (só o responsável)' : ''}</option>
+                </Select>
+              </Field>
+            )}
+          </div>
+          {!repete && comum.prazo && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12, fontSize: 13, color: T.cream, cursor: 'pointer' }}>
+              <input type="checkbox" checked={false} style={{ accentColor: T.crimson, width: 16, height: 16 }}
+                onChange={() => setComum({ ...comum, prazo: '', recorrencia: { tipo: 'semanal', dias: [new Date(`${comum.prazo}T00:00:00`).getDay()], desde: comum.prazo } })} />
+              Repetir todas as semanas à {DIAS_SEMANA[new Date(`${comum.prazo}T00:00:00`).getDay()]}
+            </label>
+          )}
+          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
+            <Field label="Repete">
+              <Select
+                value={comum.recorrencia ? comum.recorrencia.tipo : ''}
+                onChange={e => {
+                  const tipo = e.target.value;
+                  if (!tipo) { setComum({ ...comum, prazo: (comum.recorrencia && comum.recorrencia.desde) || comum.prazo || '', recorrencia: null }); return; }
+                  setComum({ ...comum, prazo: '', recorrencia: { ...(comum.recorrencia || {}), tipo, dias: (comum.recorrencia && comum.recorrencia.dias) || [1, 2, 3, 4, 5], desde: (comum.recorrencia && comum.recorrencia.desde) || comum.prazo || todayStr() } });
+                }}
+              >
+                <option value="">Não repete, só esta vez</option>
+                {Object.entries(RECORRENCIA_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </Select>
+            </Field>
+            {repete && comum.recorrencia.tipo === 'semanal' && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                {DIAS_SEMANA.map((nome, i) => {
+                  const on = (comum.recorrencia.dias || []).includes(i);
+                  return (
+                    <button key={i} type="button" onClick={() => {
+                      const dias = on ? comum.recorrencia.dias.filter(d => d !== i) : [...(comum.recorrencia.dias || []), i];
+                      setComum({ ...comum, recorrencia: { ...comum.recorrencia, dias } });
+                    }} style={chip(on, { fontSize: 12, padding: '5px 10px', textTransform: 'capitalize' })}>{nome.slice(0, 3)}</button>
+                  );
+                })}
+              </div>
+            )}
+            {repete && comum.recorrencia.tipo === 'semanal' && ocorrencia && !emGrupo && (
+              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8 }}>Para mudar só esta semana, arrasta-a no Calendário.</div>
+            )}
+          </div>
+
+          {/* RESPOSTAS — no grupo, o estado de cada um (e a nota de quem respondeu). */}
+          {editar && (modo === 'jogadores') && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11.5, color: T.muted, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+                {emGrupo ? `Quem já fez · ${registos.filter(feitaNoGrupo).length}/${registos.length}` : 'Resposta do jogador'}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {registos.map(r => {
+                  const p = (players || []).find(x => x.id === r.jogadorId) || {};
+                  const fez = feitaNoGrupo(r);
+                  return (
+                    <div key={r.id} style={{ border: `1px solid ${fez ? T.good : T.line}`, borderRadius: 8, padding: '8px 10px', background: T.bg }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.cream }}>
+                        {fez ? <CheckCircle2 size={14} color={T.good} /> : <span style={{ width: 14, height: 14, borderRadius: '50%', border: `1.5px solid ${T.line}`, display: 'inline-block' }} />}
+                        <span style={{ fontWeight: 600 }}>{shortPlayerName(p, players)}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: fez ? T.good : T.mutedDim }}>
+                          {fez ? `feito${r.notaSubmetidaEm ? ` · ${fmtShort(String(r.notaSubmetidaEm).slice(0, 10))}` : ''}` : (r.notaAtleta ? 'a escrever' : 'por fazer')}
+                        </span>
+                      </div>
+                      {r.notaAtleta && (
+                        <div style={{ fontSize: 12.5, color: T.muted, whiteSpace: 'pre-wrap', lineHeight: 1.5, marginTop: 6 }}>{r.notaAtleta}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* DIREITA: a missão (ou as missões, ao criar) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {blocos.map((b, k) => {
+            const opcoes = modo === 'jogadores' ? DESTINOS_MISSAO : CAMINHOS_STAFF;
+            const atualId = modo === 'jogadores' ? b.destino : b.caminho;
+            const d = modo === 'jogadores' ? destinoMissao(b.destino) : null;
+            return (
+              <div key={b.key} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, background: T.bg }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <span style={{ fontSize: 11.5, color: T.muted, letterSpacing: '.08em', textTransform: 'uppercase' }}>
+                    {blocos.length > 1 ? `Missão ${k + 1}` : 'A missão'}
+                  </span>
+                  {blocos.length > 1 && (
+                    <button type="button" onClick={(e) => fecharSemSaltar(e.currentTarget, () => setBlocos(bs => bs.filter((_, j) => j !== k)))} title="Tirar esta missão"
+                      style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 2, display: 'flex' }}><X size={15} /></button>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: T.mutedDim, marginBottom: 6 }}>{modo === 'jogadores' ? 'Para onde leva o jogador' : 'Para onde leva (separador da app)'}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+                  {opcoes.map(o => {
+                    const Ic = o.icon;
+                    const on = (atualId || '') === o.id;
+                    return (
+                      <button key={o.id || 'nenhum'} type="button" onClick={() => mudarBloco(k, modo === 'jogadores' ? { destino: o.id } : { caminho: o.id })}
+                        style={chip(on, { fontSize: 11.5, padding: '4px 9px' })}><Ic size={12} />{o.rotulo}</button>
+                    );
+                  })}
+                </div>
+                <Field label="O que é preciso fazer" bloco solto>
+                  <Input value={b.titulo} onChange={e => mudarBloco(k, { titulo: e.target.value })} autoFocus={k === 0}
+                    placeholder={modo === 'jogadores' ? 'Ex: corta o teu melhor lance de sábado' : 'Ex: análise individual · Lavrense'} />
+                </Field>
+                <div style={{ marginTop: 10 }}>
+                  <Field label={modo === 'jogadores' ? 'Instruções para o jogador' : 'Notas'} bloco solto>
+                    <TextArea value={b.instrucoes} onChange={e => mudarBloco(k, { instrucoes: e.target.value })} style={{ minHeight: 62, fontSize: 13 }}
+                      placeholder={modo === 'jogadores'
+                        ? (b.destino === 'nota' ? 'O que queres que o jogador te responda' : 'Opcional: o que ele deve fazer lá')
+                        : 'Detalhes, links, o que for preciso saber para fazer isto.'} />
+                  </Field>
+                </div>
+                {modo === 'jogadores' && d && (
+                  <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 6, lineHeight: 1.4 }}>
+                    {d.id === 'clipe' ? 'Fica feita quando ele gravar um clipe.'
+                      : d.auto ? 'Fica feita quando ele submeter.'
+                        : d.id !== 'nota' ? 'Leva-o lá e fica registado que abriu.'
+                          : 'Ele responde por escrito.'}
+                  </div>
+                )}
+                {modo === 'staff' && editar && b.caminho && (
+                  <button type="button" onClick={() => { onClose(); irParaSeparador(b.caminho); }} style={{
+                    marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.gold}`,
+                    color: T.warn, borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 12.5, ...body,
+                  }}>Ir para {caminhoStaff(b.caminho).rotulo} <ArrowRight size={13} /></button>
+                )}
+              </div>
+            );
+          })}
+          {!editar && (modo === 'staff' || blocos.length < MAX_MISSOES_ABERTAS) && (
+            <button type="button" onClick={() => setBlocos(bs => [...bs, { key: uid(), titulo: '', tituloAuto: '', destino: 'nota', caminho: '', instrucoes: '' }])} style={{
+              border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, borderRadius: 10, padding: '9px 12px',
+              cursor: 'pointer', fontSize: 12.5, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}><Plus size={14} /> Acrescentar outra missão (cada uma com o seu título)</button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+        {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> {emGrupo ? `Apagar para todos (${registos.length})` : 'Apagar'}</Btn>}
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={guardar} disabled={!valido}>
+          {!editar && dest.length * blocos.length > 1 ? `Guardar (${dest.length * blocos.length} missões)` : 'Guardar'}
+        </Btn>
+      </div>
+      {espacoSemSaltar}
+    </Modal>
+  );
+}
+
 function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, players, monitoring }) {
   const [modal, setModal] = useState(null); // 'new' | tarefa
   // Dia já escolhido para uma tarefa nova criada a partir do Calendário.
@@ -41522,9 +42016,18 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const hoje = todayStr();
   const ctx = { sessions, matches, players, monitoring };
   const souDono = ((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner';
-  const porVer = tarefas.filter(t => conclusaoPorVerPara(t, euId))
-    .sort((a, b) => String(b.conclusaoPorVer.em).localeCompare(String(a.conclusaoPorVer.em)));
-  const podeConcluir = (t) => podeConcluirTarefa(t, euId, souDono);
+  /* CONCLUÍDAS POR VER — o aviso a quem criou. Agora inclui as missões
+     dos JOGADORES: quando um jogador conclui uma missão que criei (submete
+     a resposta, a autoavaliação, grava o clipe ou abre o que lhe pedi),
+     aparece aqui e no badge até eu a abrir ou carregar em "Visto". */
+  const quandoPorVer = (t) => (t.conclusaoPorVer ? t.conclusaoPorVer.em : (t.notaSubmetidaEm || t.atualizadoEm || ''));
+  const porVer = tarefas.filter(t => conclusaoPorVerPara(t, euId)
+    || (t.jogadorId && t.notaSubmetida && !t.notaRevista && t.criadoPor === euId))
+    .sort((a, b) => String(quandoPorVer(b)).localeCompare(String(quandoPorVer(a))));
+  // As missões do mesmo grupo (a mesma missão para vários) num só cartão.
+  const vistaM = agruparMissoes(tarefas);
+  const doGrupo = (t) => (t && t._grupo ? t._grupo : [t]);
+  const podeConcluir = (t) => (t && t._grupo ? t._grupo.every(r => podeConcluirTarefa(r, euId, souDono)) : podeConcluirTarefa(t, euId, souDono));
   const lembrar = (t) => {
     const alvo = alvoDoLembrete(t, euId, membros, players, hoje);
     if (!alvo || lembreteRecente(t)) return;
@@ -41547,6 +42050,27 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     setNovoDia('');
     if (concluiuAgora) aoConcluir(dados, antes);
   };
+  /* Gravar o que vem do editor de missões: várias cópias novas, cópias
+     atualizadas e cópias tiradas (pessoas retiradas do grupo). Uma só
+     missão editada segue o caminho de sempre (`save`), por causa dos
+     avisos de conclusão. */
+  const guardarMissoes = ({ upserts, removidos }) => {
+    const existentes = new Set(tarefas.map(t => t.id));
+    if (upserts.length === 1 && !removidos.length && existentes.has(upserts[0].id)) { save(upserts[0]); return; }
+    const porId = new Map(upserts.map(u => [u.id, u]));
+    setTarefas(prev => [
+      ...prev.filter(x => !removidos.includes(x.id)).map(x => (porId.has(x.id) ? porId.get(x.id) : x)),
+      ...upserts.filter(u => !existentes.has(u.id)),
+    ]);
+    setModal(null); setNovoDia(''); setOcorrencia(null);
+  };
+  const removerGrupo = (g) => {
+    const ids = new Set(g._grupo.map(r => r.id));
+    const copia = g._grupo;
+    setTarefas(prev => prev.filter(x => !ids.has(x.id)));
+    setModal(null);
+    offerUndo(`Missão apagada para ${copia.length}.`, () => setTarefas(prev => [...prev, ...copia]));
+  };
   const remove = (id) => {
     const t = tarefas.find(x => x.id === id);
     removeWithUndo(tarefas, setTarefas, id, t ? t.titulo : 'Tarefa');
@@ -41556,10 +42080,19 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      — é a forma mais natural de "marcar como lida": basta abrir para ver
      o que o atleta escreveu, sem precisar de mais nenhum clique. */
   const marcarConclusaoVista = (ids) => {
-    setTarefas(prev => prev.map(x => (ids.includes(x.id) ? { ...x, conclusaoPorVer: null } : x)));
+    setTarefas(prev => prev.map(x => (ids.includes(x.id)
+      ? { ...x, conclusaoPorVer: null, ...(x.jogadorId && x.notaSubmetida ? { notaRevista: true } : {}) }
+      : x)));
   };
   const abrir = (t, oc) => {
     setOcorrencia(oc || null);
+    if (t && t._grupo) {
+      // Abrir o grupo conta como ver as respostas que lá estão.
+      const ids = t._grupo.filter(r => r.jogadorId && r.notaSubmetida && !r.notaRevista && r.criadoPor === euId).map(r => r.id);
+      if (ids.length) setTarefas(prev => prev.map(x => (ids.includes(x.id) ? { ...x, notaRevista: true } : x)));
+      setModal(t);
+      return;
+    }
     if (conclusaoPorVerPara(t, euId)) marcarConclusaoVista([t.id]);
     // O responsável abriu a tarefa: o lembrete fica visto (deixa de estar
     // destacado), mas a tarefa continua por fazer até ele a concluir.
@@ -41595,8 +42128,34 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     });
   }
 
+  /* Concluir / reabrir um GRUPO: aplica-se a todas as cópias (sem um aviso
+     por cada uma, que quem conclui em bloco é quem as criou). */
+  const alternarGrupo = (g, chave) => {
+    const ids = new Set(g._grupo.map(r => r.id));
+    if (g.recorrencia) {
+      const k = chave || hoje;
+      const todos = g._grupo.every(r => (r.concluidasEm || []).includes(k));
+      setTarefas(prev => prev.map(x => (ids.has(x.id)
+        ? { ...x, concluidasEm: todos ? (x.concluidasEm || []).filter(d => d !== k) : [...new Set([...(x.concluidasEm || []), k])] }
+        : x)));
+      return;
+    }
+    const feita = g.estado === 'feita';
+    setTarefas(prev => prev.map(x => (ids.has(x.id)
+      ? { ...x, estado: feita ? 'aberta' : 'feita', feitaEm: feita ? null : new Date().toISOString(), lembrete: null, ...(feita ? { conclusaoPorVer: null } : {}) }
+      : x)));
+    offerUndo(feita ? 'Missão reaberta para todos.' : 'Missão concluída para todos.', () => {
+      const antes = new Map(g._grupo.map(r => [r.id, r]));
+      setTarefas(prev => prev.map(x => antes.get(x.id) || x));
+    });
+  };
   const alternar = (t) => {
     if (!podeConcluir(t)) return;
+    if (t._grupo) {
+      const base = eSemanal(t) ? ((semanaisPendentes(t, hoje)[0] || {}).base || (semanalConcluidaEstaSemana(t, hoje) || {}).base) : null;
+      alternarGrupo(t, base);
+      return;
+    }
     /* Semanal, na lista: concluir fecha a ocorrência pendente mais
        antiga; se já não há nenhuma (está em "Concluídas"), desfazer
        reabre a desta semana. */
@@ -41630,6 +42189,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   // `base`: nas semanais, a ocorrência (pode estar mudada para outro dia).
   function alternarEm(t, dia, base) {
     if (!podeConcluir(t)) return;
+    if (t._grupo) { alternarGrupo(t, base || dia); return; }
     if (!t.recorrencia || (eSemanal(t) && !base)) { alternar(t); return; }
     const chave = base || dia;
     const vaiConcluir = !(t.concluidasEm || []).includes(chave);
@@ -41646,13 +42206,16 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   /* Mudar o dia a uma tarefa arrastando-a no Calendário: mexe só no
      `prazo`. As recorrentes não têm prazo, por isso ficam de fora. */
   const mover = (id, prazo) => {
-    setTarefas(prev => prev.map(x => (x.id === id && !x.recorrencia && (x.prazo || '') !== prazo ? { ...x, prazo } : x)));
+    const gid = String(id).startsWith('grupo:') ? String(id).slice(6) : null;
+    const eEsta = (x) => (gid ? x.grupoId === gid : x.id === id);
+    setTarefas(prev => prev.map(x => (eEsta(x) && !x.recorrencia && (x.prazo || '') !== prazo ? { ...x, prazo } : x)));
   };
   /* Semanal arrastada no Calendário: muda só ESSA semana. Voltar a pô-la
      no dia habitual apaga a exceção. */
   const moverOcorrencia = (id, base, novoDia) => {
+    const gid = String(id).startsWith('grupo:') ? String(id).slice(6) : null;
     setTarefas(prev => prev.map(x => {
-      if (x.id !== id || !eSemanal(x)) return x;
+      if ((gid ? x.grupoId !== gid : x.id !== id) || !eSemanal(x)) return x;
       const mudancas = { ...(x.recorrencia.mudancas || {}) };
       if (novoDia === base) delete mudancas[base];
       else mudancas[base] = novoDia;
@@ -41666,16 +42229,19 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      dia que não lhes diz respeito. Dentro de um dia ativo, uma
      concluída HOJE passa para "Concluídas"; volta a "abertas" sozinha
      amanhã, sem ninguém mexer em nada. */
-  const abertas = tarefas.filter(t => {
+  const estaAberta = (t) => {
     if (t.estado === 'feita') return false;
     if (!t.recorrencia) return true;
     if (eSemanal(t)) return semanaisPendentes(t, hoje).length > 0;
     return tarefaAtivaHoje(t, hoje, ctx) && !tarefaFeitaHoje(t, hoje);
-  });
+  };
+  const abertas = vistaM.filter(estaAberta);
+  // "Por pessoa" mostra a cópia de cada um, não o grupo.
+  const abertasCadaUm = tarefas.filter(estaAberta);
   const feitas = [
-    ...tarefas.filter(t => eSemanal(t) && t.estado !== 'feita' && semanaisPendentes(t, hoje).length === 0 && semanalConcluidaEstaSemana(t, hoje)),
-    ...tarefas.filter(t => t.recorrencia && !eSemanal(t) && tarefaAtivaHoje(t, hoje, ctx) && tarefaFeitaHoje(t, hoje)),
-    ...tarefas.filter(t => !t.recorrencia && t.estado === 'feita'),
+    ...vistaM.filter(t => eSemanal(t) && t.estado !== 'feita' && semanaisPendentes(t, hoje).length === 0 && semanalConcluidaEstaSemana(t, hoje)),
+    ...vistaM.filter(t => t.recorrencia && !eSemanal(t) && tarefaAtivaHoje(t, hoje, ctx) && tarefaFeitaHoje(t, hoje)),
+    ...vistaM.filter(t => !t.recorrencia && t.estado === 'feita'),
   ].sort((a, b) => String(b.feitaEm || hoje).localeCompare(String(a.feitaEm || hoje)));
 
   /* Por prazo: os grupos saem pela ordem definida em `grupoDaTarefa`, e
@@ -41696,12 +42262,12 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   /* Por pessoa: a mesma lista, outro corte. Toda a gente aparece, mesmo
      sem tarefas — ver que alguém está a zero é informação. */
   const gruposPorPessoa = () => {
-    const ids = [...new Set([...(membros || []).map(m => m.user_id), ...abertas.map(t => t.responsavel)])];
+    const ids = [...new Set([...(membros || []).map(m => m.user_id), ...abertasCadaUm.map(t => t.responsavel)])];
     return ids.map(id => ({
       id: id || 'sem',
       rotulo: nomeDoMembro(id, membros, euId),
       userId: id,
-      lista: abertas.filter(t => (t.responsavel || null) === (id || null))
+      lista: abertasCadaUm.filter(t => (t.responsavel || null) === (id || null))
         .sort((a, b) => String(a.prazo || '9999').localeCompare(String(b.prazo || '9999'))),
     })).filter(g => g.userId || g.lista.length);
   };
@@ -41712,8 +42278,8 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
     <div>
       <SectionHeader
         title="Tarefas"
-        subtitle="Missões da equipa técnica."
-        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova tarefa</Btn>}
+        subtitle="Missões para a equipa técnica e para os jogadores."
+        action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova missão</Btn>}
       />
 
       {/* CONCLUÍDAS POR VER — tarefas que criei e que outra pessoa
@@ -41735,7 +42301,9 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
                 <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => abrir(t)}>
                   <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.4 }}>{t.titulo}</div>
                   <div style={{ fontSize: 11.5, color: T.good, marginTop: 3 }}>
-                    Concluída por {nomeDoMembro(t.conclusaoPorVer.por, membros, euId)} · {timeAgo(t.conclusaoPorVer.em)}
+                    {t.conclusaoPorVer
+                      ? `Concluída por ${nomeDoMembro(t.conclusaoPorVer.por, membros, euId)} · ${timeAgo(t.conclusaoPorVer.em)}`
+                      : `Feita por ${shortPlayerName((players || []).find(p => p.id === t.jogadorId) || {}, players)}${t.notaSubmetidaEm ? ` · ${timeAgo(t.notaSubmetidaEm)}` : ''}${t.notaAtleta ? ' · tem resposta' : ''}`}
                   </div>
                 </div>
                 <Btn variant="ghost" onClick={() => marcarConclusaoVista([t.id])}><Check size={14} /> Visto</Btn>
@@ -41759,15 +42327,15 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
       <Panel title={vista === 'pessoa' ? 'Quem está com a missão' : (vista === 'calendario' ? 'Calendário' : 'Quando se executa')}>
         {vista === 'calendario' ? (
           <TarefasCalendario
-            tarefas={tarefas} hoje={hoje} ctx={ctx}
+            tarefas={vistaM} hoje={hoje} ctx={ctx}
             membros={membros} euId={euId} players={players}
             podeConcluir={podeConcluir} onLembrar={lembrar}
             onAbrir={abrir} onAlternarEm={alternarEm} onMover={mover} onMoverOcorrencia={moverOcorrencia} onNovaNoDia={novaNoDia}
           />
         ) : abertas.length === 0 ? (
           <EmptyState
-            text="Nada por fazer. Cria a primeira tarefa da equipa técnica."
-            action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova tarefa</Btn>}
+            text="Nada por fazer. Cria a primeira missão."
+            action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova missão</Btn>}
           />
         ) : (
           grupos.map(g => (
@@ -41815,7 +42383,23 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         ))}
       </Panel>
 
-      {modal && (
+      {modal && (modal === 'new' || modal._grupo || !(Array.isArray(modal.missoes) && modal.missoes.length > 1)) && (
+        <MissaoModal
+          alvo={modal === 'new' ? null : modal}
+          inicial={modal === 'new' && novoDia ? { prazo: novoDia } : null}
+          ocorrencia={modal !== 'new' ? ocorrencia : null}
+          podeConcluir={modal === 'new' ? true : podeConcluir(modal)}
+          membros={membros}
+          players={players}
+          euId={euId}
+          tarefas={tarefas}
+          onClose={() => { setModal(null); setNovoDia(''); setOcorrencia(null); }}
+          onGuardar={guardarMissoes}
+          onRemove={modal === 'new' ? null : (modal._grupo ? () => removerGrupo(modal) : () => remove(modal.id))}
+        />
+      )}
+      {/* Tarefas antigas com vários passos: ficam no editor antigo até acabarem. */}
+      {modal && modal !== 'new' && !modal._grupo && Array.isArray(modal.missoes) && modal.missoes.length > 1 && (
         <TarefaModal
           tarefa={modal === 'new' ? null : modal}
           inicial={modal === 'new' && novoDia ? { prazo: novoDia } : null}
