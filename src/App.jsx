@@ -5159,9 +5159,20 @@ function nomeDoMembro(userId, membros, euId) {
 
 /* Cor estável por pessoa: a mesma sempre, sem a guardar em lado nenhum.
    Serve só para as iniciais se distinguirem de relance numa lista. */
-const CORES_MEMBRO = ['#C9A227', '#4CA86B', '#D14056', '#3A6FC4', '#8C3F9E', '#D9A72E'];
+/* Agora SEM REPETIR dentro da equipa: as pessoas da equipa técnica são
+   ordenadas pelo id (a mesma ordem em todos os computadores) e cada uma
+   fica com uma cor diferente desta lista, que tem cores bem distintas
+   entre si. Só numa equipa com mais de 12 pessoas é que alguma repetiria.
+   `registarCoresMembros` é chamado sempre que a lista da equipa chega. */
+const CORES_MEMBRO = ['#C9A227', '#4CA86B', '#D14056', '#3A6FC4', '#8C3F9E', '#3FA7A0', '#D9792E', '#E07BB0', '#8FB339', '#7A8CA3', '#B07A4E', '#5BC0EB'];
+const coresMembroAtribuidas = {};
+function registarCoresMembros(membros) {
+  const ids = [...new Set((membros || []).map(m => m && m.user_id).filter(Boolean))].sort();
+  ids.forEach((id, i) => { if (i < CORES_MEMBRO.length) coresMembroAtribuidas[id] = CORES_MEMBRO[i]; });
+}
 function corDoMembro(userId) {
   if (!userId) return '#6B7A6D';
+  if (coresMembroAtribuidas[userId]) return coresMembroAtribuidas[userId];
   let n = 0;
   for (let i = 0; i < String(userId).length; i++) n = (n + String(userId).charCodeAt(i)) % 997;
   return CORES_MEMBRO[n % CORES_MEMBRO.length];
@@ -41683,6 +41694,89 @@ function ResumoGrupo({ tarefa, membros, euId, players, pequeno }) {
   );
 }
 
+/* LISTA QUE ABRE, com caixas de seleção — para escolher jogadores ou
+   pessoas da equipa técnica. Pesquisa, atalhos (ex.: GR, Defesas) e os
+   escolhidos por baixo do campo, com × para tirar. */
+function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpar, comProcura, mostrarEtiquetas = true }) {
+  const [aberta, setAberta] = useState(false);
+  const [procura, setProcura] = useState('');
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!aberta) return undefined;
+    const fora = (e) => { if (ref.current && !ref.current.contains(e.target)) { setAberta(false); setProcura(''); } };
+    document.addEventListener('mousedown', fora);
+    document.addEventListener('touchstart', fora);
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('touchstart', fora); };
+  }, [aberta]);
+  const pequeno = { display: 'inline-flex', alignItems: 'center', padding: '3px 9px', borderRadius: 16, cursor: 'pointer', ...body, fontSize: 11.5, background: 'transparent', color: T.muted, border: `1px solid ${T.line}` };
+  const visiveis = itens.filter(it => !procura.trim() || semAcentos(it.rotulo).includes(semAcentos(procura.trim())));
+  return (
+    <div>
+      <div ref={ref} style={{ position: 'relative' }}>
+        <button type="button" onClick={() => setAberta(v => !v)} style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', borderRadius: 8, cursor: 'pointer', ...body,
+          background: T.bg, border: `1px solid ${aberta ? T.gold : T.line}`, color: escolhidos.length ? T.cream : T.mutedDim, fontSize: 14, textAlign: 'left',
+        }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resumo}</span>
+          <ChevronDown size={16} style={{ flexShrink: 0, transform: aberta ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+        </button>
+        {aberta && (
+          <div style={{
+            position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: T.surfaceRaise || T.surface,
+            border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,.45)', padding: 10,
+          }}>
+            {comProcura && <Input value={procura} onChange={e => setProcura(e.target.value)} placeholder="Procurar" autoFocus style={{ marginBottom: 8 }} />}
+            {((atalhos && atalhos.length) || (onLimpar && escolhidos.length > 0)) && (
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+                {(atalhos || []).map(a => <button key={a.rotulo} type="button" onClick={a.onClick} style={pequeno}>{a.rotulo}</button>)}
+                {onLimpar && escolhidos.length > 0 && <button type="button" onClick={onLimpar} style={{ ...pequeno, color: T.mutedDim }}>Limpar</button>}
+              </div>
+            )}
+            <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+              {visiveis.map(it => {
+                const on = escolhidos.includes(it.id);
+                const bloqueado = !on && !!it.bloqueado;
+                return (
+                  <label key={it.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '7px 6px', borderRadius: 6, fontSize: 13.5,
+                    color: bloqueado ? T.mutedDim : T.cream, cursor: bloqueado ? 'not-allowed' : 'pointer', opacity: bloqueado ? 0.55 : 1,
+                    background: on ? 'rgba(181,57,63,.14)' : 'transparent',
+                  }}>
+                    <input type="checkbox" checked={on} disabled={bloqueado} onChange={() => onAlternar(it.id)}
+                      style={{ accentColor: T.crimson, width: 16, height: 16, flexShrink: 0 }} />
+                    {it.cor && <span style={{ width: 12, height: 12, borderRadius: '50%', background: it.cor, flexShrink: 0 }} />}
+                    {it.prefixo && <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 30, flexShrink: 0 }}>{it.prefixo}</span>}
+                    <span style={{ flex: 1, minWidth: 0 }}>{it.rotulo}</span>
+                    {bloqueado && it.motivo && <span style={{ fontSize: 11, color: T.warn }}>{it.motivo}</span>}
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <Btn onClick={() => { setAberta(false); setProcura(''); }}>Feito</Btn>
+            </div>
+          </div>
+        )}
+      </div>
+      {mostrarEtiquetas && escolhidos.length > 0 && (
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+          {escolhidos.map(id => {
+            const it = itens.find(x => x.id === id);
+            if (!it) return null;
+            return (
+              <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: T.cream, border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 4px 2px 9px' }}>
+                {it.cor && <span style={{ width: 9, height: 9, borderRadius: '50%', background: it.cor }} />}
+                {it.rotulo}
+                <button type="button" onClick={() => onAlternar(id)} aria-label={`Tirar ${it.rotulo}`} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 1, display: 'flex' }}><X size={12} /></button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefas = [], podeConcluir = true, onClose, onGuardar, onRemove, onAbrirRegisto }) {
   const registos = alvo ? (alvo._grupo || [alvo]) : [];
   const base = registos[0] || null;
@@ -41731,17 +41825,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
     setDest(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
   };
   const [aviso, setAviso] = useState('');
-  const [listaAberta, setListaAberta] = useState(false);
-  const [procura, setProcura] = useState('');
-  const listaRef = useRef(null);
-  // Clicar fora da lista fecha-a.
-  useEffect(() => {
-    if (!listaAberta) return undefined;
-    const fora = (e) => { if (listaRef.current && !listaRef.current.contains(e.target)) { setListaAberta(false); setProcura(''); } };
-    document.addEventListener('mousedown', fora);
-    document.addEventListener('touchstart', fora);
-    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('touchstart', fora); };
-  }, [listaAberta]);
+  registarCoresMembros(membros);
   const escolherGrupo = (posicoes) => {
     const lista = jogadoresOrdenados.filter(p => !posicoes || posicoes.includes(String(p.position || '').toUpperCase()));
     const ok = lista.filter(p => !cheio(p.id)).map(p => p.id);
@@ -41837,75 +41921,22 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
 
           {modo === 'jogadores' ? (
             <div style={{ marginBottom: 14 }}>
-              {/* LISTA QUE ABRE (em vez de todos os nomes à vista): carrega-se
-                  no campo, escolhe-se com caixas de seleção, com pesquisa e
-                  atalhos por setor. Os escolhidos ficam por baixo do campo. */}
-              <div ref={listaRef} style={{ position: 'relative' }}>
-                <button type="button" onClick={() => setListaAberta(v => !v)} style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', borderRadius: 8, cursor: 'pointer', ...body,
-                  background: T.bg, border: `1px solid ${listaAberta ? T.gold : T.line}`, color: dest.length ? T.cream : T.mutedDim, fontSize: 14, textAlign: 'left',
-                }}>
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {dest.length === 0 ? 'Escolher jogadores'
-                      : dest.length === jogadoresOrdenados.length ? `Todo o plantel (${dest.length})`
-                        : `${dest.length} ${dest.length === 1 ? 'jogador' : 'jogadores'}`}
-                  </span>
-                  <ChevronDown size={16} style={{ flexShrink: 0, transform: listaAberta ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
-                </button>
-                {listaAberta && (
-                  <div style={{
-                    position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: T.surfaceRaise || T.surface,
-                    border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,.45)', padding: 10,
-                  }}>
-                    <Input value={procura} onChange={e => setProcura(e.target.value)} placeholder="Procurar jogador" autoFocus style={{ marginBottom: 8 }} />
-                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
-                      <button type="button" onClick={() => escolherGrupo(null)} style={chip(false, { fontSize: 11.5, padding: '3px 9px' })}>Todos</button>
-                      {GRUPOS_POSICAO_PRINT.map(g => (
-                        <button key={g.grupo} type="button" onClick={() => escolherGrupo(g.posicoes)} style={chip(false, { fontSize: 11.5, padding: '3px 9px' })}>{g.label}</button>
-                      ))}
-                      {dest.length > 0 && <button type="button" onClick={() => { setDest([]); setAviso(''); }} style={chip(false, { fontSize: 11.5, padding: '3px 9px', color: T.mutedDim })}>Limpar</button>}
-                    </div>
-                    <div style={{ maxHeight: 260, overflowY: 'auto' }}>
-                      {jogadoresOrdenados
-                        .filter(p => !procura.trim() || semAcentos(`${p.name} ${shortPlayerName(p, players)}`).includes(semAcentos(procura.trim())))
-                        .map(p => {
-                          const on = dest.includes(p.id);
-                          const bloqueado = !on && cheio(p.id);
-                          return (
-                            <label key={p.id} style={{
-                              display: 'flex', alignItems: 'center', gap: 10, padding: '7px 6px', borderRadius: 6, fontSize: 13.5,
-                              color: bloqueado ? T.mutedDim : T.cream, cursor: bloqueado ? 'not-allowed' : 'pointer', opacity: bloqueado ? 0.55 : 1,
-                              background: on ? 'rgba(181,57,63,.14)' : 'transparent',
-                            }}>
-                              <input type="checkbox" checked={on} disabled={bloqueado} onChange={() => alternarDest(p.id)}
-                                style={{ accentColor: T.crimson, width: 16, height: 16, flexShrink: 0 }} />
-                              <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 30, flexShrink: 0 }}>{p.position || '--'}</span>
-                              <span style={{ flex: 1, minWidth: 0 }}>{shortPlayerName(p, players)}</span>
-                              {bloqueado && <span style={{ fontSize: 11, color: T.warn }}>já tem {MAX_MISSOES_ABERTAS} em aberto</span>}
-                            </label>
-                          );
-                        })}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-                      <Btn onClick={() => { setListaAberta(false); setProcura(''); }}>Feito</Btn>
-                    </div>
-                  </div>
-                )}
-              </div>
-              {dest.length > 0 && dest.length < jogadoresOrdenados.length && (
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
-                  {dest.map(id => {
-                    const p = (players || []).find(x => x.id === id);
-                    if (!p) return null;
-                    return (
-                      <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: T.cream, border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 4px 2px 9px' }}>
-                        {shortPlayerName(p, players)}
-                        <button type="button" onClick={() => alternarDest(id)} aria-label={`Tirar ${p.name}`} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 1, display: 'flex' }}><X size={12} /></button>
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
+              <ListaMultipla
+                itens={jogadoresOrdenados.map(p => ({
+                  id: p.id, rotulo: shortPlayerName(p, players), prefixo: p.position || '--',
+                  bloqueado: cheio(p.id), motivo: `já tem ${MAX_MISSOES_ABERTAS} em aberto`,
+                }))}
+                escolhidos={dest}
+                onAlternar={alternarDest}
+                comProcura
+                mostrarEtiquetas={dest.length < jogadoresOrdenados.length}
+                resumo={dest.length === 0 ? 'Escolher jogadores'
+                  : dest.length === jogadoresOrdenados.length ? `Todo o plantel (${dest.length})`
+                    : `${dest.length} ${dest.length === 1 ? 'jogador' : 'jogadores'}`}
+                atalhos={[{ rotulo: 'Todos', onClick: () => escolherGrupo(null) },
+                  ...GRUPOS_POSICAO_PRINT.map(g => ({ rotulo: g.label, onClick: () => escolherGrupo(g.posicoes) }))]}
+                onLimpar={() => { setDest([]); setAviso(''); }}
+              />
               <div style={{ fontSize: 11.5, color: aviso ? T.warn : T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
                 {aviso || `Cada um recebe a sua cópia no Portal. Máximo de ${MAX_MISSOES_ABERTAS} missões em aberto por jogador.`}
               </div>
@@ -41920,18 +41951,19 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
             </div>
           ) : (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                {(membros || []).map(m => {
-                  const on = dest.includes(m.user_id);
-                  return (
-                    <button key={m.user_id} type="button" onClick={() => alternarDest(m.user_id)} disabled={!podeConcluir && !on}
-                      style={chip(on, { fontSize: 12 })}>
-                      <span style={{ width: 14, height: 14, borderRadius: '50%', background: corDoMembro(m.user_id), display: 'inline-block' }} />
-                      {nomeDoMembro(m.user_id, membros, euId)}
-                    </button>
-                  );
-                })}
-              </div>
+              <ListaMultipla
+                itens={(membros || []).map(m => ({
+                  id: m.user_id, rotulo: nomeDoMembro(m.user_id, membros, euId), cor: corDoMembro(m.user_id),
+                  bloqueado: !podeConcluir, motivo: 'só quem é responsável',
+                }))}
+                escolhidos={dest}
+                onAlternar={alternarDest}
+                resumo={dest.length === 0 ? 'Ninguém (aberta a toda a equipa técnica)'
+                  : dest.length === 1 ? nomeDoMembro(dest[0], membros, euId)
+                    : `${dest.length} pessoas`}
+                atalhos={(membros || []).length > 2 ? [{ rotulo: 'Todos', onClick: () => setDest((membros || []).map(m => m.user_id)) }] : []}
+                onLimpar={() => setDest([])}
+              />
               <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
                 {dest.length === 0 ? 'Sem ninguém escolhido: fica aberta a toda a equipa técnica.' : 'Com mais do que uma pessoa, cada uma recebe a sua cópia e conclui a sua.'}
               </div>
@@ -42041,16 +42073,12 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                       style={{ marginLeft: 'auto', background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 2, display: 'flex' }}><X size={15} /></button>
                   )}
                 </div>
-                <div style={{ fontSize: 11, color: T.mutedDim, marginBottom: 6 }}>{modo === 'jogadores' ? 'Para onde leva o jogador' : 'Para onde leva (separador da app)'}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
-                  {opcoes.map(o => {
-                    const Ic = o.icon;
-                    const on = (atualId || '') === o.id;
-                    return (
-                      <button key={o.id || 'nenhum'} type="button" onClick={() => mudarBloco(k, modo === 'jogadores' ? { destino: o.id } : { caminho: o.id })}
-                        style={chip(on, { fontSize: 11.5, padding: '4px 9px' })}><Ic size={12} />{o.rotulo}</button>
-                    );
-                  })}
+                <div style={{ marginBottom: 12 }}>
+                  <Field label={modo === 'jogadores' ? 'Para onde leva o jogador' : 'Para onde leva (separador da app)'}>
+                    <Select value={atualId || ''} onChange={e => mudarBloco(k, modo === 'jogadores' ? { destino: e.target.value } : { caminho: e.target.value })}>
+                      {opcoes.map(o => <option key={o.id || 'nenhum'} value={o.id}>{o.rotulo}</option>)}
+                    </Select>
+                  </Field>
                 </div>
                 <Field label="O que é preciso fazer" bloco solto>
                   <Input value={b.titulo} onChange={e => mudarBloco(k, { titulo: e.target.value })} autoFocus={k === 0}
@@ -42103,6 +42131,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
 }
 
 function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, players, monitoring }) {
+  registarCoresMembros(membros);
   const [modal, setModal] = useState(null); // 'new' | tarefa
   // Dia já escolhido para uma tarefa nova criada a partir do Calendário.
   const [novoDia, setNovoDia] = useState('');
