@@ -26416,13 +26416,249 @@ function StandingsModal({ standings, onClose, onSave }) {
   );
 }
 
+/* ================================================================
+   RELATÓRIOS DE JOGO — a forma prática de lançar as estatísticas.
+   ================================================================
+   Um separador próprio em Jogos, só para isto: a lista dos jogos já
+   realizados, separada em COMPETIÇÃO e AMIGÁVEIS / PRÉ-ÉPOCA (a mesma
+   separação das estatísticas), com o estado de cada relatório (por
+   preencher, incompleto, preenchido). Carregar num jogo abre o relatório
+   em página inteira: quem jogou, titular, minutos, golos, assistências,
+   cartão e nota.
+   Grava no MESMO sítio de sempre (`match.report`, `match.ratings`), por
+   isso as estatísticas dos jogadores, a ficha do jogo e a missão
+   "Estatísticas do jogo" da equipa técnica continuam a funcionar igual.
+   A missão leva diretamente ao relatório do jogo que falta. */
+const comMinutos = (r) => !!r && Number(r.minutes) > 0;
+function estadoRelatorio(m) {
+  const conv = (m.convocados || []);
+  const rep = m.report || {};
+  if (!conv.length && !Object.values(rep).some(comMinutos)) return { id: 'vazio', txt: 'Por preencher', cor: T.bad };
+  const semMin = conv.filter(pid => !comMinutos(rep[pid])).length;
+  const comMin = conv.length - semMin;
+  if (!comMin) return { id: 'vazio', txt: 'Por preencher', cor: T.bad };
+  // Suplentes que não entraram ficam sem minutos: é normal. Só conta como
+  // incompleto se faltar o resultado ou algum titular sem minutos.
+  const titularesSem = (m.starters || []).filter(pid => !comMinutos(rep[pid])).length;
+  if (titularesSem || !String(m.result || '').trim()) {
+    return { id: 'incompleto', txt: titularesSem ? `Incompleto · ${titularesSem} ${titularesSem === 1 ? 'titular' : 'titulares'} sem minutos` : 'Incompleto · falta o resultado', cor: T.warn };
+  }
+  return { id: 'feito', txt: `Preenchido · ${comMin} ${comMin === 1 ? 'jogador' : 'jogadores'}`, cor: T.good };
+}
+
+function RelatoriosJogo({ matches, players, season, onSave, abrirId, onAberto }) {
+  const hoje = todayStr();
+  const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje)
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const oficiais = jogados.filter(m => competitionLabel(m.competition) !== FRIENDLY);
+  const amigaveis = jogados.filter(m => competitionLabel(m.competition) === FRIENDLY);
+  const porPreencher = (lista) => lista.filter(m => estadoRelatorio(m).id !== 'feito').length;
+  const [grupo, setGrupo] = useState(() => (porPreencher(oficiais) || !porPreencher(amigaveis) ? 'oficial' : 'amigavel'));
+  const [aberto, setAberto] = useState(null);
+  // Chegou pela missão: abre logo o relatório pedido.
+  useEffect(() => {
+    if (!abrirId) return;
+    const m = (matches || []).find(x => x.id === abrirId);
+    if (m) { setGrupo(competitionLabel(m.competition) === FRIENDLY ? 'amigavel' : 'oficial'); setAberto(m); }
+    if (onAberto) onAberto();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirId]);
+  const lista = grupo === 'oficial' ? oficiais : amigaveis;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        {[['oficial', 'Competição', oficiais], ['amigavel', 'Amigáveis e pré-época', amigaveis]].map(([id, rot, l]) => {
+          const on = grupo === id;
+          const n = porPreencher(l);
+          return (
+            <button key={id} type="button" onClick={() => setGrupo(id)} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, cursor: 'pointer', ...body, fontSize: 13,
+              background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted, border: `1px solid ${on ? T.crimson : T.line}`,
+            }}>
+              {rot}
+              {n > 0 && <span style={{ ...mono, fontSize: 11, background: on ? 'rgba(0,0,0,.25)' : T.bad, color: '#fff', borderRadius: 10, padding: '1px 7px' }}>{n}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {lista.length === 0 ? (
+        <EmptyState text={grupo === 'oficial' ? 'Ainda não há jogos oficiais realizados.' : 'Ainda não há amigáveis realizados.'} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {lista.map(m => {
+            const e = estadoRelatorio(m);
+            return (
+              <button key={m.id} type="button" onClick={() => setAberto(m)} style={{
+                display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer', ...body,
+                background: T.surface, border: `1px solid ${e.id === 'feito' ? T.line : e.cor}`, borderRadius: 10, padding: '11px 14px',
+              }}>
+                <div style={{ ...mono, fontSize: 12, color: T.mutedDim, width: 46, flexShrink: 0 }}>{fmtShort(m.date)}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14.5, color: T.cream, fontWeight: 600, ...LINHAS(1) }}>
+                    vs {m.opponent || 'Adversário'}{m.result ? <span style={{ ...mono, color: T.warn, marginLeft: 8 }}>{m.result}</span> : null}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: T.mutedDim, ...LINHAS(1) }}>
+                    {[competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ')}
+                  </div>
+                </div>
+                <span style={{ fontSize: 11.5, color: e.cor, fontWeight: 600, textAlign: 'right', flexShrink: 0, maxWidth: '45%' }}>{e.txt}</span>
+                <ChevronRight size={16} color={T.mutedDim} style={{ flexShrink: 0 }} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {aberto && (
+        <RelatorioJogoModal
+          match={aberto} players={players} season={season}
+          onClose={() => setAberto(null)}
+          onSave={(dados) => { onSave(dados); setAberto(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RelatorioJogoModal({ match, players, onClose, onSave }) {
+  const estreito = useIsMobile(760);
+  const [f, setF] = useState(() => ({
+    ...match,
+    convocados: match.convocados || [], starters: match.starters || [], report: match.report || {}, result: match.result || '',
+  }));
+  const ordenados = sortByPosition(players || []);
+  const conv = ordenados.filter(p => f.convocados.includes(p.id));
+  const setR = (pid, campo, val) => setF(prev => {
+    const novo = { ...prev, report: { ...prev.report, [pid]: { ...(prev.report[pid] || {}), [campo]: val } } };
+    // A nota é a mesma de Presenças: ficam sempre iguais (ver MatchModal).
+    if (campo === 'rating') {
+      const numero = val !== '' && val != null ? Number(val) : null;
+      novo.ratings = { ...(prev.ratings || {}) };
+      if (numero == null || Number.isNaN(numero)) delete novo.ratings[pid]; else novo.ratings[pid] = numero;
+    }
+    return novo;
+  });
+  const alternarConv = (pid) => setF(prev => {
+    if (prev.convocados.includes(pid)) {
+      const report = { ...prev.report }; delete report[pid];
+      return { ...prev, convocados: prev.convocados.filter(x => x !== pid), starters: prev.starters.filter(x => x !== pid), report };
+    }
+    return { ...prev, convocados: [...prev.convocados, pid], starters: prev.starters.length < 11 ? [...prev.starters, pid] : prev.starters };
+  });
+  const alternarTitular = (pid) => setF(prev => ({ ...prev, starters: prev.starters.includes(pid) ? prev.starters.filter(x => x !== pid) : [...prev.starters, pid] }));
+  // Atalho: os titulares que ainda não têm minutos ficam com 90'.
+  const titulares90 = () => setF(prev => {
+    const report = { ...prev.report };
+    prev.starters.forEach(pid => { if (!comMinutos(report[pid])) report[pid] = { ...(report[pid] || {}), minutes: '90' }; });
+    return { ...prev, report };
+  });
+  const comMin = conv.filter(p => comMinutos(f.report[p.id])).length;
+  const campo = { padding: '6px 6px', fontSize: 13, textAlign: 'center' };
+  const num = (p, k, ph, max) => (
+    <Input type="number" inputMode="numeric" min="0" max={max} placeholder={ph} value={(f.report[p.id] || {})[k] ?? ''}
+      onChange={e => setR(p.id, k, e.target.value)} style={campo} />
+  );
+
+  return (
+    <Modal title={`Relatório · vs ${match.opponent || 'Adversário'}`} onClose={onClose} fullPage larguraMax={980}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ fontSize: 13, color: T.mutedDim, flex: '1 1 200px' }}>
+          {fmtDate(match.date)} · {[competitionLabel(match.competition), match.jornada].filter(Boolean).join(' · ')}
+        </div>
+        <div style={{ width: 120 }}>
+          <Field label="Resultado"><Input value={f.result} placeholder="2-1" onChange={e => setF({ ...f, result: e.target.value })} style={{ textAlign: 'center' }} /></Field>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ flex: '1 1 260px' }}>
+          <ListaMultipla
+            itens={ordenados.map(p => ({ id: p.id, rotulo: shortPlayerName(p, players), prefixo: p.position || '--' }))}
+            escolhidos={f.convocados}
+            onAlternar={alternarConv}
+            comProcura
+            mostrarEtiquetas={false}
+            resumo={f.convocados.length ? `Quem jogou: ${f.convocados.length} convocados` : 'Quem jogou? Escolhe os convocados'}
+          />
+        </div>
+        <Btn variant="ghost" onClick={titulares90} disabled={!f.starters.length}>Titulares com 90'</Btn>
+      </div>
+
+      {conv.length === 0 ? (
+        <EmptyState text="Escolhe primeiro quem foi convocado. Os onze primeiros ficam titulares." />
+      ) : (
+        <>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6 }}>{comMin}/{conv.length} com minutos. Suplentes que não entraram ficam em branco.</div>
+          {!estreito && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 92px 70px 70px 70px 150px 70px', gap: 8, padding: '0 10px 4px', fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              <span>Jogador</span><span /><span style={{ textAlign: 'center' }}>Min</span><span style={{ textAlign: 'center' }}>Golos</span><span style={{ textAlign: 'center' }}>Ass.</span><span>Cartão</span><span style={{ textAlign: 'center' }}>Nota</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: estreito ? undefined : 'calc(100dvh - 330px)', overflowY: estreito ? 'visible' : 'auto' }}>
+            {conv.map(p => {
+              const r = f.report[p.id] || {};
+              const tit = f.starters.includes(p.id);
+              const nome = (
+                <span style={{ fontSize: 13.5, color: T.cream, ...LINHAS(1) }}>
+                  <span style={{ ...mono, fontSize: 11, color: T.mutedDim, marginRight: 6 }}>{p.position || '--'}</span>{shortPlayerName(p, players)}
+                </span>
+              );
+              const botTit = (
+                <button type="button" onClick={() => alternarTitular(p.id)} style={{
+                  fontSize: 11, padding: '5px 8px', borderRadius: 6, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
+                  background: tit ? T.crimson : 'transparent', color: tit ? TEXT_ON_ACCENT : T.mutedDim, border: `1px solid ${tit ? T.crimson : T.line}`,
+                }}>{tit ? 'Titular' : 'Suplente'}</button>
+              );
+              const cartao = (
+                <Select value={r.card || 'none'} onChange={e => setR(p.id, 'card', e.target.value)} style={{ padding: '6px 6px', fontSize: 12.5 }}>
+                  {CARD_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </Select>
+              );
+              const borda = comMinutos(r) ? T.line : (tit ? T.warn : T.line);
+              return estreito ? (
+                <div key={p.id} style={{ background: T.bg, border: `1px solid ${borda}`, borderRadius: 8, padding: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>{nome}</div>{botTit}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 6, marginBottom: 6 }}>
+                    {num(p, 'minutes', 'Min', 120)}{num(p, 'goals', 'Golos')}{num(p, 'assists', 'Ass.')}{num(p, 'rating', 'Nota', 10)}
+                  </div>
+                  {cartao}
+                </div>
+              ) : (
+                <div key={p.id} style={{
+                  display: 'grid', gridTemplateColumns: 'minmax(0,1.6fr) 92px 70px 70px 70px 150px 70px', gap: 8, alignItems: 'center',
+                  background: T.bg, border: `1px solid ${borda}`, borderRadius: 8, padding: '6px 10px',
+                }}>
+                  {nome}{botTit}{num(p, 'minutes', 'Min', 120)}{num(p, 'goals', '0')}{num(p, 'assists', '0')}{cartao}{num(p, 'rating', '–', 10)}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div style={{
+        display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${T.line}`, background: T.bg,
+        ...(estreito ? { position: 'sticky', bottom: 0, zIndex: 5, paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))' } : {}),
+      }}>
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn onClick={() => onSave(withConvocadosInAttendance(f))}><Check size={15} /> Guardar relatório</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial }) {
   /* Convocatórias deixaram de ter separador próprio e vivem aqui: nascem
      com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
      jornada sincronizados), por isso eram já a outra vista da mesma
      coisa. */
-  const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : 'jogos');
+  const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : abaInicial === 'estatisticas' ? 'relatorios' : 'jogos');
   const [modal, setModal] = useState(null);
+  const [abrirRelatorio, setAbrirRelatorio] = useState(null);
   /* Chegou pela missão "Introduzir as estatísticas": abre logo o editor do
      jogo mais recente que ainda não tem estatísticas (ou, se já estão
      todas, o último jogo realizado). */
@@ -26431,8 +26667,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
     const hoje = todayStr();
     const alvo = jogosSemEstatisticas(matches, addDays(hoje, 1))[0]
       || [...(matches || [])].filter(m => m.date && m.date <= hoje).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-    setAba('jogos');
-    if (alvo) setModal(alvo);
+    setAba('relatorios');
+    if (alvo) setAbrirRelatorio(alvo.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abaInicial]);
   const [modalVoltarFicha, setModalVoltarFicha] = useState(false); // true só quando o editor abriu a partir da ficha
@@ -26517,6 +26753,30 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
     ? sorted
     : sorted.filter(m => competitionLabel(m.competition) === compAberta);
 
+  // Relatórios por preencher (jogos já realizados), para o número no separador.
+  const relatoriosPorFazer = (matches || []).filter(m => m && m.date && m.date <= todayStr() && estadoRelatorio(m).id !== 'feito').length;
+
+  if (aba === 'relatorios') {
+    return (
+      <div>
+        <SectionHeader title="Jogos" subtitle="Relatórios de jogo: alimentam as estatísticas dos jogadores." />
+        <SubTabs
+          value={aba}
+          onChange={setAba}
+          tabs={[
+            { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
+            { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
+            { id: 'relatorios', label: 'Relatórios de jogo', icon: Pencil, count: relatoriosPorFazer },
+          ]}
+        />
+        <RelatoriosJogo
+          matches={matches} players={players} season={season}
+          onSave={save} abrirId={abrirRelatorio} onAberto={() => setAbrirRelatorio(null)}
+        />
+      </div>
+    );
+  }
+
   if (aba === 'convocatorias') {
     return (
       <div>
@@ -26532,6 +26792,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
               tabs={[
                 { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
                 { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
+                { id: 'relatorios', label: 'Relatórios de jogo', icon: Pencil, count: relatoriosPorFazer },
               ]}
             />
           )}
@@ -26550,6 +26811,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
         tabs={[
           { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
           { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
+          { id: 'relatorios', label: 'Relatórios de jogo', icon: Pencil, count: relatoriosPorFazer },
         ]}
       />
 
@@ -41772,7 +42034,7 @@ const CAMINHOS_STAFF = [
   { id: 'planeamento', rotulo: 'Planeamento', acao: 'Planear a semana', icon: CalendarDays },
   { id: 'jogos', rotulo: 'Jogos / convocatória', acao: 'Preparar a convocatória', icon: Trophy },
   // Abre Jogos já com o editor do último jogo sem estatísticas.
-  { id: 'estatisticas', rotulo: 'Estatísticas do jogo', acao: 'Introduzir as estatísticas do jogo', icon: Pencil },
+  { id: 'estatisticas', rotulo: 'Relatórios de jogo', acao: 'Introduzir as estatísticas do jogo', icon: Pencil },
   { id: 'monitorizacao', rotulo: 'Monitorização', acao: 'Rever a monitorização', icon: Activity },
   { id: 'desenvolvimento', rotulo: 'Desenvolvimento', acao: 'Avaliar o desenvolvimento', icon: TrendingUp },
   { id: 'ideiajogo', rotulo: 'Ideia de Jogo', acao: 'Atualizar a ideia de jogo', icon: Lightbulb },
