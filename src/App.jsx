@@ -16,7 +16,7 @@ import AnalisadorVideo, {
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
 } from './AnalisadorVideo';
 import {
-  ZoomIn, Ruler, Flag, Shirt, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
+  ZoomIn, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
   Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
@@ -29336,7 +29336,10 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
   );
 }
 
-function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
+/* Também serve a EQUIPA TÉCNICA (sem Portal): `destinoDe` troca o destino
+   do Portal pelo caminho da app, `cabecalho` o título da prancheta e
+   `dicaDe` a frase por baixo do botão. */
+function EcraMissao({ player, tarefas, janelas = {}, onIr, onAdiar, destinoDe, cabecalho, dicaDe }) {
   const [i, setI] = useState(0);
   const [folha, setFolha] = useState(0); // muda a cada página → reinicia as animações
   /* O FUNDO DA PÁGINA TODA MEXE, como os papelinhos dos anos — mas aqui
@@ -29348,7 +29351,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
   })), []);
   const t = tarefas[Math.min(i, tarefas.length - 1)];
   if (!t) return null;
-  const d = destinoMissao(t.destino);
+  const d = destinoDe ? destinoDe(t) : destinoMissao(t.destino);
   const Ic = d.icon;
   const fechadoAgora = (d.rota === 'wellness' && janelas.wellness && !janelas.wellness.open)
     || (d.rota === 'rpe' && janelas.rpe && !janelas.rpe.open);
@@ -29418,7 +29421,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
           <div style={{
             position: 'absolute', top: 9, left: 0, right: 0, textAlign: 'center', whiteSpace: 'nowrap',
             color: T.gold, fontSize: 11, fontWeight: 800, letterSpacing: '.22em', textTransform: 'uppercase',
-          }}>Instruções do mister{tarefas.length > 1 ? ` · ${i + 1}/${tarefas.length}` : ''}</div>
+          }}>{cabecalho || 'Instruções do mister'}{tarefas.length > 1 ? ` · ${i + 1}/${tarefas.length}` : ''}</div>
 
           {/* o quadro verde, com o campo a giz */}
           <div key={`q${folha}`} style={{ position: 'relative', background: 'linear-gradient(160deg, #2f5d3a 0%, #1f4429 100%)', borderRadius: 10, overflow: 'hidden', border: '3px solid #6b4b2e' }}>
@@ -29501,7 +29504,7 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
               const ativa = k === Math.min(i, tarefas.length - 1);
               const pz = prazoDe(tt);
               const tit = String(tt.titulo || '').trim();
-              const tb = tit ? tit.charAt(0).toUpperCase() + tit.slice(1) : destinoMissao(tt.destino).rotulo;
+              const tb = tit ? tit.charAt(0).toUpperCase() + tit.slice(1) : (destinoDe ? destinoDe(tt) : destinoMissao(tt.destino)).rotulo;
               return (
           <div key={ativa ? `f${folha}` : `o${tt.id}`} aria-hidden={!ativa} style={{
             gridArea: '1 / 1', visibility: ativa ? 'visible' : 'hidden',
@@ -29543,7 +29546,11 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
           {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>Bora! {t.acao || d.acao} <ArrowRight size={18} /></>}
         </button>
         {/* sempre no lugar (só se esconde) — para os botões de baixo não saltarem entre missões */}
-        <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6, visibility: d.auto && !t._jogo && !fechadoAgora ? 'visible' : 'hidden' }}>{t.destino === 'clipe' ? 'Fica feita quando gravares o clipe.' : 'Fica feita assim que submeteres.'}</div>
+        {dicaDe ? (
+          <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6, minHeight: 17, lineHeight: 1.45 }}>{dicaDe(t) || ''}</div>
+        ) : (
+          <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6, visibility: d.auto && !t._jogo && !fechadoAgora ? 'visible' : 'hidden' }}>{t.destino === 'clipe' ? 'Fica feita quando gravares o clipe.' : 'Fica feita assim que submeteres.'}</div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: tarefas.length > 1 ? 'space-between' : 'center', gap: 10 }}>
           <button type="button" onClick={() => { onAdiar(t.id); mudar(0); }} style={{
             background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
@@ -41974,45 +41981,57 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
 }
 
 /* ================================================================
-   ENTRADA DA EQUIPA TÉCNICA — "O teu dia": o teu cacifo, aberto.
+   ENTRADA DA EQUIPA TÉCNICA — as missões em página inteira.
    ================================================================
-   Ao entrar, cada pessoa vê primeiro as SUAS missões de hoje e as
-   atrasadas (as prioritárias primeiro), dentro do seu cacifo do
-   Balneário. É um LEMBRETE, não um portão: há sempre "Continuar", que
-   regista um adiamento por missão e por dia (quem criou vê "adiada 3×").
-   Aparece uma vez por dia. As missões com caminho não têm "Concluir":
-   fecham sozinhas quando a app vê o trabalho feito (ver
-   `missaoStaffFeita`). Missões sem responsável não entram aqui. */
+   A MESMA dinâmica das missões do Portal (a prancheta do mister com o
+   quadro a giz e a folha de caderno), mas dentro da app da equipa
+   técnica: ao entrar, cada pessoa vê, uma a uma, as missões que lhe
+   foram atribuídas para hoje e as atrasadas (prioritárias primeiro).
+   - "Bora!" leva ao sítio onde a missão se faz (o caminho). As missões
+     com caminho fecham sozinhas quando a app vê o trabalho feito
+     (`missaoStaffFeita`); sem caminho, "Bora! Concluir" conclui-a.
+   - "Mais tarde" passa à seguinte e regista um adiamento (um por missão
+     e por dia; quem criou vê "adiada 3×").
+   - Aparece uma vez por dia. Não bloqueia ninguém.
+   - Missões sem responsável não entram aqui. */
 function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr }) {
   const hoje = todayStr();
   const chaveVista = `mjp_entrada_${euId}_${hoje}`;
   /* MODO DE TESTE: ?testeentrada=1 no endereço mostra o ecrã em todas
-     as entradas, mesmo que já tenha sido visto hoje. Se não tiveres
-     missões para hoje, mostra três de exemplo. Em teste, nada é gravado:
-     nem adiamentos nem conclusões. */
+     as entradas. Sem missões para hoje, mostra três de exemplo. Em teste,
+     nada é gravado (nem adiamentos nem conclusões). */
   const teste = (() => { try { return /[?&#]testeentrada\b/i.test(window.location.href); } catch (e) { return false; } })();
   const [fechado, setFechado] = useState(() => { if (teste) return false; try { return sessionStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
+  const [adiadas, setAdiadas] = useState([]);
   const reais = euId ? missoesDoCacifo(tarefas, euId, ctx, hoje).filter(x => !x.futura) : [];
   const exemplos = [
-    { t: { id: 'teste-a', titulo: 'Relatório do adversário de sábado', caminho: 'scouting', obrigatoria: true, responsavel: euId, prazo: addDays(hoje, -2), notas: 'Exemplo de missão prioritária e atrasada.' }, dia: addDays(hoje, -2), atraso: true, n: 1, futura: false },
-    { t: { id: 'teste-b', titulo: 'Introduzir as estatísticas do jogo', caminho: 'estatisticas', responsavel: euId, prazo: hoje }, dia: hoje, atraso: false, n: 1, futura: false },
-    { t: { id: 'teste-c', titulo: 'Confirmar o autocarro para Penafiel', caminho: '', responsavel: euId, prazo: hoje, notas: 'Exemplo sem caminho: esta conclui-se à mão.' }, dia: hoje, atraso: false, n: 1, futura: false },
+    { t: { id: 'teste-a', titulo: 'Relatório do adversário de sábado', caminho: 'scouting', obrigatoria: true, responsavel: euId, criadoPor: euId, notas: 'Exemplo de missão prioritária e atrasada.' }, dia: addDays(hoje, -2), atraso: true },
+    { t: { id: 'teste-b', titulo: 'Introduzir as estatísticas do jogo', caminho: 'estatisticas', responsavel: euId, criadoPor: euId }, dia: hoje, atraso: false },
+    { t: { id: 'teste-c', titulo: 'Confirmar o autocarro para Penafiel', caminho: '', responsavel: euId, criadoPor: euId, notas: 'Exemplo sem caminho: esta conclui-se à mão.' }, dia: hoje, atraso: false },
   ];
-  const [tiradas, setTiradas] = useState([]); // só em teste
-  const lista = (teste && !reais.length ? exemplos : reais).filter(x => !tiradas.includes(x.t.id));
+  const lista = (teste && !reais.length ? exemplos : reais).filter(x => !adiadas.includes(x.t.id));
   if (!euId || fechado || !lista.length) return null;
-  registarCoresMembros(membros);
 
-  const meu = (membros || []).find(m => m.user_id === euId);
-  const primeiro = meu && meu.nome ? String(meu.nome).trim().split(/\s+/)[0] : '';
-  const hora = new Date().getHours();
-  const saudacao = hora < 12 ? 'Bom dia' : hora < 20 ? 'Boa tarde' : 'Boa noite';
   const fechar = () => { if (!teste) { try { sessionStorage.setItem(chaveVista, '1'); } catch (e) { /* fica só nesta página */ } } setFechado(true); };
+  const porId = new Map(lista.map(x => [x.t.id, x]));
+  // O que a prancheta mostra: título, instruções, prazo e a linha "Para …".
+  const folhas = lista.map(x => ({
+    id: x.t.id, titulo: x.t.titulo, notas: x.t.notas || '', prazo: x.dia || '', caminho: x.t.caminho || '',
+    passoTxt: [x.t.obrigatoria ? 'Prioritária' : '', x.t.criadoPor && x.t.criadoPor !== euId ? `pedida por ${nomeDoMembro(x.t.criadoPor, membros, euId)}` : ''].filter(Boolean).join(' · '),
+  }));
+  const meu = (membros || []).find(m => m.user_id === euId) || {};
+  const pessoa = { name: meu.nome || 'Tu', number: '', position: '' };
+  const destinoDe = (f) => {
+    const c = caminhoStaff(f.caminho);
+    return { id: c.id || 'manual', icon: c.icon, rotulo: c.rotulo, acao: c.id ? c.rotulo : 'Concluir', auto: false };
+  };
+  const dicaDe = (f) => (f.caminho && CRITERIO_STAFF[f.caminho]
+    ? `Fica feita sozinha quando ${CRITERIO_STAFF[f.caminho]}.`
+    : (!f.caminho ? 'Sem caminho: ao carregar, fica concluída.' : ''));
 
   const concluir = (x) => {
+    if (teste) return;
     const t = x.t;
-    if (caminhoVerificavel(t)) return; // essas fecham sozinhas
-    if (teste) { setTiradas(v => [...v, t.id]); return; } // em teste não grava
     const agora = new Date().toISOString();
     setTarefas(prev => prev.map(r => {
       if (r.id !== t.id) return r;
@@ -42021,82 +42040,46 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr }) {
       return { ...r, estado: 'feita', feitaEm: agora, lembrete: null, ...(avisaCriadorAoConcluir(r, euId) ? { conclusaoPorVer: { por: euId, em: agora } } : {}) };
     }));
   };
-  const continuar = () => {
-    if (teste) { fechar(); return; } // em teste não regista adiamentos
-    const ids = new Set(lista.map(x => x.t.id));
-    setTarefas(prev => prev.map(r => (ids.has(r.id) && !(r.adiadaEm || []).includes(hoje)
-      ? { ...r, adiadaEm: [...(r.adiadaEm || []), hoje].slice(-60) }
-      : r)));
+  const ir = (f) => {
+    const x = porId.get(f.id);
+    if (!x) return;
+    if (!x.t.caminho) {
+      // Sem caminho: "Bora! Concluir" conclui e passa à seguinte.
+      concluir(x);
+      setAdiadas(v => [...v, x.t.id]);
+      return;
+    }
     fechar();
+    onIr(x.t.caminho);
   };
-  const irPara = (caminho) => { fechar(); onIr(caminho); };
-  const cor = corDoMembro(euId);
-  const atrasadas = lista.filter(x => x.atraso).length;
+  const adiar = (id) => {
+    if (!teste) {
+      setTarefas(prev => prev.map(r => (r.id === id && !(r.adiadaEm || []).includes(hoje)
+        ? { ...r, adiadaEm: [...(r.adiadaEm || []), hoje].slice(-60) }
+        : r)));
+    }
+    if (lista.length <= 1) fechar();
+    setAdiadas(v => [...v, id]);
+  };
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 90, overflowY: 'auto', ...body, background: '#151d18',
-      backgroundImage: 'linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px)',
-      backgroundSize: '34px 34px',
-    }}>
-      <style>{`
-        @keyframes en-porta { from { transform: perspective(900px) rotateY(0deg); } to { transform: perspective(900px) rotateY(-72deg); } }
-        @keyframes en-dentro { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-        @media (prefers-reduced-motion: reduce) { .en-anim { animation: none !important; } }
-      `}</style>
-      <div style={{ maxWidth: 760, margin: '0 auto', padding: 'calc(26px + env(safe-area-inset-top, 0px)) 16px calc(26px + env(safe-area-inset-bottom, 0px))' }}>
-        <div style={{ color: T.gold, fontSize: 11.5, fontWeight: 800, letterSpacing: '.24em', textTransform: 'uppercase' }}>
-          O teu cacifo · {fmtShort(hoje)}{teste ? ' · teste' : ''}
-        </div>
-        <h2 style={{ ...display, color: T.cream, fontSize: 28, fontWeight: 600, margin: '6px 0 4px' }}>
-          {saudacao}{primeiro ? `, ${primeiro}` : ''}.
-        </h2>
-        <div style={{ color: T.muted, fontSize: 14, lineHeight: 1.5, marginBottom: 18 }}>
-          {`Tens ${lista.length === 1 ? 'uma missão' : `${lista.length} missões`} para hoje`}{atrasadas ? `, ${atrasadas === 1 ? 'uma atrasada' : `${atrasadas} atrasadas`}` : ''}.
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 260 }}>
-          {/* a porta, a abrir */}
-          <div className="en-anim" style={{
-            width: 96, flexShrink: 0, borderRadius: '10px 0 0 10px', transformOrigin: 'left center',
-            background: `linear-gradient(160deg, ${cor} 0%, color-mix(in srgb, ${cor} 55%, #101512) 100%)`,
-            border: '2px solid rgba(0,0,0,.45)', position: 'relative', animation: 'en-porta .7s cubic-bezier(.3,.8,.3,1) .15s both',
-          }}>
-            <div style={{ position: 'absolute', top: 14, left: 12, right: 12, height: 26, background: 'repeating-linear-gradient(180deg, rgba(0,0,0,.45) 0 3px, transparent 3px 7px)' }} />
-          </div>
-          <div className="en-anim" style={{ flex: 1, minWidth: 0, display: 'flex', marginLeft: -50, animation: 'en-dentro .5s ease-out .45s both' }}>
-            <InteriorCacifo
-              itens={lista} hoje={hoje} membros={membros} euId={euId}
-              podeConcluir={(t) => !caminhoVerificavel(t)} onConcluir={concluir} onIr={irPara}
-            />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 20, textAlign: 'center' }}>
-          <Btn variant="ghost" onClick={continuar}>Continuar <ArrowRight size={14} /></Btn>
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
-            O que ficar por fazer conta como adiado hoje. Encontras tudo no Balneário, em Tarefas.
-          </div>
-        </div>
-      </div>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 90 }}>
+      <EcraMissao
+        player={pessoa}
+        tarefas={folhas}
+        onIr={ir}
+        onAdiar={adiar}
+        destinoDe={destinoDe}
+        dicaDe={dicaDe}
+        cabecalho={teste ? 'Missões da equipa técnica · teste' : 'Missões da equipa técnica'}
+      />
     </div>
   );
 }
 
-/* ================================================================
-   O BALNEÁRIO DA EQUIPA TÉCNICA
-   ================================================================
-   As missões da equipa técnica, cada pessoa com o seu CACIFO:
-   - a porta tem a cor da pessoa, a placa com o nome, etiquetas penduradas
-     (atrasadas a vermelho, prioritárias) e, em baixo, os RISCOS DE GIZ das
-     missões fechadas esta semana (||||/, de cinco em cinco);
-   - ao abrir, a porta roda e aparecem as FICHAS penduradas nos ganchos,
-     cada uma com o atalho para o sítio onde se faz;
-   - no topo, o PLACARD DA SEMANA da equipa técnica.
-   O ecrã de entrada ("O teu dia") é o teu próprio cacifo aberto.
-   Só missões da equipa técnica; as dos jogadores ficam no Portal. */
-
-// As missões em aberto no cacifo de uma pessoa ('' = cacifo comum).
+/* As missões em aberto de uma pessoa da equipa técnica ('' = sem
+   responsável): semanais por concluir, repetições ativas hoje, e as
+   normais por fazer. Prioritárias e atrasadas primeiro. */
 function missoesDoCacifo(tarefas, pessoaId, ctx, hoje) {
   const quem = pessoaId || '';
   return (tarefas || []).filter(t => t && !t.jogadorId && (t.responsavel || '') === quem).map(t => {
@@ -42116,233 +42099,6 @@ function missoesDoCacifo(tarefas, pessoaId, ctx, hoje) {
     return peso(a) - peso(b) || String(a.dia || '9999').localeCompare(String(b.dia || '9999'));
   });
 }
-// Missões fechadas esta semana por uma pessoa (para os riscos de giz).
-function feitasNaSemana(tarefas, pessoaId, hoje) {
-  const seg = getMonday(hoje);
-  const dom = addDays(seg, 6);
-  const naSemana = (d) => d && d >= seg && d <= dom;
-  return (tarefas || []).filter(t => t && !t.jogadorId && (t.responsavel || '') === (pessoaId || ''))
-    .reduce((n, t) => n + (t.recorrencia
-      ? (t.concluidasEm || []).filter(naSemana).length
-      : (t.estado === 'feita' && naSemana(String(t.feitaEm || '').slice(0, 10)) ? 1 : 0)), 0);
-}
-
-// Riscos de giz: grupos de cinco (quatro de pé e um atravessado).
-function RiscosGiz({ n, cor = 'rgba(245,240,225,.85)' }) {
-  if (!n) return <div style={{ height: 22, fontSize: 10.5, color: 'rgba(245,240,225,.45)', display: 'flex', alignItems: 'center' }}>sem riscos esta semana</div>;
-  const grupos = [];
-  for (let i = 0; i < n; i += 5) grupos.push(Math.min(5, n - i));
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', minHeight: 22 }} title={`${n} ${n === 1 ? 'missão fechada' : 'missões fechadas'} esta semana`}>
-      {grupos.map((g, k) => (
-        <svg key={k} width="26" height="20" viewBox="0 0 26 20" style={{ overflow: 'visible' }}>
-          {Array.from({ length: Math.min(g, 4) }, (_, i) => (
-            <path key={i} d={`M${4 + i * 5} 2 L${3.4 + i * 5} 18`} stroke={cor} strokeWidth="2" strokeLinecap="round" />
-          ))}
-          {g === 5 && <path d="M1 15 L23 4" stroke={cor} strokeWidth="2" strokeLinecap="round" />}
-        </svg>
-      ))}
-    </div>
-  );
-}
-
-// Uma FICHA pendurada no gancho do cacifo.
-function FichaMissao({ x, k, hoje, membros, euId, podeConcluir, onConcluir, onIr, onAbrir }) {
-  const t = x.t;
-  const c = caminhoStaff(t.caminho);
-  const Ic = c.icon;
-  const auto = caminhoVerificavel(t);
-  const cor = x.atraso ? (t.obrigatoria ? T.bad : '#C0563B') : (t.obrigatoria ? T.bad : '#7A6A48');
-  return (
-    <div style={{ position: 'relative', paddingTop: 14, transform: `rotate(${k % 2 ? 0.8 : -0.8}deg)` }}>
-      {/* o fio e o gancho */}
-      <span style={{ position: 'absolute', top: 0, left: 22, width: 2, height: 18, background: 'rgba(220,210,180,.5)' }} />
-      <div style={{
-        background: '#F3ECDA', borderRadius: '4px 4px 8px 8px', padding: '12px 13px 12px 15px', position: 'relative',
-        boxShadow: '0 6px 14px rgba(0,0,0,.35)', borderLeft: `4px solid ${cor}`,
-      }}>
-        <span style={{ position: 'absolute', top: 6, left: 17, width: 8, height: 8, borderRadius: '50%', background: '#2a2f2b', boxShadow: 'inset 0 1px 2px rgba(0,0,0,.6)' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginLeft: 18, marginBottom: 3 }}>
-          {t.obrigatoria && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: T.bad }}>
-              <Flag size={10} /> Prioritária
-            </span>
-          )}
-          <span style={{ ...mono, fontSize: 10.5, color: x.atraso ? '#B03A2E' : '#7a6f5c' }}>
-            {x.atraso ? `atrasada · ${prazoTexto(x.dia, hoje)}` : x.futura ? (x.dia ? prazoTexto(x.dia, hoje) : 'sem prazo') : 'hoje'}
-            {x.n > 1 ? ` · ${x.n} semanas` : ''}
-          </span>
-        </div>
-        <button type="button" onClick={() => onAbrir && onAbrir(t)} style={{
-          display: 'block', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: onAbrir ? 'pointer' : 'default',
-          ...display, fontSize: 18, lineHeight: 1.2, color: '#14231a', width: '100%',
-        }}>{t.titulo}</button>
-        {t.notas && <div style={{ fontSize: 12, color: '#4a4a3a', marginTop: 4, lineHeight: 1.45, ...LINHAS(2) }}>{t.notas}</div>}
-        {t.criadoPor && t.criadoPor !== (t.responsavel || '') && (
-          <div style={{ fontSize: 11, color: '#7a6f5c', marginTop: 4 }}>Pedida por {nomeDoMembro(t.criadoPor, membros, euId)}</div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-          {t.caminho && (
-            <button type="button" onClick={() => onIr(t.caminho)} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', ...body,
-              background: '#14231a', color: '#F3ECDA', border: 'none', fontSize: 12.5, fontWeight: 600,
-            }}><Ic size={13} /> Ir para {c.rotulo} <ArrowRight size={12} /></button>
-          )}
-          {auto ? (
-            <span style={{ fontSize: 11.5, color: '#2E6B3A', lineHeight: 1.35 }}>Fecha sozinha quando {CRITERIO_STAFF[t.caminho]}.</span>
-          ) : podeConcluir ? (
-            <button type="button" onClick={() => onConcluir(x)} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', ...body,
-              background: 'transparent', color: '#14231a', border: '1.5px solid #14231a', fontSize: 12.5, fontWeight: 600,
-            }}><Check size={13} /> Concluir</button>
-          ) : (
-            <span style={{ fontSize: 11.5, color: '#7a6f5c' }}>Só quem é responsável conclui.</span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// O interior de um cacifo aberto: prateleira, ganchos e fichas.
-function InteriorCacifo({ itens, hoje, membros, euId, podeConcluir, onConcluir, onIr, onAbrir, vazio }) {
-  return (
-    <div style={{
-      flex: 1, minWidth: 0, borderRadius: '0 10px 10px 0', padding: '14px 14px 18px',
-      background: 'linear-gradient(180deg, #0d1310 0%, #18221c 100%)', boxShadow: 'inset 0 10px 24px rgba(0,0,0,.6)',
-    }}>
-      {/* a prateleira com os ganchos */}
-      <div style={{ height: 8, borderRadius: 2, background: 'linear-gradient(180deg, #6b5a3d, #4a3d28)', marginBottom: 2, position: 'relative' }}>
-        {[12, 38, 64, 90].map(p => <span key={p} style={{ position: 'absolute', left: `${p}%`, top: 6, width: 6, height: 10, borderRadius: '0 0 4px 4px', border: '2px solid #a7a7a0', borderTop: 'none' }} />)}
-      </div>
-      {itens.length === 0 ? (
-        <div style={{ padding: '22px 6px 6px', fontSize: 13, color: T.mutedDim, textAlign: 'center' }}>{vazio || 'Cacifo arrumado: nada em aberto.'}</div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '6px 14px' }}>
-          {itens.map((x, k) => (
-            <FichaMissao key={`${x.t.id}:${x.base || ''}`} x={x} k={k} hoje={hoje} membros={membros} euId={euId}
-              podeConcluir={podeConcluir(x.t)} onConcluir={onConcluir} onIr={onIr} onAbrir={onAbrir} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Balneario({ tarefas, membros, euId, hoje, ctx, podeConcluir, onConcluir, onIr, onAbrir, onNova }) {
-  const [aberto, setAberto] = useState(euId || null);
-  registarCoresMembros(membros);
-  const pessoas = [...(membros || [])].sort((a, b) => (a.user_id === euId ? -1 : b.user_id === euId ? 1 : String(a.nome || '').localeCompare(String(b.nome || ''))));
-  const cacifos = pessoas.map((m, i) => ({ id: m.user_id, nome: nomeDoMembro(m.user_id, membros, euId), cor: corDoMembro(m.user_id), num: i + 1 }));
-  const comum = missoesDoCacifo(tarefas, '', ctx, hoje);
-  if (comum.length) cacifos.push({ id: '', nome: 'Comum', cor: '#6B7A6D', num: cacifos.length + 1, comum: true });
-  const dados = cacifos.map(c => {
-    const itens = missoesDoCacifo(tarefas, c.id, ctx, hoje);
-    return { ...c, itens, atrasadas: itens.filter(x => x.atraso).length, prioritarias: itens.filter(x => x.t.obrigatoria).length, feitas: feitasNaSemana(tarefas, c.id, hoje) };
-  });
-  const tot = dados.reduce((a, d) => ({ abertas: a.abertas + d.itens.length, atrasadas: a.atrasadas + d.atrasadas, feitas: a.feitas + d.feitas }), { abertas: 0, atrasadas: 0, feitas: 0 });
-  const led = { fontFamily: "'JetBrains Mono', 'Courier New', monospace", color: '#FFC23D', textShadow: '0 0 6px rgba(255,170,40,.75)' };
-  const escurecer = (hex) => `color-mix(in srgb, ${hex} 55%, #101512)`;
-
-  return (
-    <div style={{
-      borderRadius: 14, padding: '18px 16px 0', position: 'relative', overflow: 'hidden',
-      background: '#151d18',
-      backgroundImage: 'linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px)',
-      backgroundSize: '34px 34px',
-    }}>
-      <style>{`
-        @keyframes bn-porta { from { transform: perspective(900px) rotateY(0deg); } to { transform: perspective(900px) rotateY(-68deg); } }
-        @keyframes bn-dentro { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-        @media (prefers-reduced-motion: reduce) { .bn-anim { animation: none !important; } }
-      `}</style>
-
-      {/* PLACARD DA SEMANA */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-around', gap: 10, flexWrap: 'wrap', padding: '12px 14px', marginBottom: 18, borderRadius: 10,
-        background: '#07090a', backgroundImage: 'radial-gradient(rgba(255,194,61,.07) 1px, transparent 1.3px)', backgroundSize: '5px 5px', border: '3px solid #2a2f33',
-      }}>
-        {[['Em aberto', tot.abertas], ['Atrasadas', tot.atrasadas], ['Fechadas na semana', tot.feitas]].map(([r, v]) => (
-          <div key={r} style={{ textAlign: 'center', minWidth: 90 }}>
-            <div style={{ ...led, fontSize: 26, fontWeight: 700, color: r === 'Atrasadas' && v ? '#FF6B5A' : '#FFC23D' }}>{String(v).padStart(2, '0')}</div>
-            <div style={{ fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase', color: 'rgba(255,194,61,.65)' }}>{r}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* A PAREDE DE CACIFOS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, paddingBottom: 26 }}>
-        {dados.map(d => {
-          const estaAberto = aberto === d.id;
-          const porta = (
-            <button type="button" onClick={() => setAberto(estaAberto ? null : d.id)} aria-expanded={estaAberto}
-              className={estaAberto ? 'bn-anim' : ''}
-              style={{
-                position: 'relative', width: estaAberto ? 150 : '100%', flexShrink: 0, height: 250, borderRadius: estaAberto ? '10px 0 0 10px' : 10,
-                cursor: 'pointer', padding: 0, ...body, textAlign: 'left', transformOrigin: 'left center',
-                border: `2px solid ${d.id === euId ? T.gold : 'rgba(0,0,0,.45)'}`,
-                background: `linear-gradient(160deg, ${d.cor} 0%, ${escurecer(d.cor)} 100%)`,
-                boxShadow: estaAberto ? 'none' : '0 10px 18px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.08)',
-                animation: estaAberto ? 'bn-porta .55s cubic-bezier(.3,.8,.3,1) both' : 'none',
-              }}>
-              {/* ventilação */}
-              <div style={{ position: 'absolute', top: 14, left: 18, right: 18, height: 30, background: 'repeating-linear-gradient(180deg, rgba(0,0,0,.45) 0 3px, transparent 3px 7px)', borderRadius: 2 }} />
-              {/* placa do nome */}
-              <div style={{
-                position: 'absolute', top: 54, left: 14, right: 14, background: '#F3ECDA', borderRadius: 4, padding: '5px 8px',
-                boxShadow: '0 2px 0 rgba(0,0,0,.35)', display: 'flex', alignItems: 'baseline', gap: 6,
-              }}>
-                <span style={{ ...mono, fontSize: 10, color: '#7a6f5c' }}>{String(d.num).padStart(2, '0')}</span>
-                <span style={{ ...display, fontSize: 16, color: '#14231a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.nome}</span>
-              </div>
-              {/* puxador */}
-              <span style={{ position: 'absolute', right: 12, top: 118, width: 6, height: 34, borderRadius: 3, background: 'linear-gradient(90deg, #d8d8d0, #8b8b85)', boxShadow: '0 2px 3px rgba(0,0,0,.5)' }} />
-              {/* etiquetas penduradas */}
-              <div style={{ position: 'absolute', top: 100, left: 14, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#fff', background: 'rgba(0,0,0,.35)', borderRadius: 4, padding: '2px 7px' }}>
-                  {d.itens.length} {d.itens.length === 1 ? 'missão' : 'missões'}
-                </span>
-                {d.atrasadas > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: T.bad, borderRadius: 4, padding: '2px 7px', transform: 'rotate(-4deg)' }}>
-                    {d.atrasadas} {d.atrasadas === 1 ? 'atrasada' : 'atrasadas'}
-                  </span>
-                )}
-                {d.prioritarias > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#14231a', background: '#FFC23D', borderRadius: 4, padding: '2px 7px', transform: 'rotate(3deg)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                    <Flag size={10} /> {d.prioritarias}
-                  </span>
-                )}
-              </div>
-              {/* riscos de giz da semana */}
-              <div style={{ position: 'absolute', left: 14, right: 14, bottom: 12 }}>
-                <RiscosGiz n={d.feitas} />
-              </div>
-            </button>
-          );
-          if (!estaAberto) return <div key={d.id || 'comum'}>{porta}</div>;
-          return (
-            <div key={d.id || 'comum'} style={{ gridColumn: '1 / -1', display: 'flex', minHeight: 250, alignItems: 'stretch' }}>
-              {porta}
-              <div className="bn-anim" style={{ flex: 1, minWidth: 0, display: 'flex', marginLeft: -60, animation: 'bn-dentro .45s ease-out .15s both' }}>
-                <InteriorCacifo
-                  itens={d.itens} hoje={hoje} membros={membros} euId={euId}
-                  podeConcluir={podeConcluir} onConcluir={onConcluir} onIr={onIr} onAbrir={onAbrir}
-                  vazio={d.id === euId ? 'O teu cacifo está arrumado. Nada em aberto.' : `O cacifo ${d.comum ? 'comum' : `de ${d.nome}`} está arrumado.`}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {/* o banco do balneário */}
-      <div style={{ height: 14, margin: '0 -16px', background: 'linear-gradient(180deg, #7a5f3a, #4e3b22)', boxShadow: '0 -2px 0 rgba(0,0,0,.4)' }} />
-      {onNova && (
-        <div style={{ position: 'absolute', top: 18, right: 16 }} />
-      )}
-    </div>
-  );
-}
-
 function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefas = [], podeConcluir = true, podeGerir = true, onClose, onGuardar, onRemove, onAbrirRegisto }) {
   const registos = alvo ? (alvo._grupo || [alvo]) : [];
   const base = registos[0] || null;
@@ -42748,7 +42504,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
      inteira) e fechá-la volta ao mesmo separador, mesmo que a página das
      Tarefas tenha sido montada de novo pelo caminho. */
   const [vista, setVistaEstado] = useState(() => {
-    try { return sessionStorage.getItem('tarefas-vista') || 'balneario'; } catch (e) { return 'balneario'; }
+    try { const v = sessionStorage.getItem('tarefas-vista'); return v && v !== 'balneario' ? v : 'calendario'; } catch (e) { return 'calendario'; }
   });
   const setVista = (v) => {
     setVistaEstado(v);
@@ -43061,22 +42817,12 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         value={vista}
         onChange={setVista}
         tabs={[
-          { id: 'balneario', label: 'Balneário', icon: Shirt },
           { id: 'calendario', label: 'Calendário', icon: Calendar },
           { id: 'prazo', label: 'Por prazo', icon: CalendarDays },
           { id: 'pessoa', label: 'Por pessoa', icon: Users },
         ]}
       />
 
-      {vista === 'balneario' ? (
-        <Balneario
-          tarefas={tarefas} membros={membros} euId={euId} hoje={hoje} ctx={ctx}
-          podeConcluir={podeConcluir}
-          onConcluir={(x) => alternarEm(x.t, x.dia, x.base)}
-          onIr={(caminho) => irParaSeparador(caminho)}
-          onAbrir={abrir}
-        />
-      ) : (
       <Panel title={vista === 'pessoa' ? 'Quem está com a missão' : (vista === 'calendario' ? 'Calendário' : 'Quando se executa')}>
         {vista === 'calendario' ? (
           <TarefasCalendario
@@ -43116,7 +42862,6 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           ))
         )}
       </Panel>
-      )}
 
       <div style={{ height: 16 }} />
 
