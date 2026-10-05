@@ -42018,7 +42018,7 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
   const [inicial] = useState(() => euId ? missoesDoCacifo(tarefas, euId, ctx, hoje).filter(x => !x.futura).map(x => x.t.id) : []);
   const reais = euId ? missoesDoCacifo(tarefas, euId, ctx, hoje).filter(x => !x.futura) : [];
   const exemplos = [
-    { t: { id: 'teste-a', titulo: 'Relatório do adversário de sábado', caminho: 'scouting', obrigatoria: true, responsavel: euId, criadoPor: 'outro' }, dia: addDays(hoje, -2), atraso: true },
+    { t: { id: 'teste-a', titulo: 'Relatório do adversário de sábado', caminho: 'scouting', obrigatoria: true, responsavel: euId, criadoPor: 'outro', notas: 'Foca nas bolas paradas e na saída de jogo.' }, dia: addDays(hoje, -2), atraso: true },
     { t: { id: 'teste-b', titulo: 'Introduzir as estatísticas do jogo', caminho: 'estatisticas', responsavel: euId, criadoPor: euId }, dia: hoje, atraso: false },
     { t: { id: 'teste-c', titulo: 'Confirmar o autocarro para Penafiel', caminho: '', responsavel: euId, criadoPor: euId }, dia: hoje, atraso: false },
   ];
@@ -42182,6 +42182,10 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: '#14231a', lineHeight: 1.25, ...LINHAS(2) }}>{t.titulo}</div>
+                      {/* As instruções da missão, se houver: uma linha só. */}
+                      {String(t.notas || '').trim() && (
+                        <div title={t.notas} style={{ fontSize: 12, color: '#4a4f48', lineHeight: 1.35, marginTop: 1, ...LINHAS(1) }}>{String(t.notas).trim()}</div>
+                      )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
                         {estado === 'atrasada' && <span style={{ fontSize: 11, fontWeight: 700, color: '#B3261E' }}>Atrasada · {prazoTexto(x.dia, hoje)}</span>}
                         {t.obrigatoria && !feita && (
@@ -42232,7 +42236,6 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
               </div>
               <div style={{ textAlign: 'right', lineHeight: 1.1 }}>
                 <div style={{ ...mono, fontSize: 13, color: '#14231a', fontWeight: 700 }}>{lista.length - porFazer.length}/{lista.length}</div>
-                <div style={{ fontSize: 9, letterSpacing: '.16em', color: '#7a7a70', textTransform: 'uppercase' }}>feitas hoje</div>
               </div>
             </div>
           </div>
