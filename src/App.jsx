@@ -3969,6 +3969,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId}
               ctx={{ sessions, matches, players, monitoring }}
               onIr={(caminho) => goTab(caminho || 'tarefas')}
+              equipa={equipaAtiva} epoca={season && season.name}
             />
           )}
           {tab === 'tarefas' && (
@@ -41981,55 +41982,61 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
 }
 
 /* ================================================================
-   ENTRADA DA EQUIPA TÉCNICA — as missões em página inteira.
+   ENTRADA DA EQUIPA TÉCNICA — A CREDENCIAL.
    ================================================================
-   A MESMA dinâmica das missões do Portal (a prancheta do mister com o
-   quadro a giz e a folha de caderno), mas dentro da app da equipa
-   técnica: ao entrar, cada pessoa vê, uma a uma, as missões que lhe
-   foram atribuídas para hoje e as atrasadas (prioritárias primeiro).
-   - "Bora!" leva ao sítio onde a missão se faz (o caminho). As missões
-     com caminho fecham sozinhas quando a app vê o trabalho feito
-     (`missaoStaffFeita`); sem caminho, "Bora! Concluir" conclui-a.
-   - "Mais tarde" passa à seguinte e regista um adiamento (um por missão
-     e por dia; quem criou vê "adiada 3×").
-   - Aparece uma vez por dia. Não bloqueia ninguém.
-   - Missões sem responsável não entram aqui. */
-function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr }) {
+   No dia de jogo, a equipa técnica anda com uma credencial ao pescoço;
+   os jogadores não. Por isso, ao entrar na app, cai do topo do ecrã a
+   CREDENCIAL da pessoa, num cordão na sua cor, a balançar: nome, função,
+   época, a "fotografia" com as iniciais e um selo holográfico.
+   As missões de hoje e as atrasadas são as ZONAS DE ACESSO da credencial
+   (como as zonas de um estádio): código da zona, título, para onde leva
+   e prazo. Prioritárias com faixa dourada; atrasadas com luz vermelha
+   a piscar.
+   - "Entrar" leva ao sítio onde a missão se faz. Com caminho, a missão
+     fecha sozinha quando a app vê o trabalho feito (`missaoStaffFeita`).
+   - Sem caminho, "Concluir" conclui-a e a zona fica CARIMBADA.
+   - "Guardar a credencial" fecha o ecrã e regista um adiamento em cada
+     missão que ficou por fazer (um por dia; quem criou vê "adiada 3×").
+   - Aparece uma vez por dia. Não bloqueia ninguém. Missões sem
+     responsável não entram aqui.
+   - Teste: ?testeentrada=1 (aparece sempre; três missões de exemplo se
+     não houver; nada é gravado). */
+const ZONA_CODIGO = {
+  analise: 'AV', scouting: 'SC', planeamento: 'PL', jogos: 'JG', estatisticas: 'ES', monitorizacao: 'MO',
+  desenvolvimento: 'DS', ideiajogo: 'IJ', exercicios: 'EX', presencas: 'PR', clinico: 'BC', biblioteca: 'BB',
+};
+function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equipa, epoca }) {
   const hoje = todayStr();
   const chaveVista = `mjp_entrada_${euId}_${hoje}`;
-  /* MODO DE TESTE: ?testeentrada=1 no endereço mostra o ecrã em todas
-     as entradas. Sem missões para hoje, mostra três de exemplo. Em teste,
-     nada é gravado (nem adiamentos nem conclusões). */
   const teste = (() => { try { return /[?&#]testeentrada\b/i.test(window.location.href); } catch (e) { return false; } })();
   const [fechado, setFechado] = useState(() => { if (teste) return false; try { return sessionStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
-  const [adiadas, setAdiadas] = useState([]);
+  const [carimbadas, setCarimbadas] = useState([]); // concluídas aqui (ficam à vista, carimbadas)
+  const [inicial] = useState(() => euId ? missoesDoCacifo(tarefas, euId, ctx, hoje).filter(x => !x.futura).map(x => x.t.id) : []);
   const reais = euId ? missoesDoCacifo(tarefas, euId, ctx, hoje).filter(x => !x.futura) : [];
   const exemplos = [
-    { t: { id: 'teste-a', titulo: 'Relatório do adversário de sábado', caminho: 'scouting', obrigatoria: true, responsavel: euId, criadoPor: euId, notas: 'Exemplo de missão prioritária e atrasada.' }, dia: addDays(hoje, -2), atraso: true },
+    { t: { id: 'teste-a', titulo: 'Relatório do adversário de sábado', caminho: 'scouting', obrigatoria: true, responsavel: euId, criadoPor: 'outro' }, dia: addDays(hoje, -2), atraso: true },
     { t: { id: 'teste-b', titulo: 'Introduzir as estatísticas do jogo', caminho: 'estatisticas', responsavel: euId, criadoPor: euId }, dia: hoje, atraso: false },
-    { t: { id: 'teste-c', titulo: 'Confirmar o autocarro para Penafiel', caminho: '', responsavel: euId, criadoPor: euId, notas: 'Exemplo sem caminho: esta conclui-se à mão.' }, dia: hoje, atraso: false },
+    { t: { id: 'teste-c', titulo: 'Confirmar o autocarro para Penafiel', caminho: '', responsavel: euId, criadoPor: euId }, dia: hoje, atraso: false },
   ];
-  const lista = (teste && !reais.length ? exemplos : reais).filter(x => !adiadas.includes(x.t.id));
+  // As zonas são as da entrada; uma concluída aqui continua à vista, carimbada.
+  const zonas = teste && !reais.length && !inicial.length ? exemplos : reais;
+  const carimbadasVisiveis = (teste && !reais.length ? [] : (tarefas || []).filter(t => carimbadas.includes(t.id)).map(t => ({ t, dia: hoje, atraso: false, feita: true })));
+  const lista = [...zonas, ...carimbadasVisiveis.filter(c => !zonas.some(z => z.t.id === c.t.id))];
+  const porFazer = lista.filter(x => !carimbadas.includes(x.t.id) && !x.feita);
   if (!euId || fechado || !lista.length) return null;
+  registarCoresMembros(membros);
+
+  const meu = (membros || []).find(m => m.user_id === euId) || {};
+  const nome = String(meu.nome || 'Equipa técnica').trim();
+  const iniciais = nome.split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase();
+  const funcao = meu.papel === 'owner' ? 'Responsável da equipa' : 'Equipa técnica';
+  const cor = corDoMembro(euId);
+  const clube = (equipa && (equipa.clube || equipa.nome)) || 'Mister JP';
+  const escalao = (equipa && equipa.escalao) || '';
 
   const fechar = () => { if (!teste) { try { sessionStorage.setItem(chaveVista, '1'); } catch (e) { /* fica só nesta página */ } } setFechado(true); };
-  const porId = new Map(lista.map(x => [x.t.id, x]));
-  // O que a prancheta mostra: título, instruções, prazo e a linha "Para …".
-  const folhas = lista.map(x => ({
-    id: x.t.id, titulo: x.t.titulo, notas: x.t.notas || '', prazo: x.dia || '', caminho: x.t.caminho || '',
-    passoTxt: [x.t.obrigatoria ? 'Prioritária' : '', x.t.criadoPor && x.t.criadoPor !== euId ? `pedida por ${nomeDoMembro(x.t.criadoPor, membros, euId)}` : ''].filter(Boolean).join(' · '),
-  }));
-  const meu = (membros || []).find(m => m.user_id === euId) || {};
-  const pessoa = { name: meu.nome || 'Tu', number: '', position: '' };
-  const destinoDe = (f) => {
-    const c = caminhoStaff(f.caminho);
-    return { id: c.id || 'manual', icon: c.icon, rotulo: c.rotulo, acao: c.id ? c.rotulo : 'Concluir', auto: false };
-  };
-  const dicaDe = (f) => (f.caminho && CRITERIO_STAFF[f.caminho]
-    ? `Fica feita sozinha quando ${CRITERIO_STAFF[f.caminho]}.`
-    : (!f.caminho ? 'Sem caminho: ao carregar, fica concluída.' : ''));
-
   const concluir = (x) => {
+    setCarimbadas(v => [...v, x.t.id]);
     if (teste) return;
     const t = x.t;
     const agora = new Date().toISOString();
@@ -42040,39 +42047,190 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr }) {
       return { ...r, estado: 'feita', feitaEm: agora, lembrete: null, ...(avisaCriadorAoConcluir(r, euId) ? { conclusaoPorVer: { por: euId, em: agora } } : {}) };
     }));
   };
-  const ir = (f) => {
-    const x = porId.get(f.id);
-    if (!x) return;
-    if (!x.t.caminho) {
-      // Sem caminho: "Bora! Concluir" conclui e passa à seguinte.
-      concluir(x);
-      setAdiadas(v => [...v, x.t.id]);
-      return;
-    }
-    fechar();
-    onIr(x.t.caminho);
-  };
-  const adiar = (id) => {
+  const entrar = (x) => { fechar(); onIr(x.t.caminho); };
+  const guardar = () => {
     if (!teste) {
-      setTarefas(prev => prev.map(r => (r.id === id && !(r.adiadaEm || []).includes(hoje)
+      const ids = new Set(porFazer.map(x => x.t.id));
+      setTarefas(prev => prev.map(r => (ids.has(r.id) && !(r.adiadaEm || []).includes(hoje)
         ? { ...r, adiadaEm: [...(r.adiadaEm || []), hoje].slice(-60) }
         : r)));
     }
-    if (lista.length <= 1) fechar();
-    setAdiadas(v => [...v, id]);
+    fechar();
   };
+  const atrasadas = porFazer.filter(x => x.atraso).length;
+  const codigoBarras = 'repeating-linear-gradient(90deg, #1a1d1b 0 2px, transparent 2px 4px, #1a1d1b 4px 5px, transparent 5px 8px, #1a1d1b 8px 11px, transparent 11px 12px, #1a1d1b 12px 13px, transparent 13px 16px)';
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 90 }}>
-      <EcraMissao
-        player={pessoa}
-        tarefas={folhas}
-        onIr={ir}
-        onAdiar={adiar}
-        destinoDe={destinoDe}
-        dicaDe={dicaDe}
-        cabecalho={teste ? 'Missões da equipa técnica · teste' : 'Missões da equipa técnica'}
-      />
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 90, overflowY: 'auto', overflowX: 'hidden', ...body,
+      background: `radial-gradient(ellipse at 50% -10%, #33463a 0%, ${T.bg} 60%)`,
+    }}>
+      <style>{`
+        @keyframes cr-cair { 0% { transform: translateY(-115vh) rotate(-10deg); } 55% { transform: translateY(18px) rotate(5deg); } 72% { transform: translateY(-6px) rotate(-3deg); } 86% { transform: translateY(2px) rotate(1.5deg); } 100% { transform: translateY(0) rotate(0); } }
+        @keyframes cr-balancar { 0%, 100% { transform: rotate(-1.1deg); } 50% { transform: rotate(1.1deg); } }
+        @keyframes cr-holo { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
+        @keyframes cr-luz { 0%, 100% { opacity: 1; box-shadow: 0 0 8px #ff4a3d; } 50% { opacity: .25; box-shadow: none; } }
+        @keyframes cr-carimbo { 0% { transform: rotate(-14deg) scale(2.2); opacity: 0; } 100% { transform: rotate(-14deg) scale(1); opacity: .9; } }
+        @keyframes cr-zona { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) { .cr-anim { animation: none !important; } }
+      `}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 14px calc(28px + env(safe-area-inset-bottom, 0px))' }}>
+        {/* A CREDENCIAL: cai, e depois fica a balançar no cordão */}
+        <div className="cr-anim" style={{ animation: 'cr-cair 1.15s cubic-bezier(.25,.8,.35,1) both', width: 'min(92vw, 390px)' }}>
+          <div className="cr-anim" style={{ transformOrigin: '50% -140px', animation: 'cr-balancar 5.5s ease-in-out 1.2s infinite' }}>
+            {/* o cordão */}
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <div style={{
+                width: 34, height: 'calc(70px + env(safe-area-inset-top, 0px))', background: cor, position: 'relative', overflow: 'hidden',
+                boxShadow: 'inset 6px 0 8px rgba(0,0,0,.25), inset -6px 0 8px rgba(0,0,0,.25)',
+              }}>
+                <div style={{
+                  position: 'absolute', inset: 0, writingMode: 'vertical-rl', textAlign: 'center', fontSize: 9, fontWeight: 800,
+                  letterSpacing: '.3em', color: 'rgba(255,255,255,.75)', whiteSpace: 'nowrap', lineHeight: '34px', textTransform: 'uppercase',
+                }}>Equipa técnica · Equipa técnica</div>
+              </div>
+            </div>
+            {/* a mola metálica */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: -2 }}>
+              <div style={{ width: 22, height: 26, borderRadius: '6px 6px 10px 10px', background: 'linear-gradient(90deg, #8d9093, #e6e8ea 45%, #7d8083)', boxShadow: '0 2px 4px rgba(0,0,0,.5)' }} />
+            </div>
+
+            {/* o cartão */}
+            <div style={{
+              marginTop: -6, borderRadius: 16, overflow: 'hidden', background: '#F7F6F1', position: 'relative',
+              boxShadow: '0 24px 50px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.6)',
+            }}>
+              {/* a ranhura do cordão */}
+              <div style={{ position: 'absolute', top: 10, left: '50%', width: 46, height: 8, marginLeft: -23, borderRadius: 4, background: '#2a2d2b', boxShadow: 'inset 0 1px 2px rgba(0,0,0,.7)', zIndex: 2 }} />
+              {/* faixa de cima, na cor da pessoa */}
+              <div style={{ background: `linear-gradient(120deg, ${cor} 0%, color-mix(in srgb, ${cor} 60%, #0d120f) 100%)`, padding: '26px 16px 14px', color: '#fff' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                  {equipa && equipa.logo
+                    ? <img src={equipa.logo} alt="" style={{ width: 28, height: 28, objectFit: 'contain', filter: 'drop-shadow(0 1px 1px rgba(0,0,0,.4))' }} />
+                    : <Shield size={22} />}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clube}</div>
+                    <div style={{ fontSize: 10, letterSpacing: '.2em', textTransform: 'uppercase', opacity: 0.8 }}>{[escalao, epoca].filter(Boolean).join(' · ') || 'Credencial'}</div>
+                  </div>
+                  <div style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800, letterSpacing: '.18em', border: '1.5px solid rgba(255,255,255,.8)', borderRadius: 4, padding: '3px 6px' }}>STAFF</div>
+                </div>
+              </div>
+
+              {/* identificação */}
+              <div style={{ display: 'flex', gap: 14, padding: '14px 16px 6px', alignItems: 'center', position: 'relative' }}>
+                <div style={{
+                  width: 64, height: 76, borderRadius: 8, flexShrink: 0, display: 'grid', placeItems: 'center',
+                  background: `linear-gradient(160deg, color-mix(in srgb, ${cor} 25%, #fff), color-mix(in srgb, ${cor} 55%, #fff))`,
+                  border: '1px solid rgba(0,0,0,.08)',
+                }}><span style={{ ...display, fontSize: 26, color: '#14231a' }}>{iniciais}</span></div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '.22em', color: '#7a7a70', textTransform: 'uppercase' }}>Credencial · {fmtShort(hoje)}{teste ? ' · teste' : ''}</div>
+                  <div style={{ ...display, fontSize: 26, lineHeight: 1.1, color: '#14231a', margin: '2px 0' }}>{nome}</div>
+                  <div style={{ fontSize: 12.5, color: '#4a4f48' }}>{funcao}</div>
+                </div>
+                {/* o selo holográfico */}
+                <div className="cr-anim" aria-hidden="true" style={{
+                  position: 'absolute', right: 14, top: 10, width: 44, height: 44, borderRadius: '50%', opacity: 0.85,
+                  background: 'conic-gradient(from 0deg, #ff9ad5, #9ad8ff, #b6ffb0, #fff3a0, #ffb3a0, #d0a0ff, #ff9ad5)',
+                  boxShadow: 'inset 0 0 0 3px rgba(255,255,255,.55), 0 1px 3px rgba(0,0,0,.2)', animation: 'cr-holo 6s linear infinite',
+                  display: 'grid', placeItems: 'center',
+                }}><Check size={18} color="rgba(255,255,255,.95)" strokeWidth={3} /></div>
+              </div>
+
+              {/* AS ZONAS DE ACESSO = as missões */}
+              <div style={{ padding: '8px 16px 4px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.22em', color: '#14231a', textTransform: 'uppercase' }}>Zonas de acesso</span>
+                  <span style={{ flex: 1, height: 1, background: '#d8d6cc' }} />
+                  <span style={{ ...mono, fontSize: 10.5, color: atrasadas ? '#B3261E' : '#7a7a70' }}>
+                    {porFazer.length} hoje{atrasadas ? ` · ${atrasadas} em atraso` : ''}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {lista.map((x, k) => {
+                    const t = x.t;
+                    const c = caminhoStaff(t.caminho);
+                    const Ic = c.icon;
+                    const feita = x.feita || carimbadas.includes(t.id);
+                    const auto = caminhoVerificavel(t);
+                    return (
+                      <div key={`${t.id}:${x.base || ''}`} className="cr-anim" style={{
+                        position: 'relative', display: 'flex', alignItems: 'stretch', borderRadius: 10, overflow: 'hidden',
+                        border: `1.5px solid ${t.obrigatoria && !feita ? '#C9A227' : '#dedbd0'}`, background: '#fff',
+                        animation: `cr-zona .4s ease-out ${1.2 + k * 0.12}s both`, opacity: feita ? 0.75 : 1,
+                      }}>
+                        {/* o código da zona */}
+                        <div style={{
+                          width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+                          background: feita ? '#9aa39b' : cor, color: '#fff',
+                        }}>
+                          <span style={{ ...mono, fontSize: 15, fontWeight: 700, letterSpacing: '.04em' }}>{ZONA_CODIGO[t.caminho] || 'GL'}</span>
+                          <Ic size={13} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0, padding: '9px 10px 9px 11px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 }}>
+                            {x.atraso && !feita && <span className="cr-anim" style={{ width: 7, height: 7, borderRadius: '50%', background: '#ff4a3d', animation: 'cr-luz 1.1s ease-in-out infinite' }} />}
+                            <span style={{ ...mono, fontSize: 10.5, color: x.atraso && !feita ? '#B3261E' : '#7a7a70' }}>
+                              {feita ? 'feita' : x.atraso ? `atrasada · ${prazoTexto(x.dia, hoje)}` : 'hoje'}
+                            </span>
+                            {t.obrigatoria && !feita && (
+                              <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#14231a', background: '#FFC23D', borderRadius: 3, padding: '1px 5px' }}>Prioritária</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 14.5, fontWeight: 700, color: '#14231a', lineHeight: 1.3 }}>{t.titulo}</div>
+                          <div style={{ fontSize: 11.5, color: '#6a6f68', marginTop: 2, lineHeight: 1.35 }}>
+                            {c.id ? c.rotulo : 'Sem caminho'}
+                            {t.criadoPor && t.criadoPor !== euId ? ` · pedida por ${t.criadoPor === 'outro' ? 'o mister' : nomeDoMembro(t.criadoPor, membros, euId)}` : ''}
+                          </div>
+                          {!feita && auto && <div style={{ fontSize: 11, color: '#2E6B3A', marginTop: 3, lineHeight: 1.35 }}>Fecha sozinha quando {CRITERIO_STAFF[t.caminho]}.</div>}
+                        </div>
+                        {!feita && (
+                          <div style={{ display: 'flex', alignItems: 'center', paddingRight: 10 }}>
+                            {t.caminho ? (
+                              <button type="button" onClick={() => entrar(x)} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 11px', borderRadius: 8, border: 'none', cursor: 'pointer', ...body,
+                                background: '#14231a', color: '#F7F6F1', fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap',
+                              }}>Entrar <ArrowRight size={13} /></button>
+                            ) : (
+                              <button type="button" onClick={() => concluir(x)} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', ...body,
+                                background: 'transparent', color: '#14231a', border: '1.5px solid #14231a', fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap',
+                              }}><Check size={13} /> Concluir</button>
+                            )}
+                          </div>
+                        )}
+                        {feita && (
+                          <div className="cr-anim" style={{
+                            position: 'absolute', right: 12, top: '50%', marginTop: -14, border: '2.5px solid #2E6B3A', color: '#2E6B3A', borderRadius: 6,
+                            padding: '2px 9px', fontSize: 12, fontWeight: 900, letterSpacing: '.14em', textTransform: 'uppercase',
+                            animation: 'cr-carimbo .35s ease-out both', background: 'rgba(255,255,255,.7)',
+                          }}>Feita</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* rodapé: código de barras e validade */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px 16px' }}>
+                <div style={{ flex: 1, height: 34, background: codigoBarras, opacity: 0.85 }} />
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9.5, letterSpacing: '.2em', color: '#7a7a70', textTransform: 'uppercase' }}>Válida</div>
+                  <div style={{ ...mono, fontSize: 13, color: '#14231a', fontWeight: 700 }}>{fmtShort(hoje)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 22, textAlign: 'center', maxWidth: 390 }}>
+          <Btn variant="ghost" onClick={guardar}>{porFazer.length ? 'Guardar a credencial' : 'Entrar na app'} <ArrowRight size={14} /></Btn>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+            {porFazer.length ? 'O que ficar por fazer conta como adiado hoje. Encontras tudo em Tarefas.' : 'Tudo feito por hoje.'}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
