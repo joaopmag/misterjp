@@ -28970,8 +28970,11 @@ function EcraAniversario({ player, onEntrar }) {
         {idade ? (
           <div style={{ ...display, fontSize: 22, color: T.gold, letterSpacing: '.04em', textAlign: 'center' }}>{idade} anos</div>
         ) : null}
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, maxWidth: 330, textAlign: 'left', margin: '0 auto', alignSelf: 'stretch' }}>
-          Esta camisola é só tua. Toda a equipa técnica deseja-te um dia em grande, dentro e fora do campo.
+        {/* O bloco fica ao meio da página (com a largura do próprio texto) e
+            as linhas alinham à esquerda dentro dele, em dois parágrafos. */}
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, width: 'fit-content', maxWidth: 330, textAlign: 'left', margin: '0 auto', alignSelf: 'center' }}>
+          <p style={{ margin: 0 }}>Esta camisola é só tua.</p>
+          <p style={{ margin: '8px 0 0' }}>Toda a equipa técnica deseja-te um dia em grande, dentro e fora do campo.</p>
         </div>
 
         {/* O GOLO DOS PARABÉNS */}
