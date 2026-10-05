@@ -42158,7 +42158,14 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
               {lista.map((x, k) => {
                 const t = x.t;
                 const c = caminhoStaff(t.caminho);
-                const Ic = c.icon;
+                /* ANIVERSÁRIO: zona própria (AN, com os papelinhos) e, como
+                   instrução, quem faz anos hoje: "Parabéns ao Vasco". */
+                const eAniv = !!(t.recorrencia && t.recorrencia.tipo === 'aniversario');
+                const Ic = eAniv ? PartyPopper : c.icon;
+                const anivNomes = eAniv ? aniversariantesEm(ctx && ctx.players, hoje).map(pl => shortPlayerName(pl, ctx.players)).filter(Boolean) : [];
+                const instrucao = eAniv && anivNomes.length
+                  ? `Parabéns ${anivNomes.length > 1 ? 'a' : 'ao'} ${listaComE(anivNomes)}, em nome da equipa`
+                  : String(t.notas || '').trim();
                 const feita = x.feita || carimbadas.includes(t.id);
                 /* A FAIXA da zona diz o estado pela cor, e a palavra por baixo
                    do título diz o mesmo por extenso:
@@ -42177,14 +42184,14 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
                       alignSelf: 'stretch', margin: '-8px 0', width: 44, flexShrink: 0, display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center', gap: 2, background: faixa, color: '#fff',
                     }}>
-                      <span style={{ ...mono, fontSize: 13, fontWeight: 700 }}>{ZONA_CODIGO[t.caminho] || 'GL'}</span>
+                      <span style={{ ...mono, fontSize: 13, fontWeight: 700 }}>{eAniv ? 'AN' : (ZONA_CODIGO[t.caminho] || 'GL')}</span>
                       <Ic size={11} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: '#14231a', lineHeight: 1.25, ...LINHAS(2) }}>{t.titulo}</div>
                       {/* As instruções da missão, se houver: uma linha só. */}
-                      {String(t.notas || '').trim() && (
-                        <div title={t.notas} style={{ fontSize: 12, color: '#4a4f48', lineHeight: 1.35, marginTop: 1, ...LINHAS(1) }}>{String(t.notas).trim()}</div>
+                      {instrucao && (
+                        <div title={instrucao} style={{ fontSize: 12, color: '#4a4f48', lineHeight: 1.35, marginTop: 1, ...LINHAS(1) }}>{instrucao}</div>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
                         {estado === 'atrasada' && <span style={{ fontSize: 11, fontWeight: 700, color: '#B3261E' }}>Atrasada · {prazoTexto(x.dia, hoje)}</span>}
