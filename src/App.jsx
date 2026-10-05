@@ -29142,7 +29142,7 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
   const ss = falta != null ? Math.floor((falta % 60000) / 1000) : 0;
   // Igual nos dois dias: a contagem para o apito inicial. Sem hora marcada
   // não há para onde contar, e fica só "Amanhã" / "Hoje".
-  const ledLinha2 = !alvo || !mh ? (info.vespera ? 'AMANHÃ' : 'HOJE') : `${dois(hh)}:${dois(mm)}:${dois(ss)}`;
+  const ledLinha2 = !alvo || !mh ? (info.vespera ? 'AMANHÃ' : 'HOJE') : (falta > 0 ? `${dois(hh)}:${dois(mm)}:${dois(ss)}` : 'EM JOGO');
   const ledLegenda = !alvo || !mh ? '' : (falta > 0 ? 'para o apito inicial' : 'a bola já rola');
 
   const ir = () => {
@@ -29182,11 +29182,13 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
     </div>
   );
 
+  /* Rótulo e valor numa grelha: a coluna dos rótulos mede o maior
+     ("Concentração"), por isso o texto nunca fica por cima do rótulo. */
   const linhaBilhete = (rotulo, valor) => valor ? (
-    <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 13.5, lineHeight: 1.45 }}>
-      <span style={{ minWidth: 92, color: '#7a6f5c', fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase' }}>{rotulo}</span>
-      <span style={{ color: '#1d2018', fontWeight: 600 }}>{valor}</span>
-    </div>
+    <React.Fragment key={rotulo}>
+      <span style={{ color: '#7a6f5c', fontSize: 9.5, letterSpacing: '.1em', textTransform: 'uppercase', paddingTop: 3, whiteSpace: 'nowrap' }}>{rotulo}</span>
+      <span style={{ color: '#1d2018', fontWeight: 600, fontSize: 13.5, lineHeight: 1.4, minWidth: 0 }}>{valor}</span>
+    </React.Fragment>
   ) : null;
 
   return (
@@ -29283,20 +29285,21 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
               <div style={{ ...display, fontSize: 26, color: '#14231a', lineHeight: 1.15, margin: '2px 0 10px' }}>
                 {primeiro}{numero ? <span style={{ color: cor.base, marginLeft: 8 }}>#{numero}</span> : null}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'max-content minmax(0, 1fr)', columnGap: 10, rowGap: 4, alignItems: 'start' }}>
                 {linhaBilhete('Jogo', `${info.casaFora === 'Fora' ? 'Fora' : info.casaFora === 'Casa' ? 'Em casa' : ''}${info.casaFora ? ' · ' : ''}vs ${adv}`)}
                 {linhaBilhete('Hora', [info.hora, info.local].filter(Boolean).join(' · '))}
                 {linhaBilhete('Concentração', [info.horaConc, info.localConc].filter(Boolean).join(' · '))}
               </div>
-              {/* os três numa só linha: em ecrãs estreitos encolhem a letra */}
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', marginTop: 12, minWidth: 0 }}>
-                {[{ Ic: ClipboardList, t: 'Convocatória' }, { Ic: FileText, t: 'Plano de jogo' }, { Ic: Shield, t: 'Adversário' }].map(({ Ic, t }) => (
+              {/* Os três numa só linha, em três caixas iguais. Sem ícones e com a
+                  letra a acompanhar a largura do ecrã, o texto cabe sempre
+                  dentro da caixa. */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, marginTop: 12 }}>
+                {['Convocatória', 'Plano de jogo', 'Adversário'].map(t => (
                   <span key={t} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px, 2.7vw, 11px)', color: '#3b3a2c',
-                    border: '1px solid #cfc2a4', borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0,
-                  }}>
-                    <Ic size={11} style={{ flexShrink: 0 }} /> {t}
-                  </span>
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', minWidth: 0,
+                    fontSize: 'clamp(8.5px, 2.5vw, 10.5px)', fontWeight: 600, color: '#3b3a2c', lineHeight: 1.15,
+                    border: '1px solid #cfc2a4', borderRadius: 999, padding: '4px 4px', whiteSpace: 'nowrap', overflow: 'hidden',
+                  }}>{t}</span>
                 ))}
               </div>
               {info.convocado && (
@@ -29309,12 +29312,12 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
             </div>
             {/* o canhoto, com o picotado entre os dois */}
             <div className={rasgar ? '' : 'ej-anim'} style={{
-              width: 74, flexShrink: 0, background: '#F6EEDB', borderRadius: '0 10px 10px 0', position: 'relative',
+              width: 60, flexShrink: 0, background: '#F6EEDB', borderRadius: '0 10px 10px 0', position: 'relative',
               borderLeft: '2px dashed #b9aa88', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0',
               transformOrigin: '0 0', animation: rasgar ? 'ej-rasgar .65s ease-in both' : 'none',
             }}>
               <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 10, letterSpacing: '.3em', color: '#8a7a5c', textTransform: 'uppercase' }}>Entrada</div>
-              <div style={{ width: 40, height: 52, background: 'repeating-linear-gradient(90deg, #1d2018 0 2px, transparent 2px 4px, #1d2018 4px 5px, transparent 5px 8px, #1d2018 8px 11px, transparent 11px 12px)' }} />
+              <div style={{ width: 34, height: 52, background: 'repeating-linear-gradient(90deg, #1d2018 0 2px, transparent 2px 4px, #1d2018 4px 5px, transparent 5px 8px, #1d2018 8px 11px, transparent 11px 12px)' }} />
               <div style={{ ...display, fontSize: 18, color: cor.base }}>{numero || '★'}</div>
             </div>
           </div>
