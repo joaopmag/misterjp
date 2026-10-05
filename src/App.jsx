@@ -28970,13 +28970,15 @@ function EcraAniversario({ player, onEntrar }) {
         {idade ? (
           <div style={{ ...display, fontSize: 22, color: T.gold, letterSpacing: '.04em', textAlign: 'center' }}>{idade} anos</div>
         ) : null}
-        {/* Linhas alinhadas à esquerda, mas o bloco ao meio da página. O
-            `balance` deixa as linhas com comprimentos parecidos: sem isso, a
-            última linha curta deixava um vazio à direita e o texto parecia
-            encostado à esquerda. */}
+        {/* A mensagem é CENTRADA, como o resto do ecrã (título, idade,
+            camisola, baliza). Alinhada à esquerda nunca ficava bem: o
+            navegador dá ao bloco a largura máxima, as linhas acabam antes
+            dessa largura, e o texto fica sempre a parecer puxado para a
+            esquerda. O `balance` deixa as linhas com comprimentos parecidos,
+            para não ficar uma palavra sozinha na última. */}
         <div style={{
-          fontSize: 14, color: 'rgba(255,255,255,.78)', lineHeight: 1.55, width: 'fit-content', maxWidth: 'min(300px, 100%)',
-          textAlign: 'left', textWrap: 'balance', margin: '0 auto', alignSelf: 'center',
+          fontSize: 14.5, color: 'rgba(255,255,255,.8)', lineHeight: 1.6, maxWidth: 'min(320px, 100%)',
+          textAlign: 'center', textWrap: 'balance', margin: '0 auto', alignSelf: 'center',
         }}>
           Esta camisola é só tua. Toda a equipa técnica deseja-te um dia em grande, dentro e fora do campo.
         </div>
