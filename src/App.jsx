@@ -4480,6 +4480,18 @@ const RELATO_ACOES = {
 };
 const RELATO_PAGINA = 500;
 const QUIOSQUE = '__quiosque';
+/* GRAVAÇÕES AUTOMÁTICAS. Depois de um vídeo ser carregado, o servidor
+   prepara-o (miniatura, "pronto", erro de preparação) e escreve isso no
+   registo sem nenhuma pessoa por trás. Como não traz email nem id, caía
+   em QUIOSQUE e aparecia como "Jogadores editou o vídeo", o que estava
+   errado: nenhum jogador mexeu. Uma alteração sem autor em que TODOS os
+   campos são destes técnicos passa a contar como automática. */
+const AUTOMATICO = '__automatico';
+const CAMPOS_TECNICOS = new Set([
+  'pronto', 'thumbUrl', 'thumb_url', 'erroPreparacao', 'erro_preparacao',
+]);
+const soCamposTecnicos = (campos) => Array.isArray(campos) && campos.length > 0
+  && campos.every(c => c && CAMPOS_TECNICOS.has(c.k));
 
 const isoDia = (d) => /^\d{4}-\d{2}-\d{2}/.test(String(d || '')) ? String(d).slice(0, 10) : '';
 const ddmm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
@@ -4702,11 +4714,14 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
      do email — contam como o jogador, não como "Alguém da equipa". */
   const chaveDe = useCallback((e) => {
     const em = (e.ator_email || '').toLowerCase();
+    const semAutor = !e.ator_id && (!em || !em.includes('@'));
+    if (semAutor && e.acao === 'editou' && soCamposTecnicos(e.campos)) return AUTOMATICO;
     if (em && !em.includes('@')) return QUIOSQUE;
     return em || e.ator_id || QUIOSQUE;
   }, []);
   const quemE = useCallback((chave) => {
     if (chave === QUIOSQUE) return { nome: 'Jogadores', cor: T.mutedDim, eu: false, quiosque: true };
+    if (chave === AUTOMATICO) return { nome: 'Preparação automática', cor: T.mutedDim, eu: false, quiosque: true };
     const id = chave.includes('@') ? pessoasInfo.idPorEmail[chave] : chave;
     const m = id && pessoasInfo.membroPorId[id];
     const nomeEmail = chave.includes('@') ? chave.split('@')[0].replace(/[._-]+/g, ' ') : 'Alguém da equipa';
@@ -4733,6 +4748,11 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     }
     /* Pelo quiosque quem faz é o próprio jogador: "Rios respondeu ao
        wellness", e não "Jogadores editou o registo de Rios". */
+    // "Preparação automática preparou o vídeo X" (ou falhou, se houve erro).
+    if (l.chave === AUTOMATICO) {
+      const erro = (l.campos || []).some(c => (c.k === 'erroPreparacao' || c.k === 'erro_preparacao') && c.para);
+      return { sujeito: null, verbo: erro ? 'não conseguiu preparar' : 'preparou', art: sec.art, alvo, dia, secao: sec };
+    }
     if (l.chave === QUIOSQUE) {
       const ks = (l.campos || []).map(c => c.k);
       let oQue;
@@ -4894,7 +4914,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     );
   } else {
     const ultimo = lancesBase[0];
-    const nPessoas = porPessoa.filter(([k]) => k !== QUIOSQUE).length;
+    const nPessoas = porPessoa.filter(([k]) => k !== QUIOSQUE && k !== AUTOMATICO).length;
     const aCarregar = linhas === null;
     corpo = (
       <>
@@ -4919,7 +4939,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
             <span style={{ textTransform: q.quiosque ? 'none' : 'capitalize' }}>{q.nome}</span>
             {q.eu && <span style={{ fontSize: 10, opacity: .8 }}>(tu)</span>}
             <span style={{ ...mono, opacity: .75 }}>{n}</span>
-          </>, k, q.quiosque ? 'Respostas dos jogadores no quiosque' : (q.email || undefined));
+          </>, k, k === AUTOMATICO ? 'Alterações feitas pelo servidor ao preparar vídeos' : q.quiosque ? 'Respostas dos jogadores no quiosque' : (q.email || undefined));
         }))}
 
         <div style={{ marginTop: 10, minHeight: '60vh' }}>
