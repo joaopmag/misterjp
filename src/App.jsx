@@ -3872,7 +3872,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : 'jogos'} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : 'jogos'}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} />}
           {/* Sempre montado, escondido com CSS (não desmontado) — o mesmo
              motivo da Biblioteca logo abaixo: sem isto, trocar de separador
              e voltar perdia o vídeo selecionado, a posição de reprodução e
@@ -3974,7 +3974,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           )}
           {tab === 'tarefas' && (
             <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId}
-              sessions={sessions} matches={matches} players={players} monitoring={monitoring} />
+              sessions={sessions} matches={matches} players={players} monitoring={monitoring} standings={standings} />
           )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
         </div>
@@ -26561,6 +26561,61 @@ function estadoRelatorio(m) {
   return { id: 'feito', txt: `${comMin} ${comMin === 1 ? 'jogador' : 'jogadores'}`, cor: T.good };
 }
 
+/* ALERTA AO DONO: RELATÓRIOS POR PREENCHER SEM NINGUÉM ENCARREGUE.
+   Se há jogos já realizados com o relatório por fazer e NENHUMA missão
+   da equipa técnica para os relatórios (caminho "Relatórios de jogo",
+   aberta ou a repetir), o dono da equipa vê um aviso em Tarefas e em
+   Jogos › Relatórios, com um botão que abre a Nova missão já preenchida.
+   Assim que existir a missão, o aviso desaparece (quem a tiver recebe-a
+   na credencial). Só jogos dos últimos 60 dias, para jogos antigos
+   esquecidos não ficarem a gerar o aviso para sempre. */
+function relatoriosEmFalta(matches, standings) {
+  const hoje = todayStr();
+  const limite = addDays(hoje, -60);
+  return (matches || [])
+    .filter(m => m && m.date && m.date <= hoje && m.date >= limite)
+    .filter(m => estadoRelatorio(comResultado(m, standings)).id !== 'feito')
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+function haMissaoDeRelatorios(tarefas) {
+  return (tarefas || []).some(t => t && !t.jogadorId && t.caminho === 'estatisticas'
+    && (t.recorrencia || t.estado !== 'feita'));
+}
+// A Nova missão pedida a partir de outro separador (abre em Tarefas).
+let missaoPendente = null;
+function pedirNovaMissao(pref) {
+  missaoPendente = pref;
+  irParaSeparador('tarefas');
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('mjp-nova-missao'));
+}
+const PREF_MISSAO_RELATORIOS = (repetir) => ({
+  modo: 'staff', caminho: 'estatisticas', titulo: 'Introduzir as estatísticas do jogo',
+  ...(repetir ? { recorrencia: { tipo: 'pos_jogo', desde: todayStr() } } : { prazo: addDays(todayStr(), 1) }),
+});
+
+function AlertaRelatorios({ emFalta, onCriar }) {
+  if (!emFalta || !emFalta.length) return null;
+  const nomes = emFalta.slice(0, 2).map(m => `vs ${m.opponent || 'Adversário'} (${fmtShort(m.date)})`).join(', ');
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16, padding: '12px 14px', borderRadius: 10,
+      background: 'rgba(179,38,30,.10)', border: `1px solid ${T.bad}`,
+    }}>
+      <AlertTriangle size={18} color={T.bad} style={{ flexShrink: 0 }} />
+      <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 600 }}>
+          {emFalta.length === 1 ? 'Há 1 relatório de jogo por preencher' : `Há ${emFalta.length} relatórios de jogo por preencher`} e ninguém tem essa missão.
+        </div>
+        <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>{nomes}{emFalta.length > 2 ? '…' : ''}</div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Btn onClick={() => onCriar(true)}><Plus size={14} /> Missão depois de cada jogo</Btn>
+        <Btn variant="ghost" onClick={() => onCriar(false)}>Só estes jogos</Btn>
+      </div>
+    </div>
+  );
+}
+
 function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto }) {
   const hoje = todayStr();
   const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje).map(m => comResultado(m, standings))
@@ -26762,7 +26817,7 @@ function RelatorioJogoModal({ match, players, season, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial }) {
+function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial, tarefas, souDono }) {
   /* Convocatórias deixaram de ter separador próprio e vivem aqui: nascem
      com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
      jornada sincronizados), por isso eram já a outra vista da mesma
@@ -26880,6 +26935,9 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
             { id: 'relatorios', label: 'Relatórios de jogo', icon: Pencil, count: relatoriosPorFazer },
           ]}
         />
+        {souDono && !haMissaoDeRelatorios(tarefas) && (
+          <AlertaRelatorios emFalta={relatoriosEmFalta(matches, standings)} onCriar={(rep) => pedirNovaMissao(PREF_MISSAO_RELATORIOS(rep))} />
+        )}
         <RelatoriosJogo
           matches={matches} players={players} season={season} standings={standings}
           onSave={save} abrirId={abrirRelatorio} onAberto={() => setAbrirRelatorio(null)}
@@ -42631,13 +42689,13 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
   const base = registos[0] || null;
   const editar = !!base;
   const emGrupo = registos.length > 1;
-  const [modo, setModo] = useState(base ? (base.jogadorId ? 'jogadores' : 'staff') : 'staff');
+  const [modo, setModo] = useState(base ? (base.jogadorId ? 'jogadores' : 'staff') : ((inicial && inicial.modo) || 'staff'));
   const [dest, setDest] = useState(() => (base
     ? registos.map(r => (r.jogadorId ? r.jogadorId : (r.responsavel || ''))).filter(Boolean)
     : (euId ? [euId] : [])));
   const [comum, setComum] = useState(() => ({
     prazo: (base ? base.prazo : (inicial && inicial.prazo)) || '',
-    recorrencia: base ? (base.recorrencia || null) : null,
+    recorrencia: base ? (base.recorrencia || null) : ((inicial && inicial.recorrencia) || null),
     acompanha: base ? (base.jogadorId ? (base.responsavel || '') : (euId || '')) : (euId || ''),
     estado: base ? (base.estado || 'aberta') : 'aberta',
     obrigatoria: base ? !!base.obrigatoria : false,
@@ -42650,7 +42708,10 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
       caminho: t.caminho || '', instrucoes: inst,
     };
   };
-  const [blocos, setBlocos] = useState(() => (base ? [blocoDe(base)] : [{ key: uid(), titulo: '', tituloAuto: '', destino: 'nota', caminho: '', instrucoes: '' }]));
+  const [blocos, setBlocos] = useState(() => (base ? [blocoDe(base)] : [{
+    key: uid(), titulo: (inicial && inicial.titulo) || '', tituloAuto: (inicial && inicial.titulo) || '',
+    destino: 'nota', caminho: (inicial && inicial.caminho) || '', instrucoes: '',
+  }]));
   const [fecharSemSaltar, espacoSemSaltar] = useFecharSemSaltar();
 
   const jogadoresOrdenados = sortByPosition(players || []);
@@ -43009,7 +43070,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
   );
 }
 
-function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, players, monitoring }) {
+function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, players, monitoring, standings }) {
   registarCoresMembros(membros);
   const [modal, setModal] = useState(null); // 'new' | tarefa
   // Dia já escolhido para uma tarefa nova criada a partir do Calendário.
@@ -43032,6 +43093,21 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   const hoje = todayStr();
   const ctx = { sessions, matches, players, monitoring };
   const souDono = ((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner';
+  // Nova missão pedida noutro separador (ex.: o alerta dos relatórios).
+  const [prefMissao, setPrefMissao] = useState(null);
+  useEffect(() => {
+    const abrirPendente = () => {
+      if (!missaoPendente) return;
+      const pref = missaoPendente;
+      missaoPendente = null;
+      setPrefMissao(pref); setNovoDia(''); setOcorrencia(null); setModal('new');
+    };
+    abrirPendente();
+    window.addEventListener('mjp-nova-missao', abrirPendente);
+    return () => window.removeEventListener('mjp-nova-missao', abrirPendente);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const relFalta = souDono && !haMissaoDeRelatorios(tarefas) ? relatoriosEmFalta(matches, standings) : [];
   /* CONCLUÍDAS POR VER — o aviso a quem criou. Agora inclui as missões
      dos JOGADORES: quando um jogador conclui uma missão que criei (submete
      a resposta, a autoavaliação, grava o clipe ou abre o que lhe pedi),
@@ -43297,6 +43373,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
         subtitle="Missões para a equipa técnica e para os jogadores."
         action={<Btn onClick={() => setModal('new')}><Plus size={15} /> Nova missão</Btn>}
       />
+      <AlertaRelatorios emFalta={relFalta} onCriar={(r) => { setPrefMissao(PREF_MISSAO_RELATORIOS(r)); setNovoDia(''); setOcorrencia(null); setModal('new'); }} />
 
       {/* CONCLUÍDAS POR VER — tarefas que criei e que outra pessoa
           concluiu. Ficam aqui, e no badge, até eu as abrir ou dar como
@@ -43402,7 +43479,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
       {modal && (modal === 'new' || modal._grupo || !(Array.isArray(modal.missoes) && modal.missoes.length > 1)) && (
         <MissaoModal
           alvo={modal === 'new' ? null : modal}
-          inicial={modal === 'new' && novoDia ? { prazo: novoDia } : null}
+          inicial={modal === 'new' ? (prefMissao || (novoDia ? { prazo: novoDia } : null)) : null}
           ocorrencia={modal !== 'new' ? ocorrencia : null}
           podeConcluir={modal === 'new' ? true : podeConcluir(modal)}
           podeGerir={modal === 'new' ? true : doGrupo(modal).every(r => podeGerirTarefa(r, euId, souDono))}
@@ -43410,8 +43487,8 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           players={players}
           euId={euId}
           tarefas={tarefas}
-          onClose={() => { setModal(null); setNovoDia(''); setOcorrencia(null); }}
-          onGuardar={guardarMissoes}
+          onClose={() => { setModal(null); setNovoDia(''); setOcorrencia(null); setPrefMissao(null); }}
+          onGuardar={(ops) => { setPrefMissao(null); guardarMissoes(ops); }}
           onRemove={modal === 'new' ? null : (modal._grupo ? () => removerGrupo(modal) : () => remove(modal.id))}
         />
       )}
