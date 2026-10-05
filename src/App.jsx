@@ -28134,7 +28134,7 @@ function checkinWindowState(type, dateStr, now = new Date()) {
    rede — bastava abrir as ferramentas de programador. Agora a validação
    do código acontece no servidor (função checkin_bootstrap) e o que chega
    ao browser é apenas o registo de quem entrou. */
-function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnostico, code, teamId }) {
+function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnostico, code, teamId, equipa }) {
   const loggedPlayerId = player && player.id;
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
   const [selectedDate, setSelectedDate] = useState(todayStr());
@@ -28230,19 +28230,32 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      em Tarefas da equipa técnica. */
   const [, dadosConvJogo] = usePortalFetch('checkin_convocatoria', code, teamId);
   const [, dadosCompJogo] = usePortalFetch('checkin_competicao', code, teamId);
-  const jogoOficial = (c) => {
-    if (c.competicao) return competitionLabel(c.competicao) !== FRIENDLY;
+  // O jogo da competição que corresponde a esta convocatória (mesmo dia,
+  // mesmo adversário), com a jornada. null = não está no calendário oficial.
+  const jogoDoCalendario = (c) => {
     const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').trim();
     const palavras = (x) => norm(x).split(/\s+/).filter(w => w.length >= 4 && !['clube', 'futebol', 'sport', 'sporting', 'grupo', 'desportivo', 'associacao', 'uniao'].includes(w));
     const adv = palavras(c.adversario);
-    if (!adv.length) return false;
+    if (!adv.length || !c.data) return null;
     const { competitions } = normalizeStandings(dadosCompJogo && dadosCompJogo.standings);
-    return (competitions || []).some(comp => (comp.rounds || []).some(r => (r.games || []).some(g => {
-      if (!g || String(g.date || '').slice(0, 10) !== c.data) return false;
-      const lados = `${norm(g.home)} ${norm(g.away)}`;
-      return adv.some(w => lados.includes(w));
-    })));
+    for (const comp of (competitions || [])) {
+      const rounds = comp.rounds || [];
+      for (let k = 0; k < rounds.length; k++) {
+        const achou = (rounds[k].games || []).some(g => {
+          if (!g || String(g.date || '').slice(0, 10) !== c.data) return false;
+          const lados = `${norm(g.home)} ${norm(g.away)}`;
+          return adv.some(w => lados.includes(w));
+        });
+        if (achou) {
+          const lbl = String(rounds[k].label || '').trim();
+          const num = (/(\d+)/.exec(lbl) || [])[1] || (!lbl ? String(k + 1) : '');
+          return { jornada: num ? `${num}.ª jornada` : lbl };
+        }
+      }
+    }
+    return null;
   };
+  const jogoOficial = (c) => (c.competicao ? competitionLabel(c.competicao) !== FRIENDLY : !!jogoDoCalendario(c));
   // Já passou a hora do jogo de hoje? (sem hora, fica o dia todo)
   const jaComecou = (c) => {
     const m = /^(\d{1,2})[:h](\d{2})/.exec(String(c.horaJogo || '').trim());
@@ -28279,9 +28292,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
             vespera, nos: nossoClube, adv: c.adversario || 'Adversário', casaFora: c.casaFora || '',
             data: c.data, hora: c.horaJogo || '', local: c.localJogo || '',
             horaConc: c.horaConcentracao || '', localConc: c.localConcentracao || '', convocado: c.convocado === true,
+            jornada: (jogoDoCalendario(c) || {}).jornada || '', logo: (equipa && equipa.logo) || '',
           },
           titulo: vespera ? 'Amanhã há jogo' : 'Hoje é dia de jogo',
-          acao: vespera ? 'Preparar o jogo' : 'Ver o jogo de hoje',
+          acao: 'Preparar o jogo',
           notas: `${jogo}${quando ? `\n${quando}` : ''}${conc}\nVê a convocatória, o plano de jogo e o adversário.`,
         };
       })
@@ -28309,11 +28323,12 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     const horaEx = `${String(daqui.getHours()).padStart(2, '0')}:${String(daqui.getMinutes()).padStart(2, '0')}`;
     missoesJogo.push({
       id: `teste:jogo:${modoTesteJogo}`, _jogo: true, _teste: true, destino: 'jogos', prazo: vespera ? addDays(hoje, 1) : hoje, passoTxt: '',
-      titulo: vespera ? 'Amanhã há jogo' : 'Hoje é dia de jogo', acao: vespera ? 'Preparar o jogo' : 'Ver o jogo de hoje',
+      titulo: vespera ? 'Amanhã há jogo' : 'Hoje é dia de jogo', acao: 'Preparar o jogo',
       _info: {
         vespera, nos: (dadosConvJogo && dadosConvJogo.clube) || 'Nós', adv: c.adversario || 'FC Exemplo', casaFora: c.casaFora || 'Casa',
         data: vespera ? addDays(hoje, 1) : hoje, hora: c.horaJogo || horaEx, local: c.localJogo || 'Estádio de teste',
         horaConc: c.horaConcentracao || '', localConc: c.localConcentracao || '', convocado: c.convocado !== false,
+        jornada: (c.adversario && c.data ? (jogoDoCalendario(c) || {}).jornada : '') || '5.ª jornada', logo: (equipa && equipa.logo) || '',
       },
     });
   }
@@ -29025,8 +29040,8 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
   const fora = info.casaFora === 'Fora';
   const nos = String(info.nos || 'Nós');
   const adv = String(info.adv || 'Adversário');
-  const casa = fora ? { nome: adv, nosso: false } : { nome: nos, nosso: true };
-  const vis = fora ? { nome: nos, nosso: true } : { nome: adv, nosso: false };
+  const casa = fora ? { nome: adv, nosso: false, lado: 'Casa' } : { nome: nos, nosso: true, lado: 'Casa' };
+  const vis = fora ? { nome: nos, nosso: true, lado: 'Fora' } : { nome: adv, nosso: false, lado: 'Fora' };
 
   // Contagem para o apito. Sem hora marcada, conta para a meia-noite do dia do jogo.
   const mh = /^(\d{1,2})[:h](\d{2})/.exec(String(info.hora || '').trim());
@@ -29036,11 +29051,10 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
   const hh = falta != null ? Math.floor(falta / 3600000) : 0;
   const mm = falta != null ? Math.floor((falta % 3600000) / 60000) : 0;
   const ss = falta != null ? Math.floor((falta % 60000) / 1000) : 0;
-  const ledLinha2 = !alvo ? (info.vespera ? 'AMANHÃ' : 'HOJE')
-    : info.vespera ? `${dois(hh)}:${dois(mm)}:${dois(ss)}`
-      : (mh ? `APITO ${dois(mh[1])}:${mh[2]}` : 'HOJE');
-  const ledLegenda = !alvo ? '' : info.vespera ? (mh ? 'para o apito inicial' : 'para o dia do jogo')
-    : (mh ? (falta > 0 ? `faltam ${hh ? `${hh}h ` : ''}${dois(mm)}min` : 'a bola já rola') : '');
+  // Igual nos dois dias: a contagem para o apito inicial. Sem hora marcada
+  // não há para onde contar, e fica só "Amanhã" / "Hoje".
+  const ledLinha2 = !alvo || !mh ? (info.vespera ? 'AMANHÃ' : 'HOJE') : `${dois(hh)}:${dois(mm)}:${dois(ss)}`;
+  const ledLegenda = !alvo || !mh ? '' : (falta > 0 ? 'para o apito inicial' : 'a bola já rola');
 
   const ir = () => {
     if (rasgar) return;
@@ -29048,14 +29062,22 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
     setTimeout(() => onIr(missao), 650);
   };
   const led = { fontFamily: "'JetBrains Mono', 'Courier New', monospace", color: '#FFC23D', textShadow: '0 0 6px rgba(255,170,40,.85), 0 0 14px rgba(255,140,20,.45)' };
+  /* Sem emblemas: obrigava a carregar o de todos os adversários, e não é
+     essa a ideia da app. Cada lado leva só o que um placard a sério tem:
+     CASA / FORA por cima e o nome. O nosso lado tem a barra na cor da
+     equipa e, se a equipa tiver emblema carregado, o emblema ao lado do
+     nome (o do adversário nunca se pede). */
   const ladoPlacard = (eq) => (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+      <div style={{ fontSize: 9.5, letterSpacing: '.3em', color: 'rgba(255,194,61,.55)', textTransform: 'uppercase', paddingLeft: '.3em' }}>{eq.lado}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, maxWidth: '100%', minWidth: 0 }}>
+        {eq.nosso && info.logo ? <img src={info.logo} alt="" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0 }} /> : null}
+        <div style={{ ...led, fontSize: 14, letterSpacing: '.06em', textTransform: 'uppercase', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eq.nome}</div>
+      </div>
       <div style={{
-        width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: eq.nosso ? `linear-gradient(160deg, ${cor.claro}, ${cor.base})` : 'linear-gradient(160deg, #e9e9e9, #9a9a9a)',
-        border: '1.5px solid rgba(255,255,255,.7)', boxShadow: eq.nosso ? `0 0 12px ${cor.base}` : 'none',
-      }}><Shield size={16} color={eq.nosso ? cor.texto : '#222'} /></div>
-      <div style={{ ...led, fontSize: 14, letterSpacing: '.06em', textTransform: 'uppercase', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eq.nome}</div>
+        width: '70%', height: 3, borderRadius: 2,
+        background: eq.nosso ? cor.base : 'rgba(255,194,61,.18)', boxShadow: eq.nosso ? `0 0 8px ${cor.base}` : 'none',
+      }} />
     </div>
   );
   const linhaBilhete = (rotulo, valor) => valor ? (
@@ -29128,7 +29150,7 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
         <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           <div style={{ textAlign: 'center', color: T.gold, fontSize: 11.5, fontWeight: 800, letterSpacing: '.26em', textTransform: 'uppercase' }}>
-            {info.vespera ? 'Véspera de jogo' : 'Dia de jogo'}{missao._teste ? ' · teste' : ''}
+            Jogo{info.jornada ? ` · ${info.jornada}` : ''}{missao._teste ? ' · teste' : ''}
           </div>
 
           {/* O PLACARD */}
@@ -29159,13 +29181,17 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 {linhaBilhete('Jogo', `${info.casaFora === 'Fora' ? 'Fora' : info.casaFora === 'Casa' ? 'Em casa' : ''}${info.casaFora ? ' · ' : ''}vs ${adv}`)}
-                {linhaBilhete('Apito', [info.hora, info.local].filter(Boolean).join(' · '))}
+                {linhaBilhete('Hora', [info.hora, info.local].filter(Boolean).join(' · '))}
                 {linhaBilhete('Concentração', [info.horaConc, info.localConc].filter(Boolean).join(' · '))}
               </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+              {/* os três numa só linha: em ecrãs estreitos encolhem a letra */}
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap', marginTop: 12, minWidth: 0 }}>
                 {[{ Ic: ClipboardList, t: 'Convocatória' }, { Ic: FileText, t: 'Plano de jogo' }, { Ic: Shield, t: 'Adversário' }].map(({ Ic, t }) => (
-                  <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#3b3a2c', border: '1px solid #cfc2a4', borderRadius: 999, padding: '3px 9px' }}>
-                    <Ic size={12} /> {t}
+                  <span key={t} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px, 2.7vw, 11px)', color: '#3b3a2c',
+                    border: '1px solid #cfc2a4', borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0,
+                  }}>
+                    <Ic size={11} style={{ flexShrink: 0 }} /> {t}
                   </span>
                 ))}
               </div>
@@ -42234,6 +42260,7 @@ function CheckinApp() {
       onLogout={sair}
       code={codigo}
       teamId={equipaDoLink}
+      equipa={equipa}
     />
   );
 }
