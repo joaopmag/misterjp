@@ -34329,8 +34329,7 @@ const SECOES_CANAL = [
   { id: 'adversarios', label: 'Adversários', cat: 'adversario', Icon: Shield },
   { id: 'temas', label: 'Temas', cat: 'tema', Icon: FolderOpen },
 ];
-// Só no Portal do Atleta: os clipes criados pelo próprio jogador.
-const SECAO_MEUS_CLIPES = { id: 'meus', label: 'Os meus clipes', cat: 'meus', Icon: Scissors };
+// "Os meus clipes" (só no Portal) é um cartão dentro de Jogos, não uma secção.
 
 const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta }, ref) {
   const [modal, setModal] = useState(null);
@@ -35643,7 +35642,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Portal: os clipes do próprio jogador vivem só na secção "Os meus
   // clipes" (não se repetem dentro do cartão do jogo).
   const itensMeus = modoCanal ? items.filter(v => v.deAtleta) : [];
-  const secoesCanal = criarClipeAtleta ? [...SECOES_CANAL, SECAO_MEUS_CLIPES] : SECOES_CANAL;
+  /* "Os meus clipes" deixou de ser um separador: os clipes do jogador
+     cortam-se dos vídeos dos jogos, por isso ficam DENTRO de Jogos, como o
+     primeiro cartão. Assim o separador não aparece vazio a quem ainda não
+     criou nenhum, e quem cria encontra-os onde os fez. */
+  const secoesCanal = SECOES_CANAL;
   const ordemCriacao = {};
   items.forEach((v, i) => { ordemCriacao[v.id] = i + 1; });
   // Rótulo de um jogo dentro de um cartão com vários (Amigáveis/adversário).
@@ -37052,7 +37055,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           : {}),
       }}>
         {secoesCanal.map(s => {
-          const on = secao === s.id && !termo;
+          const on = (secao === s.id || (s.id === 'jogos' && secao === 'meus')) && !termo;
           const n = s.id === 'jogos' ? gruposJogo.length
             : s.id === 'adversarios' ? gruposAdv.length
             : s.id === 'meus' ? itensMeus.length
@@ -37151,7 +37154,46 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const capas = capasDosCartoes(grupos);
     return (
       <div>
-        {grupos.length === 0 ? (
+        {eJogos && criarClipeAtleta ? (
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${isNarrow ? 150 : 220}px, 1fr))`, gap: 12 }}>
+            {/* O PRIMEIRO CARTÃO: os clipes do próprio jogador. */}
+            <button onClick={() => abrirSecao('meus')} style={{
+              textAlign: 'left', padding: 0, cursor: 'pointer', overflow: 'hidden', ...body,
+              background: T.surface, border: `1px solid ${T.gold}`, borderRadius: 10, display: 'flex', flexDirection: 'column',
+            }}>
+              <div style={{
+                aspectRatio: '16 / 9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 6,
+                background: 'linear-gradient(150deg, #3a1d20 0%, #1d2a22 100%)',
+              }}>
+                <Scissors size={26} color={T.warn} />
+                <span style={{ ...mono, fontSize: 20, color: T.cream }}>{itensMeus.length}</span>
+              </div>
+              <div style={{ padding: '9px 11px 11px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: 11, color: T.warn, ...mono }}>Só teus</span>
+                <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 600 }}>Os meus clipes</div>
+                <div style={{ fontSize: 11.5, color: T.mutedDim }}>
+                  {itensMeus.length ? `${itensMeus.length} ${itensMeus.length === 1 ? 'clipe' : 'clipes'}` : 'Abre um jogo e carrega em "Criar clipe"'}
+                </div>
+              </div>
+            </button>
+            {grupos.map(g => (
+              <button key={g.key} onClick={() => abrirGrupo(g.key)} style={{
+                textAlign: 'left', padding: 0, cursor: 'pointer', overflow: 'hidden', ...body,
+                background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, display: 'flex', flexDirection: 'column',
+              }}>
+                {miniatura(g, capas[g.key])}
+                <div style={{ padding: '9px 11px 11px', display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: T.warn, ...mono }}>{g.titulo}</span>
+                    {g.resultado && <span style={{ fontSize: 11.5, color: T.cream, ...mono }}>{g.resultado}</span>}
+                  </div>
+                  <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.adversario || 'Jogo'}</div>
+                  <div style={{ fontSize: 11.5, color: T.mutedDim }}>{plural(g.completos, 'vídeo', 'vídeos')} · {plural(g.cortes, 'corte', 'cortes')}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : grupos.length === 0 ? (
           <EmptyState
             text={eJogos
               ? (soLeitura ? 'Ainda sem jogos.' : 'Ainda sem jogos. Ao adicionar um vídeo, escolhe "Jogo da equipa" e indica a jornada.')
@@ -37377,6 +37419,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       )}
 
       {modoCanal && !termo && grupoAtual && renderMigalhas()}
+      {modoCanal && !termo && secao === 'meus' && (
+        <button type="button" onClick={() => abrirSecao('jogos')} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 12, background: 'none', border: 'none',
+          color: T.muted, cursor: 'pointer', fontSize: 13, padding: 0, ...body,
+        }}><ChevronLeft size={15} /> Jogos <span style={{ color: T.mutedDim }}>·</span> <span style={{ color: T.cream }}>Os meus clipes</span></button>
+      )}
 
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={soLeitura ? null : <Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
@@ -41683,6 +41731,17 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
     setDest(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
   };
   const [aviso, setAviso] = useState('');
+  const [listaAberta, setListaAberta] = useState(false);
+  const [procura, setProcura] = useState('');
+  const listaRef = useRef(null);
+  // Clicar fora da lista fecha-a.
+  useEffect(() => {
+    if (!listaAberta) return undefined;
+    const fora = (e) => { if (listaRef.current && !listaRef.current.contains(e.target)) { setListaAberta(false); setProcura(''); } };
+    document.addEventListener('mousedown', fora);
+    document.addEventListener('touchstart', fora);
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('touchstart', fora); };
+  }, [listaAberta]);
   const escolherGrupo = (posicoes) => {
     const lista = jogadoresOrdenados.filter(p => !posicoes || posicoes.includes(String(p.position || '').toUpperCase()));
     const ok = lista.filter(p => !cheio(p.id)).map(p => p.id);
@@ -41778,28 +41837,77 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
 
           {modo === 'jogadores' ? (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
-                <button type="button" onClick={() => escolherGrupo(null)} style={chip(false, { fontSize: 11.5, padding: '3px 9px' })}>Todos</button>
-                {GRUPOS_POSICAO_PRINT.map(g => (
-                  <button key={g.grupo} type="button" onClick={() => escolherGrupo(g.posicoes)} style={chip(false, { fontSize: 11.5, padding: '3px 9px' })}>{g.label}</button>
-                ))}
-                {dest.length > 0 && <button type="button" onClick={() => { setDest([]); setAviso(''); }} style={chip(false, { fontSize: 11.5, padding: '3px 9px', color: T.mutedDim })}>Limpar</button>}
+              {/* LISTA QUE ABRE (em vez de todos os nomes à vista): carrega-se
+                  no campo, escolhe-se com caixas de seleção, com pesquisa e
+                  atalhos por setor. Os escolhidos ficam por baixo do campo. */}
+              <div ref={listaRef} style={{ position: 'relative' }}>
+                <button type="button" onClick={() => setListaAberta(v => !v)} style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', borderRadius: 8, cursor: 'pointer', ...body,
+                  background: T.bg, border: `1px solid ${listaAberta ? T.gold : T.line}`, color: dest.length ? T.cream : T.mutedDim, fontSize: 14, textAlign: 'left',
+                }}>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {dest.length === 0 ? 'Escolher jogadores'
+                      : dest.length === jogadoresOrdenados.length ? `Todo o plantel (${dest.length})`
+                        : `${dest.length} ${dest.length === 1 ? 'jogador' : 'jogadores'}`}
+                  </span>
+                  <ChevronDown size={16} style={{ flexShrink: 0, transform: listaAberta ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+                </button>
+                {listaAberta && (
+                  <div style={{
+                    position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: T.surfaceRaise || T.surface,
+                    border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,.45)', padding: 10,
+                  }}>
+                    <Input value={procura} onChange={e => setProcura(e.target.value)} placeholder="Procurar jogador" autoFocus style={{ marginBottom: 8 }} />
+                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+                      <button type="button" onClick={() => escolherGrupo(null)} style={chip(false, { fontSize: 11.5, padding: '3px 9px' })}>Todos</button>
+                      {GRUPOS_POSICAO_PRINT.map(g => (
+                        <button key={g.grupo} type="button" onClick={() => escolherGrupo(g.posicoes)} style={chip(false, { fontSize: 11.5, padding: '3px 9px' })}>{g.label}</button>
+                      ))}
+                      {dest.length > 0 && <button type="button" onClick={() => { setDest([]); setAviso(''); }} style={chip(false, { fontSize: 11.5, padding: '3px 9px', color: T.mutedDim })}>Limpar</button>}
+                    </div>
+                    <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                      {jogadoresOrdenados
+                        .filter(p => !procura.trim() || semAcentos(`${p.name} ${shortPlayerName(p, players)}`).includes(semAcentos(procura.trim())))
+                        .map(p => {
+                          const on = dest.includes(p.id);
+                          const bloqueado = !on && cheio(p.id);
+                          return (
+                            <label key={p.id} style={{
+                              display: 'flex', alignItems: 'center', gap: 10, padding: '7px 6px', borderRadius: 6, fontSize: 13.5,
+                              color: bloqueado ? T.mutedDim : T.cream, cursor: bloqueado ? 'not-allowed' : 'pointer', opacity: bloqueado ? 0.55 : 1,
+                              background: on ? 'rgba(181,57,63,.14)' : 'transparent',
+                            }}>
+                              <input type="checkbox" checked={on} disabled={bloqueado} onChange={() => alternarDest(p.id)}
+                                style={{ accentColor: T.crimson, width: 16, height: 16, flexShrink: 0 }} />
+                              <span style={{ ...mono, fontSize: 11, color: T.mutedDim, width: 30, flexShrink: 0 }}>{p.position || '--'}</span>
+                              <span style={{ flex: 1, minWidth: 0 }}>{shortPlayerName(p, players)}</span>
+                              {bloqueado && <span style={{ fontSize: 11, color: T.warn }}>já tem {MAX_MISSOES_ABERTAS} em aberto</span>}
+                            </label>
+                          );
+                        })}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                      <Btn onClick={() => { setListaAberta(false); setProcura(''); }}>Feito</Btn>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', maxHeight: 220, overflowY: 'auto', padding: 2 }}>
-                {jogadoresOrdenados.map(p => {
-                  const on = dest.includes(p.id);
-                  const bloqueado = !on && cheio(p.id);
-                  return (
-                    <button key={p.id} type="button" onClick={() => alternarDest(p.id)} disabled={bloqueado}
-                      title={bloqueado ? `Já tem ${MAX_MISSOES_ABERTAS} missões em aberto` : undefined}
-                      style={chip(on, { fontSize: 11.5, padding: '4px 9px', opacity: bloqueado ? 0.4 : 1, cursor: bloqueado ? 'not-allowed' : 'pointer' })}>
-                      <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span> {shortPlayerName(p, players)}
-                    </button>
-                  );
-                })}
-              </div>
+              {dest.length > 0 && dest.length < jogadoresOrdenados.length && (
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
+                  {dest.map(id => {
+                    const p = (players || []).find(x => x.id === id);
+                    if (!p) return null;
+                    return (
+                      <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: T.cream, border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 4px 2px 9px' }}>
+                        {shortPlayerName(p, players)}
+                        <button type="button" onClick={() => alternarDest(id)} aria-label={`Tirar ${p.name}`} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 1, display: 'flex' }}><X size={12} /></button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
               <div style={{ fontSize: 11.5, color: aviso ? T.warn : T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
-                {aviso || `${dest.length} ${dest.length === 1 ? 'jogador escolhido' : 'jogadores escolhidos'}. Cada um recebe a sua cópia no Portal. Máximo de ${MAX_MISSOES_ABERTAS} missões em aberto por jogador (os que já estão no limite aparecem apagados).`}
+                {aviso || `Cada um recebe a sua cópia no Portal. Máximo de ${MAX_MISSOES_ABERTAS} missões em aberto por jogador.`}
               </div>
               <div style={{ marginTop: 12 }}>
                 <Field label="Quem acompanha (equipa técnica)">
