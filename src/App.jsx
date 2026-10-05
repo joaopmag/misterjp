@@ -41701,6 +41701,28 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
   const [aberta, setAberta] = useState(false);
   const [procura, setProcura] = useState('');
   const ref = useRef(null);
+  /* A lista abre "por cima de tudo" (posição fixa no ecrã), calculada a
+     partir do campo: dentro de uma coluna com o seu próprio deslizar, uma
+     lista normal ficava cortada. Abre para cima se não houver espaço em
+     baixo, e acompanha o campo se a coluna deslizar. */
+  const [pos, setPos] = useState(null);
+  useEffect(() => {
+    if (!aberta) return undefined;
+    const calc = () => {
+      const el = ref.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const h = window.innerHeight;
+      const emBaixo = h - r.bottom - 12;
+      const emCima = r.top - 12;
+      const paraCima = emBaixo < 300 && emCima > emBaixo;
+      setPos({ left: r.left, width: r.width, ...(paraCima ? { bottom: h - r.top + 4, maxHeight: emCima } : { top: r.bottom + 4, maxHeight: emBaixo }) });
+    };
+    calc();
+    window.addEventListener('resize', calc);
+    window.addEventListener('scroll', calc, true);
+    return () => { window.removeEventListener('resize', calc); window.removeEventListener('scroll', calc, true); };
+  }, [aberta]);
   useEffect(() => {
     if (!aberta) return undefined;
     const fora = (e) => { if (ref.current && !ref.current.contains(e.target)) { setAberta(false); setProcura(''); } };
@@ -41720,9 +41742,10 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
           <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resumo}</span>
           <ChevronDown size={16} style={{ flexShrink: 0, transform: aberta ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
         </button>
-        {aberta && (
+        {aberta && pos && (
           <div style={{
-            position: 'absolute', left: 0, right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: T.surfaceRaise || T.surface,
+            position: 'fixed', left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxHeight,
+            zIndex: 120, background: T.surfaceRaise || T.surface, overflowY: 'auto', boxSizing: 'border-box',
             border: `1px solid ${T.line}`, borderRadius: 10, boxShadow: '0 12px 30px rgba(0,0,0,.45)', padding: 10,
           }}>
             {comProcura && <Input value={procura} onChange={e => setProcura(e.target.value)} placeholder="Procurar" autoFocus style={{ marginBottom: 8 }} />}
@@ -41732,7 +41755,7 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
                 {onLimpar && escolhidos.length > 0 && <button type="button" onClick={onLimpar} style={{ ...pequeno, color: T.mutedDim }}>Limpar</button>}
               </div>
             )}
-            <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+            <div style={{ maxHeight: Math.max(120, Math.min(260, (pos.maxHeight || 400) - 150)), overflowY: 'auto' }}>
               {visiveis.map(it => {
                 const on = escolhidos.includes(it.id);
                 const bloqueado = !on && !!it.bloqueado;
@@ -41758,21 +41781,23 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
           </div>
         )}
       </div>
-      {mostrarEtiquetas && escolhidos.length > 0 && (
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 8 }}>
-          {escolhidos.map(id => {
+      {/* Linha de altura FIXA (uma linha, desliza para o lado): escolher ou
+          tirar pessoas nunca empurra o resto da página. */}
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'nowrap', overflowX: 'auto', alignItems: 'center', height: 30, marginTop: 8, scrollbarWidth: 'thin' }}>
+        {!escolhidos.length && <span style={{ fontSize: 12, color: T.mutedDim }}>Ninguém escolhido.</span>}
+        {!mostrarEtiquetas && escolhidos.length > 0 && <span style={{ fontSize: 12, color: T.mutedDim }}>{resumo}.</span>}
+        {mostrarEtiquetas && escolhidos.map(id => {
             const it = itens.find(x => x.id === id);
             if (!it) return null;
             return (
-              <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: T.cream, border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 4px 2px 9px' }}>
+              <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: T.cream, border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 4px 2px 9px', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 {it.cor && <span style={{ width: 9, height: 9, borderRadius: '50%', background: it.cor }} />}
                 {it.rotulo}
                 <button type="button" onClick={() => onAlternar(id)} aria-label={`Tirar ${it.rotulo}`} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 1, display: 'flex' }}><X size={12} /></button>
               </span>
             );
           })}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -41826,6 +41851,8 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
   };
   const [aviso, setAviso] = useState('');
   registarCoresMembros(membros);
+  const estreito = useIsMobile(900);
+  const colunaMissoesRef = useRef(null);
   const escolherGrupo = (posicoes) => {
     const lista = jogadoresOrdenados.filter(p => !posicoes || posicoes.includes(String(p.position || '').toUpperCase()));
     const ok = lista.filter(p => !cheio(p.id)).map(p => p.id);
@@ -41908,10 +41935,16 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
 
   return (
     <Modal title={tituloModal} onClose={onClose} fullPage larguraMax={1100}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 22, alignItems: 'start' }}>
+      {/* PÁGINA FIXA: no computador, duas colunas de altura fixa, cada uma
+          com o seu próprio deslizar; os botões ficam sempre no mesmo sítio,
+          por baixo. No telemóvel, uma coluna e os botões presos ao fundo. */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: estreito ? '1fr' : '1fr 1fr', gap: 22, alignItems: 'stretch',
+        ...(estreito ? {} : { height: 'calc(100dvh - 200px)', minHeight: 420 }),
+      }}>
 
         {/* ESQUERDA: para quem, quando */}
-        <div>
+        <div style={estreito ? undefined : { overflowY: 'auto', paddingRight: 6, minHeight: 0 }}>
           <Field label="Para quem" solto>
             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
               <button type="button" onClick={() => mudarModo('jogadores')} style={chip(modo === 'jogadores')}><UserCheck size={13} /> Jogadores</button>
@@ -41937,7 +41970,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                   ...GRUPOS_POSICAO_PRINT.map(g => ({ rotulo: g.label, onClick: () => escolherGrupo(g.posicoes) }))]}
                 onLimpar={() => { setDest([]); setAviso(''); }}
               />
-              <div style={{ fontSize: 11.5, color: aviso ? T.warn : T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11.5, color: aviso ? T.warn : T.mutedDim, marginTop: 4, lineHeight: 1.5, height: 36, overflow: 'hidden' }}>
                 {aviso || `Cada um recebe a sua cópia no Portal. Máximo de ${MAX_MISSOES_ABERTAS} missões em aberto por jogador.`}
               </div>
               <div style={{ marginTop: 12 }}>
@@ -41964,7 +41997,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                 atalhos={(membros || []).length > 2 ? [{ rotulo: 'Todos', onClick: () => setDest((membros || []).map(m => m.user_id)) }] : []}
                 onLimpar={() => setDest([])}
               />
-              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4, lineHeight: 1.5, height: 36, overflow: 'hidden' }}>
                 {dest.length === 0 ? 'Sem ninguém escolhido: fica aberta a toda a equipa técnica.' : 'Com mais do que uma pessoa, cada uma recebe a sua cópia e conclui a sua.'}
               </div>
             </div>
@@ -41972,11 +42005,9 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
 
           {/* QUANDO */}
           <div style={{ ...FIELD_GRID, marginBottom: 12 }}>
-            {!repete && (
-              <Field label="Prazo">
-                <Input type="date" value={comum.prazo} onChange={e => setComum({ ...comum, prazo: e.target.value })} />
-              </Field>
-            )}
+            <Field label={repete ? 'Prazo (a regra de repetição decide)' : 'Prazo'}>
+              <Input type="date" value={repete ? '' : comum.prazo} disabled={repete} onChange={e => setComum({ ...comum, prazo: e.target.value })} style={repete ? { opacity: 0.45 } : undefined} />
+            </Field>
             {editar && !emGrupo && (
               <Field label="Estado">
                 <Select value={comum.estado} onChange={e => setComum({ ...comum, estado: e.target.value })} disabled={!podeConcluir && comum.estado === 'feita'}>
@@ -41987,13 +42018,12 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
               </Field>
             )}
           </div>
-          {!repete && comum.prazo && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12, fontSize: 13, color: T.cream, cursor: 'pointer' }}>
-              <input type="checkbox" checked={false} style={{ accentColor: T.crimson, width: 16, height: 16 }}
-                onChange={() => setComum({ ...comum, prazo: '', recorrencia: { tipo: 'semanal', dias: [new Date(`${comum.prazo}T00:00:00`).getDay()], desde: comum.prazo } })} />
-              Repetir todas as semanas à {DIAS_SEMANA[new Date(`${comum.prazo}T00:00:00`).getDay()]}
-            </label>
-          )}
+          {/* Sempre no lugar (só se esconde), para nada saltar. */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12, fontSize: 13, color: T.cream, cursor: 'pointer', height: 22, visibility: !repete && comum.prazo ? 'visible' : 'hidden' }}>
+            <input type="checkbox" checked={false} style={{ accentColor: T.crimson, width: 16, height: 16 }}
+              onChange={() => { if (!comum.prazo) return; setComum({ ...comum, prazo: '', recorrencia: { tipo: 'semanal', dias: [new Date(`${comum.prazo}T00:00:00`).getDay()], desde: comum.prazo } }); }} />
+            Repetir todas as semanas à {comum.prazo ? DIAS_SEMANA[new Date(`${comum.prazo}T00:00:00`).getDay()] : ''}
+          </label>
           <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 12, marginBottom: 12 }}>
             <Field label="Repete">
               <Select
@@ -42008,19 +42038,19 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                 {Object.entries(RECORRENCIA_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
               </Select>
             </Field>
-            {repete && comum.recorrencia.tipo === 'semanal' && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            {/* Os dias da semana têm o lugar sempre reservado. */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10, visibility: repete && comum.recorrencia.tipo === 'semanal' ? 'visible' : 'hidden' }}>
                 {DIAS_SEMANA.map((nome, i) => {
-                  const on = (comum.recorrencia.dias || []).includes(i);
+                  const on = !!(comum.recorrencia && (comum.recorrencia.dias || []).includes(i));
                   return (
                     <button key={i} type="button" onClick={() => {
+                      if (!comum.recorrencia) return;
                       const dias = on ? comum.recorrencia.dias.filter(d => d !== i) : [...(comum.recorrencia.dias || []), i];
                       setComum({ ...comum, recorrencia: { ...comum.recorrencia, dias } });
                     }} style={chip(on, { fontSize: 12, padding: '5px 10px', textTransform: 'capitalize' })}>{nome.slice(0, 3)}</button>
                   );
                 })}
-              </div>
-            )}
+            </div>
             {repete && comum.recorrencia.tipo === 'semanal' && ocorrencia && !emGrupo && (
               <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8 }}>Para mudar só esta semana, arrasta-a no Calendário.</div>
             )}
@@ -42057,7 +42087,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
         </div>
 
         {/* DIREITA: a missão (ou as missões, ao criar) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div ref={colunaMissoesRef} style={{ display: 'flex', flexDirection: 'column', gap: 12, ...(estreito ? {} : { overflowY: 'auto', paddingRight: 6, minHeight: 0 }) }}>
           {blocos.map((b, k) => {
             const opcoes = modo === 'jogadores' ? DESTINOS_MISSAO : CAMINHOS_STAFF;
             const atualId = modo === 'jogadores' ? b.destino : b.caminho;
@@ -42109,16 +42139,27 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
               </div>
             );
           })}
-          {!editar && (modo === 'staff' || blocos.length < MAX_MISSOES_ABERTAS) && (
-            <button type="button" onClick={() => setBlocos(bs => [...bs, { key: uid(), titulo: '', tituloAuto: '', destino: 'nota', caminho: '', instrucoes: '' }])} style={{
-              border: `1px dashed ${T.line}`, background: 'transparent', color: T.muted, borderRadius: 10, padding: '9px 12px',
-              cursor: 'pointer', fontSize: 12.5, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}><Plus size={14} /> Acrescentar outra missão (cada uma com o seu título)</button>
-          )}
+          {!editar && (() => {
+            const pode = modo === 'staff' || blocos.length < MAX_MISSOES_ABERTAS;
+            return (
+              <button type="button" disabled={!pode} onClick={() => {
+                setBlocos(bs => [...bs, { key: uid(), titulo: '', tituloAuto: '', destino: 'nota', caminho: '', instrucoes: '' }]);
+                // A nova missão aparece em baixo, dentro da coluna: desliza até lá sem mexer na página.
+                setTimeout(() => { const c = colunaMissoesRef.current; if (c && !estreito) c.scrollTo({ top: c.scrollHeight, behavior: 'smooth' }); }, 30);
+              }} style={{
+                border: `1px dashed ${T.line}`, background: 'transparent', color: pode ? T.muted : T.mutedDim, borderRadius: 10, padding: '9px 12px', flexShrink: 0,
+                cursor: pode ? 'pointer' : 'default', fontSize: 12.5, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>{pode ? <><Plus size={14} /> Acrescentar outra missão (cada uma com o seu título)</> : `Máximo de ${MAX_MISSOES_ABERTAS} missões de cada vez para jogadores`}</button>
+            );
+          })()}
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+      <div style={{
+        display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 14, paddingTop: 12,
+        borderTop: `1px solid ${T.line}`, background: T.bg,
+        ...(estreito ? { position: 'sticky', bottom: 0, zIndex: 5, paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))' } : {}),
+      }}>
         {onRemove && <Btn variant="danger" onClick={onRemove} style={{ marginRight: 'auto' }}><Trash2 size={15} /> {emGrupo ? `Apagar para todos (${registos.length})` : 'Apagar'}</Btn>}
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
         <Btn onClick={guardar} disabled={!valido}>
