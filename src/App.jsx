@@ -28293,7 +28293,13 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      exemplo), não verifica se é oficial e não fica marcada como vista,
      por isso aparece em todas as entradas enquanto o endereço o tiver. */
   const modoTesteJogo = (() => {
-    try { return new URLSearchParams(window.location.search).get('testejogo') || ''; } catch (e) { return ''; }
+    /* Lido do endereço inteiro (parte ? ou #), porque o link do Portal já
+       traz um "?portal=…": o teste tem de ir com "&", mas se alguém puser
+       um segundo "?" também funciona. */
+    try {
+      const m = /[?&#]testejogo=(vespera|véspera|dia)\b/i.exec(decodeURIComponent(window.location.href));
+      return m ? (/^dia$/i.test(m[1]) ? 'dia' : 'vespera') : '';
+    } catch (e) { return ''; }
   })();
   if (modoTesteJogo && !missoesJogo.length) {
     const vespera = modoTesteJogo !== 'dia';
@@ -42069,7 +42075,9 @@ function CheckinApp() {
     try {
       // Link novo: ?portal=<id-da-equipa> — o próprio valor já é o id,
       // não precisa de um "e=" à parte.
-      const p = new URLSearchParams(window.location.search).get('portal');
+      // Um segundo "?" colado ao link (ex.: "?portal=ID?testejogo=dia")
+      // estragava o id da equipa: corta-se no primeiro "?" ou "&".
+      const p = (new URLSearchParams(window.location.search).get('portal') || '').split(/[?&#]/)[0];
       if (p) return p;
       // Link antigo (?checkin=1&e=<id-da-equipa>) — continua a funcionar,
       // para não partir nada que já tenha sido partilhado.
@@ -42079,7 +42087,7 @@ function CheckinApp() {
       // porque é assim que alguns clientes de email reescrevem os
       // endereços.
       const h = window.location.hash.replace('#', '');
-      const mPortal = h.match(/(?:^|&)portal=([^&]+)/);
+      const mPortal = h.match(/(?:^|&)portal=([^&?]+)/);
       if (mPortal) return mPortal[1];
       const m = h.match(/(?:^|&)e=([^&]+)/);
       return m ? m[1] : null;
