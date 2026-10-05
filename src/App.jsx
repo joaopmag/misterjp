@@ -4490,6 +4490,8 @@ const AUTOMATICO = '__automatico';
 const CAMPOS_TECNICOS = new Set([
   'pronto', 'thumbUrl', 'thumb_url', 'erroPreparacao', 'erro_preparacao',
 ]);
+const falhouPreparacao = (l) => (l.campos || [])
+  .some(c => (c.k === 'erroPreparacao' || c.k === 'erro_preparacao') && c.para);
 const soCamposTecnicos = (campos) => Array.isArray(campos) && campos.length > 0
   && campos.every(c => c && CAMPOS_TECNICOS.has(c.k));
 
@@ -4730,7 +4732,11 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
 
   // Tudo o que veio; pessoa e pesquisa filtram por cima.
   const base = linhas || [];
-  const lancesBase = React.useMemo(() => agruparLances(base, chaveDe), [base, chaveDe]);
+  /* A preparação automática que CORREU BEM não aparece: repetia o
+     "criou o vídeo" logo acima e não diz nada a ninguém. Só fica quando
+     falha, porque aí sim é preciso alguém voltar a carregar o vídeo. */
+  const lancesBase = React.useMemo(() => agruparLances(base, chaveDe)
+    .filter(l => l.chave !== AUTOMATICO || falhouPreparacao(l)), [base, chaveDe]);
 
   const fraseDe = useCallback((l) => {
     const sec = relatoSecao(l.tabela);
@@ -4750,8 +4756,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
        wellness", e não "Jogadores editou o registo de Rios". */
     // "Preparação automática preparou o vídeo X" (ou falhou, se houve erro).
     if (l.chave === AUTOMATICO) {
-      const erro = (l.campos || []).some(c => (c.k === 'erroPreparacao' || c.k === 'erro_preparacao') && c.para);
-      return { sujeito: null, verbo: erro ? 'não conseguiu preparar' : 'preparou', art: sec.art, alvo, dia, secao: sec };
+      return { sujeito: null, verbo: falhouPreparacao(l) ? 'não conseguiu preparar' : 'preparou', art: sec.art, alvo, dia, secao: sec };
     }
     if (l.chave === QUIOSQUE) {
       const ks = (l.campos || []).map(c => c.k);
@@ -28206,6 +28211,77 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     };
   };
   const missoesPorFazer = tarefasPorFazer.flatMap(t => passosDe(t).filter(p => !p.feito).map(p => itemMissao(t, p)));
+  /* VÉSPERA E DIA DE JOGO — missão automática, sem o treinador ter de
+     criar nada. Quando há uma convocatória partilhada para AMANHÃ (véspera)
+     ou para HOJE (dia de jogo), cada jogador recebe à entrada uma missão
+     que o leva a Jogo (convocatória, plano de jogo, adversário), em vez de
+     ter de ir à procura. Vai para todos os que a convocatória mostra,
+     convocados ou não (os não convocados também devem ver o adversário).
+     SÓ JOGOS OFICIAIS: amigável nunca gera a missão. A convocatória que
+     chega ao Portal não diz a competição, por isso o jogo só conta se
+     estiver no calendário oficial (`checkin_competicao`): um jogo nesse
+     dia contra esse adversário. Se não estiver lá (amigável, ou calendário
+     por carregar), não há missão. Mais vale faltar do que mandar para um
+     amigável.
+     APARECE UMA VEZ: uma na véspera, uma no dia. Conta como vista assim
+     que aparece no ecrã, carregue ele em "Bora" ou em "Mais tarde".
+     No dia do jogo desaparece à hora do jogo: depois disso já não serve.
+     Não é uma tarefa: não conta para o limite de duas missões nem aparece
+     em Tarefas da equipa técnica. */
+  const [, dadosConvJogo] = usePortalFetch('checkin_convocatoria', code, teamId);
+  const [, dadosCompJogo] = usePortalFetch('checkin_competicao', code, teamId);
+  const jogoOficial = (c) => {
+    if (c.competicao) return competitionLabel(c.competicao) !== FRIENDLY;
+    const norm = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').trim();
+    const palavras = (x) => norm(x).split(/\s+/).filter(w => w.length >= 4 && !['clube', 'futebol', 'sport', 'sporting', 'grupo', 'desportivo', 'associacao', 'uniao'].includes(w));
+    const adv = palavras(c.adversario);
+    if (!adv.length) return false;
+    const { competitions } = normalizeStandings(dadosCompJogo && dadosCompJogo.standings);
+    return (competitions || []).some(comp => (comp.rounds || []).some(r => (r.games || []).some(g => {
+      if (!g || String(g.date || '').slice(0, 10) !== c.data) return false;
+      const lados = `${norm(g.home)} ${norm(g.away)}`;
+      return adv.some(w => lados.includes(w));
+    })));
+  };
+  // Já passou a hora do jogo de hoje? (sem hora, fica o dia todo)
+  const jaComecou = (c) => {
+    const m = /^(\d{1,2})[:h](\d{2})/.exec(String(c.horaJogo || '').trim());
+    if (!m || c.data !== todayStr()) return false;
+    const agora = new Date();
+    return agora.getHours() * 60 + agora.getMinutes() >= Number(m[1]) * 60 + Number(m[2]);
+  };
+  const [missoesJogoVistas, setMissoesJogoVistas] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('mjp_missoes_jogo_vistas') || '[]'); } catch (e) { return []; }
+  });
+  const marcarMissaoJogoVista = (id) => setMissoesJogoVistas(prev => {
+    if (prev.includes(id)) return prev;
+    const novo = [...prev, id].slice(-60);
+    try { localStorage.setItem('mjp_missoes_jogo_vistas', JSON.stringify(novo)); } catch (e) { /* sem armazenamento: volta a aparecer, não faz mal */ }
+    return novo;
+  });
+  const missoesJogo = (() => {
+    const hoje = todayStr();
+    const amanha = addDays(hoje, 1);
+    const nossoClube = (dadosConvJogo && dadosConvJogo.clube) || 'Nós';
+    return ((dadosConvJogo && dadosConvJogo.convocatorias) || [])
+      .filter(c => c && c.data && (c.data === hoje || c.data === amanha))
+      .filter(c => jogoOficial(c) && !jaComecou(c))
+      .map(c => {
+        const vespera = c.data === amanha;
+        const id = `jogo:${c.id}:${hoje}:${loggedPlayerId || ''}`;
+        const jogo = c.casaFora === 'Fora' ? `${c.adversario} vs ${nossoClube}` : `${nossoClube} vs ${c.adversario}`;
+        const quando = [c.horaJogo, c.localJogo].filter(Boolean).join(' · ');
+        const conc = !vespera && (c.horaConcentracao || c.localConcentracao)
+          ? `\nConcentração: ${[c.horaConcentracao, c.localConcentracao].filter(Boolean).join(' · ')}` : '';
+        return {
+          id, _jogo: true, destino: 'jogos', prazo: c.data, passoTxt: '',
+          titulo: vespera ? 'Amanhã há jogo' : 'Hoje é dia de jogo',
+          acao: vespera ? 'Preparar o jogo' : 'Ver o jogo de hoje',
+          notas: `${jogo}${quando ? `\n${quando}` : ''}${conc}\nVê a convocatória, o plano de jogo e o adversário.`,
+        };
+      })
+      .filter(m => !missoesJogoVistas.includes(m.id));
+  })();
   const [missaoAtiva, setMissaoAtiva] = useState(null); // a tarefa cujo destino está aberto
   const [missaoCumprida, setMissaoCumprida] = useState(null); // título, para o ecrã "Missão cumprida"
   /* "MAIS TARDE" = SÓ AGORA. A missão sai do ecrã nesta entrada no
@@ -28218,9 +28294,25 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   const [aniversarioVisto, setAniversarioVisto] = useState(false);
   // Sair e voltar a entrar (novo código) recomeça: a missão volta a aparecer.
   useEffect(() => { setMissoesAdiadas([]); setAniversarioVisto(false); }, [loggedPlayerId, code]);
+  /* Missão de jogo que apareceu = vista. Grava-se já no dispositivo (para
+     não voltar na próxima entrada), mas não sai do ecrã agora: o jogador
+     ainda a está a ler. */
+  const idsJogoNoEcra = missoesJogo.map(m => m.id).join('|');
+  useEffect(() => {
+    if (!idsJogoNoEcra) return;
+    try {
+      const ja = JSON.parse(localStorage.getItem('mjp_missoes_jogo_vistas') || '[]');
+      const novo = [...ja, ...idsJogoNoEcra.split('|').filter(id => !ja.includes(id))].slice(-60);
+      localStorage.setItem('mjp_missoes_jogo_vistas', JSON.stringify(novo));
+    } catch (e) { /* sem armazenamento: volta a aparecer, não faz mal */ }
+  }, [idsJogoNoEcra]);
+  // Nova entrada (outro código / outro jogador): relê o que já foi visto.
+  useEffect(() => {
+    try { setMissoesJogoVistas(JSON.parse(localStorage.getItem('mjp_missoes_jogo_vistas') || '[]')); } catch (e) { /* fica como está */ }
+  }, [loggedPlayerId, code]);
   const missoesEmCurso = useRef(new Set());
   // Conclui UM passo (item da missão). Recebe o item ou, por compatibilidade, a tarefa.
-  const completarMissao = async (item, texto) => {
+  const completarMissao = async (item, texto, { silencioso = false } = {}) => {
     if (!item) return;
     const it = item._tarefa ? item : (() => {
       const pend = passosDe(item).filter(p => !p.feito);
@@ -28244,7 +28336,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       if (error || !(data && data.ok)) throw (error || new Error('recusado'));
       setTarefasAjustes(prev => ({ ...prev, [t.id]: { ...prev[t.id], notaAtleta: nota, ...(submeter ? { notaSubmetida: true } : {}) } }));
       setMissaoAtiva(m => (m && m.id === it.id ? null : m));
-      setMissaoCumprida(submeter
+      if (!silencioso) setMissaoCumprida(submeter
         ? (t.titulo || 'Missão')
         : `${t.titulo || 'Missão'} — passo ${p.ordem + 1} feito. ${restantes.length === 1 ? 'Falta 1 passo.' : `Faltam ${restantes.length} passos.`}`);
     } catch (e) {
@@ -28353,7 +28445,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     const m = missaoAtiva;
     // Nas que fecham sozinhas (questionários) não há barra: tapava os
     // botões do próprio questionário, e basta submeter.
-    if (!m || (destinoMissao(m.destino).auto && m.destino !== 'clipe')) return vista;
+    if (!m || m.destino !== 'clipe') return vista;
     const d = destinoMissao(m.destino);
     return (
       <>
@@ -28368,9 +28460,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
             <div style={{ fontSize: 10.5, color: T.warn, textTransform: 'uppercase', letterSpacing: '.08em' }}>Missão</div>
             <div style={{ fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.titulo}</div>
           </div>
-          {d.auto
-            ? <span style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'right' }}>Fecha sozinha<br />{m.destino === 'clipe' ? 'quando gravares o clipe' : 'quando submeteres'}</span>
-            : <Btn onClick={() => completarMissao(m, d.acao)}><Check size={14} /> Já fiz</Btn>}
+          <span style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'right' }}>Fecha sozinha<br />{m.destino === 'clipe' ? 'quando gravares o clipe' : 'quando submeteres'}</span>
           <button type="button" onClick={() => setMissaoAtiva(null)} title="Esconder" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4 }}><X size={15} /></button>
         </div>
       </>
@@ -28378,6 +28468,12 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   };
 
   const irParaMissao = (alvo) => {
+    // Missão automática de véspera / dia de jogo: marca como vista e vai.
+    if (alvo && alvo._jogo) {
+      marcarMissaoJogoVista(alvo.id);
+      setActiveType('jogos');
+      return;
+    }
     // Pode vir um passo (da prancheta) ou uma tarefa (cartão/lista): na
     // tarefa, vai-se ao primeiro passo por fazer.
     const t = alvo && alvo._tarefa ? alvo : (() => {
@@ -28387,10 +28483,13 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     })();
     const d = destinoMissao(t.destino);
     if (!t.destino || t.destino === 'nota' || !d.rota) { setTarefaParaAbrir(t._tarefa.id); setActiveType('tarefas'); return; }
-    if (d.rota === 'wellness' && !wellnessWindow.open) return;
-    if (d.rota === 'rpe' && !rpeWindow.open) return;
-    setMissaoAtiva(t);
     adiarMissao(t.id); // ao voltar, não reabre por cima nesta entrada — fica o cartão
+    if (!d.auto) {
+      // Leitura: chegar lá É a missão. Fica registado "Abriu …", sem festa.
+      completarMissao(t, `Abriu: ${d.rotulo}`, { silencioso: true });
+    } else {
+      setMissaoAtiva(t);
+    }
     setActiveType(d.rota);
   };
   if (activeType === 'wellness') {
@@ -28476,7 +28575,9 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   /* MISSÃO EM ECRÃ INTEIRO — ao entrar, a primeira coisa que o jogador
      vê é a tarefa por fazer, com um botão para o sítio certo. "Mais
      tarde" esconde-a até ao dia seguinte (fica o cartão no ecrã inicial). */
-  const missoesParaMostrar = missoesPorFazer.filter(t => !missoesAdiadas.includes(t.id) && !missoesAdiadas.includes(t._tarefa.id));
+  // A missão de jogo vem primeiro: é a que tem hora marcada.
+  const missoesParaMostrar = [...missoesJogo, ...missoesPorFazer]
+    .filter(t => !missoesAdiadas.includes(t.id) && !(t._tarefa && missoesAdiadas.includes(t._tarefa.id)));
   const ecraMissao = missoesParaMostrar.length > 0 ? (
     <EcraMissao
       player={player}
@@ -29058,10 +29159,10 @@ function EcraMissao({ player, tarefas, janelas, onIr, onAdiar }) {
           fontSize: 16, fontWeight: 800, ...body, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
           boxShadow: fechadoAgora ? 'none' : '0 8px 20px rgba(0,0,0,.35)',
         }}>
-          {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>Bora! {d.acao} <ArrowRight size={18} /></>}
+          {fechadoAgora ? 'Ainda fechado — volta mais tarde' : <>Bora! {t.acao || d.acao} <ArrowRight size={18} /></>}
         </button>
         {/* sempre no lugar (só se esconde) — para os botões de baixo não saltarem entre missões */}
-        <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6, visibility: d.auto && !fechadoAgora ? 'visible' : 'hidden' }}>Fica feita assim que submeteres.</div>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, textAlign: 'center', marginTop: -6, visibility: d.auto && !t._jogo && !fechadoAgora ? 'visible' : 'hidden' }}>{t.destino === 'clipe' ? 'Fica feita quando gravares o clipe.' : 'Fica feita assim que submeteres.'}</div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: tarefas.length > 1 ? 'space-between' : 'center', gap: 10 }}>
           <button type="button" onClick={() => { onAdiar(t.id); mudar(0); }} style={{
             background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
@@ -40183,9 +40284,11 @@ const lembreteRecente = (t) => !!(t && t.lembrete && t.lembrete.em
    Em vez de "abrir a tarefa e ver o que é", o jogador recebe a tarefa como
    uma missão em ecrã inteiro com UM botão para o sítio certo (o
    questionário, o treino, a ideia de jogo…). `auto: true` = a missão fecha
-   sozinha quando a ação acontece (submeter o questionário); nas outras, o
-   jogador carrega em "Já fiz" no próprio sítio. "nota" = o que existia
-   antes (responder por escrito). */
+   sozinha quando a ação acontece (submeter o questionário, gravar o
+   clipe). Nas de leitura (treino, jogo, ideia de jogo, vídeos) não há
+   "Já fiz": não há maneira honesta de provar que leu, por isso a missão
+   leva-o ao sítio certo e fica registada como ABERTA ("Abriu o treino do
+   dia"), que é exatamente o que se sabe. "nota" = responder por escrito. */
 const DESTINOS_MISSAO = [
   { id: 'nota', rotulo: 'Responder por escrito', acao: 'Responder', icon: MessageCircle },
   { id: 'autoavaliacao', rotulo: 'Autoavaliação', acao: 'Fazer a autoavaliação', icon: TrendingUp, auto: true, rota: 'desenvolvimento' },
@@ -40559,7 +40662,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
                   <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 6, lineHeight: 1.4 }}>
                     {d.id === 'clipe' ? `Botão "${d.acao}" — o passo só fica feito quando ele gravar um clipe.`
                       : d.auto ? `Botão "${d.acao}" — o passo fica feito quando ele submeter.`
-                      : d.id !== 'nota' ? `Botão "${d.acao}" — lá, ele carrega em "Já fiz".`
+                      : d.id !== 'nota' ? `Botão "${d.acao}" — leva-o lá e fica registado que abriu.`
                         : 'Ele responde por escrito.'}
                   </div>
                 </div>
