@@ -42322,10 +42322,14 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
   const cheio = (pid) => modo === 'jogadores' && !(editar && jaNoGrupo(pid))
     && abertasDe(pid) + novasPorJogador > MAX_MISSOES_ABERTAS;
 
+  // Quem estava escolhido em cada lado: ir à Equipa técnica e voltar aos
+  // Jogadores devolve os jogadores que lá estavam (antes ficava vazio).
+  const destGuardado = useRef({});
   const mudarModo = (m) => {
     if (m === modo) return;
+    destGuardado.current[modo] = dest;
     setModo(m);
-    setDest(m === 'staff' && euId ? [euId] : []);
+    setDest(destGuardado.current[m] || (m === 'staff' && euId ? [euId] : []));
     setBlocos(bs => bs.map(b => ({ ...b, ...(b.titulo === b.tituloAuto ? { titulo: '', tituloAuto: '' } : {}) })));
   };
   const alternarDest = (id) => {
@@ -42423,11 +42427,11 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
           por baixo. No telemóvel, uma coluna e os botões presos ao fundo. */}
       <div style={{
         display: 'grid', gridTemplateColumns: estreito ? '1fr' : '1fr 1fr', gap: 22, alignItems: 'stretch',
-        ...(estreito ? {} : { maxHeight: 'calc(100dvh - 190px)' }),
+        ...(estreito ? {} : { height: 'calc(100dvh - 190px)' }),
       }}>
 
         {/* ESQUERDA: para quem, quando */}
-        <div style={estreito ? undefined : { overflowY: 'auto', paddingRight: 6, minHeight: 0 }}>
+        <div style={estreito ? { order: 2 } : { overflowY: 'auto', paddingRight: 6, minHeight: 0, order: 2 }}>
           <Field label="Para quem" solto>
             <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
               <button type="button" onClick={() => mudarModo('jogadores')} style={chip(modo === 'jogadores')}><UserCheck size={13} /> Jogadores</button>
@@ -42543,7 +42547,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
         </div>
 
         {/* DIREITA: a missão (ou as missões, ao criar) e, ao editar, as respostas */}
-        <div ref={colunaMissoesRef} style={{ display: 'flex', flexDirection: 'column', gap: 12, ...(estreito ? {} : { overflowY: 'auto', paddingRight: 6, minHeight: 0 }) }}>
+        <div ref={colunaMissoesRef} style={{ order: 1, display: 'flex', flexDirection: 'column', gap: 12, ...(estreito ? {} : { overflowY: 'auto', paddingRight: 6, minHeight: 0 }) }}>
           {blocos.map((b, k) => {
             const opcoes = modo === 'jogadores' ? DESTINOS_MISSAO : CAMINHOS_STAFF;
             const atualId = modo === 'jogadores' ? b.destino : b.caminho;
