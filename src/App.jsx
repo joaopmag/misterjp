@@ -17000,6 +17000,18 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                           color: nStaff === DI_INDICADORES.length ? T.good : T.muted, textAlign: 'center',
                         }}>Equipa técnica {nStaff}/{DI_INDICADORES.length}</button>
                       </div>
+                      {/* SUBMETER PELO JOGADOR: só quando as 30 respostas estão
+                          todas dadas e ele não carregou em "Submeter". Grava a
+                          mesma marca que o Portal grava (`enviado`); a missão
+                          dele fecha-se na próxima entrada no Portal. */}
+                      {nAuto === DI_INDICADORES.length && reg && !reg.enviado && (
+                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 11.5, color: T.warn, flex: 1, minWidth: 150 }}>Autoavaliação completa, por submeter.</span>
+                          <Btn variant="ghost" onClick={() => patchRegisto(momento.id, p.id, { enviado: true, enviadoPorStaffEm: new Date().toISOString() })}>
+                            Submeter pelo jogador
+                          </Btn>
+                        </div>
+                      )}
                       {nAuto === DI_INDICADORES.length && nStaff === DI_INDICADORES.length && !(reg && reg.combinada) && (
                         <div style={{ marginTop: 8 }}>
                           <Btn variant="ghost" onClick={() => patchRegisto(momento.id, p.id, { combinada: true, combinadaEm: new Date().toISOString() })} style={{ width: '100%', justifyContent: 'center' }}>
@@ -31176,7 +31188,11 @@ async function submeterAutoavaliacaoSeCompleta(code, teamId, dadosConhecidos) {
       d = Array.isArray(data) ? data[0] : data;
       if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return false; } }
     }
-    if (!d || !d.registoId || d.enviado) return false;
+    if (!d || !d.registoId) return false;
+    // Já submetida (pelo jogador noutro dia, ou pela equipa técnica em
+    // Desenvolvimento): conta como feita, para a missão "Autoavaliação"
+    // do Portal fechar também.
+    if (d.enviado) return true;
     if (diRespondido(d.auto) !== DI_INDICADORES.length) return false;
     const { data, error } = await supabase.rpc('checkin_desenvolvimento_responder', {
       p_code: code, p_team: teamId, p_registo_id: d.registoId, p_auto: {}, p_submeter: true,
