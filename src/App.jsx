@@ -29070,14 +29070,19 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
   const ladoPlacard = (eq) => (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
       <div style={{ fontSize: 9.5, letterSpacing: '.3em', color: 'rgba(255,194,61,.55)', textTransform: 'uppercase', paddingLeft: '.3em' }}>{eq.lado}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, maxWidth: '100%', minWidth: 0 }}>
-        {eq.nosso && info.logo ? <img src={info.logo} alt="" style={{ width: 22, height: 22, objectFit: 'contain', flexShrink: 0 }} /> : null}
-        <div style={{ ...led, fontSize: 14, letterSpacing: '.06em', textTransform: 'uppercase', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{eq.nome}</div>
+      {/* O nome fica sempre centrado e a barra sublinha-o à largura exata
+          do texto. O emblema (se houver) fica à esquerda, fora dessa conta,
+          para não descentrar o nome nem desalinhar os dois lados. */}
+      <div style={{ position: 'relative', maxWidth: '100%', minWidth: 0, height: 24, display: 'flex', alignItems: 'center' }}>
+        {eq.nosso && info.logo ? <img src={info.logo} alt="" style={{ position: 'absolute', right: '100%', marginRight: 7, top: 1, width: 22, height: 22, objectFit: 'contain' }} /> : null}
+        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'stretch', minWidth: 0, maxWidth: '100%' }}>
+          <div style={{ ...led, fontSize: 14, lineHeight: '18px', letterSpacing: '.06em', textTransform: 'uppercase', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: '.06em' }}>{eq.nome}</div>
+          <div style={{
+            height: 3, borderRadius: 2, marginTop: 3,
+            background: eq.nosso ? cor.base : 'rgba(255,194,61,.18)', boxShadow: eq.nosso ? `0 0 8px ${cor.base}` : 'none',
+          }} />
+        </div>
       </div>
-      <div style={{
-        width: '70%', height: 3, borderRadius: 2,
-        background: eq.nosso ? cor.base : 'rgba(255,194,61,.18)', boxShadow: eq.nosso ? `0 0 8px ${cor.base}` : 'none',
-      }} />
     </div>
   );
   const linhaBilhete = (rotulo, valor) => valor ? (
