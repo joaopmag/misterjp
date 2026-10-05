@@ -29069,12 +29069,14 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
      nome (o do adversário nunca se pede). */
   const ladoPlacard = (eq) => (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-      {/* CASA / FORA, e o nosso emblema (se houver) ao lado desta etiqueta:
-          ao lado do nome roubava espaço e o nome cortava no telemóvel. */}
-      <div style={{ height: 18, display: 'flex', alignItems: 'center', gap: 6 }}>
-        {eq.nosso && info.logo ? <img src={info.logo} alt="" style={{ width: 18, height: 18, objectFit: 'contain' }} /> : null}
-        <span style={{ fontSize: 9.5, letterSpacing: '.3em', color: 'rgba(255,194,61,.55)', textTransform: 'uppercase', paddingLeft: '.3em' }}>{eq.lado}</span>
-      </div>
+      {/* O nosso emblema (se a equipa o tiver), centrado por cima do nome.
+          Do lado do adversário fica um espaço da mesma altura, para os dois
+          nomes ficarem alinhados. Sem emblema, esta linha não existe. */}
+      {info.logo ? (
+        <div style={{ height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {eq.nosso ? <img src={info.logo} alt="" style={{ width: 26, height: 26, objectFit: 'contain' }} /> : null}
+        </div>
+      ) : null}
       {/* O nome NUNCA corta: a letra encolhe com o ecrã e, se mesmo assim
           não couber, passa para duas linhas (ex.: "SC" / "SALGUEIROS").
           A barra sublinha o nome à largura do texto, centrada. */}
@@ -29170,8 +29172,8 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
             background: '#07090a', backgroundImage: 'radial-gradient(rgba(255,194,61,.07) 1px, transparent 1.3px)', backgroundSize: '5px 5px',
             boxShadow: '0 18px 40px rgba(0,0,0,.6), inset 0 0 30px rgba(0,0,0,.8)', animation: 'ej-placard .6s ease-out 1s both',
           }}>
-            {/* Os dois lados alinham pelo topo (CASA e FORA à mesma altura,
-                mesmo que um nome passe a duas linhas); o VS fica ao meio. */}
+            {/* Os dois lados alinham pelo topo (os nomes à mesma altura,
+                mesmo que um passe a duas linhas); o VS fica ao meio. */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
               {ladoPlacard(casa)}
               <div style={{ ...led, alignSelf: 'center', flexShrink: 0, fontSize: 20, fontWeight: 700, animation: 'ej-piscar 1.6s ease-in-out infinite' }} className="ej-anim">VS</div>
