@@ -2251,22 +2251,27 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larg
    nas Estatísticas — de propósito: quem já sabe carregar numa sabe
    carregar nestas. */
 function SubTabs({ value, onChange, tabs, semMargem }) {
+  /* No TELEMÓVEL, com até três separadores, ficam os três numa linha,
+     a dividir a largura, com letra e margens mais pequenas. */
+  const estreito = useIsMobile(560);
+  const numaLinha = estreito && tabs.length <= 3;
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: semMargem ? 0 : 18 }}>
+    <div style={{ display: 'flex', gap: numaLinha ? 6 : 8, flexWrap: numaLinha ? 'nowrap' : 'wrap', marginBottom: semMargem ? 0 : 18 }}>
       {tabs.map(t => {
         const on = value === t.id;
         return (
           <button key={t.id} type="button" onClick={() => onChange(t.id)} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, flexGrow: 0,
-            padding: '7px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', ...body,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: numaLinha ? 5 : 7,
+            flexShrink: numaLinha ? 1 : 0, flexGrow: numaLinha ? 1 : 0, flexBasis: numaLinha ? 0 : 'auto', minWidth: 0, overflow: 'hidden',
+            padding: numaLinha ? '7px 6px' : '7px 14px', borderRadius: 20, fontSize: numaLinha ? 12 : 13, cursor: 'pointer', ...body,
             fontWeight: on ? 600 : 500, whiteSpace: 'nowrap',
             background: on ? '#B5393F' : 'transparent',
             color: on ? TEXT_ON_ACCENT : T.muted,
             border: `1px solid ${on ? '#B5393F' : T.line}`,
           }}>
-            {t.icon ? <t.icon size={14} /> : null}
-            {t.label}
-            {t.count != null && <span style={{ ...mono, opacity: .75 }}>{t.count}</span>}
+            {t.icon && !numaLinha ? <t.icon size={14} /> : null}
+            <span style={numaLinha ? { overflow: 'hidden', textOverflow: 'ellipsis' } : undefined}>{numaLinha && t.curto ? t.curto : t.label}</span>
+            {t.count != null && <span style={{ ...mono, opacity: .75, flexShrink: 0 }}>{t.count}</span>}
           </button>
         );
       })}
@@ -9658,6 +9663,7 @@ function DossierModal({ ideias, onClose, onImprimir }) {
 }
 
 function IdeiaJogo({ ideias, setIdeias, meta }) {
+  const cabecalhoEstreito = useIsMobile(560);
   const [modal, setModal] = useState(null); // null | 'new' | ideia (edição)
   const [viewing, setViewing] = useState(null);
   const [historyFor, setHistoryFor] = useState(null);
@@ -9731,15 +9737,17 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
     <div>
       <SectionHeader title="Ideia de Jogo" subtitle="A tua ideia de jogo."
         action={(
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          /* Pela ordem: Nova ideia, Dossier, Portal. No telemóvel, os três
+             numa linha, a dividir a largura (como nas outras páginas). */
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', ...(cabecalhoEstreito ? { width: '100%' } : {}) }}>
+            <Btn onClick={() => setModal('new')} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Plus size={15} /> Nova ideia</Btn>
             {/* Só faz sentido com alguma coisa para compilar. */}
             {ideias.length > 0 && (
-              <Btn variant="ghost" onClick={() => setDossier(true)}><BookOpen size={15} /> Dossier</Btn>
+              <Btn variant="ghost" onClick={() => setDossier(true)} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><BookOpen size={15} /> Dossier</Btn>
             )}
             {ideias.length > 0 && (
-              <Btn variant="ghost" onClick={() => setPortalAtleta(true)}><Eye size={15} /> Portal do Atleta</Btn>
+              <Btn variant="ghost" onClick={() => setPortalAtleta(true)} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Eye size={15} /> Portal</Btn>
             )}
-            <Btn onClick={() => setModal('new')}><Plus size={15} /> Nova ideia</Btn>
           </div>
         )} />
 
@@ -20311,14 +20319,17 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                 <button
                   type="button" onClick={() => toggleMes(mes.key)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 10, width: '100%', flexWrap: 'wrap',
+                    /* Seta | mês, e o resumo SEMPRE na linha de baixo,
+                       alinhado com o nome do mês (antes saltava de linha
+                       num mês e não noutro, conforme o comprimento). */
+                    display: 'grid', gridTemplateColumns: '15px minmax(0,1fr)', columnGap: 10, rowGap: 2, alignItems: 'center', width: '100%',
                     background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
                     padding: '11px 14px', cursor: 'pointer', textAlign: 'left', ...body,
                   }}
                 >
                   <ChevronRight size={15} color={T.mutedDim} style={{ flexShrink: 0, transform: aberto ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }} />
                   <span style={{ fontSize: 14.5, color: T.cream, fontWeight: 600 }}>{rotuloMes(mes.key)}</span>
-                  <span style={{ fontSize: 12, color: T.mutedDim }}>{resumoMes(mes.semanas)}</span>
+                  <span style={{ gridColumn: 2, fontSize: 12, color: T.mutedDim }}>{resumoMes(mes.semanas)}</span>
                 </button>
                 {aberto && (
                   <div style={{ padding: '14px 0 0 14px', borderLeft: `1px solid ${T.line}`, marginLeft: 20, marginTop: 6 }}>
@@ -20419,15 +20430,17 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             <button
               type="button" onClick={() => toggleWeek(week)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 6, width: '100%',
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', marginBottom: 8,
+                /* Seta | microciclo, e o resumo por baixo, alinhado com o
+                   texto do microciclo (antes ficava ao lado, desalinhado). */
+                display: 'grid', gridTemplateColumns: '13px minmax(0,1fr)', columnGap: 6, rowGap: 3, alignItems: 'center', width: '100%',
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', marginBottom: 8, ...body,
               }}
             >
               <ChevronRight size={13} color={T.mutedDim} style={{ flexShrink: 0, transform: collapsed ? 'none' : 'rotate(90deg)', transition: 'transform .15s' }} />
-              <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em', flexShrink: 0 }}>{rotuloSemana(week)}</span>
+              <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>{rotuloSemana(week)}</span>
               {collapsed && (
-                <span style={{ fontSize: 11.5, color: T.muted, minWidth: 0 }}>
-                  · {resumoSemana(items)}
+                <span style={{ gridColumn: 2, fontSize: 12, color: T.muted, minWidth: 0, lineHeight: 1.45 }}>
+                  {resumoSemana(items)}
                 </span>
               )}
             </button>
@@ -21161,8 +21174,10 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
 
       <div style={{
         display: 'grid', gap: 8,
+        /* No TELEMÓVEL, um dia por linha (agenda), com os cartões à
+           largura toda: em três colunas os nomes ficavam em reticências. */
         ...(isMobile
-          ? { gridTemplateColumns: 'repeat(3, 1fr)' }
+          ? { gridTemplateColumns: '1fr' }
           : { gridTemplateColumns: 'repeat(7, minmax(110px, 1fr))', overflowX: 'auto' }),
       }}>
         {days.map(d => {
@@ -21171,14 +21186,17 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
           const isToday = d === currentDayStr;
           return (
             <div key={d} style={{
-              background: T.surface, border: `1px solid ${isToday ? T.gold : T.line}`, borderRadius: 8, padding: 8, minHeight: 140,
+              background: T.surface, border: `1px solid ${isToday ? T.gold : T.line}`, borderRadius: 8, padding: isMobile ? 10 : 8, minHeight: isMobile ? 0 : 140,
               // Coluna: os cartões em cima e o "+ sessão" SEMPRE no fundo
               // (marginTop auto) — como todos os dias da linha têm a mesma
               // altura, os "+ sessão" ficam alinhados de ponta a ponta.
-              display: 'flex', flexDirection: 'column',
+              display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: isMobile ? 10 : 0,
             }}>
-              <div style={{ fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.04em' }}>{dayLabel(d)}</div>
-              <div style={{ ...mono, fontSize: 15, color: isToday ? T.warn : T.cream, marginBottom: 8 }}>{new Date(d + 'T00:00:00').getDate()}</div>
+              <div style={isMobile ? { width: 46, flexShrink: 0 } : undefined}>
+                <div style={{ fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.04em' }}>{isMobile ? dayLabel(d).slice(0, 3) : dayLabel(d)}</div>
+                <div style={{ ...mono, fontSize: isMobile ? 18 : 15, color: isToday ? T.warn : T.cream, marginBottom: 8 }}>{new Date(d + 'T00:00:00').getDate()}</div>
+              </div>
+              <div style={isMobile ? { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' } : { display: 'contents' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6 }}>
                 {/* JOGO — cartão CLARO (fundo creme, texto escuro), com a
                     etiqueta "JOGO": fica fora das três cores de intensidade
@@ -21194,11 +21212,11 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                     {/* Adversário numa linha e a competição em até duas, em
                         baixo — assim o nome do campeonato cabe inteiro. */}
                     <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignSelf: 'stretch' }}>
-                      <span style={LINHAS(1)}>vs {m.opponent || 'Adversário'}</span>
+                      <span style={isMobile ? undefined : LINHAS(1)}>vs {m.opponent || 'Adversário'}</span>
                       <span
                         title={m.result || competitionLabel(m.competition) || 'Jogo'}
-                        style={{ ...LINHAS(2), fontSize: 9.5, color: '#1B241CAA', marginTop: 'auto', fontWeight: 400 }}
-                      >{m.result || competitionLabel(m.competition) || 'Jogo'}</span>
+                        style={{ ...(isMobile ? {} : LINHAS(2)), fontSize: isMobile ? 11.5 : 9.5, color: '#1B241CAA', marginTop: 'auto', fontWeight: 400 }}
+                      >{isMobile ? [m.result, competitionLabel(m.competition)].filter(Boolean).join(' · ') || 'Jogo' : (m.result || competitionLabel(m.competition) || 'Jogo')}</span>
                     </span>
                   </button>
                 ))}
@@ -21231,6 +21249,7 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                 width: '100%', fontSize: 11, color: T.mutedDim, background: 'none',
                 border: `1px dashed ${T.line}`, borderRadius: 6, padding: '4px 0', cursor: 'pointer', ...body,
               }}>+ sessão</button>
+              </div>
             </div>
           );
         })}
@@ -26619,6 +26638,7 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
   const porPreencher = (lista) => lista.filter(m => estadoRelatorio(m).id !== 'feito').length;
   const [grupo, setGrupo] = useState(() => (porPreencher(oficiais) || !porPreencher(amigaveis) ? 'oficial' : 'amigavel'));
   const [aberto, setAberto] = useState(null);
+  const estreito = useIsMobile(560);
   // Chegou pela missão: abre logo o relatório pedido.
   useEffect(() => {
     if (!abrirId) return;
@@ -26632,13 +26652,14 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        {[['oficial', 'Competição', oficiais], ['amigavel', 'Amigáveis e pré-época', amigaveis]].map(([id, rot, l]) => {
+      <div style={{ display: 'flex', gap: 8, flexWrap: estreito ? 'nowrap' : 'wrap', marginBottom: 14 }}>
+        {[['oficial', 'Competição', oficiais], ['amigavel', estreito ? 'Amigáveis' : 'Amigáveis e pré-época', amigaveis]].map(([id, rot, l]) => {
           const on = grupo === id;
           const n = porPreencher(l);
           return (
             <button key={id} type="button" onClick={() => setGrupo(id)} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, cursor: 'pointer', ...body, fontSize: 13,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, cursor: 'pointer', ...body, fontSize: 13,
+              ...(estreito ? { flex: '1 1 0', minWidth: 0 } : {}),
               background: on ? T.crimson : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted, border: `1px solid ${on ? T.crimson : T.line}`,
             }}>
               {rot}
@@ -26655,6 +26676,31 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
           {lista.map(m => {
             const e = estadoRelatorio(m);
             return (
+              estreito ? (() => {
+                /* TELEMÓVEL: data, letra e estado em cima; o marcador
+                   inteiro no meio; a competição em baixo. Nada cortado. */
+                const mc = marcadorDoJogo(m, season);
+                const forte = (nome, nosso) => <span style={{ fontWeight: nosso ? 700 : 500, color: nosso ? T.cream : T.muted }}>{nome}</span>;
+                return (
+                  <button key={m.id} type="button" onClick={() => setAberto(m)} style={{
+                    display: 'flex', flexDirection: 'column', gap: 5, textAlign: 'left', cursor: 'pointer', ...body,
+                    background: T.surface, border: `1px solid ${e.id === 'feito' ? T.line : e.cor}`, borderRadius: 10, padding: '10px 12px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                      <span style={{ ...mono, fontSize: 12, color: T.mutedDim }}>{fmtShort(m.date)}</span>
+                      {mc.letra && <span style={{ ...mono, fontSize: 11, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, width: 20, height: 20, display: 'grid', placeItems: 'center' }}>{mc.letra}</span>}
+                      <span style={{ marginLeft: 'auto', fontSize: 12, color: e.cor, fontWeight: 600, textAlign: 'right' }}>{e.txt}</span>
+                      <ChevronRight size={15} color={T.mutedDim} />
+                    </div>
+                    <div style={{ fontSize: 14.5, lineHeight: 1.35 }}>
+                      {forte(mc.casa, mc.emCasa)}
+                      <span style={{ ...mono, color: T.warn, fontWeight: 700, margin: '0 7px' }}>{mc.letra ? `${mc.golosCasa}-${mc.golosFora}` : (m.result || 'vs')}</span>
+                      {forte(mc.fora, !mc.emCasa)}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.4 }}>{[competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ')}</div>
+                  </button>
+                );
+              })() : (
               <button key={m.id} type="button" onClick={() => setAberto(m)} style={{
                 display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer', ...body,
                 background: T.surface, border: `1px solid ${e.id === 'feito' ? T.line : e.cor}`, borderRadius: 10, padding: '11px 14px',
@@ -26688,6 +26734,7 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
                 <span style={{ fontSize: 11.5, color: e.cor, fontWeight: 600, textAlign: 'right', flexShrink: 0, maxWidth: '45%' }}>{e.txt}</span>
                 <ChevronRight size={16} color={T.mutedDim} style={{ flexShrink: 0 }} />
               </button>
+              )
             );
           })}
         </div>
@@ -26926,7 +26973,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
           tabs={[
             { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
             { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
-            { id: 'relatorios', label: 'Relatórios de jogo', icon: Pencil, count: relatoriosPorFazer },
+            { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosPorFazer },
           ]}
         />
         {souDono && !haMissaoDeRelatorios(tarefas) && (
@@ -26955,7 +27002,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
               tabs={[
                 { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
                 { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
-                { id: 'relatorios', label: 'Relatórios de jogo', icon: Pencil, count: relatoriosPorFazer },
+                { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosPorFazer },
               ]}
             />
           )}
@@ -26974,7 +27021,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
         tabs={[
           { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
           { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
-          { id: 'relatorios', label: 'Relatórios de jogo', icon: Pencil, count: relatoriosPorFazer },
+          { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosPorFazer },
         ]}
       />
 
@@ -41860,8 +41907,11 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
 
       <div style={{
         display: 'grid', gap: 8,
+        /* No TELEMÓVEL, um dia por linha (como uma agenda), com os cartões
+           à largura toda: em três colunas não cabia nada e o texto ficava
+           cortado em reticências. */
         ...(isMobile
-          ? { gridTemplateColumns: 'repeat(3, 1fr)' }
+          ? { gridTemplateColumns: '1fr' }
           : { gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))', overflowX: 'auto' }),
       }}>
         {/* ALINHAMENTO: o espaço do "contexto do dia" (jogo, treino, folga)
@@ -41895,12 +41945,15 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
               style={{
                 background: destacado ? 'rgba(201,162,39,.08)' : T.surface,
                 border: `1px ${destacado ? 'dashed' : 'solid'} ${destacado || isToday ? T.gold : T.line}`,
-                borderRadius: 8, padding: 8, minHeight: 160, minWidth: 0,
-                display: 'flex', flexDirection: 'column',
+                borderRadius: 8, padding: isMobile ? '10px 10px' : 8, minHeight: isMobile ? 0 : 160, minWidth: 0,
+                display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: isMobile ? 10 : 0,
               }}
             >
-              <div style={{ fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.04em' }}>{dayLabel(d)}</div>
-              <div style={{ ...mono, fontSize: 15, color: isToday ? T.warn : T.cream, marginBottom: 6 }}>{new Date(d + 'T00:00:00').getDate()}</div>
+              <div style={isMobile ? { width: 46, flexShrink: 0 } : undefined}>
+                <div style={{ fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.04em' }}>{isMobile ? dayLabel(d).slice(0, 3) : dayLabel(d)}</div>
+                <div style={{ ...mono, fontSize: isMobile ? 18 : 15, color: isToday ? T.warn : T.cream, marginBottom: 6 }}>{new Date(d + 'T00:00:00').getDate()}</div>
+              </div>
+              <div style={isMobile ? { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' } : { display: 'contents' }}>
 
               {/* Contexto do dia, sem botões: o que já está marcado. */}
               {(dayMatches.length > 0 || daySessions.length > 0 || alturaContexto > 0) && (
@@ -41951,6 +42004,7 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
                 marginTop: 'auto', width: '100%', fontSize: 11, color: T.mutedDim, background: 'none',
                 border: `1px dashed ${T.line}`, borderRadius: 6, padding: '4px 0', cursor: 'pointer', ...body,
               }}>+ tarefa</button>
+              </div>
             </div>
           );
         })}
