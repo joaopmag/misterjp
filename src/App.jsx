@@ -9672,7 +9672,8 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   const [printDossier, setPrintDossier] = useState(null);
 
   const imprimirDossier = (lista) => {
-    setDossier(false);
+    // A página do Dossier fica aberta depois de imprimir (volta-se com
+    // "‹ Ideia de Jogo", como no Portal).
     setPrintDossier(lista);
     setTimeout(() => window.print(), 120);
   };
@@ -9691,6 +9692,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   // ecrã e ia diretamente para o que estava aberto antes da Ideia de
   // Jogo. Mesmo padrão já usado no resto da app (ver `useDetailBack`).
   const fecharPortalAtleta = useDetailBack(portalAtleta, () => setPortalAtleta(false));
+  const fecharDossier = useDetailBack(dossier, () => setDossier(false));
 
   const save = (data) => {
     const isEdicao = !!data.id;
@@ -9743,15 +9745,17 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
             <Btn onClick={() => setModal('new')} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Plus size={15} /> Nova ideia</Btn>
             {/* Só faz sentido com alguma coisa para compilar. */}
             {ideias.length > 0 && (
-              <Btn variant="ghost" onClick={() => setDossier(true)} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><BookOpen size={15} /> Dossier</Btn>
+              <Btn variant="ghost" onClick={() => { setPortalAtleta(false); setDossier(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><BookOpen size={15} /> Dossier</Btn>
             )}
             {ideias.length > 0 && (
-              <Btn variant="ghost" onClick={() => setPortalAtleta(true)} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Eye size={15} /> Portal</Btn>
+              <Btn variant="ghost" onClick={() => { setDossier(false); setPortalAtleta(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Eye size={15} /> Portal</Btn>
             )}
           </div>
         )} />
 
-      {portalAtleta ? (
+      {dossier ? (
+        <DossierIdeias ideias={ideias} labelOf={labelOf} onBack={fecharDossier} onImprimir={imprimirDossier} />
+      ) : portalAtleta ? (
         <PortalAtletaIdeias ideias={ideias} setIdeias={setIdeias} labelOf={labelOf} onBack={fecharPortalAtleta} />
       ) : (
         <>
@@ -9832,9 +9836,6 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
         />
       )}
 
-      {dossier && (
-        <DossierModal ideias={ideias} onClose={() => setDossier(false)} onImprimir={imprimirDossier} />
-      )}
 
       {printDossier && createPortal(
         (() => {
@@ -9949,7 +9950,96 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
    três ou quatro. Aqui é só a lista, com um visto ao lado de cada uma;
    tocar já grava, sem "Guardar" à parte (mesmo padrão do resto da
    app — ver `useCollectionSync`, que grava a cada mudança). */
+/* O DOSSIER, NA MESMA EXPERIÊNCIA DO PORTAL: em vez de uma janela por
+   cima, abre como uma página dentro da Ideia de Jogo, com o mesmo
+   "‹ Ideia de Jogo" para voltar, o mesmo título e a mesma lista por fase.
+   No telemóvel, o nome de cada ideia aparece inteiro (sem reticências), e o
+   botão "Imprimir dossier" fica preso ao fundo do ecrã. */
+function DossierIdeias({ ideias, labelOf, onBack, onImprimir }) {
+  const estreito = useIsMobile(560);
+  const [escolhidas, setEscolhidas] = useState(() => new Set(ideias.map(i => i.id)));
+  const porFase = PHASES
+    .map(fase => ({ fase, lista: ideias.filter(i => i.phase === fase) }))
+    .filter(g => g.lista.length);
+  const semFase = ideias.filter(i => !PHASES.includes(i.phase));
+  if (semFase.length) porFase.push({ fase: 'Sem fase', lista: semFase });
+  const alternar = (id) => setEscolhidas(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const alternarFase = (lista) => setEscolhidas(prev => {
+    const n = new Set(prev);
+    const todas = lista.every(i => n.has(i.id));
+    lista.forEach(i => (todas ? n.delete(i.id) : n.add(i.id)));
+    return n;
+  });
+  const total = escolhidas.size;
+
+  return (
+    <div>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> Ideia de Jogo
+      </button>
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Dossier</div>
+      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 6 }}>
+        O modelo de jogo num documento só. Escolhe as ideias que entram e imprime.
+      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18, fontSize: 12 }}>
+        <span style={{ color: T.good }}>● {total} de {ideias.length} no dossier</span>
+        <span style={{ display: 'flex', gap: 8, marginLeft: estreito ? 0 : 'auto' }}>
+          <Btn variant="ghost" onClick={() => setEscolhidas(new Set(ideias.map(i => i.id)))} style={{ padding: '6px 12px', fontSize: 12.5 }}>Todas</Btn>
+          <Btn variant="ghost" onClick={() => setEscolhidas(new Set())} style={{ padding: '6px 12px', fontSize: 12.5 }}>Nenhuma</Btn>
+        </span>
+      </div>
+
+      {porFase.map(({ fase, lista }) => (
+        <div key={fase} style={{ marginBottom: 20 }}>
+          <button type="button" onClick={() => alternarFase(lista)} title="Marcar ou desmarcar este momento todo" style={{
+            display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', textAlign: 'left',
+            background: 'none', border: 'none', padding: 0, marginBottom: 8, cursor: 'pointer',
+          }}>
+            <span style={{ ...display, fontSize: 14, fontWeight: 600, color: T.cream }}>{fase}</span>
+            <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{lista.filter(i => escolhidas.has(i.id)).length}/{lista.length}</span>
+            <span style={{ flex: 1, height: 1, background: T.line }} />
+          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {lista.map(i => {
+              const on = escolhidas.has(i.id);
+              const passos = ((i.diagram && i.diagram.sequence) || []).length;
+              return (
+                <button key={i.id} type="button" onClick={() => alternar(i.id)} style={{
+                  display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
+                  padding: '10px 14px', borderRadius: 10, cursor: 'pointer', ...body,
+                  background: on ? `${T.good}12` : T.surface, border: `1px solid ${on ? T.good : T.line}`,
+                }}>
+                  <span style={{
+                    width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: 'grid', placeItems: 'center',
+                    background: on ? T.good : 'transparent', border: `1.5px solid ${on ? T.good : T.line}`,
+                  }}>{on && <Check size={11} style={{ color: '#0d140e' }} />}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: T.cream, lineHeight: 1.35 }}>{labelOf(i)}</span>
+                  {passos > 0 && <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{passos + 1} img</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div style={{
+        display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, marginTop: 6, borderTop: `1px solid ${T.line}`, background: T.bg,
+        position: 'sticky', bottom: 0, zIndex: 5, paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
+      }}>
+        <Btn onClick={() => onImprimir(ideias.filter(i => escolhidas.has(i.id)))} disabled={!total} style={estreito ? { flex: 1, justifyContent: 'center' } : undefined}>
+          <Printer size={15} /> Imprimir dossier ({total})
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
 function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
+  const estreito = useIsMobile(560);
   // `prev =>` em vez de `ideias.map(...)`: aqui o `ideias` (prop) é só o
   // que se via no último desenho do ecrã — sempre que se grava, chega um
   // eco do Realtime com a versão confirmada, e um clique logo a seguir
@@ -10042,12 +10132,15 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
                 <div
                   key={x.id}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+                    /* No telemóvel: o nome inteiro em cima e os dois botões
+                       por baixo (antes o nome ficava em "Pressão ..."). */
+                    display: 'flex', alignItems: estreito ? 'flex-start' : 'center', gap: estreito ? 8 : 14, width: '100%',
+                    flexWrap: estreito ? 'wrap' : 'nowrap',
                     background: marcada ? `${T.good}12` : T.surface, border: `1px solid ${marcada ? T.good : T.line}`,
                     borderRadius: 10, padding: '10px 14px', ...body,
                   }}
                 >
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ flex: estreito ? '1 1 100%' : 1, minWidth: 0, fontSize: 14, color: T.cream, lineHeight: 1.35 }}>
                     {labelOf(x)}
                   </span>
                   {/* Dois interruptores independentes, lado a lado — a
@@ -20385,7 +20478,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           // Está sempre lá (só se vê no Histórico) — assim a linha dos
           // separadores tem sempre a mesma altura e nada salta ao trocar.
           <label style={{
-            order: 2, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.mutedDim, ...body,
+            order: 2, marginLeft: isNarrow ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: T.mutedDim, ...body,
             visibility: view === 'historico' ? 'visible' : 'hidden',
           }}>
             Ir para
