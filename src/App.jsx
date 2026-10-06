@@ -42387,8 +42387,8 @@ const CAMINHOS_STAFF = [
    o trabalho feito NO SÍTIO CERTO, pela PRÓPRIA pessoa, DEPOIS de a
    missão começar. A prova vem do registo de cada tabela (quem gravou e
    quando: `updated_by_email` / `updated_at`), que a app já guarda.
-   - "Estatísticas do jogo" é mais exigente: só fecha quando o último jogo
-     realizado tem minutos lançados.
+   - "Relatórios de jogo" é mais exigente: só fecha quando TODOS os jogos
+     já realizados (menos os cancelados ou adiados) têm minutos lançados.
    - Quem verifica é a app da pessoa responsável (só ela sabe o próprio
      email). Quando vê a prova, grava a missão como concluída e quem a
      criou recebe o aviso de sempre.
@@ -42401,7 +42401,7 @@ const CRITERIO_STAFF = {
   planeamento: 'gravares uma sessão no Planeamento',
   presencas: 'registares presenças de um treino ou jogo',
   jogos: 'gravares a convocatória ou o jogo',
-  estatisticas: 'houver minutos lançados no último jogo',
+  estatisticas: 'todos os jogos já realizados tiverem minutos lançados',
   monitorizacao: 'registares dados na Monitorização',
   desenvolvimento: 'gravares uma avaliação no Desenvolvimento',
   ideiajogo: 'gravares um esquema na Ideia de Jogo',
@@ -43214,7 +43214,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                 {modo === 'staff' && (
                   <div style={{ fontSize: 11, color: CRITERIO_STAFF[b.caminho] ? T.good : T.mutedDim, marginTop: 6, lineHeight: 1.4 }}>
                     {CRITERIO_STAFF[b.caminho]
-                      ? `Fecha sozinha quando ${CRITERIO_STAFF[b.caminho]}. Não há "Concluir" à mão.`
+                      ? `Fecha sozinha quando ${CRITERIO_STAFF[b.caminho]}.`
                       : 'Sem caminho, a app não tem como ver se foi feita: conclui-se à mão.'}
                   </div>
                 )}
