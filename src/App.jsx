@@ -17079,6 +17079,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                       isNarrow={isNarrow}
                       onNotas={(v) => patchRegisto(momento.id, jogador.id, { notasReuniao: v })}
                       onFeita={() => patchRegisto(momento.id, jogador.id, { reuniaoFeita: true })}
+                      onDesfazer={() => patchRegisto(momento.id, jogador.id, { reuniaoFeita: false })}
                       onIrParaPlano={() => setAba('plano')}
                     />
                   )}
@@ -17237,7 +17238,7 @@ function diMediasSimples(respostas) {
 }
 
 /* ---------------- REUNIÃO INDIVIDUAL ---------------- */
-function DiReuniao({ jogador, registo, players, scoreAuto, scoreStaff, gapGlobal, mediasAnteriores, momentoAnterior, isNarrow, onNotas, onFeita, onIrParaPlano }) {
+function DiReuniao({ jogador, registo, players, scoreAuto, scoreStaff, gapGlobal, mediasAnteriores, momentoAnterior, isNarrow, onNotas, onFeita, onDesfazer, onIrParaPlano }) {
   const card = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16 };
   if (!registo || !registo.staff) {
     return <EmptyState text="Faz primeiro a avaliação da equipa técnica para preparar a reunião." />;
@@ -17352,6 +17353,10 @@ function DiReuniao({ jogador, registo, players, scoreAuto, scoreStaff, gapGlobal
           </Field>
           <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
             {!registo.reuniaoFeita && <Btn variant="ghost" onClick={onFeita}><Check size={15} /> Marcar reunião como feita</Btn>}
+            {/* Marcada por engano: volta atrás. As notas não se perdem. */}
+            {registo.reuniaoFeita && onDesfazer && (
+              <Btn variant="ghost" onClick={onDesfazer}><RotateCw size={15} /> Desmarcar reunião (ainda não foi feita)</Btn>
+            )}
             <Btn onClick={onIrParaPlano}>Criar plano individual</Btn>
           </div>
         </div>
