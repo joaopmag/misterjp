@@ -29054,8 +29054,15 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   };
   /* CLIPE CRIADO: a missão "Criar um clipe" só fecha quando o clipe fica
      mesmo gravado no servidor. Não há "Já fiz" para carregar. */
-  const clipeCriado = (titulo) => {
-    const it = missoesPorFazer.find(x => x.destino === 'clipe');
+  /* Cada clipe fecha UMA missão, e a do jogo certo: se o mister pediu um
+     clipe do jogo X, só um clipe feito num vídeo do jogo X a fecha. As
+     missões sem jogo escolhido aceitam um clipe de qualquer jogo. Antes,
+     dois clipes do mesmo jogo fechavam as duas missões (Lavrense e
+     Paredes), mesmo sem nenhum clipe do outro jogo. */
+  const clipeCriado = (titulo, jogoId) => {
+    const pendentes = missoesPorFazer.filter(x => x.destino === 'clipe');
+    const jogoDe = (x) => (x._passo && x._passo.jogoId) || null;
+    const it = (jogoId && pendentes.find(x => jogoDe(x) === jogoId)) || pendentes.find(x => !jogoDe(x));
     if (it) completarMissao(it, `Clipe criado: ${titulo}`);
   };
   const autoavaliacaoSubmetida = () => {
@@ -30394,7 +30401,10 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
     }
     if (resposta.clipe) setMeusClipes(prev => [...prev, clipeAtletaParaCanal(resposta.clipe)]);
     setAvisoClipe({ texto: `Clipe "${titulo}" gravado em "Os meus clipes". O treinador já o pode ver.` });
-    if (onClipeCriado) onClipeCriado(titulo); // missão "Criar um clipe" fecha-se sozinha
+    // Missão "Criar clipe" fecha-se sozinha: a do JOGO deste vídeo, se houver.
+    const doVideo = (videos || []).find(v => v.id === videoId) || {};
+    const jogoDoClipe = doVideo.jogoId || (resposta.clipe && resposta.clipe.jogoId) || null;
+    if (onClipeCriado) onClipeCriado(titulo, jogoDoClipe);
   };
 
   // Editar um clipe do próprio jogador (tempos, título e texto).
@@ -42920,7 +42930,7 @@ function missoesDoCacifo(tarefas, pessoaId, ctx, hoje) {
     return peso(a) - peso(b) || String(a.dia || '9999').localeCompare(String(b.dia || '9999'));
   });
 }
-function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefas = [], podeConcluir = true, podeGerir = true, onClose, onGuardar, onRemove, onAbrirRegisto }) {
+function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefas = [], matches = [], podeConcluir = true, podeGerir = true, onClose, onGuardar, onRemove, onAbrirRegisto }) {
   const registos = alvo ? (alvo._grupo || [alvo]) : [];
   const base = registos[0] || null;
   const editar = !!base;
@@ -42942,6 +42952,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
       key: uid(), titulo: t.titulo || '', tituloAuto: '',
       destino: t.jogadorId ? ((Array.isArray(t.missoes) && t.missoes[0] && t.missoes[0].destino) || t.destino || 'nota') : 'nota',
       caminho: t.caminho || '', instrucoes: inst,
+      jogoId: (Array.isArray(t.missoes) && t.missoes[0] && t.missoes[0].jogoId) || '',
     };
   };
   const [blocos, setBlocos] = useState(() => (base ? [blocoDe(base)] : [{
@@ -43018,7 +43029,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
         prazo: comum.recorrencia ? '' : comum.prazo, recorrencia: comum.recorrencia,
       };
       return modo === 'jogadores'
-        ? { ...comuns, jogadorId: pessoa, responsavel: comum.acompanha || euId || '', destino: b.destino || 'nota', missoes: [{ id: uid(), destino: b.destino || 'nota', instrucoes: inst }], caminho: '' }
+        ? { ...comuns, jogadorId: pessoa, responsavel: comum.acompanha || euId || '', destino: b.destino || 'nota', missoes: [{ id: uid(), destino: b.destino || 'nota', instrucoes: inst, ...(b.destino === 'clipe' && b.jogoId ? { jogoId: b.jogoId } : {}) }], caminho: '' }
         : { ...comuns, jogadorId: '', responsavel: pessoa, caminho: b.caminho || '', obrigatoria: !!comum.obrigatoria, destino: undefined, missoes: undefined };
     };
     const upserts = [];
@@ -43209,6 +43220,25 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                     </Select>
                   </Field>
                 </div>
+                {/* CLIPE DE QUE JOGO: a missão só fecha com um clipe desse jogo. */}
+                {modo === 'jogadores' && b.destino === 'clipe' && (
+                  <div style={{ marginBottom: 12 }}>
+                    <Field label="De que jogo">
+                      <Select value={b.jogoId || ''} onChange={e => {
+                        const m = (matches || []).find(x => x.id === e.target.value);
+                        const sug = m ? `Criar um clipe · vs ${m.opponent || 'Adversário'}` : 'Criar um clipe';
+                        const atual = String(b.titulo || '').trim();
+                        const eAuto = !atual || atual === b.tituloAuto || /^criar um clipe/i.test(atual);
+                        setBlocos(bs => bs.map((x, j) => (j === k ? { ...x, jogoId: e.target.value, ...(eAuto ? { titulo: sug, tituloAuto: sug } : {}) } : x)));
+                      }}>
+                        <option value="">Qualquer jogo</option>
+                        {[...(matches || [])].filter(m => m && m.date && m.date <= todayStr())
+                          .sort((a, b2) => String(b2.date).localeCompare(String(a.date)))
+                          .map(m => <option key={m.id} value={m.id}>{fmtShort(m.date)} · vs {m.opponent || 'Adversário'}</option>)}
+                      </Select>
+                    </Field>
+                  </div>
+                )}
                 <Field label="O que é preciso fazer" bloco solto>
                   <Input value={b.titulo} onChange={e => mudarBloco(k, { titulo: e.target.value })} autoFocus={k === 0}
                     placeholder={modo === 'jogadores' ? 'Ex: corta o teu melhor lance de sábado' : 'Ex: análise individual · Lavrense'} />
@@ -43223,7 +43253,7 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                 </div>
                 {modo === 'jogadores' && d && (
                   <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 6, lineHeight: 1.4 }}>
-                    {d.id === 'clipe' ? 'Fica feita quando ele gravar um clipe.'
+                    {d.id === 'clipe' ? (b.jogoId ? 'Fica feita quando ele gravar um clipe deste jogo.' : 'Fica feita quando ele gravar um clipe (de qualquer jogo).')
                       : d.auto ? 'Fica feita quando ele submeter.'
                         : d.id !== 'nota' ? 'Leva-o lá e fica registado que abriu.'
                           : 'Ele responde por escrito.'}
@@ -43276,6 +43306,16 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                         <span style={{ marginLeft: 'auto', fontSize: 11, color: fez ? T.good : T.mutedDim }}>
                           {fez ? `feito${r.notaSubmetidaEm ? ` · ${fmtShort(String(r.notaSubmetidaEm).slice(0, 10))}` : ''}` : (r.notaAtleta ? 'a escrever' : 'por fazer')}
                         </span>
+                        {/* Fechou por engano (ex.: o clipe era de outro jogo):
+                            volta a ficar por fazer no Portal do jogador. */}
+                        {fez && (
+                          <button type="button" onClick={() => onGuardar({
+                            upserts: [{ ...r, estado: 'aberta', feitaEm: null, notaSubmetida: false, notaSubmetidaEm: null, notaAtleta: '', notaRevista: false, conclusaoPorVer: null }],
+                            removidos: [],
+                          })} style={{ ...body, fontSize: 11, color: T.warn, background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, padding: '2px 7px', cursor: 'pointer' }}>
+                            Reabrir
+                          </button>
+                        )}
                       </div>
                       {r.notaAtleta && (
                         <div style={{ fontSize: 12.5, color: T.muted, whiteSpace: 'pre-wrap', lineHeight: 1.5, marginTop: 6 }}>{r.notaAtleta}</div>
@@ -43881,6 +43921,7 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
           players={players}
           euId={euId}
           tarefas={tarefas}
+          matches={matches}
           onClose={() => { setModal(null); setNovoDia(''); setOcorrencia(null); setPrefMissao(null); }}
           onGuardar={(ops) => { setPrefMissao(null); guardarMissoes(ops); }}
           onRemove={modal === 'new' ? null : (modal._grupo ? () => removerGrupo(modal) : () => remove(modal.id))}
