@@ -3413,7 +3413,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       if (!f) return r;
       const aviso = avisaCriadorAoConcluir(r, euId) ? { conclusaoPorVer: { por: euId, em: agora } } : {};
       if (f.feita) return { ...r, estado: 'feita', feitaEm: agora, fechoAutomatico: true, lembrete: null, ...aviso };
-      return { ...r, concluidasEm: [...new Set([...(r.concluidasEm || []), ...f.bases])], lembrete: null, ...(eSemanal(r) ? aviso : {}) };
+      // O aviso a quem criou também nas que se repetem (antes só nas semanais).
+      return { ...r, concluidasEm: [...new Set([...(r.concluidasEm || []), ...f.bases])], lembrete: null, ...aviso };
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarefas, tarefasReady, euId, userEmail, matches, videosMeta, videosOriginaisMeta, clipesMeta, scoutingMeta, adversariosMeta, sessionsMeta, matchesMeta, convocatoriasMeta, monitoringMeta, desenvolvimentoMeta, ideiasMeta, exercisesMeta, clinicoMeta, apresentacoesMeta, documentosMeta]);
@@ -40978,9 +40979,12 @@ const RECORRENCIA_LABEL = {
    não aparecer antes do apito) e desaparece SOZINHA quando os minutos
    estiverem lançados. */
 function jogosSemEstatisticas(matches, hoje) {
-  const limite = addDays(hoje, -14);
+  /* QUALQUER jogo já realizado, sem limite de datas (antes só contavam os
+     das últimas duas semanas). Só ficam de fora os que não se jogaram:
+     resultado "cancelado" ou "adiado". */
+  const naoJogado = (m) => /cancel|adiad/i.test(String(m.result || ''));
   return (matches || [])
-    .filter(m => m && m.date && m.date < hoje && m.date >= limite)
+    .filter(m => m && m.date && m.date < hoje && !naoJogado(m))
     .filter(m => !Object.values(m.report || {}).some(r => r && Number(r.minutes) > 0))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
@@ -42392,10 +42396,13 @@ function inicioDaMissao(t, base) {
 function missaoStaffFeita(t, base, provas) {
   if (!caminhoVerificavel(t) || !provas) return false;
   if (t.caminho === 'estatisticas') {
+    /* Só fica feita quando NENHUM jogo já realizado, seja ele qual for,
+       está sem estatísticas. Antes bastava o ÚLTIMO jogo ter
+       minutos: com o Paredes preenchido e o Lavrense por fazer, a missão
+       fechava-se sozinha sem ninguém ter lançado nada. */
     const hoje = todayStr();
-    const ultimo = [...(provas.matches || [])].filter(m => m && m.date && m.date <= hoje)
-      .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-    return !!ultimo && Object.values(ultimo.report || {}).some(r => r && Number(r.minutes) > 0);
+    const jogados = (provas.matches || []).filter(m => m && m.date && m.date < hoje);
+    return jogados.length > 0 && jogosSemEstatisticas(provas.matches, hoje).length === 0;
   }
   const email = String(provas.email || '').toLowerCase();
   if (!email) return false;
