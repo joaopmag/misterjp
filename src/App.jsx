@@ -23693,21 +23693,29 @@ function Presencas({ players, sessions, setSessions, matches, setMatches, convoc
   // registados: onde só uma das duas existir, copia-a para a outra;
   // onde já existirem as duas mas diferentes, fica a das Presenças (foi
   // a mais recentemente confirmada aqui).
+  /* "Sem nota" tem várias formas guardadas (vazio, null, "NA"): todas
+     contam como nenhuma nota. Antes, um "NA" ou um vazio nunca batia
+     certo com o relatório (NaN ou 0 contra null), e o botão ficava preso
+     para sempre, mesmo depois de carregar nele. */
+  const notaNum = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
   const jogosPorSincronizar = matches.filter(m => {
     const rat = m.ratings || {};
     const rep = m.report || {};
-    return Object.keys(rat).some(pid => Number(rat[pid]) !== (rep[pid]?.rating != null ? Number(rep[pid].rating) : null));
+    return Object.keys(rat).some(pid => notaNum(rat[pid]) !== notaNum(rep[pid] && rep[pid].rating));
   }).length;
   const sincronizarNotasAntigas = () => {
     setMatches(prev => prev.map(m => {
       const rat = m.ratings || {};
       if (Object.keys(rat).length === 0) return m;
       const report = { ...(m.report || {}) };
+      let mudou = false;
       Object.keys(rat).forEach(pid => {
-        const numero = rat[pid] != null && rat[pid] !== '' ? Number(rat[pid]) : null;
+        const numero = notaNum(rat[pid]);
+        if (numero === notaNum(report[pid] && report[pid].rating)) return;
         report[pid] = { ...(report[pid] || {}), rating: numero };
+        mudou = true;
       });
-      return { ...m, report };
+      return mudou ? { ...m, report } : m;
     }));
   };
 
