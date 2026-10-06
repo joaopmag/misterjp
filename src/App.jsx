@@ -9743,12 +9743,16 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
              numa linha, a dividir a largura (como nas outras páginas). */
           <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', ...(cabecalhoEstreito ? { width: '100%' } : {}) }}>
             <Btn onClick={() => setModal('new')} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Plus size={15} /> Nova ideia</Btn>
-            {/* Só faz sentido com alguma coisa para compilar. */}
+            {/* Só faz sentido com alguma coisa para compilar. Passar do
+                Portal para o Dossier (ou ao contrário) usa `trocarJanela`:
+                a página nova herda a marca do "voltar" da anterior. Antes,
+                fechar uma desfazia a marca e o "voltar" fechava também a
+                que acabava de abrir, saltando para a lista das ideias. */}
             {ideias.length > 0 && (
-              <Btn variant="ghost" onClick={() => { setPortalAtleta(false); setDossier(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><BookOpen size={15} /> Dossier</Btn>
+              <Btn variant="ghost" onClick={() => { if (dossier) return; if (portalAtleta) trocarJanela(() => setPortalAtleta(false), () => setDossier(true)); else setDossier(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><BookOpen size={15} /> Dossier</Btn>
             )}
             {ideias.length > 0 && (
-              <Btn variant="ghost" onClick={() => { setDossier(false); setPortalAtleta(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Eye size={15} /> Portal</Btn>
+              <Btn variant="ghost" onClick={() => { if (portalAtleta) return; if (dossier) trocarJanela(() => setDossier(false), () => setPortalAtleta(true)); else setPortalAtleta(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Eye size={15} /> Portal</Btn>
             )}
           </div>
         )} />
