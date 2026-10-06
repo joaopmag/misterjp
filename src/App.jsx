@@ -42174,6 +42174,8 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
 
 /* Uma linha. A caixa à esquerda fecha a tarefa sem abrir nada — é o
    gesto mais frequente de todos e não devia custar dois cliques. */
+// Hora local (HH:MM) de um instante ISO, para o "adiada 3×".
+const horaMinTarefa = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar, podeConcluir = true, onLembrar }) {
   const semanal = eSemanal(tarefa);
   const pendentes = semanal ? semanaisPendentes(tarefa, hoje) : [];
@@ -42289,7 +42291,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
           )}
           {/* Quem criou vê quantas vezes a pessoa entrou e adiou. */}
           {!feita && (tarefa.adiadaEm || []).length > 0 && (tarefa.criadoPor === euId || tarefa.responsavel === euId) && (
-            <span style={{ fontSize: 11, color: T.mutedDim }} title={(tarefa.adiadaEm || []).map(d => fmtShort(d)).join(', ')}>
+            <span style={{ fontSize: 11, color: T.mutedDim }} title={(tarefa.adiadaEm || []).map(d => (String(d).length > 10 ? `${fmtShort(String(d).slice(0, 10))} ${horaMinTarefa(d)}` : fmtShort(d))).join(', ')}>
               adiada {(tarefa.adiadaEm || []).length}×
             </span>
           )}
@@ -42619,8 +42621,8 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
    - Sem caminho, "Concluir" conclui-a e a zona fica CARIMBADA.
    - "Guardar a credencial" fecha o ecrã e regista um adiamento em cada
      missão que ficou por fazer (um por dia; quem criou vê "adiada 3×").
-   - Aparece uma vez por dia. Não bloqueia ninguém. Missões sem
-     responsável não entram aqui.
+   - Aparece sempre que a app é aberta, enquanto houver missões por
+     fazer. Não bloqueia ninguém. Missões sem responsável não entram aqui.
    - Teste: ?testeentrada=1 (aparece sempre; três missões de exemplo se
      não houver; nada é gravado). */
 const ZONA_CODIGO = {
@@ -42629,11 +42631,11 @@ const ZONA_CODIGO = {
 };
 function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equipa, epoca }) {
   const hoje = todayStr();
-  const chaveVista = `mjp_entrada_${euId}_${hoje}`;
   const teste = (() => { try { return /[?&#]testeentrada\b/i.test(window.location.href); } catch (e) { return false; } })();
-  // "Uma vez por dia" a sério: guardado no dispositivo (localStorage), não
-  // só no separador. Abrir a app outra vez no mesmo dia não a repete.
-  const [fechado, setFechado] = useState(() => { if (teste) return false; try { return localStorage.getItem(chaveVista) === '1'; } catch (e) { return false; } });
+  /* Aparece SEMPRE que a app é aberta ou recarregada, enquanto houver
+     missões por fazer (antes era uma vez por dia). "Mais tarde" só a
+     esconde até à próxima vez que a app for aberta. */
+  const [fechado, setFechado] = useState(false);
   const [carimbadas, setCarimbadas] = useState([]); // concluídas aqui (ficam à vista, carimbadas)
   const [fundo] = useState(() => Array.from({ length: 18 }, (_, k) => ({
     k, i: k % 8, left: Math.random() * 100, atraso: -Math.random() * 24, dur: 18 + Math.random() * 14,
@@ -42662,7 +42664,7 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
   const clube = (equipa && (equipa.clube || equipa.nome)) || 'Mister JP';
   const escalao = (equipa && equipa.escalao) || '';
 
-  const fechar = () => { if (!teste) { try { localStorage.setItem(chaveVista, '1'); } catch (e) { /* fica só nesta página */ } } setFechado(true); };
+  const fechar = () => setFechado(true);
   const concluir = (x) => {
     setCarimbadas(v => [...v, x.t.id]);
     if (teste) return;
@@ -42679,8 +42681,16 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
   const guardar = () => {
     if (!teste) {
       const ids = new Set(porFazer.map(x => x.t.id));
-      setTarefas(prev => prev.map(r => (ids.has(r.id) && !(r.adiadaEm || []).includes(hoje)
-        ? { ...r, adiadaEm: [...(r.adiadaEm || []), hoje].slice(-60) }
+      /* Um adiamento conta de 3 em 3 horas, no máximo (antes era um por
+         dia): carregar várias vezes seguidas em "Mais tarde" não conta
+         várias vezes, mas adiar de manhã e outra vez à tarde conta duas.
+         Guarda-se a hora; os registos antigos só têm a data, e contam
+         como sendo dessa data. */
+      const agoraMs = Date.now();
+      const TRES_HORAS = 3 * 60 * 60 * 1000;
+      const ultimoMs = (r) => Math.max(0, ...(r.adiadaEm || []).map(d => new Date(String(d).length <= 10 ? `${d}T00:00:00` : d).getTime() || 0));
+      setTarefas(prev => prev.map(r => (ids.has(r.id) && agoraMs - ultimoMs(r) >= TRES_HORAS
+        ? { ...r, adiadaEm: [...(r.adiadaEm || []), new Date(agoraMs).toISOString()].slice(-60) }
         : r)));
     }
     fechar();
