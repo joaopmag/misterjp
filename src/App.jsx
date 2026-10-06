@@ -3847,7 +3847,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
-          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} />}
+          {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} clipes={clipes} />}
           {tab === 'plantel' && (
             <Plantel
               players={players} setPlayers={setPlayers}
@@ -3998,7 +3998,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 /* ---------------------------------------------------------------
    VISÃO GERAL
 ---------------------------------------------------------------- */
-function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas, teamId, onIr }) {
+function Overview({ season, setSeason, players, setPlayers, sessions, setSessions, exercises, monitoring, matches, setMatches, standings, setStandings, convocatorias, setConvocatorias, lastEdits, tarefas, setTarefas, membros, euId, onVerTarefas, teamId, onIr, clipes }) {
   const [relatoOpen, setRelatoOpen] = useState(false);
   // Cartões clicáveis: sessão e jogo abrem a respetiva janela de edição
   // aqui mesmo, sem obrigar a ir ao Planeamento ou aos Jogos.
@@ -4175,6 +4175,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
       {relatoOpen && (
         <RelatoPagina
           teamId={teamId} players={players} membros={membros} euId={euId} lastEdits={lastEdits}
+          tarefas={tarefas} clipes={clipes}
           onClose={() => setRelatoOpen(false)} onIr={onIr}
         />
       )}
@@ -4712,7 +4713,7 @@ function RelatoAvatar({ nome, cor, size = 30 }) {
   );
 }
 
-function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr }) {
+function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr, tarefas, clipes }) {
   const isMobile = useIsMobile(900);
   const scrollRef = useRef(null);
   useModalHistory(onClose);
@@ -4833,7 +4834,14 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
   const fraseDe = useCallback((l) => {
     const sec = relatoSecao(l.tabela);
     const i = l.info || {};
-    const jog = i.playerId ? nomeJogador(i.playerId) : '';
+    /* QUEM FOI: o jogador vem do registo (o servidor nem sempre o guarda
+       no histórico). Tarefa → o jogador a quem foi atribuída; clipe → o
+       jogador que o criou no Portal. Assim aparece "Rui criou o clipe…"
+       em vez de "Jogadores criou o clipe…". */
+    const daTarefa = l.tabela === 'tarefas' ? (tarefas || []).find(t => t.id === l.registo_id) : null;
+    const doClipe = l.tabela === 'video_clips' ? (clipes || []).find(c => c.id === l.registo_id) : null;
+    const jogId = i.playerId || i.jogadorId || i.atletaId || (daTarefa && daTarefa.jogadorId) || (doClipe && doClipe.atletaId) || '';
+    const jog = (jogId ? nomeJogador(jogId) : '') || i.atletaNome || (doClipe && doClipe.atletaNome) || '';
     const nome = i.name || i.nome || i.titulo || i.title || i.label || i.tema || i.focus || '';
     const adv = i.opponent || i.adversario || '';
     const dia = isoDia(i.date) || isoDia(i.inicio) || isoDia(i.data);
@@ -4864,7 +4872,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
       return { sujeito: jog || null, verbo: (RELATO_ACOES[l.acao] || RELATO_ACOES.editou).verbo, art: sec.art, alvo: jog ? nome : alvo, dia, secao: sec };
     }
     return { sujeito: null, verbo: (RELATO_ACOES[l.acao] || RELATO_ACOES.editou).verbo, art: sec.art, alvo, dia, secao: sec };
-  }, [nomeJogador]);
+  }, [nomeJogador, tarefas, clipes]);
 
   const textoDe = useCallback((l) => {
     const f = fraseDe(l);
