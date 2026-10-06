@@ -26963,19 +26963,30 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   // Relatórios por preencher (jogos já realizados), para o número no separador.
   const relatoriosPorFazer = (matches || []).filter(m => m && m.date && m.date <= todayStr() && estadoRelatorio(comResultado(m, standings)).id !== 'feito').length;
 
-  if (aba === 'relatorios') {
-    return (
-      <div>
-        <SectionHeader title="Jogos" subtitle="A competição, classificação e os dados de cada jogo." />
-        <SubTabs
-          value={aba}
-          onChange={setAba}
+  /* O MESMO CABEÇALHO nos três separadores (título, "Novo jogo" e os
+     separadores). Antes, "Novo jogo" só existia em Jogos e os separadores
+     subiam e desciam ao trocar. Em Convocatórias e Relatórios, "Novo jogo"
+     leva a Jogos e abre o editor. */
+  const cabecalhoJogos = (
+    <>
+      <SectionHeader title="Jogos" subtitle="A competição, classificação e os dados de cada jogo."
+        action={<Btn onClick={() => { setAba('jogos'); setModalVoltarFicha(false); setModal('new'); }} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
+      <SubTabs
+        value={aba}
+        onChange={setAba}
           tabs={[
             { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
             { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
             { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosPorFazer },
           ]}
-        />
+      />
+    </>
+  );
+
+  if (aba === 'relatorios') {
+    return (
+      <div>
+        {cabecalhoJogos}
         {souDono && !haMissaoDeRelatorios(tarefas) && (
           <AlertaRelatorios emFalta={relatoriosEmFalta(matches, standings)} onCriar={(rep) => pedirNovaMissao(PREF_MISSAO_RELATORIOS(rep))} />
         )}
@@ -26995,17 +27006,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
           autorizarLimparConvocatorias={autorizarLimparConvocatorias}
           players={players} season={season} standings={standings}
           matches={matches} setMatches={setMatches} clinico={clinico}
-          subTabs={(
-            <SubTabs
-              value={aba}
-              onChange={setAba}
-              tabs={[
-                { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
-                { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
-                { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosPorFazer },
-              ]}
-            />
-          )}
+          subTabs={cabecalhoJogos}
         />
       </div>
     );
@@ -27013,17 +27014,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
 
   return (
     <div>
-      <SectionHeader title="Jogos" subtitle="A competição, classificação e os dados de cada jogo."
-        action={<Btn onClick={() => { setModalVoltarFicha(false); setModal('new'); }} disabled={players.length === 0}><Plus size={15} /> Novo jogo</Btn>} />
-      <SubTabs
-        value={aba}
-        onChange={setAba}
-        tabs={[
-          { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
-          { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
-          { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosPorFazer },
-        ]}
-      />
+      {cabecalhoJogos}
 
       <div style={{ marginBottom: 20 }}>
         <LeagueStandings standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} matches={matches} setMatches={setMatches} season={season} convocatorias={convocatorias} setConvocatorias={setConvocatorias} sessions={sessions} setSessions={setSessions} />
@@ -40368,8 +40359,7 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
 
   return (
     <div>
-      <SectionHeader title="Jogos" subtitle="A competição, classificação e os dados de cada jogo."
-        />
+      {/* O cabeçalho (título, Novo jogo, separadores) vem de Jogos. */}
       {subTabs}
 
       {/* Só aparece quando há mesmo o que limpar — não é uma ferramenta
