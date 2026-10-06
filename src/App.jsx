@@ -4559,6 +4559,24 @@ const QUIOSQUE = '__quiosque';
    errado: nenhum jogador mexeu. Uma alteração sem autor em que TODOS os
    campos são destes técnicos passa a contar como automática. */
 const AUTOMATICO = '__automatico';
+/* ALTERAÇÃO DIRETA NA BASE DE DADOS (por exemplo, um SQL corrido no
+   Supabase): não tem email nem id. Antes aparecia como "Um jogador
+   respondeu à tarefa". Só conta como jogador quando mexe no que um
+   jogador mexe no Portal (a resposta à tarefa, o questionário, o
+   wellness/PSE ou os clipes); o resto sem autor é alteração direta. */
+const DIRETO = '__direto';
+const CAMPOS_DO_JOGADOR = {
+  tarefas: ['notaAtleta', 'notaSubmetida', 'notaSubmetidaEm'],
+  desenvolvimento: ['auto'],
+};
+const TABELAS_DO_JOGADOR = new Set(['monitoring', 'video_clips']);
+function eDoJogador(e) {
+  if (TABELAS_DO_JOGADOR.has(e.tabela)) return true;
+  const campos = CAMPOS_DO_JOGADOR[e.tabela];
+  if (!campos) return false;
+  const ks = (e.campos || []).map(c => c && c.k);
+  return ks.some(k => campos.includes(k)) || (e.acao !== 'editou' && e.tabela !== 'tarefas');
+}
 const CAMPOS_TECNICOS = new Set([
   'pronto', 'thumbUrl', 'thumb_url', 'erroPreparacao', 'erro_preparacao',
 ]);
@@ -4791,11 +4809,13 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     const semAutor = !e.ator_id && (!em || !em.includes('@'));
     if (semAutor && e.acao === 'editou' && soCamposTecnicos(e.campos)) return AUTOMATICO;
     if (em && !em.includes('@')) return QUIOSQUE;
+    if (!em && !e.ator_id) return eDoJogador(e) ? QUIOSQUE : DIRETO;
     return em || e.ator_id || QUIOSQUE;
   }, []);
   const quemE = useCallback((chave) => {
     if (chave === QUIOSQUE) return { nome: 'Jogadores', cor: T.mutedDim, eu: false, quiosque: true };
     if (chave === AUTOMATICO) return { nome: 'Preparação automática', cor: T.mutedDim, eu: false, quiosque: true };
+    if (chave === DIRETO) return { nome: 'Base de dados', cor: T.mutedDim, eu: false, quiosque: true };
     const id = chave.includes('@') ? pessoasInfo.idPorEmail[chave] : chave;
     const m = id && pessoasInfo.membroPorId[id];
     const nomeEmail = chave.includes('@') ? chave.split('@')[0].replace(/[._-]+/g, ' ') : 'Alguém da equipa';
@@ -4829,6 +4849,10 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     // "Preparação automática preparou o vídeo X" (ou falhou, se houve erro).
     if (l.chave === AUTOMATICO) {
       return { sujeito: null, verbo: falhouPreparacao(l) ? 'não conseguiu preparar' : 'preparou', art: sec.art, alvo, dia, secao: sec };
+    }
+    // "Base de dados alterou diretamente a tarefa X" (ex.: um SQL no Supabase).
+    if (l.chave === DIRETO) {
+      return { sujeito: null, verbo: 'alterou diretamente', art: sec.art, alvo, dia, secao: sec };
     }
     if (l.chave === QUIOSQUE) {
       const ks = (l.campos || []).map(c => c.k);
@@ -4991,7 +5015,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
     );
   } else {
     const ultimo = lancesBase[0];
-    const nPessoas = porPessoa.filter(([k]) => k !== QUIOSQUE && k !== AUTOMATICO).length;
+    const nPessoas = porPessoa.filter(([k]) => k !== QUIOSQUE && k !== AUTOMATICO && k !== DIRETO).length;
     const aCarregar = linhas === null;
     corpo = (
       <>
@@ -5016,7 +5040,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
             <span style={{ textTransform: q.quiosque ? 'none' : 'capitalize' }}>{q.nome}</span>
             {q.eu && <span style={{ fontSize: 10, opacity: .8 }}>(tu)</span>}
             <span style={{ ...mono, opacity: .75 }}>{n}</span>
-          </>, k, k === AUTOMATICO ? 'Alterações feitas pelo servidor ao preparar vídeos' : q.quiosque ? 'Respostas dos jogadores no quiosque' : (q.email || undefined));
+          </>, k, k === AUTOMATICO ? 'Alterações feitas pelo servidor ao preparar vídeos' : k === DIRETO ? 'Alterações feitas diretamente na base de dados (ex.: SQL no Supabase)' : q.quiosque ? 'Respostas dos jogadores no quiosque' : (q.email || undefined));
         }))}
 
         <div style={{ marginTop: 10, minHeight: '60vh' }}>
@@ -44678,9 +44702,78 @@ function useEcraLigadoEmVideo() {
   }, []);
 }
 
+/* ATUALIZAÇÃO AUTOMÁTICA. Depois de cada publicação, quem tinha a app
+   aberta continuava com a versão antiga até a fechar e voltar a abrir.
+   (Foi assim que a missão das estatísticas do Castro se fechou sozinha
+   outra vez: a app dele ainda tinha a regra antiga.) Agora a app vê, de 5
+   em 5 minutos e sempre que se volta a ela, se há versão nova publicada
+   (os ficheiros da app mudam de nome a cada publicação):
+   - se a pessoa estava noutra app e volta, recarrega logo (não estava a
+     escrever nada);
+   - se está a usar a app, aparece um aviso pequeno em baixo, "Há uma
+     versão nova", com o botão Atualizar, para não lhe apagar o que está
+     a escrever. */
+function scriptsDaApp(doc) {
+  return [...doc.querySelectorAll('script[src]')]
+    .map(s => { try { return new URL(s.getAttribute('src'), window.location.origin).pathname; } catch (e) { return ''; } })
+    .filter(p => /\/(assets|static)\//.test(p))
+    .sort().join('|');
+}
+function useAtualizacaoAutomatica() {
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof DOMParser === 'undefined') return undefined;
+    const atual = scriptsDaApp(document);
+    if (!atual) return undefined; // em desenvolvimento não há ficheiros com nome de versão
+    let novaVersao = false;
+    let aviso = null;
+    const mostrarAviso = () => {
+      if (aviso || document.visibilityState !== 'visible') return;
+      aviso = document.createElement('div');
+      aviso.setAttribute('role', 'status');
+      aviso.style.cssText = 'position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:2147483000;'
+        + 'display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px;border-radius:12px;background:#14231a;color:#F3ECDA;'
+        + 'border:1px solid #C9A227;box-shadow:0 10px 30px rgba(0,0,0,.45);font:14px system-ui,sans-serif;max-width:calc(100vw - 24px);';
+      aviso.innerHTML = '<span>Há uma versão nova da app.</span>';
+      const bt = document.createElement('button');
+      bt.textContent = 'Atualizar';
+      bt.style.cssText = 'border:none;border-radius:8px;padding:7px 12px;background:#C9A227;color:#14231a;font-weight:700;cursor:pointer;font:inherit;';
+      bt.onclick = () => window.location.reload();
+      aviso.appendChild(bt);
+      document.body.appendChild(aviso);
+    };
+    const verificar = async () => {
+      if (novaVersao) { mostrarAviso(); return; }
+      try {
+        const r = await fetch(`${window.location.origin}/?v=${Date.now()}`, { cache: 'no-store' });
+        if (!r.ok) return;
+        const html = await r.text();
+        const publicado = scriptsDaApp(new DOMParser().parseFromString(html, 'text/html'));
+        if (publicado && publicado !== atual) { novaVersao = true; mostrarAviso(); }
+      } catch (e) { /* sem rede: tenta-se na próxima */ }
+    };
+    const aoVoltar = () => {
+      if (document.visibilityState !== 'visible') return;
+      // Voltou à app e já se sabia que havia versão nova: recarrega já.
+      if (novaVersao) { window.location.reload(); return; }
+      verificar();
+    };
+    document.addEventListener('visibilitychange', aoVoltar);
+    window.addEventListener('focus', verificar);
+    const intervalo = setInterval(verificar, 5 * 60 * 1000);
+    const primeira = setTimeout(verificar, 20 * 1000);
+    return () => {
+      document.removeEventListener('visibilitychange', aoVoltar);
+      window.removeEventListener('focus', verificar);
+      clearInterval(intervalo); clearTimeout(primeira);
+      if (aviso && aviso.parentNode) aviso.parentNode.removeChild(aviso);
+    };
+  }, []);
+}
+
 export default function AppRoot() {
   const [session, setSession] = useState(undefined); // undefined = a verificar
   useEcraLigadoEmVideo();
+  useAtualizacaoAutomatica();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
