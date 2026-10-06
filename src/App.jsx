@@ -16802,11 +16802,12 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
     .map(f => ({ ...f, jogadores: jogadoresParaCabecalho.filter(p => familiaDaPosicao(p.position) === f.id) }))
     .filter(f => f.jogadores.length > 0);
 
-  // No telemóvel, uma droplist por posição em vez da grelha de pills —
-  // é mais rápido de percorrer com o polegar do que ir a scroll por
-  // 4 blocos de botões, e o texto nunca corta.
-  const cabecalhoJogador = isNarrow ? (
-    <div style={{ marginBottom: 14 }}>
+  /* O JOGADOR ESCOLHE-SE NUMA LISTA, em todos os separadores e em
+     qualquer ecrã (antes era uma grelha de botões no computador): agrupada
+     por posição, e com o estado de cada um escrito por extenso em vez do
+     ponto, que ninguém sabia o que queria dizer. */
+  const cabecalhoJogador = (
+    <div style={{ marginBottom: 14, maxWidth: 520 }}>
       <Select value={jogadorId || ''} onChange={e => setJogadorId(e.target.value)}>
         <option value="" disabled>Escolhe um jogador…</option>
         {linhasCabecalho.map(f => (
@@ -16815,37 +16816,13 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
               const est = diEstado(diRegisto(registos, p.id));
               return (
                 <option key={p.id} value={p.id}>
-                  {p.position || '--'} · {shortPlayerName(p, players)}{est !== 'pendente' ? ' ·' : ''}
+                  {p.position || '--'} · {shortPlayerName(p, players)}{est !== 'pendente' ? `  (${DI_ESTADO_LABEL(est)})` : ''}
                 </option>
               );
             })}
           </optgroup>
         ))}
       </Select>
-    </div>
-  ) : (
-    <div style={{ marginBottom: 14 }}>
-      {linhasCabecalho.map(f => (
-        <div key={f.id} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-          {f.jogadores.map(p => {
-            const on = jogadorId === p.id;
-            const est = diEstado(diRegisto(registos, p.id));
-            return (
-              <button key={p.id} onClick={() => setJogadorId(p.id)} style={{
-                padding: '6px 11px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
-                background: on ? '#B5393F' : 'transparent',
-                color: on ? TEXT_ON_ACCENT : T.muted,
-                border: `1px solid ${on ? '#B5393F' : T.line}`,
-                whiteSpace: 'nowrap', textAlign: 'left',
-              }}>
-                <span style={{ ...mono, fontSize: 10, opacity: 0.75 }}>{p.position || '--'}</span>{' '}
-                {shortPlayerName(p, players)}
-                {est !== 'pendente' && <span style={{ color: on ? TEXT_ON_ACCENT : T.warn }}> ·</span>}
-              </button>
-            );
-          })}
-        </div>
-      ))}
     </div>
   );
 
