@@ -44898,7 +44898,12 @@ function CheckinApp() {
          resolver sozinho — pedindo o link certo. Vale a pena dizê-lo por
          palavras dele, em vez do erro genérico de ligação. */
       const ambiguo = /amb[íi]guo/i.test((e && e.message) || '');
-      setErro(ambiguo
+      // Limite de tentativas do servidor (fase 1 da segurança): a mensagem
+      // já vem pronta a mostrar ("Demasiadas tentativas. Tenta outra vez…").
+      const bloqueado = /tentativas/i.test((e && e.message) || '');
+      setErro(bloqueado
+        ? e.message
+        : ambiguo
         ? 'Este link não diz de que equipa és. Pede ao treinador o link da tua equipa.'
         : (e && e.__forma
           ? e.message
@@ -44916,17 +44921,26 @@ function CheckinApp() {
   const guardar = async (type, fields, date) => {
     setErro('');
     try {
-      const { error } = await supabase.rpc('checkin_save', {
+      const { data: resp, error } = await supabase.rpc('checkin_save', {
         p_code: codigo, p_date: date, p_type: type, p_fields: fields,
         p_days: CHECKIN_DAYS_BACK, p_team: equipaDoLink,
       });
       if (error) throw error;
+      // Com o código inválido o servidor já não dá erro (para a tentativa
+      // errada ficar registada no limite de tentativas): responde
+      // { ok: false }. Isso NÃO é uma gravação — trata-se como falha.
+      let r = resp;
+      if (Array.isArray(r)) r = r[0];
+      if (typeof r === 'string') { try { r = JSON.parse(r); } catch (e) { /* fica como está */ } }
+      if (r && typeof r === 'object' && r.ok === false) throw new Error(r.erro || 'Código inválido');
       const d = await buscar(codigo);
       if (d) setDados(d);
       return true; // confirmação real de que ficou gravado
     } catch (e) {
       console.error('checkin_save', e);
-      setErro('A resposta não ficou guardada. Tenta outra vez ou fala com o staff.');
+      setErro(/tentativas/i.test((e && e.message) || '')
+        ? e.message
+        : 'A resposta não ficou guardada. Tenta outra vez ou fala com o staff.');
       return false; // quem chamou (WellnessWizard/RpeWizard/ComposicaoWizard)
       // usa isto para NÃO mostrar "Registado" nem voltar sozinho ao
       // início — sem isto, o atleta via sempre o ecrã de sucesso, quer a
