@@ -3096,10 +3096,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      mão, e escreve DIRETO no Supabase pela mesma razão (ver o comentário
      grande ali em cima).
 
-     "AUTÓNOMO E DENTRO DO HORÁRIO": um dia só conta se houver Wellness E
-     PSE desse dia, mas só o WELLNESS precisa de ser autónomo — o PSE às
-     vezes é preenchido em grupo, junto da equipa técnica (ex.: no fim do
-     treino), e isso não deve partir a sequência (ver `diaAutonomoCompleto`).
+     "AUTÓNOMO E DENTRO DO HORÁRIO": um dia conta se houver WELLNESS desse
+     dia respondido pelo próprio jogador (o PSE não entra na contagem; ver
+     `diaAutonomoCompleto`).
      O quiosque (`?checkin=1`) já só aceita responder no PRÓPRIO dia e
      dentro da janela horária (ver CHECKIN_WINDOWS/CHECKIN_ALLOW_BACKFILL)
      — por isso um Wellness feito por ali já é, por definição, autónomo e
@@ -3134,7 +3133,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       if (jaExiste) return;
       const registo = {
         titulo: 'O jogador chegou aos 30 dias seguidos a responder aos questionários. Tem de ser premiado',
-        notas: `${p.name} respondeu sozinho, dentro do horário, ao Wellness e ao PSE durante ${dias} dias seguidos.`,
+        notas: `${p.name} respondeu sozinho, dentro do horário, ao Wellness durante ${dias} dias seguidos.`,
         responsavel: '',
         estado: 'aberta',
         marco: 'streak30',
@@ -21233,12 +21232,14 @@ function addDays(dateStr, n) {
    o WELLNESS precisa de ser autónomo — o PSE às vezes é preenchido junto
    da equipa técnica (ex.: em grupo, no fim do treino, com o preparador
    físico a ajudar), e isso não deve partir a sequência do atleta. */
+/* REGRA DO PRÉMIO: conta o dia em que o jogador respondeu SOZINHO ao
+   WELLNESS (no Portal, não preenchido pela equipa técnica). O PSE não
+   entra na contagem (antes exigia os dois). */
 function diaAutonomoCompleto(playerId, date, monitoring, monitoringMeta) {
   const registos = (monitoring || []).filter(m => m.playerId === playerId && m.date === date);
   if (registos.length === 0) return false;
   const registosWellness = registos.filter(m => typeof m.sono === 'number');
-  const temPse = registos.some(m => typeof m.pse === 'number');
-  if (registosWellness.length === 0 || !temPse) return false;
+  if (registosWellness.length === 0) return false;
   // Só os registos de Wellness precisam de estar vazios em updated_by_email.
   return registosWellness.every(m => {
     const meta = (monitoringMeta || {})[m.id];
@@ -32074,7 +32075,7 @@ function StreakCard({ dias }) {
         <span style={{ display: 'block', fontSize: 13, color: T.cream, lineHeight: 1.4 }}>{mensagem}</span>
         {dias > 0 && (
           <span style={{ display: 'block', fontSize: 11, color: T.mutedDim, marginTop: 3 }}>
-            {dias} {dias === 1 ? 'dia seguido' : 'dias seguidos'} a responder ao Wellness e ao PSE.
+            {dias} {dias === 1 ? 'dia seguido' : 'dias seguidos'} a responder ao Wellness.
           </span>
         )}
       </span>
