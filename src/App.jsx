@@ -32556,6 +32556,34 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
   const cor = coresCamisola(T.corEquipa);
   const clube = String((equipa && (equipa.clube || equipa.nome)) || '').trim();
   const nBadge = (tarefasPendentes || []).length;
+  /* ENQUADRAMENTO DO BALNEÁRIO. O desenho tem 300×215 e o espaço que
+     sobra no ecrã muda de telemóvel para telemóvel. Cortar sempre ao
+     centro levava o teto (e o emblema) nos ecrãs mais largos do que
+     altos. Aqui mede-se o espaço e escolhe-se a janela: a faixa que
+     interessa (do emblema, em cima, até à camisola do jogador) fica
+     sempre à vista; o que sobra corta-se no chão. */
+  const balRef = useRef(null);
+  const [vbBalneario, setVbBalneario] = useState('0 0 300 215');
+  useEffect(() => {
+    const el = balRef.current;
+    if (!el) return undefined;
+    const calcular = () => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (!w || !h) return;
+      const alturaVisivel = (300 * h) / w;
+      if (alturaVisivel >= 215) { setVbBalneario('0 0 300 215'); return; }
+      const y0 = Math.max(0, Math.min(215 - alturaVisivel, 84 - alturaVisivel / 2));
+      setVbBalneario(`0 ${y0.toFixed(1)} 300 ${alturaVisivel.toFixed(1)}`);
+    };
+    calcular();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', calcular);
+      return () => window.removeEventListener('resize', calcular);
+    }
+    const ro = new ResizeObserver(calcular);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const svgBalneario = React.useMemo(() => pkhBalneario({
     cor, numero, nome: primeiro, foto: (player && player.photo) || '', iniciais,
     logo: (equipa && equipa.logo) || '', inicialClube: clube ? clube[0].toUpperCase() : '', badge: nBadge,
@@ -32608,12 +32636,12 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
         <PkhSequencia dias={diasSequenciaChama || 0} />
 
         {/* BALNEÁRIO — a entrada do Portal (sempre disponível, sem janela horária). */}
-        <button type="button" onClick={onOpenPortal} aria-label="Entrar no Portal do Atleta" style={{
+        <button ref={balRef} type="button" onClick={onOpenPortal} aria-label="Entrar no Portal do Atleta" style={{
           flex: 1, minHeight: 96, position: 'relative', borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.line}`,
           background: '#121614', padding: 0, cursor: 'pointer', display: 'block', width: '100%',
         }}>
           <svg
-            viewBox="0 0 300 215" preserveAspectRatio="xMinYMid slice" width="100%" height="100%"
+            viewBox={vbBalneario} preserveAspectRatio="xMinYMid slice" width="100%" height="100%"
             style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true"
             dangerouslySetInnerHTML={{ __html: svgBalneario }}
           />
