@@ -32411,7 +32411,7 @@ function PkhSequencia({ dias, g }) {
 /* W = largura do desenho (altura fixa 215). 300 no telemóvel; em ecrã largo
    a sala alarga-se (paredes mais compridas, mais cacifos), em vez de se
    cortar o desenho. */
-function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge }, W = 300, H = 215) {
+function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge }, W = 300, H = 215, tv = null) {
   // H > 215 quando o espaço é mais alto do que o desenho: a sala estica na
   // vertical (em vez de se cortar dos lados) e a TV fica sempre ao centro.
   const VX = W / 2, VY = (95 * H) / 215, S = 0.5, BL = VX * S, BR = W - VX * S, BT = VY * S, BB = H - (H - VY) * S;
@@ -32504,6 +32504,11 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   const gancho = wp((T6[0] + T6[1]) / 2, 0.42); // = 0.19 no telemóvel, como antes
   const zoom = Math.min(1.25, 1 + (kW - 1) * 0.35); // 1 no telemóvel
   const cx = gancho[0] + 9 * zoom, cy = gancho[1] + 12, ry = gancho[1] - 22 * zoom, rr = 16 * zoom;
+  // Telemóveis baixos: a fotografia e a camisola sobem/encolhem para
+  // caberem INTEIRAS (nunca se corta a camisola do jogador).
+  const eJog = tv && tv.jogador ? tv.jogador : 1;
+  const topoJog = ry - rr - 4;
+  s += `<g transform="translate(${cx.toFixed(1)},${topoJog.toFixed(1)}) scale(${eJog.toFixed(3)}) translate(${(-cx).toFixed(1)},${(-topoJog).toFixed(1)})">`;
   s += `<ellipse cx="${cx.toFixed(1)}" cy="${(cy + 4).toFixed(1)}" rx="30" ry="52" fill="#FFC23D" opacity=".32" filter="url(#pkh-brilho2)"/>`;
   s += `<line x1="${gancho[0].toFixed(1)}" y1="${gancho[1].toFixed(1)}" x2="${(gancho[0] + 9).toFixed(1)}" y2="${(gancho[1] + 2).toFixed(1)}" stroke="#c9ced0" stroke-width="1.6"/>`;
   s += `<g transform="translate(${(cx - 22 * zoom).toFixed(1)},${cy.toFixed(1)}) scale(${(0.44 * zoom).toFixed(3)})">${camisolaFrente}</g>`;
@@ -32514,8 +32519,13 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
     : `<circle r="50" fill="#1A2A1F"/><text y="17" text-anchor="middle" font-size="${iniciais.length > 2 ? 34 : 46}" font-weight="600" fill="#FFD86A" font-family="Oswald, sans-serif">${pkhEsc(iniciais)}</text>`;
   s += '<circle r="50" fill="none" stroke="#FFD86A" stroke-width="7"/></g>';
   s += `<circle cx="${cx.toFixed(1)}" cy="${(ry - rr - 1.5).toFixed(1)}" r="2" fill="#c9ced0"/>`;
+  s += '</g>';
   // A TV da análise = a entrada do Portal.
-  s += `<g transform="translate(${VX - 150},${BT + 8 + (H - 215) * 0.25 - 46}) translate(150,46) scale(${zoom.toFixed(3)}) translate(-150,-46)">`;
+  // `tv` (telemóveis baixos): a TV sobe e encolhe o necessário para o botão
+  // "Entrar no Portal" caber por baixo dela, sem a tapar.
+  const tvTopo = tv ? tv.topo : BT + 8 + (H - 215) * 0.25;
+  const tvEscala = zoom * (tv ? tv.escala : 1);
+  s += `<g transform="translate(${VX - 150},${tvTopo - 46}) translate(150,46) scale(${tvEscala.toFixed(3)}) translate(-150,-46)">`;
   s += '<rect x="84" y="46" width="132" height="78" rx="3" fill="none" stroke="#FFC23D" stroke-width="2"><animate attributeName="opacity" values=".35;1;.35" dur="2.4s" repeatCount="indefinite"/></rect>';
   s += '<rect x="88" y="50" width="124" height="70" rx="2" fill="#07090a"/>';
   s += '<rect x="91" y="53" width="118" height="13" fill="#0d120f"/><text x="150" y="63.3" text-anchor="middle" font-size="10" font-weight="600" fill="#C9A227" font-family="Oswald, sans-serif" letter-spacing="1.4">PORTAL DO ATLETA</text>';
@@ -32700,8 +32710,31 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
       // nada se corta dos lados e a TV continua ao centro.
       const novo = alturaVisivel >= 215
         ? { W, H: Math.round(Math.min(420, alturaVisivel)), vb: `0 0 ${W} ${Math.round(Math.min(420, alturaVisivel))}` }
-        : { W, H: 215, vb: `0 ${Math.max(0, Math.min(215 - alturaVisivel, 84 - alturaVisivel / 2)).toFixed(1)} ${W} ${alturaVisivel.toFixed(1)}` };
-      setEnq(prev => (prev.W === novo.W && prev.H === novo.H && prev.vb === novo.vb ? prev : novo));
+        : {
+          W, H: 215,
+          // Espaço baixo (não cabe do emblema à camisola): o teto fica
+          // sempre inteiro e corta-se só o chão.
+          vb: `0 ${(alturaVisivel < 162 ? 3 : Math.max(0, Math.min(215 - alturaVisivel, 84 - alturaVisivel / 2))).toFixed(1)} ${W} ${alturaVisivel.toFixed(1)}`,
+        };
+      /* O botão "Entrar no Portal" fica SEMPRE ao centro, em baixo, por
+         baixo da TV e do rodapé. Se não houver espaço (telemóveis baixos),
+         a TV sobe e encolhe o necessário — nunca é o botão a mudar de sítio. */
+      novo.tv = null;
+      if (alturaVisivel < 215) {
+        const y0 = Number(novo.vb.split(' ')[1]);
+        const unidadesBotao = (46 * alturaVisivel) / h; // ~31 px de botão + margens
+        const limite = y0 + alturaVisivel - unidadesBotao;
+        const fundoTv = 47.5 + 8 + 78; // fundo natural da TV no desenho
+        const fundoVisivel = y0 + alturaVisivel - 3;
+        const jogador = fundoVisivel < 153 ? Math.max(0.55, (fundoVisivel - 48) / (153 - 48)) : 1;
+        if (limite < fundoTv || jogador < 1) {
+          const topo = limite < fundoTv ? 49.5 : 47.5 + 8;
+          const escala = limite < fundoTv ? Math.max(0.55, Math.min(1, (limite - topo) / 78)) : 1;
+          novo.tv = { topo, escala, jogador };
+        }
+      }
+      const tvChave = t => (t ? `${t.topo}:${t.escala.toFixed(3)}:${t.jogador.toFixed(3)}` : '');
+      setEnq(prev => (prev.W === novo.W && prev.H === novo.H && prev.vb === novo.vb && tvChave(prev.tv) === tvChave(novo.tv) ? prev : novo));
     };
     calcular();
     if (typeof ResizeObserver === 'undefined') {
@@ -32715,7 +32748,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
   const svgBalneario = React.useMemo(() => pkhBalneario({
     cor, numero, nome: primeiro, foto: (player && player.photo) || '', iniciais,
     logo: (equipa && equipa.logo) || '', inicialClube: clube ? clube[0].toUpperCase() : '', badge: nBadge,
-  }, enq.W, enq.H), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, enq.W, enq.H, enq.tv), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H, enq.tv && enq.tv.escala, enq.tv && enq.tv.jogador]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{
@@ -32777,9 +32810,9 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
             style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true"
             dangerouslySetInnerHTML={{ __html: svgBalneario }}
           />
-          <span style={{ position: 'absolute', left: 0, right: 0, bottom: 9, display: 'flex', justifyContent: 'center' }}>
+          <span style={{ position: 'absolute', left: 0, right: 0, bottom: enq.tv ? 6 : 9, display: 'flex', justifyContent: 'center' }}>
             <span style={{
-              background: T.gold, color: '#1A2A1F', borderRadius: 999, padding: g ? '10px 22px' : '7px 16px', fontSize: g ? 16 : 13.5, fontWeight: 600,
+              background: T.gold, color: '#1A2A1F', borderRadius: 999, padding: g ? '10px 22px' : enq.tv ? '6px 15px' : '7px 16px', fontSize: g ? 16 : 13.5, fontWeight: 600,
               display: 'flex', alignItems: 'center', gap: 6, animation: 'pkh-pulso 2s ease-in-out infinite', ...body,
             }}>
               <Play size={14} fill="#1A2A1F" /> Entrar no Portal
