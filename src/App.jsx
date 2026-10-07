@@ -32173,6 +32173,10 @@ const PKH_CSS = `
   html, body { overflow: hidden !important; overscroll-behavior: none; }
   @keyframes pkh-pulso { 0%,100% { box-shadow: 0 0 0 0 rgba(201,162,39,.55); } 50% { box-shadow: 0 0 0 8px rgba(201,162,39,0); } }
   @keyframes pkh-pisca { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  @keyframes pkh-subir {
+    0% { transform: translateY(calc(108vh - var(--y))) rotate(var(--rot)); }
+    100% { transform: translateY(calc(-1 * var(--y) - 12vh)) rotate(calc(var(--rot) + 220deg)); }
+  }
 `;
 
 function pkhEsc(s) {
@@ -32193,19 +32197,19 @@ function pkhXDoMinuto(m) {
 }
 const pkhY = (x) => 75 + 24 * Math.sin(((x - 12) / 276) * Math.PI * 3);
 
-function PkhPlacard({ legenda, hora, golosW, golosP }) {
+function PkhPlacard({ legenda, hora, golosW, golosP, g }) {
   const led = { ...mono, color: '#FFC23D' };
   return (
     <div style={{
-      flexShrink: 0, background: '#07090a', border: '3px solid #2a2f33', borderRadius: 12, padding: '5px 12px 6px',
+      flexShrink: 0, background: '#07090a', border: '3px solid #2a2f33', borderRadius: 12, padding: g ? '8px 16px 10px' : '5px 12px 6px',
       backgroundImage: 'radial-gradient(rgba(255,194,61,.08) 1px, transparent 1.3px)', backgroundSize: '5px 5px',
     }}>
-      <div style={{ ...led, textAlign: 'center', fontSize: 11, letterSpacing: '.14em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{legenda}</div>
-      <div style={{ ...led, textAlign: 'center', fontSize: 28, fontWeight: 500, letterSpacing: '.08em', lineHeight: 1.15 }}>{hora}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10 }}>
-        <span style={{ ...led, fontSize: 11, letterSpacing: '.12em', textAlign: 'right' }}>WELLNESS</span>
-        <span style={{ ...led, fontSize: 19, fontWeight: 500 }}>{golosW} – {golosP}</span>
-        <span style={{ ...led, fontSize: 11, letterSpacing: '.12em', textAlign: 'left' }}>PSE</span>
+      <div style={{ ...led, textAlign: 'center', fontSize: g ? 13.5 : 11, letterSpacing: '.14em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{legenda}</div>
+      <div style={{ ...led, textAlign: 'center', fontSize: g ? 42 : 28, fontWeight: 500, letterSpacing: '.08em', lineHeight: 1.15 }}>{hora}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: g ? 16 : 10 }}>
+        <span style={{ ...led, fontSize: g ? 13.5 : 11, letterSpacing: '.12em', textAlign: 'right' }}>WELLNESS</span>
+        <span style={{ ...led, fontSize: g ? 28 : 19, fontWeight: 500 }}>{golosW} – {golosP}</span>
+        <span style={{ ...led, fontSize: g ? 13.5 : 11, letterSpacing: '.12em', textAlign: 'left' }}>PSE</span>
       </div>
     </div>
   );
@@ -32223,7 +32227,7 @@ function PkhBolaMini({ size = 13, color = '#1A2A1F' }) {
 /* Painel LED do mister. Cada mensagem: { tipo, texto, onTocar }.
    Uma de cada vez: entra pela direita, atravessa o painel inteira e só
    então entra a seguinte. O toque vai para a mensagem que está a passar. */
-function PkhPainelMister({ mensagens }) {
+function PkhPainelMister({ mensagens, g }) {
   const zonaRef = useRef(null);
   const txtRef = useRef(null);
   const [idx, setIdx] = useState(0);
@@ -32257,15 +32261,15 @@ function PkhPainelMister({ mensagens }) {
       onClick={() => { if (tocavel) atual.onTocar(); }}
       aria-label={`Mister: ${atual.texto}`}
       style={{
-        display: 'flex', alignItems: 'stretch', width: '100%', height: 26, padding: 0, textAlign: 'left',
+        display: 'flex', alignItems: 'stretch', width: '100%', height: g ? 34 : 26, padding: 0, textAlign: 'left',
         background: '#050607', border: '2px solid #2a2f33', borderBottom: 'none', borderRadius: '8px 8px 0 0',
         overflow: 'hidden', cursor: tocavel ? 'pointer' : 'default',
         backgroundImage: 'radial-gradient(rgba(255,255,255,.05) 1px, transparent 1.2px)', backgroundSize: '3px 3px',
       }}
     >
       <span style={{
-        flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', background: T.gold,
-        color: '#1A2A1F', fontSize: 11, fontWeight: 600, letterSpacing: '.06em', position: 'relative', zIndex: 1, ...body,
+        flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: g ? '0 12px' : '0 8px', background: T.gold,
+        color: '#1A2A1F', fontSize: g ? 13 : 11, fontWeight: 600, letterSpacing: '.06em', position: 'relative', zIndex: 1, ...body,
       }}>
         <span style={{ display: 'flex', animation: tocavel ? 'pkh-pisca 1.2s infinite' : 'none' }}>
           {atual.tipo === 'jogo' ? <PkhBolaMini /> : atual.tipo === 'festa' ? <PartyPopper size={13} /> : <Megaphone size={13} />}
@@ -32274,7 +32278,7 @@ function PkhPainelMister({ mensagens }) {
       </span>
       <span ref={zonaRef} style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
         <span ref={txtRef} style={{
-          ...mono, position: 'absolute', top: '50%', left: 0, whiteSpace: 'nowrap', fontSize: 12.5, fontWeight: 500,
+          ...mono, position: 'absolute', top: '50%', left: 0, whiteSpace: 'nowrap', fontSize: g ? 15.5 : 12.5, fontWeight: 500,
           letterSpacing: '.08em', color: cor, transform: 'translate(2000px,-50%)', textTransform: 'uppercase',
         }}>{atual.texto}  ★</span>
       </span>
@@ -32282,7 +32286,7 @@ function PkhPainelMister({ mensagens }) {
   );
 }
 
-function PkhCampo({ mins, doneW, doneP, wAberto, pAberto, semSegunda, corCamisola, marca }) {
+function PkhCampo({ mins, doneW, doneP, wAberto, pAberto, semSegunda, corCamisola, marca, g, largo }) {
   const G = 'rgba(255,255,255,.78)';
   const W = CHECKIN_WINDOWS.wellness, P = CHECKIN_WINDOWS.rpe;
   const x = pkhXDoMinuto(mins);
@@ -32315,7 +32319,7 @@ function PkhCampo({ mins, doneW, doneP, wAberto, pAberto, semSegunda, corCamisol
       background: '#24563a', border: '3px solid #6b4b2e', borderRadius: '0 0 10px 10px', overflow: 'hidden',
       filter: noite ? 'brightness(.45) saturate(.6)' : 'none', transition: 'filter .8s',
     }}>
-      <svg viewBox="0 0 300 150" preserveAspectRatio="xMidYMid meet" style={{ display: 'block', width: '100%', height: 'auto', maxHeight: '22dvh' }} aria-hidden="true">
+      <svg viewBox="0 0 300 150" preserveAspectRatio="xMidYMid meet" style={{ display: 'block', width: '100%', height: 'auto', maxHeight: largo ? (g ? '18dvh' : '22dvh') : '24.5dvh' }} aria-hidden="true">
         <g stroke={G} strokeWidth="1.5" fill="none" opacity=".6">
           <rect x="11" y="8" width="278" height="134" /><line x1="150" y1="8" x2="150" y2="142" /><circle cx="150" cy="75" r="19" />
           <rect x="11" y="40" width="36" height="70" /><rect x="253" y="40" width="36" height="70" />
@@ -32343,17 +32347,17 @@ function PkhCampo({ mins, doneW, doneP, wAberto, pAberto, semSegunda, corCamisol
   );
 }
 
-function PkhBotaoQuestionario({ nome, estado, texto, onClick }) {
+function PkhBotaoQuestionario({ nome, estado, texto, onClick, g }) {
   // estado: 'feito' | 'aberto' | 'fechado'
   const corBorda = estado === 'feito' ? T.good : estado === 'aberto' ? T.gold : T.line;
   return (
     <button type="button" onClick={onClick} disabled={estado !== 'aberto'} style={{
-      flex: 1, minWidth: 0, height: 54, boxSizing: 'border-box', borderRadius: 12, padding: '7px 10px', textAlign: 'left',
+      flex: 1, minWidth: 0, height: g ? 70 : 54, boxSizing: 'border-box', borderRadius: 12, padding: g ? '10px 16px' : '7px 10px', textAlign: 'left',
       background: T.surface, border: `1px solid ${corBorda}`, cursor: estado === 'aberto' ? 'pointer' : 'default', overflow: 'hidden', ...body,
     }}>
-      <div style={{ ...display, fontSize: 18, fontWeight: 600, color: T.cream, lineHeight: 1.15 }}>{nome}</div>
+      <div style={{ ...display, fontSize: g ? 23 : 18, fontWeight: 600, color: T.cream, lineHeight: 1.15 }}>{nome}</div>
       <div style={{
-        fontSize: 11.5, lineHeight: 1.3, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        fontSize: g ? 14 : 11.5, lineHeight: 1.3, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         display: 'flex', alignItems: 'center', gap: 4,
         color: estado === 'feito' ? T.good : estado === 'aberto' ? T.gold : T.warn,
       }}>
@@ -32365,17 +32369,17 @@ function PkhBotaoQuestionario({ nome, estado, texto, onClick }) {
   );
 }
 
-function PkhSequencia({ dias }) {
+function PkhSequencia({ dias, g }) {
   const frase = mensagemChamaDoDia(todayStr());
   return (
-    <div style={{ flexShrink: 0, height: 58, display: 'flex', alignItems: 'stretch' }}>
+    <div style={{ flexShrink: 0, height: g ? 64 : 58, display: 'flex', alignItems: 'stretch' }}>
       <div style={{
-        flexShrink: 0, width: 76, background: T.gold, clipPath: 'polygon(0 0,100% 0,84% 100%,0 100%)', borderRadius: '8px 0 0 8px',
+        flexShrink: 0, width: g ? 104 : 76, background: T.gold, clipPath: 'polygon(0 0,100% 0,84% 100%,0 100%)', borderRadius: '8px 0 0 8px',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingRight: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Flame size={18} color={dias > 0 ? '#8a3a12' : '#5f4b10'} />
-          <span style={{ ...display, fontSize: 26, fontWeight: 600, color: '#1A2A1F', lineHeight: 1 }}>{dias}</span>
+          <span style={{ ...display, fontSize: g ? 30 : 26, fontWeight: 600, color: '#1A2A1F', lineHeight: 1 }}>{dias}</span>
         </div>
         <div style={{ fontSize: 11, color: '#3b2f0a', lineHeight: 1.1, textAlign: 'center', ...body }}>{dias === 1 ? 'dia seguido' : 'dias seguidos'}</div>
       </div>
@@ -32385,7 +32389,7 @@ function PkhSequencia({ dias }) {
         borderBottom: `3px solid ${T.gold}`, boxSizing: 'border-box',
       }}>
         <div style={{
-          fontSize: 11.5, color: T.cream, lineHeight: 1.28, ...body,
+          fontSize: g ? 14 : 11.5, color: T.cream, lineHeight: 1.28, ...body,
           display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
         }}>«{frase}»</div>
       </div>
@@ -32396,10 +32400,17 @@ function PkhSequencia({ dias }) {
 /* Balneário em perspetiva (um só ponto de fuga), desenhado como texto SVG:
    é uma cena estática, recalculada só quando mudam a cor, a camisola, a
    fotografia ou o emblema. Todo o texto que vem de dados passa por pkhEsc. */
-function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge }) {
-  const H = 215, VX = 150, VY = 95, S = 0.5, BL = VX * S, BR = 300 - VX * S, BT = VY * S, BB = H - (H - VY) * S;
+/* W = largura do desenho (altura fixa 215). 300 no telemóvel; em ecrã largo
+   a sala alarga-se (paredes mais compridas, mais cacifos), em vez de se
+   cortar o desenho. */
+function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge }, W = 300, H = 215) {
+  // H > 215 quando o espaço é mais alto do que o desenho: a sala estica na
+  // vertical (em vez de se cortar dos lados) e a TV fica sempre ao centro.
+  const VX = W / 2, VY = (95 * H) / 215, S = 0.5, BL = VX * S, BR = W - VX * S, BT = VY * S, BB = H - (H - VY) * S;
+  const kW = W / 300;
+  const yE = ((VY * S) * 22) / 47.5; // altura do emblema no teto (22 no desenho base)
   const wp = (t, v) => { const x = t * BL, yt = t * BT, yb = H - t * (H - BB); return [x, yt + v * (yb - yt)]; };
-  const mir = p => [300 - p[0], p[1]];
+  const mir = p => [W - p[0], p[1]];
   const pts = ps => ps.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const poly = (ps, f, st, sw) => `<polygon points="${pts(ps)}" fill="${f}"${st ? ` stroke="${st}" stroke-width="${sw || 0.8}"` : ''}/>`;
   const aff = (p00, p10, p01, inner) => `<g transform="matrix(${((p10[0] - p00[0]) / 100).toFixed(4)},${((p10[1] - p00[1]) / 100).toFixed(4)},${((p01[0] - p00[0]) / 100).toFixed(4)},${((p01[1] - p00[1]) / 100).toFixed(4)},${p00[0].toFixed(2)},${p00[1].toFixed(2)})">${inner}</g>`;
@@ -32432,26 +32443,30 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
     + '<filter id="pkh-brilho2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>'
     + '<clipPath id="pkh-retrato"><circle cx="0" cy="0" r="50"/></clipPath>'
     + '<clipPath id="pkh-tk"><rect x="91" y="106" width="118" height="11"/></clipPath></defs>';
-  s += `<rect width="300" height="${H}" fill="#121614"/>`;
-  s += poly([[0, 0], [300, 0], [BR, BT], [BL, BT]], '#171c19');
+  s += `<rect width="${W}" height="${H}" fill="#121614"/>`;
+  s += poly([[0, 0], [W, 0], [BR, BT], [BL, BT]], '#171c19');
   s += poly([[0, 0], [BL, BT], [BL, BB], [0, H]], '#232b26');
-  s += poly([[300, 0], [BR, BT], [BR, BB], [300, H]], '#202823');
-  s += poly([[0, H], [300, H], [BR, BB], [BL, BB]], '#191f1b');
-  [-120, -40, 40, 110, 190, 260, 340, 420].forEach(x => { s += `<line x1="${x}" y1="${H}" x2="${x + (VX - x) * S}" y2="${BB}" stroke="#262e29" stroke-width=".8"/>`; });
-  [0.25, 0.5, 0.75].forEach(t => { const y = H - t * (H - BB); s += `<line x1="${t * BL}" y1="${y}" x2="${300 - t * BL}" y2="${y}" stroke="#262e29" stroke-width=".8"/>`; });
-  [30, 90, 210, 270].forEach(x => { s += `<line x1="${x}" y1="0" x2="${x + (VX - x) * S}" y2="${BT}" stroke="#FFFBEA" stroke-width="1.6" opacity=".3"/>`; });
+  s += poly([[W, 0], [BR, BT], [BR, BB], [W, H]], '#202823');
+  s += poly([[0, H], [W, H], [BR, BB], [BL, BB]], '#191f1b');
+  [-120, -40, 40, 110, 190, 260, 340, 420].map(x => VX + (x - 150) * kW).forEach(x => { s += `<line x1="${x}" y1="${H}" x2="${x + (VX - x) * S}" y2="${BB}" stroke="#262e29" stroke-width=".8"/>`; });
+  [0.25, 0.5, 0.75].forEach(t => { const y = H - t * (H - BB); s += `<line x1="${t * BL}" y1="${y}" x2="${W - t * BL}" y2="${y}" stroke="#262e29" stroke-width=".8"/>`; });
+  [30, 90, 210, 270].map(x => VX + (x - 150) * kW).forEach(x => { s += `<line x1="${x}" y1="0" x2="${x + (VX - x) * S}" y2="${BT}" stroke="#FFFBEA" stroke-width="1.6" opacity=".3"/>`; });
   // Emblema iluminado no teto.
-  s += '<ellipse cx="150" cy="22" rx="84" ry="15" fill="none" stroke="#FFE6A0" stroke-width="1" opacity=".28"/>';
-  s += '<ellipse cx="150" cy="22" rx="70" ry="12.5" fill="#0d120f" stroke="#FFE6A0" stroke-width="2.4"/>';
+  const rxE = Math.min(70 * kW, 105);
+  s += `<ellipse cx="${VX}" cy="${yE.toFixed(1)}" rx="${rxE * 1.2}" ry="15" fill="none" stroke="#FFE6A0" stroke-width="1" opacity=".28"/>`;
+  s += `<ellipse cx="${VX}" cy="${yE.toFixed(1)}" rx="${rxE}" ry="12.5" fill="#0d120f" stroke="#FFE6A0" stroke-width="2.4"/>`;
   s += logo
-    ? `<g transform="translate(150,22) scale(1.7,.62)"><image href="${pkhEsc(logo)}" x="-14" y="-15" width="28" height="30" preserveAspectRatio="xMidYMid meet"/></g>`
-    : `<g transform="translate(150,22) scale(1.7,.62)"><path d="M-10 -12 H10 V2 Q10 11 0 16 Q-10 11 -10 2 Z" fill="${cor.base}" stroke="#C9A227" stroke-width="1.4"/><text y="5" text-anchor="middle" font-size="11" font-weight="700" fill="${cor.texto}" font-family="Oswald, sans-serif">${pkhEsc(inicialClube)}</text></g>`;
+    ? `<g transform="translate(${VX},${yE.toFixed(1)}) scale(1.7,.62)"><image href="${pkhEsc(logo)}" x="-14" y="-15" width="28" height="30" preserveAspectRatio="xMidYMid meet"/></g>`
+    : `<g transform="translate(${VX},${yE.toFixed(1)}) scale(1.7,.62)"><path d="M-10 -12 H10 V2 Q10 11 0 16 Q-10 11 -10 2 Z" fill="${cor.base}" stroke="#C9A227" stroke-width="1.4"/><text y="5" text-anchor="middle" font-size="11" font-weight="700" fill="${cor.texto}" font-family="Oswald, sans-serif">${pkhEsc(inicialClube)}</text></g>`;
   s += `<rect x="${BL}" y="${BT}" width="${BR - BL}" height="${BB - BT}" fill="#29332d"/>`;
   // Cacifos. Números decorativos (o quiosque não recebe o plantel): nunca o do próprio.
-  const T6 = [0.06, 0.32, 0.53, 0.68, 0.8, 0.9, 1];
+  // Mais cacifos quando a sala é mais comprida (o 1.º é sempre o do jogador).
+  const nCacifos = Math.max(6, Math.round(6 * Math.sqrt(kW)));
+  const T6 = kW <= 1.01 ? [0.06, 0.32, 0.53, 0.68, 0.8, 0.9, 1]
+    : [0.06, ...Array.from({ length: nCacifos }, (_, i) => 0.06 + 0.94 * (1 - Math.pow(1 - (i + 1) / nCacifos, 1.7)))];
   const decor = ['11', '7', '6', '3', '14', '10', '4', '23', '9', '2', '5', '17', '20', '1'].filter(n => n !== String(numero || ''));
   let nd = 0;
-  [[false, [-1, 2, 1, 0, 2, 1]], [true, [1, 0, 2, 1, 0, 2]]].forEach(([dir, quadros]) => {
+  [false, true].forEach((dir) => {
     const M = dir ? mir : (p => p);
     for (let i = 0; i < T6.length - 1; i++) {
       const a = T6[i] + 0.012, b = T6[i + 1] - 0.012;
@@ -32468,7 +32483,7 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
         s += aff(p00, p10, p01, camisolaParede(decor[nd++ % decor.length]));
         const fa = a + (b - a) * 0.12, fb = b - (b - a) * 0.12;
         const q00 = dir ? M(wp(fb, 0.12)) : wp(fa, 0.12), q10 = dir ? M(wp(fa, 0.12)) : wp(fb, 0.12), q01 = dir ? M(wp(fb, 0.33)) : wp(fa, 0.33);
-        s += aff(q00, q10, q01, quadro(quadros[i]));
+        s += aff(q00, q10, q01, quadro((i + (dir ? 1 : 2)) % 3));
       } else {
         s += `<polygon points="${pts(contorno)}" fill="none" stroke="#FFD86A" stroke-width="1.8"/>`;
       }
@@ -32478,11 +32493,12 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
     s += poly([[A[0] + sg * 36, A[1] + 20], [B[0] + sg * 7, B[1] + 3], [B[0] + sg * 7, B[1] + 6], [A[0] + sg * 36, A[1] + 28]], '#4f3a24');
   });
   // O lugar do jogador: camisola pendurada de frente + retrato por cima.
-  const gancho = wp(0.19, 0.42);
-  const cx = gancho[0] + 9, cy = gancho[1] + 12, ry = gancho[1] - 22, rr = 16;
+  const gancho = wp((T6[0] + T6[1]) / 2, 0.42); // = 0.19 no telemóvel, como antes
+  const zoom = Math.min(1.25, 1 + (kW - 1) * 0.35); // 1 no telemóvel
+  const cx = gancho[0] + 9 * zoom, cy = gancho[1] + 12, ry = gancho[1] - 22 * zoom, rr = 16 * zoom;
   s += `<ellipse cx="${cx.toFixed(1)}" cy="${(cy + 4).toFixed(1)}" rx="30" ry="52" fill="#FFC23D" opacity=".32" filter="url(#pkh-brilho2)"/>`;
   s += `<line x1="${gancho[0].toFixed(1)}" y1="${gancho[1].toFixed(1)}" x2="${(gancho[0] + 9).toFixed(1)}" y2="${(gancho[1] + 2).toFixed(1)}" stroke="#c9ced0" stroke-width="1.6"/>`;
-  s += `<g transform="translate(${(cx - 22).toFixed(1)},${cy.toFixed(1)}) scale(.44)">${camisolaFrente}</g>`;
+  s += `<g transform="translate(${(cx - 22 * zoom).toFixed(1)},${cy.toFixed(1)}) scale(${(0.44 * zoom).toFixed(3)})">${camisolaFrente}</g>`;
   s += `<circle cx="${cx.toFixed(1)}" cy="${(ry + 1.5).toFixed(1)}" r="${rr + 3}" fill="#000" opacity=".35"/>`;
   s += `<g transform="translate(${cx.toFixed(1)},${ry.toFixed(1)}) scale(${rr / 50})">`;
   s += foto
@@ -32491,7 +32507,7 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   s += '<circle r="50" fill="none" stroke="#FFD86A" stroke-width="7"/></g>';
   s += `<circle cx="${cx.toFixed(1)}" cy="${(ry - rr - 1.5).toFixed(1)}" r="2" fill="#c9ced0"/>`;
   // A TV da análise = a entrada do Portal.
-  s += `<g transform="translate(0,${BT + 8 - 46})">`;
+  s += `<g transform="translate(${VX - 150},${BT + 8 + (H - 215) * 0.25 - 46}) translate(150,46) scale(${zoom.toFixed(3)}) translate(-150,-46)">`;
   s += '<rect x="84" y="46" width="132" height="78" rx="3" fill="none" stroke="#FFC23D" stroke-width="2"><animate attributeName="opacity" values=".35;1;.35" dur="2.4s" repeatCount="indefinite"/></rect>';
   s += '<rect x="88" y="50" width="124" height="70" rx="2" fill="#07090a"/>';
   s += '<rect x="91" y="53" width="118" height="13" fill="#0d120f"/><text x="150" y="63.3" text-anchor="middle" font-size="10" font-weight="600" fill="#C9A227" font-family="Oswald, sans-serif" letter-spacing="1.4">PORTAL DO ATLETA</text>';
@@ -32504,10 +32520,105 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   s += `<circle r="3" fill="${cor.base}" stroke="#fff" stroke-width=".7"><animateMotion dur="3s" repeatCount="indefinite" path="M128 74 L170 92"/></circle>`;
   s += `<circle cx="186" cy="80" r="3" fill="${cor.base}" stroke="#fff" stroke-width=".7"/><circle cx="196" cy="94" r="3" fill="#f2ede0"/><circle cx="178" cy="98" r="3" fill="#f2ede0"/>`;
   s += '<rect x="91" y="106" width="118" height="11" fill="#C9A227"/>';
-  s += `<g clip-path="url(#pkh-tk)"><text y="114.3" font-size="8.5" font-weight="600" fill="#1A2A1F" font-family="Oswald, sans-serif" letter-spacing=".6"><animateTransform attributeName="transform" type="translate" from="210 0" to="-360 0" dur="15s" repeatCount="indefinite"/>${PKH_TICKER}</text></g>`;
+  // Rodapé da TV em contínuo: duas cópias com o mesmo comprimento, a
+  // segunda logo a seguir à primeira — nunca fica uma faixa vazia.
+  const tk = `${PKH_TICKER} · `;
+  s += `<g clip-path="url(#pkh-tk)"><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-440 0" dur="18s" repeatCount="indefinite"/>`
+    + `<text x="91" y="114.3" font-size="8.5" font-weight="600" fill="#1A2A1F" font-family="Oswald, sans-serif" textLength="440" lengthAdjust="spacingAndGlyphs">${tk}</text>`
+    + `<text x="531" y="114.3" font-size="8.5" font-weight="600" fill="#1A2A1F" font-family="Oswald, sans-serif" textLength="440" lengthAdjust="spacingAndGlyphs">${tk}</text></g></g>`;
   if (badge > 0) s += `<circle cx="212" cy="49" r="7" fill="#E5484D" stroke="#07090a" stroke-width="1.5"/><text x="212" y="52.6" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" font-family="JetBrains Mono, monospace">${badge > 9 ? '9+' : badge}</text>`;
   s += '</g>';
   return s;
+}
+
+/* FAIXAS LATERAIS (só em ecrã largo): o mesmo fundo do ecrã inteiro da
+   missão — marcas de giz brancas, quase transparentes, a subir devagar e a
+   rodar —, aqui com objetos de futebol desenhados a giz (chuteiras, bolas,
+   braçadeiras, meias, balizas, apitos, cones, troféus, camisolas) entre as
+   cruzes, círculos e setas. Sem cor, como na missão e na credencial. Ficam
+   só nas faixas que sobram: nunca passam por cima do conteúdo. Com
+   "reduzir movimento", ficam parados onde estão. */
+const PKH_OBJETOS = ['bola', 'chuteira', 'luvas', 'x', 'bracadeira', 'meia', 'caneleira', 'seta', 'baliza', 'calcoes', 'apito', 'o', 'garrafa', 'cronometro', 'trofeu', 'camisola', 'bandeirola', 'medalha', 'cone'];
+function PkhObjeto({ tipo, tam }) {
+  if (tipo === 'bola') return <BolaFutebol tamanho={tam} />;
+  const desenho = {
+    x: <><line x1="5" y1="5" x2="19" y2="19" /><line x1="19" y1="5" x2="5" y2="19" /></>,
+    o: <circle cx="12" cy="12" r="8" />,
+    seta: <><path d="M4 18 Q10 6 19 7" /><path d="M14 4 L19 7 L15.5 11.5" /></>,
+    cone: <><path d="M12 3 L18 19 L6 19 Z" /><path d="M8.6 12.5 L15.4 12.5" /><path d="M4 21 L20 21" /></>,
+    chuteira: <><path d="M2 15 Q2.5 11 6 10.5 L11 9.5 Q13 7 15 7 L17 7 Q18 10.5 20.5 12 Q23 13.5 22.5 16 L22.5 17 L2.5 17 Q1.6 16.5 2 15 Z" /><path d="M10 12 L14.5 9.6 M12 13.6 L16.5 11.2" /><path d="M4.5 19.5 h1 M9 19.5 h1 M14.5 19.5 h1 M19 19.5 h1" /></>,
+    bracadeira: <><path d="M2 9 Q12 6 22 9 L22 15 Q12 18 2 15 Z" /><path d="M14 10.6 Q12.2 9.7 10.8 10.6 Q9.4 12 10.8 13.4 Q12.2 14.3 14 13.4" /></>,
+    meia: <><path d="M9 2 H15 V13 Q15 15 16.5 16 L20 18 Q22.5 20 20.5 21.8 Q19 22.8 16.5 21.6 L9.6 18.4 Q8.4 17.6 8.8 15.8 Z" /><path d="M9 5 H15" /></>,
+    baliza: <><path d="M3 19 V6 H21 V19" /><path d="M1 19 H23" /><path d="M7.5 6 V19 M12 6 V19 M16.5 6 V19 M3 10.5 H21 M3 15 H21" strokeWidth="1" opacity=".7" /></>,
+    apito: <><path d="M9 9.5 H21 V13.5 H13.5" /><circle cx="9" cy="14" r="5" /><circle cx="9" cy="14" r="1.2" /><path d="M6 4 Q2.5 6.5 5.5 9.5" /></>,
+    trofeu: <><path d="M7 3 H17 V9 Q17 14 12 14.5 Q7 14 7 9 Z" /><path d="M7 5 Q3 5 4 8.5 Q5 11 7.5 10.5 M17 5 Q21 5 20 8.5 Q19 11 16.5 10.5" /><path d="M12 14.5 V18 M9 18 H15 V21 H9 Z" /></>,
+    camisola: <path d="M7.5 3 L4 5 L2 10 L5 11 V21 H19 V11 L22 10 L20 5 L16.5 3 Q12 6 7.5 3 Z" />,
+    luvas: <><path d="M7 21 V12 L5 9.5 Q4 8 5.5 7.3 L8 9.5 V4.5 Q8 3 9.3 3 Q10.6 3 10.6 4.5 V9 M10.6 4 Q10.6 2.5 11.9 2.5 Q13.2 2.5 13.2 4 V9 M13.2 4.5 Q13.2 3 14.5 3 Q15.8 3 15.8 4.5 V9.5 M15.8 6 Q15.8 4.8 17 4.8 Q18.2 4.8 18.2 6 V14 Q18.2 18 15 19 V21 Z" /><path d="M7 17.5 H15.5" /></>,
+    caneleira: <><path d="M8 3 Q12 1.5 16 3 L17 17 Q12 22.5 7 17 Z" /><path d="M10 7.5 H14 M10.5 11 H13.5" /></>,
+    calcoes: <><path d="M4 4 H20 L21.5 19 H14 L12 11 L10 19 H2.5 Z" /><path d="M4 7 H20" /></>,
+    garrafa: <><path d="M10 2 H14 V4 L15.5 6.5 V21 H8.5 V6.5 L10 4 Z" /><path d="M8.5 11 H15.5 M8.5 15 H15.5" /></>,
+    cronometro: <><circle cx="12" cy="13.5" r="7.5" /><path d="M12 13.5 L15 10.5 M10 2.5 H14 M12 2.5 V6 M18.3 6.2 L19.8 4.7" /></>,
+    bandeirola: <><path d="M6 22 V2" /><path d="M6 3 L18.5 6.5 L6 10" /><path d="M3 22 H10" /></>,
+    medalha: <><path d="M8 2 L12 9 L16 2" /><circle cx="12" cy="15" r="6" /><path d="M12 12.4 L12.9 14.3 L15 14.5 L13.4 15.9 L13.9 18 L12 16.9 L10.1 18 L10.6 15.9 L9 14.5 L11.1 14.3 Z" strokeWidth="1.2" /></>,
+  }[tipo];
+  return (
+    <svg viewBox="0 0 24 24" width={tam} height={tam} aria-hidden="true">
+      <g fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{desenho}</g>
+    </svg>
+  );
+}
+
+function PkhFaixasLaterais({ larguraConteudo }) {
+  const itens = React.useMemo(() => [0, 1].flatMap(lado => Array.from({ length: 17 }, (_, k) => ({
+    lado, k,
+    tipo: PKH_OBJETOS[(k + lado * 9) % PKH_OBJETOS.length],
+    left: 6 + Math.random() * 70,
+    y: Math.random() * 100,
+    tam: Math.round(24 + Math.random() * 26),
+    dur: 18 + Math.random() * 14,
+    rot: Math.round(Math.random() * 360),
+    op: 0.12 + Math.random() * 0.14,
+  }))), []);
+  const larg = `calc((100vw - ${larguraConteudo}) / 2)`;
+  return (
+    <>
+      {[0, 1].map(lado => (
+        <div key={lado} aria-hidden="true" style={{
+          position: 'absolute', top: 0, bottom: 0, [lado ? 'right' : 'left']: 0, width: larg,
+          overflow: 'hidden', pointerEvents: 'none',
+        }}>
+          {itens.filter(i => i.lado === lado).map(i => (
+            <div key={i.k} style={{
+              position: 'absolute', left: `${i.left}%`, top: `${i.y}vh`, lineHeight: 0,
+              opacity: i.tipo === 'bola' ? i.op + 0.08 : i.op,
+              '--y': `${i.y}vh`, '--rot': `${i.rot}deg`,
+              // atraso negativo = cada marca já começa a meio do caminho
+              animation: `pkh-subir ${i.dur.toFixed(1)}s linear ${(-((108 - i.y) / 120) * i.dur).toFixed(1)}s infinite`,
+            }}>
+              <PkhObjeto tipo={i.tipo} tam={i.tam} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/* Ecrã largo = computador (ou tablet deitado). Aí a página alarga-se e
+   aparecem as faixas laterais; no telemóvel fica tudo como estava. */
+const PKH_LARGO = '(min-width: 1000px) and (min-aspect-ratio: 5/4)';
+const PKH_LARGURA_LARGA = 'min(41vw, 820px)';
+function usePkhMedia(q) {
+  const [largo, setLargo] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q).matches : false));
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+    const m = window.matchMedia(q);
+    const f = () => setLargo(m.matches);
+    f();
+    if (m.addEventListener) m.addEventListener('change', f); else m.addListener(f);
+    return () => { if (m.removeEventListener) m.removeEventListener('change', f); else m.removeListener(f); };
+  }, [q]);
+  return largo;
 }
 
 function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenPortal, onLogout, tarefasPendentes, mensagensMister, diasSequenciaChama }) {
@@ -32562,18 +32673,27 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
      altos. Aqui mede-se o espaço e escolhe-se a janela: a faixa que
      interessa (do emblema, em cima, até à camisola do jogador) fica
      sempre à vista; o que sobra corta-se no chão. */
+  const largo = usePkhMedia(PKH_LARGO);
+  // Letra maior só se também houver altura (portáteis baixos ficam com os
+  // tamanhos do telemóvel, para tudo caber sem cortar o balneário).
+  const g = usePkhMedia('(min-height: 820px)') && largo;
   const balRef = useRef(null);
-  const [vbBalneario, setVbBalneario] = useState('0 0 300 215');
+  const [enq, setEnq] = useState({ W: 300, H: 215, vb: '0 0 300 215' });
   useEffect(() => {
     const el = balRef.current;
     if (!el) return undefined;
     const calcular = () => {
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;
-      const alturaVisivel = (300 * h) / w;
-      if (alturaVisivel >= 215) { setVbBalneario('0 0 300 215'); return; }
-      const y0 = Math.max(0, Math.min(215 - alturaVisivel, 84 - alturaVisivel / 2));
-      setVbBalneario(`0 ${y0.toFixed(1)} 300 ${alturaVisivel.toFixed(1)}`);
+      // Ecrã largo: a sala alarga-se (até 780) em vez de se cortar.
+      const W = largo ? Math.round(Math.max(300, Math.min(780, (215 * w) / h))) : 300;
+      const alturaVisivel = (W * h) / w;
+      // Mais alto do que o desenho: a sala estica na vertical (até 420) —
+      // nada se corta dos lados e a TV continua ao centro.
+      const novo = alturaVisivel >= 215
+        ? { W, H: Math.round(Math.min(420, alturaVisivel)), vb: `0 0 ${W} ${Math.round(Math.min(420, alturaVisivel))}` }
+        : { W, H: 215, vb: `0 ${Math.max(0, Math.min(215 - alturaVisivel, 84 - alturaVisivel / 2)).toFixed(1)} ${W} ${alturaVisivel.toFixed(1)}` };
+      setEnq(prev => (prev.W === novo.W && prev.H === novo.H && prev.vb === novo.vb ? prev : novo));
     };
     calcular();
     if (typeof ResizeObserver === 'undefined') {
@@ -32583,11 +32703,11 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
     const ro = new ResizeObserver(calcular);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [largo]);
   const svgBalneario = React.useMemo(() => pkhBalneario({
     cor, numero, nome: primeiro, foto: (player && player.photo) || '', iniciais,
     logo: (equipa && equipa.logo) || '', inicialClube: clube ? clube[0].toUpperCase() : '', badge: nBadge,
-  }), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, enq.W, enq.H), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{
@@ -32595,33 +32715,37 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
       touchAction: 'manipulation', ...body,
     }}>
       <style>{PKH_CSS}</style>
+      {largo && <PkhFaixasLaterais larguraConteudo={PKH_LARGURA_LARGA} />}
       <div style={{
-        height: '100%', maxWidth: 460, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box',
-        padding: 'calc(14px + env(safe-area-inset-top, 0px)) 14px calc(12px + env(safe-area-inset-bottom, 0px))',
+        position: 'relative', height: '100%', maxWidth: largo ? PKH_LARGURA_LARGA : 460, margin: '0 auto',
+        display: 'flex', flexDirection: 'column', gap: g ? 12 : 8, boxSizing: 'border-box',
+        padding: largo
+          ? `calc(${g ? 20 : 12}px + env(safe-area-inset-top, 0px)) 0 calc(${g ? 18 : 10}px + env(safe-area-inset-bottom, 0px))`
+          : 'calc(14px + env(safe-area-inset-top, 0px)) 14px calc(12px + env(safe-area-inset-bottom, 0px))',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{greetingNow()}, {primeiro}!</div>
-            <div style={{ fontSize: 12, color: T.mutedDim }}>{dataDeHojeExtenso()}</div>
+            <div style={{ ...display, fontSize: g ? 30 : 22, fontWeight: 600, color: T.cream, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{greetingNow()}, {primeiro}!</div>
+            <div style={{ fontSize: g ? 14 : 12, color: T.mutedDim }}>{dataDeHojeExtenso()}</div>
           </div>
           <button type="button" onClick={onLogout} title="Terminar sessão" style={{
             display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`,
-            borderRadius: 8, color: T.mutedDim, padding: '6px 10px', cursor: 'pointer', ...body, fontSize: 11.5, flexShrink: 0,
+            borderRadius: 8, color: T.mutedDim, padding: g ? '8px 14px' : '6px 10px', cursor: 'pointer', ...body, fontSize: g ? 13.5 : 11.5, flexShrink: 0,
           }}>
-            <LogOut size={13} /> Sair
+            <LogOut size={g ? 15 : 13} /> Sair
           </button>
         </div>
 
-        <PkhPlacard legenda={legenda} hora={hora} golosW={doneWellness ? 1 : 0} golosP={doneRpe ? 1 : 0} />
+        <PkhPlacard legenda={legenda} hora={hora} golosW={doneWellness ? 1 : 0} golosP={doneRpe ? 1 : 0} g={g} />
 
         <div style={{ flexShrink: 0 }}>
-          <PkhPainelMister mensagens={mensagensMister} />
+          <PkhPainelMister mensagens={mensagensMister} g={g} />
           <PkhCampo
             mins={isToday ? mins : -1} doneW={doneWellness} doneP={doneRpe}
             wAberto={wellnessEnabled} pAberto={rpeEnabled} semSegunda={isRestDay}
-            corCamisola={cor} marca={numero || iniciais.slice(0, 2)}
+            corCamisola={cor} marca={numero || iniciais.slice(0, 2)} g={g} largo={largo}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 11, color: T.mutedDim, marginTop: 4, padding: '0 2px', whiteSpace: 'nowrap' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: g ? 13 : 11, color: T.mutedDim, marginTop: 4, padding: '0 2px', whiteSpace: 'nowrap' }}>
             <span>1.ª parte {fmtMinutesOfDay(W.startMin)}–{fmtMinutesOfDay(W.endMin)}</span>
             <span>intervalo</span>
             <span>2.ª parte {fmtMinutesOfDay(P.startMin)}–{fmtMinutesOfDay(P.endMin)}</span>
@@ -32629,25 +32753,25 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          <PkhBotaoQuestionario nome="Wellness" estado={wEstado} texto={wTexto} onClick={onOpenWellness} />
-          <PkhBotaoQuestionario nome="PSE" estado={pEstado} texto={pTexto} onClick={onOpenRpe} />
+          <PkhBotaoQuestionario nome="Wellness" estado={wEstado} texto={wTexto} onClick={onOpenWellness} g={g} />
+          <PkhBotaoQuestionario nome="PSE" estado={pEstado} texto={pTexto} onClick={onOpenRpe} g={g} />
         </div>
 
-        <PkhSequencia dias={diasSequenciaChama || 0} />
+        <PkhSequencia dias={diasSequenciaChama || 0} g={g} />
 
         {/* BALNEÁRIO — a entrada do Portal (sempre disponível, sem janela horária). */}
         <button ref={balRef} type="button" onClick={onOpenPortal} aria-label="Entrar no Portal do Atleta" style={{
-          flex: 1, minHeight: 96, position: 'relative', borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.line}`,
+          flex: 1, minHeight: g ? 160 : 96, position: 'relative', borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.line}`,
           background: '#121614', padding: 0, cursor: 'pointer', display: 'block', width: '100%',
         }}>
           <svg
-            viewBox={vbBalneario} preserveAspectRatio="xMinYMid slice" width="100%" height="100%"
+            viewBox={enq.vb} preserveAspectRatio="xMinYMid slice" width="100%" height="100%"
             style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true"
             dangerouslySetInnerHTML={{ __html: svgBalneario }}
           />
           <span style={{ position: 'absolute', left: 0, right: 0, bottom: 9, display: 'flex', justifyContent: 'center' }}>
             <span style={{
-              background: T.gold, color: '#1A2A1F', borderRadius: 999, padding: '7px 16px', fontSize: 13.5, fontWeight: 600,
+              background: T.gold, color: '#1A2A1F', borderRadius: 999, padding: g ? '10px 22px' : '7px 16px', fontSize: g ? 16 : 13.5, fontWeight: 600,
               display: 'flex', alignItems: 'center', gap: 6, animation: 'pkh-pulso 2s ease-in-out infinite', ...body,
             }}>
               <Play size={14} fill="#1A2A1F" /> Entrar no Portal
