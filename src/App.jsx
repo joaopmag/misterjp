@@ -3078,7 +3078,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarefasReady, teamId]);
 
-  /* PONTO DE PARTIDA DA CONTAGEM DOS 30 DIAS — "a partir de agora", não
+  /* PONTO DE PARTIDA DA CONTAGEM DA SEQUÊNCIA — "a partir de agora", não
      desde sempre. Guardado em `season.streakDesde` (mais um campo na
      Época, que já é um singleton por equipa — não precisa de tabela
      nova). Só se define UMA vez, na primeira vez que a equipa abre a
@@ -3091,10 +3091,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seasonReady]);
 
-  /* PRÉMIO DOS 30 DIAS SEGUIDOS — mesmo mecanismo do aniversário: a app
-     garante sozinha que a tarefa existe, sem ninguém ter de a criar à
-     mão, e escreve DIRETO no Supabase pela mesma razão (ver o comentário
-     grande ali em cima).
+  /* PRÉMIO DA SEQUÊNCIA (META_SEQUENCIA dias seguidos — eram 30, agora
+     60) — mesmo mecanismo do aniversário: a app garante sozinha que a
+     tarefa existe, sem ninguém ter de a criar à mão, e escreve DIRETO no
+     Supabase pela mesma razão (ver o comentário grande ali em cima).
 
      "AUTÓNOMO E DENTRO DO HORÁRIO": um dia conta se houver WELLNESS desse
      dia respondido pelo próprio jogador (o PSE não entra na contagem; ver
@@ -3110,45 +3110,48 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
      quiosque a gravar (sem sessão autenticada) e só tem email quando é
      staff autenticado.
 
-     "RECOMEÇA DO ZERO PARA TODOS QUANDO ALGUÉM CHEGA AOS 30": a
-     contagem de cada jogador nunca olha para trás de `season.streakDesde`
-     — e assim que um jogador bate a marca, essa data avança para o dia
-     seguinte ao fim da sequência dele, para toda a equipa. Não é só ELE
-     a recomeçar: É A RONDA INTEIRA. Dentro do mesmo ciclo do efeito
-     (antes de a gravação no servidor voltar), `desdeNestaPassagem`
-     guarda esse avanço em memória — para dois jogadores que batam a
-     marca no mesmíssimo dia não abrirem duas tarefas com dois pontos de
-     partida diferentes. */
+     "O PRIMEIRO A CHEGAR É PREMIADO E A CONTAGEM RECOMEÇA PARA TODOS":
+     a contagem de cada jogador nunca olha para trás de `season.streakDesde`.
+     O dia do feito de cada jogador é o dia em que completou a meta
+     (início da sequência + META − 1). Ganha quem tiver o dia do feito
+     mais cedo; se forem vários no MESMO dia, são todos premiados (todos
+     chegaram primeiro). Nesse momento a ronda recomeça para a equipa
+     inteira a partir do dia seguinte ao feito — não do dia em que a app
+     foi aberta: se o staff só abrir a app uns dias depois, quem continuou
+     a responder nesses dias não perde esses dias na ronda nova. */
   useEffect(() => {
     if (!tarefasReady || !monitoringReady || !playersReady || !seasonReady || !teamId) return;
-    let desdeNestaPassagem = season.streakDesde || todayStr();
+    const desde = season.streakDesde || todayStr();
+    const chegaram = [];
     (players || []).forEach(p => {
-      const { dias, inicio, fim } = sequenciaAutonomaCompleta(p.id, monitoring, monitoringMeta, null, desdeNestaPassagem);
-      if (dias < 30) return;
+      const { dias, inicio } = sequenciaAutonomaCompleta(p.id, monitoring, monitoringMeta, null, desde);
+      if (dias < META_SEQUENCIA) return;
+      chegaram.push({ p, dias, inicio, diaFeito: addDays(inicio, META_SEQUENCIA - 1) });
+    });
+    if (!chegaram.length) return;
+    const primeiroDia = chegaram.reduce((min, c) => (c.diaFeito < min ? c.diaFeito : min), chegaram[0].diaFeito);
+    chegaram.filter(c => c.diaFeito === primeiroDia).forEach(({ p, inicio }) => {
       // A mesma sequência (mesmo dia de início) só cria a tarefa uma vez.
-      // Se a sequência quebrar e o atleta chegar aos 30 outra vez mais
-      // tarde, é uma sequência nova (início diferente) e ganha outra
-      // tarefa — é um novo feito, não o mesmo por acabar.
-      const jaExiste = (tarefas || []).some(t => t.marco === 'streak30' && t.playerId === p.id && t.streakInicio === inicio);
+      const jaExiste = (tarefas || []).some(t => (t.marco === 'streak60' || t.marco === 'streak30') && t.playerId === p.id && t.streakInicio === inicio);
       if (jaExiste) return;
       const registo = {
-        titulo: 'O jogador chegou aos 30 dias seguidos a responder aos questionários. Tem de ser premiado',
-        notas: `${p.name} respondeu sozinho, dentro do horário, ao Wellness durante ${dias} dias seguidos.`,
+        titulo: `O jogador chegou aos ${META_SEQUENCIA} dias seguidos a responder ao Wellness. Foi o primeiro — tem de ser premiado`,
+        notas: `${p.name} respondeu sozinho, dentro do horário, ao Wellness durante ${META_SEQUENCIA} dias seguidos (de ${formatShortDatePt(inicio)} a ${formatShortDatePt(primeiroDia)}). Foi o primeiro do plantel a chegar à marca; a contagem recomeçou para todos a ${formatShortDatePt(addDays(primeiroDia, 1))}.`,
         responsavel: '',
         estado: 'aberta',
-        marco: 'streak30',
+        marco: 'streak60',
         playerId: p.id,
         jogadorNome: p.name,
         streakInicio: inicio,
+        diaFeito: primeiroDia,
         criadoEm: new Date().toISOString(),
       };
       supabase.from('tarefas').insert([{ id: uid(), data: registo, team_id: teamId }])
-        .then(({ error }) => { if (error) console.error('tarefas (auto streak30)', error); });
-      // Reinicia a ronda para toda a equipa a partir do dia seguinte.
-      const novoDesde = addDays(fim, 1);
-      desdeNestaPassagem = novoDesde;
-      setSeason(prev => (prev.streakDesde === novoDesde ? prev : { ...prev, streakDesde: novoDesde }));
+        .then(({ error }) => { if (error) console.error('tarefas (auto streak60)', error); });
     });
+    // Recomeça a ronda para toda a equipa no dia seguinte ao feito.
+    const novoDesde = addDays(primeiroDia, 1);
+    setSeason(prev => (prev.streakDesde === novoDesde ? prev : { ...prev, streakDesde: novoDesde }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarefasReady, monitoringReady, playersReady, seasonReady, teamId, monitoring, tarefas, players, season.streakDesde]);
 
@@ -21247,6 +21250,11 @@ function diaAutonomoCompleto(playerId, date, monitoring, monitoringMeta) {
   });
 }
 
+/* Dias seguidos de Wellness autónomo para o prémio da sequência. O
+   primeiro a chegar é premiado e a contagem recomeça para todos (ver o
+   efeito "PRÉMIO DA SEQUÊNCIA"). Era 30; passou a 60. */
+const META_SEQUENCIA = 60;
+
 function sequenciaAutonomaCompleta(playerId, monitoring, monitoringMeta, hoje, desde) {
   hoje = hoje || todayStr();
   const comecaEm = diaAutonomoCompleto(playerId, hoje, monitoring, monitoringMeta) ? hoje : addDays(hoje, -1);
@@ -29082,7 +29090,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }, [missaoCumprida]);
 
   // Sequência do cartão da chama, calculada no servidor (a mesma regra
-  // da tarefa dos 30 dias: Wellness + PSE, autónomo, com o mesmo
+  // da tarefa da sequência (META_SEQUENCIA dias): autónomo, com o mesmo
   // reinício) — ver o comentário grande junto de `checkin_sequencia_wellness_pse.sql`.
   const [, dadosSequencia] = usePortalFetch('checkin_sequencia_wellness_pse', code, teamId);
   const diasSequenciaChama = (dadosSequencia && dadosSequencia.dias) || 0;
@@ -32044,7 +32052,7 @@ function CheckinLogin({ onSubmit, equipa }) {
    para o histórico — não é preciso pedir mais nada ao servidor. */
 /* `sequenciaWellness` deixou de ser usada pelo StreakCard — a chama
    passou a seguir a mesma regra (Wellness + PSE, autónomo, com o mesmo
-   reinício) que a tarefa dos 30 dias, calculada no servidor por
+   reinício) que a tarefa da sequência (META_SEQUENCIA dias), calculada no servidor por
    `checkin_sequencia_wellness_pse` (o "autónomo" depende de
    updated_by_email, que o quiosque não recebe). Fica cá só por se
    algures ainda for útil um dia — não faz mal nenhum ficar sem uso. */
@@ -42821,7 +42829,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
           </div>
         )}
 
-        {tarefa.marco === 'streak30' && tarefa.jogadorNome && (
+        {(tarefa.marco === 'streak30' || tarefa.marco === 'streak60') && tarefa.jogadorNome && (
           <div style={{ fontSize: 11.5, color: T.gold, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
             <Flame size={12} /> {tarefa.jogadorNome}
           </div>
