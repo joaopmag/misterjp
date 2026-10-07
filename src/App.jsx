@@ -23,7 +23,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
+  HeartPulse, Flame, PartyPopper, Megaphone, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
   Video, Repeat, Calendar, Bell, Lock,
   Volume2, VolumeX, CheckCircle2,
 } from 'lucide-react';
@@ -28932,7 +28932,11 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     try { localStorage.setItem('mjp_missoes_jogo_vistas', JSON.stringify(novo)); } catch (e) { /* sem armazenamento: volta a aparecer, não faz mal */ }
     return novo;
   });
-  const missoesJogo = (() => {
+  /* Todas as missões de jogo de hoje/amanhã, vistas ou não. O ecrã inteiro
+     (EcraJogo) só usa as ainda não vistas — aparece uma vez —, mas o
+     painel LED do mister no ecrã inicial continua a anunciar o jogo o dia
+     todo (até à hora do jogo), com o toque a levar à área Jogo. */
+  const missoesJogoTodas = (() => {
     const hoje = todayStr();
     const amanha = addDays(hoje, 1);
     const nossoClube = (dadosConvJogo && dadosConvJogo.clube) || 'Nós';
@@ -28958,9 +28962,9 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
           acao: 'Preparar o jogo',
           notas: `${jogo}${quando ? `\n${quando}` : ''}${conc}\nVê a convocatória, o plano de jogo e o adversário.`,
         };
-      })
-      .filter(m => !missoesJogoVistas.includes(m.id));
+      });
   })();
+  const missoesJogo = missoesJogoTodas.filter(m => !missoesJogoVistas.includes(m.id));
   /* MODO DE TESTE do ecrã de jogo, sem esperar por um jogo a sério:
      abrir o Portal com ?testejogo=vespera ou ?testejogo=dia no fim do
      endereço. Usa a primeira convocatória que houver (ou um jogo de
@@ -29082,6 +29086,29 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // reinício) — ver o comentário grande junto de `checkin_sequencia_wellness_pse.sql`.
   const [, dadosSequencia] = usePortalFetch('checkin_sequencia_wellness_pse', code, teamId);
   const diasSequenciaChama = (dadosSequencia && dadosSequencia.dias) || 0;
+
+  /* FOTOGRAFIA DO PLANTEL para o cacifo do ecrã inicial. Se a
+     `checkin_bootstrap` já a trouxer em `player.photo`, usa-se essa; se
+     não, pede-se à parte à `checkin_foto` (ver checkin_foto.sql). Sem a
+     função (SQL por correr) ou sem fotografia, o cacifo mostra as
+     iniciais — nada parte. */
+  const [fotoPlantel, setFotoPlantel] = useState(null);
+  const temFotoNoBootstrap = !!(player && player.photo);
+  useEffect(() => {
+    setFotoPlantel(null);
+    if (!code || !teamId || temFotoNoBootstrap) return undefined;
+    let cancelado = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('checkin_foto', { p_code: code, p_team: teamId });
+        if (cancelado || error) return;
+        let d = Array.isArray(data) ? data[0] : data;
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { d = null; } }
+        if (d && typeof d.photo === 'string' && d.photo) setFotoPlantel(d.photo);
+      } catch (e) { /* sem a função: fica com as iniciais */ }
+    })();
+    return () => { cancelado = true; };
+  }, [code, teamId, temFotoNoBootstrap]);
 
   // Relógio interno: as janelas horárias abrem/fecham sozinhas sem o atleta
   // ter de recarregar a página (ex.: está no ecrã às 12:59 e às 13:00 o
@@ -29339,14 +29366,50 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return <EcraAniversario player={player} onEntrar={() => setAniversarioVisto(true)} />;
   }
 
+  /* PAINEL LED DO MISTER (ecrã inicial) — a voz do mister, por ordem:
+     1) véspera / dia de jogo → leva à área Jogo do Portal (convocatória,
+        plano de jogo, adversário). Usa as mesmas regras da missão de jogo
+        (só jogos oficiais, desaparece à hora do jogo), mas fica o dia todo,
+        mesmo depois de o ecrã inteiro já ter sido visto;
+     2) cada missão por fazer (passo a passo) → irParaMissao, o mesmo
+        caminho da prancheta e de Tarefas;
+     3) dia de anos → os parabéns da equipa técnica (sem toque);
+     4) nada disto → "Sem missões pendentes · Bom treino" (sem toque). */
+  const jogoNoPainel = missoesJogoTodas[0] || missoesJogo.find(m => m._teste) || null;
+  const mensagensMister = [];
+  if (jogoNoPainel) {
+    const i = jogoNoPainel._info || {};
+    const jogoTxt = i.casaFora === 'Fora' ? `${i.adv} × ${i.nos}` : `${i.nos} × ${i.adv}`;
+    mensagensMister.push({
+      tipo: 'jogo',
+      texto: `${i.vespera ? 'Amanhã há jogo' : 'Hoje é dia de jogo'} · ${jogoTxt}${i.hora ? ` · ${i.hora}` : ''} ▸ Vê a convocatória, o plano de jogo e o adversário`,
+      onTocar: () => { if (!jogoNoPainel._teste) marcarMissaoJogoVista(jogoNoPainel.id); setActiveType('jogos'); },
+    });
+  }
+  missoesPorFazer.forEach(it => {
+    mensagensMister.push({
+      tipo: 'missao',
+      texto: `${it.titulo || 'Missão'}${it.passoTxt ? ` (${it.passoTxt})` : ''} ▸ Toca para começar`,
+      onTocar: () => irParaMissao(it),
+    });
+  });
+  if (player && isBirthdayToday(player.birthdate)) {
+    const primeiroNome = String(player.name || '').trim().split(/\s+/)[0] || '';
+    mensagensMister.push({ tipo: 'festa', texto: `Parabéns, ${primeiroNome}! Toda a equipa técnica te deseja um ótimo dia` });
+  }
+  if (!jogoNoPainel && !missoesPorFazer.length) {
+    mensagensMister.push({ tipo: 'nada', texto: 'Sem missões pendentes · Bom treino' });
+  }
+
   return (
     <>
     {ecraMissao}
     {toastCumprida}
     <PlayerKioskHome
-      player={player} session={sessionForDate}
-      recentDates={recentDates} dayStatus={dayStatus}
-      selectedDate={selectedDate} onSelectDate={setSelectedDate}
+      player={fotoPlantel ? { ...player, photo: fotoPlantel } : player}
+      equipa={equipa}
+      session={sessionForDate}
+      selectedDate={selectedDate}
       doneWellness={hasDate('wellness', selectedDate)} doneRpe={hasDate('rpe', selectedDate)}
       wellnessWindow={wellnessWindow} rpeWindow={rpeWindow}
       onOpenWellness={() => { if (wellnessWindow.open) setActiveType('wellness'); }}
@@ -29354,7 +29417,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       onOpenPortal={() => setActiveType('portal')}
       onLogout={onLogout}
       tarefasPendentes={tarefasPorFazer}
-      onAbrirTarefa={(t) => irParaMissao(t)}
+      mensagensMister={mensagensMister}
       diasSequenciaChama={diasSequenciaChama}
     />
     </>
@@ -32083,153 +32146,486 @@ function StreakCard({ dias }) {
   );
 }
 
-function PlayerKioskHome({ player, session, recentDates, dayStatus, selectedDate, onSelectDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenPortal, onLogout, tarefasPendentes, onAbrirTarefa, diasSequenciaChama }) {
-  const isToday = selectedDate === todayStr();
-  const isRestDay = session && session.phase === 'Descanso';
-  const sessionLabel = session ? (session.focus || session.phase || 'Sessão de hoje') : `Sem sessão definida para ${isToday ? 'hoje' : 'este dia'}`;
+/* ===================================================================
+   PÁGINA INICIAL DO PORTAL — "O DIA É UM JOGO"
+   ===================================================================
+   O dia do atleta tem a forma de um jogo: o Wellness é a 1.ª parte
+   (CHECKIN_WINDOWS.wellness), o PSE é a 2.ª (CHECKIN_WINDOWS.rpe) e os
+   minutos entre as duas são o intervalo. Tudo num só ecrã, fixo, sem
+   scroll — nada mexe a página quando se toca em alguma coisa.
+   · PLACARD: as horas, a parte do dia e quanto falta para fechar; por
+     baixo, o resultado Wellness–PSE (cada questionário respondido é um
+     golo).
+   · PAINEL LED DO MISTER (colado à linha lateral da prancheta): a voz do
+     mister, sempre a correr. Em véspera/dia de jogo anuncia o jogo e leva
+     à área Jogo do Portal; com missões por fazer, leva a cada missão;
+     sem nada, "Sem missões pendentes". Várias mensagens passam uma de
+     cada vez e o toque vai para a que está a passar.
+   · PRANCHETA: o campo como linha do tempo — o íman do jogador anda com
+     a hora do dia; cada baliza é um questionário.
+   · GRAFISMO DA SEQUÊNCIA: os dias seguidos da chama + a frase do dia.
+   · BALNEÁRIO: a entrada do Portal. A TV da análise ao fundo, e o cacifo
+     do próprio jogador iluminado, com a camisola dele (nome e número) e a
+     fotografia do plantel.
+   Os horários vêm sempre de CHECKIN_WINDOWS: mudar lá muda aqui. */
+const PKH_TICKER = 'IDEIA DE JOGO · TREINO · BIBLIOTECA · JOGO · COMPETIÇÃO · DESENVOLVIMENTO · TAREFAS';
+const PKH_CSS = `
+  html, body { overflow: hidden !important; overscroll-behavior: none; }
+  @keyframes pkh-pulso { 0%,100% { box-shadow: 0 0 0 0 rgba(201,162,39,.55); } 50% { box-shadow: 0 0 0 8px rgba(201,162,39,0); } }
+  @keyframes pkh-pisca { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+`;
 
-  // Janelas horárias (ver CHECKIN_WINDOWS). O Wellness depende só da hora;
-  // o PSE depende da hora e ainda de existir sessão criada e não ser folga.
+function pkhEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function pkhDur(d) {
+  const v = Math.max(0, d);
+  return v >= 60 ? `${Math.floor(v / 60)}H${String(v % 60).padStart(2, '0')}` : `${v} MIN`;
+}
+// Posição (x) do íman no campo para um minuto do dia; null = antes de abrir.
+function pkhXDoMinuto(m) {
+  const W = CHECKIN_WINDOWS.wellness, P = CHECKIN_WINDOWS.rpe;
+  if (m < W.startMin) return null;
+  if (m <= W.endMin) return 12 + ((m - W.startMin) / Math.max(1, W.endMin - W.startMin)) * 134;
+  if (m < P.startMin) return 150;
+  if (m <= P.endMin) return 154 + ((m - P.startMin) / Math.max(1, P.endMin - P.startMin)) * 134;
+  return 288;
+}
+const pkhY = (x) => 75 + 24 * Math.sin(((x - 12) / 276) * Math.PI * 3);
+
+function PkhPlacard({ legenda, hora, golosW, golosP }) {
+  const led = { ...mono, color: '#FFC23D' };
+  return (
+    <div style={{
+      flexShrink: 0, background: '#07090a', border: '3px solid #2a2f33', borderRadius: 12, padding: '5px 12px 6px',
+      backgroundImage: 'radial-gradient(rgba(255,194,61,.08) 1px, transparent 1.3px)', backgroundSize: '5px 5px',
+    }}>
+      <div style={{ ...led, textAlign: 'center', fontSize: 11, letterSpacing: '.14em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{legenda}</div>
+      <div style={{ ...led, textAlign: 'center', fontSize: 28, fontWeight: 500, letterSpacing: '.08em', lineHeight: 1.15 }}>{hora}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 10 }}>
+        <span style={{ ...led, fontSize: 11, letterSpacing: '.12em', textAlign: 'right' }}>WELLNESS</span>
+        <span style={{ ...led, fontSize: 19, fontWeight: 500 }}>{golosW} – {golosP}</span>
+        <span style={{ ...led, fontSize: 11, letterSpacing: '.12em', textAlign: 'left' }}>PSE</span>
+      </div>
+    </div>
+  );
+}
+
+function PkhBolaMini({ size = 13, color = '#1A2A1F' }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="2" />
+      <path d="M12 7.5 L16 10.4 L14.5 15 L9.5 15 L8 10.4 Z" fill={color} />
+    </svg>
+  );
+}
+
+/* Painel LED do mister. Cada mensagem: { tipo, texto, onTocar }.
+   Uma de cada vez: entra pela direita, atravessa o painel inteira e só
+   então entra a seguinte. O toque vai para a mensagem que está a passar. */
+function PkhPainelMister({ mensagens }) {
+  const zonaRef = useRef(null);
+  const txtRef = useRef(null);
+  const [idx, setIdx] = useState(0);
+  const lista = mensagens && mensagens.length ? mensagens : [{ tipo: 'nada', texto: 'Sem missões pendentes · Bom treino' }];
+  const chave = lista.map(m => `${m.tipo}:${m.texto}`).join('|');
+  useEffect(() => { setIdx(0); }, [chave]);
+  const atual = lista[idx % lista.length];
+  useEffect(() => {
+    const zona = zonaRef.current, el = txtRef.current;
+    if (!zona || !el) return undefined;
+    const reduzir = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduzir || typeof el.animate !== 'function') {
+      // Sem movimento: a mensagem fica parada e troca a cada 6 s.
+      el.style.transform = 'translate(0,-50%)';
+      const h = setTimeout(() => setIdx(i => i + 1), 6000);
+      return () => clearTimeout(h);
+    }
+    const cw = zona.clientWidth, sw = el.scrollWidth;
+    const a = el.animate(
+      [{ transform: `translate(${cw}px,-50%)` }, { transform: `translate(${-sw}px,-50%)` }],
+      { duration: Math.max(4000, ((cw + sw) / 48) * 1000), easing: 'linear' },
+    );
+    a.onfinish = () => setIdx(i => i + 1);
+    return () => { a.onfinish = null; a.cancel(); };
+  }, [idx, chave]);
+  const cor = atual.tipo === 'jogo' ? '#F2EDE0' : atual.tipo === 'nada' ? '#8EE6A0' : '#FFC23D';
+  const tocavel = typeof atual.onTocar === 'function';
+  return (
+    <button
+      type="button"
+      onClick={() => { if (tocavel) atual.onTocar(); }}
+      aria-label={`Mister: ${atual.texto}`}
+      style={{
+        display: 'flex', alignItems: 'stretch', width: '100%', height: 26, padding: 0, textAlign: 'left',
+        background: '#050607', border: '2px solid #2a2f33', borderBottom: 'none', borderRadius: '8px 8px 0 0',
+        overflow: 'hidden', cursor: tocavel ? 'pointer' : 'default',
+        backgroundImage: 'radial-gradient(rgba(255,255,255,.05) 1px, transparent 1.2px)', backgroundSize: '3px 3px',
+      }}
+    >
+      <span style={{
+        flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', background: T.gold,
+        color: '#1A2A1F', fontSize: 11, fontWeight: 600, letterSpacing: '.06em', position: 'relative', zIndex: 1, ...body,
+      }}>
+        <span style={{ display: 'flex', animation: tocavel ? 'pkh-pisca 1.2s infinite' : 'none' }}>
+          {atual.tipo === 'jogo' ? <PkhBolaMini /> : atual.tipo === 'festa' ? <PartyPopper size={13} /> : <Megaphone size={13} />}
+        </span>
+        MISTER
+      </span>
+      <span ref={zonaRef} style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
+        <span ref={txtRef} style={{
+          ...mono, position: 'absolute', top: '50%', left: 0, whiteSpace: 'nowrap', fontSize: 12.5, fontWeight: 500,
+          letterSpacing: '.08em', color: cor, transform: 'translate(2000px,-50%)', textTransform: 'uppercase',
+        }}>{atual.texto}  ★</span>
+      </span>
+    </button>
+  );
+}
+
+function PkhCampo({ mins, doneW, doneP, wAberto, pAberto, semSegunda, corCamisola, marca }) {
+  const G = 'rgba(255,255,255,.78)';
+  const W = CHECKIN_WINDOWS.wellness, P = CHECKIN_WINDOWS.rpe;
+  const x = pkhXDoMinuto(mins);
+  const noite = x === null;
+  const intervalo = mins > W.endMin && mins < P.startMin;
+  let trilho = '';
+  if (x !== null) {
+    trilho = `M12 ${pkhY(12).toFixed(1)}`;
+    for (let k = 14; k <= x; k += 4) trilho += ` L${k} ${pkhY(k).toFixed(1)}`;
+  }
+  const baliza = (lado, feito, aberto) => {
+    const bx = lado === 'w' ? 3 : 289;
+    return (
+      <g>
+        <rect x={bx} y="63" width="8" height="24" fill={feito ? 'rgba(120,220,140,.35)' : 'none'} stroke={feito ? '#8EE6A0' : G} strokeWidth="1.6" />
+        {feito && <circle cx={bx + 4} cy="75" r="3.6" fill="#fff" />}
+        {feito && (
+          <text x={lado === 'w' ? 18 : 282} y="57" textAnchor={lado === 'w' ? 'start' : 'end'} fontSize="11" fontWeight="700" fill="#8EE6A0" fontFamily="Oswald, sans-serif">GOLO</text>
+        )}
+        {!feito && aberto && (
+          <circle cx={lado === 'w' ? 36 : 264} cy="75" r="4" fill="#fff">
+            <animate attributeName="r" values="4;5.4;4" dur="1.4s" repeatCount="indefinite" />
+          </circle>
+        )}
+      </g>
+    );
+  };
+  return (
+    <div style={{
+      background: '#24563a', border: '3px solid #6b4b2e', borderRadius: '0 0 10px 10px', overflow: 'hidden',
+      filter: noite ? 'brightness(.45) saturate(.6)' : 'none', transition: 'filter .8s',
+    }}>
+      <svg viewBox="0 0 300 150" preserveAspectRatio="xMidYMid meet" style={{ display: 'block', width: '100%', height: 'auto', maxHeight: '22dvh' }} aria-hidden="true">
+        <g stroke={G} strokeWidth="1.5" fill="none" opacity=".6">
+          <rect x="11" y="8" width="278" height="134" /><line x1="150" y1="8" x2="150" y2="142" /><circle cx="150" cy="75" r="19" />
+          <rect x="11" y="40" width="36" height="70" /><rect x="253" y="40" width="36" height="70" />
+          <rect x="11" y="60" width="13" height="30" /><rect x="276" y="60" width="13" height="30" />
+        </g>
+        <text x="80" y="24" textAnchor="middle" fontSize="11" fill={G} fontFamily="Oswald, sans-serif" letterSpacing="2">WELLNESS</text>
+        <text x="220" y="24" textAnchor="middle" fontSize="11" fill={G} fontFamily="Oswald, sans-serif" letterSpacing="2">{semSegunda ? 'FOLGA' : 'PSE'}</text>
+        {semSegunda && <rect x="151" y="9" width="137" height="132" fill="rgba(0,0,0,.28)" />}
+        {baliza('w', doneW, wAberto)}
+        {baliza('p', doneP, pAberto)}
+        {x !== null ? (
+          <>
+            <path d={trilho} fill="none" stroke="#fff" strokeWidth="2.2" strokeDasharray="5 4" strokeLinecap="round" opacity=".85" />
+            <g transform={`translate(${x.toFixed(1)},${pkhY(x).toFixed(1)})`}>
+              <circle r="12" fill={corCamisola.base} stroke="#fff" strokeWidth="2" />
+              <text y="4.5" textAnchor="middle" fontSize={marca.length > 2 ? 9 : 12} fontWeight="700" fill={corCamisola.texto} fontFamily="'JetBrains Mono', monospace">{marca}</text>
+            </g>
+          </>
+        ) : (
+          <text x="150" y="79" textAnchor="middle" fontSize="12" fill={G} fontFamily="Oswald, sans-serif" letterSpacing="2">LUZES APAGADAS</text>
+        )}
+        {intervalo && <text x="150" y="50" textAnchor="middle" fontSize="12" fill="#FFC23D" fontFamily="Oswald, sans-serif" letterSpacing="2">INTERVALO</text>}
+      </svg>
+    </div>
+  );
+}
+
+function PkhBotaoQuestionario({ nome, estado, texto, onClick }) {
+  // estado: 'feito' | 'aberto' | 'fechado'
+  const corBorda = estado === 'feito' ? T.good : estado === 'aberto' ? T.gold : T.line;
+  return (
+    <button type="button" onClick={onClick} disabled={estado !== 'aberto'} style={{
+      flex: 1, minWidth: 0, height: 54, boxSizing: 'border-box', borderRadius: 12, padding: '7px 10px', textAlign: 'left',
+      background: T.surface, border: `1px solid ${corBorda}`, cursor: estado === 'aberto' ? 'pointer' : 'default', overflow: 'hidden', ...body,
+    }}>
+      <div style={{ ...display, fontSize: 18, fontWeight: 600, color: T.cream, lineHeight: 1.15 }}>{nome}</div>
+      <div style={{
+        fontSize: 11.5, lineHeight: 1.3, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        display: 'flex', alignItems: 'center', gap: 4,
+        color: estado === 'feito' ? T.good : estado === 'aberto' ? T.gold : T.warn,
+      }}>
+        {estado === 'feito' ? <Check size={12} style={{ flexShrink: 0 }} /> : estado === 'fechado' ? <Clock size={12} style={{ flexShrink: 0 }} /> : null}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{texto}</span>
+        {estado === 'aberto' && <ArrowRight size={12} style={{ flexShrink: 0 }} />}
+      </div>
+    </button>
+  );
+}
+
+function PkhSequencia({ dias }) {
+  const frase = mensagemChamaDoDia(todayStr());
+  return (
+    <div style={{ flexShrink: 0, height: 58, display: 'flex', alignItems: 'stretch' }}>
+      <div style={{
+        flexShrink: 0, width: 76, background: T.gold, clipPath: 'polygon(0 0,100% 0,84% 100%,0 100%)', borderRadius: '8px 0 0 8px',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingRight: 10,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Flame size={18} color={dias > 0 ? '#8a3a12' : '#5f4b10'} />
+          <span style={{ ...display, fontSize: 26, fontWeight: 600, color: '#1A2A1F', lineHeight: 1 }}>{dias}</span>
+        </div>
+        <div style={{ fontSize: 11, color: '#3b2f0a', lineHeight: 1.1, textAlign: 'center', ...body }}>{dias === 1 ? 'dia seguido' : 'dias seguidos'}</div>
+      </div>
+      <div style={{
+        flex: 1, minWidth: 0, marginLeft: -10, background: '#0d120f', clipPath: 'polygon(13px 0,100% 0,100% 100%,0 100%)',
+        padding: '4px 10px 4px 20px', display: 'flex', alignItems: 'center', borderRadius: '0 8px 8px 0',
+        borderBottom: `3px solid ${T.gold}`, boxSizing: 'border-box',
+      }}>
+        <div style={{
+          fontSize: 11.5, color: T.cream, lineHeight: 1.28, ...body,
+          display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}>«{frase}»</div>
+      </div>
+    </div>
+  );
+}
+
+/* Balneário em perspetiva (um só ponto de fuga), desenhado como texto SVG:
+   é uma cena estática, recalculada só quando mudam a cor, a camisola, a
+   fotografia ou o emblema. Todo o texto que vem de dados passa por pkhEsc. */
+function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge }) {
+  const H = 215, VX = 150, VY = 95, S = 0.5, BL = VX * S, BR = 300 - VX * S, BT = VY * S, BB = H - (H - VY) * S;
+  const wp = (t, v) => { const x = t * BL, yt = t * BT, yb = H - t * (H - BB); return [x, yt + v * (yb - yt)]; };
+  const mir = p => [300 - p[0], p[1]];
+  const pts = ps => ps.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const poly = (ps, f, st, sw) => `<polygon points="${pts(ps)}" fill="${f}"${st ? ` stroke="${st}" stroke-width="${sw || 0.8}"` : ''}/>`;
+  const aff = (p00, p10, p01, inner) => `<g transform="matrix(${((p10[0] - p00[0]) / 100).toFixed(4)},${((p10[1] - p00[1]) / 100).toFixed(4)},${((p01[0] - p00[0]) / 100).toFixed(4)},${((p01[1] - p00[1]) / 100).toFixed(4)},${p00[0].toFixed(2)},${p00[1].toFixed(2)})">${inner}</g>`;
+  const camisolaParede = n => `<line x1="50" y1="0" x2="50" y2="10" stroke="#9aa39c" stroke-width="2"/><path d="M14 22 L38 10 Q50 20 62 10 L86 22 L98 44 L78 50 L78 98 L22 98 L22 50 L2 44 Z" fill="${cor.base}" stroke="#0d120f" stroke-width="2"/><text x="50" y="80" text-anchor="middle" font-size="34" font-weight="700" fill="${cor.texto}" font-family="JetBrains Mono, monospace">${n}</text>`;
+  const quadro = k => {
+    let s = `<rect x="0" y="0" width="100" height="100" fill="#9c7f22"/><rect x="7" y="7" width="86" height="86" fill="${k === 1 ? '#26334a' : '#33503c'}"/>`;
+    if (k === 0) s += '<path d="M34 24 H66 V44 Q66 62 50 64 Q34 62 34 44 Z" fill="#C9A43A"/><path d="M34 30 Q20 30 24 44 Q28 52 36 50" fill="none" stroke="#C9A43A" stroke-width="5"/><path d="M66 30 Q80 30 76 44 Q72 52 64 50" fill="none" stroke="#C9A43A" stroke-width="5"/><rect x="45" y="64" width="10" height="12" fill="#C9A43A"/><rect x="34" y="76" width="32" height="9" fill="#7a5f14"/>';
+    else if (k === 1) s += [20, 50, 80].map(x => `<circle cx="${x}" cy="40" r="8" fill="#cfc2aa"/><path d="M${x - 10} 88 V56 H${x + 10} V88 Z" fill="${cor.base}"/><line x1="${x - 9}" y1="58" x2="${x - 18}" y2="26" stroke="#cfc2aa" stroke-width="5"/><line x1="${x + 9}" y1="58" x2="${x + 18}" y2="26" stroke="#cfc2aa" stroke-width="5"/>`).join('');
+    else s += [18, 38, 58, 78].map((x, i) => `<circle cx="${x}" cy="${52 - (i % 2) * 6}" r="7" fill="#cfc2aa"/><rect x="${x - 9}" y="${60 - (i % 2) * 6}" width="18" height="34" fill="${cor.base}"/>`).join('') + '<path d="M38 18 L50 30 L62 18" fill="none" stroke="#C9A43A" stroke-width="4"/>';
+    return s;
+  };
+  const nomeCamisola = pkhEsc(String(nome || '').toUpperCase());
+  const camisolaFrente = (() => {
+    const fNome = nomeCamisola.length > 9 ? 9 : nomeCamisola.length > 6 ? 11 : 13;
+    let s = '<path d="M50 -14 Q50 -22 56 -22 Q62 -22 62 -16" fill="none" stroke="#c9ced0" stroke-width="3"/>'
+      + '<path d="M50 -10 L14 8 L86 8 Z" fill="none" stroke="#c9ced0" stroke-width="3"/>'
+      + `<path d="M16 10 L38 0 Q50 10 62 0 L84 10 L100 38 L80 46 L80 104 Q50 108 20 104 L20 46 L0 38 Z" fill="${cor.base}" stroke="#FFD86A" stroke-width="2.5"/>`
+      + `<path d="M38 0 Q50 10 62 0" fill="none" stroke="${cor.mangas}" stroke-width="3"/>`
+      + `<path d="M0 38 L20 46 M100 38 L80 46" stroke="${cor.mangas}" stroke-width="3"/>`;
+    if (numero) {
+      s += `<text x="50" y="30" text-anchor="middle" font-size="${fNome}" font-weight="600" fill="${cor.texto}" font-family="Oswald, sans-serif" letter-spacing="1.5">${nomeCamisola}</text>`
+        + `<text x="50" y="86" text-anchor="middle" font-size="${numero.length > 2 ? 40 : 54}" font-weight="700" fill="${cor.texto}" stroke="${cor.contorno}" stroke-width="2.5" paint-order="stroke" font-family="Oswald, sans-serif">${pkhEsc(numero)}</text>`;
+    } else {
+      s += `<text x="50" y="66" text-anchor="middle" font-size="${fNome + 4}" font-weight="600" fill="${cor.texto}" stroke="${cor.contorno}" stroke-width="1.5" paint-order="stroke" font-family="Oswald, sans-serif" letter-spacing="1.5">${nomeCamisola}</text>`;
+    }
+    return s;
+  })();
+
+  let s = '<defs><filter id="pkh-brilho" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.5"/></filter>'
+    + '<filter id="pkh-brilho2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>'
+    + '<clipPath id="pkh-retrato"><circle cx="0" cy="0" r="50"/></clipPath>'
+    + '<clipPath id="pkh-tk"><rect x="91" y="106" width="118" height="11"/></clipPath></defs>';
+  s += `<rect width="300" height="${H}" fill="#121614"/>`;
+  s += poly([[0, 0], [300, 0], [BR, BT], [BL, BT]], '#171c19');
+  s += poly([[0, 0], [BL, BT], [BL, BB], [0, H]], '#232b26');
+  s += poly([[300, 0], [BR, BT], [BR, BB], [300, H]], '#202823');
+  s += poly([[0, H], [300, H], [BR, BB], [BL, BB]], '#191f1b');
+  [-120, -40, 40, 110, 190, 260, 340, 420].forEach(x => { s += `<line x1="${x}" y1="${H}" x2="${x + (VX - x) * S}" y2="${BB}" stroke="#262e29" stroke-width=".8"/>`; });
+  [0.25, 0.5, 0.75].forEach(t => { const y = H - t * (H - BB); s += `<line x1="${t * BL}" y1="${y}" x2="${300 - t * BL}" y2="${y}" stroke="#262e29" stroke-width=".8"/>`; });
+  [30, 90, 210, 270].forEach(x => { s += `<line x1="${x}" y1="0" x2="${x + (VX - x) * S}" y2="${BT}" stroke="#FFFBEA" stroke-width="1.6" opacity=".3"/>`; });
+  // Emblema iluminado no teto.
+  s += '<ellipse cx="150" cy="22" rx="84" ry="15" fill="none" stroke="#FFE6A0" stroke-width="1" opacity=".28"/>';
+  s += '<ellipse cx="150" cy="22" rx="70" ry="12.5" fill="#0d120f" stroke="#FFE6A0" stroke-width="2.4"/>';
+  s += logo
+    ? `<g transform="translate(150,22) scale(1.7,.62)"><image href="${pkhEsc(logo)}" x="-14" y="-15" width="28" height="30" preserveAspectRatio="xMidYMid meet"/></g>`
+    : `<g transform="translate(150,22) scale(1.7,.62)"><path d="M-10 -12 H10 V2 Q10 11 0 16 Q-10 11 -10 2 Z" fill="${cor.base}" stroke="#C9A227" stroke-width="1.4"/><text y="5" text-anchor="middle" font-size="11" font-weight="700" fill="${cor.texto}" font-family="Oswald, sans-serif">${pkhEsc(inicialClube)}</text></g>`;
+  s += `<rect x="${BL}" y="${BT}" width="${BR - BL}" height="${BB - BT}" fill="#29332d"/>`;
+  // Cacifos. Números decorativos (o quiosque não recebe o plantel): nunca o do próprio.
+  const T6 = [0.06, 0.32, 0.53, 0.68, 0.8, 0.9, 1];
+  const decor = ['11', '7', '6', '3', '14', '10', '4', '23', '9', '2', '5', '17', '20', '1'].filter(n => n !== String(numero || ''));
+  let nd = 0;
+  [[false, [-1, 2, 1, 0, 2, 1]], [true, [1, 0, 2, 1, 0, 2]]].forEach(([dir, quadros]) => {
+    const M = dir ? mir : (p => p);
+    for (let i = 0; i < T6.length - 1; i++) {
+      const a = T6[i] + 0.012, b = T6[i + 1] - 0.012;
+      const meu = !dir && i === 0;
+      const contorno = [wp(a - 0.01, 0.07), wp(b + 0.008, 0.07), wp(b + 0.008, 0.815), wp(a - 0.01, 0.815)];
+      if (meu) {
+        s += `<polygon points="${pts(contorno)}" fill="none" stroke="#FFC23D" stroke-width="6" opacity=".55" filter="url(#pkh-brilho)"><animate attributeName="opacity" values=".3;.75;.3" dur="2.2s" repeatCount="indefinite"/></polygon>`;
+        s += poly([wp(a, 0.07), wp(b, 0.07), wp(b, 0.38), wp(a, 0.38)], '#2a2f25');
+      }
+      s += poly([wp(a, 0.4), wp(b, 0.4), wp(b, 0.8), wp(a, 0.8)].map(M), meu ? '#2a2f25' : '#171d19', meu ? null : '#333c36');
+      if (!meu) {
+        const ia = a + (b - a) * 0.18, ib = b - (b - a) * 0.18;
+        const p00 = dir ? M(wp(ib, 0.43)) : wp(ia, 0.43), p10 = dir ? M(wp(ia, 0.43)) : wp(ib, 0.43), p01 = dir ? M(wp(ib, 0.66)) : wp(ia, 0.66);
+        s += aff(p00, p10, p01, camisolaParede(decor[nd++ % decor.length]));
+        const fa = a + (b - a) * 0.12, fb = b - (b - a) * 0.12;
+        const q00 = dir ? M(wp(fb, 0.12)) : wp(fa, 0.12), q10 = dir ? M(wp(fa, 0.12)) : wp(fb, 0.12), q01 = dir ? M(wp(fb, 0.33)) : wp(fa, 0.33);
+        s += aff(q00, q10, q01, quadro(quadros[i]));
+      } else {
+        s += `<polygon points="${pts(contorno)}" fill="none" stroke="#FFD86A" stroke-width="1.8"/>`;
+      }
+    }
+    const A = M(wp(0, 0.8)), B = M(wp(1, 0.8)), sg = dir ? -1 : 1;
+    s += poly([A, B, [B[0] + sg * 7, B[1] + 3], [A[0] + sg * 36, A[1] + 20]], '#7a5a38');
+    s += poly([[A[0] + sg * 36, A[1] + 20], [B[0] + sg * 7, B[1] + 3], [B[0] + sg * 7, B[1] + 6], [A[0] + sg * 36, A[1] + 28]], '#4f3a24');
+  });
+  // O lugar do jogador: camisola pendurada de frente + retrato por cima.
+  const gancho = wp(0.19, 0.42);
+  const cx = gancho[0] + 9, cy = gancho[1] + 12, ry = gancho[1] - 22, rr = 16;
+  s += `<ellipse cx="${cx.toFixed(1)}" cy="${(cy + 4).toFixed(1)}" rx="30" ry="52" fill="#FFC23D" opacity=".32" filter="url(#pkh-brilho2)"/>`;
+  s += `<line x1="${gancho[0].toFixed(1)}" y1="${gancho[1].toFixed(1)}" x2="${(gancho[0] + 9).toFixed(1)}" y2="${(gancho[1] + 2).toFixed(1)}" stroke="#c9ced0" stroke-width="1.6"/>`;
+  s += `<g transform="translate(${(cx - 22).toFixed(1)},${cy.toFixed(1)}) scale(.44)">${camisolaFrente}</g>`;
+  s += `<circle cx="${cx.toFixed(1)}" cy="${(ry + 1.5).toFixed(1)}" r="${rr + 3}" fill="#000" opacity=".35"/>`;
+  s += `<g transform="translate(${cx.toFixed(1)},${ry.toFixed(1)}) scale(${rr / 50})">`;
+  s += foto
+    ? `<rect x="-50" y="-50" width="100" height="100" fill="#cfd9d1" clip-path="url(#pkh-retrato)"/><image href="${pkhEsc(foto)}" x="-50" y="-50" width="100" height="100" preserveAspectRatio="xMidYMin slice" clip-path="url(#pkh-retrato)"/>`
+    : `<circle r="50" fill="#1A2A1F"/><text y="17" text-anchor="middle" font-size="${iniciais.length > 2 ? 34 : 46}" font-weight="600" fill="#FFD86A" font-family="Oswald, sans-serif">${pkhEsc(iniciais)}</text>`;
+  s += '<circle r="50" fill="none" stroke="#FFD86A" stroke-width="7"/></g>';
+  s += `<circle cx="${cx.toFixed(1)}" cy="${(ry - rr - 1.5).toFixed(1)}" r="2" fill="#c9ced0"/>`;
+  // A TV da análise = a entrada do Portal.
+  s += `<g transform="translate(0,${BT + 8 - 46})">`;
+  s += '<rect x="84" y="46" width="132" height="78" rx="3" fill="none" stroke="#FFC23D" stroke-width="2"><animate attributeName="opacity" values=".35;1;.35" dur="2.4s" repeatCount="indefinite"/></rect>';
+  s += '<rect x="88" y="50" width="124" height="70" rx="2" fill="#07090a"/>';
+  s += '<rect x="91" y="53" width="118" height="13" fill="#0d120f"/><text x="150" y="63.3" text-anchor="middle" font-size="10" font-weight="600" fill="#C9A227" font-family="Oswald, sans-serif" letter-spacing="1.4">PORTAL DO ATLETA</text>';
+  s += '<rect x="91" y="66" width="118" height="40" fill="#24563a"/>';
+  [0, 1, 2].forEach(i => { s += `<rect x="${91 + i * 40}" y="66" width="20" height="40" fill="#2a6142"/>`; });
+  s += '<g stroke="#fff" stroke-width=".7" fill="none" opacity=".6"><line x1="150" y1="66" x2="150" y2="106"/><circle cx="150" cy="86" r="7"/></g>';
+  s += '<path d="M112 96 Q132 80 156 78" fill="none" stroke="#fff" stroke-width="1" stroke-dasharray="3 2"/><path d="M152 75.5 L157 78 L153 81" fill="none" stroke="#fff" stroke-width="1"/>';
+  s += '<path d="M128 74 L170 92" fill="none" stroke="#FFC23D" stroke-width="1" stroke-dasharray="3 2"/>';
+  s += `<circle r="3" fill="${cor.base}" stroke="#fff" stroke-width=".7"><animateMotion dur="3s" repeatCount="indefinite" path="M112 96 Q132 80 156 78"/></circle>`;
+  s += `<circle r="3" fill="${cor.base}" stroke="#fff" stroke-width=".7"><animateMotion dur="3s" repeatCount="indefinite" path="M128 74 L170 92"/></circle>`;
+  s += `<circle cx="186" cy="80" r="3" fill="${cor.base}" stroke="#fff" stroke-width=".7"/><circle cx="196" cy="94" r="3" fill="#f2ede0"/><circle cx="178" cy="98" r="3" fill="#f2ede0"/>`;
+  s += '<rect x="91" y="106" width="118" height="11" fill="#C9A227"/>';
+  s += `<g clip-path="url(#pkh-tk)"><text y="114.3" font-size="8.5" font-weight="600" fill="#1A2A1F" font-family="Oswald, sans-serif" letter-spacing=".6"><animateTransform attributeName="transform" type="translate" from="210 0" to="-360 0" dur="15s" repeatCount="indefinite"/>${PKH_TICKER}</text></g>`;
+  if (badge > 0) s += `<circle cx="212" cy="49" r="7" fill="#E5484D" stroke="#07090a" stroke-width="1.5"/><text x="212" y="52.6" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" font-family="JetBrains Mono, monospace">${badge > 9 ? '9+' : badge}</text>`;
+  s += '</g>';
+  return s;
+}
+
+function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, doneRpe, wellnessWindow, rpeWindow, onOpenWellness, onOpenRpe, onOpenPortal, onLogout, tarefasPendentes, mensagensMister, diasSequenciaChama }) {
+  const isToday = selectedDate === todayStr();
+  const isRestDay = !!(session && session.phase === 'Descanso');
+  const W = CHECKIN_WINDOWS.wellness, P = CHECKIN_WINDOWS.rpe;
+  const agora = new Date();
+  const mins = agora.getHours() * 60 + agora.getMinutes();
+  const hora = fmtMinutesOfDay(mins);
+
   const wWin = wellnessWindow || { open: true, reason: '' };
   const rWin = rpeWindow || { open: true, reason: '' };
   const wellnessEnabled = wWin.open && !doneWellness;
   const rpeEnabled = rWin.open && !!session && !isRestDay && !doneRpe;
 
-  const wellnessHint = doneWellness
-    ? 'Já respondeste hoje — obrigado!'
-    : !wWin.open ? wWin.reason
-      : 'Sono e como te sentes hoje';
+  // Estados e textos dos dois botões (mesmas regras de sempre).
+  const wEstado = doneWellness ? 'feito' : wellnessEnabled ? 'aberto' : 'fechado';
+  const wTexto = doneWellness ? 'Golo! Respondido'
+    : wellnessEnabled ? 'Responder agora'
+      : !isToday ? 'Só no próprio dia'
+        : mins < W.startMin ? `Abre às ${fmtMinutesOfDay(W.startMin)}` : 'Fechou · fala com o staff';
+  const pEstado = doneRpe ? 'feito' : rpeEnabled ? 'aberto' : 'fechado';
+  const pTexto = doneRpe ? 'Golo! Respondido'
+    : isRestDay ? 'Folga · sem PSE'
+      : rpeEnabled ? 'Responder agora'
+        : !isToday ? 'Só no próprio dia'
+          : mins < P.startMin ? `Abre às ${fmtMinutesOfDay(P.startMin)}`
+            : mins > P.endMin ? 'Fechou · fala com o staff'
+              : 'Ainda sem sessão para hoje';
 
-  const rpeHint = doneRpe
-    ? 'Já respondeste hoje — obrigado!'
-    : !rWin.open ? rWin.reason
-      : isRestDay ? 'Dia de folga — sem PSE a registar'
-        : !session ? 'Ainda sem sessão criada para hoje'
-          : `Intensidade de: ${sessionLabel}`;
-  // O "(das 08:00 às 13:00)" passa para a linha de baixo — só quando
-  // existe mesmo um parêntesis no texto; as mensagens sem ele ("Já
-  // respondeste hoje", "Dia de folga", etc.) ficam como estão.
-  const quebrarParenteses = (texto) => {
-    const i = typeof texto === 'string' ? texto.indexOf('(') : -1;
-    if (i === -1) return texto;
-    return <>{texto.slice(0, i).trimEnd()}<br />{texto.slice(i)}</>;
-  };
+  // A linha de cima do placard: a parte do dia e o que falta.
+  const legenda = !isToday ? 'DIA JÁ FECHADO · SÓ HOJE'
+    : mins < W.startMin ? `ESTÁDIO FECHADO · ABRE ÀS ${fmtMinutesOfDay(W.startMin)}`
+      : mins <= W.endMin ? (doneWellness ? '1.ª PARTE · JÁ MARCASTE' : `1.ª PARTE · FECHA EM ${pkhDur(W.endMin - mins + 1)}`)
+        : mins < P.startMin ? (isRestDay ? 'FOLGA · SEM 2.ª PARTE' : `INTERVALO · 2.ª PARTE ÀS ${fmtMinutesOfDay(P.startMin)}`)
+          : isRestDay ? 'FOLGA · SEM 2.ª PARTE'
+            : doneRpe ? '2.ª PARTE · JÁ MARCASTE'
+              : mins > P.endMin ? `FIM DO DIA · VOLTA ÀS ${fmtMinutesOfDay(W.startMin)}`
+                : !session ? '2.ª PARTE · AINDA SEM SESSÃO'
+                  : `2.ª PARTE · FECHA EM ${pkhDur(P.endMin - mins + 1)}`;
+
+  const nomeCompleto = String((player && player.name) || '').trim();
+  const primeiro = nomeCompleto ? nomeCompleto.split(/\s+/)[0] : 'Atleta';
+  const iniciais = nomeCompleto ? nomeCompleto.split(/\s+/).filter(Boolean).map(p => p[0]).filter((_, i, a) => i === 0 || i === a.length - 1).join('').toUpperCase() : '?';
+  const numero = player && player.number != null && String(player.number).trim() !== '' ? String(player.number).trim() : '';
+  const cor = coresCamisola(T.corEquipa);
+  const clube = String((equipa && (equipa.clube || equipa.nome)) || '').trim();
+  const nBadge = (tarefasPendentes || []).length;
+  const svgBalneario = React.useMemo(() => pkhBalneario({
+    cor, numero, nome: primeiro, foto: (player && player.photo) || '', iniciais,
+    logo: (equipa && equipa.logo) || '', inicialClube: clube ? clube[0].toUpperCase() : '', badge: nBadge,
+  }), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <div style={{ maxWidth: 420, margin: '0 auto', padding: '28px 18px 60px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 22, gap: 10 }}>
-        <div>
-          <div style={{ ...display, fontSize: 22, fontWeight: 700, color: T.cream }}>{greetingNow()}, {player.name.split(' ')[0]}!</div>
-          <div style={{ fontSize: 13, color: T.mutedDim, marginTop: 3 }}>{dataDeHojeExtenso()}</div>
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1, background: T.bg, overflow: 'hidden', overscrollBehavior: 'none',
+      touchAction: 'manipulation', ...body,
+    }}>
+      <style>{PKH_CSS}</style>
+      <div style={{
+        height: '100%', maxWidth: 460, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box',
+        padding: 'calc(14px + env(safe-area-inset-top, 0px)) 14px calc(12px + env(safe-area-inset-bottom, 0px))',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexShrink: 0 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{greetingNow()}, {primeiro}!</div>
+            <div style={{ fontSize: 12, color: T.mutedDim }}>{dataDeHojeExtenso()}</div>
+          </div>
+          <button type="button" onClick={onLogout} title="Terminar sessão" style={{
+            display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`,
+            borderRadius: 8, color: T.mutedDim, padding: '6px 10px', cursor: 'pointer', ...body, fontSize: 11.5, flexShrink: 0,
+          }}>
+            <LogOut size={13} /> Sair
+          </button>
         </div>
-        <button onClick={onLogout} title="Terminar sessão" style={{
-          display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`,
-          borderRadius: 8, color: T.mutedDim, padding: '7px 10px', cursor: 'pointer', ...body, fontSize: 11.5, flexShrink: 0,
-        }}>
-          <LogOut size={13} /> Sair
-        </button>
-      </div>
 
-      {isBirthdayToday(player.birthdate) && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22,
-          background: `${T.gold}1a`, border: `1px solid ${T.gold}`, borderRadius: 12, padding: '14px 16px',
-        }}>
-          <PartyPopper size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.4, fontWeight: 600 }}>
-            Parabéns, {player.name.split(' ')[0]}! Toda a equipa técnica deseja-te um ótimo dia. 🎉
-          </span>
+        <PkhPlacard legenda={legenda} hora={hora} golosW={doneWellness ? 1 : 0} golosP={doneRpe ? 1 : 0} />
+
+        <div style={{ flexShrink: 0 }}>
+          <PkhPainelMister mensagens={mensagensMister} />
+          <PkhCampo
+            mins={isToday ? mins : -1} doneW={doneWellness} doneP={doneRpe}
+            wAberto={wellnessEnabled} pAberto={rpeEnabled} semSegunda={isRestDay}
+            corCamisola={cor} marca={numero || iniciais.slice(0, 2)}
+          />
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 11, color: T.mutedDim, marginTop: 4, padding: '0 2px', whiteSpace: 'nowrap' }}>
+            <span>1.ª parte {fmtMinutesOfDay(W.startMin)}–{fmtMinutesOfDay(W.endMin)}</span>
+            <span>intervalo</span>
+            <span>2.ª parte {fmtMinutesOfDay(P.startMin)}–{fmtMinutesOfDay(P.endMin)}</span>
+          </div>
         </div>
-      )}
 
-      {/* NOTIFICAÇÃO DE TAREFA — mesma ideia do badge do lado do staff
-          (bolinha vermelha, ver `tarefasAMinhaPorta`), só que aqui logo
-          no primeiro ecrã que o atleta vê ao entrar, e a tocar-lhe leva
-          direto à tarefa (não só à lista de Tarefas). */}
-      {tarefasPendentes && tarefasPendentes.length > 0 && (
-        <button onClick={() => onAbrirTarefa(tarefasPendentes[0])} style={{
-          display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22, width: '100%', textAlign: 'left',
-          background: T.surface, border: `1px solid ${T.crimsonBright}`, borderRadius: 12, padding: '14px 16px',
-          cursor: 'pointer', ...body,
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <PkhBotaoQuestionario nome="Wellness" estado={wEstado} texto={wTexto} onClick={onOpenWellness} />
+          <PkhBotaoQuestionario nome="PSE" estado={pEstado} texto={pTexto} onClick={onOpenRpe} />
+        </div>
+
+        <PkhSequencia dias={diasSequenciaChama || 0} />
+
+        {/* BALNEÁRIO — a entrada do Portal (sempre disponível, sem janela horária). */}
+        <button type="button" onClick={onOpenPortal} aria-label="Entrar no Portal do Atleta" style={{
+          flex: 1, minHeight: 96, position: 'relative', borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.line}`,
+          background: '#121614', padding: 0, cursor: 'pointer', display: 'block', width: '100%',
         }}>
-          <span style={{ position: 'relative', flexShrink: 0, display: 'flex' }}>
-            <ClipboardList size={26} color={T.cream} strokeWidth={1.6} />
+          <svg
+            viewBox="0 0 300 215" preserveAspectRatio="xMinYMid slice" width="100%" height="100%"
+            style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true"
+            dangerouslySetInnerHTML={{ __html: svgBalneario }}
+          />
+          <span style={{ position: 'absolute', left: 0, right: 0, bottom: 9, display: 'flex', justifyContent: 'center' }}>
             <span style={{
-              position: 'absolute', top: -4, right: -4, width: 11, height: 11, borderRadius: '50%',
-              background: T.crimsonBright, border: `2px solid ${T.surface}`,
-            }} />
-          </span>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 13.5, color: T.cream, fontWeight: 600, display: 'block' }}>
-              {tarefasPendentes.length === 1 ? 'Tens uma tarefa nova' : `Tens ${tarefasPendentes.length} tarefas novas`}
+              background: T.gold, color: '#1A2A1F', borderRadius: 999, padding: '7px 16px', fontSize: 13.5, fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: 6, animation: 'pkh-pulso 2s ease-in-out infinite', ...body,
+            }}>
+              <Play size={14} fill="#1A2A1F" /> Entrar no Portal
             </span>
-            <span style={{
-              fontSize: 12, color: T.mutedDim, display: 'block', marginTop: 2,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>{tarefasPendentes[0].titulo}</span>
           </span>
-          <ChevronRight size={18} color={T.mutedDim} style={{ flexShrink: 0 }} />
         </button>
-      )}
-
-      {recentDates && (
-        <StreakCard dias={diasSequenciaChama} />
-      )}
-
-      {!isToday && (
-        <div style={{ fontSize: 12, color: T.warn, marginBottom: 14 }}>
-          {formatShortDatePt(selectedDate)} — dia já fechado. Só podes responder ao dia de hoje.
-        </div>
-      )}
-
-      <button onClick={onOpenWellness} disabled={!wellnessEnabled} style={{
-        width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${doneWellness ? T.good : T.line}`,
-        borderRadius: 12, padding: '18px 16px', cursor: wellnessEnabled ? 'pointer' : 'default',
-        opacity: wellnessEnabled || doneWellness ? 1 : 0.55,
-        ...body, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 14,
-      }}>
-        <Activity size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
-        <span style={{ flex: 1 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Wellness</div>
-          <div style={{ fontSize: 12, color: doneWellness ? T.good : (wWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{quebrarParenteses(wellnessHint)}</div>
-        </span>
-        {doneWellness ? <Check size={18} color={T.good} /> : wWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
-      </button>
-
-      <button onClick={onOpenRpe} disabled={!rpeEnabled} style={{
-        width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${doneRpe ? T.good : T.line}`,
-        borderRadius: 12, padding: '18px 16px', cursor: rpeEnabled ? 'pointer' : 'default',
-        opacity: rpeEnabled || doneRpe ? 1 : 0.55,
-        ...body, display: 'flex', alignItems: 'center', gap: 14,
-      }}>
-        <HeartPulse size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
-        <span style={{ flex: 1 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>RPE</div>
-          <div style={{ fontSize: 12, color: doneRpe ? T.good : (rWin.open ? T.mutedDim : T.warn), marginTop: 2 }}>{quebrarParenteses(rpeHint)}</div>
-        </span>
-        {doneRpe ? <Check size={18} color={T.good} /> : rWin.open ? <ChevronRight size={18} color={T.mutedDim} /> : <Clock size={16} color={T.warn} />}
-      </button>
-
-      {/* PORTAL DO ATLETA — sempre disponível, não tem janela horária (não
-          é um questionário, é só consulta). Fica visível mesmo sem nada
-          partilhado ainda: o ecrã explica isso lá dentro, em vez de o
-          botão desaparecer sem explicação nenhuma. */}
-      <button onClick={onOpenPortal} style={{
-        width: '100%', textAlign: 'left', background: T.surface, border: `1px solid ${T.line}`,
-        borderRadius: 12, padding: '18px 16px', cursor: 'pointer',
-        ...body, marginTop: 12, display: 'flex', alignItems: 'center', gap: 14,
-      }}>
-        <LayoutGrid size={26} color={T.gold} strokeWidth={1.6} style={{ flexShrink: 0 }} />
-        <span style={{ flex: 1 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 600, color: T.cream }}>Portal do Atleta</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2 }}>Conteúdos que a equipa técnica partilha contigo</div>
-        </span>
-        <ChevronRight size={18} color={T.mutedDim} />
-      </button>
-
-      <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 18, lineHeight: 1.5 }}>
-        Horários: Wellness {CHECKIN_WINDOWS.wellness.label} · PSE {CHECKIN_WINDOWS.rpe.label}.
-        <br />
-        Fora destas horas fala com o staff técnico.
       </div>
     </div>
   );
@@ -44366,6 +44762,8 @@ function CheckinApp() {
         <div style={{
           background: '#3A1F22', border: `1px solid ${T.bad}`, color: T.cream,
           fontSize: 13, padding: '10px 14px', textAlign: 'center',
+          // O ecrã inicial é fixo (ocupa o ecrã todo): o aviso fica por cima dele.
+          position: 'relative', zIndex: 70,
         }}>{erro}</div>
       )}
       {conteudo}
