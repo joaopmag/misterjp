@@ -32401,7 +32401,7 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
   );
   const corSinal = aberta ? '#4CAF6A' : '#FF5A4E';
   return (
-    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minHeight: 0 }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0d120f', border: '1px solid #3a4440', borderRadius: 8, padding: '5px 12px', boxShadow: '0 0 14px rgba(255,194,61,.15)', marginBottom: 8, flexShrink: 0 }}>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: corSinal, boxShadow: `0 0 8px ${corSinal}`, transition: 'all .3s' }} />
         <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
@@ -32409,7 +32409,9 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
           <div style={{ ...display, fontSize: 17, fontWeight: 600, letterSpacing: '.24em', color: aberta ? '#8EE6A0' : '#FFC23D' }}>PLANTEL</div>
         </div>
       </div>
-      <div style={{ width: 'min(100%, 300px)', flex: 1, minHeight: 120, maxHeight: 340, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', padding: 7, boxSizing: 'border-box', boxShadow: '0 10px 24px rgba(0,0,0,.45)', display: 'flex' }}>
+      {/* Proporção de porta (5:6): com menos altura fica mais estreita, em
+          vez de achatada (iPad deitado, telemóveis baixos). */}
+      <div style={{ flex: 1, minHeight: 120, maxHeight: 'min(48dvh, 520px)', aspectRatio: '5 / 6', width: 'auto', maxWidth: '100%', borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', padding: 7, boxSizing: 'border-box', boxShadow: '0 10px 24px rgba(0,0,0,.45)', display: 'flex' }}>
         <div ref={caixaRef} style={{ position: 'relative', flex: 1, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
           <svg viewBox={`0 0 300 ${H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />
           <div style={{ ...vidro, left: 0, transform: aberta ? 'translateX(-101%)' : 'none' }}>{emblemaNoVidro('E')}</div>
@@ -32417,7 +32419,7 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
           <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberta ? 0 : 1, transition: 'opacity .2s' }} />
         </div>
       </div>
-      <div style={{ width: 'min(70%, 230px)', height: 8, borderRadius: '0 0 4px 4px', background: '#2a332d', flexShrink: 0 }} />
+      <div style={{ width: 'min(60%, 220px)', height: 8, borderRadius: '0 0 4px 4px', background: '#2a332d', flexShrink: 0 }} />
     </div>
   );
 }
@@ -32434,7 +32436,7 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
 function peEstaInstalado() {
   try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; }
 }
-function PeInstalar({ estilo }) {
+function PeInstalar({ estilo, aoAbrir }) {
   const [pedido, setPedido] = useState(() => (typeof window !== 'undefined' ? window.__mjpInstalar || null : null));
   const [ajuda, setAjuda] = useState(false);
   useEffect(() => {
@@ -32448,17 +32450,18 @@ function PeInstalar({ estilo }) {
     if (pedido) {
       try { pedido.prompt(); await pedido.userChoice; } catch (e) { /* cancelado */ }
       window.__mjpInstalar = null; setPedido(null);
+      if (aoAbrir) aoAbrir();
       return;
     }
     setAjuda(true);
   };
   return (
     <>
-      <button type="button" onClick={instalar} style={estilo}>Pôr o Portal no ecrã do telemóvel</button>
+      <button type="button" onClick={instalar} style={estilo}>Instalar app no dispositivo</button>
       {ajuda && (
         <div onClick={() => setAjuda(false)} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16, padding: '18px 18px 14px', color: T.cream, ...body }}>
-            <div style={{ ...display, fontSize: 19, fontWeight: 600, marginBottom: 10 }}>Pôr o Portal no ecrã do telemóvel</div>
+            <div style={{ ...display, fontSize: 19, fontWeight: 600, marginBottom: 10 }}>Instalar app no dispositivo</div>
             {iphone ? (
               <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.6, color: T.muted }}>
                 <li>Abre este link no <strong style={{ color: T.cream }}>Safari</strong>.</li>
@@ -32825,6 +32828,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   // (No Portal não há o diálogo de confirmação do staff: confirma-se na
   // própria linha do aparelho — ver `aRemover`.)
   const [aRemover, setARemover] = useState(null);
+  const [maisOpcoes, setMaisOpcoes] = useState(false);
   const removerAparelho = async (ap) => {
       setARemover(null);
       try {
@@ -32963,7 +32967,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
             <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Já tenho cartão noutro aparelho</div>
             <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', marginTop: -4, lineHeight: 1.45 }}>
-              No aparelho onde já tens o cartão, toca em <strong style={{ color: T.cream }}>Usar o cartão noutro aparelho</strong>. Aparece um código de ligação (ou lê o QR code com a câmara deste aparelho).
+              No equipamento onde já tens o cartão, abre <strong style={{ color: T.cream }}>Mais opções → Utilizar outro equipamento</strong>. Aparece um código de ligação (ou lê o QR code com a câmara deste aparelho).
             </div>
             <div style={{ width: 'min(100%, 300px)' }}>
               <PePainel rotulo={aviso && aviso.length <= 32 ? aviso : 'CÓDIGO DE LIGAÇÃO'} corRotulo={aviso && aviso.length <= 32 ? corAviso : undefined} tremer={tremer}>
@@ -32982,7 +32986,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
         <div style={coluna}>
           <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
             <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>
-              {ecra === 'ligar-pin' ? 'Ligar este aparelho' : 'Usar o cartão noutro aparelho'}
+              {ecra === 'ligar-pin' ? 'Ligar este aparelho' : 'Utilizar outro equipamento'}
             </div>
             <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', marginTop: -4, lineHeight: 1.45 }}>
               {ecra === 'ligar-pin' ? 'Escreve o teu PIN para o cartão ficar também neste aparelho.' : 'Escreve o teu PIN para receberes o código de ligação.'}
@@ -33134,7 +33138,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           </div>
           {semMemoria && (
             <div style={{ alignSelf: 'stretch', fontSize: 12.5, lineHeight: 1.45, color: T.cream, background: '#3A1F22', border: `1px solid ${T.bad}`, borderRadius: 10, padding: '8px 12px', flexShrink: 0 }}>
-              Este navegador não está a guardar o teu cartão (janela privada ou memória bloqueada). Podes entrar agora com o PIN, mas da próxima vez abre o Portal num navegador normal — ou põe-no no ecrã do telemóvel.
+              Este navegador não está a guardar o teu cartão (janela privada ou memória bloqueada). Podes entrar agora com o PIN, mas da próxima vez abre o Portal num navegador normal — ou instala a app no dispositivo (Mais opções).
             </div>
           )}
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
@@ -33144,11 +33148,24 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             </PePainel>
           </div>
           <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
-          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
-            <button type="button" onClick={() => { limpar(); setPin(''); setEcra('outro-pin'); }} style={ligacao}>Usar o cartão noutro aparelho</button>
-            <PeInstalar estilo={ligacao} />
-            <button type="button" onClick={usarOutroCartao} style={ligacao}>Não és tu? Usar outro cartão</button>
-          </div>
+          {/* Uma só ligação discreta; as opções abrem num painel por baixo,
+              para não roubarem altura à porta e ao teclado. */}
+          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
+          </button>
+          {maisOpcoes && (() => {
+            const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: T.bg, border: `1px solid ${T.line}`, color: T.cream, fontSize: 14.5, cursor: 'pointer', ...body };
+            return (
+              <div onClick={() => setMaisOpcoes(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px' }}>
+                <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <PeInstalar estilo={opcao} aoAbrir={() => setMaisOpcoes(false)} />
+                  <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('outro-pin'); }}>Utilizar outro equipamento</button>
+                  <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); usarOutroCartao(); }}>Usar outro cartão de atleta</button>
+                  <button type="button" onClick={() => setMaisOpcoes(false)} style={{ ...opcao, textAlign: 'center', background: 'none', border: 'none', color: T.mutedDim }}>Fechar</button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
