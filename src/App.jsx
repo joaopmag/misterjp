@@ -6418,7 +6418,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                             <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                             <td style={{ ...td2, fontSize: 12 }}>
                               {est.ativo
-                                ? <span style={{ color: T.good }}>Ativo{est.ultimo_uso ? ` · entrou ${quando(est.ultimo_uso)}` : ''}</span>
+                                ? <span style={{ color: T.good }}>Ativo{est.aparelhos > 1 ? ` em ${est.aparelhos} aparelhos` : ''}{est.ultimo_uso ? ` · entrou ${quando(est.ultimo_uso)}` : ''}</span>
                                 : est.pendente_ate
                                   ? <span style={{ color: T.warn }}>Código enviado · válido até {quando(est.pendente_ate)}</span>
                                   : <span style={{ color: T.mutedDim }}>Sem cartão</span>}
@@ -32481,12 +32481,172 @@ function PeInstalar({ estilo }) {
   );
 }
 
+/* Gerador de QR code compacto (modo byte, correção L, versões 1–10).
+   Chega para o link de ligação do cartão (~90 caracteres). */
+function qrMatriz(texto) {
+  const bytes = Array.from(new TextEncoder().encode(texto));
+  const TAB = { 1: [7, [[1, 19]]], 2: [10, [[1, 34]]], 3: [15, [[1, 55]]], 4: [20, [[1, 80]]], 5: [26, [[1, 108]]], 6: [18, [[2, 68]]], 7: [20, [[2, 78]]], 8: [24, [[2, 97]]], 9: [30, [[2, 116]]], 10: [18, [[2, 68], [2, 69]]] };
+  const ALINH = { 1: [], 2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34], 7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46], 10: [6, 28, 50] };
+  let v = 1, dadosCw = 0;
+  for (; v <= 10; v++) {
+    dadosCw = TAB[v][1].reduce((s, [n, c]) => s + n * c, 0);
+    const bitsConta = v < 10 ? 8 : 16;
+    if (4 + bitsConta + bytes.length * 8 <= dadosCw * 8) break;
+  }
+  if (v > 10) throw new Error('Texto demasiado longo para o QR');
+  const bits = [];
+  const poe = (val, n) => { for (let i = n - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+  poe(4, 4); poe(bytes.length, v < 10 ? 8 : 16); bytes.forEach(b => poe(b, 8));
+  for (let i = 0; i < 4 && bits.length < dadosCw * 8; i++) bits.push(0);
+  while (bits.length % 8) bits.push(0);
+  const cw = [];
+  for (let i = 0; i < bits.length; i += 8) cw.push(parseInt(bits.slice(i, i + 8).join(''), 2));
+  for (let k = 0; cw.length < dadosCw; k++) cw.push(k % 2 ? 0x11 : 0xEC);
+  // Reed-Solomon em GF(256)
+  const EXP = new Array(512), LOG = new Array(256);
+  for (let i = 0, x = 1; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; }
+  for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
+  const mul = (a, b) => (a && b ? EXP[LOG[a] + LOG[b]] : 0);
+  const ecN = TAB[v][0];
+  let gen = [1];
+  for (let i = 0; i < ecN; i++) {
+    const g = new Array(gen.length + 1).fill(0);
+    gen.forEach((c, j) => { g[j] ^= c; g[j + 1] ^= mul(c, EXP[i]); });
+    gen = g;
+  }
+  const blocos = [], ecs = [];
+  let pos = 0;
+  TAB[v][1].forEach(([n, c]) => {
+    for (let b = 0; b < n; b++) {
+      const d = cw.slice(pos, pos + c); pos += c; blocos.push(d);
+      const r = d.concat(new Array(ecN).fill(0));
+      for (let i = 0; i < d.length; i++) { const f = r[i]; if (f) gen.forEach((g, j) => { r[i + j] ^= mul(g, f); }); }
+      ecs.push(r.slice(d.length));
+    }
+  });
+  const fim = [];
+  const maxD = Math.max(...blocos.map(b => b.length));
+  for (let i = 0; i < maxD; i++) blocos.forEach(b => { if (i < b.length) fim.push(b[i]); });
+  for (let i = 0; i < ecN; i++) ecs.forEach(e => fim.push(e[i]));
+  // matriz
+  const N = 17 + 4 * v;
+  const M = Array.from({ length: N }, () => new Array(N).fill(null));
+  const fixo = Array.from({ length: N }, () => new Array(N).fill(false));
+  const set = (r, c, val) => { M[r][c] = val; fixo[r][c] = true; };
+  const finder = (r0, c0) => {
+    for (let r = -1; r <= 7; r++) for (let c = -1; c <= 7; c++) {
+      const rr = r0 + r, cc = c0 + c;
+      if (rr < 0 || cc < 0 || rr >= N || cc >= N) continue;
+      const dentro = r >= 0 && r <= 6 && c >= 0 && c <= 6;
+      const anel = dentro && (r === 0 || r === 6 || c === 0 || c === 6);
+      const meio = r >= 2 && r <= 4 && c >= 2 && c <= 4;
+      set(rr, cc, dentro && (anel || meio) ? 1 : 0);
+    }
+  };
+  finder(0, 0); finder(0, N - 7); finder(N - 7, 0);
+  for (let i = 8; i < N - 8; i++) { set(6, i, i % 2 ? 0 : 1); set(i, 6, i % 2 ? 0 : 1); }
+  const al = ALINH[v];
+  al.forEach(r => al.forEach(c => {
+    if ((r === 6 && c === 6) || (r === 6 && c === N - 7) || (r === N - 7 && c === 6)) return;
+    for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) set(r + dr, c + dc, Math.max(Math.abs(dr), Math.abs(dc)) === 1 ? 0 : 1);
+  }));
+  set(N - 8, 8, 1); // módulo escuro
+  for (let i = 0; i < 9; i++) { if (!fixo[8][i]) set(8, i, 0); if (!fixo[i][8]) set(i, 8, 0); }
+  for (let i = 0; i < 8; i++) { set(8, N - 1 - i, 0); set(N - 1 - i, 8, 0); }
+  if (v >= 7) for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) { set(i, N - 11 + j, 0); set(N - 11 + j, i, 0); }
+  // dados em zigue-zague
+  const dbits = [];
+  fim.forEach(b => { for (let i = 7; i >= 0; i--) dbits.push((b >> i) & 1); });
+  let k = 0, sobe = true;
+  for (let c = N - 1; c > 0; c -= 2) {
+    if (c === 6) c--;
+    for (let i = 0; i < N; i++) {
+      const r = sobe ? N - 1 - i : i;
+      for (let d = 0; d < 2; d++) {
+        const cc = c - d;
+        if (!fixo[r][cc]) { M[r][cc] = k < dbits.length ? dbits[k] : 0; k++; }
+      }
+    }
+    sobe = !sobe;
+  }
+  const mascaras = [(r, c) => (r + c) % 2 === 0, (r) => r % 2 === 0, (r, c) => c % 3 === 0, (r, c) => (r + c) % 3 === 0,
+    (r, c) => (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0, (r, c) => ((r * c) % 2) + ((r * c) % 3) === 0,
+    (r, c) => (((r * c) % 2) + ((r * c) % 3)) % 2 === 0, (r, c) => (((r + c) % 2) + ((r * c) % 3)) % 2 === 0];
+  const bch = (dados, polinomio, nBits) => {
+    let x = dados << nBits;
+    const grau = Math.floor(Math.log2(polinomio));
+    while (Math.floor(Math.log2(x || 1)) >= grau && x) x ^= polinomio << (Math.floor(Math.log2(x)) - grau);
+    return (dados << nBits) | x;
+  };
+  const aplica = (m) => {
+    const A = M.map(l => l.slice());
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!fixo[r][c] && mascaras[m](r, c)) A[r][c] ^= 1;
+    const fmt = bch((0b01 << 3) | m, 0x537, 10) ^ 0x5412;
+    const fb = i => (fmt >> i) & 1;
+    for (let i = 0; i <= 5; i++) A[8][i] = fb(14 - i);
+    A[8][7] = fb(8); A[8][8] = fb(7); A[7][8] = fb(6);
+    for (let i = 9; i <= 14; i++) A[14 - i][8] = fb(14 - i);
+    for (let i = 0; i <= 7; i++) A[N - 1 - i][8] = fb(14 - i);
+    for (let i = 8; i <= 14; i++) A[8][N - 15 + i] = fb(14 - i);
+    if (v >= 7) {
+      const vi = bch(v, 0x1f25, 12);
+      for (let i = 0; i < 18; i++) { const b = (vi >> i) & 1; const a = Math.floor(i / 3), bb = i % 3 + N - 11; A[a][bb] = b; A[bb][a] = b; }
+    }
+    return A;
+  };
+  const penal = (A) => {
+    let p = 0;
+    for (let r = 0; r < N; r++) for (const lin of [A[r], A.map(l => l[r])]) {
+      let run = 1;
+      for (let i = 1; i < N; i++) { if (lin[i] === lin[i - 1]) { run++; if (run === 5) p += 3; else if (run > 5) p++; } else run = 1; }
+      const s = lin.join('');
+      p += 40 * ((s.match(/10111010000/g) || []).length + (s.match(/00001011101/g) || []).length);
+    }
+    for (let r = 0; r < N - 1; r++) for (let c = 0; c < N - 1; c++) { const s = A[r][c] + A[r + 1][c] + A[r][c + 1] + A[r + 1][c + 1]; if (s === 0 || s === 4) p += 3; }
+    const escuros = A.reduce((s, l) => s + l.reduce((a, b) => a + b, 0), 0);
+    p += Math.floor(Math.abs(escuros * 100 / (N * N) - 50) / 5) * 10;
+    return p;
+  };
+  let melhor = null, melhorP = Infinity;
+  for (let m = 0; m < 8; m++) { const A = aplica(m); const p = penal(A); if (p < melhorP) { melhorP = p; melhor = A; } }
+  return melhor;
+}
+
+function PeQr({ texto, tam = 180 }) {
+  let m = null;
+  try { m = qrMatriz(texto); } catch (e) { m = null; }
+  if (!m) return null;
+  const N = m.length, q = 2; // margem branca de 2 módulos
+  let d = '';
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (m[r][c]) d += `M${c + q} ${r + q}h1v1h-1z`;
+  return (
+    <svg viewBox={`0 0 ${N + 2 * q} ${N + 2 * q}`} width={tam} height={tam} shapeRendering="crispEdges" role="img" aria-label="QR code para ligar o outro aparelho" style={{ display: 'block', background: '#fff', borderRadius: 8 }}>
+      <path d={d} fill="#0d120f" />
+    </svg>
+  );
+}
+
+// "iPhone · Safari", "Telemóvel Android · Chrome", "Computador · Edge"… e
+// "· ícone" quando o Portal está instalado no ecrã inicial.
+function peDescricaoAparelho() {
+  try {
+    const ua = navigator.userAgent || '';
+    const aparelho = /iphone/i.test(ua) ? 'iPhone' : /ipad/i.test(ua) ? 'iPad' : /android/i.test(ua) ? (/mobile/i.test(ua) ? 'Telemóvel Android' : 'Tablet Android') : 'Computador';
+    const nav = /edg\//i.test(ua) ? 'Edge' : /samsungbrowser/i.test(ua) ? 'Samsung Internet' : /firefox|fxios/i.test(ua) ? 'Firefox' : /crios|chrome/i.test(ua) ? 'Chrome' : /safari/i.test(ua) ? 'Safari' : 'navegador';
+    return `${aparelho} · ${peEstaInstalado() ? 'ícone' : nav}`;
+  } catch (e) { return 'Aparelho'; }
+}
+
 function PortalEntrada({ entrar, equipa, teamId }) {
   const cor = coresCamisola(T.corEquipa);
   const logo = (equipa && equipa.logo) || '';
   const clube = String((equipa && (equipa.clube || equipa.nome)) || '').trim();
   const [cartao, setCartao] = useState(() => peLerCartao(teamId));
-  const [ecra, setEcra] = useState(() => (peLerCartao(teamId) ? 'porta' : 'rececao'));
+  const [ecra, setEcra] = useState(() => {
+    if (peLerCartao(teamId)) return 'porta';
+    try { if (/^\d{6}$/.test(new URLSearchParams(window.location.search).get('ligar') || '')) return 'ligar-pin'; } catch (e) { /* nada */ }
+    return 'rececao';
+  });
   const [codigo, setCodigo] = useState('');
   const [jogador, setJogador] = useState(null);
   const [pin, setPin] = useState('');
@@ -32499,6 +32659,13 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   const [codigoAntigo, setCodigoAntigo] = useState('');
   // Navegador que não guarda nada (janela privada, cookies bloqueados…).
   const [semMemoria, setSemMemoria] = useState(false);
+  // Ligar outro aparelho / gerir aparelhos.
+  const [codigoLigacao, setCodigoLigacao] = useState(() => {
+    try { const c = new URLSearchParams(window.location.search).get('ligar'); return /^\d{6}$/.test(c || '') ? c : ''; } catch (e) { return ''; }
+  });
+  const [pinOutro, setPinOutro] = useState('');
+  const [dadosLigacao, setDadosLigacao] = useState(null); // { codigo, expira_em, cheio, aparelhos }
+  const [agora, setAgora] = useState(Date.now());
 
   const mostrarErro = (msg) => { setAviso(msg); setCorAviso('#FF5A4E'); setTremer(true); setTimeout(() => setTremer(false), 500); };
   const limpar = () => { setAviso(''); setCorAviso(''); };
@@ -32535,6 +32702,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       }
       const novo = { token: r.token, jogador: r.jogador || jogador || {} };
       setSemMemoria(!peGuardarCartao(teamId, novo));
+      peRpc('checkin_cartao_descrever', { p_token: r.token, p_team: teamId, p_descricao: peDescricaoAparelho() }).catch(() => {});
       setCartao(novo);
       setCodigo(''); setPin1('');
       setEcra('porta');
@@ -32600,6 +32768,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       if (r.ok && r.token) {
         const novo = { token: r.token, jogador: r.jogador || jogador || {} };
         setSemMemoria(!peGuardarCartao(teamId, novo)); setCartao(novo); setCodigoAntigo(''); setEcra('porta');
+        peRpc('checkin_cartao_descrever', { p_token: r.token, p_team: teamId, p_descricao: peDescricaoAparelho() }).catch(() => {});
         const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: valor });
         if (e.ok && e.sessao) { setPin(valor); await abrirEEntrar(e.sessao); } else { setPin(''); }
         return;
@@ -32611,8 +32780,72 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     } catch (e) { setPin(''); mostrarErro(erroDe(e)); } finally { setOcupado(false); }
   };
 
+  /* USAR O CARTÃO NOUTRO APARELHO (no aparelho onde já tem cartão):
+     PIN → código de ligação de 10 minutos + QR. Com 3 aparelhos, escolhe
+     primeiro qual deixa de usar. */
+  const pedirLigacao = async (valorPin) => {
+    setOcupado(true); limpar();
+    try {
+      const r = await peRpc('checkin_cartao_ligacao_criar', { p_token: cartao.token, p_team: teamId, p_pin: valorPin });
+      if (r.ok) { setPinOutro(valorPin); setDadosLigacao(r); setPin(''); setEcra('outro'); return; }
+      setPin('');
+      if (r.bloqueado || r.invalido) { usarOutroCartao(); setAviso('Por segurança, o teu cartão foi bloqueado. Pede um código de ativação novo ao staff técnico.'); setCorAviso('#FF5A4E'); return; }
+      mostrarErro(r.restantes != null ? `PIN ERRADO · ${r.restantes} ${r.restantes === 1 ? 'TENTATIVA' : 'TENTATIVAS'}` : (r.erro || 'Não foi possível.'));
+    } catch (e) { setPin(''); mostrarErro(/does not exist|PGRST202/i.test((e && (e.message || e.code)) || '') ? 'Esta opção ainda não está disponível.' : erroDe(e)); } finally { setOcupado(false); }
+  };
+  // (No Portal não há o diálogo de confirmação do staff: confirma-se na
+  // própria linha do aparelho — ver `aRemover`.)
+  const [aRemover, setARemover] = useState(null);
+  const removerAparelho = async (ap) => {
+      setARemover(null);
+      try {
+        const r = await peRpc('checkin_cartao_remover', { p_token: cartao.token, p_team: teamId, p_pin: pinOutro, p_aparelho: ap.id });
+        if (!r.ok) { mostrarErro(r.erro || 'Não foi possível remover.'); return; }
+        // Com lugar livre, pede logo o código de ligação.
+        const n = await peRpc('checkin_cartao_ligacao_criar', { p_token: cartao.token, p_team: teamId, p_pin: pinOutro });
+        if (n.ok) setDadosLigacao(n); else setDadosLigacao(l => ({ ...l, aparelhos: r.aparelhos }));
+      } catch (e) { mostrarErro(erroDe(e)); }
+  };
+  useEffect(() => {
+    if (ecra !== 'outro') return undefined;
+    const t = setInterval(() => setAgora(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [ecra]);
+  // NO APARELHO NOVO: código de ligação + PIN.
+  const ligarAparelho = async (valorPin) => {
+    setOcupado(true); limpar();
+    try {
+      const r = await peRpc('checkin_cartao_ligar', { p_codigo: codigoLigacao, p_team: teamId, p_pin: valorPin });
+      if (r.ok && r.token) {
+        const novo = { token: r.token, jogador: r.jogador || {} };
+        setSemMemoria(!peGuardarCartao(teamId, novo)); setCartao(novo); setCodigoLigacao(''); setEcra('porta');
+        peRpc('checkin_cartao_descrever', { p_token: r.token, p_team: teamId, p_descricao: peDescricaoAparelho() }).catch(() => {});
+        const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: valorPin });
+        if (e.ok && e.sessao) { setPin(valorPin); await abrirEEntrar(e.sessao); } else { setPin(''); }
+        return;
+      }
+      setPin('');
+      if (r.bloqueado) { setEcra('rececao'); setAviso('Por segurança, o teu cartão foi bloqueado. Pede um código de ativação novo ao staff técnico.'); setCorAviso('#FF5A4E'); return; }
+      if (r.erro) { setCodigoLigacao(''); setEcra('ligar'); mostrarErro(r.erro); return; }
+      mostrarErro(`PIN ERRADO · ${r.restantes} ${r.restantes === 1 ? 'TENTATIVA' : 'TENTATIVAS'}`);
+    } catch (e) { setPin(''); mostrarErro(erroDe(e)); } finally { setOcupado(false); }
+  };
+
   const tecla = (k) => {
     if (ocupado || aberta) return;
+    if (ecra === 'ligar') {
+      limpar();
+      setCodigoLigacao(c => (k === '⌫' ? c.slice(0, -1) : c.length < 6 ? c + k : c));
+      return;
+    }
+    if (ecra === 'ligar-pin' || ecra === 'outro-pin') {
+      if (k === '⌫') { setPin(p => p.slice(0, -1)); return; }
+      if (pin.length >= 6) return;
+      const novo = pin + k;
+      setPin(novo); limpar();
+      if (novo.length === 6) { if (ecra === 'ligar-pin') ligarAparelho(novo); else pedirLigacao(novo); }
+      return;
+    }
     if (ecra === 'codigo') {
       limpar();
       setCodigoAntigo(c => (k === '⌫' ? c.slice(0, -1) : c.length < 6 ? c + k : c));
@@ -32690,10 +32923,106 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             {ocupado ? 'A verificar…' : 'Levantar o cartão'}
           </button>
           <div style={{ fontSize: 12, color: T.mutedDim, textAlign: 'center' }}>O código é dado pelo staff técnico e só serve uma vez.</div>
-          <button type="button" onClick={() => { limpar(); setCodigoAntigo(''); setEcra('codigo'); }} style={ligacao}>Já tens cartão ou ainda usas o código antigo? Entra aqui</button>
+          <button type="button" onClick={() => { limpar(); setCodigoLigacao(''); setPin(''); setEcra('ligar'); }} style={{ ...ligacao, marginTop: -4 }}>Já tenho cartão noutro aparelho</button>
+          <button type="button" onClick={() => { limpar(); setCodigoAntigo(''); setEcra('codigo'); }} style={{ ...ligacao, marginTop: -8 }}>Ainda usas o código antigo de acesso? Entra aqui</button>
           <div style={{ fontSize: 10, color: T.line, ...mono }}>{APP_BUILD}</div>
         </div>
       )}
+
+      {ecra === 'ligar' && (
+        <div style={coluna}>
+          <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Já tenho cartão noutro aparelho</div>
+            <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', marginTop: -4, lineHeight: 1.45 }}>
+              No aparelho onde já tens o cartão, toca em <strong style={{ color: T.cream }}>Usar o cartão noutro aparelho</strong>. Aparece um código de ligação (ou lê o QR code com a câmara deste aparelho).
+            </div>
+            <div style={{ width: 'min(100%, 300px)' }}>
+              <PePainel rotulo={aviso && aviso.length <= 32 ? aviso : 'CÓDIGO DE LIGAÇÃO'} corRotulo={aviso && aviso.length <= 32 ? corAviso : undefined} tremer={tremer}>
+                <PeCaixas valor={codigoLigacao} />
+              </PePainel>
+            </div>
+            {aviso && aviso.length > 32 && <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4 }}>{aviso}</div>}
+            <PeTeclado onTecla={tecla} desativado={ocupado} />
+            <button type="button" onClick={() => { if (codigoLigacao.length === 6) { limpar(); setPin(''); setEcra('ligar-pin'); } }} disabled={codigoLigacao.length !== 6} style={botaoOuro(codigoLigacao.length === 6)}>Seguinte</button>
+          </div>
+          <button type="button" onClick={() => { setEcra('rececao'); setCodigoLigacao(''); limpar(); }} style={ligacao}>Voltar à receção</button>
+        </div>
+      )}
+
+      {(ecra === 'ligar-pin' || ecra === 'outro-pin') && (
+        <div style={coluna}>
+          <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>
+              {ecra === 'ligar-pin' ? 'Ligar este aparelho' : 'Usar o cartão noutro aparelho'}
+            </div>
+            <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', marginTop: -4, lineHeight: 1.45 }}>
+              {ecra === 'ligar-pin' ? 'Escreve o teu PIN para o cartão ficar também neste aparelho.' : 'Escreve o teu PIN para receberes o código de ligação.'}
+            </div>
+            <div style={{ width: 'min(100%, 300px)' }}>
+              <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
+                <PeCaixas valor={pin} ocultar />
+              </PePainel>
+            </div>
+            <PeTeclado onTecla={tecla} desativado={ocupado} />
+          </div>
+          <button type="button" onClick={() => { setPin(''); limpar(); setEcra(ecra === 'ligar-pin' ? 'ligar' : 'porta'); }} style={ligacao}>Voltar</button>
+        </div>
+      )}
+
+      {ecra === 'outro' && dadosLigacao && (() => {
+        const restam = dadosLigacao.expira_em ? Math.max(0, Math.floor((new Date(dadosLigacao.expira_em).getTime() - agora) / 1000)) : 0;
+        const link = dadosLigacao.codigo ? `${URL_PUBLICA_APP}?portal=${teamId}&ligar=${dadosLigacao.codigo}` : '';
+        const aps = dadosLigacao.aparelhos || [];
+        const quando = (d) => (d ? new Date(d).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'ainda não entrou');
+        return (
+          <div style={{ ...coluna, overflowY: 'auto' }}>
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, margin: 'auto 0' }}>
+              {dadosLigacao.cheio ? (
+                <>
+                  <div style={{ ...display, fontSize: 21, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Já tens o cartão em 3 aparelhos</div>
+                  <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', lineHeight: 1.45 }}>Para ligares outro, escolhe primeiro qual deixas de usar.</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ ...display, fontSize: 21, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Liga o teu outro aparelho</div>
+                  <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', lineHeight: 1.45 }}>Lê o QR code com a câmara do outro aparelho, ou abre lá o Portal, toca em <strong style={{ color: T.cream }}>Já tenho cartão noutro aparelho</strong> e escreve este código.</div>
+                  {restam > 0 ? (
+                    <>
+                      <PeQr texto={link} tam={168} />
+                      <div style={{ ...mono, fontSize: 32, color: T.gold, letterSpacing: '.24em', lineHeight: 1.1 }}>{dadosLigacao.codigo}</div>
+                      <div style={{ fontSize: 12, color: T.mutedDim }}>Válido durante {Math.floor(restam / 60)}:{String(restam % 60).padStart(2, '0')} · só serve uma vez</div>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => pedirLigacao(pinOutro)} style={botaoOuro(true)}>O código expirou · Gerar outro</button>
+                  )}
+                </>
+              )}
+              <div style={{ alignSelf: 'stretch', marginTop: 8 }}>
+                <div style={{ fontSize: 11, letterSpacing: '.12em', color: T.mutedDim, marginBottom: 6 }}>OS TEUS APARELHOS · {aps.length} DE {dadosLigacao.limite || 3}</div>
+                {aps.map(ap => (
+                  <div key={ap.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: T.surface, border: `1px solid ${ap.este ? T.gold + '88' : T.line}`, marginBottom: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 500 }}>{ap.descricao}{ap.este && <span style={{ color: T.gold, fontWeight: 400 }}> · este aparelho</span>}</div>
+                      <div style={{ fontSize: 11.5, color: T.mutedDim }}>Último uso: {quando(ap.ultimo_uso)}</div>
+                    </div>
+                    {!ap.este && (aRemover === ap.id ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <span style={{ fontSize: 12, color: T.muted }}>Remover?</span>
+                        <button type="button" onClick={() => removerAparelho(ap)} style={{ background: T.bad, border: 'none', borderRadius: 8, color: '#fff', fontSize: 12, padding: '5px 10px', cursor: 'pointer', ...body }}>Sim</button>
+                        <button type="button" onClick={() => setARemover(null)} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, fontSize: 12, padding: '5px 10px', cursor: 'pointer', ...body }}>Não</button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setARemover(ap.id)} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 8, color: T.cream, fontSize: 12, padding: '5px 10px', cursor: 'pointer', flexShrink: 0, ...body }}>Remover</button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              {aviso && <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center' }}>{aviso}</div>}
+            </div>
+            <button type="button" onClick={() => { setEcra('porta'); setDadosLigacao(null); setPinOutro(''); limpar(); }} style={ligacao}>Concluído</button>
+          </div>
+        );
+      })()}
 
       {ecra === 'codigo' && (
         <div style={coluna}>
@@ -32781,6 +33110,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           </div>
           <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
           <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+            <button type="button" onClick={() => { limpar(); setPin(''); setEcra('outro-pin'); }} style={ligacao}>Usar o cartão noutro aparelho</button>
             <PeInstalar estilo={ligacao} />
             <button type="button" onClick={usarOutroCartao} style={ligacao}>Não és tu? Usar outro cartão</button>
           </div>
