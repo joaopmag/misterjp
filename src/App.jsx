@@ -5762,7 +5762,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
     const fazer = async () => {
       try {
         const r = await rpcStaff('staff_cartao_gerar', { p_team: equipa.id, p_player: String(p.id) });
-        setCodigoGerado({ playerId: p.id, nome: p.name, codigo: r.codigo, expira_em: r.expira_em });
+        setCodigoGerado({ playerId: p.id, nome: p.name, contacto: p.contact || '', codigo: r.codigo, expira_em: r.expira_em });
         setCartaoCopiado(false);
         carregarCartoes();
       } catch (e) { setErro((e && e.message) || 'Não foi possível gerar o código.'); }
@@ -5780,6 +5780,18 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
       fazer();
     }
   };
+  // A mesma mensagem para "Copiar" e para "Enviar por WhatsApp", com o link
+  // do Portal para o atleta tocar e ir direto à Receção.
+  const mensagemAtivacao = (cg) => (
+    `Olá ${firstNameOf(cg.nome)}! O teu código de ativação do Portal do Atleta é ${cg.codigo}.\n\n`
+    + `Abre o Portal${linkPortal ? ` (${linkPortal})` : ''}, escreve o código na Receção, recebe o teu cartão de atleta e escolhe o teu PIN pessoal. `
+    + `O código só serve uma vez e expira em 48 horas.${RODAPE_MENSAGEM_SISTEMA}`
+  );
+  const linkWhatsAppAtivacao = (cg) => (
+    linkWhatsApp(cg.contacto, mensagemAtivacao(cg))
+    // sem contacto na ficha: abre o WhatsApp com a mensagem e escolhe-se a conversa
+    || `https://wa.me/?text=${encodeURIComponent(semEmojis(mensagemAtivacao(cg)))}`
+  );
   const terminarCartao = (p) => askConfirm({
     title: 'Terminar o cartão deste jogador?',
     label: p.name,
@@ -6374,12 +6386,23 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                       <div style={{ ...mono, fontSize: 28, color: T.gold, letterSpacing: '.22em', lineHeight: 1.3 }}>{codigoGerado.codigo}</div>
                       <div style={{ fontSize: 11.5, color: T.mutedDim }}>Válido até {new Date(codigoGerado.expira_em).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · só serve uma vez</div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <a href={linkWhatsAppAtivacao(codigoGerado)} target="_blank" rel="noopener noreferrer" style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
+                        background: '#25D366', color: '#0b1f12', fontWeight: 600, fontSize: 13.5, textDecoration: 'none', ...body,
+                      }}>
+                        <MessageCircle size={15} /> Enviar por WhatsApp
+                      </a>
                       <Btn variant="ghost" onClick={async () => {
-                        try { await navigator.clipboard.writeText(`O teu código de ativação do Portal do Atleta é ${codigoGerado.codigo}. Abre o Portal, vai à Receção e escreve-o para receberes o teu cartão de atleta. Só serve uma vez e expira em 48 horas.`); setCartaoCopiado(true); } catch (e) { /* sem área de transferência */ }
+                        try { await navigator.clipboard.writeText(semEmojis(mensagemAtivacao(codigoGerado))); setCartaoCopiado(true); } catch (e) { /* sem área de transferência */ }
                       }}>{cartaoCopiado ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar mensagem</>}</Btn>
                       <Btn variant="ghost" onClick={() => setCodigoGerado(null)}><X size={14} /></Btn>
                     </div>
+                    {!linkWhatsApp(codigoGerado.contacto, 'x') && (
+                      <div style={{ flexBasis: '100%', fontSize: 11.5, color: T.mutedDim }}>
+                        Este atleta não tem contacto na ficha: o WhatsApp abre com a mensagem pronta e escolhes tu a conversa.
+                      </div>
+                    )}
                   </div>
                 )}
 
