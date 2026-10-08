@@ -32701,9 +32701,24 @@ async function peBioDisponivel() {
       && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
   } catch (e) { return false; }
 }
+/* Erros da Edge Function com o motivo à vista (para se perceber logo se é
+   a verificação JWT ligada — 401 —, a função não publicada — 404 — ou
+   falta de ligação), em vez de só "não foi possível". */
 async function peBioFn(corpo) {
   const { data, error } = await supabase.functions.invoke('portal-biometria', { body: corpo });
-  if (error) throw error;
+  if (error) {
+    const estado = error.context && error.context.status;
+    let motivo = estado === 401 ? 'erro 401 · verificação JWT da função ligada'
+      : estado === 404 ? 'erro 404 · função portal-biometria não encontrada'
+        : estado ? `erro ${estado}`
+          : /FunctionsFetchError/.test(error.name || '') ? 'sem ligação à função (verificação JWT ou função não publicada)'
+            : (error.message || 'erro desconhecido');
+    try {
+      const corpoErro = error.context && typeof error.context.json === 'function' ? await error.context.json() : null;
+      if (corpoErro && (corpoErro.erro || corpoErro.message || corpoErro.msg)) motivo += ` · ${corpoErro.erro || corpoErro.message || corpoErro.msg}`;
+    } catch (e) { /* sem corpo */ }
+    const e = new Error(motivo); e.diag = motivo; throw e;
+  }
   return typeof data === 'string' ? JSON.parse(data) : (data || {});
 }
 async function peBioRegistar(o) {
@@ -32953,7 +32968,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       const v = await peBioFn({ acao: 'entrada-verificar', token: cartao.token, team: teamId, resposta });
       if (v.ok && v.sessao) { setPin('●●●●●●'); await abrirEEntrar(v.sessao); return; }
       mostrarErro(v.erro || 'Não foi possível confirmar. Entra com o PIN.');
-    } catch (e) { mostrarErro('Não foi possível usar a impressão digital agora. Entra com o PIN.'); setModoPin(true); }
+    } catch (e) { mostrarErro(`Não foi possível usar a impressão digital agora${e && e.diag ? ` (${e.diag})` : ''}. Entra com o PIN.`); setModoPin(true); }
     finally { setOcupado(false); }
   };
   // Ativar neste aparelho (pede o PIN — o servidor confirma-o outra vez).
@@ -33033,7 +33048,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           if (r && r.cancelado) { setEcra('porta'); return; }
           if (r && (r.bloqueado || r.invalido)) { usarOutroCartao(); setAviso('Por segurança, o teu cartão foi bloqueado. Pede um código de ativação novo ao staff técnico.'); setCorAviso('#FF5A4E'); return; }
           mostrarErro(r && r.restantes != null ? `PIN ERRADO · ${r.restantes} ${r.restantes === 1 ? 'TENTATIVA' : 'TENTATIVAS'}` : ((r && r.erro) || 'Não foi possível ativar.'));
-        }).catch(() => { setPin(''); mostrarErro('Não foi possível ativar agora.'); }).finally(() => setOcupado(false));
+        }).catch((e) => { setPin(''); mostrarErro(`Não foi possível ativar agora${e && e.diag ? ` (${e.diag})` : ''}.`); }).finally(() => setOcupado(false));
       }
       return;
     }
