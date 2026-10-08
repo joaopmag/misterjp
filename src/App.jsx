@@ -32162,6 +32162,8 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
    código novo. Nada disto guarda o PIN no telemóvel. */
 const PE_CSS = `
   html, body { overflow: hidden !important; overscroll-behavior: none; }
+  html { scrollbar-gutter: auto !important; background: ${T.bg}; }
+  body { background: ${T.bg}; }
   @keyframes pe-chega { 0% { transform: translateY(-40px) rotateY(-75deg) rotateX(20deg); opacity: 0; } 70% { transform: translateY(4px) rotateY(6deg) rotateX(-3deg); opacity: 1; } 100% { transform: none; opacity: 1; } }
   @keyframes pe-brilho { 0% { left: -60%; } 100% { left: 130%; } }
   @keyframes pe-treme { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
@@ -33403,8 +33405,13 @@ function StreakCard({ dias }) {
      fotografia do plantel.
    Os horários vêm sempre de CHECKIN_WINDOWS: mudar lá muda aqui. */
 const PKH_TICKER = 'IDEIA DE JOGO · TREINO · BIBLIOTECA · JOGO · COMPETIÇÃO · DESENVOLVIMENTO · TAREFAS';
+// Ecrã fixo, sem scroll: não se reserva o espaço da barra de scroll (a regra
+// geral do Portal "scrollbar-gutter: stable" deixava aqui uma faixa branca
+// à direita, muito visível na app instalada) e o fundo da janela é o da app.
 const PKH_CSS = `
   html, body { overflow: hidden !important; overscroll-behavior: none; }
+  html { scrollbar-gutter: auto !important; background: ${T.bg}; }
+  body { background: ${T.bg}; }
   @keyframes pkh-pulso { 0%,100% { box-shadow: 0 0 0 0 rgba(201,162,39,.55); } 50% { box-shadow: 0 0 0 8px rgba(201,162,39,0); } }
   @keyframes pkh-pisca { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
   @keyframes pkh-subir {
