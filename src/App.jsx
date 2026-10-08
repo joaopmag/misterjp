@@ -46020,9 +46020,12 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
 /* O PORTAL COMO APP NO TELEMÓVEL. Só nas páginas do Portal (não na
    plataforma do staff): liga o manifesto e o ícone, guarda o evento de
    instalação do Chrome e regista um service worker mínimo (só passa os
-   pedidos à rede — não guarda nada em cache). O ícone instalado no
-   Android abre "/?origem=portal-icone"; aqui redireciona-se para o Portal
-   da última equipa aberta neste telemóvel. Os ficheiros manifest.webmanifest,
+   pedidos à rede — não guarda nada em cache). O manifesto NÃO tem
+   start_url: assim o ícone abre o endereço exato onde foi instalado (o
+   link do Portal da equipa, com ?portal=…). Um start_url fixo não serve:
+   no iPhone/iPad o ícone tem a memória separada do Safari e não saberia
+   qual é o Portal. (O redirecionamento de "?origem=portal-icone" fica só
+   para quem instalou com a versão antiga do manifesto.) Os ficheiros manifest.webmanifest,
    icone-192.png, icone-512.png, apple-touch-icon.png e sw.js vivem na
    pasta public/ do projeto. */
 const PORTAL_ULTIMO = 'mjp-portal-ultimo';
