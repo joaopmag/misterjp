@@ -46057,6 +46057,12 @@ const PORTAL_ULTIMO = 'mjp-portal-ultimo';
     }
     const ehPortal = q.has('portal') || q.has('checkin') || /portal=|checkin/.test(window.location.hash);
     if (!ehPortal) return;
+    // Fundo verde desde o primeiro instante: sem clarão branco no arranque e
+    // sem faixa branca à direita (o espaço reservado à barra de scroll fica
+    // da mesma cor do resto, enquanto os ecrãs ainda carregam).
+    const estiloBase = document.createElement('style');
+    estiloBase.textContent = `html, body { background: ${T.bg} !important; }`;
+    document.head.appendChild(estiloBase);
     const junta = (tag, attrs) => {
       const el = document.createElement(tag);
       Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
@@ -46267,6 +46273,8 @@ function CheckinApp() {
            muda. Só afeta desktop (a maioria dos browsers de telemóvel
            já usa uma barra sobreposta, que não ocupa espaço nenhum). */
         html { scrollbar-gutter: stable; }
+        /* O espaço da barra fica com a cor da app — nunca uma faixa branca. */
+        html, body { background: ${T.bg}; }
       `}</style>
       {erro && (
         <div style={{
