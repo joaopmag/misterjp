@@ -32626,15 +32626,42 @@ function PeQr({ texto, tam = 180 }) {
   );
 }
 
-// "iPhone · Safari", "Telemóvel Android · Chrome", "Computador · Edge"… e
-// "· ícone" quando o Portal está instalado no ecrã inicial.
-function peDescricaoAparelho() {
+/* O NOME DE CADA APARELHO na lista "Os teus aparelhos", para o atleta
+   saber qual remover: sistema e tipo ("iPhone", "Android", "Computador
+   Windows", "Computador Mac"…), o modelo quando o navegador o diz (o
+   Chrome no Android, via userAgentData — ex.: "Samsung SM-A536B"), o
+   navegador, e "ícone" quando o Portal está instalado no ecrã inicial. */
+async function peDescricaoAparelho() {
   try {
     const ua = navigator.userAgent || '';
-    const aparelho = /iphone/i.test(ua) ? 'iPhone' : /ipad/i.test(ua) ? 'iPad' : /android/i.test(ua) ? (/mobile/i.test(ua) ? 'Telemóvel Android' : 'Tablet Android') : 'Computador';
-    const nav = /edg\//i.test(ua) ? 'Edge' : /samsungbrowser/i.test(ua) ? 'Samsung Internet' : /firefox|fxios/i.test(ua) ? 'Firefox' : /crios|chrome/i.test(ua) ? 'Chrome' : /safari/i.test(ua) ? 'Safari' : 'navegador';
+    const ipad = /ipad/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+    let aparelho = /iphone/i.test(ua) ? 'iPhone' : ipad ? 'iPad'
+      : /android/i.test(ua) ? (/mobile/i.test(ua) ? 'Android' : 'Tablet Android')
+        : /windows/i.test(ua) ? 'Computador Windows' : /cros/i.test(ua) ? 'Chromebook'
+          : /macintosh|mac os x/i.test(ua) ? 'Computador Mac' : /linux/i.test(ua) ? 'Computador Linux' : 'Computador';
+    // Modelo do telemóvel (só o Chrome/Edge no Android o revelam).
+    try {
+      let modelo = '';
+      if (/android/i.test(ua) && navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        const h = await navigator.userAgentData.getHighEntropyValues(['model']);
+        modelo = String((h && h.model) || '').trim();
+      }
+      if ((!modelo || modelo === 'K') && /android/i.test(ua)) {
+        const m = ua.match(/Android [\d.]+; ([^;)]+?)(?: Build|\))/);
+        modelo = m ? m[1].trim() : '';
+      }
+      if (modelo && modelo !== 'K') aparelho = /^SM-/i.test(modelo) ? `Samsung ${modelo}` : modelo;
+    } catch (e) { /* sem modelo: fica o tipo */ }
+    const nav = /edg\//i.test(ua) ? 'Edge' : /samsungbrowser/i.test(ua) ? 'Samsung Internet' : /opr\//i.test(ua) ? 'Opera'
+      : /firefox|fxios/i.test(ua) ? 'Firefox' : /crios|chrome/i.test(ua) ? 'Chrome' : /safari/i.test(ua) ? 'Safari' : 'navegador';
     return `${aparelho} · ${peEstaInstalado() ? 'ícone' : nav}`;
   } catch (e) { return 'Aparelho'; }
+}
+// Regista (ou atualiza) o nome deste aparelho no servidor. Nunca falha alto.
+function peDescreverAparelho(token, teamId) {
+  peDescricaoAparelho()
+    .then(d => peRpc('checkin_cartao_descrever', { p_token: token, p_team: teamId, p_descricao: d }))
+    .catch(() => {});
 }
 
 function PortalEntrada({ entrar, equipa, teamId }) {
@@ -32702,7 +32729,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       }
       const novo = { token: r.token, jogador: r.jogador || jogador || {} };
       setSemMemoria(!peGuardarCartao(teamId, novo));
-      peRpc('checkin_cartao_descrever', { p_token: r.token, p_team: teamId, p_descricao: peDescricaoAparelho() }).catch(() => {});
+      peDescreverAparelho(r.token, teamId);
       setCartao(novo);
       setCodigo(''); setPin1('');
       setEcra('porta');
@@ -32719,6 +32746,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       const r = await peRpc('checkin_cartao_entrar', { p_token: cartao.token, p_team: teamId, p_pin: valor });
       if (r.ok && r.sessao) {
         if (r.jogador) { const atual = { ...cartao, jogador: r.jogador }; peGuardarCartao(teamId, atual); setCartao(atual); }
+        peDescreverAparelho(cartao.token, teamId); // os aparelhos antigos ganham nome aqui
         await abrirEEntrar(r.sessao);
         return;
       }
@@ -32768,7 +32796,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       if (r.ok && r.token) {
         const novo = { token: r.token, jogador: r.jogador || jogador || {} };
         setSemMemoria(!peGuardarCartao(teamId, novo)); setCartao(novo); setCodigoAntigo(''); setEcra('porta');
-        peRpc('checkin_cartao_descrever', { p_token: r.token, p_team: teamId, p_descricao: peDescricaoAparelho() }).catch(() => {});
+        peDescreverAparelho(r.token, teamId);
         const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: valor });
         if (e.ok && e.sessao) { setPin(valor); await abrirEEntrar(e.sessao); } else { setPin(''); }
         return;
@@ -32786,6 +32814,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   const pedirLigacao = async (valorPin) => {
     setOcupado(true); limpar();
     try {
+      try { await peRpc('checkin_cartao_descrever', { p_token: cartao.token, p_team: teamId, p_descricao: await peDescricaoAparelho() }); } catch (e) { /* nada */ }
       const r = await peRpc('checkin_cartao_ligacao_criar', { p_token: cartao.token, p_team: teamId, p_pin: valorPin });
       if (r.ok) { setPinOutro(valorPin); setDadosLigacao(r); setPin(''); setEcra('outro'); return; }
       setPin('');
@@ -32819,7 +32848,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       if (r.ok && r.token) {
         const novo = { token: r.token, jogador: r.jogador || {} };
         setSemMemoria(!peGuardarCartao(teamId, novo)); setCartao(novo); setCodigoLigacao(''); setEcra('porta');
-        peRpc('checkin_cartao_descrever', { p_token: r.token, p_team: teamId, p_descricao: peDescricaoAparelho() }).catch(() => {});
+        peDescreverAparelho(r.token, teamId);
         const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: valorPin });
         if (e.ok && e.sessao) { setPin(valorPin); await abrirEEntrar(e.sessao); } else { setPin(''); }
         return;
@@ -33002,8 +33031,14 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                 {aps.map(ap => (
                   <div key={ap.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, background: T.surface, border: `1px solid ${ap.este ? T.gold + '88' : T.line}`, marginBottom: 6 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 500 }}>{ap.descricao}{ap.este && <span style={{ color: T.gold, fontWeight: 400 }}> · este aparelho</span>}</div>
-                      <div style={{ fontSize: 11.5, color: T.mutedDim }}>Último uso: {quando(ap.ultimo_uso)}</div>
+                      <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 500 }}>
+                        {ap.descricao && ap.descricao !== 'Aparelho' ? ap.descricao : 'Aparelho sem nome'}
+                        {ap.este && <span style={{ color: T.gold, fontWeight: 400 }}> · este aparelho</span>}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: T.mutedDim }}>Ligado em {quando(ap.criado_em)} · último uso: {quando(ap.ultimo_uso)}</div>
+                      {(!ap.descricao || ap.descricao === 'Aparelho') && !ap.este && (
+                        <div style={{ fontSize: 11, color: T.mutedDim, fontStyle: 'italic' }}>O nome aparece na próxima vez que entrares nesse aparelho.</div>
+                      )}
                     </div>
                     {!ap.este && (aRemover === ap.id ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
