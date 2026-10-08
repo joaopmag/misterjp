@@ -32576,7 +32576,11 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     setOcupado(true); limpar();
     try {
       const r = await peRpc('checkin_cartao_por_codigo', { p_codigo: codigoAntigo, p_team: teamId });
-      if (!r.ok) { mostrarErro(r.erro || 'Código inválido.'); setCodigoAntigo(''); return; }
+      if (!r.ok) {
+        mostrarErro('Este não é um código de acesso válido. Escreve o código que usavas antes do cartão — o PIN só é pedido a seguir. Se não o souberes, pede-o ao staff técnico.');
+        setCodigoAntigo('');
+        return;
+      }
       if (r.tem_cartao) { setJogador(r.jogador || {}); setPin(''); setEcra('recuperar'); return; }
       if (r.so_cartao) { mostrarErro('Ainda não tens cartão de atleta. Pede o código de ativação ao staff técnico.'); return; }
       const ok = await entrar(codigoAntigo);
@@ -32694,12 +32698,13 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       {ecra === 'codigo' && (
         <div style={coluna}>
           <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Entrar com o código antigo</div>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Entrar com o código antigo de acesso</div>
             <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', marginTop: -4, lineHeight: 1.45 }}>
-              Se já tens cartão de atleta, a seguir pedimos o teu PIN e o cartão fica também aqui.
+              É o código que usavas <strong style={{ color: T.cream }}>antes do cartão</strong> (4 ou 6 números) — <strong style={{ color: T.cream }}>não é o PIN</strong>.
+              Se já tens cartão de atleta, o PIN é pedido a seguir.
             </div>
             <div style={{ width: 'min(100%, 300px)' }}>
-              <PePainel rotulo={aviso && aviso.length <= 32 ? aviso : 'O TEU CÓDIGO'} corRotulo={aviso && aviso.length <= 32 ? corAviso : undefined} tremer={tremer}>
+              <PePainel rotulo={aviso && aviso.length <= 32 ? aviso : 'CÓDIGO ANTIGO DE ACESSO'} corRotulo={aviso && aviso.length <= 32 ? corAviso : undefined} tremer={tremer}>
                 <PeCaixas valor={codigoAntigo} />
               </PePainel>
             </div>
