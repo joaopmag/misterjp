@@ -32772,6 +32772,22 @@ function pePodeAutoAbrirBio() {
     return !ios && !safari;
   } catch (e) { return false; }
 }
+/* Nome do desbloqueio conforme o aparelho. O site não escolhe entre dedo
+   e cara: é o sistema que usa o desbloqueio forte que tiver. No Android
+   isso é quase sempre a impressão digital (o desbloqueio facial da maioria
+   dos Android não é considerado seguro o suficiente para isto). */
+function peBioTextos() {
+  try {
+    const ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {
+      return { nome: 'Face ID ou Touch ID', comArtigo: 'o Face ID ou o Touch ID', gesto: 'usar a cara ou o dedo' };
+    }
+    if (/Macintosh/.test(ua)) return { nome: 'Touch ID', comArtigo: 'o Touch ID', gesto: 'usar o dedo' };
+    if (/Windows/.test(ua)) return { nome: 'Windows Hello', comArtigo: 'o Windows Hello', gesto: 'confirmar com o Windows Hello' };
+  } catch (e) { /* segue para o habitual */ }
+  return { nome: 'impressão digital', comArtigo: 'a impressão digital', gesto: 'usar o dedo' };
+}
+const PE_BIO_TXT = peBioTextos();
 // Uma só abertura automática por carregamento da página: se o atleta
 // cancelar, não volta a aparecer sozinho (fica o botão para tocar).
 let peBioAutoFeito = false;
@@ -33031,7 +33047,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       renovar = true;
     } catch (e) {
       if (auto) renovar = true;
-      else { mostrarErro(`Não foi possível usar a impressão digital agora${e && e.diag ? ` (${e.diag})` : ''}. Entra com o PIN.`); setModoPin(true); }
+      else { mostrarErro(`Não foi possível usar ${PE_BIO_TXT.comArtigo} agora${e && e.diag ? ` (${e.diag})` : ''}. Entra com o PIN.`); setModoPin(true); }
     } finally {
       bioEmCurso.current = false;
       setOcupado(false);
@@ -33267,9 +33283,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             <div style={{ width: 96, height: 96, borderRadius: 24, background: '#0d120f', border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Fingerprint size={60} color={T.gold} strokeWidth={1.6} />
             </div>
-            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream }}>Entrar com impressão digital ou Face ID?</div>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream }}>Entrar com {PE_BIO_TXT.nome}?</div>
             <div style={{ fontSize: 13.5, color: T.mutedDim, lineHeight: 1.5, maxWidth: 320 }}>
-              Da próxima vez, neste aparelho, basta tocar e usar o dedo ou a cara. A impressão digital nunca sai do teu telemóvel. O PIN continua a funcionar.
+              Da próxima vez, neste aparelho, basta tocar e {PE_BIO_TXT.gesto}. Os teus dados biométricos nunca saem do aparelho. O PIN continua a funcionar.
             </div>
             <button type="button" onClick={() => responderOferta(true)} disabled={ocupado} style={botaoOuro(!ocupado)}>{ocupado ? 'A ativar…' : 'Ativar'}</button>
             <button type="button" onClick={() => responderOferta(false)} disabled={ocupado} style={ligacao}>Agora não</button>
@@ -33281,7 +33297,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
         <div style={coluna}>
           <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
             <Fingerprint size={44} color={T.gold} strokeWidth={1.6} />
-            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Impressão digital ou Face ID</div>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>{PE_BIO_TXT.nome.charAt(0).toUpperCase() + PE_BIO_TXT.nome.slice(1)}</div>
             <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', marginTop: -4 }}>Escreve o teu PIN para ativar neste aparelho.</div>
             <div style={{ width: 'min(100%, 300px)' }}>
               <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
@@ -33476,7 +33492,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
           {bioAtiva && !modoPin ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flexShrink: 0, padding: '6px 0' }}>
-              <button type="button" onClick={() => entrarComBio()} disabled={ocupado || aberta} aria-label="Entrar com impressão digital ou Face ID" style={{
+              <button type="button" onClick={() => entrarComBio()} disabled={ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.nome}`} style={{
                 width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                 animation: ocupado || aberta ? 'none' : 'pe-pulso 2s ease-in-out infinite',
@@ -33484,7 +33500,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                 <Fingerprint size={56} color={aberta ? '#8EE6A0' : T.gold} strokeWidth={1.6} />
               </button>
               <div style={{ fontSize: 13.5, color: aviso ? (corAviso || T.bad) : T.cream, textAlign: 'center', minHeight: 20 }}>
-                {aviso || (ocupado ? 'A confirmar…' : 'Toca e usa a impressão digital ou o Face ID')}
+                {aviso || (ocupado ? 'A confirmar…' : `Toca e usa ${PE_BIO_TXT.comArtigo}`)}
               </div>
               <button type="button" onClick={() => { limpar(); setPin(''); setModoPin(true); }} style={{ ...ligacao, padding: 2 }}>Entrar com o PIN</button>
             </div>
@@ -33498,7 +33514,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
               {bioAtiva && (
                 <button type="button" onClick={() => { limpar(); setModoPin(false); }} style={{ ...ligacao, padding: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Fingerprint size={15} /> Entrar com impressão digital
+                  <Fingerprint size={15} /> Entrar com {PE_BIO_TXT.nome}
                 </button>
               )}
             </>
@@ -33515,7 +33531,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                 <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <PeInstalar estilo={opcao} aoAbrir={() => setMaisOpcoes(false)} />
                   {bioSuportada && !cartao.bio && (
-                    <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('bio-pin'); }}>Entrar com impressão digital ou Face ID</button>
+                    <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('bio-pin'); }}>Entrar com {PE_BIO_TXT.nome}</button>
                   )}
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('outro-pin'); }}>Utilizar outro equipamento</button>
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); usarOutroCartao(); }}>Usar outro cartão de atleta</button>
