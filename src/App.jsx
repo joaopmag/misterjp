@@ -5733,6 +5733,82 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   // aparece a quem administra.
   const [showCodes, setShowCodes] = useState(false);
 
+  /* CARTÕES DE ATLETA (fase 2 da segurança do Portal). O staff gera um
+     código de ativação por jogador (6 dígitos, uso único, 48 h); o jogador
+     usa-o na Receção do Portal e escolhe o seu PIN. Tudo passa por funções
+     do servidor que só aceitam o dono da equipa (staff_*). Se o SQL da
+     fase 2 ainda não tiver sido corrido, o painel diz isso e não parte nada. */
+  const [cartoes, setCartoes] = useState(null); // { so_cartao, jogadores: [...] } | { erro }
+  const [codigoGerado, setCodigoGerado] = useState(null); // { playerId, codigo, expira_em }
+  const [cartaoCopiado, setCartaoCopiado] = useState(false);
+  const rpcStaff = async (nome, args) => {
+    const { data, error } = await supabase.rpc(nome, args);
+    if (error) throw error;
+    let d = data;
+    if (Array.isArray(d)) d = d[0];
+    if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica */ } }
+    return d;
+  };
+  const carregarCartoes = async () => {
+    try { setCartoes(await rpcStaff('staff_cartoes_estado', { p_team: equipa.id })); }
+    catch (e) {
+      const semSql = /does not exist|não existe|PGRST202|function/i.test((e && (e.message || e.code)) || '');
+      setCartoes({ erro: semSql ? 'sql' : ((e && e.message) || 'Não foi possível ler os cartões.') });
+    }
+  };
+  const estadoCartao = (playerId) => ((cartoes && cartoes.jogadores) || []).find(j => j.player_id === String(playerId)) || null;
+  const gerarCodigoCartao = (p) => {
+    const est = estadoCartao(p.id);
+    const fazer = async () => {
+      try {
+        const r = await rpcStaff('staff_cartao_gerar', { p_team: equipa.id, p_player: String(p.id) });
+        setCodigoGerado({ playerId: p.id, nome: p.name, codigo: r.codigo, expira_em: r.expira_em });
+        setCartaoCopiado(false);
+        carregarCartoes();
+      } catch (e) { setErro((e && e.message) || 'Não foi possível gerar o código.'); }
+    };
+    if (est && est.ativo) {
+      askConfirm({
+        title: 'Gerar um código de ativação novo?',
+        label: p.name,
+        note: 'Este jogador já tem o cartão ativo num telemóvel. Quando usar o código novo, esse telemóvel deixa de entrar (útil se trocou ou perdeu o telemóvel).',
+        confirmLabel: 'Gerar código',
+        destructive: false,
+        onConfirm: fazer,
+      });
+    } else {
+      fazer();
+    }
+  };
+  const terminarCartao = (p) => askConfirm({
+    title: 'Terminar o cartão deste jogador?',
+    label: p.name,
+    note: 'O telemóvel dele deixa de entrar no Portal de imediato. Para voltar a entrar precisa de um código de ativação novo.',
+    confirmLabel: 'Terminar cartão',
+    onConfirm: async () => {
+      try { await rpcStaff('staff_cartao_terminar', { p_team: equipa.id, p_player: String(p.id) }); carregarCartoes(); }
+      catch (e) { setErro((e && e.message) || 'Não foi possível terminar o cartão.'); }
+    },
+  });
+  const mudarSoCartao = (ligar) => {
+    const semCartao = players.filter(p => !(estadoCartao(p.id) || {}).ativo).length;
+    const fazer = async () => {
+      try { await rpcStaff('staff_portal_so_cartao', { p_team: equipa.id, p_ligar: ligar }); carregarCartoes(); }
+      catch (e) { setErro((e && e.message) || 'Não foi possível mudar esta opção.'); }
+    };
+    if (!ligar) { fazer(); return; }
+    askConfirm({
+      title: 'Desligar os códigos antigos?',
+      label: semCartao ? `${semCartao} ${semCartao === 1 ? 'jogador ainda não tem' : 'jogadores ainda não têm'} cartão de atleta` : 'Todos os jogadores já têm cartão',
+      note: semCartao
+        ? 'Quem ainda não tem cartão deixa de conseguir entrar até ativar o seu. Podes voltar a ligar os códigos antigos a qualquer momento.'
+        : 'A partir de agora só se entra no Portal com o cartão de atleta e o PIN. Podes voltar a ligar os códigos antigos a qualquer momento.',
+      confirmLabel: 'Só cartão de atleta',
+      destructive: semCartao > 0,
+      onConfirm: fazer,
+    });
+  };
+
   /* LINK DO PORTAL DO ATLETA — veio de Monitorização. Fica aqui, logo
      antes dos códigos de acesso: o link é a porta, o código é a chave de
      cada atleta. Leva a equipa (?portal=<id>), para o servidor não ter de
@@ -5810,6 +5886,8 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   const euId = session && session.user && session.user.id;
   const eu = (membros || []).find(m => m.user_id === euId);
   const souDono = eu && eu.papel === 'owner';
+  // Cartões de atleta: só quem administra a equipa os vê e gere.
+  useEffect(() => { if (souDono) carregarCartoes(); }, [equipa.id, souDono]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (eu) setMeuNome(eu.nome || ''); }, [eu && eu.nome]);
   useEffect(() => { if (eu) setMeuTelefone(eu.telefone || ''); }, [eu && eu.telefone]);
   useEffect(() => { if (eu) setMeuGenero(eu.genero || ''); }, [eu && eu.genero]);
@@ -6273,6 +6351,90 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
           código de convite, só quem administra a equipa vê e gere. */}
       {souDono && players.length > 0 && (
         <>
+          <div style={{ height: 16 }} />
+          <Panel title={<>Cartões de atleta <span style={{ color: T.mutedDim, fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>(entrada no Portal com PIN pessoal)</span></>}>
+            {!cartoes ? (
+              <div style={{ fontSize: 12.5, color: T.mutedDim }}>A carregar…</div>
+            ) : cartoes.erro ? (
+              <div style={{ fontSize: 12.5, color: T.warn, lineHeight: 1.5 }}>
+                {cartoes.erro === 'sql'
+                  ? 'Falta correr no Supabase o SQL da fase 2 (fase2_cartao_atleta.sql). Até lá, os atletas entram com os códigos de acesso abaixo.'
+                  : cartoes.erro}
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
+                  Gera um código de ativação para cada atleta e envia-lho em mensagem privada. Ele usa-o uma vez, na Receção do Portal, e escolhe o seu PIN pessoal (que ninguém do staff vê). O código expira em 48 horas.
+                </div>
+
+                {codigoGerado && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: '12px 14px', marginBottom: 12, borderRadius: 10, background: `${T.gold}14`, border: `1px solid ${T.gold}66` }}>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <div style={{ fontSize: 12, color: T.muted }}>Código de ativação de <strong style={{ color: T.cream }}>{codigoGerado.nome}</strong></div>
+                      <div style={{ ...mono, fontSize: 28, color: T.gold, letterSpacing: '.22em', lineHeight: 1.3 }}>{codigoGerado.codigo}</div>
+                      <div style={{ fontSize: 11.5, color: T.mutedDim }}>Válido até {new Date(codigoGerado.expira_em).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · só serve uma vez</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Btn variant="ghost" onClick={async () => {
+                        try { await navigator.clipboard.writeText(`O teu código de ativação do Portal do Atleta é ${codigoGerado.codigo}. Abre o Portal, vai à Receção e escreve-o para receberes o teu cartão de atleta. Só serve uma vez e expira em 48 horas.`); setCartaoCopiado(true); } catch (e) { /* sem área de transferência */ }
+                      }}>{cartaoCopiado ? <><Check size={14} /> Copiado</> : <><Copy size={14} /> Copiar mensagem</>}</Btn>
+                      <Btn variant="ghost" onClick={() => setCodigoGerado(null)}><X size={14} /></Btn>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table>
+                    <thead><tr><th style={th2}>Jogador</th><th style={th2}>Cartão</th><th style={th2}></th></tr></thead>
+                    <tbody>
+                      {sortByPosition(players).map(p => {
+                        const est = estadoCartao(p.id) || {};
+                        const quando = (d) => new Date(d).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <tr key={p.id} style={{ borderBottom: `1px solid ${T.line}` }}>
+                            <td style={{ ...td2, color: T.cream }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
+                            <td style={{ ...td2, fontSize: 12 }}>
+                              {est.ativo
+                                ? <span style={{ color: T.good }}>Ativo{est.ultimo_uso ? ` · entrou ${quando(est.ultimo_uso)}` : ''}</span>
+                                : est.pendente_ate
+                                  ? <span style={{ color: T.warn }}>Código enviado · válido até {quando(est.pendente_ate)}</span>
+                                  : <span style={{ color: T.mutedDim }}>Sem cartão</span>}
+                            </td>
+                            <td style={{ ...td2, whiteSpace: 'nowrap' }}>
+                              <button onClick={() => gerarCodigoCartao(p)} title="Gerar código de ativação"
+                                style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5 }}>
+                                <Lock size={12} /> {est.ativo || est.pendente_ate ? 'Novo código' : 'Gerar código'}
+                              </button>
+                              {est.ativo && (
+                                <button onClick={() => terminarCartao(p)} title="Terminar o cartão"
+                                  style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, marginLeft: 10 }}>
+                                  <X size={12} /> Terminar
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 14, padding: '11px 14px', borderRadius: 8, background: T.surface, border: `1px solid ${T.line}` }}>
+                  <div style={{ flex: 1, minWidth: 200, fontSize: 12.5, color: T.cream, lineHeight: 1.5 }}>
+                    <strong>Entrada só com cartão de atleta</strong>
+                    <div style={{ fontSize: 12, color: T.mutedDim }}>
+                      {(cartoes.jogadores || []).filter(j => j.ativo).length} de {players.length} atletas com cartão ativo.
+                      {cartoes.so_cartao ? ' Os códigos antigos estão desligados.' : ' Enquanto estiver desligado, os códigos antigos continuam a funcionar.'}
+                    </div>
+                  </div>
+                  <Btn variant={cartoes.so_cartao ? 'ghost' : 'primary'} onClick={() => mudarSoCartao(!cartoes.so_cartao)}>
+                    {cartoes.so_cartao ? 'Voltar a ligar códigos antigos' : 'Desligar códigos antigos'}
+                  </Btn>
+                </div>
+              </>
+            )}
+          </Panel>
+
           <div style={{ height: 16 }} />
           <Panel title={<>Códigos de acesso individuais <span style={{ color: T.mutedDim, fontWeight: 400, textTransform: 'none', letterSpacing: 'normal' }}>(questionários wellness e PSE)</span></>}
             action={<button onClick={() => setShowCodes(!showCodes)} style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -31954,6 +32116,461 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
   );
 }
 
+/* ===================================================================
+   ENTRADA DO PORTAL — CARTÃO DE ATLETA (fase 2 da segurança)
+   ===================================================================
+   O conceito é o centro de treinos do clube:
+   · RECEÇÃO (1.ª vez num telemóvel): o jogador escreve o código de
+     ativação que o staff lhe deu no Plantel (6 dígitos, uso único,
+     expira em 48 h). → `checkin_cartao_ver`
+   · CARTÃO DE ATLETA: o cartão "chega-lhe à mão" (cor do clube, foto,
+     nome, número) e ele escolhe um PIN pessoal de 6 dígitos, duas vezes.
+     → `checkin_cartao_ativar` devolve um TOKEN, guardado só neste
+     telemóvel (localStorage, por equipa).
+   · PORTA DO BALNEÁRIO (todos os dias): o cartão com o nome no topo, a
+     porta de vidro fosco com o emblema e o PIN por baixo. PIN certo →
+     `checkin_cartao_entrar` devolve uma CHAVE DE SESSÃO temporária; a
+     porta abre para o balneário (a TV diz "Bem-vindo") e entra-se com
+     essa chave no lugar do código antigo — por isso todo o resto do
+     Portal funciona sem alterações (ver checkin_jogador, fase 2).
+   · Os códigos antigos continuam a entrar (ligação "Entrar com o código
+     antigo") até o staff ligar "Entrada só com cartão de atleta".
+   5 PIN errados bloqueiam o cartão neste telemóvel; o staff gera um
+   código novo. Nada disto guarda o PIN no telemóvel. */
+const PE_CSS = `
+  html, body { overflow: hidden !important; overscroll-behavior: none; }
+  @keyframes pe-chega { 0% { transform: translateY(-40px) rotateY(-75deg) rotateX(20deg); opacity: 0; } 70% { transform: translateY(4px) rotateY(6deg) rotateX(-3deg); opacity: 1; } 100% { transform: none; opacity: 1; } }
+  @keyframes pe-brilho { 0% { left: -60%; } 100% { left: 130%; } }
+  @keyframes pe-treme { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+  @keyframes pe-respira { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+  @keyframes pe-onda { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -60; } }
+`;
+const peChave = (teamId) => `mjp-cartao:${teamId || 'sem-equipa'}`;
+function peLerCartao(teamId) {
+  try { const v = JSON.parse(localStorage.getItem(peChave(teamId)) || 'null'); return v && v.token ? v : null; } catch (e) { return null; }
+}
+function peGuardarCartao(teamId, cartao) {
+  try { localStorage.setItem(peChave(teamId), JSON.stringify(cartao)); return; } catch (e) { /* sem espaço: tenta sem a foto */ }
+  try { localStorage.setItem(peChave(teamId), JSON.stringify({ ...cartao, jogador: { ...(cartao.jogador || {}), foto: null } })); } catch (e) { /* sem memória: fica só nesta visita */ }
+}
+function peApagarCartao(teamId) { try { localStorage.removeItem(peChave(teamId)); } catch (e) { /* nada */ } }
+async function peRpc(nome, args) {
+  const { data, error } = await supabase.rpc(nome, args);
+  if (error) throw error;
+  let d = data;
+  if (Array.isArray(d)) d = d[0];
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica */ } }
+  return d || {};
+}
+function peIniciais(nome) {
+  const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return '?';
+  return (partes[0][0] + (partes.length > 1 ? partes[partes.length - 1][0] : '')).toUpperCase();
+}
+function peEpoca() {
+  const h = new Date(); const y = h.getMonth() >= 6 ? h.getFullYear() : h.getFullYear() - 1;
+  return `${y}/${String((y + 1) % 100).padStart(2, '0')}`;
+}
+
+function PeEmblema({ logo, cor, tam = 40, branco = false }) {
+  if (logo) {
+    return <img src={logo} alt="" style={{ height: tam, width: 'auto', display: 'block', filter: branco ? 'grayscale(1) brightness(2.4)' : 'none' }} />;
+  }
+  return (
+    <svg viewBox="0 0 40 44" height={tam} aria-hidden="true">
+      <path d="M2 2 H38 V22 Q38 36 20 42 Q2 36 2 22 Z" fill={branco ? 'rgba(255,255,255,.28)' : '#fff'} stroke={branco ? 'rgba(255,255,255,.95)' : cor.base} strokeWidth={branco ? 1.2 : 3} />
+      <path d="M8 8 H32 V22 Q32 32 20 36 Q8 32 8 22 Z" fill={branco ? 'rgba(255,255,255,.18)' : cor.base} />
+    </svg>
+  );
+}
+
+function PeTeclado({ onTecla, desativado }) {
+  const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7, width: '100%' }}>
+      {teclas.map((k, i) => (k ? (
+        <button key={i} type="button" disabled={desativado} onClick={() => onTecla(k)} aria-label={k === '⌫' ? 'Apagar' : k} style={{
+          height: 'clamp(38px, 5.6dvh, 50px)', borderRadius: 10, background: '#0d120f', border: '1px solid #2a2f33', color: '#FFC23D',
+          ...mono, fontSize: 19, fontWeight: 500, cursor: desativado ? 'default' : 'pointer', opacity: desativado ? 0.5 : 1,
+        }}>{k}</button>
+      ) : <div key={i} />))}
+    </div>
+  );
+}
+
+/* As caixas do código e do PIN: a mesma identidade nas duas (rebordo
+   vermelho à medida que se escreve; o PIN mostra pontos). */
+function PeCaixas({ valor, ocultar, cor }) {
+  return (
+    <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} style={{
+          width: 30, height: 36, borderRadius: 6, background: '#121815',
+          border: `1.5px solid ${cor || (i < valor.length ? '#FF4B5A' : '#3a4440')}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', ...mono, fontWeight: 500, fontSize: 17, color: cor || '#FFC23D',
+        }}>{i < valor.length ? (ocultar ? '●' : valor[i]) : ''}</div>
+      ))}
+    </div>
+  );
+}
+function PePainel({ rotulo, corRotulo, children, tremer }) {
+  return (
+    <div style={{
+      background: 'rgba(7,9,10,.92)', border: '1px solid #3a4440', borderRadius: 10, padding: '7px 10px 9px', textAlign: 'center',
+      boxShadow: '0 0 16px rgba(255,75,90,.25)', animation: tremer ? 'pe-treme .45s' : 'none',
+    }}>
+      <div style={{ fontSize: 11, letterSpacing: '.1em', color: corRotulo || '#9aa8a0', lineHeight: 1.3, marginBottom: 6, textTransform: 'uppercase', ...body }}>{rotulo}</div>
+      {children}
+    </div>
+  );
+}
+
+function PeRececao({ cor, logo, clube }) {
+  const base = cor.base;
+  return (
+    <svg viewBox="0 0 300 220" width="100%" style={{ display: 'block' }} aria-hidden="true">
+      <defs>
+        <radialGradient id="pe-sala" cx="50%" cy="30%" r="80%"><stop offset="0" stopColor="#26342b" /><stop offset="1" stopColor="#0e1310" /></radialGradient>
+        <linearGradient id="pe-led" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#0d120f" /><stop offset=".5" stopColor={base} /><stop offset="1" stopColor="#0d120f" /></linearGradient>
+        <linearGradient id="pe-tampo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f4f2ec" /><stop offset="1" stopColor="#bdb8ad" /></linearGradient>
+        <linearGradient id="pe-frente" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1b211e" /><stop offset="1" stopColor="#0b0f0d" /></linearGradient>
+        <linearGradient id="pe-chao" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#18201b" /><stop offset="1" stopColor="#0b0f0d" /></linearGradient>
+        <filter id="pe-desfoca" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" /></filter>
+      </defs>
+      <rect width="300" height="220" fill="url(#pe-sala)" />
+      <ellipse cx="150" cy="10" rx="120" ry="14" fill="none" stroke="#FFE6A0" strokeWidth="3" opacity=".8" />
+      <ellipse cx="150" cy="10" rx="120" ry="14" fill="none" stroke="#FFE6A0" strokeWidth="12" opacity=".25" filter="url(#pe-desfoca)" />
+      <path d="M40 34 Q150 22 260 34 L260 124 Q150 114 40 124 Z" fill="url(#pe-led)" />
+      {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => <path key={i} d={`M40 ${40 + i * 10} Q150 ${29 + i * 10} 260 ${40 + i * 10}`} fill="none" stroke="#fff" strokeWidth=".5" opacity=".08" />)}
+      <path d="M40 34 Q150 22 260 34 L260 124 Q150 114 40 124 Z" fill="none" stroke="#FFC23D" strokeWidth="1.2" opacity=".6" />
+      <g style={{ animation: 'pe-respira 3.5s ease-in-out infinite' }}>
+        <circle cx="150" cy="70" r="34" fill="#fff" opacity=".08" />
+        {logo
+          ? <image href={logo} x="124" y="44" width="52" height="54" preserveAspectRatio="xMidYMid meet" />
+          : <g transform="translate(150,70)"><path d="M-20 -24 H20 V2 Q20 20 0 28 Q-20 20 -20 2 Z" fill="#fff" /><path d="M-14 -18 H14 V2 Q14 15 0 21 Q-14 15 -14 2 Z" fill={base} /></g>}
+      </g>
+      <text x="150" y="114" textAnchor="middle" fontSize="9" fontWeight="600" fill="#F3ECDA" fontFamily="Oswald, sans-serif" letterSpacing="3" opacity=".85">{clube ? String(clube).toUpperCase() : 'CENTRO DE TREINOS'}</text>
+      {[16, 278].map(x => (
+        <g key={x}><rect x={x} y="30" width="6" height="140" rx="3" fill="#FFE6A0" opacity=".55" /><rect x={x} y="30" width="6" height="140" rx="3" fill="#FFE6A0" opacity=".35" filter="url(#pe-desfoca)" /></g>
+      ))}
+      <rect x="0" y="168" width="300" height="52" fill="url(#pe-chao)" />
+      <ellipse cx="150" cy="190" rx="110" ry="12" fill={base} opacity=".2" filter="url(#pe-desfoca)" />
+      <path d="M30 138 Q150 126 270 138 L270 146 Q150 134 30 146 Z" fill="url(#pe-tampo)" />
+      <path d="M34 146 Q150 134 266 146 L262 186 Q150 176 38 186 Z" fill="url(#pe-frente)" />
+      <path d="M38 180 Q150 170 262 180" fill="none" stroke="#FF4B5A" strokeWidth="2.5" strokeDasharray="40 20" style={{ animation: 'pe-onda 2.5s linear infinite' }} />
+      <path d="M38 180 Q150 170 262 180" fill="none" stroke="#FF4B5A" strokeWidth="8" opacity=".35" filter="url(#pe-desfoca)" />
+    </svg>
+  );
+}
+
+function PeCartao({ jogador, cor, logo, clube }) {
+  const nome = String((jogador && jogador.nome) || '').trim();
+  const partes = nome.split(/\s+/).filter(Boolean);
+  const linha1 = partes[0] || '';
+  const linha2 = partes.length > 1 ? partes[partes.length - 1] : '';
+  const texto = cor.texto || '#fff';
+  return (
+    <div style={{ perspective: 800 }}>
+      <div style={{
+        position: 'relative', width: 'min(300px, 86vw)', aspectRatio: '1.586', borderRadius: 14, overflow: 'hidden', color: texto,
+        background: `linear-gradient(135deg, ${cor.escuro || cor.base} 0%, ${cor.base} 45%, ${cor.escuro || cor.base} 100%)`,
+        boxShadow: '0 16px 34px rgba(0,0,0,.55)', animation: 'pe-chega 1.1s cubic-bezier(.2,.8,.2,1) both', ...body,
+      }}>
+        <div style={{ position: 'absolute', right: '-10%', top: '-4%', height: '108%', opacity: 0.12, display: 'flex' }}>
+          <PeEmblema logo={logo} cor={cor} tam={190} branco />
+        </div>
+        <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(115deg, rgba(255,255,255,.04) 0 8px, transparent 8px 16px)' }} />
+        <div style={{ position: 'absolute', left: '5%', top: '7%', display: 'flex', alignItems: 'center', gap: 7 }}>
+          <PeEmblema logo={logo} cor={cor} tam={24} />
+          <div>
+            <div style={{ ...display, fontSize: 13, fontWeight: 600, lineHeight: 1.05, letterSpacing: '.04em' }}>{(clube || 'O MEU CLUBE').toUpperCase()}</div>
+            <div style={{ fontSize: 11, letterSpacing: '.16em', opacity: 0.85 }}>CARTÃO DE ATLETA</div>
+          </div>
+        </div>
+        <div style={{ position: 'absolute', right: '5%', top: '8%', width: 30, height: 22, borderRadius: 5, background: 'linear-gradient(135deg,#f1d27a,#b8902e)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.25)' }} />
+        <div style={{ position: 'absolute', left: '5%', top: '30%', width: '25%', height: '52%', borderRadius: 8, overflow: 'hidden', background: '#1A2A1F', border: '2px solid #F3ECDA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {jogador && jogador.foto
+            ? <img src={jogador.foto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <span style={{ ...display, fontSize: 26, fontWeight: 600, color: '#FFD86A' }}>{peIniciais(nome)}</span>}
+        </div>
+        <div style={{ position: 'absolute', left: '34%', top: '31%', right: '26%' }}>
+          <div style={{ ...display, fontSize: 21, fontWeight: 600, lineHeight: 1.02, textTransform: 'uppercase', overflow: 'hidden' }}>{linha1}{linha2 && <><br />{linha2}</>}</div>
+          {jogador && jogador.posicao && <div style={{ fontSize: 12, opacity: 0.9, marginTop: 5 }}>{jogador.posicao}</div>}
+        </div>
+        {jogador && jogador.numero && (
+          <div style={{ position: 'absolute', right: '6%', top: '32%', ...display, fontSize: 54, fontWeight: 600, lineHeight: 1, color: '#F3ECDA', textShadow: '0 2px 0 rgba(0,0,0,.25)' }}>{jogador.numero}</div>
+        )}
+        <div style={{ position: 'absolute', left: '34%', bottom: '8%', fontSize: 11, letterSpacing: '.12em', opacity: 0.9 }}>ÉPOCA {peEpoca()}</div>
+        <div style={{ position: 'absolute', top: '-20%', bottom: '-20%', width: '40%', background: 'linear-gradient(100deg, transparent, rgba(255,255,255,.35), transparent)', transform: 'skewX(-18deg)', animation: 'pe-brilho 2.8s ease-in-out 1.2s infinite' }} />
+      </div>
+    </div>
+  );
+}
+
+/* Porta automática de vidro fosco com o emblema do clube a toda a altura,
+   cada metade do emblema numa folha. Atrás, o balneário da página inicial
+   (com o cacifo do jogador) e a TV a dar as boas-vindas. */
+function PePorta({ aberta, jogador, cor, logo, clube }) {
+  const caixaRef = useRef(null);
+  const [tam, setTam] = useState({ w: 260, h: 180 });
+  useEffect(() => {
+    const el = caixaRef.current;
+    if (!el) return undefined;
+    const medir = () => { if (el.clientWidth && el.clientHeight) setTam(t => (t.w === el.clientWidth && t.h === el.clientHeight ? t : { w: el.clientWidth, h: el.clientHeight })); };
+    medir();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(medir); ro.observe(el); return () => ro.disconnect();
+  }, []);
+  const H = Math.round(Math.max(215, Math.min(420, (300 * tam.h) / Math.max(1, tam.w))));
+  const nome = String((jogador && jogador.nome) || '').trim();
+  const primeiro = nome ? nome.split(/\s+/)[0] : '';
+  const numero = jogador && jogador.numero != null && String(jogador.numero).trim() !== '' ? String(jogador.numero).trim() : '';
+  const svg = React.useMemo(() => pkhBalneario({
+    cor, numero, nome: primeiro, foto: (jogador && jogador.foto) || '', iniciais: peIniciais(nome),
+    logo: logo || '', inicialClube: clube ? String(clube)[0].toUpperCase() : '', badge: 0, boasVindas: primeiro || 'Atleta',
+  }, 300, H), [T.corEquipa, numero, primeiro, jogador && jogador.foto, logo, clube, H]); // eslint-disable-line react-hooks/exhaustive-deps
+  const vidro = {
+    position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
+    background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
+    backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)', transition: 'transform 1.1s cubic-bezier(.4,.1,.2,1)',
+  };
+  // O emblema ocupa a porta toda; cada folha mostra a sua metade.
+  const emblemaNoVidro = (lado) => (
+    <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: logo ? 0.6 : 1 }}>
+      <PeEmblema logo={logo} cor={cor} tam={Math.round(tam.h * 0.78)} branco />
+    </div>
+  );
+  const corSinal = aberta ? '#4CAF6A' : '#FF5A4E';
+  return (
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0d120f', border: '1px solid #3a4440', borderRadius: 8, padding: '5px 12px', boxShadow: '0 0 14px rgba(255,194,61,.15)', marginBottom: 8, flexShrink: 0 }}>
+        <span style={{ width: 9, height: 9, borderRadius: '50%', background: corSinal, boxShadow: `0 0 8px ${corSinal}`, transition: 'all .3s' }} />
+        <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
+          <div style={{ fontSize: 11, letterSpacing: '.18em', color: '#8A9A8C', ...body }}>ACESSO RESERVADO</div>
+          <div style={{ ...display, fontSize: 17, fontWeight: 600, letterSpacing: '.24em', color: aberta ? '#8EE6A0' : '#FFC23D' }}>PLANTEL</div>
+        </div>
+      </div>
+      <div style={{ width: 'min(100%, 300px)', flex: 1, minHeight: 120, maxHeight: 340, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', padding: 7, boxSizing: 'border-box', boxShadow: '0 10px 24px rgba(0,0,0,.45)', display: 'flex' }}>
+        <div ref={caixaRef} style={{ position: 'relative', flex: 1, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
+          <svg viewBox={`0 0 300 ${H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />
+          <div style={{ ...vidro, left: 0, transform: aberta ? 'translateX(-101%)' : 'none' }}>{emblemaNoVidro('E')}</div>
+          <div style={{ ...vidro, right: 0, transform: aberta ? 'translateX(101%)' : 'none' }}>{emblemaNoVidro('D')}</div>
+          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberta ? 0 : 1, transition: 'opacity .2s' }} />
+        </div>
+      </div>
+      <div style={{ width: 'min(70%, 230px)', height: 8, borderRadius: '0 0 4px 4px', background: '#2a332d', flexShrink: 0 }} />
+    </div>
+  );
+}
+
+function PortalEntrada({ entrar, equipa, teamId }) {
+  const cor = coresCamisola(T.corEquipa);
+  const logo = (equipa && equipa.logo) || '';
+  const clube = String((equipa && (equipa.clube || equipa.nome)) || '').trim();
+  const [cartao, setCartao] = useState(() => peLerCartao(teamId));
+  const [ecra, setEcra] = useState(() => (peLerCartao(teamId) ? 'porta' : 'rececao'));
+  const [codigo, setCodigo] = useState('');
+  const [jogador, setJogador] = useState(null);
+  const [pin, setPin] = useState('');
+  const [pin1, setPin1] = useState('');
+  const [aviso, setAviso] = useState('');
+  const [corAviso, setCorAviso] = useState('');
+  const [tremer, setTremer] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+  const [aberta, setAberta] = useState(false);
+
+  const mostrarErro = (msg) => { setAviso(msg); setCorAviso('#FF5A4E'); setTremer(true); setTimeout(() => setTremer(false), 500); };
+  const limpar = () => { setAviso(''); setCorAviso(''); };
+  const erroDe = (e) => ((e && e.message && /tentativas/i.test(e.message)) ? e.message : 'Não foi possível ligar. Verifica a internet e tenta outra vez.');
+
+  // PIN certo → a porta abre, a TV diz bem-vindo, e entra-se com a sessão.
+  const abrirEEntrar = async (sessao) => {
+    setAberta(true);
+    setAviso('ACESSO AUTORIZADO'); setCorAviso('#8EE6A0');
+    await new Promise(r => setTimeout(r, 2300));
+    const ok = await entrar(sessao);
+    if (!ok) { setAberta(false); setPin(''); mostrarErro('Não foi possível entrar. Tenta outra vez.'); }
+  };
+
+  const validarCodigo = async () => {
+    if (codigo.length !== 6 || ocupado) return;
+    setOcupado(true); limpar();
+    try {
+      const r = await peRpc('checkin_cartao_ver', { p_codigo: codigo, p_team: teamId });
+      if (!r.ok) { mostrarErro(r.erro || 'Código de ativação inválido.'); setCodigo(''); return; }
+      setJogador(r.jogador || {}); setPin(''); setPin1(''); setEcra('cartao');
+    } catch (e) { mostrarErro(erroDe(e)); } finally { setOcupado(false); }
+  };
+
+  const ativar = async (pinEscolhido) => {
+    setOcupado(true); limpar();
+    try {
+      const r = await peRpc('checkin_cartao_ativar', { p_codigo: codigo, p_team: teamId, p_pin: pinEscolhido });
+      if (!r.ok) {
+        mostrarErro(r.erro || 'Não foi possível ativar o cartão.');
+        setPin(''); setPin1('');
+        if (/ativação/i.test(r.erro || '')) { setCodigo(''); setEcra('rececao'); }
+        return;
+      }
+      const novo = { token: r.token, jogador: r.jogador || jogador || {} };
+      peGuardarCartao(teamId, novo);
+      setCartao(novo);
+      setCodigo(''); setPin1('');
+      setEcra('porta');
+      const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: pinEscolhido });
+      if (e.ok && e.sessao) { setPin(pinEscolhido); await abrirEEntrar(e.sessao); } else { setPin(''); }
+    } catch (e) { mostrarErro(erroDe(e)); setPin(''); } finally { setOcupado(false); }
+  };
+
+  const entrarComPin = async (valor) => {
+    if (!cartao || ocupado) return;
+    setOcupado(true); limpar();
+    try {
+      const r = await peRpc('checkin_cartao_entrar', { p_token: cartao.token, p_team: teamId, p_pin: valor });
+      if (r.ok && r.sessao) {
+        if (r.jogador) { const atual = { ...cartao, jogador: r.jogador }; peGuardarCartao(teamId, atual); setCartao(atual); }
+        await abrirEEntrar(r.sessao);
+        return;
+      }
+      if (r.bloqueado || r.invalido) {
+        peApagarCartao(teamId); setCartao(null); setPin(''); setEcra('rececao');
+        setAviso(r.bloqueado
+          ? 'Por segurança, o teu cartão foi bloqueado neste telemóvel. Pede um código de ativação novo ao staff técnico.'
+          : 'O teu cartão já não é válido neste telemóvel. Pede um código de ativação novo ao staff técnico.');
+        setCorAviso('#FF5A4E');
+        return;
+      }
+      setPin('');
+      mostrarErro(`PIN ERRADO · ${r.restantes} ${r.restantes === 1 ? 'TENTATIVA' : 'TENTATIVAS'}`);
+    } catch (e) { setPin(''); mostrarErro(erroDe(e)); } finally { setOcupado(false); }
+  };
+
+  const tecla = (k) => {
+    if (ocupado || aberta) return;
+    if (ecra === 'rececao') {
+      limpar();
+      setCodigo(c => (k === '⌫' ? c.slice(0, -1) : c.length < 6 ? c + k : c));
+      return;
+    }
+    if (ecra === 'cartao') {
+      if (k === '⌫') { setPin(p => p.slice(0, -1)); return; }
+      if (pin.length >= 6) return;
+      const novo = pin + k;
+      setPin(novo); limpar();
+      if (novo.length === 6) {
+        if (!pin1) { setTimeout(() => { setPin1(novo); setPin(''); }, 250); }
+        else if (novo !== pin1) { setTimeout(() => { setPin(''); setPin1(''); mostrarErro('Os PIN não são iguais. Escolhe outra vez.'); }, 250); }
+        else { ativar(novo); }
+      }
+      return;
+    }
+    if (ecra === 'porta') {
+      if (k === '⌫') { setPin(p => p.slice(0, -1)); return; }
+      if (pin.length >= 6) return;
+      const novo = pin + k;
+      setPin(novo); limpar();
+      if (novo.length === 6) entrarComPin(novo);
+    }
+  };
+
+  const usarOutroCartao = () => {
+    peApagarCartao(teamId); setCartao(null); setPin(''); setCodigo(''); limpar(); setEcra('rececao');
+  };
+
+  const ecraFixo = {
+    position: 'fixed', inset: 0, zIndex: 1, background: T.bg, overflow: 'hidden', overscrollBehavior: 'none', ...body,
+  };
+  const coluna = {
+    height: '100%', maxWidth: 420, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center',
+    padding: 'calc(16px + env(safe-area-inset-top, 0px)) 16px calc(12px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box', gap: 10,
+  };
+  const ligacao = { background: 'none', border: 'none', color: T.gold, textDecoration: 'underline', fontSize: 13, cursor: 'pointer', padding: '6px', ...body, flexShrink: 0 };
+  const botaoOuro = (ativo) => ({
+    width: '100%', padding: 11, borderRadius: 12, border: 'none', background: ativo ? T.gold : '#3a4f3d', color: ativo ? '#1A2A1F' : '#8A9A8C',
+    ...display, fontSize: 17, fontWeight: 600, cursor: ativo ? 'pointer' : 'default', flexShrink: 0,
+  });
+
+  if (ecra === 'antigo') {
+    return (
+      <>
+        <CheckinLogin onSubmit={entrar} equipa={equipa} />
+        <div style={{ textAlign: 'center', paddingBottom: 20 }}>
+          <button type="button" onClick={() => setEcra(cartao ? 'porta' : 'rececao')} style={ligacao}>Voltar à receção</button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <div style={ecraFixo}>
+      <style>{PE_CSS}</style>
+      {ecra === 'rececao' && (
+        <div style={{ ...coluna, justifyContent: 'center' }}>
+          <div style={{ ...display, fontSize: 24, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Bem-vindo ao plantel!</div>
+          <div style={{ fontSize: 13.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>Levanta aqui o teu cartão de atleta.</div>
+          <div style={{ position: 'relative', width: '100%', borderRadius: 14, overflow: 'hidden', flexShrink: 1, minHeight: 0, maxHeight: '34dvh', display: 'flex', alignItems: 'flex-end' }}>
+            <PeRececao cor={cor} logo={logo} clube={clube} />
+            <div style={{ position: 'absolute', left: '18%', right: '18%', bottom: '8%' }}>
+              <PePainel rotulo={aviso && aviso.length <= 32 ? aviso : 'CÓDIGO DE ATIVAÇÃO'} corRotulo={aviso && aviso.length <= 32 ? corAviso : undefined} tremer={tremer}>
+                <PeCaixas valor={codigo} />
+              </PePainel>
+            </div>
+          </div>
+          {aviso && aviso.length > 32 && <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4 }}>{aviso}</div>}
+          <PeTeclado onTecla={tecla} desativado={ocupado} />
+          <button type="button" onClick={validarCodigo} disabled={codigo.length !== 6 || ocupado} style={botaoOuro(codigo.length === 6 && !ocupado)}>
+            {ocupado ? 'A verificar…' : 'Levantar o cartão'}
+          </button>
+          <div style={{ fontSize: 12, color: T.mutedDim, textAlign: 'center' }}>O código é dado pelo staff técnico e só serve uma vez.</div>
+          <button type="button" onClick={() => { limpar(); setEcra('antigo'); }} style={ligacao}>Ainda não tens? Entra com o teu código antigo</button>
+          <div style={{ fontSize: 10, color: T.line, ...mono }}>{APP_BUILD}</div>
+        </div>
+      )}
+
+      {ecra === 'cartao' && (
+        <div style={{ ...coluna, justifyContent: 'flex-start', paddingTop: 'calc(26px + env(safe-area-inset-top, 0px))' }}>
+          <PeCartao jogador={jogador} cor={cor} logo={logo} clube={clube} />
+          <div style={{ ...display, fontSize: 19, fontWeight: 600, color: T.cream, marginTop: 14 }}>{pin1 ? 'Confirma o teu PIN' : 'Cria o teu PIN pessoal'}</div>
+          <div style={{ fontSize: 12.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>6 números que só tu sabes. É com ele que entras daqui em diante.</div>
+          <div style={{ width: 'min(100%, 300px)' }}>
+            <PePainel rotulo={aviso || (pin1 ? 'REPETE O PIN' : 'PIN PESSOAL')} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
+              <PeCaixas valor={pin} ocultar />
+            </PePainel>
+          </div>
+          <PeTeclado onTecla={tecla} desativado={ocupado} />
+          <div style={{ flex: 1 }} />
+          <button type="button" onClick={() => { setEcra('rececao'); setPin(''); setPin1(''); limpar(); }} style={ligacao}>Voltar</button>
+        </div>
+      )}
+
+      {ecra === 'porta' && cartao && (
+        <div style={coluna}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'stretch', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '7px 10px', flexShrink: 0 }}>
+            <div style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', background: '#1A2A1F', border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {cartao.jogador && cartao.jogador.foto
+                ? <img src={cartao.jogador.foto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <span style={{ ...display, fontSize: 15, fontWeight: 600, color: '#FFD86A' }}>{peIniciais(cartao.jogador && cartao.jogador.nome)}</span>}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ ...display, fontSize: 16, fontWeight: 600, color: T.cream, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(cartao.jogador && cartao.jogador.nome) || 'Atleta'}</div>
+              <div style={{ fontSize: 11.5, color: T.mutedDim }}>Cartão de atleta válido</div>
+            </div>
+            <span style={{ marginLeft: 'auto', width: 14, height: 14, borderRadius: '50%', flexShrink: 0, background: aberta ? '#4CAF6A' : '#B3261E', boxShadow: `0 0 10px ${aberta ? '#4CAF6A' : '#B3261E'}`, transition: 'all .3s' }} />
+          </div>
+          <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
+          <div style={{ width: 'min(100%, 300px)', flexShrink: 0 }}>
+            <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
+              <PeCaixas valor={pin} ocultar cor={aberta ? '#8EE6A0' : undefined} />
+            </PePainel>
+          </div>
+          <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
+          <button type="button" onClick={usarOutroCartao} style={ligacao}>Não és tu? Usar outro cartão</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* `onSubmit` devolve uma promessa: true se o código existir, false se
    não. A lista de jogadores já não passa por aqui — quem confirma o
    código é a base de dados. */
@@ -32411,7 +33028,7 @@ function PkhSequencia({ dias, g }) {
 /* W = largura do desenho (altura fixa 215). 300 no telemóvel; em ecrã largo
    a sala alarga-se (paredes mais compridas, mais cacifos), em vez de se
    cortar o desenho. */
-function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge }, W = 300, H = 215, tv = null) {
+function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge, boasVindas }, W = 300, H = 215, tv = null) {
   // H > 215 quando o espaço é mais alto do que o desenho: a sala estica na
   // vertical (em vez de se cortar dos lados) e a TV fica sempre ao centro.
   const VX = W / 2, VY = (95 * H) / 215, S = 0.5, BL = VX * S, BR = W - VX * S, BT = VY * S, BB = H - (H - VY) * S;
@@ -32544,6 +33161,13 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   s += `<g clip-path="url(#pkh-tk)"><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-440 0" dur="18s" repeatCount="indefinite"/>`
     + `<text x="91" y="114.3" font-size="8.5" font-weight="600" fill="#1A2A1F" font-family="Oswald, sans-serif" textLength="440" lengthAdjust="spacingAndGlyphs">${tk}</text>`
     + `<text x="531" y="114.3" font-size="8.5" font-weight="600" fill="#1A2A1F" font-family="Oswald, sans-serif" textLength="440" lengthAdjust="spacingAndGlyphs">${tk}</text></g></g>`;
+  // Porta da entrada do Portal: a TV dá as boas-vindas ao jogador.
+  if (boasVindas) {
+    s += `<rect x="88" y="50" width="124" height="70" rx="2" fill="#0d1a12"/>`
+      + `<rect x="88" y="50" width="124" height="70" rx="2" fill="${cor.base}" opacity=".35"/>`
+      + `<text x="150" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="#FFC23D" font-family="Oswald, sans-serif" letter-spacing="3">BEM-VINDO,</text>`
+      + `<text x="150" y="104" text-anchor="middle" font-size="${String(boasVindas).length > 9 ? 16 : 22}" font-weight="600" fill="#fff" font-family="Oswald, sans-serif" letter-spacing="2">${pkhEsc(String(boasVindas).toUpperCase())}!</text>`;
+  }
   if (badge > 0) s += `<circle cx="212" cy="49" r="7" fill="#E5484D" stroke="#07090a" stroke-width="1.5"/><text x="212" y="52.6" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" font-family="JetBrains Mono, monospace">${badge > 9 ? '9+' : badge}</text>`;
   s += '</g>';
   return s;
@@ -44900,7 +45524,7 @@ function CheckinApp() {
       const ambiguo = /amb[íi]guo/i.test((e && e.message) || '');
       // Limite de tentativas do servidor (fase 1 da segurança): a mensagem
       // já vem pronta a mostrar ("Demasiadas tentativas. Tenta outra vez…").
-      const bloqueado = /tentativas/i.test((e && e.message) || '');
+      const bloqueado = /tentativas|cart[ãa]o de atleta/i.test((e && e.message) || '');
       setErro(bloqueado
         ? e.message
         : ambiguo
@@ -44979,8 +45603,7 @@ function CheckinApp() {
 
   if (!dados) return moldura(
     <>
-      <CheckinLogin onSubmit={entrar} equipa={equipa} />
-      <div style={{ textAlign: 'center', fontSize: 10, color: T.line, paddingBottom: 16, ...mono }}>{APP_BUILD}</div>
+      <PortalEntrada entrar={entrar} equipa={equipa} teamId={equipaDoLink} />
     </>
   );
 
