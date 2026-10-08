@@ -32551,7 +32551,10 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       )}
 
       {ecra === 'cartao' && (
-        <div style={{ ...coluna, justifyContent: 'flex-start', paddingTop: 'calc(26px + env(safe-area-inset-top, 0px))' }}>
+        <div style={coluna}>
+          {/* O cartão, o PIN e o teclado centrados na altura que sobra; o
+              "Voltar" fica sempre no fundo. */}
+          <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <PeCartao jogador={jogador} cor={cor} logo={logo} clube={clube} />
           <div style={{ ...display, fontSize: 19, fontWeight: 600, color: T.cream, marginTop: 14 }}>{pin1 ? 'Confirma o teu PIN' : 'Cria o teu PIN pessoal'}</div>
           <div style={{ fontSize: 12.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>6 números que só tu sabes. É com ele que entras daqui em diante.</div>
@@ -32561,7 +32564,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             </PePainel>
           </div>
           <PeTeclado onTecla={tecla} desativado={ocupado} />
-          <div style={{ flex: 1 }} />
+          </div>
           <button type="button" onClick={() => { setEcra('rececao'); setPin(''); setPin1(''); limpar(); }} style={ligacao}>Voltar</button>
         </div>
       )}
@@ -45459,7 +45462,7 @@ function CheckinApp() {
      partir do id que vem no link. Não é informação sensível — quem tem o
      link já sabe de que clube é — mas a tabela `teams` não é legível sem
      sessão, por isso passa por uma função própria no servidor. */
-  const [equipa, setEquipa] = useState(null);
+  const [equipaRemota, setEquipa] = useState(null);
 
   const equipaDoLink = (() => {
     if (typeof window === 'undefined') return null;
@@ -45490,6 +45493,20 @@ function CheckinApp() {
      e do SDK: como objeto, como texto por interpretar, ou embrulhado num
      array de uma posição. Aceitar as três aqui evita que o resto do
      quiosque tenha de saber disto. */
+  /* EMBLEMA E COR SEM ESPERAR. Pedir a identidade da equipa ao servidor
+     demora uns segundos, e até lá a Receção mostrava o escudo provisório e
+     depois trocava pelo emblema. Agora o telemóvel guarda a identidade da
+     última visita (só o nome, o emblema e a cor — nada pessoal) e o Portal
+     abre logo com ela; a resposta do servidor só a atualiza se mudou. */
+  const chaveIdentidade = `mjp-equipa:${equipaDoLink || 'sem-equipa'}`;
+  const [equipaGuardada] = useState(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(chaveIdentidade) || 'null');
+      if (v && v.cor) T.corEquipa = v.cor;
+      return v;
+    } catch (e) { return null; }
+  });
+  const equipa = equipaRemota || equipaGuardada;
   useEffect(() => {
     if (!equipaDoLink) return;
     (async () => {
@@ -45501,10 +45518,11 @@ function CheckinApp() {
           // Portal — a camisola dos anos e afins vestem-se dela.
           if (eq && eq.cor) T.corEquipa = eq.cor;
           setEquipa(eq);
+          try { localStorage.setItem(chaveIdentidade, JSON.stringify(eq)); } catch (e) { /* sem espaço: fica só nesta visita */ }
         }
       } catch (e) { /* sem identidade, o ecrã fica neutro — não é impeditivo */ }
     })();
-  }, [equipaDoLink]);
+  }, [equipaDoLink]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const buscar = async (code) => {
     const { data, error } = await supabase.rpc('checkin_bootstrap', {
