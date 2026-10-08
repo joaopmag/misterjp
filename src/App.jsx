@@ -32168,15 +32168,51 @@ const PE_CSS = `
   @keyframes pe-respira { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
   @keyframes pe-onda { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -60; } }
 `;
+/* ONDE O CARTÃO FICA GUARDADO NESTE TELEMÓVEL/COMPUTADOR.
+   O Portal e a plataforma do staff partilham o mesmo endereço e, por
+   isso, a mesma memória do navegador (localStorage, limitada). Com a
+   fotografia junto, o cartão podia não caber e perdia-se sem aviso — e o
+   atleta voltava à Receção. Agora:
+   · o cartão em si é pequeno (a chave e o nome, sem foto);
+   · fica em DOIS sítios: localStorage e um cookie (memória separada, que
+     não conta para o mesmo limite) — se um falhar, o outro chega;
+   · a fotografia vai à parte e é dispensável (sem ela, mostram-se as
+     iniciais). */
 const peChave = (teamId) => `mjp-cartao:${teamId || 'sem-equipa'}`;
+const peChaveFoto = (teamId) => `mjp-cartao-foto:${teamId || 'sem-equipa'}`;
+const peCookie = (teamId) => `mjp_cartao_${String(teamId || 'sem-equipa').replace(/[^a-zA-Z0-9-]/g, '')}`;
+function peLerCookie(nome) {
+  try {
+    const m = document.cookie.split('; ').find(c => c.startsWith(`${nome}=`));
+    return m ? decodeURIComponent(m.slice(nome.length + 1)) : null;
+  } catch (e) { return null; }
+}
 function peLerCartao(teamId) {
-  try { const v = JSON.parse(localStorage.getItem(peChave(teamId)) || 'null'); return v && v.token ? v : null; } catch (e) { return null; }
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(peChave(teamId)) || 'null'); } catch (e) { v = null; }
+  if (!v || !v.token) { try { v = JSON.parse(peLerCookie(peCookie(teamId)) || 'null'); } catch (e) { v = null; } }
+  if (!v || !v.token) return null;
+  let foto = null;
+  try { foto = localStorage.getItem(peChaveFoto(teamId)); } catch (e) { foto = null; }
+  return { ...v, jogador: { ...(v.jogador || {}), foto: (v.jogador && v.jogador.foto) || foto || null } };
 }
+// Devolve true se ficou guardado em pelo menos um dos dois sítios.
 function peGuardarCartao(teamId, cartao) {
-  try { localStorage.setItem(peChave(teamId), JSON.stringify(cartao)); return; } catch (e) { /* sem espaço: tenta sem a foto */ }
-  try { localStorage.setItem(peChave(teamId), JSON.stringify({ ...cartao, jogador: { ...(cartao.jogador || {}), foto: null } })); } catch (e) { /* sem memória: fica só nesta visita */ }
+  const j = (cartao && cartao.jogador) || {};
+  const pequeno = JSON.stringify({ token: cartao.token, jogador: { nome: j.nome || '', numero: j.numero || '', posicao: j.posicao || '' } });
+  try { localStorage.setItem(peChave(teamId), pequeno); } catch (e) { /* sem espaço ou modo privado */ }
+  try {
+    const seguro = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${peCookie(teamId)}=${encodeURIComponent(pequeno)}; Max-Age=${60 * 60 * 24 * 400}; Path=/; SameSite=Lax${seguro}`;
+  } catch (e) { /* cookies bloqueados */ }
+  try { if (j.foto) localStorage.setItem(peChaveFoto(teamId), j.foto); } catch (e) { /* a foto é dispensável */ }
+  const lido = peLerCartao(teamId);
+  return !!(lido && lido.token === cartao.token);
 }
-function peApagarCartao(teamId) { try { localStorage.removeItem(peChave(teamId)); } catch (e) { /* nada */ } }
+function peApagarCartao(teamId) {
+  try { localStorage.removeItem(peChave(teamId)); localStorage.removeItem(peChaveFoto(teamId)); } catch (e) { /* nada */ }
+  try { document.cookie = `${peCookie(teamId)}=; Max-Age=0; Path=/; SameSite=Lax`; } catch (e) { /* nada */ }
+}
 async function peRpc(nome, args) {
   const { data, error } = await supabase.rpc(nome, args);
   if (error) throw error;
@@ -32386,6 +32422,65 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
   );
 }
 
+/* INSTALAR O PORTAL NO TELEMÓVEL (ícone no ecrã inicial). Assim o atleta
+   abre sempre pelo mesmo sítio e o cartão fica lá guardado de vez.
+   · Android/Chrome: o navegador oferece "Instalar" (evento guardado em
+     window.__mjpInstalar, ver prepararPortalInstalavel).
+   · iPhone: não há botão automático — mostram-se os passos (Partilhar →
+     Adicionar ao ecrã principal). O ícone do iPhone tem a memória separada
+     do Safari: na 1.ª vez que abrir pelo ícone, recupera o cartão com o
+     código antigo e o PIN.
+   Já instalado (aberto pelo ícone): não aparece. */
+function peEstaInstalado() {
+  try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; } catch (e) { return false; }
+}
+function PeInstalar({ estilo }) {
+  const [pedido, setPedido] = useState(() => (typeof window !== 'undefined' ? window.__mjpInstalar || null : null));
+  const [ajuda, setAjuda] = useState(false);
+  useEffect(() => {
+    const f = () => setPedido(window.__mjpInstalar || null);
+    window.addEventListener('mjp-instalavel', f);
+    return () => window.removeEventListener('mjp-instalavel', f);
+  }, []);
+  if (typeof window === 'undefined' || peEstaInstalado()) return null;
+  const iphone = /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+  const instalar = async () => {
+    if (pedido) {
+      try { pedido.prompt(); await pedido.userChoice; } catch (e) { /* cancelado */ }
+      window.__mjpInstalar = null; setPedido(null);
+      return;
+    }
+    setAjuda(true);
+  };
+  return (
+    <>
+      <button type="button" onClick={instalar} style={estilo}>Pôr o Portal no ecrã do telemóvel</button>
+      {ajuda && (
+        <div onClick={() => setAjuda(false)} style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16, padding: '18px 18px 14px', color: T.cream, ...body }}>
+            <div style={{ ...display, fontSize: 19, fontWeight: 600, marginBottom: 10 }}>Pôr o Portal no ecrã do telemóvel</div>
+            {iphone ? (
+              <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.6, color: T.muted }}>
+                <li>Abre este link no <strong style={{ color: T.cream }}>Safari</strong>.</li>
+                <li>Toca em <strong style={{ color: T.cream }}>Partilhar</strong> (o quadrado com a seta para cima).</li>
+                <li>Escolhe <strong style={{ color: T.cream }}>Adicionar ao ecrã principal</strong>.</li>
+                <li>Abre o Portal pelo ícone novo. Na primeira vez, usa <strong style={{ color: T.cream }}>Entrar com o código antigo</strong> e o teu PIN.</li>
+              </ol>
+            ) : (
+              <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.6, color: T.muted }}>
+                <li>Abre este link no <strong style={{ color: T.cream }}>Chrome</strong> (se estiveres dentro do WhatsApp, toca nos três pontos e escolhe abrir no navegador).</li>
+                <li>Toca nos <strong style={{ color: T.cream }}>três pontos</strong> do canto.</li>
+                <li>Escolhe <strong style={{ color: T.cream }}>Instalar app</strong> ou <strong style={{ color: T.cream }}>Adicionar ao ecrã principal</strong>.</li>
+              </ol>
+            )}
+            <button type="button" onClick={() => setAjuda(false)} style={{ marginTop: 14, width: '100%', padding: 11, borderRadius: 12, border: 'none', background: T.gold, color: '#1A2A1F', ...display, fontSize: 16, fontWeight: 600, cursor: 'pointer' }}>Percebi</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function PortalEntrada({ entrar, equipa, teamId }) {
   const cor = coresCamisola(T.corEquipa);
   const logo = (equipa && equipa.logo) || '';
@@ -32401,6 +32496,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   const [tremer, setTremer] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [aberta, setAberta] = useState(false);
+  const [codigoAntigo, setCodigoAntigo] = useState('');
+  // Navegador que não guarda nada (janela privada, cookies bloqueados…).
+  const [semMemoria, setSemMemoria] = useState(false);
 
   const mostrarErro = (msg) => { setAviso(msg); setCorAviso('#FF5A4E'); setTremer(true); setTimeout(() => setTremer(false), 500); };
   const limpar = () => { setAviso(''); setCorAviso(''); };
@@ -32436,10 +32534,11 @@ function PortalEntrada({ entrar, equipa, teamId }) {
         return;
       }
       const novo = { token: r.token, jogador: r.jogador || jogador || {} };
-      peGuardarCartao(teamId, novo);
+      setSemMemoria(!peGuardarCartao(teamId, novo));
       setCartao(novo);
       setCodigo(''); setPin1('');
       setEcra('porta');
+      if (!peLerCartao(teamId)) { setPin(''); return; } // não ficou guardado: fica na porta com o aviso
       const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: pinEscolhido });
       if (e.ok && e.sessao) { setPin(pinEscolhido); await abrirEEntrar(e.sessao); } else { setPin(''); }
     } catch (e) { mostrarErro(erroDe(e)); setPin(''); } finally { setOcupado(false); }
@@ -32468,8 +32567,61 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     } catch (e) { setPin(''); mostrarErro(erroDe(e)); } finally { setOcupado(false); }
   };
 
+  /* CÓDIGO ANTIGO → se já tem cartão, pede o PIN e recupera-o neste sítio
+     (o cartão fica guardado no "sítio" onde foi ativado; outro navegador,
+     o navegador de dentro do WhatsApp ou o ícone do Portal são sítios
+     diferentes). Se ainda não tem cartão, entra como antes com o código. */
+  const seguirCodigoAntigo = async () => {
+    if (codigoAntigo.length < 4 || ocupado) return;
+    setOcupado(true); limpar();
+    try {
+      const r = await peRpc('checkin_cartao_por_codigo', { p_codigo: codigoAntigo, p_team: teamId });
+      if (!r.ok) { mostrarErro(r.erro || 'Código inválido.'); setCodigoAntigo(''); return; }
+      if (r.tem_cartao) { setJogador(r.jogador || {}); setPin(''); setEcra('recuperar'); return; }
+      if (r.so_cartao) { mostrarErro('Ainda não tens cartão de atleta. Pede o código de ativação ao staff técnico.'); return; }
+      const ok = await entrar(codigoAntigo);
+      if (!ok) mostrarErro('Não foi possível entrar com esse código.');
+    } catch (e) {
+      // Sem o SQL da recuperação (fase 2b) ainda corrido: entra como antes.
+      if (/checkin_cartao_por_codigo|does not exist|PGRST202/i.test((e && (e.message || e.code)) || '')) {
+        const ok = await entrar(codigoAntigo);
+        if (!ok) mostrarErro('Não foi possível entrar com esse código.');
+      } else { mostrarErro(erroDe(e)); }
+    } finally { setOcupado(false); }
+  };
+  const recuperarComPin = async (valor) => {
+    setOcupado(true); limpar();
+    try {
+      const r = await peRpc('checkin_cartao_recuperar', { p_codigo: codigoAntigo, p_team: teamId, p_pin: valor });
+      if (r.ok && r.token) {
+        const novo = { token: r.token, jogador: r.jogador || jogador || {} };
+        setSemMemoria(!peGuardarCartao(teamId, novo)); setCartao(novo); setCodigoAntigo(''); setEcra('porta');
+        const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: valor });
+        if (e.ok && e.sessao) { setPin(valor); await abrirEEntrar(e.sessao); } else { setPin(''); }
+        return;
+      }
+      setPin('');
+      if (r.bloqueado) { setEcra('rececao'); setAviso('Por segurança, o teu cartão foi bloqueado. Pede um código de ativação novo ao staff técnico.'); setCorAviso('#FF5A4E'); return; }
+      if (r.sem_cartao) { setEcra('codigo'); mostrarErro('Ainda não tens cartão de atleta.'); return; }
+      mostrarErro(r.restantes != null ? `PIN ERRADO · ${r.restantes} ${r.restantes === 1 ? 'TENTATIVA' : 'TENTATIVAS'}` : (r.erro || 'Não foi possível recuperar o cartão.'));
+    } catch (e) { setPin(''); mostrarErro(erroDe(e)); } finally { setOcupado(false); }
+  };
+
   const tecla = (k) => {
     if (ocupado || aberta) return;
+    if (ecra === 'codigo') {
+      limpar();
+      setCodigoAntigo(c => (k === '⌫' ? c.slice(0, -1) : c.length < 6 ? c + k : c));
+      return;
+    }
+    if (ecra === 'recuperar') {
+      if (k === '⌫') { setPin(p => p.slice(0, -1)); return; }
+      if (pin.length >= 6) return;
+      const novo = pin + k;
+      setPin(novo); limpar();
+      if (novo.length === 6) recuperarComPin(novo);
+      return;
+    }
     if (ecra === 'rececao') {
       limpar();
       setCodigo(c => (k === '⌫' ? c.slice(0, -1) : c.length < 6 ? c + k : c));
@@ -32513,17 +32665,6 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     ...display, fontSize: 17, fontWeight: 600, cursor: ativo ? 'pointer' : 'default', flexShrink: 0,
   });
 
-  if (ecra === 'antigo') {
-    return (
-      <>
-        <CheckinLogin onSubmit={entrar} equipa={equipa} />
-        <div style={{ textAlign: 'center', paddingBottom: 20 }}>
-          <button type="button" onClick={() => setEcra(cartao ? 'porta' : 'rececao')} style={ligacao}>Voltar à receção</button>
-        </div>
-      </>
-    );
-  }
-
   return (
     <div style={ecraFixo}>
       <style>{PE_CSS}</style>
@@ -32545,8 +32686,47 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             {ocupado ? 'A verificar…' : 'Levantar o cartão'}
           </button>
           <div style={{ fontSize: 12, color: T.mutedDim, textAlign: 'center' }}>O código é dado pelo staff técnico e só serve uma vez.</div>
-          <button type="button" onClick={() => { limpar(); setEcra('antigo'); }} style={ligacao}>Ainda não tens? Entra com o teu código antigo</button>
+          <button type="button" onClick={() => { limpar(); setCodigoAntigo(''); setEcra('codigo'); }} style={ligacao}>Já tens cartão ou ainda usas o código antigo? Entra aqui</button>
           <div style={{ fontSize: 10, color: T.line, ...mono }}>{APP_BUILD}</div>
+        </div>
+      )}
+
+      {ecra === 'codigo' && (
+        <div style={coluna}>
+          <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Entrar com o código antigo</div>
+            <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', marginTop: -4, lineHeight: 1.45 }}>
+              Se já tens cartão de atleta, a seguir pedimos o teu PIN e o cartão fica também aqui.
+            </div>
+            <div style={{ width: 'min(100%, 300px)' }}>
+              <PePainel rotulo={aviso && aviso.length <= 32 ? aviso : 'O TEU CÓDIGO'} corRotulo={aviso && aviso.length <= 32 ? corAviso : undefined} tremer={tremer}>
+                <PeCaixas valor={codigoAntigo} />
+              </PePainel>
+            </div>
+            {aviso && aviso.length > 32 && <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4 }}>{aviso}</div>}
+            <PeTeclado onTecla={tecla} desativado={ocupado} />
+            <button type="button" onClick={seguirCodigoAntigo} disabled={codigoAntigo.length < 4 || ocupado} style={botaoOuro(codigoAntigo.length >= 4 && !ocupado)}>
+              {ocupado ? 'A verificar…' : 'Seguinte'}
+            </button>
+          </div>
+          <button type="button" onClick={() => { setEcra(cartao ? 'porta' : 'rececao'); setCodigoAntigo(''); limpar(); }} style={ligacao}>Voltar à receção</button>
+        </div>
+      )}
+
+      {ecra === 'recuperar' && (
+        <div style={coluna}>
+          <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <PeCartao jogador={jogador} cor={cor} logo={logo} clube={clube} />
+            <div style={{ ...display, fontSize: 19, fontWeight: 600, color: T.cream, marginTop: 14 }}>Já tens cartão de atleta</div>
+            <div style={{ fontSize: 12.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>Escreve o teu PIN para o usares também aqui.</div>
+            <div style={{ width: 'min(100%, 300px)' }}>
+              <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
+                <PeCaixas valor={pin} ocultar />
+              </PePainel>
+            </div>
+            <PeTeclado onTecla={tecla} desativado={ocupado} />
+          </div>
+          <button type="button" onClick={() => { setEcra('codigo'); setPin(''); limpar(); }} style={ligacao}>Voltar</button>
         </div>
       )}
 
@@ -32583,6 +32763,11 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             </div>
             <span style={{ marginLeft: 'auto', width: 14, height: 14, borderRadius: '50%', flexShrink: 0, background: aberta ? '#4CAF6A' : '#B3261E', boxShadow: `0 0 10px ${aberta ? '#4CAF6A' : '#B3261E'}`, transition: 'all .3s' }} />
           </div>
+          {semMemoria && (
+            <div style={{ alignSelf: 'stretch', fontSize: 12.5, lineHeight: 1.45, color: T.cream, background: '#3A1F22', border: `1px solid ${T.bad}`, borderRadius: 10, padding: '8px 12px', flexShrink: 0 }}>
+              Este navegador não está a guardar o teu cartão (janela privada ou memória bloqueada). Podes entrar agora com o PIN, mas da próxima vez abre o Portal num navegador normal — ou põe-no no ecrã do telemóvel.
+            </div>
+          )}
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
           <div style={{ width: 'min(100%, 300px)', flexShrink: 0 }}>
             <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
@@ -32590,7 +32775,10 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             </PePainel>
           </div>
           <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
-          <button type="button" onClick={usarOutroCartao} style={ligacao}>Não és tu? Usar outro cartão</button>
+          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+            <PeInstalar estilo={ligacao} />
+            <button type="button" onClick={usarOutroCartao} style={ligacao}>Não és tu? Usar outro cartão</button>
+          </div>
         </div>
       )}
     </div>
@@ -45442,6 +45630,46 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
    de todos os atletas ao alcance de quem extraísse a chave pública do
    site. O código de 4 dígitos deixa de ser um filtro no browser e passa
    a ser uma credencial verificada na base de dados. */
+/* O PORTAL COMO APP NO TELEMÓVEL. Só nas páginas do Portal (não na
+   plataforma do staff): liga o manifesto e o ícone, guarda o evento de
+   instalação do Chrome e regista um service worker mínimo (só passa os
+   pedidos à rede — não guarda nada em cache). O ícone instalado no
+   Android abre "/?origem=portal-icone"; aqui redireciona-se para o Portal
+   da última equipa aberta neste telemóvel. Os ficheiros manifest.webmanifest,
+   icone-192.png, icone-512.png, apple-touch-icon.png e sw.js vivem na
+   pasta public/ do projeto. */
+const PORTAL_ULTIMO = 'mjp-portal-ultimo';
+(function prepararPortalInstalavel() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  try {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('origem') === 'portal-icone' && !q.has('portal')) {
+      const ultimo = localStorage.getItem(PORTAL_ULTIMO);
+      if (ultimo) { window.location.replace(`/?portal=${encodeURIComponent(ultimo)}`); return; }
+    }
+    const ehPortal = q.has('portal') || q.has('checkin') || /portal=|checkin/.test(window.location.hash);
+    if (!ehPortal) return;
+    const junta = (tag, attrs) => {
+      const el = document.createElement(tag);
+      Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
+      document.head.appendChild(el);
+    };
+    if (!document.querySelector('link[rel="manifest"]')) junta('link', { rel: 'manifest', href: '/manifest.webmanifest' });
+    junta('link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' });
+    junta('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
+    junta('meta', { name: 'mobile-web-app-capable', content: 'yes' });
+    junta('meta', { name: 'apple-mobile-web-app-title', content: 'Portal' });
+    junta('meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' });
+    junta('meta', { name: 'theme-color', content: '#182619' });
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      window.__mjpInstalar = e;
+      window.dispatchEvent(new Event('mjp-instalavel'));
+    });
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => { /* sem service worker: continua tudo a funcionar */ });
+  } catch (e) { /* nada disto é essencial */ }
+})();
+
 function CheckinApp() {
   const [codigo, setCodigo] = useState(null);
   const [dados, setDados] = useState(null); // { player, sessions, monitoring }
@@ -45519,6 +45747,7 @@ function CheckinApp() {
           if (eq && eq.cor) T.corEquipa = eq.cor;
           setEquipa(eq);
           try { localStorage.setItem(chaveIdentidade, JSON.stringify(eq)); } catch (e) { /* sem espaço: fica só nesta visita */ }
+          try { localStorage.setItem(PORTAL_ULTIMO, equipaDoLink); } catch (e) { /* idem */ }
         }
       } catch (e) { /* sem identidade, o ecrã fica neutro — não é impeditivo */ }
     })();
