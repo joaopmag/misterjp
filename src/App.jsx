@@ -23,7 +23,7 @@ import {
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
-  HeartPulse, Flame, PartyPopper, Megaphone, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
+  HeartPulse, Flame, PartyPopper, Megaphone, Fingerprint, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
   Video, Repeat, Calendar, Bell, Lock,
   Volume2, VolumeX, CheckCircle2,
 } from 'lucide-react';
@@ -32169,6 +32169,7 @@ const PE_CSS = `
   @keyframes pe-treme { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
   @keyframes pe-respira { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
   @keyframes pe-onda { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -60; } }
+  @keyframes pe-pulso { 0%,100% { box-shadow: 0 0 0 0 rgba(201,162,39,.55); } 50% { box-shadow: 0 0 0 12px rgba(201,162,39,0); } }
 `;
 /* ONDE O CARTÃO FICA GUARDADO NESTE TELEMÓVEL/COMPUTADOR.
    O Portal e a plataforma do staff partilham o mesmo endereço e, por
@@ -32201,7 +32202,7 @@ function peLerCartao(teamId) {
 // Devolve true se ficou guardado em pelo menos um dos dois sítios.
 function peGuardarCartao(teamId, cartao) {
   const j = (cartao && cartao.jogador) || {};
-  const pequeno = JSON.stringify({ token: cartao.token, jogador: { nome: j.nome || '', numero: j.numero || '', posicao: j.posicao || '' } });
+  const pequeno = JSON.stringify({ token: cartao.token, bio: !!cartao.bio, jogador: { nome: j.nome || '', numero: j.numero || '', posicao: j.posicao || '' } });
   try { localStorage.setItem(peChave(teamId), pequeno); } catch (e) { /* sem espaço ou modo privado */ }
   try {
     const seguro = window.location.protocol === 'https:' ? '; Secure' : '';
@@ -32677,6 +32678,72 @@ function peDescreverAparelho(token, teamId) {
     .catch(() => {});
 }
 
+/* IMPRESSÃO DIGITAL / FACE ID (fase 3). O navegador fala com o leitor do
+   aparelho (WebAuthn); a Edge Function "portal-biometria" gera os desafios
+   e verifica as assinaturas. Aqui só se convertem os dados entre o formato
+   do navegador (bytes) e o do servidor (texto base64url). */
+function peB64uParaBuf(s) {
+  const b = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b + '==='.slice((b.length + 3) % 4));
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u.buffer;
+}
+function peBufParaB64u(buf) {
+  const u = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function peBioDisponivel() {
+  try {
+    return !!(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable
+      && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+  } catch (e) { return false; }
+}
+async function peBioFn(corpo) {
+  const { data, error } = await supabase.functions.invoke('portal-biometria', { body: corpo });
+  if (error) throw error;
+  return typeof data === 'string' ? JSON.parse(data) : (data || {});
+}
+async function peBioRegistar(o) {
+  const cred = await navigator.credentials.create({ publicKey: {
+    ...o,
+    challenge: peB64uParaBuf(o.challenge),
+    user: { ...o.user, id: peB64uParaBuf(o.user.id) },
+    excludeCredentials: (o.excludeCredentials || []).map(c => ({ ...c, id: peB64uParaBuf(c.id) })),
+  } });
+  return {
+    id: cred.id, rawId: peBufParaB64u(cred.rawId), type: cred.type,
+    response: {
+      clientDataJSON: peBufParaB64u(cred.response.clientDataJSON),
+      attestationObject: peBufParaB64u(cred.response.attestationObject),
+      transports: cred.response.getTransports ? cred.response.getTransports() : [],
+    },
+    clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    authenticatorAttachment: cred.authenticatorAttachment || undefined,
+  };
+}
+async function peBioAutenticar(o) {
+  const cred = await navigator.credentials.get({ publicKey: {
+    ...o,
+    challenge: peB64uParaBuf(o.challenge),
+    allowCredentials: (o.allowCredentials || []).map(c => ({ ...c, id: peB64uParaBuf(c.id) })),
+  } });
+  return {
+    id: cred.id, rawId: peBufParaB64u(cred.rawId), type: cred.type,
+    response: {
+      clientDataJSON: peBufParaB64u(cred.response.clientDataJSON),
+      authenticatorData: peBufParaB64u(cred.response.authenticatorData),
+      signature: peBufParaB64u(cred.response.signature),
+      userHandle: cred.response.userHandle ? peBufParaB64u(cred.response.userHandle) : undefined,
+    },
+    clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    authenticatorAttachment: cred.authenticatorAttachment || undefined,
+  };
+}
+const peBioRecusa = (teamId) => `mjp-bio-recusa:${teamId || 'sem-equipa'}`;
+
 function PortalEntrada({ entrar, equipa, teamId }) {
   const cor = coresCamisola(T.corEquipa);
   const logo = (equipa && equipa.logo) || '';
@@ -32760,6 +32827,12 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       if (r.ok && r.sessao) {
         if (r.jogador) { const atual = { ...cartao, jogador: r.jogador }; peGuardarCartao(teamId, atual); setCartao(atual); }
         peDescreverAparelho(cartao.token, teamId); // os aparelhos antigos ganham nome aqui
+        let recusou = 0;
+        try { recusou = Number(localStorage.getItem(peBioRecusa(teamId)) || 0); } catch (e) { recusou = 0; }
+        if (bioSuportada && !cartao.bio && Date.now() - recusou > 30 * 24 * 3600 * 1000) {
+          setOferta({ sessao: r.sessao, pin: valor }); setPin(''); setEcra('oferta-bio');
+          return;
+        }
         await abrirEEntrar(r.sessao);
         return;
       }
@@ -32839,6 +32912,72 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   // própria linha do aparelho — ver `aRemover`.)
   const [aRemover, setARemover] = useState(null);
   const [maisOpcoes, setMaisOpcoes] = useState(false);
+  // "Perdeste o acesso ao cartão?" na Receção. A opção do código antigo só
+  // aparece enquanto os códigos antigos estiverem ligados (atletas novos
+  // nunca tiveram um).
+  const [perdeuAcesso, setPerdeuAcesso] = useState(false);
+  const [semNenhum, setSemNenhum] = useState(false);
+  const [codigosAntigosLigados, setCodigosAntigosLigados] = useState(true);
+  useEffect(() => {
+    peRpc('checkin_portal_config', { p_team: teamId })
+      .then(r => { if (r && typeof r.so_cartao === 'boolean') setCodigosAntigosLigados(!r.so_cartao); })
+      .catch(() => { /* sem a função: mostra a opção, como antes */ });
+  }, [teamId]);
+  // Impressão digital / Face ID
+  const [bioSuportada, setBioSuportada] = useState(false);
+  const [modoPin, setModoPin] = useState(false);      // com biometria ativa, o PIN é a alternativa
+  const [oferta, setOferta] = useState(null);         // { sessao, pin } — perguntar se quer ativar
+  useEffect(() => { peBioDisponivel().then(setBioSuportada); }, []);
+  // O servidor manda: se a biometria foi desligada (aparelho removido, cartão terminado…), acerta-se aqui.
+  useEffect(() => {
+    if (!cartao || !cartao.token) return;
+    peRpc('checkin_bio_estado', { p_token: cartao.token, p_team: teamId })
+      .then(r => { if (r && typeof r.ativa === 'boolean' && r.ativa !== !!cartao.bio) { const novo = { ...cartao, bio: r.ativa }; peGuardarCartao(teamId, novo); setCartao(novo); } })
+      .catch(() => {});
+  }, [cartao && cartao.token]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bioAtiva = !!(cartao && cartao.bio && bioSuportada);
+
+  const entrarComBio = async () => {
+    if (!cartao || ocupado || aberta) return;
+    setOcupado(true); limpar();
+    try {
+      const o = await peBioFn({ acao: 'entrada-opcoes', token: cartao.token, team: teamId });
+      if (!o.ok) {
+        if (o.invalido) { usarOutroCartao(); setAviso('O teu cartão já não é válido neste aparelho. Pede um código de ativação novo ao staff técnico.'); setCorAviso('#FF5A4E'); return; }
+        if (o.sem_biometria) { const novo = { ...cartao, bio: false }; peGuardarCartao(teamId, novo); setCartao(novo); setModoPin(true); mostrarErro('Entra com o PIN.'); return; }
+        mostrarErro(o.erro || 'Não foi possível.'); return;
+      }
+      let resposta;
+      try { resposta = await peBioAutenticar(o.opcoes); }
+      catch (e) { setOcupado(false); return; } // cancelado pelo atleta: fica tudo como estava
+      const v = await peBioFn({ acao: 'entrada-verificar', token: cartao.token, team: teamId, resposta });
+      if (v.ok && v.sessao) { setPin('●●●●●●'); await abrirEEntrar(v.sessao); return; }
+      mostrarErro(v.erro || 'Não foi possível confirmar. Entra com o PIN.');
+    } catch (e) { mostrarErro('Não foi possível usar a impressão digital agora. Entra com o PIN.'); setModoPin(true); }
+    finally { setOcupado(false); }
+  };
+  // Ativar neste aparelho (pede o PIN — o servidor confirma-o outra vez).
+  const ativarBio = async (valorPin) => {
+    const o = await peBioFn({ acao: 'registo-opcoes', token: cartao.token, team: teamId, pin: valorPin });
+    if (!o.ok) return o;
+    let resposta;
+    try { resposta = await peBioRegistar(o.opcoes); } catch (e) { return { ok: false, cancelado: true }; }
+    const v = await peBioFn({ acao: 'registo-verificar', token: cartao.token, team: teamId, resposta });
+    if (v.ok) { const novo = { ...cartao, bio: true }; peGuardarCartao(teamId, novo); setCartao(novo); setModoPin(false); }
+    return v;
+  };
+  const responderOferta = async (aceita) => {
+    const o = oferta; setOferta(null);
+    if (aceita) {
+      setOcupado(true);
+      try { await ativarBio(o.pin); } catch (e) { /* segue com o PIN */ }
+      setOcupado(false);
+    } else {
+      try { localStorage.setItem(peBioRecusa(teamId), String(Date.now())); } catch (e) { /* nada */ }
+    }
+    setEcra('porta');
+    await abrirEEntrar(o.sessao);
+  };
   const removerAparelho = async (ap) => {
       setARemover(null);
       try {
@@ -32879,6 +33018,23 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     if (ecra === 'ligar') {
       limpar();
       setCodigoLigacao(c => (k === '⌫' ? c.slice(0, -1) : c.length < 6 ? c + k : c));
+      return;
+    }
+    if (ecra === 'bio-pin') {
+      if (k === '⌫') { setPin(p => p.slice(0, -1)); return; }
+      if (pin.length >= 6) return;
+      const novo = pin + k;
+      setPin(novo); limpar();
+      if (novo.length === 6) {
+        setOcupado(true);
+        ativarBio(novo).then(r => {
+          setPin('');
+          if (r && r.ok) { setEcra('porta'); setAviso('IMPRESSÃO DIGITAL ATIVA'); setCorAviso('#8EE6A0'); return; }
+          if (r && r.cancelado) { setEcra('porta'); return; }
+          if (r && (r.bloqueado || r.invalido)) { usarOutroCartao(); setAviso('Por segurança, o teu cartão foi bloqueado. Pede um código de ativação novo ao staff técnico.'); setCorAviso('#FF5A4E'); return; }
+          mostrarErro(r && r.restantes != null ? `PIN ERRADO · ${r.restantes} ${r.restantes === 1 ? 'TENTATIVA' : 'TENTATIVAS'}` : ((r && r.erro) || 'Não foi possível ativar.'));
+        }).catch(() => { setPin(''); mostrarErro('Não foi possível ativar agora.'); }).finally(() => setOcupado(false));
+      }
       return;
     }
     if (ecra === 'ligar-pin' || ecra === 'outro-pin') {
@@ -32967,8 +33123,79 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           </button>
           <div style={{ fontSize: 12, color: T.mutedDim, textAlign: 'center' }}>O código é dado pelo staff técnico e só serve uma vez.</div>
           <button type="button" onClick={() => { limpar(); setCodigoLigacao(''); setPin(''); setEcra('ligar'); }} style={{ ...ligacao, marginTop: -4 }}>Já tenho cartão noutro aparelho</button>
-          <button type="button" onClick={() => { limpar(); setCodigoAntigo(''); setEcra('codigo'); }} style={{ ...ligacao, marginTop: -8 }}>Ainda usas o código antigo de acesso? Entra aqui</button>
+          <button type="button" onClick={() => { limpar(); setSemNenhum(false); setPerdeuAcesso(true); }} style={{ ...ligacao, marginTop: -8 }}>Perdeste o acesso ao cartão?</button>
+          {perdeuAcesso && (() => {
+            const opcao = { width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 12, background: T.bg, border: `1px solid ${T.line}`, color: T.cream, fontSize: 14.5, cursor: 'pointer', ...body };
+            const sub = { display: 'block', fontSize: 12, color: T.mutedDim, marginTop: 2 };
+            return (
+              <div onClick={() => setPerdeuAcesso(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px' }}>
+                <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16, padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ ...display, fontSize: 19, fontWeight: 600, color: T.cream, marginBottom: 2 }}>Perdeste o acesso ao cartão?</div>
+                  {semNenhum ? (
+                    <>
+                      <div style={{ fontSize: 14, color: T.muted, lineHeight: 1.55 }}>
+                        Pede ao <strong style={{ color: T.cream }}>staff técnico</strong> um código de ativação novo. Com ele recebes o cartão outra vez e escolhes um PIN novo.
+                        O teu histórico (Wellness, PSE, missões, sequência) mantém-se igual.
+                      </div>
+                      <button type="button" onClick={() => setPerdeuAcesso(false)} style={botaoOuro(true)}>Percebi</button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" style={opcao} onClick={() => { setPerdeuAcesso(false); limpar(); setCodigoLigacao(''); setPin(''); setEcra('ligar'); }}>
+                        Ainda tenho o cartão noutro aparelho
+                        <span style={sub}>Liga este a partir dele, com o QR code ou o código de ligação.</span>
+                      </button>
+                      {codigosAntigosLigados && (
+                        <button type="button" style={opcao} onClick={() => { setPerdeuAcesso(false); limpar(); setCodigoAntigo(''); setEcra('codigo'); }}>
+                          Tenho o código de acesso antigo
+                          <span style={sub}>O código que usavas antes do cartão, com o teu PIN.</span>
+                        </button>
+                      )}
+                      <button type="button" style={opcao} onClick={() => setSemNenhum(true)}>
+                        Não tenho nenhum aparelho com o cartão
+                        <span style={sub}>Ou esqueci-me do PIN.</span>
+                      </button>
+                      <button type="button" onClick={() => setPerdeuAcesso(false)} style={{ ...opcao, textAlign: 'center', background: 'none', border: 'none', color: T.mutedDim }}>Fechar</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ fontSize: 10, color: T.line, ...mono }}>{APP_BUILD}</div>
+        </div>
+      )}
+
+      {ecra === 'oferta-bio' && oferta && (
+        <div style={coluna}>
+          <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, textAlign: 'center' }}>
+            <div style={{ width: 96, height: 96, borderRadius: 24, background: '#0d120f', border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Fingerprint size={60} color={T.gold} strokeWidth={1.6} />
+            </div>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream }}>Entrar com impressão digital ou Face ID?</div>
+            <div style={{ fontSize: 13.5, color: T.mutedDim, lineHeight: 1.5, maxWidth: 320 }}>
+              Da próxima vez, neste aparelho, basta tocar e usar o dedo ou a cara. A impressão digital nunca sai do teu telemóvel. O PIN continua a funcionar.
+            </div>
+            <button type="button" onClick={() => responderOferta(true)} disabled={ocupado} style={botaoOuro(!ocupado)}>{ocupado ? 'A ativar…' : 'Ativar'}</button>
+            <button type="button" onClick={() => responderOferta(false)} disabled={ocupado} style={ligacao}>Agora não</button>
+          </div>
+        </div>
+      )}
+
+      {ecra === 'bio-pin' && (
+        <div style={coluna}>
+          <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <Fingerprint size={44} color={T.gold} strokeWidth={1.6} />
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream, textAlign: 'center' }}>Impressão digital ou Face ID</div>
+            <div style={{ fontSize: 13, color: T.mutedDim, textAlign: 'center', marginTop: -4 }}>Escreve o teu PIN para ativar neste aparelho.</div>
+            <div style={{ width: 'min(100%, 300px)' }}>
+              <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
+                <PeCaixas valor={pin} ocultar />
+              </PePainel>
+            </div>
+            <PeTeclado onTecla={tecla} desativado={ocupado} />
+          </div>
+          <button type="button" onClick={() => { setPin(''); limpar(); setEcra('porta'); }} style={ligacao}>Voltar</button>
         </div>
       )}
 
@@ -33152,12 +33379,35 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             </div>
           )}
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
-          <div style={{ width: 'min(100%, 300px)', flexShrink: 0 }}>
-            <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
-              <PeCaixas valor={pin} ocultar cor={aberta ? '#8EE6A0' : undefined} />
-            </PePainel>
-          </div>
-          <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
+          {bioAtiva && !modoPin ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flexShrink: 0, padding: '6px 0' }}>
+              <button type="button" onClick={entrarComBio} disabled={ocupado || aberta} aria-label="Entrar com impressão digital ou Face ID" style={{
+                width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                animation: ocupado || aberta ? 'none' : 'pe-pulso 2s ease-in-out infinite',
+              }}>
+                <Fingerprint size={56} color={aberta ? '#8EE6A0' : T.gold} strokeWidth={1.6} />
+              </button>
+              <div style={{ fontSize: 13.5, color: aviso ? (corAviso || T.bad) : T.cream, textAlign: 'center', minHeight: 20 }}>
+                {aviso || (ocupado ? 'A confirmar…' : 'Toca e usa a impressão digital ou o Face ID')}
+              </div>
+              <button type="button" onClick={() => { limpar(); setPin(''); setModoPin(true); }} style={{ ...ligacao, padding: 2 }}>Entrar com o PIN</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ width: 'min(100%, 300px)', flexShrink: 0 }}>
+                <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
+                  <PeCaixas valor={pin} ocultar cor={aberta ? '#8EE6A0' : undefined} />
+                </PePainel>
+              </div>
+              <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
+              {bioAtiva && (
+                <button type="button" onClick={() => { limpar(); setModoPin(false); }} style={{ ...ligacao, padding: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Fingerprint size={15} /> Entrar com impressão digital
+                </button>
+              )}
+            </>
+          )}
           {/* Uma só ligação discreta; as opções abrem num painel por baixo,
               para não roubarem altura à porta e ao teclado. */}
           <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -33169,6 +33419,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               <div onClick={() => setMaisOpcoes(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px' }}>
                 <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <PeInstalar estilo={opcao} aoAbrir={() => setMaisOpcoes(false)} />
+                  {bioSuportada && !cartao.bio && (
+                    <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('bio-pin'); }}>Entrar com impressão digital ou Face ID</button>
+                  )}
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('outro-pin'); }}>Utilizar outro equipamento</button>
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); usarOutroCartao(); }}>Usar outro cartão de atleta</button>
                   <button type="button" onClick={() => setMaisOpcoes(false)} style={{ ...opcao, textAlign: 'center', background: 'none', border: 'none', color: T.mutedDim }}>Fechar</button>
