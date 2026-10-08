@@ -32758,6 +32758,23 @@ async function peBioAutenticar(o) {
   };
 }
 const peBioRecusa = (teamId) => `mjp-bio-recusa:${teamId || 'sem-equipa'}`;
+/* Desafio preparado antes do toque: válido por pouco tempo, para não se
+   usar um que o servidor já tenha dado como expirado. */
+const PE_BIO_VALIDADE_MS = 60 * 1000;
+/* Abrir o leitor sozinho só onde o navegador o permite sem toque. No
+   iPhone/iPad (todos os navegadores são WebKit) e no Safari do Mac, a
+   Apple obriga a que o pedido nasça de um toque. */
+function pePodeAutoAbrirBio() {
+  try {
+    const ua = navigator.userAgent || '';
+    const ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    const safari = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|EdgiOS|Edg\/|OPR|SamsungBrowser|Android/.test(ua);
+    return !ios && !safari;
+  } catch (e) { return false; }
+}
+// Uma só abertura automática por carregamento da página: se o atleta
+// cancelar, não volta a aparecer sozinho (fica o botão para tocar).
+let peBioAutoFeito = false;
 
 function PortalEntrada({ entrar, equipa, teamId }) {
   const cor = coresCamisola(T.corEquipa);
@@ -32952,25 +32969,88 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   }, [cartao && cartao.token]); // eslint-disable-line react-hooks/exhaustive-deps
   const bioAtiva = !!(cartao && cartao.bio && bioSuportada);
 
-  const entrarComBio = async () => {
-    if (!cartao || ocupado || aberta) return;
+  /* Desafio preparado em segundo plano. Assim que a porta aparece, pede-se
+     ao servidor o desafio de segurança; ao tocar no leitor (ou na abertura
+     automática), o ecrã do sistema abre logo, sem esperar pela Edge
+     Function. Cada desafio serve uma só vez. */
+  const bioPronto = useRef(null);      // { o, quando }
+  const bioPedido = useRef(null);      // promessa do pedido em curso
+  const bioSeq = useRef(0);
+  const bioEmCurso = useRef(false);    // leitor aberto: não pedir outro desafio por cima
+  const prepararBio = () => {
+    if (!cartao || !cartao.token || bioEmCurso.current) return;
+    const seq = ++bioSeq.current;
+    const p = peBioFn({ acao: 'entrada-opcoes', token: cartao.token, team: teamId })
+      .then(o => { if (seq === bioSeq.current) bioPronto.current = { o, quando: Date.now() }; return o; });
+    p.catch(() => {}).finally(() => { if (bioPedido.current === p) bioPedido.current = null; });
+    bioPedido.current = p;
+  };
+  const obterOpcoesBio = async () => {
+    const pronto = bioPronto.current; bioPronto.current = null;
+    if (pronto && Date.now() - pronto.quando < PE_BIO_VALIDADE_MS) return pronto.o;
+    if (bioPedido.current) {
+      try { const o = await bioPedido.current; bioPronto.current = null; return o; }
+      catch (e) { /* o pedido antecipado falhou: tenta-se outra vez já */ }
+    }
+    return peBioFn({ acao: 'entrada-opcoes', token: cartao.token, team: teamId });
+  };
+  const naPortaComBio = ecra === 'porta' && bioAtiva && !modoPin && !aberta;
+  useEffect(() => {
+    if (!naPortaComBio) { bioPronto.current = null; return undefined; }
+    prepararBio();
+    // Ao voltar à app (estava em segundo plano), renova o desafio se já for velho.
+    const aoVoltar = () => {
+      if (document.visibilityState !== 'visible' || bioEmCurso.current) return;
+      const pronto = bioPronto.current;
+      if (!bioPedido.current && (!pronto || Date.now() - pronto.quando >= PE_BIO_VALIDADE_MS)) prepararBio();
+    };
+    document.addEventListener('visibilitychange', aoVoltar);
+    return () => document.removeEventListener('visibilitychange', aoVoltar);
+  }, [naPortaComBio, cartao && cartao.token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // auto = aberto sozinho ao chegar à porta: falhas silenciosas, o botão fica para tocar.
+  const entrarComBio = async (auto = false) => {
+    if (!cartao || ocupado || aberta || bioEmCurso.current) return;
+    bioEmCurso.current = true;
     setOcupado(true); limpar();
+    let renovar = false; // true quando se fica na porta com a impressão digital à espera de novo toque
     try {
-      const o = await peBioFn({ acao: 'entrada-opcoes', token: cartao.token, team: teamId });
+      const o = await obterOpcoesBio();
       if (!o.ok) {
         if (o.invalido) { usarOutroCartao(); setAviso('O teu cartão já não é válido neste aparelho. Pede um código de ativação novo ao staff técnico.'); setCorAviso('#FF5A4E'); return; }
         if (o.sem_biometria) { const novo = { ...cartao, bio: false }; peGuardarCartao(teamId, novo); setCartao(novo); setModoPin(true); mostrarErro('Entra com o PIN.'); return; }
-        mostrarErro(o.erro || 'Não foi possível.'); return;
+        if (!auto) mostrarErro(o.erro || 'Não foi possível.');
+        renovar = true; return;
       }
       let resposta;
       try { resposta = await peBioAutenticar(o.opcoes); }
-      catch (e) { setOcupado(false); return; } // cancelado pelo atleta: fica tudo como estava
+      catch (e) { renovar = true; return; } // cancelado pelo atleta (ou recusado sem toque): fica tudo como estava
       const v = await peBioFn({ acao: 'entrada-verificar', token: cartao.token, team: teamId, resposta });
       if (v.ok && v.sessao) { setPin('●●●●●●'); await abrirEEntrar(v.sessao); return; }
       mostrarErro(v.erro || 'Não foi possível confirmar. Entra com o PIN.');
-    } catch (e) { mostrarErro(`Não foi possível usar a impressão digital agora${e && e.diag ? ` (${e.diag})` : ''}. Entra com o PIN.`); setModoPin(true); }
-    finally { setOcupado(false); }
+      renovar = true;
+    } catch (e) {
+      if (auto) renovar = true;
+      else { mostrarErro(`Não foi possível usar a impressão digital agora${e && e.diag ? ` (${e.diag})` : ''}. Entra com o PIN.`); setModoPin(true); }
+    } finally {
+      bioEmCurso.current = false;
+      setOcupado(false);
+      // O desafio usado já não serve: prepara-se outro para o próximo toque.
+      if (renovar) prepararBio();
+    }
   };
+  // Abrir o leitor sozinho (Android e computador). Espera um instante para a
+  // porta aparecer e para não chocar com outros painéis abertos.
+  useEffect(() => {
+    if (!naPortaComBio || ocupado || oferta || maisOpcoes || peBioAutoFeito || !pePodeAutoAbrirBio()) return undefined;
+    if (document.visibilityState !== 'visible') return undefined;
+    const t = setTimeout(() => {
+      if (peBioAutoFeito || document.visibilityState !== 'visible') return;
+      peBioAutoFeito = true;
+      entrarComBio(true);
+    }, 450);
+    return () => clearTimeout(t);
+  }, [naPortaComBio, ocupado, oferta, maisOpcoes]); // eslint-disable-line react-hooks/exhaustive-deps
   // Ativar neste aparelho (pede o PIN — o servidor confirma-o outra vez).
   const ativarBio = async (valorPin) => {
     const o = await peBioFn({ acao: 'registo-opcoes', token: cartao.token, team: teamId, pin: valorPin });
@@ -33396,7 +33476,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
           {bioAtiva && !modoPin ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flexShrink: 0, padding: '6px 0' }}>
-              <button type="button" onClick={entrarComBio} disabled={ocupado || aberta} aria-label="Entrar com impressão digital ou Face ID" style={{
+              <button type="button" onClick={() => entrarComBio()} disabled={ocupado || aberta} aria-label="Entrar com impressão digital ou Face ID" style={{
                 width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                 animation: ocupado || aberta ? 'none' : 'pe-pulso 2s ease-in-out infinite',
