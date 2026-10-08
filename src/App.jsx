@@ -43667,7 +43667,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
   // Uma tarefa antiga que já passava do limite pode ser gravada como está,
   // só não pode crescer.
   const pendentesOriginais = (tarefa && tarefa.jogadorId === f.jogadorId) ? missoesPorFazerDe(tarefa) : 0;
-  const passaLimite = !!f.jogadorId && pendentesAqui > lugaresLivres && pendentesAqui > pendentesOriginais;
+  const passaLimite = !repete && !!f.jogadorId && pendentesAqui > lugaresLivres && pendentesAqui > pendentesOriginais;
   const podeAcrescentar = missoes.length < MAX_MISSOES_ABERTAS && pendentesAqui < lugaresLivres;
   const nomeJogador = f.jogadorId ? shortPlayerName((players || []).find(p => p.id === f.jogadorId) || {}, players) : '';
   const valido = String(f.titulo || '').trim().length > 0 && !passaLimite;
@@ -43804,8 +43804,10 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
               // Ao deixar de repetir, a tarefa volta a ter o dia em que
               // a repetição começou (se o houver), em vez de ficar sem dia.
               if (!tipo) { setF({ ...f, prazo: (f.recorrencia && f.recorrencia.desde) || f.prazo || '', recorrencia: null }); return; }
+              // Uma tarefa que se repete não vai para o Portal: o jogador só tem
+              // uma resposta, e ela aparecia em todos os dias da repetição.
               setF({
-                ...f, prazo: '',
+                ...f, prazo: '', jogadorId: '',
                 recorrencia: {
                   tipo,
                   dias: (f.recorrencia && f.recorrencia.dias) || [1, 2, 3, 4, 5],
@@ -43882,6 +43884,13 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
 
       </div>
       <div>
+        {repete ? (
+          <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.5 }}>
+            {f.jogadorId
+              ? `Esta tarefa estava atribuída a ${shortPlayerName((players || []).find(p => p.id === f.jogadorId) || {}, players)}. Tarefas que se repetem não podem ir para o Portal do Atleta: ao guardar, deixa de estar atribuída a um jogador.`
+              : 'Tarefas que se repetem ficam só para a equipa técnica. Para dar uma missão a um jogador, cria uma tarefa que não se repete.'}
+          </div>
+        ) : (<>
         <div style={{ marginBottom: 14 }}>
           <Field label="Atribuir a um jogador (aparece no Portal do Atleta)" solto>
             <Select value={f.jogadorId || ''} onChange={e => setF({ ...f, jogadorId: e.target.value })}>
@@ -43968,6 +43977,7 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
             Escolhe um jogador para lhe dares missões — cada uma com o seu destino (autoavaliação, treino, vídeo…) e as suas instruções. Máximo de {MAX_MISSOES_ABERTAS} em aberto ao mesmo tempo por jogador.
           </div>
         )}
+        </>)}
       </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
@@ -43977,6 +43987,12 @@ function TarefaModal({ tarefa, inicial, ocorrencia, podeConcluir = true, membros
           if (!valido) return;
           // As missões gravam-se sempre que há jogador (mesmo sem lhes mexer).
           const { destinoManual, tituloAuto, ...resto } = f; // eslint-disable-line no-unused-vars
+          if (repete) {
+            // Limpa também o que ficou de uma atribuição antiga a um jogador
+            // (a resposta dele era uma só e aparecia em todos os dias).
+            onSave({ ...resto, jogadorId: '', missoes: undefined, destino: undefined, notaAtleta: '', notaSubmetida: false, notaSubmetidaEm: null, notaRevista: false });
+            return;
+          }
           onSave(f.jogadorId ? { ...resto, missoes, destino: (missoes[0] && missoes[0].destino) || 'nota' } : resto);
         }} disabled={!valido}>Guardar</Btn>
       </div>
@@ -44045,7 +44061,9 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
      nome que interessa é o do atleta (é ele quem a faz, no Portal), por
      isso aparece primeiro, a dourado; o responsável da equipa técnica
      fica por baixo, como quem acompanha. */
-  const jogador = tarefa.jogadorId ? (players || []).find(p => p.id === tarefa.jogadorId) : null;
+  // Nas que se repetem não há jogador: a resposta dele seria uma só e
+  // aparecia (com o visto de submetida) em todos os dias da repetição.
+  const jogador = !repete && tarefa.jogadorId ? (players || []).find(p => p.id === tarefa.jogadorId) : null;
   // Numa tarefa de aniversário, quem faz anos NESSE dia (não hoje).
   const aniversariantes = repete && tarefa.recorrencia.tipo === 'aniversario'
     ? aniversariantesEm(players, dia)
