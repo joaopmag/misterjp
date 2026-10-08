@@ -32445,7 +32445,9 @@ function PeInstalar({ estilo, aoAbrir }) {
     return () => window.removeEventListener('mjp-instalavel', f);
   }, []);
   if (typeof window === 'undefined' || peEstaInstalado()) return null;
-  const iphone = /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+  const ua = navigator.userAgent || '';
+  const iphone = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+  const android = /android/i.test(ua);
   const instalar = async () => {
     if (pedido) {
       try { pedido.prompt(); await pedido.userChoice; } catch (e) { /* cancelado */ }
@@ -32469,11 +32471,17 @@ function PeInstalar({ estilo, aoAbrir }) {
                 <li>Escolhe <strong style={{ color: T.cream }}>Adicionar ao ecrã principal</strong>.</li>
                 <li>Abre o Portal pelo ícone novo. Na primeira vez, usa <strong style={{ color: T.cream }}>Entrar com o código antigo</strong> e o teu PIN.</li>
               </ol>
-            ) : (
+            ) : android ? (
               <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.6, color: T.muted }}>
                 <li>Abre este link no <strong style={{ color: T.cream }}>Chrome</strong> (se estiveres dentro do WhatsApp, toca nos três pontos e escolhe abrir no navegador).</li>
                 <li>Toca nos <strong style={{ color: T.cream }}>três pontos</strong> do canto.</li>
                 <li>Escolhe <strong style={{ color: T.cream }}>Instalar app</strong> ou <strong style={{ color: T.cream }}>Adicionar ao ecrã principal</strong>.</li>
+              </ol>
+            ) : (
+              <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.6, color: T.muted }}>
+                <li>Usa o <strong style={{ color: T.cream }}>Chrome</strong> ou o <strong style={{ color: T.cream }}>Edge</strong> (o Safari e o Firefox do computador não instalam apps).</li>
+                <li>Na barra do endereço, à direita, toca no ícone de <strong style={{ color: T.cream }}>instalar</strong> (um ecrã com uma seta), ou abre o menu <strong style={{ color: T.cream }}>⋮</strong> e escolhe <strong style={{ color: T.cream }}>Instalar Portal do Atleta</strong>.</li>
+                <li>Se não aparecer essa opção, a app já está instalada neste computador: procura <strong style={{ color: T.cream }}>Portal</strong> nas aplicações.</li>
               </ol>
             )}
             <button type="button" onClick={() => setAjuda(false)} style={{ marginTop: 14, width: '100%', padding: 11, borderRadius: 12, border: 'none', background: T.gold, color: '#1A2A1F', ...display, fontSize: 16, fontWeight: 600, cursor: 'pointer' }}>Percebi</button>
@@ -46020,12 +46028,15 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
 /* O PORTAL COMO APP NO TELEMÓVEL. Só nas páginas do Portal (não na
    plataforma do staff): liga o manifesto e o ícone, guarda o evento de
    instalação do Chrome e regista um service worker mínimo (só passa os
-   pedidos à rede — não guarda nada em cache). O manifesto NÃO tem
-   start_url: assim o ícone abre o endereço exato onde foi instalado (o
-   link do Portal da equipa, com ?portal=…). Um start_url fixo não serve:
-   no iPhone/iPad o ícone tem a memória separada do Safari e não saberia
-   qual é o Portal. (O redirecionamento de "?origem=portal-icone" fica só
-   para quem instalou com a versão antiga do manifesto.) Os ficheiros manifest.webmanifest,
+   pedidos à rede — não guarda nada em cache).
+   DOIS MUNDOS:
+   · Chrome/Edge (Android e computador): recebem o manifesto, que tem de
+     ter start_url para o navegador oferecer "Instalar" direto. O ícone
+     abre "/?origem=portal-icone" e aqui redireciona-se para o Portal da
+     última equipa (a app instalada partilha a memória com o navegador).
+   · iPhone/iPad: NÃO recebem o manifesto — o Safari usaria o start_url e
+     o ícone (com memória separada do Safari) não saberia qual é o Portal.
+     Sem manifesto, o iOS guarda o endereço exato da página (?portal=…).  Os ficheiros manifest.webmanifest,
    icone-192.png, icone-512.png, apple-touch-icon.png e sw.js vivem na
    pasta public/ do projeto. */
 const PORTAL_ULTIMO = 'mjp-portal-ultimo';
@@ -46044,7 +46055,8 @@ const PORTAL_ULTIMO = 'mjp-portal-ultimo';
       Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
       document.head.appendChild(el);
     };
-    if (!document.querySelector('link[rel="manifest"]')) junta('link', { rel: 'manifest', href: '/manifest.webmanifest' });
+    const ehApple = /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (/macintosh/i.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
+    if (!ehApple && !document.querySelector('link[rel="manifest"]')) junta('link', { rel: 'manifest', href: '/manifest.webmanifest' });
     junta('link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' });
     junta('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
     junta('meta', { name: 'mobile-web-app-capable', content: 'yes' });
