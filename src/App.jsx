@@ -32246,11 +32246,20 @@ function PeEmblema({ logo, cor, tam = 40, branco = false }) {
   );
 }
 
-function PeTeclado({ onTecla, desativado }) {
+/* `extra` ocupa a tecla vazia em baixo à esquerda (ex.: a impressão
+   digital na porta), como nos teclados de PIN dos bancos: um símbolo no
+   próprio teclado em vez de uma frase por baixo. */
+function PeTeclado({ onTecla, desativado, extra }) {
   const teclas = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 7, width: '100%' }}>
-      {teclas.map((k, i) => (k ? (
+      {teclas.map((k, i) => (!k && extra ? (
+        <button key={i} type="button" disabled={extra.desativado} onClick={extra.onClick} aria-label={extra.rotulo} title={extra.rotulo} style={{
+          height: 'clamp(38px, 5.6dvh, 50px)', borderRadius: 10, background: '#0d120f', border: '1px solid #2a2f33', color: '#FFC23D',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: extra.desativado ? 'default' : 'pointer', opacity: extra.desativado ? 0.5 : 1,
+        }}><extra.Icon size={24} strokeWidth={1.7} /></button>
+      ) : k ? (
         <button key={i} type="button" disabled={desativado} onClick={() => onTecla(k)} aria-label={k === '⌫' ? 'Apagar' : k} style={{
           height: 'clamp(38px, 5.6dvh, 50px)', borderRadius: 10, background: '#0d120f', border: '1px solid #2a2f33', color: '#FFC23D',
           ...mono, fontSize: 19, fontWeight: 500, cursor: desativado ? 'default' : 'pointer', opacity: desativado ? 0.5 : 1,
@@ -33555,37 +33564,59 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             </div>
           )}
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
-          {bioAtiva && !modoPin ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flexShrink: 0, padding: '6px 0', marginTop: -24, position: 'relative', zIndex: 1 }}>
-              <button type="button" onClick={() => entrarComBio()} disabled={ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.comArtigo}`} style={{
-                width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                animation: ocupado || aberta ? 'none' : 'pe-pulso 2s ease-in-out infinite',
-              }}>
-                <Fingerprint size={56} color={aberta ? '#8EE6A0' : T.gold} strokeWidth={1.6} />
-              </button>
-              {/* Sem frase por baixo: o símbolo já diz o que fazer. Só
-                  aparece texto quando há um aviso (erro, cartão inválido…). */}
-              {aviso && (
-                <div style={{ fontSize: 13.5, color: corAviso || T.bad, textAlign: 'center' }}>{aviso}</div>
-              )}
-              <button type="button" onClick={() => { limpar(); setPin(''); setModoPin(true); }} style={{ ...ligacao, padding: 2 }}>Entrar com o PIN</button>
-            </div>
-          ) : (
-            <>
-              <div style={{ width: 'min(100%, 300px)', flexShrink: 0 }}>
-                <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
-                  <PeCaixas valor={pin} ocultar cor={aberta ? '#8EE6A0' : undefined} />
-                </PePainel>
+          {/* PIN E IMPRESSÃO DIGITAL NO MESMO ESPAÇO. Os dois blocos ficam
+              sobrepostos na mesma célula da grelha e só um se vê; a célula
+              tem sempre a altura do maior (o do teclado). Assim, trocar entre
+              "Entrar com o PIN" e a impressão digital não muda o tamanho da
+              porta nem faz o ecrã saltar. O símbolo fica logo por baixo da
+              porta, no topo desse espaço. */}
+          {(() => {
+            const verBio = bioAtiva && !modoPin;
+            const camada = (visivel) => ({
+              gridArea: '1 / 1', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
+              visibility: visivel ? 'visible' : 'hidden', pointerEvents: visivel ? 'auto' : 'none',
+            });
+            return (
+              <div style={{ display: 'grid', width: '100%', flexShrink: 0 }}>
+                {bioAtiva && (
+                  <div aria-hidden={!verBio} style={{ ...camada(verBio), justifyContent: 'flex-start', gap: 8, paddingTop: 2 }}>
+                    <button type="button" onClick={() => entrarComBio()} disabled={!verBio || ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.comArtigo}`} style={{
+                      width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                      animation: !verBio || ocupado || aberta ? 'none' : 'pe-pulso 2s ease-in-out infinite',
+                    }}>
+                      <Fingerprint size={56} color={aberta ? '#8EE6A0' : T.gold} strokeWidth={1.6} />
+                    </button>
+                    {/* Sem frase por baixo: o símbolo já diz o que fazer. Só
+                        aparece texto quando há um aviso (erro, cartão inválido…). */}
+                    {verBio && aviso && (
+                      <div style={{ fontSize: 13.5, color: corAviso || T.bad, textAlign: 'center' }}>{aviso}</div>
+                    )}
+                    <button type="button" disabled={!verBio} onClick={() => { limpar(); setPin(''); setModoPin(true); }} style={{ ...ligacao, padding: 2 }}>Entrar com o PIN</button>
+                  </div>
+                )}
+                <div aria-hidden={verBio} style={{ ...camada(!verBio), gap: 10 }}>
+                  <div style={{ width: 'min(100%, 300px)', flexShrink: 0 }}>
+                    <PePainel rotulo={(!verBio && aviso) || 'PIN PESSOAL'} corRotulo={!verBio && aviso ? corAviso : undefined} tremer={tremer}>
+                      <PeCaixas valor={pin} ocultar cor={aberta ? '#8EE6A0' : undefined} />
+                    </PePainel>
+                  </div>
+                  <div style={{ width: '100%', flexShrink: 0 }}>
+                    <PeTeclado
+                      onTecla={tecla} desativado={verBio || ocupado || aberta}
+                      /* Com a impressão digital ativa, a tecla vazia passa a
+                         ser o símbolo: um toque abre logo o leitor. */
+                      extra={bioAtiva ? {
+                        Icon: Fingerprint, rotulo: `Entrar com ${PE_BIO_TXT.comArtigo}`,
+                        desativado: verBio || ocupado || aberta,
+                        onClick: () => { limpar(); setPin(''); entrarComBio(); },
+                      } : null}
+                    />
+                  </div>
+                </div>
               </div>
-              <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
-              {bioAtiva && (
-                <button type="button" onClick={() => { limpar(); setModoPin(false); }} style={{ ...ligacao, padding: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Fingerprint size={15} /> Entrar com {PE_BIO_TXT.comArtigo}
-                </button>
-              )}
-            </>
-          )}
+            );
+          })()}
           {/* Uma só ligação discreta; as opções abrem num painel por baixo,
               para não roubarem altura à porta e ao teclado. */}
           <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6 }}>
