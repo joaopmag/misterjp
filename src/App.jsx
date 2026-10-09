@@ -33579,7 +33579,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             return (
               <div style={{ display: 'grid', width: '100%', flexShrink: 0 }}>
                 {bioAtiva && (
-                  <div aria-hidden={!verBio} style={{ ...camada(verBio), justifyContent: 'flex-start', gap: 8, paddingTop: 2 }}>
+                  <div aria-hidden={!verBio} style={{ ...camada(verBio), justifyContent: 'center', gap: 8 }}>
                     <button type="button" onClick={() => entrarComBio()} disabled={!verBio || ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.comArtigo}`} style={{
                       width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -33605,11 +33605,12 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                     <PeTeclado
                       onTecla={tecla} desativado={verBio || ocupado || aberta}
                       /* Com a impressão digital ativa, a tecla vazia passa a
-                         ser o símbolo: um toque abre logo o leitor. */
+                         ser o símbolo: um toque volta ao ecrã do símbolo
+                         grande e abre logo o leitor. */
                       extra={bioAtiva ? {
                         Icon: Fingerprint, rotulo: `Entrar com ${PE_BIO_TXT.comArtigo}`,
                         desativado: verBio || ocupado || aberta,
-                        onClick: () => { limpar(); setPin(''); entrarComBio(); },
+                        onClick: () => { limpar(); setPin(''); setModoPin(false); entrarComBio(); },
                       } : null}
                     />
                   </div>
