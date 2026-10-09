@@ -32262,7 +32262,15 @@ function peEpoca() {
 
 function PeEmblema({ logo, cor, tam = 40, branco = false }) {
   if (logo) {
-    return <img src={logo} alt="" style={{ height: tam, width: 'auto', display: 'block', filter: branco ? 'grayscale(1) brightness(2.4)' : 'none' }} />;
+    /* No vidro da porta (`branco`), o emblema aparece muito ampliado. Com
+       brightness(2.4) os píxeis meio transparentes do contorno ficavam
+       brancos e via-se a linha aos bocados ("serrilhada"). Agora: menos
+       brilho, e um desfoque mínimo que junta os bocados do contorno, como
+       num vidro gravado (o resto do emblema continua nítido a esta escala). */
+    return <img src={logo} alt="" decoding="async" style={{
+      height: tam, width: 'auto', display: 'block',
+      filter: branco ? 'grayscale(1) brightness(1.85) contrast(1.05) blur(0.6px)' : 'none',
+    }} />;
   }
   return (
     <svg viewBox="0 0 40 44" height={tam} aria-hidden="true">
