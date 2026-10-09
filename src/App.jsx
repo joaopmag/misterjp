@@ -29907,7 +29907,9 @@ function EcraAniversario({ player, onEntrar }) {
             </svg>
           </div>
         </div>
-        <div style={{ ...display, fontSize: 34, color: '#fff', lineHeight: 1.05, marginTop: 2 }}>Parabéns, {primeiro}!</div>
+        {/* No modo claro, os textos brancos passam a dourado (o branco
+            desaparecia no fundo claro). No escuro fica tudo como estava. */}
+        <div style={{ ...display, fontSize: 34, color: TEMA_ATUAL === 'claro' ? T.gold : '#fff', lineHeight: 1.05, marginTop: 2 }}>Parabéns, {primeiro}!</div>
         {idade ? (
           <div style={{ ...display, fontSize: 22, color: T.gold, letterSpacing: '.04em', textAlign: 'center' }}>{idade} anos</div>
         ) : null}
@@ -29918,7 +29920,7 @@ function EcraAniversario({ player, onEntrar }) {
             esquerda. O `balance` deixa as linhas com comprimentos parecidos,
             para não ficar uma palavra sozinha na última. */}
         <div style={{
-          fontSize: 14.5, color: 'rgba(255,255,255,.8)', lineHeight: 1.6, maxWidth: 'min(320px, 100%)',
+          fontSize: 14.5, color: TEMA_ATUAL === 'claro' ? T.gold : 'rgba(255,255,255,.8)', lineHeight: 1.6, maxWidth: 'min(320px, 100%)',
           textAlign: 'center', textWrap: 'balance', margin: '0 auto', alignSelf: 'center',
         }}>
           Esta camisola é só tua. Toda a equipa técnica deseja-te um dia em grande, dentro e fora do campo.
@@ -30013,7 +30015,7 @@ function EcraAniversario({ player, onEntrar }) {
           {golo ? (
             <div style={{ position: 'absolute', left: 0, right: 0, top: 30, ...display, fontSize: 44, color: T.gold, animation: 'festa-golo .5s ease-out .55s both', textShadow: '0 3px 0 #5c0614' }}>{eGR ? 'DEFESA!' : 'GOLO!'}</div>
           ) : (
-            <div style={{ position: 'absolute', left: 0, right: 0, top: 200, fontSize: 12.5, color: 'rgba(255,255,255,.75)' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, top: 200, fontSize: 12.5, color: TEMA_ATUAL === 'claro' ? T.gold : 'rgba(255,255,255,.75)' }}>
               {eGR ? 'Vem aí o remate — toca nas luvas e defende 🧤' : 'Toca na bola — remata para celebrar ⚽'}
             </div>
           )}
@@ -30030,7 +30032,7 @@ function EcraAniversario({ player, onEntrar }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, animation: 'festa-entrar .5s ease-out 1.2s both',
             }}>Entrar no Portal <ArrowRight size={18} /></button>
           ) : (
-            <button type="button" onClick={onEntrar} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.45)', fontSize: 12, cursor: 'pointer', ...body }}>Saltar</button>
+            <button type="button" onClick={onEntrar} style={{ background: 'none', border: 'none', color: TEMA_ATUAL === 'claro' ? T.gold : 'rgba(255,255,255,.45)', opacity: TEMA_ATUAL === 'claro' ? 0.75 : 1, fontSize: 12, cursor: 'pointer', ...body }}>Saltar</button>
           )}
         </div>
       </div>
