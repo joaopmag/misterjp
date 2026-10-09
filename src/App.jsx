@@ -33554,7 +33554,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           )}
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
           {bioAtiva && !modoPin ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flexShrink: 0, padding: '6px 0' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flexShrink: 0, padding: '6px 0', marginTop: -24, position: 'relative', zIndex: 1 }}>
               <button type="button" onClick={() => entrarComBio()} disabled={ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.nome}`} style={{
                 width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
