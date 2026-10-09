@@ -33850,10 +33850,6 @@ const PKH_CSS = `
 function pkhEsc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
-function pkhDur(d) {
-  const v = Math.max(0, d);
-  return v >= 60 ? `${Math.floor(v / 60)}H${String(v % 60).padStart(2, '0')}` : `${v} MIN`;
-}
 // Posição (x) do íman no campo para um minuto do dia; null = antes de abrir.
 function pkhXDoMinuto(m) {
   const W = CHECKIN_WINDOWS.wellness, P = CHECKIN_WINDOWS.rpe;
@@ -34337,13 +34333,13 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
   // A linha de cima do placard: a parte do dia e o que falta.
   const legenda = !isToday ? 'DIA JÁ FECHADO · SÓ HOJE'
     : mins < W.startMin ? `ESTÁDIO FECHADO · ABRE ÀS ${fmtMinutesOfDay(W.startMin)}`
-      : mins <= W.endMin ? (doneWellness ? '1.ª PARTE · JÁ MARCASTE' : `1.ª PARTE · FECHA EM ${pkhDur(W.endMin - mins + 1)}`)
+      : mins <= W.endMin ? (doneWellness ? '1.ª PARTE · JÁ MARCASTE' : '1.ª PARTE')
         : mins < P.startMin ? (isRestDay ? 'FOLGA · SEM 2.ª PARTE' : `INTERVALO · 2.ª PARTE ÀS ${fmtMinutesOfDay(P.startMin)}`)
           : isRestDay ? 'FOLGA · SEM 2.ª PARTE'
             : doneRpe ? '2.ª PARTE · JÁ MARCASTE'
               : mins > P.endMin ? `FIM DO DIA · VOLTA ÀS ${fmtMinutesOfDay(W.startMin)}`
                 : !session ? '2.ª PARTE · AINDA SEM SESSÃO'
-                  : `2.ª PARTE · FECHA EM ${pkhDur(P.endMin - mins + 1)}`;
+                  : '2.ª PARTE';
 
   const nomeCompleto = String((player && player.name) || '').trim();
   const primeiro = nomeCompleto ? nomeCompleto.split(/\s+/)[0] : 'Atleta';
@@ -34482,7 +34478,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
               background: T.gold, color: '#1A2A1F', borderRadius: 999, padding: g ? '10px 22px' : enq.tv ? '6px 15px' : '7px 16px', fontSize: g ? 16 : 13.5, fontWeight: 600,
               display: 'flex', alignItems: 'center', gap: 6, animation: 'pkh-pulso 2s ease-in-out infinite', ...body,
             }}>
-              <Play size={14} fill="#1A2A1F" /> Entrar no Portal
+              <Play size={14} fill="#1A2A1F" /> Entrar
             </span>
           </span>
         </button>
