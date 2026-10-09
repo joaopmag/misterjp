@@ -32840,6 +32840,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     setOcupado(true); limpar();
     try {
       const r = await peRpc('checkin_cartao_ver', { p_codigo: codigo, p_team: teamId });
+      // Código já usado por quem tem o cartão ativo: em vez de "inválido",
+      // pede o PIN e liga este aparelho ao mesmo cartão.
+      if (r.ja_ativado) { setJogador(r.jogador || {}); setPin(''); setPin1(''); setEcra('reativar'); return; }
       if (!r.ok) { mostrarErro(r.erro || 'Código de ativação inválido.'); setCodigo(''); return; }
       setJogador(r.jogador || {}); setPin(''); setPin1(''); setEcra('cartao');
     } catch (e) { mostrarErro(erroDe(e)); } finally { setOcupado(false); }
@@ -32865,6 +32868,40 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: pinEscolhido });
       if (e.ok && e.sessao) { setPin(pinEscolhido); await abrirEEntrar(e.sessao); } else { setPin(''); }
     } catch (e) { mostrarErro(erroDe(e)); setPin(''); } finally { setOcupado(false); }
+  };
+
+  /* MESMO CARTÃO NOUTRO APARELHO, COM O CÓDIGO DE ATIVAÇÃO JÁ USADO.
+     O jogador volta a escrever o código que o staff lhe deu (é o natural)
+     e o servidor pede o PIN: código + PIN certos ligam este aparelho ao
+     cartão que já tem, sem desligar os outros (máximo de 3, como na
+     ligação por QR). PIN errado conta para o bloqueio de 5 tentativas. */
+  const reativar = async (valor) => {
+    setOcupado(true); limpar();
+    try {
+      const r = await peRpc('checkin_cartao_reativar', { p_codigo: codigo, p_team: teamId, p_pin: valor });
+      if (r.ok && r.token) {
+        const novo = { token: r.token, jogador: r.jogador || jogador || {} };
+        setSemMemoria(!peGuardarCartao(teamId, novo));
+        peDescreverAparelho(r.token, teamId);
+        setCartao(novo); setCodigo('');
+        setEcra('porta');
+        if (!peLerCartao(teamId)) { setPin(''); return; }
+        const e = await peRpc('checkin_cartao_entrar', { p_token: r.token, p_team: teamId, p_pin: valor });
+        if (e.ok && e.sessao) { setPin(valor); await abrirEEntrar(e.sessao); } else { setPin(''); }
+        return;
+      }
+      setPin('');
+      if (r.bloqueado) {
+        setCodigo(''); setEcra('rececao');
+        setAviso('Por segurança, o teu cartão foi bloqueado. Pede um código de ativação novo ao staff técnico.'); setCorAviso('#FF5A4E');
+        return;
+      }
+      if (r.restantes != null) { mostrarErro(`PIN ERRADO · ${r.restantes} ${r.restantes === 1 ? 'TENTATIVA' : 'TENTATIVAS'}`); return; }
+      mostrarErro(r.erro || 'Não foi possível.');
+    } catch (e) {
+      setPin('');
+      mostrarErro(/checkin_cartao_reativar|does not exist|PGRST202/i.test((e && (e.message || e.code)) || '') ? 'Esta opção ainda não está disponível.' : erroDe(e));
+    } finally { setOcupado(false); }
   };
 
   const entrarComPin = async (valor) => {
@@ -33174,6 +33211,14 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       setCodigo(c => (k === '⌫' ? c.slice(0, -1) : c.length < 6 ? c + k : c));
       return;
     }
+    if (ecra === 'reativar') {
+      if (k === '⌫') { setPin(p => p.slice(0, -1)); return; }
+      if (pin.length >= 6) return;
+      const novo = pin + k;
+      setPin(novo); limpar();
+      if (novo.length === 6) reativar(novo);
+      return;
+    }
     if (ecra === 'cartao') {
       if (k === '⌫') { setPin(p => p.slice(0, -1)); return; }
       if (pin.length >= 6) return;
@@ -33448,6 +33493,24 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             <PeTeclado onTecla={tecla} desativado={ocupado} />
           </div>
           <button type="button" onClick={() => { setEcra('codigo'); setPin(''); limpar(); }} style={ligacao}>Voltar</button>
+        </div>
+      )}
+
+      {ecra === 'reativar' && (
+        <div style={coluna}>
+          <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <PeCartao jogador={jogador} cor={cor} logo={logo} clube={clube} />
+          <div style={{ ...display, fontSize: 19, fontWeight: 600, color: T.cream, marginTop: 14, textAlign: 'center' }}>Já levantaste o teu cartão</div>
+          <div style={{ fontSize: 12.5, color: T.mutedDim, textAlign: 'center', marginTop: -6, lineHeight: 1.45 }}>Escreve o teu PIN para o usares também neste aparelho.</div>
+          <div style={{ width: 'min(100%, 300px)' }}>
+            <PePainel rotulo={aviso || 'PIN PESSOAL'} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
+              <PeCaixas valor={pin} ocultar />
+            </PePainel>
+          </div>
+          <PeTeclado onTecla={tecla} desativado={ocupado} />
+          </div>
+          <button type="button" onClick={() => { limpar(); setSemNenhum(true); setPerdeuAcesso(true); setEcra('rececao'); setPin(''); }} style={{ ...ligacao, marginBottom: -6 }}>Esqueci-me do PIN</button>
+          <button type="button" onClick={() => { setEcra('rececao'); setPin(''); setCodigo(''); limpar(); }} style={ligacao}>Voltar</button>
         </div>
       )}
 
