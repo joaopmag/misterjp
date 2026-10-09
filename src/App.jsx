@@ -33283,7 +33283,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               </PePainel>
             </div>
           </div>
-          {aviso && aviso.length > 32 && <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4 }}>{aviso}</div>}
+          {/* Espaço fixo (2 linhas) para avisos longos: aparecer ou desaparecer
+              (ex.: ao tocar no primeiro número) já não mexe na página. */}
+          <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4, height: '2.8em', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{aviso && aviso.length > 32 ? aviso : ''}</div>
           <PeTeclado onTecla={tecla} desativado={ocupado} />
           <button type="button" onClick={validarCodigo} disabled={codigo.length !== 6 || ocupado} style={botaoOuro(codigo.length === 6 && !ocupado)}>
             {ocupado ? 'A verificar…' : 'Levantar o cartão'}
@@ -33329,7 +33331,6 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               </div>
             );
           })()}
-          <div style={{ fontSize: 10, color: T.line, ...mono }}>{APP_BUILD}</div>
         </div>
       )}
 
@@ -33378,7 +33379,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                 <PeCaixas valor={codigoLigacao} />
               </PePainel>
             </div>
-            {aviso && aviso.length > 32 && <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4 }}>{aviso}</div>}
+            {/* Espaço fixo (2 linhas) para avisos longos: aparecer ou desaparecer
+              (ex.: ao tocar no primeiro número) já não mexe na página. */}
+          <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4, height: '2.8em', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{aviso && aviso.length > 32 ? aviso : ''}</div>
             <PeTeclado onTecla={tecla} desativado={ocupado} />
             <button type="button" onClick={() => { if (codigoLigacao.length === 6) { limpar(); setPin(''); setEcra('ligar-pin'); } }} disabled={codigoLigacao.length !== 6} style={botaoOuro(codigoLigacao.length === 6)}>Seguinte</button>
           </div>
@@ -33480,7 +33483,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                 <PeCaixas valor={codigoAntigo} />
               </PePainel>
             </div>
-            {aviso && aviso.length > 32 && <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4 }}>{aviso}</div>}
+            {/* Espaço fixo (2 linhas) para avisos longos: aparecer ou desaparecer
+              (ex.: ao tocar no primeiro número) já não mexe na página. */}
+          <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.4, height: '2.8em', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{aviso && aviso.length > 32 ? aviso : ''}</div>
             <PeTeclado onTecla={tecla} desativado={ocupado} />
             <button type="button" onClick={seguirCodigoAntigo} disabled={codigoAntigo.length < 4 || ocupado} style={botaoOuro(codigoAntigo.length >= 4 && !ocupado)}>
               {ocupado ? 'A verificar…' : 'Seguinte'}
