@@ -58,7 +58,88 @@ const T = {
   // `App` atualiza isto assim que sabe qual é a equipa ativa (ver mais
   // abaixo); os quadros só leem `T.corEquipa`, nunca um vermelho fixo.
   corEquipa: '#B5393F',
+  // Dourado de FUNDO (botões e etiquetas com texto escuro por cima): fica
+  // igual nos dois temas, ao contrário de `gold`, que no modo claro
+  // escurece para se ler como texto.
+  goldFundo: '#C9A227',
 };
+
+/* ===================================================================
+   MODO CLARO (fase 1)
+   ===================================================================
+   Três escolhas, guardadas em cada aparelho: Escuro (o de sempre, e o
+   que fica por omissão), Claro, e Automático (segue o modo do telemóvel
+   ou do computador). O tema aplica-se AQUI, antes de qualquer ecrã ou
+   estilo ser calculado, trocando os valores de `T`: assim tudo o que lê
+   `T` (a grande maioria da app) muda de uma vez, sem mexer em cada ecrã.
+   Ao trocar de tema a página recarrega: é a forma de garantir que os
+   estilos calculados no arranque também mudam.
+   Ainda por rever (fases 2 e 3): cores escritas diretamente nos ecrãs.
+   No Portal, o placard, a TV do balneário e a porta ficam escuros de
+   propósito. */
+const TEMA_CHAVE = 'mjp-tema';
+const PALETA_CLARA = {
+  bg: '#F2F4EF',
+  surface: '#FFFFFF',
+  surfaceRaise: '#E7ECE4',
+  line: '#C9D3C6',
+  crimson: '#A6192E',
+  crimsonBright: '#B8243A',
+  gold: '#8A6A0E',      // dourado mais escuro: legível sobre fundo claro
+  goldSoft: '#B08A1E',
+  cream: '#1B2A1D',     // o "texto principal" passa a escuro
+  muted: '#4F6352',
+  mutedDim: '#5F7062',
+  good: '#2E7D4A',
+  warn: '#A6750F',
+  bad: '#B23A3A',
+};
+function lerPreferenciaTema() {
+  try { const v = localStorage.getItem(TEMA_CHAVE); return v === 'claro' || v === 'auto' ? v : 'escuro'; } catch (e) { return 'escuro'; }
+}
+function temaEfetivo(pref) {
+  if (pref === 'claro' || pref === 'escuro') return pref;
+  try { return window.matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'escuro'; } catch (e) { return 'escuro'; }
+}
+const TEMA_ATUAL = typeof window !== 'undefined' ? temaEfetivo(lerPreferenciaTema()) : 'escuro';
+if (TEMA_ATUAL === 'claro') {
+  Object.assign(T, PALETA_CLARA);
+  try {
+    // O index.html arranca verde-escuro (sem flash branco); aqui acerta-se
+    // logo para o fundo claro e para os controlos do navegador em claro.
+    document.documentElement.style.background = T.bg;
+    document.documentElement.style.colorScheme = 'light';
+    if (document.body) document.body.style.background = T.bg;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', T.bg);
+  } catch (e) { /* sem documento: nada a fazer */ }
+}
+function mudarTema(pref) {
+  try { localStorage.setItem(TEMA_CHAVE, pref); } catch (e) { /* sem memória: fica só nesta visita */ }
+  if (temaEfetivo(pref) !== TEMA_ATUAL) window.location.reload();
+}
+// Escuro / Claro / Automático — o mesmo seletor na plataforma e no Portal.
+function SeletorTema({ grande = false }) {
+  const [pref, setPref] = useState(lerPreferenciaTema);
+  const opcoes = [['escuro', 'Escuro'], ['claro', 'Claro'], ['auto', 'Automático']];
+  return (
+    <div role="radiogroup" aria-label="Aspeto" style={{ display: 'flex', gap: grande ? 6 : 4, width: '100%' }}>
+      {opcoes.map(([id, rot]) => {
+        const on = pref === id;
+        return (
+          <button key={id} type="button" role="radio" aria-checked={on}
+            onClick={() => { setPref(id); mudarTema(id); }}
+            title={id === 'auto' ? 'Segue o modo claro/escuro do telemóvel ou do computador' : undefined}
+            style={{
+              flex: 1, fontSize: grande ? 13.5 : 10.5, padding: grande ? '10px 6px' : '4px 6px', borderRadius: grande ? 10 : 6, cursor: 'pointer',
+              border: `1px solid ${on ? T.gold : T.line}`, background: on ? T.surfaceRaise : 'transparent',
+              color: on ? T.cream : T.muted, fontWeight: on ? 600 : 400, fontFamily: 'inherit',
+            }}>{rot}</button>
+        );
+      })}
+    </div>
+  );
+}
 
 /* Text-on-accent color: light text used on the crimson accent
    backgrounds (buttons, active tabs, badges) — dark pitch-green
@@ -3820,6 +3901,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               >
                 Sair
               </button>
+            </div>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 5 }}>Aspeto</div>
+              <SeletorTema />
             </div>
             <DataTools
               season={season} setSeason={setSeason} players={players} setPlayers={setPlayers}
@@ -32522,7 +32607,7 @@ function PeInstalar({ estilo, aoAbrir }) {
                 <li>Se não aparecer essa opção, a app já está instalada neste computador: procura <strong style={{ color: T.cream }}>Portal</strong> nas aplicações.</li>
               </ol>
             )}
-            <button type="button" onClick={() => setAjuda(false)} style={{ marginTop: 14, width: '100%', padding: 11, borderRadius: 12, border: 'none', background: T.gold, color: '#1A2A1F', ...display, fontSize: 16, fontWeight: 600, cursor: 'pointer' }}>Percebi</button>
+            <button type="button" onClick={() => setAjuda(false)} style={{ marginTop: 14, width: '100%', padding: 11, borderRadius: 12, border: 'none', background: T.goldFundo, color: '#1A2A1F', ...display, fontSize: 16, fontWeight: 600, cursor: 'pointer' }}>Percebi</button>
           </div>
         </div>
       )}
@@ -33295,7 +33380,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   };
   const ligacao = { background: 'none', border: 'none', color: T.gold, textDecoration: 'underline', fontSize: 13, cursor: 'pointer', padding: '6px', ...body, flexShrink: 0 };
   const botaoOuro = (ativo) => ({
-    width: '100%', padding: 11, borderRadius: 12, border: 'none', background: ativo ? T.gold : '#3a4f3d', color: ativo ? '#1A2A1F' : '#8A9A8C',
+    width: '100%', padding: 11, borderRadius: 12, border: 'none', background: ativo ? T.goldFundo : '#3a4f3d', color: ativo ? '#1A2A1F' : '#8A9A8C',
     ...display, fontSize: 17, fontWeight: 600, cursor: ativo ? 'pointer' : 'default', flexShrink: 0,
   });
 
@@ -33673,6 +33758,10 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                   )}
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('outro-pin'); }}>Utilizar outro equipamento</button>
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); usarOutroCartao(); }}>Usar outro cartão de atleta</button>
+                  <div style={{ padding: '6px 2px 0' }}>
+                    <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 6 }}>Aspeto do Portal</div>
+                    <SeletorTema grande />
+                  </div>
                   <button type="button" onClick={() => setMaisOpcoes(false)} style={{ ...opcao, textAlign: 'center', background: 'none', border: 'none', color: T.mutedDim }}>Fechar</button>
                 </div>
               </div>
@@ -34007,7 +34096,7 @@ function PkhPainelMister({ mensagens, g }) {
       }}
     >
       <span style={{
-        flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: g ? '0 12px' : '0 8px', background: T.gold,
+        flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: g ? '0 12px' : '0 8px', background: T.goldFundo,
         color: '#1A2A1F', fontSize: g ? 13 : 11, fontWeight: 600, letterSpacing: '.06em', position: 'relative', zIndex: 1, ...body,
       }}>
         <span style={{ display: 'flex', animation: tocavel ? 'pkh-pisca 1.2s infinite' : 'none' }}>
@@ -34113,7 +34202,7 @@ function PkhSequencia({ dias, g }) {
   return (
     <div style={{ flexShrink: 0, height: g ? 64 : 58, display: 'flex', alignItems: 'stretch' }}>
       <div style={{
-        flexShrink: 0, width: g ? 104 : 76, background: T.gold, clipPath: 'polygon(0 0,100% 0,84% 100%,0 100%)', borderRadius: '8px 0 0 8px',
+        flexShrink: 0, width: g ? 104 : 76, background: T.goldFundo, clipPath: 'polygon(0 0,100% 0,84% 100%,0 100%)', borderRadius: '8px 0 0 8px',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingRight: 10,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -34558,7 +34647,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
           />
           <span style={{ position: 'absolute', left: 0, right: 0, bottom: enq.tv ? 6 : 9, display: 'flex', justifyContent: 'center' }}>
             <span style={{
-              background: T.gold, color: '#1A2A1F', borderRadius: 999, padding: g ? '10px 22px' : enq.tv ? '6px 15px' : '7px 16px', fontSize: g ? 16 : 13.5, fontWeight: 600,
+              background: T.goldFundo, color: '#1A2A1F', borderRadius: 999, padding: g ? '10px 22px' : enq.tv ? '6px 15px' : '7px 16px', fontSize: g ? 16 : 13.5, fontWeight: 600,
               display: 'flex', alignItems: 'center', gap: 6, animation: 'pkh-pulso 2s ease-in-out infinite', ...body,
             }}>
               <Play size={14} fill="#1A2A1F" /> Entrar
