@@ -46613,10 +46613,18 @@ const PORTAL_ULTIMO = 'mjp-portal-ultimo';
 (function prepararPortalInstalavel() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   try {
-    const q = new URLSearchParams(window.location.search);
+    let q = new URLSearchParams(window.location.search);
     if (q.get('origem') === 'portal-icone' && !q.has('portal')) {
       const ultimo = localStorage.getItem(PORTAL_ULTIMO);
-      if (ultimo) { window.location.replace(`/?portal=${encodeURIComponent(ultimo)}`); return; }
+      /* Antes fazia-se location.replace: a página carregava DUAS vezes e,
+         entre uma e outra, aparecia por instantes o ecrã da plataforma do
+         staff. Agora só se reescreve o endereço, sem recarregar: isto corre
+         antes de a app desenhar o primeiro ecrã, por isso ela já arranca
+         diretamente no Portal. */
+      if (ultimo) {
+        window.history.replaceState(null, '', `/?portal=${encodeURIComponent(ultimo)}`);
+        q = new URLSearchParams(window.location.search);
+      }
     }
     const ehPortal = q.has('portal') || q.has('checkin') || /portal=|checkin/.test(window.location.hash);
     if (!ehPortal) return;
