@@ -5795,7 +5795,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   const terminarCartao = (p) => askConfirm({
     title: 'Terminar o cartão deste jogador?',
     label: p.name,
-    note: 'O telemóvel dele deixa de entrar no Portal de imediato. Para voltar a entrar precisa de um código de ativação novo.',
+    note: 'Deixa de entrar no Portal de imediato, em todos os aparelhos, e o código de acesso antigo também deixa de servir. Para voltar a entrar precisa de um código de ativação novo; o histórico dele mantém-se.',
     confirmLabel: 'Terminar cartão',
     onConfirm: async () => {
       try { await rpcStaff('staff_cartao_terminar', { p_team: equipa.id, p_player: String(p.id) }); carregarCartoes(); }
