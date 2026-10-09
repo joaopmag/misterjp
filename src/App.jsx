@@ -33046,7 +33046,12 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       .catch(() => { /* sem a função: mostra a opção, como antes */ });
   }, [teamId]);
   // Impressão digital / Face ID
-  const [bioSuportada, setBioSuportada] = useState(false);
+  /* null = ainda a verificar. A verificação do leitor é assíncrona: com
+     `false` à partida, a porta abria primeiro com o teclado do PIN e só
+     depois trocava para a impressão digital (dois ecrãs seguidos). Quem já
+     ativou a impressão digital neste aparelho tem leitor, por isso enquanto
+     se verifica assume-se que sim; se afinal não houver, passa ao PIN. */
+  const [bioSuportada, setBioSuportada] = useState(null);
   const [modoPin, setModoPin] = useState(false);      // com biometria ativa, o PIN é a alternativa
   const [oferta, setOferta] = useState(null);         // { sessao, pin } — perguntar se quer ativar
   useEffect(() => { peBioDisponivel().then(setBioSuportada); }, []);
@@ -33057,7 +33062,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
       .then(r => { if (r && typeof r.ativa === 'boolean' && r.ativa !== !!cartao.bio) { const novo = { ...cartao, bio: r.ativa }; peGuardarCartao(teamId, novo); setCartao(novo); } })
       .catch(() => {});
   }, [cartao && cartao.token]); // eslint-disable-line react-hooks/exhaustive-deps
-  const bioAtiva = !!(cartao && cartao.bio && bioSuportada);
+  const bioAtiva = !!(cartao && cartao.bio && bioSuportada !== false);
 
   /* Desafio preparado em segundo plano. Assim que a porta aparece, pede-se
      ao servidor o desafio de segurança; ao tocar no leitor (ou na abertura
