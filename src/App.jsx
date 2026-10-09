@@ -24583,7 +24583,7 @@ function PrintFichaJogo({ match, players, season }) {
 
   return (
     <div className="print-sheet">
-      <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{nosso} vs {match.opponent || 'Adversário por definir'}</h2>
+      <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{tituloDoJogo(match, nosso)}</h2>
       <p style={{ margin: '0 0 16px', fontSize: 13 }}>
         {[
           fmtDate(match.date),
@@ -24684,9 +24684,9 @@ function buildMatchShareHtml({ match, players, season }) {
   ].filter(Boolean);
 
   return {
-    title: `${nosso} vs ${match.opponent || 'Adversário por definir'}`,
+    title: tituloDoJogo(match, nosso),
     html: buildShareableHtmlDoc({
-      title: `${nosso} vs ${match.opponent || 'Adversário por definir'}`,
+      title: tituloDoJogo(match, nosso),
       metaLines,
       blocks: [],
       extraHtml,
@@ -24732,7 +24732,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
 
   return (
     <Modal
-      title={`${nosso} vs ${match.opponent || 'Adversário por definir'}`}
+      title={tituloDoJogo(match, nosso)}
       subtitle={[
         fmtDate(match.date),
         competitionLabel(match.competition),
@@ -24746,11 +24746,15 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
     >
       {/* Resultado em destaque: é a primeira coisa que se procura. */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <span style={{ ...display, fontSize: 17, color: T.cream }}>{nosso}</span>
+        {/* Casa à esquerda, fora à direita, e o resultado tal como está
+            guardado ("casa-fora"): num jogo fora, "Paredes 6 – 0 Salgueiros". */}
+        <span style={{ ...display, fontSize: 17, color: T.cream }}>{match.atHome === false ? (match.opponent || '—') : nosso}</span>
         <span style={{ ...mono, fontSize: 24, color: T.warn }}>
-          {golosPorLado ? `${golosPorLado.nos} – ${golosPorLado.eles}` : (match.result || '—')}
+          {golosPorLado
+            ? (match.atHome === false ? `${golosPorLado.eles} – ${golosPorLado.nos}` : `${golosPorLado.nos} – ${golosPorLado.eles}`)
+            : (match.result || '—')}
         </span>
-        <span style={{ ...display, fontSize: 17, color: T.cream }}>{match.opponent || '—'}</span>
+        <span style={{ ...display, fontSize: 17, color: T.cream }}>{match.atHome === false ? nosso : (match.opponent || '—')}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11.5, color: T.mutedDim }}>Formação</span>
           <Select
@@ -26857,6 +26861,12 @@ function marcadorDoJogo(m, season) {
   return { casa, fora, emCasa, golosCasa: sc.home, golosFora: sc.away, letra };
 }
 const COR_RESULTADO = { V: '#3E9B5F', E: '#9A8A4A', D: '#B3261E' };
+/* Título do jogo com a equipa da CASA primeiro ("Paredes vs Salgueiros"
+   num jogo fora), como no marcador. */
+function tituloDoJogo(match, nosso) {
+  const rival = (match && match.opponent) || 'Adversário por definir';
+  return match && match.atHome === false ? `${rival} vs ${nosso}` : `${nosso} vs ${rival}`;
+}
 const NOME_RESULTADO = { V: 'Vitória', E: 'Empate', D: 'Derrota' };
 
 /* ================================================================
