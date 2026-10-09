@@ -29793,7 +29793,14 @@ function EcraAniversario({ player, onEntrar }) {
           opacity: 0.85, transform: `rotate(${c.rot}deg)`, animation: `festa-cair ${c.dur}s linear ${c.atraso}s infinite`, pointerEvents: 'none',
         }} />
       ))}
-      <div style={{ position: 'relative', maxWidth: 420, margin: '0 auto', padding: '30px 20px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 10 }}>
+      {/* Centrado na vertical: em ecrãs altos (iPad ao alto) o conteúdo
+          ficava todo em cima, com metade do ecrã vazia por baixo. Em ecrãs
+          baixos continua a começar em cima e a deslizar, como antes. */}
+      <div style={{
+        position: 'relative', maxWidth: 420, minHeight: '100%', boxSizing: 'border-box', margin: '0 auto',
+        padding: 'calc(30px + env(safe-area-inset-top, 0px)) 20px calc(40px + env(safe-area-inset-bottom, 0px))',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 10,
+      }}>
         <div style={{ fontSize: 11, color: T.gold, letterSpacing: '.24em', textTransform: 'uppercase' }}>Hoje é dia de festa</div>
         {/* A CAMISOLA DOS ANOS */}
         <div style={{ animation: 'festa-camisola 1.4s cubic-bezier(.2,.8,.2,1) both' }}>
