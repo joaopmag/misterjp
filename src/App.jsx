@@ -32785,7 +32785,7 @@ function peBioTextos() {
     if (/Macintosh/.test(ua)) return { nome: 'Touch ID', comArtigo: 'o Touch ID', gesto: 'usar o dedo' };
     // "Windows Hello" não diz nada a um jogador: fala-se do gesto que ele já
     // conhece (a cara, o dedo ou o PIN com que desbloqueia o computador).
-    if (/Windows/.test(ua)) return { nome: 'desbloqueio do computador', comArtigo: 'o desbloqueio do computador', gesto: 'confirmar como desbloqueias o computador', toca: 'Toca e confirma como desbloqueias o computador' };
+    if (/Windows/.test(ua)) return { nome: 'desbloqueio do computador', comArtigo: 'o desbloqueio do computador', gesto: 'confirmar como desbloqueias o computador' };
   } catch (e) { /* segue para o habitual */ }
   return { nome: 'impressão digital', comArtigo: 'a impressão digital', gesto: 'usar o dedo' };
 }
@@ -33564,9 +33564,11 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               }}>
                 <Fingerprint size={56} color={aberta ? '#8EE6A0' : T.gold} strokeWidth={1.6} />
               </button>
-              <div style={{ fontSize: 13.5, color: aviso ? (corAviso || T.bad) : T.cream, textAlign: 'center', minHeight: 20 }}>
-                {aviso || (ocupado ? 'A confirmar…' : (PE_BIO_TXT.toca || `Toca e usa ${PE_BIO_TXT.comArtigo}`))}
-              </div>
+              {/* Sem frase por baixo: o símbolo já diz o que fazer. Só
+                  aparece texto quando há um aviso (erro, cartão inválido…). */}
+              {aviso && (
+                <div style={{ fontSize: 13.5, color: corAviso || T.bad, textAlign: 'center' }}>{aviso}</div>
+              )}
               <button type="button" onClick={() => { limpar(); setPin(''); setModoPin(true); }} style={{ ...ligacao, padding: 2 }}>Entrar com o PIN</button>
             </div>
           ) : (
