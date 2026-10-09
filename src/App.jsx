@@ -5785,7 +5785,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   const mensagemAtivacao = (cg) => (
     `Olá ${firstNameOf(cg.nome)}! O teu código de ativação do Portal do Atleta é ${cg.codigo}.\n\n`
     + `Abre o Portal${linkPortal ? ` (${linkPortal})` : ''}, escreve o código na Receção, recebe o teu cartão de atleta e escolhe o teu PIN pessoal. `
-    + `O código só serve uma vez e expira em 48 horas.${RODAPE_MENSAGEM_SISTEMA}`
+    + `Tens 48 horas para levantar o cartão. Depois, se quiseres o Portal noutro telemóvel ou computador, usa este mesmo código e o teu PIN. Guarda esta mensagem.${RODAPE_MENSAGEM_SISTEMA}`
   );
   const linkWhatsAppAtivacao = (cg) => (
     linkWhatsApp(cg.contacto, mensagemAtivacao(cg))
@@ -6384,7 +6384,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                     <div style={{ flex: 1, minWidth: 180 }}>
                       <div style={{ fontSize: 12, color: T.muted }}>Código de ativação de <strong style={{ color: T.cream }}>{codigoGerado.nome}</strong></div>
                       <div style={{ ...mono, fontSize: 28, color: T.gold, letterSpacing: '.22em', lineHeight: 1.3 }}>{codigoGerado.codigo}</div>
-                      <div style={{ fontSize: 11.5, color: T.mutedDim }}>Válido até {new Date(codigoGerado.expira_em).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · só serve uma vez</div>
+                      <div style={{ fontSize: 11.5, color: T.mutedDim }}>Válido até {new Date(codigoGerado.expira_em).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · depois de levantado, serve com o PIN para outros aparelhos</div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                       <a href={linkWhatsAppAtivacao(codigoGerado)} target="_blank" rel="noopener noreferrer" style={{
@@ -33277,7 +33277,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           <button type="button" onClick={validarCodigo} disabled={codigo.length !== 6 || ocupado} style={botaoOuro(codigo.length === 6 && !ocupado)}>
             {ocupado ? 'A verificar…' : 'Levantar o cartão'}
           </button>
-          <div style={{ fontSize: 12, color: T.mutedDim, textAlign: 'center' }}>O código é dado pelo staff técnico e só serve uma vez.</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, textAlign: 'center', lineHeight: 1.45 }}>O código é dado pelo staff técnico. Já levantaste o cartão? Usa o mesmo código e o teu PIN.</div>
           <button type="button" onClick={() => { limpar(); setCodigoLigacao(''); setPin(''); setEcra('ligar'); }} style={{ ...ligacao, marginTop: -4 }}>Já tenho cartão noutro aparelho</button>
           <button type="button" onClick={() => { limpar(); setSemNenhum(false); setPerdeuAcesso(true); }} style={{ ...ligacao, marginTop: -8 }}>Perdeste o acesso ao cartão?</button>
           {perdeuAcesso && (() => {
@@ -33299,7 +33299,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                     <>
                       <button type="button" style={opcao} onClick={() => { setPerdeuAcesso(false); limpar(); setCodigoLigacao(''); setPin(''); setEcra('ligar'); }}>
                         Ainda tenho o cartão noutro aparelho
-                        <span style={sub}>Liga este a partir dele, com o QR code ou o código de ligação.</span>
+                        <span style={sub}>Escreve aqui o teu código de ativação e o PIN, ou liga este a partir do outro com o QR code.</span>
                       </button>
                       {codigosAntigosLigados && (
                         <button type="button" style={opcao} onClick={() => { setPerdeuAcesso(false); limpar(); setCodigoAntigo(''); setEcra('codigo'); }}>
