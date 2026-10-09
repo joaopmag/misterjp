@@ -33531,8 +33531,8 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               "Voltar" fica sempre no fundo. */}
           <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <PeCartao jogador={jogador} cor={cor} logo={logo} clube={clube} />
-          <div style={{ ...display, fontSize: 19, fontWeight: 600, color: T.cream, marginTop: 14 }}>{pin1 ? 'Confirma o teu PIN' : 'Cria o teu PIN pessoal'}</div>
-          <div style={{ fontSize: 12.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>6 números que só tu sabes. É com ele que entras daqui em diante.</div>
+          <div style={{ ...display, fontSize: 19, fontWeight: 600, color: T.cream, marginTop: 14 }}>{pin1 ? 'Confirma o teu PIN' : 'Define o teu PIN de acesso'}</div>
+          <div style={{ fontSize: 12.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>{pin1 ? 'Escreve-o outra vez para confirmar.' : 'É com ele que entras no Portal daqui em diante.'}</div>
           <div style={{ width: 'min(100%, 300px)' }}>
             <PePainel rotulo={aviso || (pin1 ? 'REPETE O PIN' : 'PIN PESSOAL')} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
               <PeCaixas valor={pin} ocultar />
@@ -33580,6 +33580,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               <div style={{ display: 'grid', width: '100%', flexShrink: 0 }}>
                 {bioAtiva && (
                   <div aria-hidden={!verBio} style={{ ...camada(verBio), justifyContent: 'center', gap: 8 }}>
+                    {/* O aviso (ex.: ACESSO AUTORIZADO, a verde) fica por baixo
+                        sem ocupar lugar: a caixa e o "Entrar com o PIN" não mexem. */}
+                    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                     <button type="button" onClick={() => entrarComBio()} disabled={!verBio || ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.comArtigo}`} style={{
                       width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -33589,10 +33592,11 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                     </button>
                     {/* Sem frase por baixo: o símbolo já diz o que fazer. Só
                         aparece texto quando há um aviso (erro, cartão inválido…). */}
-                    {verBio && aviso && (
-                      <div style={{ fontSize: 13.5, color: corAviso || T.bad, textAlign: 'center' }}>{aviso}</div>
-                    )}
                     <button type="button" disabled={!verBio} onClick={() => { limpar(); setPin(''); setModoPin(true); }} style={{ ...ligacao, padding: 2 }}>Entrar com o PIN</button>
+                    {verBio && aviso && (
+                      <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 380px)', marginTop: 6, fontSize: 13.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.35 }}>{aviso}</div>
+                    )}
+                    </div>
                   </div>
                 )}
                 <div aria-hidden={verBio} style={{ ...camada(!verBio), gap: 10 }}>
