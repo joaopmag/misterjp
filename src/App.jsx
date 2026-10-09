@@ -21,7 +21,7 @@ import {
   Moon, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
-  Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Music2, Lightbulb,
+  Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Facebook, Music2, Lightbulb,
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
   HeartPulse, Flame, PartyPopper, Megaphone, Fingerprint, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
   Video, Repeat, Calendar, Bell, Lock,
@@ -3936,7 +3936,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 equipasCompeticao={nomesEquipasCompeticao(standings)}
                 provaDeEquipa={(nome) => provaDaEquipa(nome, standings)}
                 adversariosProntos={!!adversariosReady && !!videosReady}
-                emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro, para começares."
+                emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram, TikTok ou Facebook, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
               />
             </div>
@@ -35871,7 +35871,7 @@ function AdversarioPage({ adversario: a, scouting, videos, setVideos, onBack, on
         addLabel="Adicionar vídeo"
         addButtonVariant="ghost"
         semCatalogo
-        emptyText="Ainda sem vídeos deste adversário. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro."
+        emptyText="Ainda sem vídeos deste adversário. Cola o link do YouTube, Instagram, TikTok ou Facebook, ou carrega um ficheiro."
         emptyFirstLabel="Adicionar o primeiro vídeo"
       />
     </div>
@@ -36382,7 +36382,7 @@ function ScoutSheetPage({ player: x, videos, setVideos, onBack, onEdit, onShare,
         addLabel="Adicionar vídeo"
         addButtonVariant="ghost"
         semCatalogo
-        emptyText="Ainda sem vídeos deste jogador. Cola o link do YouTube, Instagram ou TikTok, ou carrega um ficheiro."
+        emptyText="Ainda sem vídeos deste jogador. Cola o link do YouTube, Instagram, TikTok ou Facebook, ou carrega um ficheiro."
         emptyFirstLabel="Adicionar o primeiro vídeo"
       />
     </div>
@@ -36590,9 +36590,39 @@ function parseTikTokId(url) {
   return null;
 }
 
+/* FACEBOOK — vídeos e reels públicos, pelo leitor oficial de embed
+   (facebook.com/plugins/video.php?href=…). O leitor recebe o endereço
+   completo da publicação, por isso guarda-se o link normalizado além do
+   número. Links curtos fb.watch não são suportados, pela mesma razão dos
+   do TikTok: o browser não consegue seguir o redirecionamento.
+   Formatos aceites:
+     facebook.com/reel/123…            → reel (vertical)
+     facebook.com/watch/?v=123…        → vídeo
+     facebook.com/<página>/videos/123… → vídeo
+     facebook.com/share/r/… e /share/v/… (links de partilha do telemóvel) */
+function parseFacebookVideo(url) {
+  let u;
+  try { u = new URL(String(url).trim()); } catch (e) { return null; }
+  if (!/(^|\.)facebook\.com$/.test(u.hostname)) return null;
+  const caminho = u.pathname;
+  let m = caminho.match(/\/reels?\/(\d+)/);
+  if (m) return { id: m[1], tipo: 'reel', url: `https://www.facebook.com/reel/${m[1]}` };
+  const v = u.searchParams.get('v');
+  if (/^\/watch/.test(caminho) && /^\d+$/.test(v || '')) return { id: v, tipo: 'video', url: `https://www.facebook.com/watch/?v=${v}` };
+  m = caminho.match(/\/videos\/(?:[^/]+\/)?(\d+)/);
+  if (m) return { id: m[1], tipo: 'video', url: `https://www.facebook.com${caminho.replace(/\/+$/, '')}/` };
+  m = caminho.match(/\/share\/(r|v)\/([A-Za-z0-9_-]+)/);
+  if (m) return { id: m[2], tipo: m[1] === 'r' ? 'reel' : 'video', url: `https://www.facebook.com/share/${m[1]}/${m[2]}/` };
+  return null;
+}
+
 // Deteta automaticamente a rede social a partir do link colado.
 function detectSocialEmbed(url) {
   if (!url) return null;
+  if (/facebook\.com/.test(url)) {
+    const info = parseFacebookVideo(url);
+    return info ? { platform: 'facebook', id: info.id, tipo: info.tipo, url: info.url } : null;
+  }
   if (/instagram\.com/.test(url)) {
     const info = parseInstagramId(url);
     return info ? { platform: 'instagram', id: info.id, tipo: info.tipo } : null;
@@ -36775,6 +36805,7 @@ function socialExternalUrl(social) {
     return `https://www.instagram.com/${social.tipo || 'reel'}/${social.id}/`;
   }
   if (social.platform === 'tiktok') return `https://www.tiktok.com/@_/video/${social.id}`;
+  if (social.platform === 'facebook') return social.url || null;
   return null;
 }
 
@@ -36931,12 +36962,14 @@ function socialEmbedSrc(social) {
     return `https://www.instagram.com/${tipo}/${social.id}/embed`;
   }
   if (social.platform === 'tiktok') return `https://www.tiktok.com/player/v1/${social.id}?${TIKTOK_PLAYER_PARAMS}`;
+  if (social.platform === 'facebook') return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(social.url || '')}&show_text=false`;
   return '';
 }
 
 const socialMeta = {
   instagram: { label: 'Instagram', Icon: Instagram, color: '#E1306C' },
   tiktok: { label: 'TikTok', Icon: Music2, color: '#00F2EA' },
+  facebook: { label: 'Facebook', Icon: Facebook, color: '#1877F2' },
 };
 
 /* O TikTok resolveu-se com o player oficial (/player/v1/), que é só o vídeo.
@@ -36962,7 +36995,12 @@ const SOCIAL_CROP = {
     extraPx: 700,     // folga em baixo, só para o embed se desenhar todo
   },
   tiktok: { headerPx: 0, mediaRatio: 16 / 9, extraPx: 0 },
+  // O leitor do Facebook é só o vídeo: reels ao alto, vídeos ao largo.
+  facebook: { headerPx: 0, mediaRatio: 16 / 9, extraPx: 0 },
+  facebook_video: { headerPx: 0, mediaRatio: 9 / 16, extraPx: 0 },
 };
+// Medidas a usar para cada vídeo (no Facebook dependem de ser reel ou não).
+const socialCropKey = (social) => (social && social.platform === 'facebook' && social.tipo !== 'reel' ? 'facebook_video' : (social && social.platform));
 
 /* SANDBOX DO INSTAGRAM — equilíbrio entre tocar e não fugir.
 
@@ -40996,8 +41034,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             só mudam as medidas. Se alternássemos entre árvores
                             diferentes, o React voltava a montar o iframe e o
                             vídeo recomeçava do início ao entrar em ecrã inteiro. */}
-                        <div style={socialClipStyle(active.social.platform, isSocialFullscreen, boxSize, socialZoom, 40)}>
-                          <div style={socialInnerStyle(active.social.platform, isSocialFullscreen, boxSize, socialZoom, 40, socialOffset)}>
+                        <div style={socialClipStyle(socialCropKey(active.social), isSocialFullscreen, boxSize, socialZoom, 40)}>
+                          <div style={socialInnerStyle(socialCropKey(active.social), isSocialFullscreen, boxSize, socialZoom, 40, socialOffset)}>
                             <iframe
                               key={active.id}
                               src={socialEmbedSrc(active.social)}
@@ -41021,7 +41059,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       }}>
                         {(() => {
                           const ctrlStyle = { width: 24, height: 24, borderRadius: 6, border: '1px solid #333', background: '#1b1b1b', color: '#fff', cursor: 'pointer', fontSize: 13, lineHeight: 1 };
-                          const hasChrome = (SOCIAL_CROP[active.social.platform] || {}).headerPx > 0;
+                          const hasChrome = (SOCIAL_CROP[socialCropKey(active.social)] || {}).headerPx > 0;
                           return (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginRight: 4 }}>
                               {/* Alinhamento do recorte — só faz falta onde a
@@ -41621,7 +41659,9 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
         onSave({ ...(item || {}), ...comuns(), youtubeId: null, social, kind: null, fileName: null, dataUrl: null, drive: null });
         return;
       }
-      setError('Não consegui identificar o vídeo — confirma o link do YouTube, Instagram ou TikTok (link completo, não o link curto do TikTok).');
+      setError(/fb\.watch/.test(f.url || '')
+        ? 'Os links curtos do Facebook (fb.watch) não funcionam. Abre o vídeo no Facebook e copia o link completo (facebook.com/reel/… ou …/videos/…).'
+        : 'Não consegui identificar o vídeo — confirma o link do YouTube, Instagram, TikTok ou Facebook (link completo, não o link curto do TikTok ou fb.watch).');
     } else if (source === 'drive') {
       const drive = parseDriveId(f.driveUrl);
       if (!drive) {
@@ -41773,10 +41813,10 @@ function MediaModal({ item, onClose, onSave, folders = [], defaultFolder = '', s
         { id: 'link', conteudo: (
             <div style={{ marginBottom: 8 }}>
               <Field label="Link do vídeo">
-                <Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/... · instagram.com/reel/... · tiktok.com/@user/video/..." />
+                <Input value={f.url} onChange={e => { setF({ ...f, url: e.target.value }); setError(''); }} placeholder="https://youtu.be/... · instagram.com/reel/... · tiktok.com/@user/video/... · facebook.com/reel/..." />
               </Field>
               <p style={{ fontSize: 11.5, color: T.mutedDim, margin: '6px 0 0' }}>
-                No TikTok, usa o link completo (com "/video/"), não o link curto (vm.tiktok.com).
+                No TikTok, usa o link completo (com "/video/"), não o link curto (vm.tiktok.com). No Facebook, só vídeos e reels públicos, com o link completo (não fb.watch).
               </p>
             </div>
         ) },
