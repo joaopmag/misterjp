@@ -25996,8 +25996,13 @@ function syncCompetitionMatches(competitions, matches) {
       const opponent = isHome ? g.away : g.home;
       if (!opponent) return;
       const sc = parseScore(g.score);
-      // O resultado é sempre do nosso ponto de vista.
-      const result = sc ? (isHome ? `${sc.home}-${sc.away}` : `${sc.away}-${sc.home}`) : '';
+      /* O resultado guarda-se SEMPRE como "casa-fora", igual à tabela.
+         Antes, nos jogos fora, esta função invertia-o para "nós-eles",
+         mas o resto da app (marcador, V/E/D, ficha do jogo, relatórios)
+         lê "casa-fora": cada vez que se gravava a tabela da competição,
+         os jogos fora apareciam com o resultado trocado (uma vitória fora
+         por 1-0 passava a derrota). */
+      const result = sc ? `${sc.home}-${sc.away}` : '';
       const idx = next.findIndex(m => m.sourceGameId === g.id);
       if (idx >= 0) {
         next[idx] = {
@@ -27638,7 +27643,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
             <option value="fora">Fora</option>
           </Select>
         </Field>
-        <Field label="Resultado"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder="Ex: 2-1" /></Field>
+        <Field label="Resultado (casa-fora)"><Input value={f.result} onChange={e => setF({ ...f, result: e.target.value })} placeholder={f.atHome === false ? 'Ex: 1-2 (golos deles primeiro)' : 'Ex: 2-1 (nossos golos primeiro)'} /></Field>
       </div>
       {/* AMIGÁVEL: a convocatória não nasce sozinha (como nos jogos
           oficiais). Pergunta-se aqui, que é onde o amigável se cria. */}
