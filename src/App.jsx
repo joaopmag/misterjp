@@ -29934,16 +29934,20 @@ function EcraAniversario({ player, onEntrar }) {
           )}
         </div>
 
-        {golo && (
-          <button type="button" onClick={onEntrar} style={{
-            marginTop: 18, width: '100%', padding: '15px 18px', borderRadius: 14, border: 'none', cursor: 'pointer',
-            background: '#fff', color: '#7a0c1c', fontSize: 15.5, fontWeight: 800, ...body,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, animation: 'festa-entrar .5s ease-out 1.2s both',
-          }}>Entrar no Portal <ArrowRight size={18} /></button>
-        )}
-        {!golo && (
-          <button type="button" onClick={onEntrar} style={{ marginTop: 16, background: 'none', border: 'none', color: 'rgba(255,255,255,.45)', fontSize: 12, cursor: 'pointer', ...body }}>Saltar</button>
-        )}
+        {/* Lugar fixo para o botão de baixo: "Saltar" (pequeno) e "Entrar
+            no Portal" (grande, depois do golo) ocupam a mesma altura, por
+            isso o ecrã não sobe quando se marca o golo. */}
+        <div style={{ marginTop: 18, width: '100%', height: 54, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {golo ? (
+            <button type="button" onClick={onEntrar} style={{
+              width: '100%', height: '100%', padding: '0 18px', borderRadius: 14, border: 'none', cursor: 'pointer',
+              background: '#fff', color: '#7a0c1c', fontSize: 15.5, fontWeight: 800, ...body,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, animation: 'festa-entrar .5s ease-out 1.2s both',
+            }}>Entrar no Portal <ArrowRight size={18} /></button>
+          ) : (
+            <button type="button" onClick={onEntrar} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,.45)', fontSize: 12, cursor: 'pointer', ...body }}>Saltar</button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -34355,6 +34359,11 @@ function PkhFaixasLaterais({ larguraConteudo }) {
    aparecem as faixas laterais; no telemóvel fica tudo como estava. */
 const PKH_LARGO = '(min-width: 1000px) and (min-aspect-ratio: 5/4)';
 const PKH_LARGURA_LARGA = 'min(41vw, 820px)';
+/* Tablet ao alto (iPad na vertical): largo o suficiente para não ficar
+   espremido na coluna do telemóvel (460), mas sem as faixas laterais do
+   computador. */
+const PKH_TABLET_ALTO = '(min-width: 700px) and (max-aspect-ratio: 5/4)';
+const PKH_LARGURA_TABLET = 'min(88vw, 720px)';
 function usePkhMedia(q) {
   const [largo, setLargo] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q).matches : false));
   useEffect(() => {
@@ -34421,9 +34430,10 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
      interessa (do emblema, em cima, até à camisola do jogador) fica
      sempre à vista; o que sobra corta-se no chão. */
   const largo = usePkhMedia(PKH_LARGO);
+  const tablet = usePkhMedia(PKH_TABLET_ALTO);
   // Letra maior só se também houver altura (portáteis baixos ficam com os
   // tamanhos do telemóvel, para tudo caber sem cortar o balneário).
-  const g = usePkhMedia('(min-height: 820px)') && largo;
+  const g = usePkhMedia('(min-height: 820px)') && (largo || tablet);
   const balRef = useRef(null);
   const [enq, setEnq] = useState({ W: 300, H: 215, vb: '0 0 300 215' });
   useEffect(() => {
@@ -34433,7 +34443,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;
       // Ecrã largo: a sala alarga-se (até 780) em vez de se cortar.
-      const W = largo ? Math.round(Math.max(300, Math.min(780, (215 * w) / h))) : 300;
+      const W = (largo || tablet) ? Math.round(Math.max(300, Math.min(780, (215 * w) / h))) : 300;
       const alturaVisivel = (W * h) / w;
       // Mais alto do que o desenho: a sala estica na vertical (até 420) —
       // nada se corta dos lados e a TV continua ao centro.
@@ -34473,7 +34483,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
     const ro = new ResizeObserver(calcular);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [largo]);
+  }, [largo, tablet]);
   const svgBalneario = React.useMemo(() => pkhBalneario({
     cor, numero, nome: primeiro, foto: (player && player.photo) || '', iniciais,
     logo: (equipa && equipa.logo) || '', inicialClube: clube ? clube[0].toUpperCase() : '', badge: nBadge,
@@ -34487,11 +34497,13 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
       <style>{PKH_CSS}</style>
       {largo && <PkhFaixasLaterais larguraConteudo={PKH_LARGURA_LARGA} />}
       <div style={{
-        position: 'relative', height: '100%', maxWidth: largo ? PKH_LARGURA_LARGA : 460, margin: '0 auto',
+        position: 'relative', height: '100%', maxWidth: largo ? PKH_LARGURA_LARGA : tablet ? PKH_LARGURA_TABLET : 460, margin: '0 auto',
         display: 'flex', flexDirection: 'column', gap: g ? 12 : 8, boxSizing: 'border-box',
         padding: largo
           ? `calc(${g ? 20 : 12}px + env(safe-area-inset-top, 0px)) 0 calc(${g ? 18 : 10}px + env(safe-area-inset-bottom, 0px))`
-          : 'calc(14px + env(safe-area-inset-top, 0px)) 14px calc(12px + env(safe-area-inset-bottom, 0px))',
+          : tablet
+            ? 'calc(22px + env(safe-area-inset-top, 0px)) 24px calc(18px + env(safe-area-inset-bottom, 0px))'
+            : 'calc(14px + env(safe-area-inset-top, 0px)) 14px calc(12px + env(safe-area-inset-bottom, 0px))',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
