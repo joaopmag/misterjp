@@ -32783,7 +32783,9 @@ function peBioTextos() {
       return { nome: 'Face ID ou Touch ID', comArtigo: 'o Face ID ou o Touch ID', gesto: 'usar a cara ou o dedo' };
     }
     if (/Macintosh/.test(ua)) return { nome: 'Touch ID', comArtigo: 'o Touch ID', gesto: 'usar o dedo' };
-    if (/Windows/.test(ua)) return { nome: 'Windows Hello', comArtigo: 'o Windows Hello', gesto: 'confirmar com o Windows Hello' };
+    // "Windows Hello" não diz nada a um jogador: fala-se do gesto que ele já
+    // conhece (a cara, o dedo ou o PIN com que desbloqueia o computador).
+    if (/Windows/.test(ua)) return { nome: 'desbloqueio do computador', comArtigo: 'o desbloqueio do computador', gesto: 'confirmar como desbloqueias o computador', toca: 'Toca e confirma como desbloqueias o computador' };
   } catch (e) { /* segue para o habitual */ }
   return { nome: 'impressão digital', comArtigo: 'a impressão digital', gesto: 'usar o dedo' };
 }
@@ -33328,7 +33330,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             <div style={{ width: 96, height: 96, borderRadius: 24, background: '#0d120f', border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Fingerprint size={60} color={T.gold} strokeWidth={1.6} />
             </div>
-            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream }}>Entrar com {PE_BIO_TXT.nome}?</div>
+            <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream }}>Entrar com {PE_BIO_TXT.comArtigo}?</div>
             <div style={{ fontSize: 13.5, color: T.mutedDim, lineHeight: 1.5, maxWidth: 320 }}>
               Da próxima vez, neste aparelho, basta tocar e {PE_BIO_TXT.gesto}. Os teus dados biométricos nunca saem do aparelho. O PIN continua a funcionar.
             </div>
@@ -33555,7 +33557,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
           {bioAtiva && !modoPin ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flexShrink: 0, padding: '6px 0', marginTop: -24, position: 'relative', zIndex: 1 }}>
-              <button type="button" onClick={() => entrarComBio()} disabled={ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.nome}`} style={{
+              <button type="button" onClick={() => entrarComBio()} disabled={ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.comArtigo}`} style={{
                 width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                 animation: ocupado || aberta ? 'none' : 'pe-pulso 2s ease-in-out infinite',
@@ -33563,7 +33565,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                 <Fingerprint size={56} color={aberta ? '#8EE6A0' : T.gold} strokeWidth={1.6} />
               </button>
               <div style={{ fontSize: 13.5, color: aviso ? (corAviso || T.bad) : T.cream, textAlign: 'center', minHeight: 20 }}>
-                {aviso || (ocupado ? 'A confirmar…' : `Toca e usa ${PE_BIO_TXT.comArtigo}`)}
+                {aviso || (ocupado ? 'A confirmar…' : (PE_BIO_TXT.toca || `Toca e usa ${PE_BIO_TXT.comArtigo}`))}
               </div>
               <button type="button" onClick={() => { limpar(); setPin(''); setModoPin(true); }} style={{ ...ligacao, padding: 2 }}>Entrar com o PIN</button>
             </div>
@@ -33577,7 +33579,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               <div style={{ width: '100%', flexShrink: 0 }}><PeTeclado onTecla={tecla} desativado={ocupado || aberta} /></div>
               {bioAtiva && (
                 <button type="button" onClick={() => { limpar(); setModoPin(false); }} style={{ ...ligacao, padding: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Fingerprint size={15} /> Entrar com {PE_BIO_TXT.nome}
+                  <Fingerprint size={15} /> Entrar com {PE_BIO_TXT.comArtigo}
                 </button>
               )}
             </>
@@ -33594,7 +33596,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                 <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <PeInstalar estilo={opcao} aoAbrir={() => setMaisOpcoes(false)} />
                   {bioSuportada && !cartao.bio && (
-                    <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('bio-pin'); }}>Entrar com {PE_BIO_TXT.nome}</button>
+                    <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('bio-pin'); }}>Entrar com {PE_BIO_TXT.comArtigo}</button>
                   )}
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('outro-pin'); }}>Utilizar outro equipamento</button>
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); usarOutroCartao(); }}>Usar outro cartão de atleta</button>
