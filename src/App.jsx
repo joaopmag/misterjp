@@ -43048,13 +43048,42 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
               ).map(p => p.id);
               return (
                 <>
-                  <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Convocados {(ids.length + experiencia.length) ? `(${ids.length + experiencia.length})` : ''}</h3>
-                  <div style={{
-                    fontSize: 12.5, marginBottom: 16, lineHeight: 1.65,
-                  }}>
-                    {idsOrdenados.map((pid) => nome(pid))}
-                    {experiencia.map((n, i) => linha(null, `${n} (exp)`, `x-${i}`))}
-                  </div>
+                  {/* DUAS COLUNAS: convocados e assinatura. Cada jogador tem
+                      uma linha própria para assinar, com 9 mm de altura (a
+                      medida habitual de uma linha de assinatura em
+                      formulários), e nenhuma linha é partida entre páginas. */}
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, marginBottom: 16 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', fontSize: 15, fontWeight: 700, padding: '0 0 6px', width: '50%' }}>
+                          Convocados {(ids.length + experiencia.length) ? `(${ids.length + experiencia.length})` : ''}
+                        </th>
+                        <th style={{ textAlign: 'left', fontSize: 15, fontWeight: 700, padding: '0 0 6px 16px', width: '50%' }}>Assinatura</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ...idsOrdenados.map(pid => {
+                          const p = players.find(pl => pl.id === pid);
+                          return p ? { key: pid, numero: p.number, texto: p.name } : null;
+                        }).filter(Boolean),
+                        ...experiencia.map((n, i) => ({ key: `x-${i}`, numero: null, texto: `${n} (exp)` })),
+                      ].map(r => (
+                        <tr key={r.key} style={{ height: '9mm', breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+                          <td style={{ verticalAlign: 'bottom', padding: '0 0 3px' }}>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                              <span style={{ width: 20, flexShrink: 0, textAlign: 'right', color: '#888' }}>{r.numero || ''}</span>
+                              <span>{r.numero ? '·' : ''}</span>
+                              <span>{r.texto}</span>
+                            </div>
+                          </td>
+                          <td style={{ verticalAlign: 'bottom', padding: '0 0 0 16px' }}>
+                            <div style={{ borderBottom: '1px solid #555', height: '7mm' }} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </>
               );
             }
