@@ -33532,7 +33532,6 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <PeCartao jogador={jogador} cor={cor} logo={logo} clube={clube} />
           <div style={{ ...display, fontSize: 19, fontWeight: 600, color: T.cream, marginTop: 14 }}>{pin1 ? 'Confirma o teu PIN' : 'Define o teu PIN de acesso'}</div>
-          <div style={{ fontSize: 12.5, color: T.mutedDim, textAlign: 'center', marginTop: -6 }}>{pin1 ? 'Escreve-o outra vez para confirmar.' : 'É com ele que entras no Portal daqui em diante.'}</div>
           <div style={{ width: 'min(100%, 300px)' }}>
             <PePainel rotulo={aviso || (pin1 ? 'REPETE O PIN' : 'PIN PESSOAL')} corRotulo={aviso ? corAviso : undefined} tremer={tremer}>
               <PeCaixas valor={pin} ocultar />
