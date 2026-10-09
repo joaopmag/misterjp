@@ -44145,7 +44145,11 @@ function dataInicioRepeticao(t) {
 
 function repeteNoDia(t, dia, hoje, ctx) {
   if (!t.recorrencia) return false;
-  const inicio = dataInicioRepeticao(t);
+  /* Os aniversários são factos do calendário, não trabalho que "ainda não
+     existia": aparecem também nas semanas antes de a tarefa ter sido
+     criada. Assim, se a tarefa automática for apagada e a app a criar de
+     novo, os aniversários que já passaram não desaparecem. */
+  const inicio = t.recorrencia.tipo === 'aniversario' ? null : dataInicioRepeticao(t);
   if (inicio && dia < inicio) return false;
   if (t.recorrencia.tipo === 'wellness_pse') return dia === hoje && tarefaAtivaHoje(t, hoje, ctx);
   return tarefaAtivaHoje(t, dia, ctx);
