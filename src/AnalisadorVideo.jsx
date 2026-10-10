@@ -16,8 +16,40 @@ const T = {
   crimson: '#A6192E', crimsonBright: '#D14056', gold: '#C9A227', cream: '#ECEFEA',
   muted: '#8FA091', mutedDim: '#6B7A6D', good: '#4CA86B', warn: '#D9A72E', bad: '#C25A5A',
   teamB: '#3A6FC4', teamC: '#D9A72E', teamD: '#8C3F9E',
+  goldFundo: '#C9A227',               // dourado de fundo (texto escuro por cima): igual nos dois temas
+  campoFundo: '#111', campoTexto: '#fff', // caixas de texto fora do vídeo
 };
 const TEXT_ON_ACCENT = '#FBF3F0';
+
+/* MODO CLARO — segue a escolha feita na app (mesma chave 'mjp-tema').
+   `TV` é a paleta escura fixa: a bancada do vídeo (leitor, barra de
+   ferramentas, etiquetas, painel do relvado) fica sempre escura, como
+   em qualquer editor de vídeo. O resto (lista de vídeos, clipes,
+   janelas) acompanha o tema. Os valores claros são os mesmos da App.jsx:
+   se mudarem lá, mudar também aqui. */
+const TV = { ...T };
+const TEMA = T;
+const BancadaVideo = React.createContext(false);
+const AV_CLARO = (() => {
+  try {
+    const v = localStorage.getItem('mjp-tema');
+    return v === 'claro' || (v === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches);
+  } catch (e) { return false; }
+})();
+// Etiquetas amarelas/douradas sobre fundo branco: o texto escurece para
+// se ler (o traço e o fundo da etiqueta mantêm a cor original).
+const ESCURECER_ETIQUETA = { '#C9A227': '#8A6A0E', '#D9A72E': '#A6750F' };
+function corTextoEtiqueta(c) {
+  return AV_CLARO ? (ESCURECER_ETIQUETA[String(c || '').toUpperCase()] || c) : c;
+}
+if (AV_CLARO) {
+  Object.assign(T, {
+    bg: '#F2F4EF', surface: '#FFFFFF', surfaceRaise: '#E7ECE4', line: '#C9D3C6',
+    crimson: '#A6192E', crimsonBright: '#B8243A', gold: '#8A6A0E', cream: '#1B2A1D',
+    muted: '#4F6352', mutedDim: '#5F7062', good: '#2E7D4A', warn: '#A6750F', bad: '#B23A3A',
+    campoFundo: '#FFFFFF', campoTexto: '#1B2A1D',
+  });
+}
 
 // As ferramentas de desenho em si — estático, não depende de nada do
 // componente, por isso também dá para reaproveitar noutros sítios que
@@ -124,7 +156,7 @@ function MarcadorTrajetoria({ videoRef, pontos }) {
       {/* holofote — um tubo de luz, transparência igual de cima a baixo,
          a tocar no relvado mesmo por baixo dos pés do jogador (que
          ficam sempre exatamente ao centro, na horizontal) */}
-      <polygon points={`${px - largTopo},0 ${px + largTopo},0 ${px + largBase},${py} ${px - largBase},${py}`} fill={T.crimsonBright} opacity={0.22} />
+      <polygon points={`${px - largTopo},0 ${px + largTopo},0 ${px + largBase},${py} ${px - largBase},${py}`} fill={TV.crimsonBright} opacity={0.22} />
     </g>
   );
 }
@@ -137,24 +169,24 @@ const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
 const TAGS = [
-  { id: 'golo', label: 'Golo', color: T.good },
-  { id: 'remate', label: 'Remate', color: T.gold },
-  { id: 'bp', label: 'Bola Parada', color: T.teamB },
-  { id: 'perda', label: 'Perda', color: T.bad },
-  { id: 'recuperacao', label: 'Recuperação', color: T.teamD },
-  { id: 'transicao', label: 'Transição', color: T.crimsonBright },
-  { id: 'individual', label: 'Ação Individual', color: T.teamC },
-  { id: 'erro', label: 'Erro', color: T.bad },
+  { id: 'golo', label: 'Golo', color: TV.good },
+  { id: 'remate', label: 'Remate', color: TV.gold },
+  { id: 'bp', label: 'Bola Parada', color: TV.teamB },
+  { id: 'perda', label: 'Perda', color: TV.bad },
+  { id: 'recuperacao', label: 'Recuperação', color: TV.teamD },
+  { id: 'transicao', label: 'Transição', color: TV.crimsonBright },
+  { id: 'individual', label: 'Ação Individual', color: TV.teamC },
+  { id: 'erro', label: 'Erro', color: TV.bad },
 ];
 
 // Cores à escolha para os desenhos — útil para distinguir, por exemplo,
 // os movimentos da nossa equipa (branco) dos do adversário (vermelho).
 export const PALETA_DESENHO = [
   { id: 'branco', cor: '#FFFFFF' },
-  { id: 'vermelho', cor: T.crimsonBright },
-  { id: 'amarelo', cor: T.gold },
-  { id: 'azul', cor: T.teamB },
-  { id: 'verde', cor: T.good },
+  { id: 'vermelho', cor: TV.crimsonBright },
+  { id: 'amarelo', cor: TV.gold },
+  { id: 'azul', cor: TV.teamB },
+  { id: 'verde', cor: TV.good },
 ];
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -171,6 +203,7 @@ function parseMMSS(str) {
 }
 
 function Btn({ children, onClick, variant = 'ghost', active, disabled, style, title }) {
+  const T = React.useContext(BancadaVideo) ? TV : TEMA;
   const base = {
     display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', borderRadius: 7,
     padding: '8px 12px', fontSize: 13, cursor: disabled ? 'not-allowed' : 'pointer',
@@ -196,8 +229,8 @@ export function ToolBtn({ icon: Icon, label, active, onClick, compacto }) {
       style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: compacto ? 3 : 2,
         width: '100%', minWidth: 0, minHeight: compacto ? 40 : 42, padding: compacto ? '5px 2px' : '6px 3px', borderRadius: 8, cursor: 'pointer', ...body,
-        border: `1px solid ${active ? T.crimsonBright : T.line}`,
-        background: active ? T.surfaceRaise : 'transparent', color: active ? T.cream : T.muted,
+        border: `1px solid ${active ? TV.crimsonBright : TV.line}`,
+        background: active ? TV.surfaceRaise : 'transparent', color: active ? TV.cream : TV.muted,
       }}>
       <Icon size={compacto ? 15 : 16} />
       <span style={{
@@ -1444,7 +1477,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               style={{
                 padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', ...body,
                 border: `1px solid ${tg.color}`, background: clip.tagId === tg.id ? tg.color : 'transparent',
-                color: clip.tagId === tg.id ? TEXT_ON_ACCENT : tg.color,
+                color: clip.tagId === tg.id ? TEXT_ON_ACCENT : corTextoEtiqueta(tg.color),
               }}>
               {tg.label}
             </button>
@@ -1827,7 +1860,7 @@ function CamadaRelvado({ calibrando, calibracao, cantosCrus, cantos, refFJ, onAg
         if (r) pts.push(`${r.x},${r.y}`);
       }
       if (pts.length > 1) {
-        linhas.push(<polyline key={k} points={pts.join(' ')} fill="none" stroke={forte ? T.gold : '#ffffff'}
+        linhas.push(<polyline key={k} points={pts.join(' ')} fill="none" stroke={forte ? TV.gold : '#ffffff'}
           strokeOpacity={forte ? 0.95 : 0.28} strokeWidth={forte ? 0.22 : 0.1} style={{ pointerEvents: 'none' }} />);
       }
     };
@@ -1853,14 +1886,14 @@ function CamadaRelvado({ calibrando, calibracao, cantosCrus, cantos, refFJ, onAg
       })}
       {cantos && (
         <g style={{ pointerEvents: 'none' }}>
-          <line x1={cantos[0].x} y1={cantos[0].y} x2={cantos[1].x} y2={cantos[1].y} stroke={T.crimsonBright} strokeWidth={0.5} strokeLinecap="round" />
+          <line x1={cantos[0].x} y1={cantos[0].y} x2={cantos[1].x} y2={cantos[1].y} stroke={TV.crimsonBright} strokeWidth={0.5} strokeLinecap="round" />
           <text x={(cantos[0].x + cantos[1].x) / 2} y={(cantos[0].y + cantos[1].y) / 2 - 1} textAnchor="middle" fill="#fff" fontSize={1.8} fontWeight={700}
             style={{ ...body, paintOrder: 'stroke', stroke: '#000', strokeWidth: 0.35 }}>baliza</text>
         </g>
       )}
       {calibrando && calibrando.pontos.map((q, k) => (
         <g key={`cal${k}`}>
-          <circle cx={q.x} cy={q.y} r={0.7} fill={T.gold} stroke="#000" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
+          <circle cx={q.x} cy={q.y} r={0.7} fill={TV.gold} stroke="#000" strokeWidth={0.15} style={{ pointerEvents: 'none' }} />
           <text x={q.x + 1} y={q.y - 0.9} fill="#fff" fontSize={1.8} fontWeight={700}
             style={{ ...body, paintOrder: 'stroke', stroke: '#000', strokeWidth: 0.35, pointerEvents: 'none' }}>
             {porLinhas ? `L${Math.floor(k / 2) + 1}` : k + 1}
@@ -1881,12 +1914,12 @@ function CamadaRelvado({ calibrando, calibracao, cantosCrus, cantos, refFJ, onAg
 
 const estiloCaixaRelvado = {
   position: 'absolute', top: 12, zIndex: 7, width: 300, maxWidth: 'calc(100% - 40px)',
-  background: 'rgba(0,0,0,0.9)', border: `1px solid ${T.line}`, borderRadius: 10, padding: 12,
+  background: 'rgba(0,0,0,0.9)', border: `1px solid ${TV.line}`, borderRadius: 10, padding: 12,
   color: '#fff', fontSize: 12.5, ...body, display: 'flex', flexDirection: 'column', gap: 8,
 };
 const BotaoRelvado = ({ rotulo, onClick, on, desligado }) => (
   <button type="button" onClick={onClick} disabled={desligado} style={{
-    background: on ? T.gold : 'transparent', color: on ? '#111' : '#fff', border: `1px solid ${on ? T.gold : T.line}`,
+    background: on ? TV.gold : 'transparent', color: on ? '#111' : '#fff', border: `1px solid ${on ? TV.gold : TV.line}`,
     borderRadius: 6, padding: '5px 9px', fontSize: 12, cursor: desligado ? 'default' : 'pointer', opacity: desligado ? 0.4 : 1, ...body,
   }}>{rotulo}</button>
 );
@@ -1911,7 +1944,7 @@ function PainelRelvado({
     return (
       <div style={caixa} onPointerDown={e => e.stopPropagation()}>
         <div style={{ fontWeight: 700 }}>Calibrar — {modelo ? modelo.nome : ''} · {porLinhas ? 'por linhas' : 'por cantos'}</div>
-        <div style={{ color: T.cream, lineHeight: 1.4 }}>
+        <div style={{ color: TV.cream, lineHeight: 1.4 }}>
           {n === total && calibrando.ladoBaliza == null
             ? <><b>Agora toca na linha de baliza</b> — o lado da área colado à baliza (as linhas a azul).</>
             : n < total
@@ -1920,8 +1953,8 @@ function PainelRelvado({
                 : <>Toca no canto <b>{n + 1} de 4</b>: {modelo ? modelo.passos[n] : ''}</>)
               : 'Arrasta os pontos até a grelha amarela bater certo com as linhas do campo.'}
         </div>
-        {verif && verif.ok && <div style={{ color: T.good, lineHeight: 1.4 }}>✓ Bate certo com a {modelo ? modelo.nome.toLowerCase() : 'área'}. A linha de baliza é a vermelha.</div>}
-        {verif && !verif.ok && verif.avisos.map((t, k) => <div key={k} style={{ color: T.warn, lineHeight: 1.4 }}>⚠ {t}</div>)}
+        {verif && verif.ok && <div style={{ color: TV.good, lineHeight: 1.4 }}>✓ Bate certo com a {modelo ? modelo.nome.toLowerCase() : 'área'}. A linha de baliza é a vermelha.</div>}
+        {verif && !verif.ok && verif.avisos.map((t, k) => <div key={k} style={{ color: TV.warn, lineHeight: 1.4 }}>⚠ {t}</div>)}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <BotaoRelvado rotulo={verif && !verif.ok ? 'Confirmar mesmo assim' : 'Confirmar'} onClick={onConfirmar} on={!(verif && !verif.ok)} desligado={!cantos} />
           {cantos && <BotaoRelvado rotulo="Mudar linha de baliza" onClick={() => setCalibrando(c => ({ ...c, ladoBaliza: null }))} />}
@@ -1936,30 +1969,30 @@ function PainelRelvado({
     <div style={caixa} onPointerDown={e => e.stopPropagation()}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontWeight: 700 }}>Relvado</span>
-        <button type="button" onClick={onFechar} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><X size={15} /></button>
+        <button type="button" onClick={onFechar} style={{ background: 'none', border: 'none', color: TV.mutedDim, cursor: 'pointer', padding: 0 }}><X size={15} /></button>
       </div>
       {calibracao ? (
         <>
           {calibracao.duvidosa
-            ? <div style={{ color: T.warn, lineHeight: 1.4 }}>⚠ Calibrado com avisos — os desenhos no chão ficaram desligados (sairiam tortos). Recalibra até aparecer o ✓.</div>
-            : <div style={{ color: T.good }}>✓ Calibrado ({(MODELOS_CALIBRACAO.find(m => m.id === calibracao.tipo) || {}).nome || 'retângulo'})</div>}
-          <div style={{ color: T.mutedDim, lineHeight: 1.4 }}>Zona, Círculo, Seta e Linha desenham-se no chão, com a perspetiva do campo.</div>
+            ? <div style={{ color: TV.warn, lineHeight: 1.4 }}>⚠ Calibrado com avisos — os desenhos no chão ficaram desligados (sairiam tortos). Recalibra até aparecer o ✓.</div>
+            : <div style={{ color: TV.good }}>✓ Calibrado ({(MODELOS_CALIBRACAO.find(m => m.id === calibracao.tipo) || {}).nome || 'retângulo'})</div>}
+          <div style={{ color: TV.mutedDim, lineHeight: 1.4 }}>Zona, Círculo, Seta e Linha desenham-se no chão, com a perspetiva do campo.</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <BotaoRelvado rotulo={noChao ? 'No chão: sim' : 'No chão: não'} onClick={() => setNoChao(v => !v)} on={noChao} />
             <BotaoRelvado rotulo={grelha ? 'Grelha: sim' : 'Grelha: não'} onClick={() => setGrelha(v => !v)} on={grelha} />
           </div>
-          <div style={{ color: T.mutedDim, marginTop: 2 }}>Linhas de campo:</div>
+          <div style={{ color: TV.mutedDim, marginTop: 2 }}>Linhas de campo:</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             <BotaoRelvado rotulo="5 corredores" onClick={() => alternarGuia('corredores')} on={!!(guias && guias.corredores)} />
             <BotaoRelvado rotulo="Terços" onClick={() => alternarGuia('tercos')} on={!!(guias && guias.tercos)} />
-            <span style={{ color: T.mutedDim, fontSize: 11.5 }}>campo</span>
+            <span style={{ color: TV.mutedDim, fontSize: 11.5 }}>campo</span>
             <input value={comprimentoCampo} inputMode="numeric"
               onChange={e => setComprimentoCampo(Number(String(e.target.value).replace(/\D/g, '').slice(0, 3)) || 0)}
-              style={{ width: 44, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 5px', fontSize: 12, textAlign: 'center' }} />
-            <span style={{ color: T.mutedDim, fontSize: 11.5 }}>m</span>
+              style={{ width: 44, background: '#111', color: '#fff', border: `1px solid ${TV.line}`, borderRadius: 4, padding: '3px 5px', fontSize: 12, textAlign: 'center' }} />
+            <span style={{ color: TV.mutedDim, fontSize: 11.5 }}>m</span>
           </div>
-          <div style={{ color: T.mutedDim, lineHeight: 1.4, fontSize: 11.5 }}>
-            Na barra: <b style={{ color: T.cream }}>Medir</b> (arrasta entre dois pontos → metros) e <b style={{ color: T.cream }}>Fora de jogo</b> (toca nos pés do jogador).
+          <div style={{ color: TV.mutedDim, lineHeight: 1.4, fontSize: 11.5 }}>
+            Na barra: <b style={{ color: TV.cream }}>Medir</b> (arrasta entre dois pontos → metros) e <b style={{ color: TV.cream }}>Fora de jogo</b> (toca nos pés do jogador).
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <BotaoRelvado rotulo="Recalibrar" onClick={() => onComecar(MODELOS_CALIBRACAO.find(m => m.id === calibracao.tipo) || MODELOS_CALIBRACAO[0], calibracao.W, calibracao.D, calibracao.modo || modoCalib)} />
@@ -1968,15 +2001,15 @@ function PainelRelvado({
         </>
       ) : (
         <>
-          <div style={{ color: T.mutedDim, lineHeight: 1.4 }}>
+          <div style={{ color: TV.mutedDim, lineHeight: 1.4 }}>
             Com o vídeo parado, marca uma área que se veja bem. A partir daí, as formas ficam assentes no relvado e dá para medir em metros.
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ color: T.mutedDim }}>Marcar por:</span>
+            <span style={{ color: TV.mutedDim }}>Marcar por:</span>
             <BotaoRelvado rotulo="Cantos" onClick={() => setModoCalib('cantos')} on={modoCalib === 'cantos'} />
             <BotaoRelvado rotulo="Linhas" onClick={() => setModoCalib('linhas')} on={modoCalib === 'linhas'} />
           </div>
-          <div style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: 1.35 }}>
+          <div style={{ color: TV.mutedDim, fontSize: 11.5, lineHeight: 1.35 }}>
             {modoCalib === 'linhas'
               ? 'Linhas: 2 toques em cada linha da área, a dar a volta — serve com os cantos tapados ou fora do ecrã.'
               : 'Cantos: os 4 cantos da área, a dar a volta, a começar em qualquer um.'}
@@ -1990,11 +2023,11 @@ function PainelRelvado({
             const D = parseFloat(String(e.currentTarget.elements.d.value).replace(',', '.'));
             if (W > 0 && D > 0) onComecar(MODELOS_CALIBRACAO.find(m => m.id === 'medida'), W, D);
           }} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ color: T.mutedDim }}>À medida:</span>
-            <input name="w" placeholder="largura m" inputMode="decimal" style={{ width: 70, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 12 }} />
+            <span style={{ color: TV.mutedDim }}>À medida:</span>
+            <input name="w" placeholder="largura m" inputMode="decimal" style={{ width: 70, background: '#111', color: '#fff', border: `1px solid ${TV.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 12 }} />
             <span>×</span>
-            <input name="d" placeholder="prof. m" inputMode="decimal" style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 12 }} />
-            <button type="submit" style={{ background: 'transparent', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>Marcar</button>
+            <input name="d" placeholder="prof. m" inputMode="decimal" style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${TV.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 12 }} />
+            <button type="submit" style={{ background: 'transparent', color: '#fff', border: `1px solid ${TV.line}`, borderRadius: 6, padding: '4px 8px', fontSize: 12, cursor: 'pointer' }}>Marcar</button>
           </form>
           {ultimaCalibracao && <div><BotaoRelvado rotulo="Usar a calibração anterior" onClick={() => setCalibracao(ultimaCalibracao)} /></div>}
         </>
@@ -2011,8 +2044,8 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   if (pronto) {
     return (
       <div onPointerDown={e => e.stopPropagation()} style={{
-        ...base, background: 'rgba(0,0,0,0.85)', border: `1px solid ${T.line}`, borderRadius: 18, padding: '5px 8px 5px 12px',
-        color: T.cream, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8,
+        ...base, background: 'rgba(0,0,0,0.85)', border: `1px solid ${TV.line}`, borderRadius: 18, padding: '5px 8px 5px 12px',
+        color: TV.cream, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8,
       }}>
         Referência ✓ ({refFJ.l2 && refFJ.l2.length === 2 ? '2 linhas' : '1 linha'}) — toca nos pés do jogador
         <BotaoRelvado rotulo="Refazer" onClick={() => setRefFJ(null)} />
@@ -2023,11 +2056,11 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   const n2 = refFJ ? refFJ.l2.length : 0;
   return (
     <div onPointerDown={e => e.stopPropagation()} style={{
-      ...base, width: 360, maxWidth: 'calc(100% - 40px)', background: 'rgba(0,0,0,0.9)', border: `1px solid ${T.line}`,
+      ...base, width: 360, maxWidth: 'calc(100% - 40px)', background: 'rgba(0,0,0,0.9)', border: `1px solid ${TV.line}`,
       borderRadius: 10, padding: 12, color: '#fff', fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 8, lineHeight: 1.4,
     }}>
       <div style={{ fontWeight: 700 }}>Fora de jogo — referência</div>
-      <div style={{ color: T.cream }}>
+      <div style={{ color: TV.cream }}>
         {n1 < 2
           ? <>Toca em <b>2 pontos de uma linha paralela à linha de baliza</b> (a linha da grande área, por exemplo) — bem afastados.</>
           : <>Agora, se se vir, <b>2 pontos noutra linha paralela</b> (linha de baliza ou da pequena área) — fica muito mais certo. Ou usa só esta.</>}
@@ -2962,7 +2995,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             value={nomeVideoInput}
             onChange={e => setNomeVideoInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && nomeVideoInput.trim()) { iniciarUploadVideo(ficheiroPendente, nomeVideoInput.trim()); setFicheiroPendente(null); } }}
-            style={{ flex: '1 1 180px', background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '6px 9px', fontSize: 13, ...body }}
+            style={{ flex: '1 1 180px', background: T.campoFundo, color: T.campoTexto, border: `1px solid ${T.line}`, borderRadius: 4, padding: '6px 9px', fontSize: 13, ...body }}
           />
           <Btn variant="solid" disabled={!nomeVideoInput.trim()} onClick={() => { iniciarUploadVideo(ficheiroPendente, nomeVideoInput.trim()); setFicheiroPendente(null); }}>
             <Upload size={13} /> Carregar
@@ -3007,7 +3040,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     onClick={e => e.stopPropagation()}
                     onKeyDown={e => { if (e.key === 'Enter') renomearVideo(v.id, nomeEditado); if (e.key === 'Escape') setEditandoNomeId(null); }}
                     onBlur={() => renomearVideo(v.id, nomeEditado)}
-                    style={{ width: '100%', background: '#111', color: '#fff', border: `1px solid ${T.crimsonBright}`, borderRadius: 4, padding: '3px 6px', fontSize: 12.5, ...body }}
+                    style={{ width: '100%', background: T.campoFundo, color: T.campoTexto, border: `1px solid ${T.crimsonBright}`, borderRadius: 4, padding: '3px 6px', fontSize: 12.5, ...body }}
                   />
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -3059,8 +3092,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       )}
 
       {originalAtivo && (
+        <BancadaVideo.Provider value={true}>
         <div ref={containerRef} style={{
-          background: T.surface, borderRadius: 12, border: `1px solid ${T.line}`, overflow: 'hidden',
+          background: TV.surface, borderRadius: 12, border: `1px solid ${TV.line}`, overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
           // Cabe sempre na janela, sem ser preciso descer a página — antes
           // o vídeo tirava a altura só da largura do ecrã (16:9 "deitado"),
@@ -3073,8 +3107,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             maxHeight: modoDesenho ? 60 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
             transition: 'max-height 0.2s ease, opacity 0.15s ease',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${T.line}`, background: T.surfaceRaise }}>
-              <span style={{ fontSize: 12.5, color: T.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${TV.line}`, background: TV.surfaceRaise }}>
+              <span style={{ fontSize: 12.5, color: TV.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
               <div style={{ display: 'flex', gap: 8 }}>
                 {/* Botões simples: o Btn trava cliques seguidos (e aqui recuam-se vários pontos de rajada). */}
                 {[
@@ -3083,7 +3117,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 ].map(({ on, fn, Ic, t: rotulo }) => (
                   <button key={rotulo} type="button" onClick={fn} disabled={!on} title={rotulo} aria-label={rotulo} style={{
                     padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent',
-                    border: `1px solid ${T.line}`, borderRadius: 8, color: on ? T.cream : T.mutedDim, opacity: on ? 1 : 0.45, cursor: on ? 'pointer' : 'default',
+                    border: `1px solid ${TV.line}`, borderRadius: 8, color: on ? TV.cream : TV.mutedDim, opacity: on ? 1 : 0.45, cursor: on ? 'pointer' : 'default',
                   }}><Ic size={16} /></button>
                 ))}
                 <Btn variant="solid" onClick={fecharDesenho} title="Sair do modo de desenho (ou Esc)"><X size={14} /> Sair do desenho</Btn>
@@ -3103,13 +3137,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             }}>
               <div style={{
                 display: 'flex', flexDirection: 'column', gap: 5, padding: 8,
-                borderRight: `1px solid ${T.line}`, overflowY: 'auto', overflowX: 'hidden', width: 90, height: '100%', boxSizing: 'border-box',
+                borderRight: `1px solid ${TV.line}`, overflowY: 'auto', overflowX: 'hidden', width: 90, height: '100%', boxSizing: 'border-box',
               }}>
                 {FERRAMENTAS.filter(([id]) => id !== 'linha').map(([id, Icon, titulo]) => (
                   <ToolBtn compacto key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
                 <ToolBtn compacto icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
-                <div style={{ height: 1, background: T.line, margin: '2px 0', flexShrink: 0 }} />
+                <div style={{ height: 1, background: TV.line, margin: '2px 0', flexShrink: 0 }} />
                 <ToolBtn compacto icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />
                 <ToolBtn compacto icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />
                 {calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
@@ -3122,7 +3156,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                  servia quando a coluna da direita desaparecia em ecrã inteiro.) */}
               <div style={{ position: 'absolute', inset: 0, ...estiloZoomEditor }}>
               {originalAtivo?.pronto === false ? (
-                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted, gap: 8, textAlign: 'center', padding: 20 }}>
+                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: TV.muted, gap: 8, textAlign: 'center', padding: 20 }}>
                   <Loader2 size={20} className="spin" />
                   <span style={{ fontSize: 12.5, ...body }}>
                     A preparar este vídeo para arrancar depressa (só acontece uma vez) — pode demorar alguns minutos, dependendo do tamanho.
@@ -3133,14 +3167,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   <video ref={videoRef} src={signedUrl} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }} playsInline
                     onLoadStart={() => setVideoPronto(false)} onCanPlay={() => setVideoPronto(true)} />
                   {!videoPronto && (
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: T.muted, pointerEvents: 'none' }}>
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: TV.muted, pointerEvents: 'none' }}>
                       <Loader2 size={20} className="spin" />
                       <span style={{ fontSize: 12, ...body }}>A carregar o vídeo…</span>
                     </div>
                   )}
                 </>
               ) : (
-                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: T.muted }}><Loader2 size={20} className="spin" /></div>
+                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: TV.muted }}><Loader2 size={20} className="spin" /></div>
               )}
               <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? CURSOR_BORRACHA : hoverMove ? 'move' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
@@ -3178,13 +3212,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   const rc = pegaRodarZonaNoChao(forma);
                   return (
                     <g>
-                      {rc && rc.base && rc.pega && <line x1={rc.base.x} y1={rc.base.y} x2={rc.pega.x} y2={rc.pega.y} stroke={T.gold} strokeWidth={0.15} />}
-                      <circle cx={c0.x} cy={c0.y} r={0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
+                      {rc && rc.base && rc.pega && <line x1={rc.base.x} y1={rc.base.y} x2={rc.pega.x} y2={rc.pega.y} stroke={TV.gold} strokeWidth={0.15} />}
+                      <circle cx={c0.x} cy={c0.y} r={0.55} fill={TV.crimsonBright} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 0, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
-                      <circle cx={c1.x} cy={c1.y} r={0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
+                      <circle cx={c1.x} cy={c1.y} r={0.55} fill={TV.crimsonBright} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 1, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
                       {rc && rc.pega && (
-                        <circle cx={rc.pega.x} cy={rc.pega.y} r={0.55} fill={T.gold} stroke="#fff" strokeWidth={0.15}
+                        <circle cx={rc.pega.x} cy={rc.pega.y} r={0.55} fill={TV.gold} stroke="#fff" strokeWidth={0.15}
                           onPointerDown={e => startHandleDrag(editandoDuracaoIndex, null, e, 'rotacao')} style={{ cursor: 'grab', touchAction: 'none' }} />
                       )}
                     </g>
@@ -3201,19 +3235,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   const pegaRodar = girar({ x: centro.x, y: y - 6 }, centro, rot);
                   return (
                     <g>
-                      <line x1={topoMeio.x} y1={topoMeio.y} x2={pegaRodar.x} y2={pegaRodar.y} stroke={T.gold} strokeWidth={0.15} />
-                      <circle cx={p0.x} cy={p0.y} r={0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
+                      <line x1={topoMeio.x} y1={topoMeio.y} x2={pegaRodar.x} y2={pegaRodar.y} stroke={TV.gold} strokeWidth={0.15} />
+                      <circle cx={p0.x} cy={p0.y} r={0.55} fill={TV.crimsonBright} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 0, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
-                      <circle cx={p1.x} cy={p1.y} r={0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
+                      <circle cx={p1.x} cy={p1.y} r={0.55} fill={TV.crimsonBright} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, 1, e)} style={{ cursor: 'pointer', touchAction: 'none' }} />
-                      <circle cx={pegaRodar.x} cy={pegaRodar.y} r={0.55} fill={T.gold} stroke="#fff" strokeWidth={0.15}
+                      <circle cx={pegaRodar.x} cy={pegaRodar.y} r={0.55} fill={TV.gold} stroke="#fff" strokeWidth={0.15}
                         onPointerDown={e => startHandleDrag(editandoDuracaoIndex, null, e, 'rotacao')} style={{ cursor: 'grab', touchAction: 'none' }} />
                       {/* Pega de INCLINAR (rodar para cima/baixo), ao lado direito. */}
                       {(() => {
                         const pd = girar({ x: x + w + 2.6, y: centro.y }, centro, rot);
                         return (
                           <g>
-                            <rect x={pd.x - 0.75} y={pd.y - 1.6} width={1.5} height={3.2} rx={0.75} fill="#fff" stroke={T.crimsonBright} strokeWidth={0.2} style={{ pointerEvents: 'none' }} />
+                            <rect x={pd.x - 0.75} y={pd.y - 1.6} width={1.5} height={3.2} rx={0.75} fill="#fff" stroke={TV.crimsonBright} strokeWidth={0.2} style={{ pointerEvents: 'none' }} />
                             <circle cx={pd.x} cy={pd.y} r={1.6} fill="transparent"
                               onPointerDown={e => startHandleDrag(editandoDuracaoIndex, null, e, 'inclinacao')} style={{ cursor: 'ns-resize', touchAction: 'none' }} />
                           </g>
@@ -3224,7 +3258,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 })()}
                 {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'zonalivre', 'linhaPontos', 'medida'].includes(shapes[editandoDuracaoIndex].tool) &&
                   shapes[editandoDuracaoIndex].points.map((p, pi) => (
-                    <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.4 : 0.55} fill={T.crimsonBright} stroke="#fff" strokeWidth={0.15}
+                    <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.4 : 0.55} fill={TV.crimsonBright} stroke="#fff" strokeWidth={0.15}
                       onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
                       style={{ cursor: 'pointer', touchAction: 'none' }} />
                   ))}
@@ -3310,7 +3344,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     onChange={e => setDuracaoInputTexto(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') confirmarDuracaoShape(); }}
                     placeholder="mm:ss"
-                    style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${T.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 13, textAlign: 'center', ...mono }}
+                    style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${TV.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 13, textAlign: 'center', ...mono }}
                   />
                   <Btn variant="solid" onClick={confirmarDuracaoShape} style={{ padding: '5px 10px', fontSize: 12 }}>OK</Btn>
                   <Btn variant="ghost" onClick={marcarSempreVisivelShape} style={{ padding: '5px 10px', fontSize: 12 }}>Sempre visível</Btn>
@@ -3321,7 +3355,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                         const on = (Number(shapes[editandoDuracaoIndex]?.zoom) || 1) === z;
                         return (
                           <button key={z} type="button" onClick={() => mudarZoom(z)} style={{
-                            background: on ? T.gold : 'none', color: on ? '#111' : '#fff', border: `1px solid ${on ? T.gold : T.line}`,
+                            background: on ? TV.gold : 'none', color: on ? '#111' : '#fff', border: `1px solid ${on ? TV.gold : TV.line}`,
                             borderRadius: 4, padding: '2px 7px', fontSize: 11.5, cursor: 'pointer', ...mono,
                           }}>{r}</button>
                         );
@@ -3340,19 +3374,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               maxWidth: modoDesenho ? 90 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
               transition: 'max-width 0.2s ease, opacity 0.15s ease',
             }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderLeft: `1px solid ${T.line}`, justifyContent: 'center', width: 90 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderLeft: `1px solid ${TV.line}`, justifyContent: 'center', width: 90 }}>
                 <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
-                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <div style={{ height: 1, background: TV.line, margin: '4px 0' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
                   {PALETA_DESENHO.map(p => (
                     <button key={p.id} onClick={() => mudarCor(p.cor)} title={p.id}
                       style={{
                         width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
-                        background: p.cor, border: corAtual === p.cor ? `2px solid ${T.crimsonBright}` : `1px solid ${T.line}`,
+                        background: p.cor, border: corAtual === p.cor ? `2px solid ${TV.crimsonBright}` : `1px solid ${TV.line}`,
                       }} />
                   ))}
                 </div>
-                <div style={{ height: 1, background: T.line, margin: '4px 0' }} />
+                <div style={{ height: 1, background: TV.line, margin: '4px 0' }} />
                 <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
                 <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
               </div>
@@ -3361,41 +3395,41 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
           <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
             <Btn variant="ghost" onClick={togglePlay} style={{ padding: 8 }}>{playing ? <Pause size={16} /> : <Play size={16} />}</Btn>
-            <span style={{ fontSize: 12, color: T.muted, ...mono, minWidth: 44 }}>{fmt(current)}</span>
+            <span style={{ fontSize: 12, color: TV.muted, ...mono, minWidth: 44 }}>{fmt(current)}</span>
             <div onPointerDown={startScrub} onPointerMove={dragScrub} onPointerUp={endScrub} onPointerCancel={endScrub}
               style={{ flex: 1, height: 36, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
-              <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: T.line, borderRadius: 3 }} />
-              <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: T.gold, borderRadius: 3 }} />
-              {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: T.good }} />}
-              {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: T.bad }} />}
+              <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: TV.line, borderRadius: 3 }} />
+              <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: TV.gold, borderRadius: 3 }} />
+              {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: TV.good }} />}
+              {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: TV.bad }} />}
               <div style={{
                 position: 'absolute', left: `${pct(current)}%`, transform: 'translateX(-50%)',
-                width: 16, height: 16, borderRadius: '50%', background: T.gold,
-                border: `2px solid ${T.cream}`, boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                width: 16, height: 16, borderRadius: '50%', background: TV.gold,
+                border: `2px solid ${TV.cream}`, boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
               }} />
             </div>
-            <span style={{ fontSize: 12, color: T.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
+            <span style={{ fontSize: 12, color: TV.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
             <Btn variant="ghost" onClick={alternarEcraInteiro} style={{ padding: 8 }} title="Ecrã inteiro">
               {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </Btn>
           </div>
 
-          <div style={{ padding: '8px 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: `1px solid ${T.line}` }}>
-            <Btn variant="ghost" onClick={markIn}><Flag size={14} color={T.good} /> Marcar início ({fmt(inPoint ?? 0)})</Btn>
-            <Btn variant="ghost" onClick={markOut}><Flag size={14} color={T.bad} /> Marcar fim ({fmt(outPoint ?? 0)})</Btn>
+          <div style={{ padding: '8px 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: `1px solid ${TV.line}` }}>
+            <Btn variant="ghost" onClick={markIn}><Flag size={14} color={TV.good} /> Marcar início ({fmt(inPoint ?? 0)})</Btn>
+            <Btn variant="ghost" onClick={markOut}><Flag size={14} color={TV.bad} /> Marcar fim ({fmt(outPoint ?? 0)})</Btn>
             <Btn variant="ghost" onClick={limparMarcas} disabled={inPoint == null && outPoint == null}><RotateCcw size={14} /> Limpar</Btn>
             {!modoDesenho && (
               <>
-                <div style={{ width: 1, background: T.line, margin: '0 4px' }} />
+                <div style={{ width: 1, background: TV.line, margin: '0 4px' }} />
                 <Btn variant="ghost" onClick={abrirDesenho}>
                   <Scissors size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}
-                  {trajetoriaFocoPendente && <Target size={13} color={T.crimsonBright} style={{ marginLeft: 2 }} />}
+                  {trajetoriaFocoPendente && <Target size={13} color={TV.crimsonBright} style={{ marginLeft: 2 }} />}
                 </Btn>
               </>
             )}
           </div>
           {erroSeguirFoco && (
-            <div style={{ margin: '0 14px 10px', background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 7, padding: 9, color: T.cream, fontSize: 12.5 }}>{erroSeguirFoco}</div>
+            <div style={{ margin: '0 14px 10px', background: TV.surfaceRaise, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, color: TV.cream, fontSize: 12.5 }}>{erroSeguirFoco}</div>
           )}
 
           {!modoDesenho && (
@@ -3414,14 +3448,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               </div>
 
               {inPoint != null && outPoint != null && outPoint > inPoint && (
-                <div style={{ margin: '0 14px 16px', background: T.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${T.line}` }}>
-                  <div style={{ fontSize: 12.5, color: T.muted, marginBottom: 8, ...mono }}>
+                <div style={{ margin: '0 14px 16px', background: TV.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${TV.line}` }}>
+                  <div style={{ fontSize: 12.5, color: TV.muted, marginBottom: 8, ...mono }}>
                     Novo clipe · {fmt(inPoint)} – {fmt(outPoint)} ({Math.round(outPoint - inPoint)}s) {shapes.length > 0 && `· ${shapes.length} desenho(s)`}
                   </div>
                   <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…"
-                    style={{ width: '100%', minHeight: 54, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 7, color: T.cream, padding: 8, fontSize: 13, resize: 'vertical', ...body }} />
+                    style={{ width: '100%', minHeight: 54, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 13, resize: 'vertical', ...body }} />
                   {erro && (
-                    <div style={{ background: T.surface, border: `1px solid ${T.bad}`, borderRadius: 7, padding: 9, marginTop: 8, color: T.cream, fontSize: 12.5 }}>{erro}</div>
+                    <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, marginTop: 8, color: TV.cream, fontSize: 12.5 }}>{erro}</div>
                   )}
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe}>
@@ -3434,6 +3468,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             </>
           )}
         </div>
+        </BancadaVideo.Provider>
       )}
 
       {/* Biblioteca de clipes — permanente, independente do vídeo original */}
@@ -3496,7 +3531,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                         aria-label={`Ver os ${g.clipes.length} clipes de ${g.nome} seguidos`}
                         style={{
                           width: 40, height: 40, borderRadius: '50%', flexShrink: 0, cursor: 'pointer',
-                          background: T.gold, border: 'none', color: '#111',
+                          background: T.goldFundo, border: 'none', color: '#111',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
                         }}>
@@ -3612,7 +3647,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <button key={tag.id} onClick={() => setFiltroTag(tag.id)}
                   style={{
                     flex: '0 0 auto', padding: '7px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', ...body, whiteSpace: 'nowrap',
-                    border: `1px solid ${tag.color}`, background: filtroTag === tag.id ? tag.color : 'transparent', color: filtroTag === tag.id ? TEXT_ON_ACCENT : tag.color,
+                    border: `1px solid ${tag.color}`, background: filtroTag === tag.id ? tag.color : 'transparent', color: filtroTag === tag.id ? TEXT_ON_ACCENT : corTextoEtiqueta(tag.color),
                   }}>
                   {tag.label}
                 </button>
@@ -3646,7 +3681,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       </span>
                     </div>
                     <div style={{ padding: '7px 9px' }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: tag?.color || T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label || 'Sem etiqueta'}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: corTextoEtiqueta(tag?.color) || T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag?.label || 'Sem etiqueta'}</div>
                       {clip.note ? (
                         <div style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{clip.note}</div>
                       ) : (

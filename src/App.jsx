@@ -62,10 +62,20 @@ const T = {
   // igual nos dois temas, ao contrário de `gold`, que no modo claro
   // escurece para se ler como texto.
   goldFundo: '#C9A227',
+  // Cores que eram escritas à mão nos ecrãs (fase 2 do modo claro). No
+  // escuro têm exatamente o valor de antes; o modo claro troca-as.
+  textoForte: '#FFFFFF',     // títulos de painel e nome da equipa
+  sobreCream: '#1B241C',     // texto sobre uma etiqueta com fundo `cream`
+  sobreVerde: '#0d140e',     // visto (✓) sobre `good`
+  fundoErro: '#3A1F22',      // faixa de erro
+  fundoDica: '#0F1A12',      // balão de valor nos gráficos
+  linhaAtiva: '#4A6250',     // contorno de um cartão aberto
+  epocaRotulo: '#D9A72E',    // "Época" na faixa vermelha da Visão Geral
+  epocaNome: '#ECEFEA',      // nome da época na mesma faixa
 };
 
 /* ===================================================================
-   MODO CLARO (fase 1)
+   MODO CLARO
    ===================================================================
    Três escolhas, guardadas em cada aparelho: Escuro (o de sempre, e o
    que fica por omissão), Claro, e Automático (segue o modo do telemóvel
@@ -74,7 +84,7 @@ const T = {
    `T` (a grande maioria da app) muda de uma vez, sem mexer em cada ecrã.
    Ao trocar de tema a página recarrega: é a forma de garantir que os
    estilos calculados no arranque também mudam.
-   Ainda por rever (fases 2 e 3): cores escritas diretamente nos ecrãs.
+   Fase 2 (plataforma) feita com os tokens no fim de `T`. Fase 3: Portal.
    No Portal, o placard, a TV do balneário e a porta ficam escuros de
    propósito. */
 const TEMA_CHAVE = 'mjp-tema';
@@ -93,6 +103,14 @@ const PALETA_CLARA = {
   good: '#2E7D4A',
   warn: '#A6750F',
   bad: '#B23A3A',
+  textoForte: '#132015',
+  sobreCream: '#F2F4EF',
+  sobreVerde: '#FFFFFF',
+  fundoErro: '#FBE9E9',
+  fundoDica: '#FFFFFF',
+  linhaAtiva: '#9FB29C',
+  epocaRotulo: '#F6D88A',
+  epocaNome: '#FFFFFF',
 };
 function lerPreferenciaTema() {
   try { const v = localStorage.getItem(TEMA_CHAVE); return v === 'claro' || v === 'auto' ? v : 'escuro'; } catch (e) { return 'escuro'; }
@@ -108,6 +126,11 @@ if (TEMA_ATUAL === 'claro') {
     // O index.html arranca verde-escuro (sem flash branco); aqui acerta-se
     // logo para o fundo claro e para os controlos do navegador em claro.
     document.documentElement.style.background = T.bg;
+    // O index.html declara `color-scheme: dark` também no body e no #root;
+    // sem isto as caixas de seleção e os calendários nativos ficavam pretos.
+    const estilo = document.createElement('style');
+    estilo.textContent = `html, body, #root { color-scheme: light !important; background: ${T.bg} !important; }`;
+    document.head.appendChild(estilo);
     document.documentElement.style.colorScheme = 'light';
     if (document.body) document.body.style.background = T.bg;
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -912,7 +935,7 @@ function SyncErrorBanner() {
   return (
     <div style={{
       position: 'fixed', left: 16, right: 16, bottom: 16, zIndex: 80,
-      background: '#3A1F22', border: `1px solid ${T.bad}`, borderRadius: 10,
+      background: T.fundoErro, border: `1px solid ${T.bad}`, borderRadius: 10,
       padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10,
       boxShadow: '0 12px 40px #00000080', maxWidth: 620, margin: '0 auto',
     }}>
@@ -3758,7 +3781,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             {equipaAtiva && equipaAtiva.logo ? (
               <img src={equipaAtiva.logo} alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />
             ) : null}
-            <span style={{ ...display, color: '#FFFFFF', fontSize: 15, fontWeight: 600 }}>SC Salgueiros U19</span>
+            <span style={{ ...display, color: T.textoForte, fontSize: 15, fontWeight: 600 }}>SC Salgueiros U19</span>
           </div>
         )}
 
@@ -3803,7 +3826,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 {equipaAtiva && equipaAtiva.logo ? (
                   <img src={equipaAtiva.logo} alt="" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
                 ) : null}
-                <span style={{ ...display, color: '#FFFFFF', fontSize: 17, fontWeight: 600, letterSpacing: '.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ ...display, color: T.textoForte, fontSize: 17, fontWeight: 600, letterSpacing: '.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {(equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || 'Mister JP'}
                 </span>
               </div>
@@ -4121,11 +4144,11 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20,
       }}>
         <div>
-          <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>Época</div>
+          <div style={{ fontSize: 11, color: T.epocaRotulo, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>Época</div>
           <input
             value={season.name}
             onChange={e => setSeason({ ...season, name: e.target.value })}
-            style={{ background: 'transparent', border: 'none', ...display, color: T.cream, fontSize: 30, fontWeight: 600, outline: 'none', width: 200 }}
+            style={{ background: 'transparent', border: 'none', ...display, color: T.epocaNome, fontSize: 30, fontWeight: 600, outline: 'none', width: 200 }}
           />
         </div>
         <div style={{ display: 'flex', gap: 28 }}>
@@ -5044,7 +5067,7 @@ function RelatoPagina({ teamId, players, membros, euId, lastEdits, onClose, onIr
           <div
             onClick={() => temDetalhe && setAberto(abre ? null : l.id)}
             style={{
-              background: abre ? T.surfaceRaise : T.surface, border: `1px solid ${abre ? '#4A6250' : T.line}`, borderRadius: 10,
+              background: abre ? T.surfaceRaise : T.surface, border: `1px solid ${abre ? T.linhaAtiva : T.line}`, borderRadius: 10,
               padding: '9px 12px', cursor: temDetalhe ? 'pointer' : 'default',
             }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -8235,7 +8258,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
        cheio — ver comentário no topo da função. */
     fontSize: 8.5 * escala * fatorNomes, lineHeight: alturaLinha, fontWeight: 500,
     color: escuro ? (on ? '#0d140e' : T.cream) : '#111',
-    background: on ? T.gold : 'transparent',
+    background: on ? T.goldFundo : 'transparent',
     borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   });
@@ -8611,7 +8634,7 @@ function Panel({ title, children, action }) {
       height: '100%', boxSizing: 'border-box',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
-        <h3 style={{ ...display, color: '#FFFFFF', fontSize: 15, fontWeight: 600, margin: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</h3>
+        <h3 style={{ ...display, color: T.textoForte, fontSize: 15, fontWeight: 600, margin: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>{title}</h3>
         {action}
       </div>
       {children}
@@ -9488,7 +9511,7 @@ function CaptainArmband({ rank, size = 16, title }) {
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         width: size, height: size * 0.72, borderRadius: 3, flexShrink: 0,
-        background: rank === 1 ? T.gold : (rank === 2 ? '#B08A1E' : T.line),
+        background: rank === 1 ? T.goldFundo : (rank === 2 ? '#B08A1E' : T.line),
         color: rank <= 2 ? '#1A1A1A' : T.cream,
         border: `1px solid ${rank <= 2 ? '#8A6F1C' : T.line}`,
         fontSize: size * 0.52, fontWeight: 700, lineHeight: 1,
@@ -12346,7 +12369,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                       title="Mão — arrasta as bolas para mover"
                       style={{
                         width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                        background: modo === 'mao' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+                        background: modo === 'mao' ? T.goldFundo : '#2B402D', border: `2px solid ${T.gold}`,
                         color: modo === 'mao' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                       }}
@@ -12356,7 +12379,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                       title="Caneta — risca à mão livre"
                       style={{
                         width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                        background: modo === 'caneta' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+                        background: modo === 'caneta' ? T.goldFundo : '#2B402D', border: `2px solid ${T.gold}`,
                         color: modo === 'caneta' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                       }}
@@ -12451,7 +12474,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                 title="Mão — arrasta as bolas para mover"
                 style={{
                   width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                  background: modo === 'mao' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+                  background: modo === 'mao' ? T.goldFundo : '#2B402D', border: `2px solid ${T.gold}`,
                   color: modo === 'mao' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                 }}
@@ -12461,7 +12484,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                 title="Caneta — risca à mão livre"
                 style={{
                   width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                  background: modo === 'caneta' ? T.gold : '#2B402D', border: `2px solid ${T.gold}`,
+                  background: modo === 'caneta' ? T.goldFundo : '#2B402D', border: `2px solid ${T.gold}`,
                   color: modo === 'caneta' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                 }}
@@ -21611,17 +21634,17 @@ function WeekAgenda({ weekStart, setWeekStart, sessions, matches, onEdit, onAddF
                 {dayMatches.map(m => (
                   <button key={m.id} onClick={() => onEditMatch(m)} style={{
                     ...CARTAO_AGENDA, ...body,
-                    color: '#1B241C', background: T.cream, border: `1px solid ${T.cream}`,
+                    color: T.sobreCream, background: T.cream, border: `1px solid ${T.cream}`,
                     flexDirection: 'row', alignItems: 'flex-start', gap: 5, fontWeight: 600,
                   }}>
-                    <Trophy size={11} color="#1B241C" style={{ marginTop: 1, flexShrink: 0 }} />
+                    <Trophy size={11} color={T.sobreCream} style={{ marginTop: 1, flexShrink: 0 }} />
                     {/* Adversário numa linha e a competição em até duas, em
                         baixo — assim o nome do campeonato cabe inteiro. */}
                     <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignSelf: 'stretch' }}>
                       <span style={isMobile ? undefined : LINHAS(1)}>vs {m.opponent || 'Adversário'}</span>
                       <span
                         title={m.result || competitionLabel(m.competition) || 'Jogo'}
-                        style={{ ...(isMobile ? {} : LINHAS(2)), fontSize: isMobile ? 11.5 : 9.5, color: '#1B241CAA', marginTop: 'auto', fontWeight: 400 }}
+                        style={{ ...(isMobile ? {} : LINHAS(2)), fontSize: isMobile ? 11.5 : 9.5, color: T.sobreCream, opacity: 0.67, marginTop: 'auto', fontWeight: 400 }}
                       >{isMobile ? [m.result, competitionLabel(m.competition)].filter(Boolean).join(' · ') || 'Jogo' : (m.result || competitionLabel(m.competition) || 'Jogo')}</span>
                     </span>
                   </button>
@@ -24440,7 +24463,7 @@ function EventosDoJogador({ x, compacto }) {
           title={x.cartao === 'yellow' ? 'Amarelo' : (x.cartao === 'red' ? 'Vermelho' : 'Duplo amarelo')}
           style={{
             display: 'inline-block', width: tam * 0.62, height: tam * 0.9, borderRadius: 1.5,
-            background: x.cartao === 'yellow' ? T.gold : (x.cartao === 'red' ? T.bad : T.gold),
+            background: x.cartao === 'yellow' ? T.goldFundo : (x.cartao === 'red' ? T.bad : T.goldFundo),
             border: x.cartao === 'yellow2' ? `1.5px solid ${T.bad}` : 'none',
           }}
         />
@@ -26885,7 +26908,7 @@ function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcap
               {b && (
                 <span title={b === 'C' ? 'Capitão (escolhido na Convocatória)' : 'Subcapitão (escolhido na Convocatória)'} style={{
                   ...mono, fontSize: 10, fontWeight: 800, padding: '1px 5px', borderRadius: 4, flexShrink: 0,
-                  background: b === 'C' ? T.gold : '#B08A1E', color: '#1A1A1A',
+                  background: b === 'C' ? T.goldFundo : '#B08A1E', color: '#1A1A1A',
                 }}>{b}</span>
               )}
             </span>
@@ -28659,7 +28682,7 @@ function Sparkline({
         const topo = acima ? py - 21 : py + 7;
         return (
           <g style={{ pointerEvents: 'none' }}>
-            <rect x={px - largura / 2} y={topo} width={largura} height={16} rx={4} fill="#0F1A12" stroke={T.line} strokeWidth="1" />
+            <rect x={px - largura / 2} y={topo} width={largura} height={16} rx={4} fill={T.fundoDica} stroke={T.line} strokeWidth="1" />
             <text x={px} y={topo + 11} textAnchor="middle" fontSize="10" fill={T.cream} style={{ ...mono }}>{texto}</text>
           </g>
         );
@@ -33678,7 +33701,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             <span style={{ marginLeft: 'auto', width: 14, height: 14, borderRadius: '50%', flexShrink: 0, background: aberta ? '#4CAF6A' : '#B3261E', boxShadow: `0 0 10px ${aberta ? '#4CAF6A' : '#B3261E'}`, transition: 'all .3s' }} />
           </div>
           {semMemoria && (
-            <div style={{ alignSelf: 'stretch', fontSize: 12.5, lineHeight: 1.45, color: T.cream, background: '#3A1F22', border: `1px solid ${T.bad}`, borderRadius: 10, padding: '8px 12px', flexShrink: 0 }}>
+            <div style={{ alignSelf: 'stretch', fontSize: 12.5, lineHeight: 1.45, color: T.cream, background: T.fundoErro, border: `1px solid ${T.bad}`, borderRadius: 10, padding: '8px 12px', flexShrink: 0 }}>
               Este navegador não está a guardar o teu cartão (janela privada ou memória bloqueada). Podes entrar agora com o PIN, mas da próxima vez abre o Portal num navegador normal — ou instala a app no dispositivo (Mais opções).
             </div>
           )}
@@ -40990,7 +41013,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                     <button key={a.id} onClick={() => escolherPausaBib(a)}
                                       title={`Abrir esta pausa (${(a.shapes || []).length} ${(a.shapes || []).length === 1 ? 'forma' : 'formas'})`}
                                       style={{
-                                        background: emEdicao ? T.gold : 'none', color: emEdicao ? '#111' : '#fff',
+                                        background: emEdicao ? T.goldFundo : 'none', color: emEdicao ? '#111' : '#fff',
                                         border: `1px solid ${emEdicao ? T.gold : T.line}`, borderRadius: 4,
                                         padding: '2px 8px', fontSize: 12, cursor: 'pointer', ...mono,
                                       }}>
@@ -41062,7 +41085,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               }));
                               const op = (z, rotulo) => (
                                 <button key={z} onClick={() => por(z)} style={{
-                                  background: atual === z ? T.gold : 'none', color: atual === z ? '#111' : '#fff',
+                                  background: atual === z ? T.goldFundo : 'none', color: atual === z ? '#111' : '#fff',
                                   border: `1px solid ${atual === z ? T.gold : T.line}`, borderRadius: 4,
                                   padding: '2px 7px', fontSize: 11.5, cursor: 'pointer', ...mono,
                                 }}>{rotulo}</button>
@@ -43407,7 +43430,7 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
                                 title={b.dica}
                                 style={{
                                   padding: '2px 8px', borderRadius: 5, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', ...mono,
-                                  background: b.ativo ? T.gold : 'transparent',
+                                  background: b.ativo ? T.goldFundo : 'transparent',
                                   color: b.ativo ? '#1A1A1A' : T.mutedDim,
                                   border: `1px solid ${b.ativo ? T.gold : T.line}`,
                                 }}
@@ -44409,7 +44432,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
           background: feita ? T.good : 'transparent', border: `1.5px solid ${feita ? T.good : T.line}`,
           display: 'grid', placeItems: 'center',
         }}
-      >{feita ? <Check size={9} style={{ color: '#0d140e' }} /> : (bloqueada && <Lock size={8} style={{ color: T.mutedDim }} />)}</button>
+      >{feita ? <Check size={9} style={{ color: T.sobreVerde }} /> : (bloqueada && <Lock size={8} style={{ color: T.mutedDim }} />)}</button>
       <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={() => onAbrir(tarefa, ocorrencia)}>
         <div style={{
           ...LINHAS(2), fontSize: 11.5, lineHeight: 1.3,
@@ -44617,9 +44640,9 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
                   {dayMatches.map(m => (
                     <div key={m.id} style={{
                       display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600,
-                      color: '#1B241C', background: T.cream, borderRadius: 4, padding: '2px 5px', minWidth: 0,
+                      color: T.sobreCream, background: T.cream, borderRadius: 4, padding: '2px 5px', minWidth: 0,
                     }}>
-                      <Trophy size={9} color="#1B241C" style={{ flexShrink: 0 }} />
+                      <Trophy size={9} color={T.sobreCream} style={{ flexShrink: 0 }} />
                       <span style={LINHAS(1)}>vs {m.opponent || 'Adversário'}</span>
                     </div>
                   ))}
@@ -44758,7 +44781,7 @@ function LinhaTarefa({ tarefa, membros, euId, hoje, players, onAbrir, onAlternar
           display: 'grid', placeItems: 'center', padding: 0,
           opacity: !podeConcluir && !feita ? 0.7 : 1,
         }}
-      >{feita ? <Check size={11} style={{ color: '#0d140e' }} /> : (!podeConcluir && <Lock size={9} style={{ color: T.mutedDim }} />)}</button>
+      >{feita ? <Check size={11} style={{ color: T.sobreVerde }} /> : (!podeConcluir && <Lock size={9} style={{ color: T.mutedDim }} />)}</button>
 
       <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onAbrir(tarefa)}>
         <div style={{
@@ -46971,7 +46994,7 @@ function CheckinApp() {
       `}</style>
       {erro && (
         <div style={{
-          background: '#3A1F22', border: `1px solid ${T.bad}`, color: T.cream,
+          background: T.fundoErro, border: `1px solid ${T.bad}`, color: T.cream,
           fontSize: 13, padding: '10px 14px', textAlign: 'center',
           // O ecrã inicial é fixo (ocupa o ecrã todo): o aviso fica por cima dele.
           position: 'relative', zIndex: 70,
@@ -47507,7 +47530,7 @@ export default function AppRoot() {
 
   if (session === undefined) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#182619', color: '#8FA091' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.bg, color: T.muted }}>
         A carregar…
       </div>
     );
@@ -47533,7 +47556,7 @@ function PortaoEquipa({ session }) {
 
   if (equipas === null) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#182619', color: '#8FA091' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.bg, color: T.muted }}>
         A carregar…
       </div>
     );
