@@ -3774,7 +3774,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 
         {/* SIDEBAR — fixa em ecrã largo; em mobile passa a painel deslizante (drawer) */}
         <aside style={{
-          width: 220, background: T.surface, borderRight: `1px solid ${T.line}`,
+          // 240 em vez de 220: o email, o sol e o Sair cabem na mesma linha sem cortar o email.
+          width: 240, background: T.surface, borderRight: `1px solid ${T.line}`,
           flexShrink: 0, display: 'flex', flexDirection: 'column',
           ...(isMobile ? {
             position: 'fixed', top: 0, left: 0, height: '100dvh', zIndex: 50,
@@ -3877,30 +3878,32 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             </button>
           </nav>
           <div style={{ padding: '14px 20px', borderTop: `1px solid ${T.line}` }}>
-            {/* Linha 1: email (sem cortar) + sol/lua. Linha 2: Exportar, Importar e Sair. */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-              <div title={session.user.email} style={{ fontSize: 10.5, color: T.mutedDim, overflowWrap: 'anywhere', lineHeight: 1.35, minWidth: 0 }}>
-                {session.user.email}
+            {/* Email inteiro, sol/lua e Sair na mesma linha. Se um email
+                for mais comprido do que o espaço, parte antes do "@"
+                (nunca é cortado com reticências). */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+              <div title={session.user.email} style={{ fontSize: 10.5, color: T.mutedDim, lineHeight: 1.35, minWidth: 0, overflowWrap: 'anywhere' }}>
+                {(() => { const e = session.user.email || ''; const k = e.indexOf('@'); return k > 0 ? <>{e.slice(0, k)}<wbr />{e.slice(k)}</> : e; })()}
               </div>
-              <button
-                type="button"
-                onClick={trocarTema}
-                title={ROTULO_TROCA_TEMA}
-                aria-label={ROTULO_TROCA_TEMA}
-                style={{ color: T.muted, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 7px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-              >
-                <IconeTema size={13} />
-              </button>
-            </div>
-            <DataTools
-              extra={
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={trocarTema}
+                  title={ROTULO_TROCA_TEMA}
+                  aria-label={ROTULO_TROCA_TEMA}
+                  style={{ color: T.muted, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 7px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <IconeTema size={13} />
+                </button>
                 <button
                   onClick={() => supabase.auth.signOut()}
-                  style={{ marginLeft: 'auto', fontSize: 10.5, color: T.muted, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', ...body }}
+                  style={{ fontSize: 10.5, color: T.muted, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', ...body }}
                 >
                   Sair
                 </button>
-              }
+              </div>
+            </div>
+            <DataTools
               season={season} setSeason={setSeason} players={players} setPlayers={setPlayers}
               exercises={exercises} setExercises={setExercises} ideias={ideias} setIdeias={setIdeias}
               sessions={sessions} setSessions={setSessions}
@@ -6724,7 +6727,7 @@ function SeletorEquipa({ equipas, equipaAtiva, onNova, onGerir }) {
   );
 }
 
-function DataTools({ extra = null, season, setSeason, players, setPlayers, exercises, setExercises, ideias, setIdeias, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario, clinico, setClinico, desenvolvimento, setDesenvolvimento, standings, setStandings }) {
+function DataTools({ season, setSeason, players, setPlayers, exercises, setExercises, ideias, setIdeias, sessions, setSessions, monitoring, setMonitoring, matches, setMatches, scouting, setScouting, videos, setVideos, apresentacoes, setApresentacoes, convocatorias, setConvocatorias, diario, setDiario, clinico, setClinico, desenvolvimento, setDesenvolvimento, standings, setStandings }) {
   const fileInputRef = React.useRef(null);
   const [importOpen, setImportOpen] = useState(false);
   const [erroImport, setErroImport] = useState('');
@@ -6798,7 +6801,7 @@ function DataTools({ extra = null, season, setSeason, players, setPlayers, exerc
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, alignSelf: 'stretch' }}>
+      <div style={{ display: 'flex', gap: 14 }}>
         <button onClick={doExport} title="Exportar dados" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, ...body }}>
           <Download size={13} /> Exportar
         </button>
@@ -6806,7 +6809,6 @@ function DataTools({ extra = null, season, setSeason, players, setPlayers, exerc
           <Upload size={13} /> Importar
         </button>
         <input type="file" accept="application/json" ref={fileInputRef} onChange={handleImportFile} style={{ display: 'none' }} />
-        {extra}
       </div>
       {erroImport && (
         <div style={{ fontSize: 11.5, color: T.bad, maxWidth: 320, lineHeight: 1.4, ...body }}>{erroImport}</div>
