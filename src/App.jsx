@@ -18,7 +18,7 @@ import AnalisadorVideo, {
 import {
   ZoomIn, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
   Pencil, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Loader2, Clock,
-  Moon, Printer, TrendingUp, Trophy,
+  Moon, Sun, Printer, TrendingUp, Trophy,
   Search, Star, UserCheck, Download, Upload, Tv, RotateCw, Maximize2, Minimize2,
   ExternalLink, ClipboardList, BookOpen, Play, Square, Eye, EyeOff, RefreshCw, LogOut,
   Undo2, Redo2, Copy, Share2, Presentation, FileText, Instagram, Facebook, Music2, Lightbulb,
@@ -118,28 +118,14 @@ function mudarTema(pref) {
   try { localStorage.setItem(TEMA_CHAVE, pref); } catch (e) { /* sem memória: fica só nesta visita */ }
   if (temaEfetivo(pref) !== TEMA_ATUAL) window.location.reload();
 }
-// Escuro / Claro / Automático — o mesmo seletor na plataforma e no Portal.
-function SeletorTema({ grande = false }) {
-  const [pref, setPref] = useState(lerPreferenciaTema);
-  const opcoes = [['escuro', 'Escuro'], ['claro', 'Claro'], ['auto', 'Automático']];
-  return (
-    <div role="radiogroup" aria-label="Aspeto" style={{ display: 'flex', gap: grande ? 6 : 4, width: '100%' }}>
-      {opcoes.map(([id, rot]) => {
-        const on = pref === id;
-        return (
-          <button key={id} type="button" role="radio" aria-checked={on}
-            onClick={() => { setPref(id); mudarTema(id); }}
-            title={id === 'auto' ? 'Segue o modo claro/escuro do telemóvel ou do computador' : undefined}
-            style={{
-              flex: 1, fontSize: grande ? 13.5 : 10.5, padding: grande ? '10px 6px' : '4px 6px', borderRadius: grande ? 10 : 6, cursor: 'pointer',
-              border: `1px solid ${on ? T.gold : T.line}`, background: on ? T.surfaceRaise : 'transparent',
-              color: on ? T.cream : T.muted, fontWeight: on ? 600 : 400, fontFamily: 'inherit',
-            }}>{rot}</button>
-        );
-      })}
-    </div>
-  );
+// Um só toque troca entre claro e escuro. Mostra o modo para onde vai:
+// lua no claro (passar a escuro), sol no escuro (passar a claro).
+// Uma preferência 'auto' antiga continua a valer até o utilizador tocar.
+function trocarTema() { mudarTema(TEMA_ATUAL === 'claro' ? 'escuro' : 'claro'); }
+function IconeTema({ size = 14 }) {
+  return TEMA_ATUAL === 'claro' ? <Moon size={size} /> : <Sun size={size} />;
 }
+const ROTULO_TROCA_TEMA = TEMA_ATUAL === 'claro' ? 'Mudar para modo escuro' : 'Mudar para modo claro';
 
 /* Text-on-accent color: light text used on the crimson accent
    backgrounds (buttons, active tabs, badges) — dark pitch-green
@@ -3895,16 +3881,23 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               <div style={{ fontSize: 10.5, color: T.mutedDim, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {session.user.email}
               </div>
-              <button
-                onClick={() => supabase.auth.signOut()}
-                style={{ fontSize: 10.5, color: T.muted, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', flexShrink: 0, ...body }}
-              >
-                Sair
-              </button>
-            </div>
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 10, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 5 }}>Aspeto</div>
-              <SeletorTema />
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={trocarTema}
+                  title={ROTULO_TROCA_TEMA}
+                  aria-label={ROTULO_TROCA_TEMA}
+                  style={{ color: T.muted, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 7px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <IconeTema size={13} />
+                </button>
+                <button
+                  onClick={() => supabase.auth.signOut()}
+                  style={{ fontSize: 10.5, color: T.muted, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', ...body }}
+                >
+                  Sair
+                </button>
+              </div>
             </div>
             <DataTools
               season={season} setSeason={setSeason} players={players} setPlayers={setPlayers}
@@ -33760,10 +33753,10 @@ function PortalEntrada({ entrar, equipa, teamId }) {
                   )}
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('outro-pin'); }}>Utilizar outro equipamento</button>
                   <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); usarOutroCartao(); }}>Usar outro cartão de atleta</button>
-                  <div style={{ padding: '6px 2px 0' }}>
-                    <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 6 }}>Aspeto do Portal</div>
-                    <SeletorTema grande />
-                  </div>
+                  <button type="button" style={{ ...opcao, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={trocarTema}>
+                    {TEMA_ATUAL === 'claro' ? 'Modo escuro' : 'Modo claro'}
+                    <span style={{ color: T.muted, display: 'flex' }}><IconeTema size={18} /></span>
+                  </button>
                   <button type="button" onClick={() => setMaisOpcoes(false)} style={{ ...opcao, textAlign: 'center', background: 'none', border: 'none', color: T.mutedDim }}>Fechar</button>
                 </div>
               </div>
