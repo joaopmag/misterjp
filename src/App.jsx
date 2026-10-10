@@ -155,6 +155,22 @@ const ROTULO_TROCA_TEMA = TEMA_ATUAL === 'claro' ? 'Mudar para modo escuro' : 'M
    theme, so this is now light instead of dark. */
 const TEXT_ON_ACCENT = '#FBF3F0';
 
+/* Imprimir com o nome certo no PDF. Ao "Guardar como PDF", o browser usa
+   o título da página como nome do ficheiro (e como cabeçalho da folha).
+   Troca-se o título só durante a impressão e repõe-se logo a seguir. */
+function imprimirComNome(nome) {
+  const limpo = String(nome || '').trim();
+  const antes = document.title;
+  if (limpo) document.title = limpo;
+  const repor = () => { document.title = antes; window.removeEventListener('afterprint', repor); };
+  window.addEventListener('afterprint', repor);
+  setTimeout(() => {
+    window.print();
+    // Safari e alguns telemóveis não disparam "afterprint": repõe na mesma.
+    setTimeout(repor, 1500);
+  }, 80);
+}
+
 /* O EMBLEMA DEIXOU DE VIVER NO CÓDIGO.
 
    Estavam aqui 70 KB de PNG em base64 com o emblema do SC Salgueiros —
@@ -9638,7 +9654,7 @@ function Exercicios({ exercises, setExercises, meta }) {
       return;
     }
     setPrintExercise(x);
-    setTimeout(() => window.print(), 80);
+    imprimirComNome(x.name);
   };
   const doShare = (x) => {
     const meta = [x.phase, x.space && `📐 ${x.space}`, x.playersCount && `👥 ${x.playersCount}`, x.material && `🎒 ${x.material}`, x.defaultDuration && `⏱ ${x.defaultDuration} min`].filter(Boolean);
@@ -10030,7 +10046,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
 
   const doPrint = (x) => {
     setPrintIdeia(x);
-    setTimeout(() => window.print(), 80);
+    imprimirComNome([labelOf(x), x.phase].filter(Boolean).join(' · '));
   };
   const doShare = (x) => {
     const block = buildDiagramBlockHtml(x.diagram, '', 'ideia');
@@ -10907,7 +10923,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
           <DiagramEditor
             value={f.diagram || { elements: [], arrows: [] }}
             onChange={d => setF(prev => ({ ...prev, diagram: d }))}
-            exerciseInfo={{ phase: f.phase }}
+            exerciseInfo={{ name: f.name, phase: f.phase }}
             activeColor={diagramColor}
             onColorChange={setDiagramColor}
           />
@@ -14627,7 +14643,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const doPrint = () => {
     setPrintOpen(true);
-    setTimeout(() => window.print(), 80);
+    imprimirComNome([exerciseInfo?.name, exerciseInfo?.phase].filter(Boolean).join(' · '));
   };
   const clearAll = () => {
     commit({ elements: [], arrows: [], sequence: [] });
@@ -36154,7 +36170,7 @@ function TaticaAdversarioModal({ tatica, onClose, onSave }) {
           <DiagramEditor
             value={f.diagram || { elements: [], arrows: [] }}
             onChange={d => setF(prev => ({ ...prev, diagram: d }))}
-            exerciseInfo={{ phase: f.phase }}
+            exerciseInfo={{ name: f.nome, phase: f.phase }}
             activeColor={diagramColor}
             onColorChange={setDiagramColor}
           />
