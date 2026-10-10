@@ -8292,7 +8292,7 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
        `fatorNomes` encolhe os DOIS por igual quando o quadro fica
        cheio — ver comentário no topo da função. */
     fontSize: 8.5 * escala * fatorNomes, lineHeight: alturaLinha, fontWeight: 500,
-    color: escuro ? (on ? '#0d140e' : T.cream) : '#111',
+    color: escuro ? (on ? '#0d140e' : T_ESCURO.cream) : '#111',
     background: on ? T.goldFundo : 'transparent',
     borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -9728,7 +9728,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                   <div style={{
                     width: '100%', height: 130, background: '#1e3a24',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 12px',
-                    fontSize: 11.5, color: T.mutedDim, textAlign: 'center',
+                    fontSize: 11.5, color: T_ESCURO.mutedDim, textAlign: 'center',
                   }}>
                     {x.attachment ? (<><BookOpen size={13} style={{ flexShrink: 0 }} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.attachment.name}</span></>) : 'Sem esquema'}
                   </div>
@@ -10150,7 +10150,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
                 ) : (
                   <div style={{
                     width: '100%', height: 130, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T.mutedDim,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T_ESCURO.mutedDim,
                   }}>Sem esquema</div>
                 )}
                 {/* Ícones por baixo da imagem, encostados à margem direita
@@ -24976,7 +24976,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                     border: eGR ? '1px solid #16281B55' : 'none',
                   }}>{p.number || lugares[i]}</span>
                   <div style={{
-                    fontSize: 11, color: T.cream, marginTop: 2, lineHeight: 1.2,
+                    fontSize: 11, color: T_ESCURO.cream, marginTop: 2, lineHeight: 1.2,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                   }}>
                     {shortPlayerName(p, players)}
@@ -32293,7 +32293,7 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
             ) : (
               <div style={{
                 width: '100%', height: ALTURA_MINIATURA, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, color: T.mutedDim,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, color: T_ESCURO.mutedDim,
               }}>Sem esquema</div>
             )}
           </div>
