@@ -79,6 +79,7 @@ const T = {
   botaoInativo: '#3a4f3d',            // "Levantar o cartão" antes do código
   botaoInativoTexto: '#8A9A8C',
   sobreBom: '#0E1A0E',                // texto sobre o botão verde
+  giz: '#FFFFFF',                     // desenhos que sobem no fundo (Portal, missão, credencial)
 };
 /* A paleta escura, fixa. Os objetos do Portal que são sempre escuros
    (placard, TV do balneário, porta, estádio do dia de jogo) leem daqui,
@@ -128,6 +129,7 @@ const PALETA_CLARA = {
   botaoInativo: '#DDE3DA',
   botaoInativoTexto: '#6F806F',
   sobreBom: '#FFFFFF',
+  giz: '#1B2A1D',
 };
 function lerPreferenciaTema() {
   try { const v = localStorage.getItem(TEMA_CHAVE); return v === 'claro' || v === 'auto' ? v : 'escuro'; } catch (e) { return 'escuro'; }
@@ -12232,7 +12234,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
             title="Fechar"
             style={{
               position: 'absolute', top: 10, right: 10, zIndex: 5, width: 34, height: 34, borderRadius: '50%',
-              background: '#00000066', border: `1px solid ${T.line}`, color: T.cream,
+              background: '#00000066', border: `1px solid ${T_ESCURO.line}`, color: T_ESCURO.cream,
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
             }}
           ><X size={17} /></button>
@@ -12377,7 +12379,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                         onPointerDown={iniciarNovaBola(t.id)}
                         style={{
                           width: compacto ? 26 : 44, height: compacto ? 26 : 44, borderRadius: '50%', background: t.fill,
-                          border: `2.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
+                          border: `2.5px solid ${T_ESCURO.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
                         }}
                       />
                     ))}
@@ -12390,7 +12392,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                     style={{
                       position: 'absolute', left: '50%', bottom: '3%', transform: 'translateX(-50%)',
                       width: compacto ? 26 : 34, height: compacto ? 26 : 34, borderRadius: '50%',
-                      border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none', overflow: 'hidden',
+                      border: `2px solid ${T_ESCURO.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none', overflow: 'hidden',
                       background: '#00000066',
                     }}
                   >
@@ -12402,8 +12404,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                       title="Mão — arrasta as bolas para mover"
                       style={{
                         width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                        background: modo === 'mao' ? T.goldFundo : '#2B402D', border: `2px solid ${T.gold}`,
-                        color: modo === 'mao' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: modo === 'mao' ? T.goldFundo : '#2B402D', border: `2px solid ${T_ESCURO.gold}`,
+                        color: modo === 'mao' ? '#1E3A24' : T_ESCURO.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                       }}
                     ><Hand size={compacto ? 15 : 25} /></button>
@@ -12412,8 +12414,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                       title="Caneta — risca à mão livre"
                       style={{
                         width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                        background: modo === 'caneta' ? T.goldFundo : '#2B402D', border: `2px solid ${T.gold}`,
-                        color: modo === 'caneta' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: modo === 'caneta' ? T.goldFundo : '#2B402D', border: `2px solid ${T_ESCURO.gold}`,
+                        color: modo === 'caneta' ? '#1E3A24' : T_ESCURO.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                       }}
                     ><Pencil size={compacto ? 15 : 25} /></button>
@@ -12422,8 +12424,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                       title="Borracha — arrasta para apagar"
                       style={{
                         width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                        background: modo === 'borracha' ? '#B5393F' : '#2B402D', border: `2px solid ${modo === 'borracha' ? '#D14056' : T.gold}`,
-                        color: modo === 'borracha' ? TEXT_ON_ACCENT : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: modo === 'borracha' ? '#B5393F' : '#2B402D', border: `2px solid ${modo === 'borracha' ? '#D14056' : T_ESCURO.gold}`,
+                        color: modo === 'borracha' ? TEXT_ON_ACCENT : T_ESCURO.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                         cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                       }}
                     ><Eraser size={compacto ? 15 : 25} /></button>
@@ -12435,8 +12437,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                         width: sobreLixo ? (compacto ? 42 : 66) : (compacto ? 34 : 54),
                         height: sobreLixo ? (compacto ? 42 : 66) : (compacto ? 34 : 54),
                         borderRadius: '50%', transition: 'width .12s, height .12s',
-                        background: sobreLixo ? T.bad : '#2B402D', border: `2px solid ${T.bad}`,
-                        color: sobreLixo ? TEXT_ON_ACCENT : T.bad,
+                        background: sobreLixo ? T_ESCURO.bad : '#2B402D', border: `2px solid ${T_ESCURO.bad}`,
+                        color: sobreLixo ? TEXT_ON_ACCENT : T_ESCURO.bad,
                         display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
                         boxShadow: '0 3px 10px #00000066',
                       }}
@@ -12469,7 +12471,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                   onPointerDown={iniciarNovaBola(t.id)}
                   style={{
                     width: compacto ? 26 : 44, height: compacto ? 26 : 44, borderRadius: '50%', background: t.fill,
-                    border: `2.5px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
+                    border: `2.5px solid ${T_ESCURO.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none',
                   }}
                 />
               ))}
@@ -12486,7 +12488,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
               onPointerDown={iniciarBola}
               style={{
                 width: compacto ? 26 : 34, height: compacto ? 26 : 34, borderRadius: '50%',
-                border: `2px solid ${T.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none', overflow: 'hidden',
+                border: `2px solid ${T_ESCURO.line}`, cursor: 'grab', touchAction: 'none', padding: 0, userSelect: 'none', overflow: 'hidden',
                 background: '#00000066', flexShrink: 0,
               }}
             >
@@ -12507,8 +12509,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                 title="Mão — arrasta as bolas para mover"
                 style={{
                   width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                  background: modo === 'mao' ? T.goldFundo : '#2B402D', border: `2px solid ${T.gold}`,
-                  color: modo === 'mao' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: modo === 'mao' ? T.goldFundo : '#2B402D', border: `2px solid ${T_ESCURO.gold}`,
+                  color: modo === 'mao' ? '#1E3A24' : T_ESCURO.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                 }}
               ><Hand size={compacto ? 15 : 25} /></button>
@@ -12517,8 +12519,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                 title="Caneta — risca à mão livre"
                 style={{
                   width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                  background: modo === 'caneta' ? T.goldFundo : '#2B402D', border: `2px solid ${T.gold}`,
-                  color: modo === 'caneta' ? '#1E3A24' : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: modo === 'caneta' ? T.goldFundo : '#2B402D', border: `2px solid ${T_ESCURO.gold}`,
+                  color: modo === 'caneta' ? '#1E3A24' : T_ESCURO.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                 }}
               ><Pencil size={compacto ? 15 : 25} /></button>
@@ -12527,8 +12529,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                 title="Borracha — arrasta para apagar"
                 style={{
                   width: compacto ? 34 : 54, height: compacto ? 34 : 54, borderRadius: '50%',
-                  background: modo === 'borracha' ? '#B5393F' : '#2B402D', border: `2px solid ${modo === 'borracha' ? '#D14056' : T.gold}`,
-                  color: modo === 'borracha' ? TEXT_ON_ACCENT : T.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: modo === 'borracha' ? '#B5393F' : '#2B402D', border: `2px solid ${modo === 'borracha' ? '#D14056' : T_ESCURO.gold}`,
+                  color: modo === 'borracha' ? TEXT_ON_ACCENT : T_ESCURO.gold, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: 'pointer', padding: 0, boxShadow: '0 3px 10px #00000066',
                 }}
               ><Eraser size={compacto ? 15 : 25} /></button>
@@ -12540,8 +12542,8 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
                   width: sobreLixo ? (compacto ? 42 : 66) : (compacto ? 34 : 54),
                   height: sobreLixo ? (compacto ? 42 : 66) : (compacto ? 34 : 54),
                   borderRadius: '50%', transition: 'width .12s, height .12s',
-                  background: sobreLixo ? T.bad : '#2B402D', border: `2px solid ${T.bad}`,
-                  color: sobreLixo ? TEXT_ON_ACCENT : T.bad,
+                  background: sobreLixo ? T_ESCURO.bad : '#2B402D', border: `2px solid ${T_ESCURO.bad}`,
+                  color: sobreLixo ? TEXT_ON_ACCENT : T_ESCURO.bad,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
                   boxShadow: '0 3px 10px #00000066',
                 }}
@@ -16199,8 +16201,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
                   onClick={stop}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
-                    background: '#0e1a12CC', border: `1px solid ${T.line}`,
-                    color: T.cream, cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
+                    background: '#0e1a12CC', border: `1px solid ${T_ESCURO.line}`,
+                    color: T_ESCURO.cream, cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
                   }}
                 ><Square size={14} /> Parar</button>
               )}
@@ -16221,8 +16223,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     width: 40, height: 38, borderRadius: 8,
-                    background: '#0e1a12CC', border: `1px solid ${T.line}`,
-                    color: b.off ? T.mutedDim : T.cream, cursor: b.off ? 'default' : 'pointer',
+                    background: '#0e1a12CC', border: `1px solid ${T_ESCURO.line}`,
+                    color: b.off ? T_ESCURO.mutedDim : T_ESCURO.cream, cursor: b.off ? 'default' : 'pointer',
                   }}
                 >{b.icone}</button>
               ))}
@@ -16231,8 +16233,8 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
                 onClick={() => (playing ? pause() : paused ? resume() : restart())}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 8,
-                  background: playing ? '#0e1a12CC' : '#B5393F', border: `1px solid ${playing ? T.line : '#B5393F'}`,
-                  color: playing ? T.cream : TEXT_ON_ACCENT, cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
+                  background: playing ? '#0e1a12CC' : '#B5393F', border: `1px solid ${playing ? T_ESCURO.line : '#B5393F'}`,
+                  color: playing ? T_ESCURO.cream : TEXT_ON_ACCENT, cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
                 }}
               >
                 {playing
@@ -16249,7 +16251,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
             title={isFull ? 'Sair do ecrã inteiro' : 'Ver em ecrã inteiro'}
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8,
-              background: '#0e1a12CC', border: `1px solid ${T.line}`, color: T.cream, cursor: 'pointer',
+              background: '#0e1a12CC', border: `1px solid ${T_ESCURO.line}`, color: T_ESCURO.cream, cursor: 'pointer',
               fontSize: 12, ...body,
             }}
           >
@@ -18767,8 +18769,8 @@ function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: 22, height: 22, borderRadius: '50%', ...mono, fontSize: 10.5,
               background: l.jogador ? T.corEquipa : '#00000055',
-              color: l.jogador ? '#fff' : T.mutedDim,
-              border: `1px solid ${l.jogador ? T.corEquipa : T.line}`,
+              color: l.jogador ? '#fff' : T_ESCURO.mutedDim,
+              border: `1px solid ${l.jogador ? T.corEquipa : T_ESCURO.line}`,
             }}>{l.jogador ? (l.jogador.number || rotuloDoLugar(l.lugar)) : rotuloDoLugar(l.lugar)}</span>
             {l.jogador && (
               <span style={{
@@ -25014,8 +25016,8 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
                   style={{
                     position: 'absolute', ...posCampoPrint(fx, fy),
                     transform: 'translate(-50%, -50%)', cursor: 'pointer', ...body,
-                    background: '#00000055', border: `1px dashed ${T.line}`, borderRadius: 6,
-                    padding: '4px 7px', color: T.mutedDim, fontSize: 10.5,
+                    background: '#00000055', border: `1px dashed ${T_ESCURO.line}`, borderRadius: 6,
+                    padding: '4px 7px', color: T_ESCURO.mutedDim, fontSize: 10.5,
                     ...arrasto.estiloAlvo(String(i)),
                   }}
                 >{lugares[i]}</button>
@@ -29798,7 +29800,10 @@ function coresCamisola(hex) {
     texto: clara ? '#1B1B1B' : '#FFFFFF', mangas: clara ? misturar(0.55) : '#FFFFFF',
   };
 }
-const CORES_FESTA = ['#C8102E', '#FFFFFF', '#C9A227', '#E84A5F', '#F3E3A0'];
+// Em claro, o branco e o creme não se viam no fundo claro: trocam por verde e dourado-escuro.
+const CORES_FESTA = TEMA_ATUAL === 'claro'
+  ? ['#C8102E', '#2E7D4A', '#C9A227', '#E84A5F', '#8A6A0E']
+  : ['#C8102E', '#FFFFFF', '#C9A227', '#E84A5F', '#F3E3A0'];
 
 /* Bola de futebol "a sério" (o padrão clássico de pentágonos pretos e
    hexágonos brancos), com sombra para parecer redonda. */
@@ -30404,7 +30409,7 @@ function EcraMissao({ player, tarefas, janelas = {}, onIr, onAdiar, destinoDe, c
             position: 'fixed', left: `${m.left}%`, bottom: -40, opacity: m.op, pointerEvents: 'none',
             animation: `pr-subir ${m.dur}s linear ${m.atraso}s infinite`, '--rot': `${m.rot}deg`,
           }}>
-            <g fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <g fill="none" stroke={T.giz} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               {m.tipo === 'x' && <><line x1="5" y1="5" x2="19" y2="19" /><line x1="19" y1="5" x2="5" y2="19" /></>}
               {m.tipo === 'o' && <circle cx="12" cy="12" r="8" />}
               {m.tipo === 'seta' && <><path d="M4 18 Q10 6 19 7" /><path d="M14 4 L19 7 L15.5 11.5" /></>}
@@ -34463,7 +34468,7 @@ function PkhObjeto({ tipo, tam }) {
   }[tipo];
   return (
     <svg viewBox="0 0 24 24" width={tam} height={tam} aria-hidden="true">
-      <g fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{desenho}</g>
+      <g fill="none" stroke={T.giz} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{desenho}</g>
     </svg>
   );
 }
@@ -45315,7 +45320,7 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
         const Ic = ICONES_FUNDO[f.i];
         return (
           <div key={f.k} className="cr-anim" aria-hidden="true" style={{
-            position: 'absolute', left: `${f.left}%`, bottom: -40, opacity: f.op, pointerEvents: 'none', zIndex: -1, color: '#fff',
+            position: 'absolute', left: `${f.left}%`, bottom: -40, opacity: f.op, pointerEvents: 'none', zIndex: -1, color: T.giz,
             animation: `cr-subir ${f.dur}s linear ${f.atraso}s infinite`, '--rot': `${f.rot}deg`,
           }}><Ic size={f.tam} strokeWidth={1.6} /></div>
         );
