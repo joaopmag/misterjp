@@ -72,7 +72,18 @@ const T = {
   linhaAtiva: '#4A6250',     // contorno de um cartão aberto
   epocaRotulo: '#D9A72E',    // "Época" na faixa vermelha da Visão Geral
   epocaNome: '#ECEFEA',      // nome da época na mesma faixa
+  // Fase 3 (Portal do Atleta)
+  veuMissao: 'rgba(10,20,12,0.92)',   // fundo de "Missão cumprida"
+  brilhoMissao: '#2b3a2e',            // halo do ecrã da missão
+  brilhoEntrada: '#33463a',           // halo do ecrã de entrada da equipa
+  botaoInativo: '#3a4f3d',            // "Levantar o cartão" antes do código
+  botaoInativoTexto: '#8A9A8C',
+  sobreBom: '#0E1A0E',                // texto sobre o botão verde
 };
+/* A paleta escura, fixa. Os objetos do Portal que são sempre escuros
+   (placard, TV do balneário, porta, estádio do dia de jogo) leem daqui,
+   para não mudarem com o modo claro. */
+const T_ESCURO = { ...T };
 
 /* ===================================================================
    MODO CLARO
@@ -111,6 +122,12 @@ const PALETA_CLARA = {
   linhaAtiva: '#9FB29C',
   epocaRotulo: '#F6D88A',
   epocaNome: '#FFFFFF',
+  veuMissao: 'rgba(242,244,239,0.96)',
+  brilhoMissao: '#DCE5D7',
+  brilhoEntrada: '#D5DFD1',
+  botaoInativo: '#DDE3DA',
+  botaoInativoTexto: '#6F806F',
+  sobreBom: '#FFFFFF',
 };
 function lerPreferenciaTema() {
   try { const v = localStorage.getItem(TEMA_CHAVE); return v === 'claro' || v === 'auto' ? v : 'escuro'; } catch (e) { return 'escuro'; }
@@ -29666,7 +29683,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   ) : null;
   const toastCumprida = missaoCumprida ? (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(10,20,12,0.92)', display: 'flex', flexDirection: 'column',
+      position: 'fixed', inset: 0, zIndex: 80, background: T.veuMissao, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center', gap: 10, ...body, padding: 24, textAlign: 'center',
     }} onClick={() => setMissaoCumprida(null)}>
       <div style={{ width: 74, height: 74, borderRadius: '50%', background: `${T.good}33`, border: `2px solid ${T.good}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -30245,7 +30262,7 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
       <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '56px 16px 28px', boxSizing: 'border-box', position: 'relative' }}>
         <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          <div style={{ textAlign: 'center', color: T.gold, fontSize: 11.5, fontWeight: 800, letterSpacing: '.26em', textTransform: 'uppercase' }}>
+          <div style={{ textAlign: 'center', color: T_ESCURO.gold, fontSize: 11.5, fontWeight: 800, letterSpacing: '.26em', textTransform: 'uppercase' }}>
             Jogo{info.jornada ? ` · ${info.jornada}` : ''}{missao._teste ? ' · teste' : ''}
           </div>
 
@@ -30323,7 +30340,7 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
           </button>
           <div style={{ display: 'flex', justifyContent: 'center' }}>
             <button type="button" onClick={() => onAdiar(missao.id)} style={{
-              background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
+              background: 'none', border: 'none', color: T_ESCURO.mutedDim, cursor: 'pointer', fontSize: 13.5, ...body, padding: 6,
             }}>Mais tarde</button>
           </div>
         </div>
@@ -30373,7 +30390,7 @@ function EcraMissao({ player, tarefas, janelas = {}, onIr, onAdiar, destinoDe, c
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', overflowX: 'hidden', ...body,
-      background: `radial-gradient(circle at 50% 30%, #2b3a2e 0%, ${T.bg} 75%)`,
+      background: `radial-gradient(circle at 50% 30%, ${T.brilhoMissao} 0%, ${T.bg} 75%)`,
     }}>
       {marcasGiz.map(m => (
         m.tipo === 'bola' ? (
@@ -31718,7 +31735,7 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
                   width: 17, height: 17, borderRadius: 5, flexShrink: 0, marginTop: 2,
                   background: feita ? T.good : 'transparent', border: `1.5px solid ${feita ? T.good : T.line}`,
                   display: 'grid', placeItems: 'center',
-                }}>{feita && <Check size={11} style={{ color: '#0d140e' }} />}</span>
+                }}>{feita && <Check size={11} style={{ color: T.sobreVerde }} />}</span>
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{
                     fontSize: 13.5, color: feita ? T.mutedDim : T.cream, lineHeight: 1.45, display: 'block',
@@ -33418,7 +33435,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   };
   const ligacao = { background: 'none', border: 'none', color: T.gold, textDecoration: 'underline', fontSize: 13, cursor: 'pointer', padding: '6px', ...body, flexShrink: 0 };
   const botaoOuro = (ativo) => ({
-    width: '100%', padding: 11, borderRadius: 12, border: 'none', background: ativo ? T.goldFundo : '#3a4f3d', color: ativo ? '#1A2A1F' : '#8A9A8C',
+    width: '100%', padding: 11, borderRadius: 12, border: 'none', background: ativo ? T.goldFundo : T.botaoInativo, color: ativo ? '#1A2A1F' : T.botaoInativoTexto,
     ...display, fontSize: 17, fontWeight: 600, cursor: ativo ? 'pointer' : 'default', flexShrink: 0,
   });
 
@@ -34255,7 +34272,7 @@ function PkhSequencia({ dias, g }) {
         borderBottom: `3px solid ${T.gold}`, boxSizing: 'border-box',
       }}>
         <div style={{
-          fontSize: g ? 14 : 11.5, color: T.cream, lineHeight: 1.28, ...body,
+          fontSize: g ? 14 : 11.5, color: T_ESCURO.cream, lineHeight: 1.28, ...body,
           display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
         }}>«{frase}»</div>
       </div>
@@ -34772,7 +34789,7 @@ function BigButton({ children, onClick, disabled, accent, style: s = {} }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
       width: '100%', padding: '16px', borderRadius: 10, border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
-      background: accent ? T.good : T.line, color: accent ? '#0E1A0E' : T.cream,
+      background: accent ? T.good : T.line, color: accent ? T.sobreBom : T.cream,
       ...display, fontSize: 16.5, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
       opacity: disabled ? 0.6 : 1, ...s,
     }}>{children}</button>
@@ -34804,7 +34821,7 @@ function DoneScreen({ name, message }) {
   return (
     <div style={{ minHeight: '70vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 20, textAlign: 'center' }}>
       <div style={{ width: 84, height: 84, borderRadius: '50%', background: T.good, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Check size={42} color="#0E1A0E" />
+        <Check size={42} color={T.sobreBom} />
       </div>
       <div style={{ ...display, fontSize: 24, fontWeight: 700, color: T.cream }}>{message}, {name.split(' ')[0]}!</div>
       <div style={{ fontSize: 13.5, color: T.mutedDim }}>A voltar…</div>
@@ -45279,7 +45296,7 @@ function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equi
        o botão em baixo. Só a lista das zonas desliza, por dentro do cartão. */
     <div style={{
       position: 'fixed', inset: 0, zIndex: 90, overflow: 'hidden', ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', isolation: 'isolate',
-      background: `radial-gradient(ellipse at 50% -10%, #33463a 0%, ${T.bg} 60%)`,
+      background: `radial-gradient(ellipse at 50% -10%, ${T.brilhoEntrada} 0%, ${T.bg} 60%)`,
       padding: '0 14px calc(14px + env(safe-area-inset-bottom, 0px))',
     }}>
       <style>{`
