@@ -47374,7 +47374,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
       {/* PESQUISA — compacta, por cima dos temas. Enter ou a lupa
           pesquisam; o X limpa. */}
       {diario.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, maxWidth: isMobile ? '100%' : 520 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
             <Search size={15} color={T.mutedDim} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
             <Input
