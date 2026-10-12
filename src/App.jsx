@@ -4076,6 +4076,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 equipasCompeticao={nomesEquipasCompeticao(standings)}
                 provaDeEquipa={(nome) => provaDaEquipa(nome, standings)}
                 adversariosProntos={!!adversariosReady && !!videosReady}
+                teamIdFichas={teamId}
                 emptyText="Ainda sem vídeos. Cola o link do YouTube, Instagram, TikTok ou Facebook, ou carrega um ficheiro, para começares."
                 emptyFirstLabel="Adicionar o primeiro vídeo"
               />
@@ -27138,18 +27139,19 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirId]);
   const lista = grupo === 'oficial' ? oficiais : amigaveis;
-  // Para o separador das notas: os dois próximos jogos (preparação) e os
-  // já jogados, competição e amigáveis juntos.
-  const proximos = [...(matches || [])].filter(m => m && m.date && m.date > hoje)
-    .sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(0, 2).reverse();
-  const nNotas = (matches || []).filter(m => notasDoJogo(m).length).length;
+  /* Cartão de cada jogo: tocar abre/fecha para baixo as notas da equipa
+     técnica; o "+" abre a caixa para escrever a reflexão; o relatório
+     abre-se no estado à direita ("Por preencher", "Feito"…). */
+  const [painel, setPainel] = useState(null); // { id, modo: 'ler' | 'escrever' }
+  const alternarLer = (id) => setPainel(p => (p && p.id === id && p.modo === 'ler' ? null : { id, modo: 'ler' }));
+  const abrirEscrita = (id) => setPainel({ id, modo: 'escrever' });
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: estreito ? 'nowrap' : 'wrap', marginBottom: 14 }}>
-        {[['oficial', 'Competição', oficiais], ['amigavel', estreito ? 'Amigáveis' : 'Amigáveis e pré-época', amigaveis], ['notas', estreito ? 'Notas' : 'Notas da equipa técnica', null]].map(([id, rot, l]) => {
+        {[['oficial', 'Competição', oficiais], ['amigavel', estreito ? 'Amigáveis' : 'Amigáveis e pré-época', amigaveis]].map(([id, rot, l]) => {
           const on = grupo === id;
-          const n = l ? porPreencher(l) : 0;
+          const n = porPreencher(l);
           return (
             <button key={id} type="button" onClick={() => setGrupo(id)} style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, cursor: 'pointer', ...body, fontSize: 13,
@@ -27158,80 +27160,94 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
             }}>
               {rot}
               {n > 0 && <span style={{ ...mono, fontSize: 11, background: on ? 'rgba(0,0,0,.25)' : T.bad, color: '#fff', borderRadius: 10, padding: '1px 7px' }}>{n}</span>}
-              {id === 'notas' && nNotas > 0 && <span style={{ ...mono, fontSize: 11, color: on ? TEXT_ON_ACCENT : T.mutedDim }}>{nNotas}</span>}
             </button>
           );
         })}
       </div>
 
-      {grupo === 'notas' ? (
-        <NotasJogosEquipaTecnica jogados={jogados} proximos={proximos} season={season} userEmail={userEmail} setMatches={setMatches} />
-      ) : lista.length === 0 ? (
+      {lista.length === 0 ? (
         <EmptyState text={grupo === 'oficial' ? 'Ainda não há jogos oficiais realizados.' : 'Ainda não há amigáveis realizados.'} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {lista.map(m => {
             const e = estadoRelatorio(m);
+            const mc = marcadorDoJogo(m, season);
+            const forte = (nome, nosso) => <span style={{ fontWeight: nosso ? 700 : 500, color: nosso ? T.cream : T.muted }}>{nome}</span>;
+            const nNotas = notasDoJogo(m).length;
+            const meu = painel && painel.id === m.id ? painel : null;
+            const parar = (ev) => ev.stopPropagation();
+            const letra = mc.letra ? (
+              <span title={NOME_RESULTADO[mc.letra]} style={{ ...mono, fontSize: estreito ? 11 : 11.5, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, width: estreito ? 20 : 22, height: estreito ? 20 : 22, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{mc.letra}</span>
+            ) : null;
+            const marcador = (
+              <>
+                {forte(mc.casa, mc.emCasa)}
+                <span style={{ ...mono, color: T.warn, fontWeight: 700, margin: estreito ? '0 7px' : '0 8px' }}>{mc.letra ? `${mc.golosCasa}-${mc.golosFora}` : (m.result || 'vs')}</span>
+                {forte(mc.fora, !mc.emCasa)}
+              </>
+            );
+            const prova = [competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ');
+            // Ações à direita: notas escritas, "+" para escrever, relatório.
+            const acoes = (
+              <div onClick={parar} style={{ display: 'flex', alignItems: 'center', gap: estreito ? 6 : 10, flexShrink: 0, marginLeft: 'auto' }}>
+                {nNotas > 0 && (
+                  <span title={`${nNotas} nota${nNotas > 1 ? 's' : ''} da equipa técnica — toca no cartão para ver`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: T.mutedDim, ...mono }}>
+                    <MessageCircle size={13} /> {nNotas}
+                  </span>
+                )}
+                <button type="button" onClick={() => abrirEscrita(m.id)} title="Reflexão sobre o jogo" aria-label="Reflexão sobre o jogo" style={{
+                  width: 28, height: 28, borderRadius: 14, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0,
+                  background: meu && meu.modo === 'escrever' ? `${T.gold}33` : 'transparent', border: `1px solid ${meu && meu.modo === 'escrever' ? T.gold : T.line}`, color: T.gold,
+                }}><Plus size={15} /></button>
+                <button type="button" onClick={() => setAberto(m)} title="Abrir o relatório do jogo" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0, ...body,
+                  fontSize: estreito ? 12 : 11.5, color: e.cor, fontWeight: 600, textAlign: 'right', maxWidth: estreito ? 130 : 220,
+                }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.txt}</span>
+                  <ChevronRight size={16} color={T.mutedDim} style={{ flexShrink: 0 }} />
+                </button>
+              </div>
+            );
             return (
-              estreito ? (() => {
-                /* TELEMÓVEL: data, letra e estado em cima; o marcador
-                   inteiro no meio; a competição em baixo. Nada cortado. */
-                const mc = marcadorDoJogo(m, season);
-                const forte = (nome, nosso) => <span style={{ fontWeight: nosso ? 700 : 500, color: nosso ? T.cream : T.muted }}>{nome}</span>;
-                return (
-                  <button key={m.id} type="button" onClick={() => setAberto(m)} style={{
-                    display: 'flex', flexDirection: 'column', gap: 5, textAlign: 'left', cursor: 'pointer', ...body,
-                    background: T.surface, border: `1px solid ${e.id === 'feito' ? T.line : e.cor}`, borderRadius: 10, padding: '10px 12px',
-                  }}>
+              <div key={m.id} role="button" tabIndex={0} onClick={() => alternarLer(m.id)}
+                onKeyDown={(ev) => { if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); alternarLer(m.id); } }}
+                title={meu && meu.modo === 'ler' ? 'Fechar' : 'Ver as notas da equipa técnica'}
+                style={{
+                  textAlign: 'left', cursor: 'pointer', ...body,
+                  background: T.surface, border: `1px solid ${e.id === 'feito' ? T.line : e.cor}`, borderRadius: 10, padding: estreito ? '10px 12px' : '11px 14px',
+                }}>
+                {estreito ? (
+                  /* TELEMÓVEL: data, letra e ações em cima; o marcador
+                     inteiro no meio; a competição em baixo. Nada cortado. */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
                       <span style={{ ...mono, fontSize: 12, color: T.mutedDim }}>{fmtShort(m.date)}</span>
-                      {mc.letra && <span style={{ ...mono, fontSize: 11, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, width: 20, height: 20, display: 'grid', placeItems: 'center' }}>{mc.letra}</span>}
-                      <span style={{ marginLeft: 'auto', fontSize: 12, color: e.cor, fontWeight: 600, textAlign: 'right' }}>{e.txt}</span>
-                      <ChevronRight size={15} color={T.mutedDim} />
+                      {letra}
+                      {acoes}
                     </div>
-                    <div style={{ fontSize: 14.5, lineHeight: 1.35 }}>
-                      {forte(mc.casa, mc.emCasa)}
-                      <span style={{ ...mono, color: T.warn, fontWeight: 700, margin: '0 7px' }}>{mc.letra ? `${mc.golosCasa}-${mc.golosFora}` : (m.result || 'vs')}</span>
-                      {forte(mc.fora, !mc.emCasa)}
-                    </div>
-                    <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.4 }}>{[competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ')}</div>
-                  </button>
-                );
-              })() : (
-              <button key={m.id} type="button" onClick={() => setAberto(m)} style={{
-                display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', cursor: 'pointer', ...body,
-                background: T.surface, border: `1px solid ${e.id === 'feito' ? T.line : e.cor}`, borderRadius: 10, padding: '11px 14px',
-              }}>
-                <div style={{ ...mono, fontSize: 12, color: T.mutedDim, width: 46, flexShrink: 0 }}>{fmtShort(m.date)}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {/* Quem ganhou: V/E/D a cores e o marcador com os dois
-                      nomes, a equipa da casa primeiro (a nossa a negrito). */}
-                  {(() => {
-                    const mc = marcadorDoJogo(m, season);
-                    const forte = (nome, nosso) => <span style={{ fontWeight: nosso ? 700 : 500, color: nosso ? T.cream : T.muted }}>{nome}</span>;
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14.5, minWidth: 0 }}>
-                        {mc.letra ? (
-                          <span title={NOME_RESULTADO[mc.letra]} style={{ ...mono, fontSize: 11.5, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, width: 22, height: 22, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{mc.letra}</span>
-                        ) : null}
-                        <span style={{ ...LINHAS(1), minWidth: 0 }}>
-                          {forte(mc.casa, mc.emCasa)}
-                          <span style={{ ...mono, color: T.warn, fontWeight: 700, margin: '0 8px' }}>
-                            {mc.letra ? `${mc.golosCasa}-${mc.golosFora}` : (m.result ? m.result : 'vs')}
-                          </span>
-                          {forte(mc.fora, !mc.emCasa)}
-                        </span>
-                      </div>
-                    );
-                  })()}
-                  <div style={{ fontSize: 11.5, color: T.mutedDim, ...LINHAS(1) }}>
-                    {[competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ')}
+                    <div style={{ fontSize: 14.5, lineHeight: 1.35 }}>{marcador}</div>
+                    <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.4 }}>{prova}</div>
                   </div>
-                </div>
-                <span style={{ fontSize: 11.5, color: e.cor, fontWeight: 600, textAlign: 'right', flexShrink: 0, maxWidth: '45%' }}>{e.txt}</span>
-                <ChevronRight size={16} color={T.mutedDim} style={{ flexShrink: 0 }} />
-              </button>
-              )
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ ...mono, fontSize: 12, color: T.mutedDim, width: 46, flexShrink: 0 }}>{fmtShort(m.date)}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Quem ganhou: V/E/D a cores e o marcador com os dois
+                          nomes, a equipa da casa primeiro (a nossa a negrito). */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14.5, minWidth: 0 }}>
+                        {letra}
+                        <span style={{ ...LINHAS(1), minWidth: 0 }}>{marcador}</span>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: T.mutedDim, ...LINHAS(1) }}>{prova}</div>
+                    </div>
+                    {acoes}
+                  </div>
+                )}
+                {meu && (
+                  <PainelNotasJogo key={meu.modo} m={m} modo={meu.modo} userEmail={userEmail} setMatches={setMatches}
+                    onEscrever={() => abrirEscrita(m.id)} onFechar={() => setPainel(null)} />
+                )}
+              </div>
             );
           })}
         </div>
@@ -27250,10 +27266,12 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
 
 /* NOTAS DA EQUIPA TÉCNICA sobre os jogos (vieram do Diário).
 
-   Separador próprio em Jogos › Relatórios de jogo, ao lado de Competição
-   e Amigáveis: um cartão por jogo, com as notas por ordem de escrita.
-   Qualquer pessoa da equipa técnica pode escrever, e cada nota guarda
-   quem a escreveu. Vivem no próprio jogo, em
+   Vivem dentro de cada jogo, em Jogos › Relatórios de jogo (Competição e
+   Amigáveis): o "+" do cartão abre a caixa da reflexão sobre o jogo; ao
+   gravar, a caixa fecha e o cartão volta ao normal — o que foi escrito
+   vê-se tocando no cartão, que abre para baixo. Qualquer pessoa da
+   equipa técnica pode escrever, e cada nota guarda quem a escreveu.
+   Vivem no próprio jogo, em
    `notasEquipaTecnica = [{ id, texto, autor, em, editadoPor?, editadoEm?, attachment? }]`,
    e gravam-se logo, sem passar pelo modal do relatório.
 
@@ -27273,131 +27291,94 @@ function notasDoJogo(m) {
   return [];
 }
 
-function NotasJogosEquipaTecnica({ jogados, proximos, season, userEmail, setMatches }) {
-  const estreito = useIsMobile(560);
-  const [aEscrever, setAEscrever] = useState(null); // id do jogo com a caixa aberta
+function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, onFechar }) {
+  const notas = notasDoJogo(m);
   const [texto, setTexto] = useState('');
-  const [aEditar, setAEditar] = useState(null); // { jogo, nota }
-  const [soComNotas, setSoComNotas] = useState(false);
-
-  const gravarNotas = (jogoId, mudar) => setMatches(prev => prev.map(m => (
-    m.id === jogoId ? { ...m, notasEquipaTecnica: mudar(notasDoJogo(m)) } : m
+  const [aEditar, setAEditar] = useState(null);
+  const gravarNotas = (mudar) => setMatches(prev => prev.map(x => (
+    x.id === m.id ? { ...x, notasEquipaTecnica: mudar(notasDoJogo(x)) } : x
   )));
-  const adicionar = (jogoId) => {
+  const adicionar = () => {
     const t = texto.trim();
     if (!t) return;
-    gravarNotas(jogoId, (notas) => [...notas, { id: uid(), texto: t, autor: userEmail || '', em: new Date().toISOString() }]);
-    setTexto(''); setAEscrever(null);
+    gravarNotas(lista => [...lista, { id: uid(), texto: t, autor: userEmail || '', em: new Date().toISOString() }]);
+    setTexto('');
+    onFechar(); // depois de gravar, fica fechado — abre-se tocando no cartão
   };
   const guardarEdicao = () => {
-    if (!aEditar) return;
     const t = texto.trim();
-    const { jogo, nota } = aEditar;
-    gravarNotas(jogo, (notas) => (t
-      ? notas.map(n => (n.id === nota ? { ...n, texto: t, editadoPor: userEmail || '', editadoEm: new Date().toISOString() } : n))
-      : notas.filter(n => n.id !== nota)));
-    setTexto(''); setAEditar(null);
+    const id = aEditar;
+    gravarNotas(lista => (t
+      ? lista.map(n => (n.id === id ? { ...n, texto: t, editadoPor: userEmail || '', editadoEm: new Date().toISOString() } : n))
+      : lista.filter(n => n.id !== id)));
+    setAEditar(null); setTexto('');
   };
-  const apagar = (jogoId, notaId) => {
+  const apagar = (id) => {
     if (!window.confirm('Apagar esta nota?')) return;
-    gravarNotas(jogoId, (notas) => notas.filter(n => n.id !== notaId));
+    gravarNotas(lista => lista.filter(n => n.id !== id));
   };
+  const parar = (e) => e.stopPropagation();
 
-  const todos = [...proximos.map(m => ({ m, proximo: true })), ...jogados.map(m => ({ m, proximo: false }))];
-  const comNotas = todos.filter(({ m }) => notasDoJogo(m).length).length;
-  const lista = soComNotas ? todos.filter(({ m }) => notasDoJogo(m).length) : todos;
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ fontSize: 12.5, color: T.mutedDim, flex: '1 1 220px' }}>Como correu cada jogo, a preparação do adversário, o que fica para trabalhar. Todos podem escrever.</div>
-        {comNotas > 0 && (
-          <ChipEscolha on={soComNotas} onClick={() => setSoComNotas(!soComNotas)}>Só jogos com notas ({comNotas})</ChipEscolha>
-        )}
+  if (modo === 'escrever') {
+    return (
+      <div onClick={parar} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}` }}>
+        <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>Reflexão sobre o jogo</div>
+        <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 100 }}
+          placeholder="Como correu: o que funcionou, o que falhou, momentos-chave, o que fica para trabalhar..." />
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <Btn disabled={!texto.trim()} onClick={adicionar}><Check size={14} /> Guardar nota</Btn>
+          <Btn variant="ghost" onClick={() => { setTexto(''); onFechar(); }}>Cancelar</Btn>
+        </div>
       </div>
-      {lista.length === 0 ? (
-        <EmptyState text={soComNotas ? 'Ainda não há notas em nenhum jogo.' : 'Ainda não há jogos.'} />
+    );
+  }
+  return (
+    <div onClick={parar} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}`, cursor: 'default' }}>
+      {notas.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem reflexão sobre este jogo.</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {lista.map(({ m, proximo }) => {
-            const notas = notasDoJogo(m);
-            const mc = marcadorDoJogo(m, season);
-            const forte = (nome, nosso) => <span style={{ fontWeight: nosso ? 700 : 500, color: nosso ? T.cream : T.muted }}>{nome}</span>;
-            const escrever = aEscrever === m.id;
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {notas.map(n => {
+            const editar = aEditar === n.id;
             return (
-              <div key={m.id} style={{ background: T.surface, border: `1px solid ${proximo ? `${T.gold}66` : T.line}`, borderRadius: 10, padding: '12px 14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ ...mono, fontSize: 12, color: T.mutedDim, flexShrink: 0 }}>{fmtShort(m.date)}</span>
-                  {mc.letra && <span title={NOME_RESULTADO[mc.letra]} style={{ ...mono, fontSize: 11, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, width: 20, height: 20, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{mc.letra}</span>}
-                  {proximo && <span style={{ fontSize: 11.5, color: T.gold, flexShrink: 0, marginLeft: 'auto', order: 2 }}>Próximo jogo</span>}
+              <div key={n.id} style={{ background: T.surfaceRaise, borderRadius: 8, padding: '9px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <span style={{ fontSize: 11.5, color: T.mutedDim, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {n.autor || 'Equipa técnica'}{n.em ? ` · ${fmtShort(String(n.em).slice(0, 10))}` : ''}{n.editadoPor && n.editadoPor !== n.autor ? ` · editada por ${n.editadoPor}` : ''}
+                  </span>
+                  {!editar && (
+                    <>
+                      <button type="button" onClick={() => { setAEditar(n.id); setTexto(n.texto || ''); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
+                      <button type="button" onClick={() => apagar(n.id)} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={13} /></button>
+                    </>
+                  )}
                 </div>
-                <div style={{ fontSize: 14.5, lineHeight: 1.35, marginTop: 4, ...(estreito ? {} : LINHAS(1)) }}>
-                  {forte(mc.casa, mc.emCasa)}
-                  <span style={{ ...mono, color: T.warn, fontWeight: 700, margin: '0 8px' }}>{mc.letra ? `${mc.golosCasa}-${mc.golosFora}` : (m.result || 'vs')}</span>
-                  {forte(mc.fora, !mc.emCasa)}
-                </div>
-                <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>{[competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ')}</div>
-
-                {notas.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-                    {notas.map(n => {
-                      const editar = !!aEditar && aEditar.jogo === m.id && aEditar.nota === n.id;
-                      return (
-                        <div key={n.id} style={{ background: T.surfaceRaise, borderRadius: 8, padding: '9px 12px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                            <span style={{ fontSize: 11.5, color: T.mutedDim, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {n.autor || 'Equipa técnica'}{n.em ? ` · ${fmtShort(String(n.em).slice(0, 10))}` : ''}{n.editadoPor && n.editadoPor !== n.autor ? ` · editada por ${n.editadoPor}` : ''}
-                            </span>
-                            {!editar && (
-                              <>
-                                <button type="button" onClick={() => { setAEscrever(null); setAEditar({ jogo: m.id, nota: n.id }); setTexto(n.texto || ''); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
-                                <button type="button" onClick={() => apagar(m.id, n.id)} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={13} /></button>
-                              </>
-                            )}
-                          </div>
-                          {editar ? (
-                            <div>
-                              <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 90 }} />
-                              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                <Btn onClick={guardarEdicao}><Check size={14} /> Guardar</Btn>
-                                <Btn variant="ghost" onClick={() => { setAEditar(null); setTexto(''); }}>Cancelar</Btn>
-                              </div>
-                            </div>
-                          ) : (
-                            <>
-                              {n.texto && <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{n.texto}</div>}
-                              {n.attachment && (
-                                <a href={n.attachment.dataUrl} download={n.attachment.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', marginTop: 6 }}>
-                                  <BookOpen size={13} /> {n.attachment.name}
-                                </a>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {escrever ? (
-                  <div style={{ marginTop: 10 }}>
-                    <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 100 }}
-                      placeholder={proximo ? 'Preparação: o adversário, o que queremos fazer, a que estar atentos...' : 'Como correu: o que funcionou, o que falhou, momentos-chave...'} />
+                {editar ? (
+                  <div>
+                    <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 90 }} />
                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <Btn disabled={!texto.trim()} onClick={() => adicionar(m.id)}><Check size={14} /> Guardar nota</Btn>
-                      <Btn variant="ghost" onClick={() => { setAEscrever(null); setTexto(''); }}>Cancelar</Btn>
+                      <Btn onClick={guardarEdicao}><Check size={14} /> Guardar</Btn>
+                      <Btn variant="ghost" onClick={() => { setAEditar(null); setTexto(''); }}>Cancelar</Btn>
                     </div>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => { setAEditar(null); setTexto(''); setAEscrever(m.id); }} style={{
-                    marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0,
-                  }}><Plus size={14} /> {notas.length ? 'Acrescentar nota' : 'Escrever nota'}</button>
+                  <>
+                    {n.texto && <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{n.texto}</div>}
+                    {n.attachment && (
+                      <a href={n.attachment.dataUrl} download={n.attachment.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', marginTop: 6 }}>
+                        <BookOpen size={13} /> {n.attachment.name}
+                      </a>
+                    )}
+                  </>
                 )}
               </div>
             );
           })}
         </div>
       )}
+      <button type="button" onClick={onEscrever} style={{
+        marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0,
+      }}><Plus size={14} /> Reflexão sobre o jogo</button>
     </div>
   );
 }
@@ -35980,6 +35961,7 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
     });
 
     const registo = { ...dados, jogadoresChaveIds, quadroTatica, quadroOverrides };
+    if (fichaRepetida(registo.nome, adversarios, registo.id)) return; // o formulário já avisa
     if (registo.id) {
       setAdversarios(prev => prev.map(a => (a.id === registo.id ? registo : a)));
       if (viewing && viewing.id === registo.id) setViewing(registo);
@@ -36002,8 +35984,10 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
         <AdversarioForm
           adversario={editando === 'new' ? null : editando}
           scouting={scouting}
+          adversarios={adversarios}
           onBack={fecharEdicao}
           onSave={save}
+          onAbrirExistente={(a) => { fecharEdicao(); setViewing(a); }}
         />
         {printAdversario && createPortal(
           <FolhaImpressaoAdversario adversario={printAdversario} chave={chaveDe(printAdversario)} />,
@@ -36378,7 +36362,7 @@ function TaticaAdversarioModal({ tatica, onClose, onSave }) {
    em "Jogadores" (comparado sem maiúsculas/minúsculas) liga-se a essa
    ficha ao Guardar; um nome novo cria lá uma ficha nova, só com nome e
    posição — NUNCA antes disso, só no momento de guardar. */
-function AdversarioForm({ adversario, scouting, onBack, onSave }) {
+function AdversarioForm({ adversario, scouting, adversarios, onBack, onSave, onAbrirExistente }) {
   const [f, setF] = useState(adversario || { nome: '', escalao: '', prova: '', pontosFortes: '', pontosFracos: '', notas: '' });
   const [linhas, setLinhas] = useState(() => {
     const iniciais = ((adversario && adversario.jogadoresChaveIds) || [])
@@ -36401,7 +36385,9 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
     // localId das linhas iniciais SÃO esses ids reais (ver em cima).
     return adversario.quadroOverrides;
   });
-  const valido = String(f.nome || '').trim().length > 0;
+  // Já há ficha para esta equipa? Então não se cria outra (ver fichaRepetida).
+  const repetida = fichaRepetida(f.nome, adversarios, adversario && adversario.id);
+  const valido = String(f.nome || '').trim().length > 0 && !repetida;
 
   const nomesExistentes = (scouting || []).map(x => x.name).filter(Boolean);
   const atualizarLinha = (i, campo, valor) => setLinhas(linhas.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)));
@@ -36429,6 +36415,14 @@ function AdversarioForm({ adversario, scouting, onBack, onSave }) {
         <Field label="Clube / Equipa" bloco solto>
           <Input value={f.nome} onChange={e => setF({ ...f, nome: e.target.value })} placeholder="Ex: FC Padroense" autoFocus />
         </Field>
+        {repetida && (
+          <div style={{ marginTop: 8, padding: '9px 12px', borderRadius: 8, border: `1px solid ${T.warn}66`, background: `${T.warn}14`, fontSize: 12.5, color: T.cream, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ flex: '1 1 220px' }}>Já existe uma ficha para esta equipa: <strong>{repetida.nome}</strong>.</span>
+            {onAbrirExistente && (
+              <button type="button" onClick={() => onAbrirExistente(repetida)} style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}>Abrir essa ficha</button>
+            )}
+          </div>
+        )}
       </div>
       <div style={{ marginBottom: 14 }}>
         <Field label="Cor do clube" bloco solto>
@@ -37680,6 +37674,28 @@ function fichaDaEquipa(nome, adversarios) {
   });
   return contidas.length === 1 ? contidas[0] : null;
 }
+/* FICHA REPETIDA — há já uma ficha para esta equipa? Mais estrito do que
+   `fichaDaEquipa` (que também aceita nomes "contidos" noutro): aqui só
+   conta o mesmo nome, escrito igual ou com as mesmas palavras depois de
+   tirar "FC", "SC", "U19"… ("Amarante FC" = "Amarante" = "F.C. Amarante"),
+   para não impedir equipas diferentes como "Amarante B". */
+function fichaRepetida(nome, adversarios, ignorarId) {
+  const k = semAcentos(nome);
+  if (!k) return null;
+  const c = chaveNomeEquipa(nome);
+  return (adversarios || []).find(a => a && a.id !== ignorarId && (
+    semAcentos(a.nome) === k || semAcentos(a.equipaCompeticao) === k
+    || (c && (chaveNomeEquipa(a.nome) === c || (a.equipaCompeticao && chaveNomeEquipa(a.equipaCompeticao) === c)))
+  )) || null;
+}
+/* Id das fichas criadas SOZINHAS (Canal de vídeos). É sempre o mesmo para
+   a mesma equipa da mesma equipa técnica: se dois aparelhos criarem a
+   ficha ao mesmo tempo — cada um sem ainda ver a do outro — gravam a MESMA
+   linha em vez de duas. Foi assim que apareceu o "Amarante FC" repetido. */
+function idFichaAutomatica(teamId, nome) {
+  const s = (chaveNomeEquipa(nome) || semAcentos(nome)).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return teamId && s ? `adv-${teamId}-${s}` : uid();
+}
 // Competição (nome) em que a equipa está — vai para a "Prova" da ficha
 // criada automaticamente.
 function provaDaEquipa(nome, standings) {
@@ -37719,7 +37735,7 @@ const SECOES_CANAL = [
 ];
 // "Os meus clipes" (só no Portal) é um cartão dentro de Jogos, não uma secção.
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas }, ref) {
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
   // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
@@ -40092,7 +40108,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       }
       fichasPedidasRef.current.add(k);
       novas.push({
-        id: uid(), nome, equipaCompeticao: nome,
+        id: idFichaAutomatica(teamIdFichas, nome), nome, equipaCompeticao: nome,
         escalao: '', prova: provaDeEquipa ? provaDeEquipa(nome) : '',
         pontosFortes: '', pontosFracos: '', notas: '',
         jogadoresChaveIds: [], quadroTatica: TATICA_OMISSAO, quadroOverrides: {}, taticas: [],
@@ -40105,7 +40121,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         const lig = associar.find(x => x.id === a.id);
         return lig ? { ...a, equipaCompeticao: lig.equipa } : a;
       }),
-      ...novas.filter(n => !fichaDaEquipa(n.nome, prev || [])),
+      ...novas.filter(n => !fichaDaEquipa(n.nome, prev || []) && !(prev || []).some(a => a.id === n.id)),
     ]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assinaturaEquipas, adversariosProntos, (adversarios || []).length]);
@@ -40224,12 +40240,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     }
     if (!ficha && nova) {
       ficha = {
-        id: uid(), nome: equipa, equipaCompeticao: equipa,
+        id: idFichaAutomatica(teamIdFichas, equipa), nome: equipa, equipaCompeticao: equipa,
         escalao: (nova.escalao || '').trim(), prova: (nova.prova || '').trim(),
         pontosFortes: '', pontosFracos: '', notas: '',
         jogadoresChaveIds: [], quadroTatica: TATICA_OMISSAO, quadroOverrides: {}, taticas: [],
       };
-      if (setAdversarios) setAdversarios(prev => [...(prev || []), ficha]);
+      const nova0 = ficha;
+      if (setAdversarios) setAdversarios(prev => ((prev || []).some(a => a.id === nova0.id || fichaRepetida(nova0.nome, [a])) ? prev : [...(prev || []), nova0]));
     }
     if (!ficha) return;
     gravarCorteNaFicha(pedirFicha.corte, ficha, pedirFicha.raizId, equipas, equipa);
@@ -46710,18 +46727,19 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
    tirada das próprias ocorrências. Se deixar de haver ocorrências dessa
    categoria, ela desaparece sozinha.
 
-   As notas de jogo saíram daqui: vivem agora em Jogos › Relatórios de
-   jogo › Notas da equipa técnica (um cartão por jogo). As antigas passam-
-   se para lá com o botão "Mover para o jogo" de cada nota livre. */
+   As notas de jogo saíram daqui: vivem agora dentro de cada jogo, em
+   Jogos › Relatórios de jogo (o "+" do cartão do jogo). As antigas
+   passam-se para lá com o troféu de cada nota livre. */
 const TIPOS_DIARIO = [
   { id: 'disciplina', label: 'Disciplina', icon: AlertTriangle, cor: () => T.bad, texto: 'O que aconteceu', atletas: true },
   { id: 'faltas', label: 'Faltas e atrasos', icon: Clock, cor: () => T.warn, texto: 'Notas (opcional)', atletas: true },
   { id: 'reunioes', label: 'Reuniões', icon: Users, cor: () => T.good, texto: 'Resumo da reunião', atletas: true },
+  { id: 'treino', label: 'Treino', icon: Dumbbell, cor: () => '#3FA9B8', texto: 'O que aconteceu no treino', atletas: true },
   { id: 'clube', label: 'Clube', icon: Building2, cor: () => T.teamB, texto: 'O que falhou', estadoInicial: 'aberta' },
   { id: 'infra', label: 'Infraestruturas', icon: Wrench, cor: () => '#A272C4', texto: 'O problema', estadoInicial: 'aberta' },
   { id: 'nota', label: 'Nota livre', icon: FileText, cor: () => T.muted, texto: 'Nota', atletas: true },
 ];
-const PALETA_CATEGORIAS = ['#4FA3A0', '#C9804F', '#7F93D6', '#B8749F', '#8FA552'];
+const PALETA_CATEGORIAS = ['#5FAE7E', '#C9804F', '#7F93D6', '#B8749F', '#8FA552'];
 const CONSEQUENCIAS_DISCIPLINA = ['Aviso', 'Saiu do treino', 'Não convocado', 'Dispensado do jogo', 'Suspenso', 'Reunião com a família'];
 const COM_QUEM_REUNIAO = ['Equipa técnica', 'Coordenação', 'Direção', 'Encarregados de educação', 'Atleta', 'Outro'];
 const CATEGORIAS_CLUBE = ['Posto médico', 'Horários e marcações', 'Transporte', 'Material', 'Equipamentos', 'Comunicação', 'Outra'];
@@ -46742,6 +46760,7 @@ function chaveDoTipo(n) {
   if (/reuni/.test(t)) return 'reunioes';
   if (/infraestrutur|balneari|ilumina|relvad/.test(t)) return 'infra';
   if (/posto medico|organiza|transporte/.test(t)) return 'clube';
+  if (/trein/.test(t)) return 'treino';
   return 'nota';
 }
 
@@ -46896,6 +46915,23 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
     }
     closeForm();
   };
+  /* Nova ocorrência: o formulário abre logo completo. O tipo vem já
+     escolhido — o tema que está filtrado no placard, ou Nota livre — e
+     muda-se com um toque nos botões do topo. */
+  const abrirNova = () => {
+    const base = EMPTY_OCORRENCIA();
+    if (filtro && filtro.startsWith('c:')) { base.tipo = 'outra'; base.tipoNome = nomesCustom[filtro] || ''; }
+    else {
+      base.tipo = filtro || 'nota';
+      const info = TIPOS_DIARIO.find(t => t.id === base.tipo);
+      if (info && info.estadoInicial) base.estado = info.estadoInicial;
+    }
+    setF(base);
+    setEditingId(null);
+    setAttachError('');
+    setNovaCategoria(false);
+    setFormOpen(true);
+  };
   const closeForm = () => {
     setF(EMPTY_OCORRENCIA());
     setEditingId(null);
@@ -46947,8 +46983,8 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
   };
 
   /* MOVER PARA O JOGO — as notas de jogo antigas (escritas aqui antes de
-     haver o separador próprio) passam para Jogos › Relatórios de jogo ›
-     Notas da equipa técnica, com o mesmo autor e a mesma data. Sugere-se o
+     haver notas nos jogos) passam para o próprio jogo, em Jogos ›
+     Relatórios de jogo, com o mesmo autor e a mesma data. Sugere-se o
      jogo cujo adversário aparece no título ou no texto, o mais perto da
      data da nota; se nenhum aparecer, o jogo mais perto da data. */
   const jogosParaMover = (n) => {
@@ -47041,16 +47077,16 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
   return (
     <div>
       <SectionHeader title="Diário" subtitle="O que acontece no dia a dia da equipa."
-        action={<Btn onClick={() => setFormOpen(true)}><Plus size={15} /> Nova ocorrência</Btn>} />
+        action={<Btn onClick={abrirNova}><Plus size={15} /> Nova ocorrência</Btn>} />
 
       {/* O formulário abre numa janela por cima, e não no topo da página:
           assim abrir, editar ou fechar não empurra nada do que está por
           baixo (placard, por resolver, lista). */}
       {formOpen && (
-        <Modal title={editingId ? 'Editar ocorrência' : 'Nova ocorrência'} onClose={closeForm} wide>
+        <Modal title={editingId ? 'Editar ocorrência' : 'Nova ocorrência'} onClose={closeForm} fullPage larguraMax="860px">
         <div style={{ borderLeft: `3px solid ${infoForm ? infoForm.corHex : 'transparent'}`, paddingLeft: 14 }}>
           {/* 1. O TIPO — um toque; o resto do formulário depende dele. */}
-          <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, ...body }}>{editingId ? 'Tipo' : 'Que tipo de ocorrência?'}</div>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, ...body }}>Tipo</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: f.tipo ? 16 : 4 }}>
             {TIPOS_DIARIO.map(t => {
               const Ic = t.icon;
