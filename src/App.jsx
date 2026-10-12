@@ -47371,78 +47371,85 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
         </div>
       )}
 
-      {/* PLACARD — o total de cada tema; cada um é um filtro. Grelha de
-          colunas iguais: a largura de cada tema não depende do número. */}
+      {/* PESQUISA — compacta, por cima dos temas. Enter ou a lupa
+          pesquisam; o X limpa. */}
       {diario.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6, minHeight: 15, ...body }}>
-            {filtro ? 'Só este tema · toca outra vez para tirar o filtro' : search ? 'Na pesquisa' : 'Total por tema'}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, maxWidth: isMobile ? '100%' : 520 }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+            <Search size={15} color={T.mutedDim} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+            <Input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') setSearch(query); }}
+              placeholder="Pesquisar por texto, atleta ou categoria..."
+              style={{ width: '100%', paddingLeft: 34, paddingRight: search ? 34 : undefined, height: 38, fontSize: 13.5 }}
+            />
+            {search && (
+              <button type="button" onClick={() => { setQuery(''); setSearch(''); }} title="Limpar pesquisa" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', padding: 2 }}><X size={15} /></button>
+            )}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
-            {chavesPlacard.map(k => {
-              const info = infoDoTipo(k, nomesCustom);
-              const Ic = info.icon;
-              const n = contagens[k] || 0;
-              const semana = contagensSemana[k] || 0;
-              const on = filtro === k;
-              return (
-                <button key={k} type="button" onClick={() => { setFiltro(on ? null : k); setVerTudo(false); }} title={info.label} style={{
-                  minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', ...body, textAlign: 'left',
-                  background: on ? `${info.corHex}2E` : T.surface, border: `1px solid ${on ? info.corHex : T.line}`,
-                  borderLeft: `3px solid ${info.corHex}`, opacity: n || on ? 1 : 0.55,
-                }}>
-                  <Ic size={15} color={info.corHex} style={{ flexShrink: 0 }} />
-                  <span style={{ ...display, fontSize: 20, lineHeight: 1, color: T.cream, minWidth: '2ch', fontVariantNumeric: 'tabular-nums' }}>{n}</span>
-                  <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                    <span style={{ fontSize: 12, color: T.muted, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.label}</span>
-                    <span style={{ fontSize: 10.5, color: semana ? info.corHex : T.mutedDim, lineHeight: 1.3, whiteSpace: 'nowrap' }}>{semana ? `${semana} nos últimos 7 dias` : '—'}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <Btn variant="ghost" onClick={() => setSearch(query)} style={{ height: 38, padding: '0 14px', fontSize: 13 }}>Pesquisar</Btn>
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
-        <Input
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') setSearch(query); }}
-          placeholder="Pesquisar por texto, atleta ou categoria..."
-          style={{ flex: 1 }}
-        />
-        <Btn variant="ghost" onClick={() => setSearch(query)}>Pesquisar</Btn>
-      </div>
+      {/* PLACARD — o total de cada tema; cada um é um filtro (tocar outra
+          vez tira-o). Grelha de colunas iguais: a largura de cada tema não
+          depende do número. */}
+      {diario.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8, marginBottom: 14 }}>
+          {chavesPlacard.map(k => {
+            const info = infoDoTipo(k, nomesCustom);
+            const Ic = info.icon;
+            const n = contagens[k] || 0;
+            const semana = contagensSemana[k] || 0;
+            const on = filtro === k;
+            return (
+              <button key={k} type="button" onClick={() => { setFiltro(on ? null : k); setVerTudo(false); }} title={on ? 'Tocar outra vez para ver todos os temas' : info.label} style={{
+                minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', ...body, textAlign: 'left',
+                background: on ? `${info.corHex}2E` : T.surface, border: `1px solid ${on ? info.corHex : T.line}`,
+                borderLeft: `3px solid ${info.corHex}`, opacity: n || on ? 1 : 0.55,
+              }}>
+                <Ic size={15} color={info.corHex} style={{ flexShrink: 0 }} />
+                <span style={{ ...display, fontSize: 20, lineHeight: 1, color: T.cream, minWidth: '2ch', fontVariantNumeric: 'tabular-nums' }}>{n}</span>
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span style={{ fontSize: 12, color: T.muted, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.label}</span>
+                  <span style={{ fontSize: 10.5, color: semana ? info.corHex : T.mutedDim, lineHeight: 1.3, whiteSpace: 'nowrap' }}>{semana ? `${semana} nos últimos 7 dias` : '—'}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* BARRA DO PERÍODO — sempre no mesmo sítio, haja ou não ocorrências
+          na lista: à esquerda o que se está a ver, à direita "Ver todas" /
+          "Só a última semana". */}
+      {doTema.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, minHeight: 28, marginBottom: 10, ...body }}>
+          <span style={{ fontSize: 12, color: T.mutedDim }}>
+            {search ? `Pesquisa: ${doTema.length} resultado${doTema.length === 1 ? '' : 's'}` : verTudo ? 'Todas as datas' : 'Última semana'}
+          </span>
+          {!search && !verTudo && antigas > 0 && (
+            <button type="button" onClick={() => setVerTudo(true)} style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}>
+              Ver todas ({antigas} mais antigas)
+            </button>
+          )}
+          {!search && verTudo && (
+            <button type="button" onClick={() => setVerTudo(false)} style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}>
+              Só a última semana
+            </button>
+          )}
+        </div>
+      )}
 
       {doTema.length === 0 ? (
         <EmptyState text={search ? 'Nenhuma ocorrência encontrada.' : filtro ? 'Ainda não há ocorrências deste tema.' : 'Ainda sem ocorrências. Regista a primeira.'} />
       ) : sorted.length === 0 ? (
-        <div style={{ padding: '18px 4px' }}>
-          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10 }}>
-            {filtro ? 'Sem ocorrências deste tema na última semana.' : 'Sem ocorrências na última semana.'}
-          </div>
-          {!search && !verTudo && antigas > 0 && (
-            <button
-              onClick={() => setVerTudo(true)}
-              style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}
-            >Ver todas ({antigas} mais antigas)</button>
-          )}
+        <div style={{ padding: '14px 4px', fontSize: 12.5, color: T.mutedDim }}>
+          {filtro ? 'Sem ocorrências deste tema na última semana.' : 'Sem ocorrências na última semana.'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {!search && !verTudo && antigas > 0 && (
-            <button
-              onClick={() => setVerTudo(true)}
-              style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
-            >Ver todas ({antigas} mais antigas)</button>
-          )}
-          {!search && verTudo && (
-            <button
-              onClick={() => setVerTudo(false)}
-              style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
-            >Mostrar só a última semana</button>
-          )}
           {sorted.map(n => {
             const chave = chaveDoTipo(n);
             const info = infoDoTipo(chave, nomesCustom);
