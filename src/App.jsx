@@ -46994,14 +46994,25 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
   const limiteSemana = addDays(todayStr(), -6);
   const recentes = filtered.filter(n => (n.data || '') >= limiteSemana);
   const antigas = filtered.length - recentes.length;
-  const noPeriodo = (search || verTudo) ? filtered : recentes;
+  /* Escolher um tema no placard mostra TODAS as ocorrências desse tema,
+     de qualquer data — quem toca em "Reuniões" quer ver as reuniões, não
+     só as da última semana. */
+  const noPeriodo = (search || verTudo || filtro) ? filtered : recentes;
   const visiveis = filtro ? noPeriodo.filter(n => chaveDoTipo(n) === filtro) : noPeriodo;
   const sorted = [...visiveis].sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
 
-  // PLACARD: quantas ocorrências de cada tipo no período que se está a ver.
+  /* PLACARD: o TOTAL de cada tema (todas as datas; numa pesquisa, só o
+     que corresponde), e por baixo quantas foram nos últimos 7 dias. Os
+     números não mudam ao abrir as mais antigas, e os temas são sempre os
+     mesmos — nada salta de sítio. */
   const contagens = {};
-  noPeriodo.forEach(n => { const k = chaveDoTipo(n); contagens[k] = (contagens[k] || 0) + 1; });
-  const chavesPlacard = [...TIPOS_DIARIO.map(t => t.id), ...chavesCustom.filter(k => contagens[k] || filtro === k)];
+  const contagensSemana = {};
+  filtered.forEach(n => {
+    const k = chaveDoTipo(n);
+    contagens[k] = (contagens[k] || 0) + 1;
+    if ((n.data || '') >= limiteSemana) contagensSemana[k] = (contagensSemana[k] || 0) + 1;
+  });
+  const chavesPlacard = [...TIPOS_DIARIO.map(t => t.id), ...chavesCustom];
 
   // POR RESOLVER: tudo o que tem seguimento em aberto, de qualquer data.
   const pendentes = diario.filter(n => n.estado === 'aberta' || n.estado === 'comunicada')
@@ -47030,10 +47041,14 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
   return (
     <div>
       <SectionHeader title="Diário" subtitle="O que acontece no dia a dia da equipa."
-        action={<Btn onClick={() => (formOpen ? closeForm() : setFormOpen(true))}>{formOpen ? 'Fechar' : <><Plus size={15} /> Nova ocorrência</>}</Btn>} />
+        action={<Btn onClick={() => setFormOpen(true)}><Plus size={15} /> Nova ocorrência</Btn>} />
 
+      {/* O formulário abre numa janela por cima, e não no topo da página:
+          assim abrir, editar ou fechar não empurra nada do que está por
+          baixo (placard, por resolver, lista). */}
       {formOpen && (
-        <div style={{ background: T.surface, border: `1px solid ${infoForm ? infoForm.corHex : T.line}`, borderRadius: 10, padding: 18, marginBottom: 20 }}>
+        <Modal title={editingId ? 'Editar ocorrência' : 'Nova ocorrência'} onClose={closeForm} wide>
+        <div style={{ borderLeft: `3px solid ${infoForm ? infoForm.corHex : 'transparent'}`, paddingLeft: 14 }}>
           {/* 1. O TIPO — um toque; o resto do formulário depende dele. */}
           <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, ...body }}>{editingId ? 'Tipo' : 'Que tipo de ocorrência?'}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: f.tipo ? 16 : 4 }}>
@@ -47218,12 +47233,13 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                 <Btn disabled={!podeGravar} onClick={save}>
                   {editingId ? <><Check size={15} /> Guardar alterações</> : 'Guardar ocorrência'}
                 </Btn>
-                {editingId && <Btn variant="ghost" onClick={closeForm}>Cancelar</Btn>}
+                <Btn variant="ghost" onClick={closeForm}>Cancelar</Btn>
                 {f.tipo === 'outra' && !f.tipoNome.trim() && <span style={{ fontSize: 12, color: T.mutedDim }}>Dá um nome à categoria.</span>}
               </div>
             </>
           )}
         </div>
+        </Modal>
       )}
 
       {/* POR RESOLVER — o que precisa de atenção, venha de quando vier. */}
@@ -47248,28 +47264,32 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
         </div>
       )}
 
-      {/* PLACARD — quantas de cada tipo no período; cada um é um filtro. */}
+      {/* PLACARD — o total de cada tema; cada um é um filtro. Grelha de
+          colunas iguais: a largura de cada tema não depende do número. */}
       {diario.length > 0 && (
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6, ...body }}>
-            {search ? 'Na pesquisa' : verTudo ? 'Todas as datas' : 'Últimos 7 dias'}{filtro ? ' · toca outra vez para tirar o filtro' : ''}
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6, minHeight: 15, ...body }}>
+            {filtro ? 'A mostrar todas deste tema · toca outra vez para tirar o filtro' : search ? 'Na pesquisa' : 'Total por tema'}
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
             {chavesPlacard.map(k => {
               const info = infoDoTipo(k, nomesCustom);
               const Ic = info.icon;
               const n = contagens[k] || 0;
+              const semana = contagensSemana[k] || 0;
               const on = filtro === k;
               return (
                 <button key={k} type="button" onClick={() => setFiltro(on ? null : k)} title={info.label} style={{
-                  flex: isMobile ? '1 1 calc(50% - 8px)' : '0 1 auto', minWidth: isMobile ? 0 : 118,
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10, cursor: 'pointer', ...body, textAlign: 'left',
+                  minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', ...body, textAlign: 'left',
                   background: on ? `${info.corHex}2E` : T.surface, border: `1px solid ${on ? info.corHex : T.line}`,
                   borderLeft: `3px solid ${info.corHex}`, opacity: n || on ? 1 : 0.55,
                 }}>
                   <Ic size={15} color={info.corHex} style={{ flexShrink: 0 }} />
-                  <span style={{ ...display, fontSize: 20, lineHeight: 1, color: T.cream }}>{n}</span>
-                  <span style={{ fontSize: 11.5, color: T.muted, lineHeight: 1.2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.label}</span>
+                  <span style={{ ...display, fontSize: 20, lineHeight: 1, color: T.cream, minWidth: '2ch', fontVariantNumeric: 'tabular-nums' }}>{n}</span>
+                  <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <span style={{ fontSize: 12, color: T.muted, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.label}</span>
+                    <span style={{ fontSize: 10.5, color: semana ? info.corHex : T.mutedDim, lineHeight: 1.3, whiteSpace: 'nowrap' }}>{semana ? `${semana} nos últimos 7 dias` : '—'}</span>
+                  </span>
                 </button>
               );
             })}
@@ -47293,9 +47313,9 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
       ) : sorted.length === 0 ? (
         <div style={{ padding: '18px 4px' }}>
           <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10 }}>
-            {filtro ? `Sem ocorrências deste tipo ${search || verTudo ? 'aqui' : 'na última semana'}.` : 'Sem ocorrências na última semana.'}
+            {filtro ? (search ? 'Sem ocorrências deste tema na pesquisa.' : 'Ainda não há ocorrências deste tema.') : 'Sem ocorrências na última semana.'}
           </div>
-          {!search && !verTudo && antigas > 0 && (
+          {!search && !filtro && !verTudo && antigas > 0 && (
             <button
               onClick={() => setVerTudo(true)}
               style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}
@@ -47304,13 +47324,13 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {!search && !verTudo && antigas > 0 && (
+          {!search && !filtro && !verTudo && antigas > 0 && (
             <button
               onClick={() => setVerTudo(true)}
               style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
             >Ver todas ({antigas} mais antigas)</button>
           )}
-          {!search && verTudo && (
+          {!search && !filtro && verTudo && (
             <button
               onClick={() => setVerTudo(false)}
               style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
