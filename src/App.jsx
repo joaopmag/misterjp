@@ -27203,20 +27203,26 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
             /* "+ Análise do jogo" fica por baixo do jogo, à esquerda — longe
                do estado do relatório (à direita), para não se confundir com
                o preencher das estatísticas. */
-            const analise = (
+            /* Sem análises: botão "+ Análise do jogo" por baixo do jogo, e o
+               cartão não abre. Com análises: no lugar do botão fica quantas
+               há, e tocar no cartão abre-o para baixo — lá dentro está o
+               "+ Análise do jogo" para acrescentar outra. */
+            const abrivel = nNotas > 0;
+            const analise = abrivel ? (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: T.gold }}>
+                <MessageCircle size={13} />
+                {nNotas} análise{nNotas > 1 ? 's' : ''}
+                <ChevronDown size={14} style={{ transform: meu && meu.modo === 'ler' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+              </div>
+            ) : (
               <button type="button" onClick={(ev) => { ev.stopPropagation(); abrirEscrita(m.id); }} style={{
                 alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '3px 10px', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
                 background: meu && meu.modo === 'escrever' ? `${T.gold}26` : 'transparent', border: `1px solid ${meu && meu.modo === 'escrever' ? T.gold : `${T.gold}55`}`, color: T.gold,
               }}><Plus size={13} /> Análise do jogo</button>
             );
-            // Ações à direita: quantas notas há e o relatório.
+            // À direita: o relatório (estatísticas).
             const acoes = (
               <div onClick={parar} style={{ display: 'flex', alignItems: 'center', gap: estreito ? 6 : 10, flexShrink: 0, marginLeft: 'auto' }}>
-                {nNotas > 0 && (
-                  <span title={`${nNotas} nota${nNotas > 1 ? 's' : ''} da equipa técnica — toca no cartão para ver`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: T.mutedDim, ...mono }}>
-                    <MessageCircle size={13} /> {nNotas}
-                  </span>
-                )}
                 <button type="button" onClick={() => setAberto(m)} title="Abrir o relatório do jogo" style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0, ...body,
                   fontSize: estreito ? 12 : 11.5, color: e.cor, fontWeight: 600, textAlign: 'right', maxWidth: estreito ? 130 : 220,
@@ -27227,11 +27233,11 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
               </div>
             );
             return (
-              <div key={m.id} role="button" tabIndex={0} onClick={() => alternarLer(m.id)}
-                onKeyDown={(ev) => { if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); alternarLer(m.id); } }}
-                title={meu && meu.modo === 'ler' ? 'Fechar' : 'Ver as notas da equipa técnica'}
+              <div key={m.id} role={abrivel ? 'button' : undefined} tabIndex={abrivel ? 0 : undefined}
+                onClick={() => { if (abrivel) alternarLer(m.id); }}
+                onKeyDown={(ev) => { if (abrivel && ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); alternarLer(m.id); } }}
                 style={{
-                  textAlign: 'left', cursor: 'pointer', ...body,
+                  textAlign: 'left', cursor: abrivel ? 'pointer' : 'default', ...body,
                   background: T.surface, border: `1px solid ${e.id === 'feito' ? T.line : e.cor}`, borderRadius: 10, padding: estreito ? '10px 12px' : '11px 14px',
                 }}>
                 {estreito ? (
@@ -27263,7 +27269,7 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
                     {acoes}
                   </div>
                 )}
-                {meu && (
+                {meu && (meu.modo === 'escrever' || abrivel) && (
                   <PainelNotasJogo key={meu.modo} m={m} modo={meu.modo} userEmail={userEmail} setMatches={setMatches}
                     onEscrever={() => abrirEscrita(m.id)} onFechar={() => setPainel(null)} />
                 )}
@@ -43784,7 +43790,7 @@ const RECORRENCIA_LABEL = {
   treino_jogo: 'Dias de treino ou jogo',
   wellness_pse: 'Enquanto faltar Wellness/PSE',
   aniversario: 'Aniversário de jogador',
-  pos_jogo: 'Depois de cada jogo (até haver estatísticas)',
+  pos_jogo: 'Depois de cada jogo (até estar feito)',
 };
 /* Jogos já realizados (até 14 dias atrás) sem estatísticas: nenhum
    jogador com minutos registados no relatório do jogo. É isto que mantém
@@ -43800,6 +43806,19 @@ function jogosSemEstatisticas(matches, hoje) {
   return (matches || [])
     .filter(m => m && m.date && m.date < hoje && !naoJogado(m))
     .filter(m => !Object.values(m.report || {}).some(r => r && Number(r.minutes) > 0))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+/* Jogos já realizados sem nenhuma análise da equipa técnica. Só contam
+   os jogos desde uma semana antes de a missão começar (`desde`): os jogos
+   antigos, de antes de haver análises, não podem ficar a gerar a missão
+   para sempre. */
+function jogosSemAnalise(matches, hoje, desde) {
+  const naoJogado = (m) => /cancel|adiad/i.test(String(m.result || ''));
+  const inicio = desde ? addDays(desde, -7) : '';
+  return (matches || [])
+    .filter(m => m && m.date && m.date < hoje && m.date >= inicio && !naoJogado(m))
+    .filter(m => !notasDoJogo(m).length)
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
@@ -43839,7 +43858,12 @@ function tarefaAtivaHoje(tarefa, hoje, ctx) {
        mostrava-a em todos os dias da semana enquanto faltasse um jogo. */
     const hj = todayStr();
     if (hoje > hj) return false;
-    const falta = jogosSemEstatisticas(ctx.matches, hoje);
+    /* O que fica "por fazer" depende do caminho da missão: a análise do
+       jogo olha para os jogos sem análise; tudo o resto (estatísticas)
+       para os jogos sem minutos lançados. */
+    const falta = tarefa.caminho === 'analisejogo'
+      ? jogosSemAnalise(ctx.matches, hoje, r.desde)
+      : jogosSemEstatisticas(ctx.matches, hoje);
     if (hoje === hj) return falta.length > 0;
     return falta.some(m => addDays(m.date, 1) === hoje);
   }
@@ -47075,13 +47099,13 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
   /* Por omissão só a última semana — é o que se consulta no dia a dia; o
      resto está a um clique. Uma pesquisa mostra sempre tudo. */
   const limiteSemana = addDays(todayStr(), -6);
-  const recentes = filtered.filter(n => (n.data || '') >= limiteSemana);
-  const antigas = filtered.length - recentes.length;
-  /* Escolher um tema no placard mostra TODAS as ocorrências desse tema,
-     de qualquer data — quem toca em "Reuniões" quer ver as reuniões, não
-     só as da última semana. */
-  const noPeriodo = (search || verTudo || filtro) ? filtered : recentes;
-  const visiveis = filtro ? noPeriodo.filter(n => chaveDoTipo(n) === filtro) : noPeriodo;
+  /* Também por tema: escolher um tema no placard mostra a última semana
+     DESSE tema, e "Ver todas" abre as mais antigas só desse tema (o número
+     do botão é o desse tema). */
+  const doTema = filtro ? filtered.filter(n => chaveDoTipo(n) === filtro) : filtered;
+  const recentes = doTema.filter(n => (n.data || '') >= limiteSemana);
+  const antigas = doTema.length - recentes.length;
+  const visiveis = (search || verTudo) ? doTema : recentes;
   const sorted = [...visiveis].sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
 
   /* PLACARD: o TOTAL de cada tema (todas as datas; numa pesquisa, só o
@@ -47352,7 +47376,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
       {diario.length > 0 && (
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6, minHeight: 15, ...body }}>
-            {filtro ? 'A mostrar todas deste tema · toca outra vez para tirar o filtro' : search ? 'Na pesquisa' : 'Total por tema'}
+            {filtro ? 'Só este tema · toca outra vez para tirar o filtro' : search ? 'Na pesquisa' : 'Total por tema'}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
             {chavesPlacard.map(k => {
@@ -47362,7 +47386,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
               const semana = contagensSemana[k] || 0;
               const on = filtro === k;
               return (
-                <button key={k} type="button" onClick={() => setFiltro(on ? null : k)} title={info.label} style={{
+                <button key={k} type="button" onClick={() => { setFiltro(on ? null : k); setVerTudo(false); }} title={info.label} style={{
                   minWidth: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: 'pointer', ...body, textAlign: 'left',
                   background: on ? `${info.corHex}2E` : T.surface, border: `1px solid ${on ? info.corHex : T.line}`,
                   borderLeft: `3px solid ${info.corHex}`, opacity: n || on ? 1 : 0.55,
@@ -47391,14 +47415,14 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
         <Btn variant="ghost" onClick={() => setSearch(query)}>Pesquisar</Btn>
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState text={search ? 'Nenhuma ocorrência encontrada.' : 'Ainda sem ocorrências. Regista a primeira.'} />
+      {doTema.length === 0 ? (
+        <EmptyState text={search ? 'Nenhuma ocorrência encontrada.' : filtro ? 'Ainda não há ocorrências deste tema.' : 'Ainda sem ocorrências. Regista a primeira.'} />
       ) : sorted.length === 0 ? (
         <div style={{ padding: '18px 4px' }}>
           <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10 }}>
-            {filtro ? (search ? 'Sem ocorrências deste tema na pesquisa.' : 'Ainda não há ocorrências deste tema.') : 'Sem ocorrências na última semana.'}
+            {filtro ? 'Sem ocorrências deste tema na última semana.' : 'Sem ocorrências na última semana.'}
           </div>
-          {!search && !filtro && !verTudo && antigas > 0 && (
+          {!search && !verTudo && antigas > 0 && (
             <button
               onClick={() => setVerTudo(true)}
               style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}
@@ -47407,13 +47431,13 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {!search && !filtro && !verTudo && antigas > 0 && (
+          {!search && !verTudo && antigas > 0 && (
             <button
               onClick={() => setVerTudo(true)}
               style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
             >Ver todas ({antigas} mais antigas)</button>
           )}
-          {!search && !filtro && verTudo && (
+          {!search && verTudo && (
             <button
               onClick={() => setVerTudo(false)}
               style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
