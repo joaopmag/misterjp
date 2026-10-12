@@ -25,7 +25,7 @@ import {
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
   HeartPulse, Flame, PartyPopper, Megaphone, Fingerprint, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
   Video, Repeat, Calendar, Bell, Lock,
-  Volume2, VolumeX, CheckCircle2,
+  Volume2, VolumeX, CheckCircle2, Building2, Wrench, Tag,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -4020,7 +4020,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : 'jogos'}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : 'jogos'}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
           {/* Sempre montado, escondido com CSS (não desmontado) — o mesmo
              motivo da Biblioteca logo abaixo: sem isto, trocar de separador
              e voltar perdia o vídeo selecionado, a posição de reprodução e
@@ -4124,7 +4124,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId}
               sessions={sessions} matches={matches} players={players} monitoring={monitoring} standings={standings} />
           )}
-          {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} />}
+          {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} players={players} matches={matches} setMatches={setMatches} season={season} />}
         </div>
         </main>
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
@@ -20602,7 +20602,9 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
   const saveMatch = (data) => {
     const isEdicao = !!data.id;
     const registo = podarPresencasForaDosConvocados(isEdicao ? data : { ...data, id: uid() });
-    if (isEdicao) setMatches(prev => prev.map(m => m.id === data.id ? registo : m));
+    // As notas da equipa técnica só se escrevem no seu separador (Relatórios
+    // de jogo): fica sempre a versão mais recente delas, nunca a do modal.
+    if (isEdicao) setMatches(prev => prev.map(m => (m.id === data.id ? { ...registo, notasEquipaTecnica: m.notasEquipaTecnica } : m)));
     else setMatches(prev => [...prev, registo]);
     if (setConvocatorias) setConvocatorias(prev => syncMatchConvocatoria(registo, prev, season));
     setSessions(prev => ensureMatchSession(registo, prev));
@@ -27116,7 +27118,7 @@ function AlertaRelatorios({ emFalta, onCriar }) {
   );
 }
 
-function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto }) {
+function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto, userEmail, setMatches }) {
   const hoje = todayStr();
   const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje).map(m => comResultado(m, standings))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -27136,13 +27138,18 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirId]);
   const lista = grupo === 'oficial' ? oficiais : amigaveis;
+  // Para o separador das notas: os dois próximos jogos (preparação) e os
+  // já jogados, competição e amigáveis juntos.
+  const proximos = [...(matches || [])].filter(m => m && m.date && m.date > hoje)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(0, 2).reverse();
+  const nNotas = (matches || []).filter(m => notasDoJogo(m).length).length;
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: estreito ? 'nowrap' : 'wrap', marginBottom: 14 }}>
-        {[['oficial', 'Competição', oficiais], ['amigavel', estreito ? 'Amigáveis' : 'Amigáveis e pré-época', amigaveis]].map(([id, rot, l]) => {
+        {[['oficial', 'Competição', oficiais], ['amigavel', estreito ? 'Amigáveis' : 'Amigáveis e pré-época', amigaveis], ['notas', estreito ? 'Notas' : 'Notas da equipa técnica', null]].map(([id, rot, l]) => {
           const on = grupo === id;
-          const n = porPreencher(l);
+          const n = l ? porPreencher(l) : 0;
           return (
             <button key={id} type="button" onClick={() => setGrupo(id)} style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '7px 14px', borderRadius: 20, cursor: 'pointer', ...body, fontSize: 13,
@@ -27151,12 +27158,15 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
             }}>
               {rot}
               {n > 0 && <span style={{ ...mono, fontSize: 11, background: on ? 'rgba(0,0,0,.25)' : T.bad, color: '#fff', borderRadius: 10, padding: '1px 7px' }}>{n}</span>}
+              {id === 'notas' && nNotas > 0 && <span style={{ ...mono, fontSize: 11, color: on ? TEXT_ON_ACCENT : T.mutedDim }}>{nNotas}</span>}
             </button>
           );
         })}
       </div>
 
-      {lista.length === 0 ? (
+      {grupo === 'notas' ? (
+        <NotasJogosEquipaTecnica jogados={jogados} proximos={proximos} season={season} userEmail={userEmail} setMatches={setMatches} />
+      ) : lista.length === 0 ? (
         <EmptyState text={grupo === 'oficial' ? 'Ainda não há jogos oficiais realizados.' : 'Ainda não há amigáveis realizados.'} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -27233,6 +27243,160 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
           onClose={() => setAberto(null)}
           onSave={(dados) => { onSave(dados); setAberto(null); }}
         />
+      )}
+    </div>
+  );
+}
+
+/* NOTAS DA EQUIPA TÉCNICA sobre os jogos (vieram do Diário).
+
+   Separador próprio em Jogos › Relatórios de jogo, ao lado de Competição
+   e Amigáveis: um cartão por jogo, com as notas por ordem de escrita.
+   Qualquer pessoa da equipa técnica pode escrever, e cada nota guarda
+   quem a escreveu. Vivem no próprio jogo, em
+   `notasEquipaTecnica = [{ id, texto, autor, em, editadoPor?, editadoEm?, attachment? }]`,
+   e gravam-se logo, sem passar pelo modal do relatório.
+
+   Os modais do jogo (relatório, ficha) não mexem nas notas: o `save` de
+   Jogos e o de Planeamento mantêm sempre as da versão mais recente, para
+   que gravar um relatório aberto há algum tempo não apague notas escritas
+   entretanto por outra pessoa. */
+function notasDoJogo(m) {
+  const v = m && m.notasEquipaTecnica;
+  if (Array.isArray(v)) return v.filter(x => x && (String(x.texto || '').trim() || x.attachment));
+  // Formato provisório (uma caixa por pessoa): converte-se ao ler.
+  if (v && typeof v === 'object') {
+    return Object.entries(v)
+      .filter(([, x]) => x && String(x.texto || '').trim())
+      .map(([autor, x]) => ({ id: `n-${autor}`, texto: x.texto, autor: autor === 'equipa' ? '' : autor, em: x.em || '' }));
+  }
+  return [];
+}
+
+function NotasJogosEquipaTecnica({ jogados, proximos, season, userEmail, setMatches }) {
+  const estreito = useIsMobile(560);
+  const [aEscrever, setAEscrever] = useState(null); // id do jogo com a caixa aberta
+  const [texto, setTexto] = useState('');
+  const [aEditar, setAEditar] = useState(null); // { jogo, nota }
+  const [soComNotas, setSoComNotas] = useState(false);
+
+  const gravarNotas = (jogoId, mudar) => setMatches(prev => prev.map(m => (
+    m.id === jogoId ? { ...m, notasEquipaTecnica: mudar(notasDoJogo(m)) } : m
+  )));
+  const adicionar = (jogoId) => {
+    const t = texto.trim();
+    if (!t) return;
+    gravarNotas(jogoId, (notas) => [...notas, { id: uid(), texto: t, autor: userEmail || '', em: new Date().toISOString() }]);
+    setTexto(''); setAEscrever(null);
+  };
+  const guardarEdicao = () => {
+    if (!aEditar) return;
+    const t = texto.trim();
+    const { jogo, nota } = aEditar;
+    gravarNotas(jogo, (notas) => (t
+      ? notas.map(n => (n.id === nota ? { ...n, texto: t, editadoPor: userEmail || '', editadoEm: new Date().toISOString() } : n))
+      : notas.filter(n => n.id !== nota)));
+    setTexto(''); setAEditar(null);
+  };
+  const apagar = (jogoId, notaId) => {
+    if (!window.confirm('Apagar esta nota?')) return;
+    gravarNotas(jogoId, (notas) => notas.filter(n => n.id !== notaId));
+  };
+
+  const todos = [...proximos.map(m => ({ m, proximo: true })), ...jogados.map(m => ({ m, proximo: false }))];
+  const comNotas = todos.filter(({ m }) => notasDoJogo(m).length).length;
+  const lista = soComNotas ? todos.filter(({ m }) => notasDoJogo(m).length) : todos;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ fontSize: 12.5, color: T.mutedDim, flex: '1 1 220px' }}>Como correu cada jogo, a preparação do adversário, o que fica para trabalhar. Todos podem escrever.</div>
+        {comNotas > 0 && (
+          <ChipEscolha on={soComNotas} onClick={() => setSoComNotas(!soComNotas)}>Só jogos com notas ({comNotas})</ChipEscolha>
+        )}
+      </div>
+      {lista.length === 0 ? (
+        <EmptyState text={soComNotas ? 'Ainda não há notas em nenhum jogo.' : 'Ainda não há jogos.'} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {lista.map(({ m, proximo }) => {
+            const notas = notasDoJogo(m);
+            const mc = marcadorDoJogo(m, season);
+            const forte = (nome, nosso) => <span style={{ fontWeight: nosso ? 700 : 500, color: nosso ? T.cream : T.muted }}>{nome}</span>;
+            const escrever = aEscrever === m.id;
+            return (
+              <div key={m.id} style={{ background: T.surface, border: `1px solid ${proximo ? `${T.gold}66` : T.line}`, borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ ...mono, fontSize: 12, color: T.mutedDim, flexShrink: 0 }}>{fmtShort(m.date)}</span>
+                  {mc.letra && <span title={NOME_RESULTADO[mc.letra]} style={{ ...mono, fontSize: 11, fontWeight: 800, color: '#fff', background: COR_RESULTADO[mc.letra], borderRadius: 5, width: 20, height: 20, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{mc.letra}</span>}
+                  {proximo && <span style={{ fontSize: 11.5, color: T.gold, flexShrink: 0, marginLeft: 'auto', order: 2 }}>Próximo jogo</span>}
+                </div>
+                <div style={{ fontSize: 14.5, lineHeight: 1.35, marginTop: 4, ...(estreito ? {} : LINHAS(1)) }}>
+                  {forte(mc.casa, mc.emCasa)}
+                  <span style={{ ...mono, color: T.warn, fontWeight: 700, margin: '0 8px' }}>{mc.letra ? `${mc.golosCasa}-${mc.golosFora}` : (m.result || 'vs')}</span>
+                  {forte(mc.fora, !mc.emCasa)}
+                </div>
+                <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 2 }}>{[competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ')}</div>
+
+                {notas.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+                    {notas.map(n => {
+                      const editar = !!aEditar && aEditar.jogo === m.id && aEditar.nota === n.id;
+                      return (
+                        <div key={n.id} style={{ background: T.surfaceRaise, borderRadius: 8, padding: '9px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                            <span style={{ fontSize: 11.5, color: T.mutedDim, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {n.autor || 'Equipa técnica'}{n.em ? ` · ${fmtShort(String(n.em).slice(0, 10))}` : ''}{n.editadoPor && n.editadoPor !== n.autor ? ` · editada por ${n.editadoPor}` : ''}
+                            </span>
+                            {!editar && (
+                              <>
+                                <button type="button" onClick={() => { setAEscrever(null); setAEditar({ jogo: m.id, nota: n.id }); setTexto(n.texto || ''); }} title="Editar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Pencil size={13} /></button>
+                                <button type="button" onClick={() => apagar(m.id, n.id)} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Trash2 size={13} /></button>
+                              </>
+                            )}
+                          </div>
+                          {editar ? (
+                            <div>
+                              <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 90 }} />
+                              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                <Btn onClick={guardarEdicao}><Check size={14} /> Guardar</Btn>
+                                <Btn variant="ghost" onClick={() => { setAEditar(null); setTexto(''); }}>Cancelar</Btn>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {n.texto && <div style={{ fontSize: 13.5, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{n.texto}</div>}
+                              {n.attachment && (
+                                <a href={n.attachment.dataUrl} download={n.attachment.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', marginTop: 6 }}>
+                                  <BookOpen size={13} /> {n.attachment.name}
+                                </a>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {escrever ? (
+                  <div style={{ marginTop: 10 }}>
+                    <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 100 }}
+                      placeholder={proximo ? 'Preparação: o adversário, o que queremos fazer, a que estar atentos...' : 'Como correu: o que funcionou, o que falhou, momentos-chave...'} />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <Btn disabled={!texto.trim()} onClick={() => adicionar(m.id)}><Check size={14} /> Guardar nota</Btn>
+                      <Btn variant="ghost" onClick={() => { setAEscrever(null); setTexto(''); }}>Cancelar</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => { setAEditar(null); setTexto(''); setAEscrever(m.id); }} style={{
+                    marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0,
+                  }}><Plus size={14} /> {notas.length ? 'Acrescentar nota' : 'Escrever nota'}</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -27345,7 +27509,7 @@ function RelatorioJogoModal({ match, players, season, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial, tarefas, souDono }) {
+function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial, tarefas, souDono, userEmail }) {
   /* Convocatórias deixaram de ter separador próprio e vivem aqui: nascem
      com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
      jornada sincronizados), por isso eram já a outra vista da mesma
@@ -27393,7 +27557,9 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   const save = (data) => {
     const isEdicao = !!data.id;
     const registo = podarPresencasForaDosConvocados(isEdicao ? data : { ...data, id: uid() });
-    if (isEdicao) setMatches(prev => prev.map(m => m.id === data.id ? registo : m));
+    // As notas da equipa técnica só se escrevem no seu separador (Relatórios
+    // de jogo): fica sempre a versão mais recente delas, nunca a do modal.
+    if (isEdicao) setMatches(prev => prev.map(m => (m.id === data.id ? { ...registo, notasEquipaTecnica: m.notasEquipaTecnica } : m)));
     else setMatches(prev => [...prev, registo]);
     // Todo o jogo entra também na agenda como sessão, amigável ou oficial
     // (ver ensureMatchSession) — é o que faz o PSE aparecer sozinho no
@@ -27480,6 +27646,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
         <RelatoriosJogo
           matches={matches} players={players} season={season} standings={standings}
           onSave={save} abrirId={abrirRelatorio} onAberto={() => setAbrirRelatorio(null)}
+          userEmail={userEmail} setMatches={setMatches}
         />
       </div>
     );
@@ -43505,7 +43672,6 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
 /* ---------------------------------------------------------------
    DIÁRIO — notas datadas do treinador, com pesquisa.
 ---------------------------------------------------------------- */
-const EMPTY_NOTA = () => ({ data: todayStr(), titulo: '', nota: '', attachment: null });
 
 /* ================================================================
    TAREFAS DA EQUIPA TÉCNICA
@@ -46523,18 +46689,169 @@ function Tarefas({ tarefas, setTarefas, membros, euId, sessions, matches, player
   );
 }
 
-function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
+/* DIÁRIO — registo de ocorrências por tipo.
+
+   O Diário era título + texto livre e misturava coisas de natureza
+   diferente: disciplina e faltas (sobre um atleta), falhas do clube e
+   das instalações (sobre o clube), reuniões, e até notas de jogo. Nada
+   disso se cruzava — ninguém sabia quantas vezes um atleta já tinha tido
+   problemas, nem quantas falhas do clube houve na época.
+
+   Agora cada registo tem um TIPO, e o formulário muda com ele. Continua a
+   viver na mesma coleção (`diario`) e com os mesmos campos de base (data,
+   título, nota, anexo, autor), por isso nada do que existe se perde: as
+   notas antigas, sem tipo, são classificadas pelo título no momento de
+   mostrar (`chaveDoTipo`) e ficam com o tipo certo assim que alguém as
+   edita e grava.
+
+   CATEGORIAS NOVAS: não há tabela de categorias. Quem cria uma ocorrência
+   pode escrever uma categoria nova (`tipo: 'outra'` + `tipoNome`); a
+   partir daí ela aparece como opção para toda a equipa, porque a lista é
+   tirada das próprias ocorrências. Se deixar de haver ocorrências dessa
+   categoria, ela desaparece sozinha.
+
+   As notas de jogo saíram daqui: vivem agora em Jogos › Relatórios de
+   jogo › Notas da equipa técnica (um cartão por jogo). As antigas passam-
+   se para lá com o botão "Mover para o jogo" de cada nota livre. */
+const TIPOS_DIARIO = [
+  { id: 'disciplina', label: 'Disciplina', icon: AlertTriangle, cor: () => T.bad, texto: 'O que aconteceu', atletas: true },
+  { id: 'faltas', label: 'Faltas e atrasos', icon: Clock, cor: () => T.warn, texto: 'Notas (opcional)', atletas: true },
+  { id: 'reunioes', label: 'Reuniões', icon: Users, cor: () => T.good, texto: 'Resumo da reunião', atletas: true },
+  { id: 'clube', label: 'Clube', icon: Building2, cor: () => T.teamB, texto: 'O que falhou', estadoInicial: 'aberta' },
+  { id: 'infra', label: 'Infraestruturas', icon: Wrench, cor: () => '#A272C4', texto: 'O problema', estadoInicial: 'aberta' },
+  { id: 'nota', label: 'Nota livre', icon: FileText, cor: () => T.muted, texto: 'Nota', atletas: true },
+];
+const PALETA_CATEGORIAS = ['#4FA3A0', '#C9804F', '#7F93D6', '#B8749F', '#8FA552'];
+const CONSEQUENCIAS_DISCIPLINA = ['Aviso', 'Saiu do treino', 'Não convocado', 'Dispensado do jogo', 'Suspenso', 'Reunião com a família'];
+const COM_QUEM_REUNIAO = ['Equipa técnica', 'Coordenação', 'Direção', 'Encarregados de educação', 'Atleta', 'Outro'];
+const CATEGORIAS_CLUBE = ['Posto médico', 'Horários e marcações', 'Transporte', 'Material', 'Equipamentos', 'Comunicação', 'Outra'];
+const CATEGORIAS_INFRA = ['Campo', 'Balneários', 'Iluminação', 'Ginásio', 'Arrecadação', 'Outra'];
+const COR_CARTAO = { amarelo: '#E3C33B', vermelho: '#D23C3C' };
+
+/* A chave do tipo de uma ocorrência: o id de um tipo fixo, ou `c:<nome>`
+   para uma categoria criada pela equipa. As notas antigas (sem tipo) são
+   classificadas pelo título — só pelo título, de propósito: o texto
+   fala de tudo e enganava-se mais do que acertava. Na dúvida, Nota livre. */
+function chaveDoTipo(n) {
+  if (n.tipo === 'outra') return n.tipoNome && n.tipoNome.trim() ? `c:${semAcentos(n.tipoNome)}` : 'nota';
+  if (n.tipo) return n.tipo;
+  const t = semAcentos(n.titulo);
+  if (!t) return 'nota';
+  if (/disciplin|comportament|castig/.test(t)) return 'disciplina';
+  if (/\bfalt|atras/.test(t)) return 'faltas';
+  if (/reuni/.test(t)) return 'reunioes';
+  if (/infraestrutur|balneari|ilumina|relvad/.test(t)) return 'infra';
+  if (/posto medico|organiza|transporte/.test(t)) return 'clube';
+  return 'nota';
+}
+
+function infoDoTipo(chave, nomesCustom) {
+  const fixo = TIPOS_DIARIO.find(t => t.id === chave);
+  if (fixo) return { ...fixo, corHex: fixo.cor() };
+  const nome = (nomesCustom && nomesCustom[chave]) || chave.replace(/^c:/, '');
+  let h = 0;
+  for (let i = 0; i < chave.length; i++) h = (h * 31 + chave.charCodeAt(i)) >>> 0;
+  return { id: chave, label: nome, icon: Tag, corHex: PALETA_CATEGORIAS[h % PALETA_CATEGORIAS.length], texto: 'O que aconteceu', atletas: true, custom: true };
+}
+
+/* Só o que interessa ao tipo escolhido — trocar de tipo a meio do
+   formulário não deixa campos de outro tipo esquecidos no registo. */
+function limparOcorrencia(f) {
+  const o = { data: f.data, tipo: f.tipo, titulo: f.titulo || '', nota: f.nota || '', attachment: f.attachment || null };
+  const info = TIPOS_DIARIO.find(t => t.id === f.tipo);
+  if (f.tipo === 'outra') o.tipoNome = (f.tipoNome || '').trim();
+  if (f.tipo === 'outra' || (info && info.atletas)) o.atletas = f.atletas || [];
+  if (f.tipo === 'disciplina') { o.cartao = f.cartao || 'amarelo'; o.consequencias = f.consequencias || []; }
+  if (f.tipo === 'faltas') { o.faltaTipo = f.faltaTipo || 'falta'; o.justificada = !!f.justificada; }
+  if (f.tipo === 'reunioes') { o.comQuem = f.comQuem || ''; o.participantes = f.participantes || ''; o.decisoes = f.decisoes || ''; }
+  if (f.tipo === 'clube' || f.tipo === 'infra') o.categoria = f.categoria || '';
+  if (f.estado) {
+    o.estado = f.estado;
+    o.seguimento = f.seguimento || '';
+    if (f.estado === 'resolvida') { o.resolvidaEm = f.resolvidaEm || new Date().toISOString(); if (f.resolvidaPor) o.resolvidaPor = f.resolvidaPor; }
+  }
+  return o;
+}
+
+const EMPTY_OCORRENCIA = () => ({
+  data: todayStr(), tipo: '', tipoNome: '', titulo: '', nota: '', attachment: null,
+  atletas: [], cartao: 'amarelo', consequencias: [], faltaTipo: 'falta', justificada: false,
+  comQuem: '', participantes: '', decisoes: '', categoria: '', estado: '', seguimento: '',
+});
+
+/* Seguimento: aberta → (comunicada, só para falhas do clube e
+   instalações, que dependem de outros) → resolvida → aberta outra vez. */
+function proximoEstado(chave, estado) {
+  const comComunicada = chave === 'clube' || chave === 'infra';
+  if (estado === 'aberta') return comComunicada ? 'comunicada' : 'resolvida';
+  if (estado === 'comunicada') return 'resolvida';
+  return 'aberta';
+}
+const ROTULO_ESTADO = { aberta: 'Por resolver', comunicada: 'Comunicada', resolvida: 'Resolvida' };
+
+function ChipEscolha({ on, cor, onClick, children, title }) {
+  const c = cor || T.gold;
+  return (
+    <button type="button" onClick={onClick} title={title} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 18, cursor: 'pointer', ...body, fontSize: 12.5,
+      background: on ? `${c}26` : 'transparent', color: on ? T.cream : T.muted, border: `1px solid ${on ? c : T.line}`,
+    }}>{children}</button>
+  );
+}
+
+function MiniCartao({ cor, title }) {
+  return <span title={title} style={{ display: 'inline-block', width: 9, height: 12, borderRadius: 2, background: COR_CARTAO[cor] || COR_CARTAO.amarelo, flexShrink: 0, boxShadow: '0 0 0 1px rgba(0,0,0,.25)' }} />;
+}
+
+function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], matches = [], setMatches, season }) {
+  const isMobile = useIsMobile();
   const [formOpen, setFormOpen] = useState(false);
-  // Quando se está a editar uma nota já existente, guarda-se aqui o id dela;
-  // a null significa que se está a criar uma nota nova.
+  // Quando se está a editar uma ocorrência já existente, guarda-se aqui o
+  // id dela; a null significa que se está a criar uma nova.
   const [editingId, setEditingId] = useState(null);
-  const [f, setF] = useState(EMPTY_NOTA);
+  const [f, setF] = useState(EMPTY_OCORRENCIA);
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [attachError, setAttachError] = useState('');
   const [verTudo, setVerTudo] = useState(false);
-  // Para levar o cursor direito à nota ao editar (ver startEdit).
+  const [filtro, setFiltro] = useState(null);
+  const [novaCategoria, setNovaCategoria] = useState(false);
+  // Nota a mover para as notas da equipa técnica de um jogo: { id, jogo }.
+  const [aMover, setAMover] = useState(null);
+  // Para levar o cursor direito ao texto ao editar (ver startEdit).
   const notaRef = useRef(null);
+
+  const nomeAtleta = (pid) => {
+    const p = players.find(x => x.id === pid);
+    return p ? shortPlayerName(p, players) : 'Atleta removido';
+  };
+
+  // Categorias criadas pela equipa, tiradas das próprias ocorrências.
+  const nomesCustom = {};
+  diario.forEach(n => {
+    if (n.tipo === 'outra' && n.tipoNome && n.tipoNome.trim()) {
+      const k = `c:${semAcentos(n.tipoNome)}`;
+      if (!nomesCustom[k]) nomesCustom[k] = n.tipoNome.trim();
+    }
+  });
+  const chavesCustom = Object.keys(nomesCustom).sort((a, b) => nomesCustom[a].localeCompare(nomesCustom[b]));
+
+  /* CADASTRO DISCIPLINAR: para cada atleta, as ocorrências de
+     disciplina por ordem de data. Serve para escrever "2.º" no cartão e
+     avisar a partir do 3.º amarelo, como na acumulação. */
+  const cadastro = {};
+  diario.filter(n => chaveDoTipo(n) === 'disciplina')
+    .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')) || String(a.criadoEm || '').localeCompare(String(b.criadoEm || '')))
+    .forEach(n => (n.atletas || []).forEach(pid => {
+      (cadastro[pid] = cadastro[pid] || []).push({ id: n.id, cartao: n.cartao || 'amarelo' });
+    }));
+  const contagemCartao = (pid, n) => {
+    const lista = cadastro[pid] || [];
+    const cor = n.cartao || 'amarelo';
+    let k = 0;
+    for (const x of lista) { if (x.cartao === cor) k++; if (x.id === n.id) break; }
+    return k;
+  };
 
   const handleAttachmentFile = async (file) => {
     setAttachError('');
@@ -46553,34 +46870,58 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
     setF(prev => ({ ...prev, attachment: { name: file.name, type: isPdf ? 'pdf' : 'image', dataUrl } }));
   };
 
+  const escolherTipo = (id, nome) => setF(prev => {
+    const info = TIPOS_DIARIO.find(t => t.id === id);
+    const estadoBase = info && info.estadoInicial ? info.estadoInicial : '';
+    // Ao mudar de tipo, o seguimento por omissão acompanha o tipo novo —
+    // a não ser que já se tenha escrito o que falta fazer.
+    const manterEstado = prev.estado && (prev.seguimento || '').trim();
+    return { ...prev, tipo: id, tipoNome: id === 'outra' ? (nome || '') : '', estado: manterEstado ? prev.estado : estadoBase };
+  });
+
+  const temConteudo = !!(f.nota.trim() || f.attachment || (f.atletas || []).length || f.decisoes.trim());
+  const podeGravar = !!f.tipo && (f.tipo !== 'outra' || !!f.tipoNome.trim()) && temConteudo;
+
   const save = () => {
-    if (!f.nota.trim() && !f.attachment) return;
+    if (!podeGravar) return;
+    const limpo = limparOcorrencia({ ...f, resolvidaPor: f.estado === 'resolvida' ? (f.resolvidaPor || userEmail) : undefined });
     if (editingId) {
-      // Ao editar, o autor original mantém-se; regista-se quem alterou.
+      // Ao editar, o autor e a data de criação originais mantêm-se;
+      // regista-se quem alterou.
       setDiario(prev => prev.map(n => (n.id === editingId
-        ? { ...f, id: editingId, autor: n.autor || userEmail, editadoPor: userEmail, editadoEm: new Date().toISOString() }
+        ? { ...limpo, id: editingId, autor: n.autor || userEmail, criadoEm: n.criadoEm, editadoPor: userEmail, editadoEm: new Date().toISOString() }
         : n)));
     } else {
-      setDiario(prev => [{ ...f, id: uid(), autor: userEmail, criadoEm: new Date().toISOString() }, ...prev]);
+      setDiario(prev => [{ ...limpo, id: uid(), autor: userEmail, criadoEm: new Date().toISOString() }, ...prev]);
     }
     closeForm();
   };
   const closeForm = () => {
-    setF(EMPTY_NOTA());
+    setF(EMPTY_OCORRENCIA());
     setEditingId(null);
     setAttachError('');
+    setNovaCategoria(false);
     setFormOpen(false);
   };
-  // Abre o formulário já preenchido com a nota escolhida.
   const startEdit = (n) => {
-    setF({ data: n.data || todayStr(), titulo: n.titulo || '', nota: n.nota || '', attachment: n.attachment || null });
+    const chave = chaveDoTipo(n);
+    const ehCustom = chave.startsWith('c:');
+    setF({
+      ...EMPTY_OCORRENCIA(),
+      ...n,
+      data: n.data || todayStr(),
+      tipo: ehCustom ? 'outra' : chave,
+      tipoNome: ehCustom ? (n.tipoNome || '') : '',
+      titulo: n.titulo || '', nota: n.nota || '', attachment: n.attachment || null,
+      atletas: n.atletas || [], consequencias: n.consequencias || [],
+      comQuem: n.comQuem || '', participantes: n.participantes || '', decisoes: n.decisoes || '',
+      categoria: n.categoria || '', estado: n.estado || '', seguimento: n.seguimento || '',
+    });
     setEditingId(n.id);
     setAttachError('');
+    setNovaCategoria(false);
     setFormOpen(true);
-    /* O cursor vai direito ao texto da nota.
-
-       Antes só se rolava a página para cima e o treinador tinha ainda de
-       procurar a caixa e clicar nela. O `setTimeout` é preciso porque o
+    /* O cursor vai direito ao texto. O `setTimeout` é preciso porque o
        formulário ainda não existe no ecrã no instante em que se carrega no
        lápis — só depois de o React o desenhar é que há onde pôr o cursor. */
     setTimeout(() => {
@@ -46591,80 +46932,347 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
     }, 60);
   };
   const remove = (id) => removeWithUndo(
-    diario, setDiario, id, itemLabel(diario.find(n => n.id === id), 'Nota'),
+    diario, setDiario, id, itemLabel(diario.find(n => n.id === id), 'Ocorrência'),
     () => { if (editingId === id) closeForm(); },
   );
+  const avancarEstado = (n) => {
+    const seguinte = proximoEstado(chaveDoTipo(n), n.estado);
+    setDiario(prev => prev.map(x => {
+      if (x.id !== n.id) return x;
+      const novo = { ...x, estado: seguinte };
+      if (seguinte === 'resolvida') { novo.resolvidaEm = new Date().toISOString(); novo.resolvidaPor = userEmail; }
+      else { delete novo.resolvidaEm; delete novo.resolvidaPor; }
+      return novo;
+    }));
+  };
 
+  /* MOVER PARA O JOGO — as notas de jogo antigas (escritas aqui antes de
+     haver o separador próprio) passam para Jogos › Relatórios de jogo ›
+     Notas da equipa técnica, com o mesmo autor e a mesma data. Sugere-se o
+     jogo cujo adversário aparece no título ou no texto, o mais perto da
+     data da nota; se nenhum aparecer, o jogo mais perto da data. */
+  const jogosParaMover = (n) => {
+    const txt = semAcentos(`${n.titulo || ''} ${n.nota || ''}`);
+    const dist = (m) => Math.abs(new Date(m.date) - new Date(n.data || todayStr()));
+    const nomeia = (m) => { const o = semAcentos(m.opponent); return o.length > 2 && txt.includes(o); };
+    return (matches || []).filter(m => m && m.date)
+      .sort((a, b) => (nomeia(b) - nomeia(a)) || (dist(a) - dist(b)));
+  };
+  const abrirMover = (n) => {
+    const lista = jogosParaMover(n);
+    setAMover({ id: n.id, jogo: lista[0] ? lista[0].id : '' });
+  };
+  const confirmarMover = (n) => {
+    if (!aMover || !aMover.jogo || !setMatches) return;
+    const jogo = (matches || []).find(m => m.id === aMover.jogo);
+    if (!jogo) return;
+    const titulo = (n.titulo || '').trim();
+    // O título só entra se disser mais do que o nome do adversário.
+    const tituloUtil = titulo && !semAcentos(jogo.opponent).includes(semAcentos(titulo));
+    const texto = [tituloUtil ? titulo : '', n.nota || ''].filter(Boolean).join('\n');
+    const autor = n.autor || (diarioMeta[n.id] && diarioMeta[n.id].email) || '';
+    const nota = { id: uid(), texto, autor, em: n.criadoEm || `${n.data || todayStr()}T12:00:00.000Z`, ...(n.attachment ? { attachment: n.attachment } : {}) };
+    setMatches(prev => prev.map(m => (m.id === jogo.id ? { ...m, notasEquipaTecnica: [...notasDoJogo(m), nota] } : m)));
+    setDiario(prev => prev.filter(x => x.id !== n.id));
+    setAMover(null);
+    if (editingId === n.id) closeForm();
+  };
+
+  /* PESQUISA: além do título e do texto, procura nos nomes dos atletas,
+     na categoria, no tipo, nas decisões e no seguimento. */
+  const textoPesquisavel = (n) => [
+    n.titulo, n.nota, n.decisoes, n.seguimento, n.categoria, n.comQuem, n.participantes, n.tipoNome,
+    infoDoTipo(chaveDoTipo(n), nomesCustom).label,
+    ...(n.atletas || []).map(nomeAtleta),
+  ].filter(Boolean).join(' ');
   const filtered = search
-    ? diario.filter(n => (n.titulo || '').toLowerCase().includes(search.toLowerCase()) || (n.nota || '').toLowerCase().includes(search.toLowerCase()))
+    ? diario.filter(n => semAcentos(textoPesquisavel(n)).includes(semAcentos(search)))
     : diario;
 
-  /* Por omissão só a última semana.
-
-     O diário acumula depressa e a página ficava com meses de notas
-     abertas. Sete dias é o que se consulta no dia a dia; o resto está a um
-     clique. Uma pesquisa mostra sempre tudo — quem procura é precisamente
-     porque a nota não é de agora. */
+  /* Por omissão só a última semana — é o que se consulta no dia a dia; o
+     resto está a um clique. Uma pesquisa mostra sempre tudo. */
   const limiteSemana = addDays(todayStr(), -6);
   const recentes = filtered.filter(n => (n.data || '') >= limiteSemana);
   const antigas = filtered.length - recentes.length;
-  const visiveis = (search || verTudo) ? filtered : recentes;
-  const sorted = [...visiveis].sort((a, b) => new Date(b.data) - new Date(a.data));
+  const noPeriodo = (search || verTudo) ? filtered : recentes;
+  const visiveis = filtro ? noPeriodo.filter(n => chaveDoTipo(n) === filtro) : noPeriodo;
+  const sorted = [...visiveis].sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')) || String(b.criadoEm || '').localeCompare(String(a.criadoEm || '')));
+
+  // PLACARD: quantas ocorrências de cada tipo no período que se está a ver.
+  const contagens = {};
+  noPeriodo.forEach(n => { const k = chaveDoTipo(n); contagens[k] = (contagens[k] || 0) + 1; });
+  const chavesPlacard = [...TIPOS_DIARIO.map(t => t.id), ...chavesCustom.filter(k => contagens[k] || filtro === k)];
+
+  // POR RESOLVER: tudo o que tem seguimento em aberto, de qualquer data.
+  const pendentes = diario.filter(n => n.estado === 'aberta' || n.estado === 'comunicada')
+    .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
+
+  const chaveForm = f.tipo === 'outra' ? `c:${semAcentos(f.tipoNome)}` : f.tipo;
+  const infoForm = f.tipo ? infoDoTipo(chaveForm, { [chaveForm]: f.tipoNome || 'Nova categoria' }) : null;
+  const mostraAtletas = !!(infoForm && infoForm.atletas);
+  const alternarLista = (campo, v) => setF(prev => ({ ...prev, [campo]: (prev[campo] || []).includes(v) ? prev[campo].filter(x => x !== v) : [...(prev[campo] || []), v] }));
+
+  const pillEstado = (n) => {
+    if (!n.estado) return null;
+    const cor = n.estado === 'resolvida' ? T.good : n.estado === 'comunicada' ? T.teamB : T.warn;
+    const seguinte = proximoEstado(chaveDoTipo(n), n.estado);
+    return (
+      <button type="button" onClick={() => avancarEstado(n)} title={`Marcar como: ${ROTULO_ESTADO[seguinte].toLowerCase()}`} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 11.5,
+        background: `${cor}22`, color: cor, border: `1px solid ${cor}66`, flexShrink: 0,
+      }}>
+        {n.estado === 'resolvida' ? <CheckCircle2 size={12} /> : <Circle size={10} />}
+        {ROTULO_ESTADO[n.estado]}
+      </button>
+    );
+  };
 
   return (
     <div>
-      <SectionHeader title="Diário" subtitle="Notas e observações do dia a dia."
-        action={<Btn onClick={() => (formOpen ? closeForm() : setFormOpen(true))}>{formOpen ? 'Fechar' : <><Plus size={15} /> Nova nota</>}</Btn>} />
+      <SectionHeader title="Diário" subtitle="O que acontece no dia a dia da equipa."
+        action={<Btn onClick={() => (formOpen ? closeForm() : setFormOpen(true))}>{formOpen ? 'Fechar' : <><Plus size={15} /> Nova ocorrência</>}</Btn>} />
 
       {formOpen && (
-        <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 18, marginBottom: 20 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, marginBottom: 12 }}>
-            <Field label="Data"><Input type="date" value={f.data} onChange={e => setF({ ...f, data: e.target.value })} /></Field>
-            <Field label="Título (opcional)"><Input value={f.titulo} onChange={e => setF({ ...f, titulo: e.target.value })} /></Field>
+        <div style={{ background: T.surface, border: `1px solid ${infoForm ? infoForm.corHex : T.line}`, borderRadius: 10, padding: 18, marginBottom: 20 }}>
+          {/* 1. O TIPO — um toque; o resto do formulário depende dele. */}
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 8, ...body }}>{editingId ? 'Tipo' : 'Que tipo de ocorrência?'}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: f.tipo ? 16 : 4 }}>
+            {TIPOS_DIARIO.map(t => {
+              const Ic = t.icon;
+              return (
+                <ChipEscolha key={t.id} on={f.tipo === t.id} cor={t.cor()} onClick={() => { setNovaCategoria(false); escolherTipo(t.id); }}>
+                  <Ic size={14} color={t.cor()} /> {t.label}
+                </ChipEscolha>
+              );
+            })}
+            {chavesCustom.map(k => {
+              const info = infoDoTipo(k, nomesCustom);
+              const on = f.tipo === 'outra' && !novaCategoria && chaveForm === k;
+              return (
+                <ChipEscolha key={k} on={on} cor={info.corHex} onClick={() => { setNovaCategoria(false); escolherTipo('outra', nomesCustom[k]); }}>
+                  <Tag size={13} color={info.corHex} /> {info.label}
+                </ChipEscolha>
+              );
+            })}
+            <ChipEscolha on={novaCategoria} onClick={() => { setNovaCategoria(true); escolherTipo('outra', ''); }} title="Criar uma categoria nova, que fica disponível para toda a equipa">
+              <Plus size={13} /> Nova categoria
+            </ChipEscolha>
           </div>
-          <div style={{ marginBottom: 14 }}>
-            <Field label="Nota"><TextArea ref={notaRef} value={f.nota} onChange={e => setF({ ...f, nota: e.target.value })} style={{ minHeight: 120 }} /></Field>
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <Field label="Anexo (foto ou PDF, opcional)" bloco>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <label style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-                  padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
-                  background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
-                }}>
-                  <Upload size={14} />
-                  {f.attachment ? 'Substituir anexo' : 'Tirar foto ou carregar ficheiro'}
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    capture="environment"
-                    onChange={e => { handleAttachmentFile(e.target.files?.[0]); e.target.value = ''; }}
-                    style={{ display: 'none' }}
-                  />
+          {novaCategoria && (
+            <div style={{ marginBottom: 16, maxWidth: 360 }}>
+              <Field label="Nome da categoria" solto>
+                <Input autoFocus value={f.tipoNome} onChange={e => setF({ ...f, tipo: 'outra', tipoNome: e.target.value })} placeholder="Ex.: Transportes, Arbitragem…" />
+              </Field>
+            </div>
+          )}
+
+          {f.tipo && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 2fr', gap: 12, marginBottom: 12 }}>
+                <Field label="Data"><Input type="date" value={f.data} onChange={e => setF({ ...f, data: e.target.value })} /></Field>
+                <Field label="Título (opcional)"><Input value={f.titulo} onChange={e => setF({ ...f, titulo: e.target.value })} /></Field>
+              </div>
+
+              {mostraAtletas && (
+                <div style={{ marginBottom: 12 }}>
+                  <Field label={f.tipo === 'disciplina' || f.tipo === 'faltas' ? 'Atletas' : 'Atletas envolvidos (opcional)'} bloco solto>
+                    <ListaMultipla
+                      itens={sortByPosition(players).map(p => ({ id: p.id, rotulo: shortPlayerName(p, players), prefixo: p.position || '--' }))}
+                      escolhidos={f.atletas}
+                      onAlternar={(pid) => alternarLista('atletas', pid)}
+                      comProcura
+                      resumo={f.atletas.length ? `${f.atletas.length} atleta${f.atletas.length > 1 ? 's' : ''}` : 'Escolher atletas'}
+                    />
+                  </Field>
+                </div>
+              )}
+
+              {f.tipo === 'disciplina' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
+                  <Field label="Gravidade" bloco solto>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {[['amarelo', 'Amarelo · menos grave'], ['vermelho', 'Vermelho · grave']].map(([id, rot]) => (
+                        <ChipEscolha key={id} on={f.cartao === id} cor={COR_CARTAO[id]} onClick={() => setF({ ...f, cartao: id })}>
+                          <MiniCartao cor={id} /> {rot}
+                        </ChipEscolha>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field label="Consequência" bloco solto>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {CONSEQUENCIAS_DISCIPLINA.map(c => (
+                        <ChipEscolha key={c} on={f.consequencias.includes(c)} cor={T.bad} onClick={() => alternarLista('consequencias', c)}>{c}</ChipEscolha>
+                      ))}
+                    </div>
+                  </Field>
+                </div>
+              )}
+
+              {f.tipo === 'faltas' && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {[['falta', 'Falta'], ['atraso', 'Atraso']].map(([id, rot]) => (
+                    <ChipEscolha key={id} on={f.faltaTipo === id} cor={T.warn} onClick={() => setF({ ...f, faltaTipo: id })}>{rot}</ChipEscolha>
+                  ))}
+                  <span style={{ width: 1, background: T.line, margin: '0 4px' }} />
+                  {[[false, 'Injustificada'], [true, 'Justificada']].map(([v, rot]) => (
+                    <ChipEscolha key={rot} on={!!f.justificada === v} cor={v ? T.good : T.bad} onClick={() => setF({ ...f, justificada: v })}>{rot}</ChipEscolha>
+                  ))}
+                </div>
+              )}
+
+              {f.tipo === 'reunioes' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
+                  <Field label="Com quem" bloco solto>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {COM_QUEM_REUNIAO.map(c => (
+                        <ChipEscolha key={c} on={f.comQuem === c} cor={T.good} onClick={() => setF({ ...f, comQuem: f.comQuem === c ? '' : c })}>{c}</ChipEscolha>
+                      ))}
+                    </div>
+                  </Field>
+                  <Field label="Participantes (opcional)" solto>
+                    <Input value={f.participantes} onChange={e => setF({ ...f, participantes: e.target.value })} placeholder="Quem esteve presente" />
+                  </Field>
+                </div>
+              )}
+
+              {(f.tipo === 'clube' || f.tipo === 'infra') && (
+                <div style={{ marginBottom: 12 }}>
+                  <Field label="Categoria" bloco solto>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {(f.tipo === 'clube' ? CATEGORIAS_CLUBE : CATEGORIAS_INFRA).map(c => (
+                        <ChipEscolha key={c} on={f.categoria === c} cor={infoForm.corHex} onClick={() => setF({ ...f, categoria: f.categoria === c ? '' : c })}>{c}</ChipEscolha>
+                      ))}
+                    </div>
+                  </Field>
+                </div>
+              )}
+
+              <div style={{ marginBottom: 14 }}>
+                <Field label={infoForm ? infoForm.texto : 'Nota'}><TextArea ref={notaRef} value={f.nota} onChange={e => setF({ ...f, nota: e.target.value })} style={{ minHeight: 110 }} /></Field>
+              </div>
+
+              {f.tipo === 'reunioes' && (
+                <div style={{ marginBottom: 14 }}>
+                  <Field label="Decisões e próximos passos"><TextArea value={f.decisoes} onChange={e => setF({ ...f, decisoes: e.target.value })} style={{ minHeight: 70 }} placeholder="Uma por linha" /></Field>
+                </div>
+              )}
+
+              {/* SEGUIMENTO: o que ainda não está fechado aparece em
+                  "Por resolver" até alguém o dar por resolvido. */}
+              <div style={{ marginBottom: 14, padding: 12, borderRadius: 8, background: T.surfaceRaise, border: `1px solid ${T.line}` }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: T.cream, ...body }}>
+                  <input type="checkbox" checked={!!f.estado && f.estado !== 'resolvida'} onChange={e => setF({ ...f, estado: e.target.checked ? 'aberta' : (f.estado ? 'resolvida' : '') })} />
+                  Fica por resolver
                 </label>
-                {f.attachment && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {f.attachment.type === 'image' ? (
-                      <img src={f.attachment.dataUrl} alt={f.attachment.name} style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, border: `1px solid ${T.line}` }} />
-                    ) : (
-                      <div style={{ width: 46, height: 46, borderRadius: 6, border: `1px solid ${T.line}`, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <BookOpen size={18} color={T.mutedDim} />
+                {f.estado && f.estado !== 'resolvida' && (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <Input value={f.seguimento} onChange={e => setF({ ...f, seguimento: e.target.value })}
+                      placeholder={f.tipo === 'clube' || f.tipo === 'infra' ? 'A quem foi comunicado / o que falta' : 'O que falta fazer (ex.: direção reúne com o pai amanhã)'} />
+                    {(f.tipo === 'clube' || f.tipo === 'infra') && (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {['aberta', 'comunicada'].map(e => (
+                          <ChipEscolha key={e} on={f.estado === e} cor={e === 'aberta' ? T.warn : T.teamB} onClick={() => setF({ ...f, estado: e })}>{e === 'aberta' ? 'Ainda não comunicada' : 'Já comunicada ao clube'}</ChipEscolha>
+                        ))}
                       </div>
                     )}
-                    <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.attachment.name}</span>
-                    <button onClick={() => setF(prev => ({ ...prev, attachment: null }))} title="Remover anexo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
                   </div>
                 )}
               </div>
-              {attachError && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{attachError}</div>}
-            </Field>
+
+              <div style={{ marginBottom: 14 }}>
+                <Field label="Anexo (foto ou PDF, opcional)" bloco>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <label style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                      padding: '8px 14px', borderRadius: 8, border: `1px solid ${T.line}`,
+                      background: T.surfaceRaise, color: T.cream, fontSize: 13, ...body,
+                    }}>
+                      <Upload size={14} />
+                      {f.attachment ? 'Substituir anexo' : 'Tirar foto ou carregar ficheiro'}
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        capture="environment"
+                        onChange={e => { handleAttachmentFile(e.target.files?.[0]); e.target.value = ''; }}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    {f.attachment && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {f.attachment.type === 'image' ? (
+                          <img src={f.attachment.dataUrl} alt={f.attachment.name} style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, border: `1px solid ${T.line}` }} />
+                        ) : (
+                          <div style={{ width: 46, height: 46, borderRadius: 6, border: `1px solid ${T.line}`, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <BookOpen size={18} color={T.mutedDim} />
+                          </div>
+                        )}
+                        <span style={{ fontSize: 12, color: T.mutedDim, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.attachment.name}</span>
+                        <button onClick={() => setF(prev => ({ ...prev, attachment: null }))} title="Remover anexo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><X size={15} /></button>
+                      </div>
+                    )}
+                  </div>
+                  {attachError && <div style={{ fontSize: 12, color: T.bad, marginTop: 6 }}>{attachError}</div>}
+                </Field>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <Btn disabled={!podeGravar} onClick={save}>
+                  {editingId ? <><Check size={15} /> Guardar alterações</> : 'Guardar ocorrência'}
+                </Btn>
+                {editingId && <Btn variant="ghost" onClick={closeForm}>Cancelar</Btn>}
+                {f.tipo === 'outra' && !f.tipoNome.trim() && <span style={{ fontSize: 12, color: T.mutedDim }}>Dá um nome à categoria.</span>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* POR RESOLVER — o que precisa de atenção, venha de quando vier. */}
+      {pendentes.length > 0 && (
+        <div style={{ marginBottom: 18, border: `1px solid ${T.warn}55`, borderRadius: 10, background: T.surface, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 14px', fontSize: 13, color: T.warn, fontWeight: 600, ...body }}>
+            Por resolver · {pendentes.length}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Btn disabled={!f.nota.trim() && !f.attachment} onClick={save}>
-              {editingId ? <><Check size={15} /> Guardar alterações</> : 'Guardar nota'}
-            </Btn>
-            {editingId && <Btn variant="ghost" onClick={closeForm}>Cancelar</Btn>}
+          {pendentes.map(n => {
+            const info = infoDoTipo(chaveDoTipo(n), nomesCustom);
+            const resumo = n.seguimento || n.titulo || (n.nota || '').split('\n')[0] || info.label;
+            return (
+              <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderTop: `1px solid ${T.line}`, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: info.corHex, flexShrink: 0 }} />
+                <span style={{ ...mono, fontSize: 11.5, color: T.mutedDim, flexShrink: 0 }}>{fmtShort(n.data)}</span>
+                <span style={{ fontSize: 12, color: info.corHex, flexShrink: 0 }}>{info.label}</span>
+                <button type="button" onClick={() => startEdit(n)} title="Abrir" style={{ flex: '1 1 160px', minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: T.cream, fontSize: 13, ...body, padding: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{resumo}</button>
+                {pillEstado(n)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* PLACARD — quantas de cada tipo no período; cada um é um filtro. */}
+      {diario.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 6, ...body }}>
+            {search ? 'Na pesquisa' : verTudo ? 'Todas as datas' : 'Últimos 7 dias'}{filtro ? ' · toca outra vez para tirar o filtro' : ''}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {chavesPlacard.map(k => {
+              const info = infoDoTipo(k, nomesCustom);
+              const Ic = info.icon;
+              const n = contagens[k] || 0;
+              const on = filtro === k;
+              return (
+                <button key={k} type="button" onClick={() => setFiltro(on ? null : k)} title={info.label} style={{
+                  flex: isMobile ? '1 1 calc(50% - 8px)' : '0 1 auto', minWidth: isMobile ? 0 : 118,
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 10, cursor: 'pointer', ...body, textAlign: 'left',
+                  background: on ? `${info.corHex}2E` : T.surface, border: `1px solid ${on ? info.corHex : T.line}`,
+                  borderLeft: `3px solid ${info.corHex}`, opacity: n || on ? 1 : 0.55,
+                }}>
+                  <Ic size={15} color={info.corHex} style={{ flexShrink: 0 }} />
+                  <span style={{ ...display, fontSize: 20, lineHeight: 1, color: T.cream }}>{n}</span>
+                  <span style={{ fontSize: 11.5, color: T.muted, lineHeight: 1.2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -46674,35 +47282,33 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
           value={query}
           onChange={e => setQuery(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') setSearch(query); }}
-          placeholder="Pesquisar nas notas..."
+          placeholder="Pesquisar por texto, atleta ou categoria..."
           style={{ flex: 1 }}
         />
         <Btn variant="ghost" onClick={() => setSearch(query)}>Pesquisar</Btn>
       </div>
 
       {filtered.length === 0 ? (
-        /* Só é "sem notas" a sério quando não há nenhuma a corresponder —
-           nem sequer às antigas. Antes disto, uma equipa sem notas na
-           última semana (mas com histórico) via a mesma mensagem de "ainda
-           sem notas", como se o diário estivesse vazio — quando só estava
-           escondido pelo filtro por omissão. */
-        <EmptyState text={search ? 'Nenhuma nota encontrada.' : 'Ainda sem notas. Escreve a primeira.'} />
+        <EmptyState text={search ? 'Nenhuma ocorrência encontrada.' : 'Ainda sem ocorrências. Regista a primeira.'} />
       ) : sorted.length === 0 ? (
         <div style={{ padding: '18px 4px' }}>
-          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10 }}>Sem notas na última semana.</div>
-          <button
-            onClick={() => setVerTudo(true)}
-            style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}
-          >Ver todas ({antigas} notas mais antigas)</button>
+          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10 }}>
+            {filtro ? `Sem ocorrências deste tipo ${search || verTudo ? 'aqui' : 'na última semana'}.` : 'Sem ocorrências na última semana.'}
+          </div>
+          {!search && !verTudo && antigas > 0 && (
+            <button
+              onClick={() => setVerTudo(true)}
+              style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}
+            >Ver todas ({antigas} mais antigas)</button>
+          )}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Escape para o resto do diário, só quando há resto. */}
           {!search && !verTudo && antigas > 0 && (
             <button
               onClick={() => setVerTudo(true)}
               style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
-            >Ver todas ({antigas} notas mais antigas)</button>
+            >Ver todas ({antigas} mais antigas)</button>
           )}
           {!search && verTudo && (
             <button
@@ -46710,49 +47316,116 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail }) {
               style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', fontSize: 12.5, ...body, padding: '0 0 10px' }}
             >Mostrar só a última semana</button>
           )}
-          {sorted.map(n => (
-            <div key={n.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <div style={{ minWidth: 0 }}>
-                  <span style={{ ...mono, color: T.warn, fontSize: 12.5 }}>{fmtDate(n.data)}</span>
-                  {n.titulo && <span style={{ color: T.cream, fontSize: 14, fontWeight: 500, marginLeft: 10 }}>{n.titulo}</span>}
-                  {/* Autor: o que ficou gravado na própria nota. Para notas
-                      antigas, criadas antes de isto existir, recorre-se ao
-                      registo de quem gravou a linha na base de dados — que é
-                      a última pessoa a gravar, não necessariamente o autor. */}
-                  {(() => {
-                    const autor = n.autor || (diarioMeta[n.id] && diarioMeta[n.id].email);
-                    if (!autor) return null;
-                    const editor = n.editadoPor && n.editadoPor !== autor ? n.editadoPor : null;
-                    return (
+          {sorted.map(n => {
+            const chave = chaveDoTipo(n);
+            const info = infoDoTipo(chave, nomesCustom);
+            const Ic = info.icon;
+            const autor = n.autor || (diarioMeta[n.id] && diarioMeta[n.id].email);
+            const editor = n.editadoPor && n.editadoPor !== autor ? n.editadoPor : null;
+            const detalhes = [];
+            if (chave === 'faltas' && n.tipo) detalhes.push(`${n.faltaTipo === 'atraso' ? 'Atraso' : 'Falta'} ${n.justificada ? 'justificada' : 'injustificada'}`);
+            if (chave === 'disciplina' && (n.consequencias || []).length) detalhes.push(n.consequencias.join(', '));
+            if (chave === 'reunioes' && n.comQuem) detalhes.push(`Com: ${n.comQuem}`);
+            if (chave === 'reunioes' && n.participantes) detalhes.push(n.participantes);
+            if ((chave === 'clube' || chave === 'infra') && n.categoria) detalhes.push(n.categoria);
+            return (
+              <div key={n.id} style={{ background: T.surface, border: `1px solid ${n.id === editingId ? info.corHex : T.line}`, borderLeft: `3px solid ${info.corHex}`, borderRadius: 10, padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: info.corHex, fontWeight: 600 }}>
+                        <Ic size={13} /> {info.label}
+                      </span>
+                      <span style={{ ...mono, color: T.mutedDim, fontSize: 12 }}>{fmtDate(n.data)}</span>
+                      {n.titulo && <span style={{ color: T.cream, fontSize: 14, fontWeight: 500 }}>{n.titulo}</span>}
+                    </div>
+                    {/* Autor: o que ficou gravado na própria ocorrência; nas
+                        antigas, quem gravou a linha na base de dados. */}
+                    {autor && (
                       <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 3 }}>
                         Por {autor}{editor ? ` · editada por ${editor}` : ''}
                       </div>
-                    );
-                  })()}
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexShrink: 0, alignItems: 'center' }}>
+                    {!isMobile && pillEstado(n)}
+                    {chave === 'nota' && setMatches && (matches || []).length > 0 && (
+                      <button onClick={() => (aMover && aMover.id === n.id ? setAMover(null) : abrirMover(n))} title="Mover para as notas do jogo (Relatórios de jogo)" style={{ background: 'none', border: 'none', color: aMover && aMover.id === n.id ? T.gold : T.mutedDim, cursor: 'pointer' }}><Trophy size={14} /></button>
+                    )}
+                    <button onClick={() => startEdit(n)} title="Editar" style={{ background: 'none', border: 'none', color: n.id === editingId ? T.warn : T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
+                    <button onClick={() => remove(n.id)} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-                  <button onClick={() => startEdit(n)} title="Editar nota" style={{ background: 'none', border: 'none', color: n.id === editingId ? T.warn : T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
-                  <button onClick={() => remove(n.id)} title="Apagar nota" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
-                </div>
+
+                {aMover && aMover.id === n.id && (
+                  <div style={{ margin: '8px 0 12px', padding: 12, borderRadius: 8, background: T.surfaceRaise, border: `1px solid ${T.gold}55` }}>
+                    <div style={{ fontSize: 12.5, color: T.cream, marginBottom: 8 }}>Mover para as notas da equipa técnica do jogo:</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <Select value={aMover.jogo} onChange={e => setAMover({ ...aMover, jogo: e.target.value })} style={{ flex: '1 1 220px', minWidth: 0 }}>
+                        {jogosParaMover(n).map(m => (
+                          <option key={m.id} value={m.id}>{fmtShort(m.date)} · vs {m.opponent || 'Adversário'}{m.competition ? ` (${competitionLabel(m.competition)})` : ''}</option>
+                        ))}
+                      </Select>
+                      <Btn disabled={!aMover.jogo} onClick={() => confirmarMover(n)}><Check size={14} /> Mover</Btn>
+                      <Btn variant="ghost" onClick={() => setAMover(null)}>Cancelar</Btn>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6 }}>Mantém o autor e a data. Sai do Diário.</div>
+                  </div>
+                )}
+
+                {(n.atletas || []).length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
+                    {n.atletas.map(pid => {
+                      const cor = n.cartao || 'amarelo';
+                      const k = chave === 'disciplina' ? contagemCartao(pid, n) : 0;
+                      const acumula = chave === 'disciplina' && cor === 'amarelo' && k >= 3;
+                      return (
+                        <span key={pid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', borderRadius: 12, background: T.surfaceRaise, border: `1px solid ${acumula ? T.bad : T.line}`, fontSize: 12, color: T.cream }}>
+                          {chave === 'disciplina' && <MiniCartao cor={cor} />}
+                          {nomeAtleta(pid)}
+                          {chave === 'disciplina' && k > 0 && (
+                            <span style={{ ...mono, fontSize: 10.5, color: acumula ? T.bad : T.mutedDim }}
+                              title={`${k}.º ${cor} da época`}>
+                              {k}.º{acumula ? ' · acumulação' : ''}
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {detalhes.length > 0 && <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>{detalhes.join(' · ')}</div>}
+                {n.nota && <p style={{ color: T.mutedDim, fontSize: 13.5, lineHeight: 1.6, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{n.nota}</p>}
+                {n.decisoes && (
+                  <div style={{ margin: '0 0 10px', padding: '8px 12px', borderRadius: 8, background: T.surfaceRaise }}>
+                    <div style={{ fontSize: 11.5, color: T.good, marginBottom: 4 }}>Decisões e próximos passos</div>
+                    <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{n.decisoes}</div>
+                  </div>
+                )}
+                {(n.seguimento || (isMobile && n.estado)) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '0 0 10px' }}>
+                    {isMobile && pillEstado(n)}
+                    {n.seguimento && <span style={{ fontSize: 12.5, color: T.muted }}>{n.seguimento}</span>}
+                  </div>
+                )}
+                {n.attachment && (
+                  n.attachment.type === 'image' ? (
+                    <a href={n.attachment.dataUrl} download={n.attachment.name}>
+                      <img src={n.attachment.dataUrl} alt={n.attachment.name} style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: `1px solid ${T.line}`, display: 'block' }} />
+                    </a>
+                  ) : (
+                    <a
+                      href={n.attachment.dataUrl} download={n.attachment.name}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', border: `1px solid ${T.gold}55`, borderRadius: 8, padding: '6px 12px' }}
+                    >
+                      <BookOpen size={13} /> {n.attachment.name}
+                    </a>
+                  )
+                )}
               </div>
-              {n.nota && <p style={{ color: T.mutedDim, fontSize: 13.5, lineHeight: 1.6, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{n.nota}</p>}
-              {n.attachment && (
-                n.attachment.type === 'image' ? (
-                  <a href={n.attachment.dataUrl} download={n.attachment.name}>
-                    <img src={n.attachment.dataUrl} alt={n.attachment.name} style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 8, border: `1px solid ${T.line}`, display: 'block' }} />
-                  </a>
-                ) : (
-                  <a
-                    href={n.attachment.dataUrl} download={n.attachment.name}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.warn, textDecoration: 'none', border: `1px solid ${T.gold}55`, borderRadius: 8, padding: '6px 12px' }}
-                  >
-                    <BookOpen size={13} /> {n.attachment.name}
-                  </a>
-                )
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
