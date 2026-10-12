@@ -664,7 +664,7 @@ function resumoClinico(estado, { comNivel = true } = {}) {
    continuam a abrir alguma coisa em vez de darem página em branco — um
    atalho guardado ou um separador aberto no telemóvel não têm de morrer
    por causa de uma reorganização da navegação. */
-const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', documentos: 'biblioteca', estatisticas: 'jogos' };
+const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', documentos: 'biblioteca', estatisticas: 'jogos', analisejogo: 'jogos' };
 const tabValida = (id) => TABS_ANTIGAS[id] || id;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -2297,6 +2297,10 @@ function Modal({ title, subtitle, onClose, children, wide, xwide, fullPage, larg
       <div ref={scrollRef} style={{
         position: 'fixed', inset: 0, background: T.bg, zIndex: 50,
         overflowY: 'auto', overflowX: 'hidden',
+        // Reserva sempre o lugar da barra de deslocamento: quando o
+        // conteúdo cresce (ex.: mudar o tipo no formulário do Diário) a
+        // barra aparece sem empurrar a página para o lado.
+        scrollbarGutter: 'stable',
       }}>
         <div style={{
           // `larguraMax`: largura própria, quando nenhuma das três serve
@@ -3512,6 +3516,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       exercicios: [exercisesMeta],
       clinico: [clinicoMeta],
       biblioteca: [videosMeta, apresentacoesMeta, documentosMeta],
+      diario: [diarioMeta],
     },
   };
   /* FECHO AUTOMÁTICO: na app da pessoa responsável, cada missão sua com
@@ -4020,7 +4025,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : 'jogos'}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : tabPedida === 'analisejogo' ? 'analisejogo' : 'jogos'}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
           {/* Sempre montado, escondido com CSS (não desmontado) — o mesmo
              motivo da Biblioteca logo abaixo: sem isto, trocar de separador
              e voltar perdia o vídeo selecionado, a posição de reprodução e
@@ -27119,7 +27124,7 @@ function AlertaRelatorios({ emFalta, onCriar }) {
   );
 }
 
-function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto, userEmail, setMatches }) {
+function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, onAberto, userEmail, setMatches, abrirAnaliseId, onAnaliseAberta }) {
   const hoje = todayStr();
   const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje).map(m => comResultado(m, standings))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -27140,11 +27145,19 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
   }, [abrirId]);
   const lista = grupo === 'oficial' ? oficiais : amigaveis;
   /* Cartão de cada jogo: tocar abre/fecha para baixo as notas da equipa
-     técnica; o "+" abre a caixa para escrever a reflexão; o relatório
+     técnica; o "+ Análise do jogo" abre a caixa para escrever; o relatório
      abre-se no estado à direita ("Por preencher", "Feito"…). */
   const [painel, setPainel] = useState(null); // { id, modo: 'ler' | 'escrever' }
   const alternarLer = (id) => setPainel(p => (p && p.id === id && p.modo === 'ler' ? null : { id, modo: 'ler' }));
   const abrirEscrita = (id) => setPainel({ id, modo: 'escrever' });
+  // Chegou pela missão "Escrever a análise do jogo".
+  useEffect(() => {
+    if (!abrirAnaliseId) return;
+    const m = (matches || []).find(x => x.id === abrirAnaliseId);
+    if (m) { setGrupo(competitionLabel(m.competition) === FRIENDLY ? 'amigavel' : 'oficial'); abrirEscrita(m.id); }
+    if (onAnaliseAberta) onAnaliseAberta();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirAnaliseId]);
 
   return (
     <div>
@@ -27187,7 +27200,16 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
               </>
             );
             const prova = [competitionLabel(m.competition), m.jornada].filter(Boolean).join(' · ');
-            // Ações à direita: notas escritas, "+" para escrever, relatório.
+            /* "+ Análise do jogo" fica por baixo do jogo, à esquerda — longe
+               do estado do relatório (à direita), para não se confundir com
+               o preencher das estatísticas. */
+            const analise = (
+              <button type="button" onClick={(ev) => { ev.stopPropagation(); abrirEscrita(m.id); }} style={{
+                alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6, padding: '3px 10px', borderRadius: 14, cursor: 'pointer', ...body, fontSize: 12,
+                background: meu && meu.modo === 'escrever' ? `${T.gold}26` : 'transparent', border: `1px solid ${meu && meu.modo === 'escrever' ? T.gold : `${T.gold}55`}`, color: T.gold,
+              }}><Plus size={13} /> Análise do jogo</button>
+            );
+            // Ações à direita: quantas notas há e o relatório.
             const acoes = (
               <div onClick={parar} style={{ display: 'flex', alignItems: 'center', gap: estreito ? 6 : 10, flexShrink: 0, marginLeft: 'auto' }}>
                 {nNotas > 0 && (
@@ -27195,10 +27217,6 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
                     <MessageCircle size={13} /> {nNotas}
                   </span>
                 )}
-                <button type="button" onClick={() => abrirEscrita(m.id)} title="Reflexão sobre o jogo" aria-label="Reflexão sobre o jogo" style={{
-                  width: 28, height: 28, borderRadius: 14, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0,
-                  background: meu && meu.modo === 'escrever' ? `${T.gold}33` : 'transparent', border: `1px solid ${meu && meu.modo === 'escrever' ? T.gold : T.line}`, color: T.gold,
-                }}><Plus size={15} /></button>
                 <button type="button" onClick={() => setAberto(m)} title="Abrir o relatório do jogo" style={{
                   display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0, ...body,
                   fontSize: estreito ? 12 : 11.5, color: e.cor, fontWeight: 600, textAlign: 'right', maxWidth: estreito ? 130 : 220,
@@ -27227,6 +27245,7 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
                     </div>
                     <div style={{ fontSize: 14.5, lineHeight: 1.35 }}>{marcador}</div>
                     <div style={{ fontSize: 11.5, color: T.mutedDim, lineHeight: 1.4 }}>{prova}</div>
+                    {analise}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -27239,6 +27258,7 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
                         <span style={{ ...LINHAS(1), minWidth: 0 }}>{marcador}</span>
                       </div>
                       <div style={{ fontSize: 11.5, color: T.mutedDim, ...LINHAS(1) }}>{prova}</div>
+                      {analise}
                     </div>
                     {acoes}
                   </div>
@@ -27267,7 +27287,7 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
 /* NOTAS DA EQUIPA TÉCNICA sobre os jogos (vieram do Diário).
 
    Vivem dentro de cada jogo, em Jogos › Relatórios de jogo (Competição e
-   Amigáveis): o "+" do cartão abre a caixa da reflexão sobre o jogo; ao
+   Amigáveis): o "+ Análise do jogo", por baixo do jogo, abre a caixa para escrever; ao
    gravar, a caixa fecha e o cartão volta ao normal — o que foi escrito
    vê-se tocando no cartão, que abre para baixo. Qualquer pessoa da
    equipa técnica pode escrever, e cada nota guarda quem a escreveu.
@@ -27322,7 +27342,7 @@ function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, onFechar 
   if (modo === 'escrever') {
     return (
       <div onClick={parar} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}` }}>
-        <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>Reflexão sobre o jogo</div>
+        <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>Análise do jogo</div>
         <TextArea autoFocus value={texto} onChange={e => setTexto(e.target.value)} style={{ minHeight: 100 }}
           placeholder="Como correu: o que funcionou, o que falhou, momentos-chave, o que fica para trabalhar..." />
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -27335,7 +27355,7 @@ function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, onFechar 
   return (
     <div onClick={parar} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.line}`, cursor: 'default' }}>
       {notas.length === 0 ? (
-        <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem reflexão sobre este jogo.</div>
+        <div style={{ fontSize: 12.5, color: T.mutedDim }}>Ainda sem análise deste jogo.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {notas.map(n => {
@@ -27378,7 +27398,7 @@ function PainelNotasJogo({ m, modo, userEmail, setMatches, onEscrever, onFechar 
       )}
       <button type="button" onClick={onEscrever} style={{
         marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0,
-      }}><Plus size={14} /> Reflexão sobre o jogo</button>
+      }}><Plus size={14} /> Análise do jogo</button>
     </div>
   );
 }
@@ -27495,7 +27515,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
      com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
      jornada sincronizados), por isso eram já a outra vista da mesma
      coisa. */
-  const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : abaInicial === 'estatisticas' ? 'relatorios' : 'jogos');
+  const [aba, setAba] = useState(abaInicial === 'convocatorias' ? 'convocatorias' : (abaInicial === 'estatisticas' || abaInicial === 'analisejogo') ? 'relatorios' : 'jogos');
   const [modal, setModal] = useState(null);
   const [abrirRelatorio, setAbrirRelatorio] = useState(null);
   /* Chegou pela missão "Introduzir as estatísticas": abre logo o editor do
@@ -27508,6 +27528,20 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
       || [...(matches || [])].filter(m => m.date && m.date <= hoje).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
     setAba('relatorios');
     if (alvo) setAbrirRelatorio(alvo.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abaInicial]);
+  /* Chegou pela missão "Escrever a análise do jogo": abre Relatórios de
+     jogo com a caixa da análise aberta no jogo mais recente ainda sem
+     nenhuma análise (ou, se já têm todos, no último jogo realizado). */
+  const [abrirAnalise, setAbrirAnalise] = useState(null);
+  useEffect(() => {
+    if (abaInicial !== 'analisejogo') return;
+    const hoje = todayStr();
+    const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const alvo = jogados.find(m => !notasDoJogo(m).length) || jogados[0];
+    setAba('relatorios');
+    if (alvo) setAbrirAnalise(alvo.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abaInicial]);
   const [modalVoltarFicha, setModalVoltarFicha] = useState(false); // true só quando o editor abriu a partir da ficha
@@ -27628,6 +27662,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
           matches={matches} players={players} season={season} standings={standings}
           onSave={save} abrirId={abrirRelatorio} onAberto={() => setAbrirRelatorio(null)}
           userEmail={userEmail} setMatches={setMatches}
+          abrirAnaliseId={abrirAnalise} onAnaliseAberta={() => setAbrirAnalise(null)}
         />
       </div>
     );
@@ -45152,7 +45187,11 @@ const CAMINHOS_STAFF = [
   { id: 'planeamento', rotulo: 'Planeamento', acao: 'Planear a semana', icon: CalendarDays },
   { id: 'jogos', rotulo: 'Jogos / convocatória', acao: 'Preparar a convocatória', icon: Trophy },
   // Abre Jogos já com o editor do último jogo sem estatísticas.
-  { id: 'estatisticas', rotulo: 'Relatórios de jogo', acao: 'Introduzir as estatísticas do jogo', icon: Pencil },
+  { id: 'estatisticas', rotulo: 'Relatórios de jogo · preencher estatísticas', acao: 'Introduzir as estatísticas do jogo', icon: Pencil },
+  // Abre Relatórios de jogo com a caixa "Análise do jogo" do último jogo
+  // ainda sem análise.
+  { id: 'analisejogo', rotulo: 'Relatórios de jogo · análise do jogo', acao: 'Escrever a análise do jogo', icon: MessageCircle },
+  { id: 'diario', rotulo: 'Diário / ocorrência', acao: 'Registar no Diário', icon: BookOpen },
   { id: 'monitorizacao', rotulo: 'Monitorização', acao: 'Rever a monitorização', icon: Activity },
   { id: 'desenvolvimento', rotulo: 'Desenvolvimento', acao: 'Avaliar o desenvolvimento', icon: TrendingUp },
   { id: 'ideiajogo', rotulo: 'Ideia de Jogo', acao: 'Atualizar a ideia de jogo', icon: Lightbulb },
@@ -45181,6 +45220,8 @@ const CRITERIO_STAFF = {
   presencas: 'registares presenças de um treino ou jogo',
   jogos: 'gravares a convocatória ou o jogo',
   estatisticas: 'todos os jogos já realizados tiverem minutos lançados',
+  analisejogo: 'escreveres a análise de um jogo',
+  diario: 'registares uma ocorrência no Diário',
   monitorizacao: 'registares dados na Monitorização',
   desenvolvimento: 'gravares uma avaliação no Desenvolvimento',
   ideiajogo: 'gravares um esquema na Ideia de Jogo',
@@ -45210,6 +45251,11 @@ function missaoStaffFeita(t, base, provas) {
   const email = String(provas.email || '').toLowerCase();
   if (!email) return false;
   const ini = inicioDaMissao(t, base);
+  if (t.caminho === 'analisejogo') {
+    // A análise vive dentro do jogo (notasEquipaTecnica), com autor e data.
+    return (provas.matches || []).some(m => notasDoJogo(m).some(n =>
+      String(n.autor || '').toLowerCase() === email && new Date(n.em).getTime() >= ini));
+  }
   return (provas.metas[t.caminho] || []).some(meta => Object.values(meta || {})
     .some(x => x && String(x.email || '').toLowerCase() === email && new Date(x.at).getTime() >= ini));
 }
@@ -45405,6 +45451,7 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
 const ZONA_CODIGO = {
   analise: 'AV', scouting: 'SC', planeamento: 'PL', jogos: 'JG', estatisticas: 'ES', monitorizacao: 'MO',
   desenvolvimento: 'DS', ideiajogo: 'IJ', exercicios: 'EX', presencas: 'PR', clinico: 'BC', biblioteca: 'BB',
+  analisejogo: 'AJ', diario: 'DI',
 };
 function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equipa, epoca }) {
   const hoje = todayStr();
