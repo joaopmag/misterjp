@@ -23689,10 +23689,12 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                 {/* Nome curto: primeiro nome, ou apelido quando há outro
                     jogador com o mesmo primeiro nome. O nome completo fica
                     no title, para quando houver dúvida. */}
-                {/* O nome alinha pela LINHA DOS BOTÕES (P/F/C/E…), não pelo meio
-                    da linha: a nota por baixo de alguns botões fazia a linha
-                    mais alta e o nome descia para o meio, desalinhado. */}
-                <td style={{ ...nameCell, verticalAlign: 'top', paddingTop: 8, lineHeight: '16px' }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
+                {/* TUDO CENTRADO NA LINHA: o nome e, em cada dia, o bloco botão
+                    + nota ficam ao meio, à mesma distância da linha de cima e
+                    da de baixo. Cada célula reserva sempre o lugar da nota
+                    (mesmo sem nota), por isso os botões de uma linha ficam
+                    todos à mesma altura. */}
+                <td style={{ ...nameCell, verticalAlign: 'middle' }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                 {ordered.map(d => {
                   const estado = estadoDe(d, p.id);
                   const on = estado === 'presente';
@@ -23705,7 +23707,7 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                   const convocatoria = d.match && !isFriendlyMatch(d.match);
                   const label = escalao ? 'E' : (lesao ? 'L' : (falta ? 'F' : (convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP'))));
                   return (
-                    <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: 4, textAlign: 'center', verticalAlign: 'top' }}>
+                    <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: '8px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                       <button
                         type="button"
@@ -23729,9 +23731,10 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                         }}
                         title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → falta → outro escalão → lesionado → ausente'}
                       >{label}</button>
+                      <div style={{ height: 26, marginTop: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {on && (
                         closed ? (
-                          <div style={{ ...mono, fontSize: 10.5, color: rating == null || rating === '' ? T.mutedDim : T.cream, marginTop: 3 }}>
+                          <div style={{ ...mono, fontSize: 10.5, color: rating == null || rating === '' ? T.mutedDim : T.cream }}>
                             {rating == null || rating === '' ? 'NA' : rating}
                           </div>
                         ) : (
@@ -23743,13 +23746,14 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                           <Select
                             value={rating == null || rating === '' ? '' : String(rating)}
                             onChange={e => onRating(d, p.id, e.target.value)}
-                            style={{ width: 46, marginTop: 3, padding: '0 2px', height: 26, lineHeight: '24px', fontSize: 11, textAlign: 'center' }}
+                            style={{ width: 46, padding: '0 2px', height: 26, lineHeight: '24px', fontSize: 11, textAlign: 'center' }}
                           >
                             <option value="">NA</option>
                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}</option>)}
                           </Select>
                         )
                       )}
+                      </div>
                       </div>
                     </td>
                   );
