@@ -4005,6 +4005,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               clinico={clinico} setClinico={setClinico}
               desenvolvimento={desenvolvimento} setDesenvolvimento={setDesenvolvimento}
               meta={playersMeta}
+              diario={diario}
             />
           )}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
@@ -4130,7 +4131,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <Tarefas tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId}
               sessions={sessions} matches={matches} players={players} monitoring={monitoring} standings={standings} />
           )}
-          {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} players={players} matches={matches} setMatches={setMatches} season={season} />}
+          {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} players={players} matches={matches} setMatches={setMatches} season={season} sessions={sessions} />}
         </div>
         </main>
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
@@ -8704,7 +8705,7 @@ function fmtDate(d) {
 /* ---------------------------------------------------------------
    PLANTEL
 ---------------------------------------------------------------- */
-function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento }) {
+function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento, diario = [] }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
   const [modalVoltarPerfil, setModalVoltarPerfil] = useState(false); // true só quando abriu a partir do perfil
   const [statsFor, setStatsFor] = useState(null); // player object (view stats)
@@ -8829,7 +8830,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
       {statsFor ? (
         <PlayerProfilePage
           player={statsFor} sessions={sessions} matches={matches} clinico={clinico}
-          monitoring={monitoring} desenvolvimento={desenvolvimento}
+          monitoring={monitoring} desenvolvimento={desenvolvimento} diario={diario}
           onAbrirLesao={(id) => setLesaoPerfil({ tipo: 'ficha', id })}
           onBack={fecharPerfil}
           onShare={() => doShare(statsFor)}
@@ -9265,7 +9266,59 @@ function RegistoClinicoJogador({ ocorrencias, onAbrir }) {
   );
 }
 
-function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, onBack, onShare, onPrint, onEdit, onAbrirLesao }) {
+/* CADASTRO DISCIPLINAR na ficha do atleta — o que o Diário tem sobre ele:
+   as ocorrências de Disciplina (com o cartão amarelo/vermelho e a
+   consequência) e as faltas/atrasos registados com motivo. As faltas
+   marcadas só nas Presenças já contam nas Presenças, à esquerda. Só a
+   equipa técnica vê esta página. */
+function CadastroDisciplinar({ diario, playerId, card, sectionTitle }) {
+  const doAtleta = (diario || []).filter(n => (n.atletas || []).includes(playerId));
+  const disciplina = doAtleta.filter(n => chaveDoTipo(n) === 'disciplina')
+    .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+  const faltas = doAtleta.filter(n => chaveDoTipo(n) === 'faltas');
+  const amarelos = disciplina.filter(n => (n.cartao || 'amarelo') === 'amarelo').length;
+  const vermelhos = disciplina.filter(n => n.cartao === 'vermelho').length;
+  const atrasos = faltas.filter(n => n.faltaTipo === 'atraso').length;
+  const faltasInj = faltas.filter(n => n.faltaTipo !== 'atraso' && !n.justificada).length;
+  const faltasJust = faltas.filter(n => n.faltaTipo !== 'atraso' && n.justificada).length;
+  const resumo = [
+    amarelos ? `${amarelos} amarelo${amarelos > 1 ? 's' : ''}` : null,
+    vermelhos ? `${vermelhos} vermelho${vermelhos > 1 ? 's' : ''}` : null,
+    faltasInj ? `${faltasInj} falta${faltasInj > 1 ? 's' : ''} injustificada${faltasInj > 1 ? 's' : ''}` : null,
+    faltasJust ? `${faltasJust} justificada${faltasJust > 1 ? 's' : ''}` : null,
+    atrasos ? `${atrasos} atraso${atrasos > 1 ? 's' : ''}` : null,
+  ].filter(Boolean);
+  return (
+    <>
+      <div style={sectionTitle}>Cadastro disciplinar</div>
+      {disciplina.length === 0 && faltas.length === 0 ? (
+        <div style={{ ...card, color: T.mutedDim, fontSize: 12.5 }}>Sem registos no Diário.</div>
+      ) : (
+        <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 12.5, color: amarelos >= 3 || vermelhos ? T.bad : T.cream }}>
+            {resumo.join(' · ')}{amarelos >= 3 ? ' · acumulação' : ''}
+          </div>
+          {disciplina.map(n => (
+            <div key={n.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', borderTop: `1px solid ${T.line}`, paddingTop: 8 }}>
+              <MiniCartao cor={n.cartao || 'amarelo'} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 12, color: T.mutedDim }}>
+                  <span style={mono}>{fmtShort(n.data)}</span>
+                  {(n.consequencias || []).length ? ` · ${n.consequencias.join(', ')}` : ''}
+                </div>
+                {n.nota && (
+                  <div style={{ fontSize: 12.5, color: T.cream, lineHeight: 1.45, marginTop: 2, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap' }}>{n.nota}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, diario = [], onBack, onShare, onPrint, onEdit, onAbrirLesao }) {
   const s = playerStats(player, sessions, jogosOficiaisDe(matches));
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
 
@@ -9442,11 +9495,13 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
           )}
 
           <div style={sectionTitle}>Desenvolvimento individual</div>
-          <div style={{ ...card, color: momentos.length ? T.cream : T.mutedDim, fontSize: 12.5 }}>
+          <div style={{ ...card, color: momentos.length ? T.cream : T.mutedDim, fontSize: 12.5, marginBottom: 16 }}>
             {momentos.length === 0
               ? 'Ainda sem momentos de desenvolvimento.'
               : `${momentosAbertos} momento${momentosAbertos === 1 ? '' : 's'} ${momentosAbertos === 1 ? 'aberto' : 'abertos'} de ${momentos.length}${ultimoMomento ? ` · último a ${fmtShort(ultimoMomento.data)}` : ''}`}
           </div>
+
+          <CadastroDisciplinar diario={diario} playerId={player.id} card={card} sectionTitle={sectionTitle} />
         </div>
       </div>
 
@@ -23590,6 +23645,11 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
           overflow: 'auto', maxHeight: `calc(100vh - 220px + ${SBAR}px)`,
           width: `calc(100% + ${SBAR}px)`,
         }}>
+          {/* Folga de SBAR à direita e em baixo: a caixa de dentro é SBAR
+              maior do que a de fora (que corta essa sobra), por isso sem esta
+              folga a última linha (e a última coluna) ficavam sempre meio
+              escondidas, mesmo com a tabela deslocada até ao fim. */}
+          <div style={{ display: 'inline-block', paddingRight: SBAR, paddingBottom: SBAR }}>
           <table style={{ borderCollapse: 'collapse', width: 'auto' }}>
             <thead>
               <tr>
@@ -23695,6 +23755,7 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
             ))}
           </tbody>
           </table>
+          </div>
         </div>
       </div>
       <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 8, lineHeight: 1.5 }}>
@@ -46893,7 +46954,112 @@ function MiniCartao({ cor, title }) {
   return <span title={title} style={{ display: 'inline-block', width: 9, height: 12, borderRadius: 2, background: COR_CARTAO[cor] || COR_CARTAO.amarelo, flexShrink: 0, boxShadow: '0 0 0 1px rgba(0,0,0,.25)' }} />;
 }
 
-function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], matches = [], setMatches, season }) {
+/* FALTAS QUE VÊM DAS PRESENÇAS — não se escrevem duas vezes.
+
+   Uma falta marcada em Presenças (o "F" na tabela) aparece sozinha no
+   Diário, no tema Faltas e atrasos: um cartão por dia (treino) ou por
+   jogo, com os atletas que faltaram. Não é gravada no Diário — é lida
+   das Presenças cada vez, por isso tirar a falta lá tira-a daqui.
+
+   Para acrescentar o motivo (ou "justificada"), o cartão tem "Acrescentar
+   motivo": cria uma ocorrência normal de Faltas com esses atletas, e a
+   partir daí esses atletas, nesse dia, deixam de aparecer no cartão
+   automático (já estão no registo com motivo).
+
+   Os registos antigos de faltas, escritos à mão antes disto (sem atletas
+   escolhidos, só texto), tapam o cartão automático desse dia — já lá está
+   o que aconteceu, contado à mão. */
+function faltasDasPresencas(sessions, matches, diario) {
+  const hoje = todayStr();
+  const manuais = (diario || []).filter(n => chaveDoTipo(n) === 'faltas');
+  const diaTapado = new Set(manuais.filter(n => !(n.atletas || []).length).map(n => n.data));
+  const jaRegistado = (data, pid) => manuais.some(n => n.data === data && (n.atletas || []).includes(pid));
+  const porDia = {};
+  (sessions || []).forEach(s => {
+    if (!s || !s.date || s.date > hoje || !(s.faltas || []).length) return;
+    (porDia[s.date] = porDia[s.date] || new Set());
+    s.faltas.forEach(pid => porDia[s.date].add(pid));
+  });
+  const lista = [];
+  Object.entries(porDia).forEach(([data, ids]) => {
+    if (diaTapado.has(data)) return;
+    const atletas = [...ids].filter(pid => !jaRegistado(data, pid));
+    if (atletas.length) lista.push({ id: `pres-t-${data}`, data, tipo: 'faltas', faltaTipo: 'falta', atletas, derivada: true, origem: 'treino' });
+  });
+  (matches || []).forEach(m => {
+    if (!m || !m.date || m.date > hoje || !(m.faltas || []).length || diaTapado.has(m.date)) return;
+    const atletas = m.faltas.filter(pid => !jaRegistado(m.date, pid));
+    if (atletas.length) lista.push({ id: `pres-j-${m.id}`, data: m.date, tipo: 'faltas', faltaTipo: 'falta', atletas, derivada: true, origem: 'jogo', adversario: m.opponent || '' });
+  });
+  return lista;
+}
+
+/* RELATÓRIO PARA A COORDENAÇÃO — Clube e Infraestruturas, em PDF.
+
+   Abre uma página própria, limpa e a preto e branco, e chama a impressão:
+   no telemóvel ou no computador escolhe-se "Guardar como PDF". Tem o
+   resumo (quantas por categoria e por estado) e a lista completa, da mais
+   antiga para a mais recente. */
+function exportarRelatorioClube(diario) {
+  const itens = (diario || []).filter(n => { const k = chaveDoTipo(n); return k === 'clube' || k === 'infra'; })
+    .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')));
+  const win = window.open('', '_blank');
+  if (!win) { window.alert('O browser bloqueou a janela do relatório. Permite janelas deste site e tenta outra vez.'); return; }
+  const esc = escapeHtmlText;
+  const dataPt = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '');
+  const estadoTxt = (n) => (n.estado === 'resolvida' ? 'Resolvida' : n.estado === 'comunicada' ? 'Comunicada' : n.estado === 'aberta' ? 'Por resolver' : '—');
+  const conta = (f) => itens.filter(f).length;
+  const categorias = {};
+  itens.forEach(n => { const c = n.categoria || 'Sem categoria'; categorias[c] = (categorias[c] || 0) + 1; });
+  const linhasResumo = Object.entries(categorias).sort((a, b) => b[1] - a[1])
+    .map(([c, k]) => `<tr><td>${esc(c)}</td><td class="num">${k}</td></tr>`).join('');
+  const linhas = itens.map(n => {
+    const tipo = chaveDoTipo(n) === 'infra' ? 'Infraestruturas' : 'Clube';
+    return `<tr>
+      <td class="data">${esc(dataPt(n.data))}</td>
+      <td>${esc(tipo)}${n.categoria ? `<br><span class="sub">${esc(n.categoria)}</span>` : ''}</td>
+      <td>${n.titulo ? `<strong>${esc(n.titulo)}</strong><br>` : ''}${esc(n.nota || '').replace(/\n/g, '<br>')}${n.seguimento ? `<br><span class="sub">Seguimento: ${esc(n.seguimento)}</span>` : ''}</td>
+      <td>${esc(estadoTxt(n))}</td>
+    </tr>`;
+  }).join('');
+  const primeiro = itens[0] ? dataPt(itens[0].data) : '';
+  const ultimo = itens.length ? dataPt(itens[itens.length - 1].data) : '';
+  const titulo = 'Ocorrências do clube e infraestruturas';
+  win.document.write(`<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>${esc(titulo)}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11pt; margin: 0; }
+  h1 { font-size: 17pt; margin: 0 0 2mm; }
+  .periodo { color: #555; margin-bottom: 6mm; }
+  .caixas { display: flex; gap: 4mm; margin-bottom: 6mm; }
+  .caixa { border: 1px solid #bbb; border-radius: 2mm; padding: 3mm 4mm; flex: 1; }
+  .caixa b { display: block; font-size: 16pt; }
+  h2 { font-size: 12pt; margin: 6mm 0 2mm; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border-bottom: 1px solid #ccc; padding: 2mm; text-align: left; vertical-align: top; }
+  th { font-size: 9pt; text-transform: uppercase; color: #444; border-bottom: 1.5px solid #333; }
+  td.data { white-space: nowrap; }
+  td.num { text-align: right; width: 20mm; }
+  .sub { color: #666; font-size: 9.5pt; }
+  tr { page-break-inside: avoid; }
+</style></head><body>
+<h1>${esc(titulo)}</h1>
+<div class="periodo">${itens.length ? `De ${esc(primeiro)} a ${esc(ultimo)} · ` : ''}gerado a ${esc(dataPt(todayStr()))}</div>
+<div class="caixas">
+  <div class="caixa"><b>${itens.length}</b>ocorrências</div>
+  <div class="caixa"><b>${conta(n => n.estado === 'aberta' || n.estado === 'comunicada')}</b>por resolver</div>
+  <div class="caixa"><b>${conta(n => n.estado === 'resolvida')}</b>resolvidas</div>
+</div>
+${itens.length ? `<h2>Por categoria</h2><table>${linhasResumo}</table>
+<h2>Registo</h2>
+<table><thead><tr><th>Data</th><th>Tema</th><th>O que aconteceu</th><th>Estado</th></tr></thead><tbody>${linhas}</tbody></table>` : '<p>Sem ocorrências registadas.</p>'}
+</body></html>`);
+  win.document.close();
+  const imprimir = () => { try { win.focus(); win.print(); } catch (err) { /* imprime-se pelo menu */ } };
+  setTimeout(imprimir, 400);
+}
+
+function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], matches = [], setMatches, season, sessions = [] }) {
   const isMobile = useIsMobile();
   const [formOpen, setFormOpen] = useState(false);
   // Quando se está a editar uma ocorrência já existente, guarda-se aqui o
@@ -47003,6 +47169,14 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
     setNovaCategoria(false);
     setFormOpen(true);
   };
+  // Cartão automático das Presenças → ocorrência com motivo.
+  const acrescentarMotivo = (n) => {
+    setF({ ...EMPTY_OCORRENCIA(), tipo: 'faltas', data: n.data, atletas: [...(n.atletas || [])], faltaTipo: 'falta', justificada: false });
+    setEditingId(null);
+    setAttachError('');
+    setNovaCategoria(false);
+    setFormOpen(true);
+  };
   const closeForm = () => {
     setF(EMPTY_OCORRENCIA());
     setEditingId(null);
@@ -47092,9 +47266,10 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
     infoDoTipo(chaveDoTipo(n), nomesCustom).label,
     ...(n.atletas || []).map(nomeAtleta),
   ].filter(Boolean).join(' ');
+  const todas = [...diario, ...faltasDasPresencas(sessions, matches, diario)];
   const filtered = search
-    ? diario.filter(n => semAcentos(textoPesquisavel(n)).includes(semAcentos(search)))
-    : diario;
+    ? todas.filter(n => semAcentos(textoPesquisavel(n)).includes(semAcentos(search)))
+    : todas;
 
   /* Por omissão só a última semana — é o que se consulta no dia a dia; o
      resto está a um clique. Uma pesquisa mostra sempre tudo. */
@@ -47426,8 +47601,13 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
           "Só a última semana". */}
       {doTema.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, minHeight: 28, marginBottom: 10, ...body }}>
-          <span style={{ fontSize: 12, color: T.mutedDim }}>
+          <span style={{ fontSize: 12, color: T.mutedDim, display: 'inline-flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             {search ? `Pesquisa: ${doTema.length} resultado${doTema.length === 1 ? '' : 's'}` : verTudo ? 'Todas as datas' : 'Última semana'}
+            {(filtro === 'clube' || filtro === 'infra') && (
+              <button type="button" onClick={() => exportarRelatorioClube(diario)} title="Relatório de Clube e Infraestruturas (toda a época), para guardar em PDF e levar à coordenação" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`, borderRadius: 14, padding: '3px 10px', color: T.cream, cursor: 'pointer', fontSize: 12, ...body,
+              }}><Printer size={13} /> Relatório PDF</button>
+            )}
           </span>
           {!search && !verTudo && antigas > 0 && (
             <button type="button" onClick={() => setVerTudo(true)} style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, ...body, padding: 0 }}>
@@ -47457,7 +47637,8 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
             const autor = n.autor || (diarioMeta[n.id] && diarioMeta[n.id].email);
             const editor = n.editadoPor && n.editadoPor !== autor ? n.editadoPor : null;
             const detalhes = [];
-            if (chave === 'faltas' && n.tipo) detalhes.push(`${n.faltaTipo === 'atraso' ? 'Atraso' : 'Falta'} ${n.justificada ? 'justificada' : 'injustificada'}`);
+            if (chave === 'faltas' && n.tipo && !n.derivada) detalhes.push(`${n.faltaTipo === 'atraso' ? 'Atraso' : 'Falta'} ${n.justificada ? 'justificada' : 'injustificada'}`);
+            if (n.derivada) detalhes.push('Falta marcada nas Presenças · sem motivo registado');
             if (chave === 'disciplina' && (n.consequencias || []).length) detalhes.push(n.consequencias.join(', '));
             if (chave === 'reunioes' && n.comQuem) detalhes.push(`Com: ${n.comQuem}`);
             if (chave === 'reunioes' && n.participantes) detalhes.push(n.participantes);
@@ -47475,12 +47656,21 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                     </div>
                     {/* Autor: o que ficou gravado na própria ocorrência; nas
                         antigas, quem gravou a linha na base de dados. */}
-                    {autor && (
+                    {n.derivada ? (
+                      <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 3 }}>
+                        Das Presenças · {n.origem === 'jogo' ? `jogo${n.adversario ? ` vs ${n.adversario}` : ''}` : 'treino'}
+                      </div>
+                    ) : autor && (
                       <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 3 }}>
                         Por {autor}{editor ? ` · editada por ${editor}` : ''}
                       </div>
                     )}
                   </div>
+                  {n.derivada ? (
+                    <button type="button" onClick={() => acrescentarMotivo(n)} title="Registar o motivo destas faltas (ou marcá-las como justificadas)" style={{
+                      flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`, borderRadius: 14, padding: '4px 10px', color: T.gold, cursor: 'pointer', fontSize: 12, ...body,
+                    }}><Plus size={13} /> Acrescentar motivo</button>
+                  ) : (
                   <div style={{ display: 'flex', gap: 10, flexShrink: 0, alignItems: 'center' }}>
                     {!isMobile && pillEstado(n)}
                     {chave === 'nota' && setMatches && (matches || []).length > 0 && (
@@ -47489,6 +47679,7 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                     <button onClick={() => startEdit(n)} title="Editar" style={{ background: 'none', border: 'none', color: n.id === editingId ? T.warn : T.mutedDim, cursor: 'pointer' }}><Pencil size={14} /></button>
                     <button onClick={() => remove(n.id)} title="Apagar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer' }}><Trash2 size={14} /></button>
                   </div>
+                  )}
                 </div>
 
                 {aMover && aMover.id === n.id && (
@@ -47533,8 +47724,20 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                 {n.nota && <p style={{ color: T.mutedDim, fontSize: 13.5, lineHeight: 1.6, margin: '0 0 10px', whiteSpace: 'pre-wrap' }}>{n.nota}</p>}
                 {n.decisoes && (
                   <div style={{ margin: '0 0 10px', padding: '8px 12px', borderRadius: 8, background: T.surfaceRaise }}>
-                    <div style={{ fontSize: 11.5, color: T.good, marginBottom: 4 }}>Decisões e próximos passos</div>
-                    <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{n.decisoes}</div>
+                    <div style={{ fontSize: 11.5, color: T.good, marginBottom: 6 }}>Decisões e próximos passos</div>
+                    {/* Cada linha é uma decisão; "Missão" abre logo a Nova
+                        missão (em Tarefas) com a decisão como título — só
+                        falta escolher para quem e o prazo. */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {String(n.decisoes).split('\n').map(l => l.replace(/^\s*[-•*·]\s*/, '').trim()).filter(Boolean).map((linha, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, lineHeight: 1.5 }}>{linha}</span>
+                          <button type="button" onClick={() => pedirNovaMissao({ modo: 'staff', titulo: linha.slice(0, 140) })} title="Criar uma missão com esta decisão" style={{
+                            flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: `1px solid ${T.good}66`, borderRadius: 12, padding: '2px 9px', color: T.good, cursor: 'pointer', fontSize: 11.5, ...body,
+                          }}><Plus size={12} /> Missão</button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {(n.seguimento || (isMobile && n.estado)) && (
