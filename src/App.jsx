@@ -37723,15 +37723,30 @@ function ehAmigavelTxt(txt) { return semAcentos(txt).includes('amig'); }
 // junta as partes do mesmo vídeo pelo título sem "- parte_N" e sem o
 // escalão ("U18"/"U19"), que às vezes vem escrito numa parte e não
 // noutra. Um vídeo ligado a um jogo do módulo Jogos usa esse jogo.
+/* O número da parte no fim do título, escrito de muitas maneiras:
+   "_parte2", "_parte_2", " - parte 2", "_part1", "Part 2", "pt2", "(2.ª parte)"…
+   Dantes só se apanhava "parte", e "Amarante vs Paredes_part1" ficava num
+   jogo à parte do "_parte2". */
+const RE_PARTE_FIM = /\s*[-_–(]*\s*(?:(?:parte|part|pt)[\s_.-]*(\d+)|(\d+)\s*(?:\.?\s*[ªa°º])?\s*parte)\s*\)?\s*$/i;
 function tituloSemParte(t) {
-  return String(t || '').replace(/\s*[-_–]?\s*parte[\s_]*\d+\s*$/i, '').trim();
+  return String(t || '').replace(RE_PARTE_FIM, '').replace(/[\s_–-]+$/, '').trim();
 }
+function numeroDaParte(t) {
+  const m = String(t || '').match(RE_PARTE_FIM);
+  return m ? Number(m[1] || m[2]) : 0;
+}
+/* Chave do jogo pelo título: sem a parte, e cada equipa pelo nome "limpo"
+   (sem FC, SC, USC, U19…) — "Amarante vs Padroense FC_parte_2" e
+   "Amarante vs Padroense_parte_1" são o MESMO jogo. */
 function subJogoDoItem(v, byId, prof = 0) {
   const o = prof < 4 && origemDe(v, byId);
   if (o) return subJogoDoItem(o, byId, prof + 1);
   if (v.jogoId) return `m${v.jogoId}`;
   const t = ehClipe(v) ? (v.clipOrigemTitulo || v.title) : v.title;
-  return semAcentos(tituloSemParte(t)).replace(/\bu\d{2}\b/g, '').replace(/\s+/g, ' ').trim() || v.id;
+  const base = semAcentos(tituloSemParte(t)).replace(/_/g, ' ');
+  const equipas = base.split(/\s+(?:vs\.?|versus|x)\s+/i).map(chaveNomeEquipa).filter(Boolean);
+  if (equipas.length >= 2) return equipas.join(' vs ');
+  return base.replace(/\bu\d{2}\b/g, '').replace(/\s+/g, ' ').trim() || v.id;
 }
 // Divide uma lista em jogos (cada um: partes completas, depois cortes),
 // o jogo criado mais recentemente primeiro.
@@ -37740,7 +37755,7 @@ function seccionarPorJogo(lista, byId, ordemCriacao, rotuloDe) {
   lista.forEach(v => { const k = subJogoDoItem(v, byId); (porJogo[k] = porJogo[k] || []).push(v); });
   return Object.entries(porJogo)
     .map(([k, itens]) => {
-      const parte = (t) => { const m = String(t || '').match(/parte[\s_]*(\d+)\s*$/i); return m ? Number(m[1]) : 0; };
+      const parte = numeroDaParte;
       const ord = ordenarDoJogo([...itens].sort((a, b) => (parte(a.title) - parte(b.title))
         || String(a.title || '').localeCompare(String(b.title || ''), 'pt', { numeric: true })));
       return { key: k, titulo: rotuloDe(k, ord), itens: ord, recente: Math.max(...itens.map(v => ordemCriacao[v.id] || 0)) };
