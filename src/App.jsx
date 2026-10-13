@@ -23689,7 +23689,10 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                 {/* Nome curto: primeiro nome, ou apelido quando há outro
                     jogador com o mesmo primeiro nome. O nome completo fica
                     no title, para quando houver dúvida. */}
-                <td style={nameCell} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
+                {/* O nome alinha pela LINHA DOS BOTÕES (P/F/C/E…), não pelo meio
+                    da linha: a nota por baixo de alguns botões fazia a linha
+                    mais alta e o nome descia para o meio, desalinhado. */}
+                <td style={{ ...nameCell, verticalAlign: 'top', paddingTop: 8, lineHeight: '16px' }} title={p.name}>{p.position ? `${p.position} · ` : ''}{shortPlayerName(p, players)}</td>
                 {ordered.map(d => {
                   const estado = estadoDe(d, p.id);
                   const on = estado === 'presente';
@@ -23710,7 +23713,7 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                         disabled={closed}
                         title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : ''}
                         style={{
-                          width: 34, padding: '4px 0', borderRadius: 6, fontSize: 11, ...mono, fontWeight: 600,
+                          width: 34, height: 24, lineHeight: '14px', padding: '4px 0', borderRadius: 6, fontSize: 11, ...mono, fontWeight: 600, boxSizing: 'border-box',
                           cursor: closed ? 'default' : 'pointer',
                           // A falta salta à vista: é o estado que exige
                           // reação do treinador, ao contrário do NP.
