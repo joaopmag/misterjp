@@ -3614,6 +3614,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           html { scrollbar-gutter: stable; }
           ::selection { background: ${T.gold}55; }
           input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
+          /* Lista nativa das caixas de escolha (ex.: a nota nas Presenças): sem
+             isto, em alguns Windows/Chrome abria BRANCA com o texto claro por
+             cima — parecia um "flash" branco vazio. */
+          select { color-scheme: ${TEMA_ATUAL === 'claro' ? 'light' : 'dark'}; }
+          select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; }
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
           /* Sem barra nenhuma — nem fina, nem grossa. Continua tudo a
              deslocar-se na mesma (arrasto, roda do rato, gesto no
@@ -3740,6 +3745,11 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         .mjp-scroll-fino { scrollbar-width: none !important; -ms-overflow-style: none !important; }
         [style*="overflow-y: auto"], [style*="overflow-y: scroll"], [style*="overflow: auto"] { scrollbar-gutter: stable; }
         input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
+        /* Lista nativa das caixas de escolha (ex.: a nota nas Presenças): sem
+           isto, em alguns Windows/Chrome abria BRANCA com o texto claro por
+           cima — parecia um "flash" branco vazio. */
+        select { color-scheme: ${TEMA_ATUAL === 'claro' ? 'light' : 'dark'}; }
+        select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; }
         table { border-collapse: collapse; width: 100%; }
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
         html { -webkit-text-size-adjust: 100%; }
@@ -48040,6 +48050,11 @@ function CheckinApp() {
         * { box-sizing: border-box; }
         ::selection { background: ${T.gold}55; }
         input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
+        /* Lista nativa das caixas de escolha (ex.: a nota nas Presenças): sem
+           isto, em alguns Windows/Chrome abria BRANCA com o texto claro por
+           cima — parecia um "flash" branco vazio. */
+        select { color-scheme: ${TEMA_ATUAL === 'claro' ? 'light' : 'dark'}; }
+        select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; }
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
         /* Reserva sempre o espaço da barra de scroll vertical, mesmo
            quando o conteúdo é curto e não precisa dela. Sem isto, uma
