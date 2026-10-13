@@ -25,7 +25,7 @@ import {
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
   HeartPulse, Flame, PartyPopper, Megaphone, Fingerprint, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
   Video, Repeat, Calendar, Bell, Lock,
-  Volume2, VolumeX, CheckCircle2, Building2, Wrench, Tag,
+  Volume2, VolumeX, CheckCircle2, Building2, Wrench, Tag, ZoomOut,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -37412,6 +37412,99 @@ function youtubeEmbedSrc(item, extra) {
   return `https://www.youtube.com/embed/${item.youtubeId}?${bits.join('&')}`;
 }
 
+/* LUPA — aproximar o vídeo em ecrã inteiro (Biblioteca e cortes).
+   Botões − / + (e a percentagem, que volta a 100%), roda do rato sobre o
+   vídeo, e no telemóvel/tablet o gesto de pinça com dois dedos. Com zoom,
+   arrasta-se para ver outra zona; um toque sem arrastar põe em pausa ou
+   retoma. Até 4×; nunca deixa sair do vídeo (sem margens pretas). */
+function useLupa(areaRef, ativo) {
+  const [lupa, setLupa] = useState({ z: 1, x: 0, y: 0 });
+  const gestoRef = useRef(null);
+  const ptrsRef = useRef(new Map());
+  const [aArrastar, setAArrastar] = useState(false);
+  useEffect(() => { if (!ativo) { setLupa({ z: 1, x: 0, y: 0 }); ptrsRef.current.clear(); gestoRef.current = null; setAArrastar(false); } }, [ativo]);
+  const caixa = () => { const el = areaRef.current; const r = el ? el.getBoundingClientRect() : null; return r || { left: 0, top: 0, width: 0, height: 0 }; };
+  const limitar = (z, x, y) => {
+    const r = caixa();
+    const zz = Math.min(4, Math.max(1, z));
+    if (zz <= 1.01) return { z: 1, x: 0, y: 0 };
+    return { z: zz, x: Math.min(0, Math.max(r.width - r.width * zz, x)), y: Math.min(0, Math.max(r.height - r.height * zz, y)) };
+  };
+  const zoomEm = (fator, px, py) => setLupa(l => {
+    const z2 = Math.min(4, Math.max(1, l.z * fator));
+    const k = z2 / l.z;
+    return limitar(z2, px - (px - l.x) * k, py - (py - l.y) * k);
+  });
+  const noCentro = (fator) => { const r = caixa(); zoomEm(fator, r.width / 2, r.height / 2); };
+  const local = (e) => { const r = caixa(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const aoRodar = (e) => { if (!ativo) return; const [px, py] = local(e); zoomEm(e.deltaY < 0 ? 1.15 : 1 / 1.15, px, py); };
+  const handlers = (aoTocar) => ({
+    onPointerDown: (e) => {
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* sem captura */ }
+      ptrsRef.current.set(e.pointerId, local(e));
+      const pts = [...ptrsRef.current.values()];
+      setLupa(l => { gestoRef.current = { l, pts, moveu: pts.length > 1 }; return l; });
+      setAArrastar(true);
+    },
+    onPointerMove: (e) => {
+      if (!ptrsRef.current.has(e.pointerId) || !gestoRef.current) return;
+      ptrsRef.current.set(e.pointerId, local(e));
+      const g = gestoRef.current;
+      const pts = [...ptrsRef.current.values()];
+      if (pts.length >= 2 && g.pts.length >= 2) {
+        // Pinça: zoom pelo afastamento dos dedos, à volta do ponto do meio.
+        const d0 = Math.hypot(g.pts[0][0] - g.pts[1][0], g.pts[0][1] - g.pts[1][1]) || 1;
+        const d1 = Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]) || 1;
+        const mx = (g.pts[0][0] + g.pts[1][0]) / 2; const my = (g.pts[0][1] + g.pts[1][1]) / 2;
+        const nx = (pts[0][0] + pts[1][0]) / 2; const ny = (pts[0][1] + pts[1][1]) / 2;
+        const z2 = Math.min(4, Math.max(1, g.l.z * (d1 / d0)));
+        const k = z2 / g.l.z;
+        g.moveu = true;
+        setLupa(limitar(z2, nx - (mx - g.l.x) * k, ny - (my - g.l.y) * k));
+        return;
+      }
+      const [x0, y0] = g.pts[0];
+      const [x1, y1] = pts[0];
+      if (Math.abs(x1 - x0) + Math.abs(y1 - y0) > 6) g.moveu = true;
+      if (g.moveu) setLupa(limitar(g.l.z, g.l.x + (x1 - x0), g.l.y + (y1 - y0)));
+    },
+    onPointerUp: (e) => {
+      ptrsRef.current.delete(e.pointerId);
+      const g = gestoRef.current;
+      if (ptrsRef.current.size === 0) {
+        gestoRef.current = null;
+        setAArrastar(false);
+        if (g && !g.moveu && aoTocar) aoTocar();
+      } else {
+        // Ficou um dedo depois da pinça: recomeça daqui, sem saltos.
+        setLupa(l => { gestoRef.current = { l, pts: [...ptrsRef.current.values()], moveu: true }; return l; });
+      }
+    },
+    onPointerCancel: (e) => { ptrsRef.current.delete(e.pointerId); if (!ptrsRef.current.size) { gestoRef.current = null; setAArrastar(false); } },
+    onWheel: aoRodar,
+  });
+  const transform = lupa.z > 1 ? `translate3d(${lupa.x}px, ${lupa.y}px, 0) scale(${lupa.z})` : null;
+  return {
+    lupa, transform, aArrastar, handlers, aoRodar,
+    mais: () => noCentro(1.4), menos: () => noCentro(1 / 1.4), repor: () => setLupa({ z: 1, x: 0, y: 0 }),
+  };
+}
+function ControlosLupa({ lupa, mais, menos, repor }) {
+  const b = {
+    width: 32, height: 32, display: 'grid', placeItems: 'center', background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 0,
+  };
+  return (
+    <div onPointerDown={e => e.stopPropagation()} style={{
+      position: 'absolute', top: 10, right: 10, zIndex: 8, display: 'flex', alignItems: 'center', gap: 2,
+      background: 'rgba(0,0,0,0.6)', borderRadius: 18, padding: '0 4px', backdropFilter: 'blur(4px)',
+    }}>
+      <button type="button" onClick={menos} disabled={lupa.z <= 1} title="Afastar" style={{ ...b, opacity: lupa.z <= 1 ? 0.4 : 1 }}><ZoomOut size={16} /></button>
+      <button type="button" onClick={repor} title="Voltar a 100%" style={{ ...b, width: 'auto', padding: '0 4px', fontSize: 11.5, ...mono }}>{Math.round(lupa.z * 100)}%</button>
+      <button type="button" onClick={mais} disabled={lupa.z >= 4} title="Aproximar (também com a roda do rato ou dois dedos)" style={{ ...b, opacity: lupa.z >= 4 ? 0.4 : 1 }}><ZoomIn size={16} /></button>
+    </div>
+  );
+}
+
 /* VÍDEO CARREGADO COM A BARRA DA APP — em vez dos controlos nativos
    do browser (cada browser desenha os seus, com cores próprias), a
    mesma barra amarela dos clipes: reproduzir/pausa, posição, tempo,
@@ -37426,6 +37519,8 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
   const [duracao, setDuracao] = useState(0);
   const [mudo, setMudo] = useState(false);
   const [emEcraInteiro, setEmEcraInteiro] = useState(false);
+  const areaRef = useRef(null);
+  const lupaV = useLupa(areaRef, emEcraInteiro);
 
   useEffect(() => {
     const aoMudar = () => setEmEcraInteiro(!!wrapRef.current && document.fullscreenElement === wrapRef.current);
@@ -37463,6 +37558,9 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
       display: 'flex', flexDirection: 'column', background: '#000',
       ...style, ...(emEcraInteiro ? { height: '100%', width: '100%' } : {}),
     }}>
+      <div ref={areaRef} onWheel={emEcraInteiro ? lupaV.aoRodar : undefined} style={{
+        position: 'relative', overflow: 'hidden', ...(emEcraInteiro ? { flex: 1, minHeight: 0 } : {}),
+      }}>
       <video
         ref={videoRef} src={src} playsInline preload={preload} autoPlay={autoPlay}
         onClick={alternar}
@@ -37471,10 +37569,19 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
         onVolumeChange={e => setMudo(e.currentTarget.muted)}
         onTimeUpdate={e => { const t = e.currentTarget.currentTime; setTempo(t); if (onTimeUpdate) onTimeUpdate(t); }}
         style={{
-          display: 'block', width: '100%', flex: 1, minHeight: 0, objectFit: 'contain', background: '#000', cursor: 'pointer',
-          ...videoStyle, ...(emEcraInteiro ? { maxHeight: 'none' } : {}),
+          display: 'block', width: '100%', minHeight: 0, objectFit: 'contain', background: '#000', cursor: 'pointer',
+          ...videoStyle, ...(emEcraInteiro ? { maxHeight: 'none', height: '100%' } : {}),
+          transform: lupaV.transform || 'none', transformOrigin: '0 0',
+          transition: lupaV.aArrastar ? 'none' : 'transform 0.2s ease-out',
         }}
       />
+      {/* Com zoom, uma camada por cima apanha o arrastar (e o toque, que
+          continua a pausar/retomar). */}
+      {emEcraInteiro && lupaV.lupa.z > 1 && (
+        <div {...lupaV.handlers(alternar)} style={{ position: 'absolute', inset: 0, zIndex: 2, cursor: lupaV.aArrastar ? 'grabbing' : 'grab', touchAction: 'none' }} />
+      )}
+      {emEcraInteiro && <ControlosLupa {...lupaV} />}
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
         <button onClick={alternar} title={aTocar ? 'Pausar' : 'Reproduzir'} style={btn}>
           {aTocar ? <Pause size={16} /> : <Play size={16} />}
@@ -39038,6 +39145,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
        cobrir o ecrã por CSS (position: fixed) — mesmo resultado prático. */
   const ytBoxRef = React.useRef(null);
   const [ytFull, setYtFull] = useState(false); // false | 'nativo' | 'css'
+  // LUPA em ecrã inteiro (ver useLupa). Desliga-se a desenhar — aí manda o
+  // zoom dos círculos — e volta a 100% ao trocar de vídeo ou sair.
+  const lupaBib = useLupa(areaVideoBibRef, !!ytFull && !modoDesenhoBib);
+  const lupaBibRepor = lupaBib.repor;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { lupaBibRepor(); }, [activeId]);
+  const alternarLupaBib = () => {
+    if (ativoEClipe) alternarReproducaoBib();
+    else enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo');
+  };
   useEffect(() => {
     const onFsChange = () => {
       const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
@@ -41035,7 +41152,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                     {/* A estrutura é SEMPRE a mesma dentro e fora do ecrã
                         inteiro — só mudam as medidas — para o React nunca
                         voltar a montar o iframe (o vídeo recomeçaria). */}
-                    <div ref={areaVideoBibRef} style={{
+                    <div ref={areaVideoBibRef} onWheel={ytFull && !modoDesenhoBib && ativoEClipe ? lupaBib.aoRodar : undefined} style={{
                       ...(ytFull
                         ? { position: 'relative', flex: 1, minHeight: 0 }
                         : { position: 'relative', paddingTop: '56.25%' }),
@@ -41051,12 +41168,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         // Mais fluido: camada própria na placa gráfica
                         // (will-change + translate3d), entrada longa e suave a
                         // desacelerar, saída suave nos dois extremos.
-                        transform: zoomVisivelBib ? `translate3d(0,0,0) scale(${zoomVisivelBib})` : 'translate3d(0,0,0) scale(1)',
-                        transformOrigin: zoomOrigemBib.current,
+                        // Com a LUPA (ecrã inteiro) manda a lupa; senão, o zoom dos círculos.
+                        transform: zoomVisivelBib ? `translate3d(0,0,0) scale(${zoomVisivelBib})` : (lupaBib.transform || 'translate3d(0,0,0) scale(1)'),
+                        transformOrigin: !zoomVisivelBib && lupaBib.transform ? '0 0' : zoomOrigemBib.current,
                         // Entrada suave; saída suave (ou imediata num corte brusco).
                         transition: zoomVisivelBib
                           ? 'transform 1.1s cubic-bezier(0.22, 1, 0.36, 1)'
-                          : (saidaSuaveZoomRef.current ? 'transform 0.75s cubic-bezier(0.65, 0, 0.35, 1)' : 'none'),
+                          : lupaBib.transform
+                            ? (lupaBib.aArrastar ? 'none' : 'transform 0.2s ease-out')
+                            : (saidaSuaveZoomRef.current ? 'transform 0.75s cubic-bezier(0.65, 0, 0.35, 1)' : 'none'),
                         willChange: 'transform',
                       }}>
                       {isBlocked ? (
@@ -41254,6 +41374,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         </svg>
                       )}
                       </div>
+                    {/* LUPA: com zoom, uma camada por cima do vídeo apanha o
+                        arrastar, a pinça e a roda; um toque pausa/retoma. */}
+                    {ytFull && !modoDesenhoBib && !isBlocked && lupaBib.lupa.z > 1 && (
+                      <div {...lupaBib.handlers(alternarLupaBib)} style={{ position: 'absolute', inset: 0, zIndex: 5, cursor: lupaBib.aArrastar ? 'grabbing' : 'grab', touchAction: 'none' }} />
+                    )}
+                    {ytFull && !modoDesenhoBib && !isBlocked && <ControlosLupa {...lupaBib} />}
                     {/* Campo de texto — aparece exatamente onde se tocou,
                        tal como na Análise de Vídeo. */}
                     {formaTextoBib && (
