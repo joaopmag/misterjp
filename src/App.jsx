@@ -23570,6 +23570,11 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
      acontece quando a tabela abre ou muda de conteúdo — nunca por
      interagir com uma célula. */
   const diasKey = ordered.map(d => (d.match ? `m-${d.match.id}` : d.date)).join(',');
+  /* Altura do lugar da nota, igual em todas as células: a de uma lista
+     (26px) só quando há algum dia aberto para editar; com tudo guardado, a
+     nota é só um número pequeno e chega a altura dele — senão sobrava
+     espaço por baixo e o bloco parecia descaído para cima. */
+  const alturaNota = ordered.some(d => !dayClosed(d)) ? 26 : 15;
   React.useEffect(() => {
     const hojeStr = todayStr();
     let alvo = ordered.find(d => d.date === hojeStr);
@@ -23707,7 +23712,7 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                   const convocatoria = d.match && !isFriendlyMatch(d.match);
                   const label = escalao ? 'E' : (lesao ? 'L' : (falta ? 'F' : (convocatoria ? (on ? 'C' : 'NC') : (on ? 'P' : 'NP'))));
                   return (
-                    <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: '8px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
+                    <td key={(d.match ? `m-${d.match.id}` : d.date) + p.id} style={{ padding: '10px 4px', textAlign: 'center', verticalAlign: 'middle' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
                       <button
                         type="button"
@@ -23731,10 +23736,10 @@ function AttendanceMatrix({ days, players, isPresent, estadoDe, ratingOf, dayClo
                         }}
                         title={closed ? 'Dia guardado — usa "Editar" no cartão do dia' : 'Clica para alternar: presente → falta → outro escalão → lesionado → ausente'}
                       >{label}</button>
-                      <div style={{ height: 26, marginTop: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ height: alturaNota, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {on && (
                         closed ? (
-                          <div style={{ ...mono, fontSize: 10.5, color: rating == null || rating === '' ? T.mutedDim : T.cream }}>
+                          <div style={{ ...mono, fontSize: 10.5, lineHeight: '15px', color: rating == null || rating === '' ? T.mutedDim : T.cream }}>
                             {rating == null || rating === '' ? 'NA' : rating}
                           </div>
                         ) : (
