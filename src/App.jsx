@@ -25,7 +25,7 @@ import {
   Image as ImageIcon, Stethoscope, AlertTriangle, Shuffle, MessageCircle, FileSpreadsheet, Shield,
   HeartPulse, Flame, PartyPopper, Megaphone, Fingerprint, ListOrdered, ArrowRight, PenTool, Eraser, Move, Hand, Scissors, Circle, Type, Pause, RotateCcw, FolderOpen, SkipForward, SkipBack,
   Video, Repeat, Calendar, Bell, Lock,
-  Volume2, VolumeX, CheckCircle2, Building2, Wrench, Tag, ZoomOut,
+  Volume2, VolumeX, CheckCircle2, Building2, Wrench, Tag, ZoomOut, Film,
 } from 'lucide-react';
 
 /* ---------------------------------------------------------------
@@ -31186,7 +31186,7 @@ function PlayerTreinoView({ code, teamId, onBack }) {
    faz sentido nenhum. */
 // Duração máxima de um clipe criado por um jogador no Portal. Tem de
 // bater certo com o limite da função `checkin_clipe_criar` no Supabase.
-const MAX_CLIPE_ATLETA_SEG = 180;
+const MAX_CLIPE_ATLETA_SEG = 300; // 5 minutos
 
 /* Um clipe gravado por um jogador (tabela `video_clips`, origem
    'atleta') no formato de um corte do Canal — assim aparece dentro do
@@ -31404,6 +31404,7 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
           criarClipeAtleta={criarClipeAtleta}
           apagarClipeAtleta={apagarClipeAtleta}
           editarClipeAtleta={editarClipeAtleta}
+          chaveCompilacoes={`misterjp:compilacoes:${teamId}:${hashCurto(String(code || ''))}`}
           emptyText="Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver."
         />
       )}
@@ -38218,7 +38219,136 @@ const SECOES_CANAL = [
 ];
 // "Os meus clipes" (só no Portal) é um cartão dentro de Jogos, não uma secção.
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas }, ref) {
+/* OS MEUS VÍDEOS (Portal do Atleta) — juntar clipes num vídeo só.
+
+   O jogador escolhe clipes seus (de um jogo ou de vários), põe-nos pela
+   ordem que quer, dá um nome, e "Ver" reproduz tudo seguido — o mesmo
+   mecanismo do "Ver cortes em seguida": no fim de um clipe passa sozinho
+   ao seguinte, mesmo que seja de outro jogo.
+
+   Não se cria um ficheiro novo: os clipes são cortes de vídeos do
+   YouTube, e o vídeo junto é a LISTA deles, por ordem. Fica guardado
+   neste aparelho (no browser), por jogador e por equipa. */
+function hashCurto(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+function lerCompilacoes(chave) {
+  try { const v = JSON.parse(localStorage.getItem(chave) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+}
+function gravarCompilacoes(chave, lista) {
+  try { localStorage.setItem(chave, JSON.stringify(lista)); } catch (e) { /* sem espaço / modo privado */ }
+}
+const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+
+function CompilacoesAtleta({ clipes, chave, onVer, onParar, aTocar }) {
+  const [lista, setLista] = useState(() => lerCompilacoes(chave));
+  const [editar, setEditar] = useState(null); // { id?, nome, ids }
+  useEffect(() => { setLista(lerCompilacoes(chave)); }, [chave]);
+  const guardarLista = (nova) => { setLista(nova); gravarCompilacoes(chave, nova); };
+  const porId = new Map(clipes.map(c => [c.id, c]));
+  const duracao = (ids) => ids.reduce((t, id) => { const c = porId.get(id); return t + (c ? Math.max(0, (c.clipFim || 0) - (c.clipInicio || 0)) : 0); }, 0);
+  const validos = (ids) => (ids || []).filter(id => porId.has(id));
+  const aTocarId = aTocar && lista.find(v => JSON.stringify(validos(v.ids)) === JSON.stringify(aTocar));
+
+  const guardar = () => {
+    if (!editar || !editar.ids.length) return;
+    const nome = (editar.nome || '').trim() || `O meu vídeo ${lista.length + 1}`;
+    if (editar.id) guardarLista(lista.map(v => (v.id === editar.id ? { ...v, nome, ids: editar.ids } : v)));
+    else guardarLista([{ id: uid(), nome, ids: editar.ids, criadoEm: new Date().toISOString() }, ...lista]);
+    setEditar(null);
+  };
+  const alternar = (id) => setEditar(e => ({ ...e, ids: e.ids.includes(id) ? e.ids.filter(x => x !== id) : [...e.ids, id] }));
+  const mover = (i, d) => setEditar(e => {
+    const ids = [...e.ids]; const j = i + d;
+    if (j < 0 || j >= ids.length) return e;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    return { ...e, ids };
+  });
+  const btnIcone = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4, display: 'inline-flex' };
+
+  return (
+    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: lista.length || editar ? 10 : 0 }}>
+        <Film size={16} color={T.gold} />
+        <span style={{ fontSize: 14, color: T.cream, fontWeight: 600, flex: 1, minWidth: 140 }}>Os meus vídeos</span>
+        {!editar && (
+          <Btn variant="ghost" onClick={() => setEditar({ nome: '', ids: [] })}><Plus size={14} /> Juntar clipes num vídeo</Btn>
+        )}
+      </div>
+      {!editar && !lista.length && (
+        <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>Junta os teus clipes — do mesmo jogo ou de jogos diferentes — num vídeo só, e vê tudo seguido.</div>
+      )}
+
+      {!editar && lista.map(v => {
+        const ids = validos(v.ids);
+        const aDar = aTocarId && aTocarId.id === v.id;
+        return (
+          <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${T.line}` }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.nome}</div>
+              <div style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}</div>
+            </div>
+            {aDar ? (
+              <Btn variant="ghost" onClick={onParar}><Square size={13} /> Parar</Btn>
+            ) : (
+              <Btn disabled={!ids.length} onClick={() => onVer(ids)}><Play size={13} /> Ver</Btn>
+            )}
+            <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnIcone}><Pencil size={14} /></button>
+            <button type="button" title="Apagar" onClick={() => { if (window.confirm(`Apagar "${v.nome}"? Os clipes continuam lá.`)) guardarLista(lista.filter(x => x.id !== v.id)); }} style={btnIcone}><Trash2 size={14} /></button>
+          </div>
+        );
+      })}
+
+      {editar && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Input value={editar.nome} onChange={e => setEditar({ ...editar, nome: e.target.value })} placeholder="Nome do vídeo (ex.: As minhas jogadas)" />
+          <div style={{ fontSize: 12, color: T.muted }}>Toca nos clipes pela ordem em que os queres ver.</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
+            {clipes.map(c => {
+              const pos = editar.ids.indexOf(c.id);
+              const on = pos >= 0;
+              return (
+                <button key={c.id} type="button" onClick={() => alternar(c.id)} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', cursor: 'pointer', ...body,
+                  background: on ? `${T.gold}1F` : T.bg, border: `1px solid ${on ? T.gold : T.line}`, borderRadius: 8, padding: '8px 10px',
+                }}>
+                  <span style={{ width: 22, height: 22, borderRadius: 11, flexShrink: 0, display: 'grid', placeItems: 'center', ...mono, fontSize: 11.5, fontWeight: 700,
+                    background: on ? T.gold : 'transparent', color: on ? TEXT_ON_ACCENT : T.mutedDim, border: on ? 'none' : `1px solid ${T.line}` }}>{on ? pos + 1 : ''}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: T.mutedDim }}>{[c.clipOrigemTitulo, mmss(Math.max(0, (c.clipFim || 0) - (c.clipInicio || 0)))].filter(Boolean).join(' · ')}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {editar.ids.length > 1 && (
+            <div>
+              <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>Ordem</div>
+              {editar.ids.map((id, i) => (
+                <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.cream, padding: '3px 0' }}>
+                  <span style={{ ...mono, color: T.gold, width: 18 }}>{i + 1}</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(porId.get(id) || {}).title}</span>
+                  <button type="button" title="Subir" disabled={i === 0} onClick={() => mover(i, -1)} style={{ ...btnIcone, opacity: i === 0 ? 0.35 : 1 }}><ChevronUp size={15} /></button>
+                  <button type="button" title="Descer" disabled={i === editar.ids.length - 1} onClick={() => mover(i, 1)} style={{ ...btnIcone, opacity: i === editar.ids.length - 1 ? 0.35 : 1 }}><ChevronDown size={15} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <Btn disabled={!editar.ids.length} onClick={guardar}><Check size={14} /> Guardar vídeo</Btn>
+            <Btn variant="ghost" onClick={() => setEditar(null)}>Cancelar</Btn>
+            {editar.ids.length > 0 && <span style={{ fontSize: 12, color: T.mutedDim, ...mono }}>{editar.ids.length} {editar.ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(editar.ids))}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes }, ref) {
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
   // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
@@ -39160,10 +39290,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (arrastoCorpoBib.current) { arrastoCorpoBib.current = null; return; }
     if (!formaEmCursoBib || formaEmCursoBib.tool === 'zonalivre' || formaEmCursoBib.tool === 'linhaPontos') return; // essas só terminam com "Fechar" (ou ao gravar / mudar de ferramenta)
     const { tool, color, points } = formaEmCursoBib;
-    const pequenoDemais = tool === 'livre' ? points.length < 2 : Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 1;
+    // O Tubo também se põe com um toque só (largura por omissão).
+    const pontosFinais = tool === 'tubo' && Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 1
+      ? [points[0], { x: points[0].x + 2.4, y: points[0].y }]
+      : points;
+    const pequenoDemais = tool === 'livre' ? points.length < 2 : (tool !== 'tubo' && Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y) < 1);
     if (pequenoDemais) { setFormaEmCursoBib(null); return; } // só um toque, sem arrastar — ignora
     pushHistoricoBib();
-    setShapesRascunho(prev => [...prev, { id: uid(), tool, color, points, ...(formaEmCursoBib.chao ? { chao: formaEmCursoBib.chao } : {}) }]);
+    setShapesRascunho(prev => [...prev, { id: uid(), tool, color, points: pontosFinais, ...(formaEmCursoBib.chao ? { chao: formaEmCursoBib.chao } : {}) }]);
     setFormaEmCursoBib(null);
   };
   /* ZONA LIVRE e LIGAR PONTOS acumulam com o resto. Uma destas a meio
@@ -41322,6 +41456,16 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 12, background: 'none', border: 'none',
           color: T.muted, cursor: 'pointer', fontSize: 13, padding: 0, ...body,
         }}><ChevronLeft size={15} /> Jogos <span style={{ color: T.mutedDim }}>·</span> <span style={{ color: T.cream }}>Os meus clipes</span></button>
+      )}
+      {/* OS MEUS VÍDEOS — o jogador junta clipes seus (do mesmo jogo ou
+          de jogos diferentes) num vídeo e vê-os todos seguidos. */}
+      {modoCanal && !termo && secao === 'meus' && chaveCompilacoes && itensMeus.length > 0 && (
+        <CompilacoesAtleta
+          clipes={itensMeus} chave={chaveCompilacoes}
+          aTocar={sequencia}
+          onVer={(ids) => { if (!ids.length) return; setSequencia(ids); setActiveId(ids[0]); }}
+          onParar={() => setSequencia(null)}
+        />
       )}
 
       {items.length === 0 ? (

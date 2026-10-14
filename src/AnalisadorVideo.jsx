@@ -54,12 +54,23 @@ if (AV_CLARO) {
 // As ferramentas de desenho em si — estático, não depende de nada do
 // componente, por isso também dá para reaproveitar noutros sítios que
 // precisem de desenhar por cima de vídeo (ver a Biblioteca).
+/* Ícone do TUBO — um feixe vertical sobre um jogador (como o "holofote"
+   das transmissões). Desenhado aqui por não haver um igual nos ícones. */
+function IconeTubo({ size = 16, color = 'currentColor', strokeWidth = 2, ...resto }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...resto}>
+      <path d="M8 3 L8 18" /><path d="M16 3 L16 18" /><ellipse cx="12" cy="18.5" rx="4" ry="1.8" /><path d="M8 3 L16 3" strokeOpacity="0.5" />
+    </svg>
+  );
+}
+
 export const FERRAMENTAS = [
   ['seta', ArrowUpRight, 'Seta'],
   ['linha', Minus, 'Linha'],
   ['circulo', Circle, 'Círculo'],
   ['retangulo', Square, 'Zona'],
   ['cone', Eye, 'Visão'],
+  ['tubo', IconeTubo, 'Tubo'],
   ['livre', Pencil, 'Traço'],
   ['zonalivre', Lasso, 'Zona livre'],
   ['linhaPontos', Waypoints, 'Ligar pontos'],
@@ -805,6 +816,14 @@ export function distanciaShape(sh, p) {
     const dy = p.y < y1 ? y1 - p.y : (p.y > y2 ? p.y - y2 : 0);
     return Math.hypot(dx, dy);
   }
+  if (sh.tool === 'tubo' && b) {
+    const meia = Math.max(1.6, Math.min(15, Math.hypot(b.x - a.x, b.y - a.y)));
+    const fundo = a.y + meia * 0.32;
+    if (p.x >= a.x - meia && p.x <= a.x + meia && p.y <= fundo) return 0; // dentro do tubo
+    const dx = p.x < a.x - meia ? a.x - meia - p.x : (p.x > a.x + meia ? p.x - (a.x + meia) : 0);
+    const dy = p.y > fundo ? p.y - fundo : 0;
+    return Math.hypot(dx, dy);
+  }
   if (sh.tool === 'circulo' && b) {
     const r = Math.hypot(b.x - a.x, b.y - a.y);
     const dCentro = Math.hypot(p.x - a.x, p.y - a.y);
@@ -908,6 +927,31 @@ export function renderShape(sh, i) {
     );
   }
   if (!b) return null;
+  if (sh.tool === 'tubo') {
+    /* TUBO — feixe de luz do chão até ao céu sobre um jogador. O 1.º ponto
+       é onde se toca (os pés); arrastar para o lado dá a largura. Sobe
+       sempre até ao cimo da imagem. Translúcido, para o jogador continuar
+       a ver-se lá dentro, e um pouco mais forte em baixo, junto aos pés. */
+    const meia = Math.max(1.6, Math.min(15, Math.hypot(b.x - a.x, b.y - a.y)));
+    const c = sh.color || COR_DESENHO;
+    const ry = meia * 0.32;
+    const gid = `tubo-${i}-${Math.round(a.x * 10)}-${Math.round(a.y * 10)}`;
+    return (
+      <g key={i}>
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={c} stopOpacity={0.26} />
+            <stop offset="75%" stopColor={c} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={c} stopOpacity={0.42} />
+          </linearGradient>
+        </defs>
+        <rect x={a.x - meia} y={0} width={meia * 2} height={Math.max(0, a.y)} fill={`url(#${gid})`} />
+        <line x1={a.x - meia} y1={0} x2={a.x - meia} y2={a.y} stroke={c} strokeOpacity={0.55} strokeWidth={CONTORNO_FINO} />
+        <line x1={a.x + meia} y1={0} x2={a.x + meia} y2={a.y} stroke={c} strokeOpacity={0.55} strokeWidth={CONTORNO_FINO} />
+        <ellipse cx={a.x} cy={a.y} rx={meia} ry={ry} fill={c} fillOpacity={0.35} stroke={c} strokeOpacity={0.8} strokeWidth={CONTORNO_FINO} />
+      </g>
+    );
+  }
   if (sh.tool === 'circulo') {
     /* CÍRCULO A RODAR — como os das transmissões: um anel fino fixo e, por
        cima, segmentos que dão a volta ao jogador sem parar. */
@@ -3287,7 +3331,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     </g>
                   );
                 })()}
-                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'zonalivre', 'linhaPontos', 'medida'].includes(shapes[editandoDuracaoIndex].tool) &&
+                {editandoDuracaoIndex != null && shapes[editandoDuracaoIndex] && ['seta', 'linha', 'circulo', 'cone', 'tubo', 'zonalivre', 'linhaPontos', 'medida'].includes(shapes[editandoDuracaoIndex].tool) &&
                   shapes[editandoDuracaoIndex].points.map((p, pi) => (
                     <circle key={pi} cx={p.x} cy={p.y} r={['zonalivre', 'linhaPontos'].includes(shapes[editandoDuracaoIndex].tool) ? 0.4 : 0.55} fill={TV.crimsonBright} stroke="#fff" strokeWidth={0.15}
                       onPointerDown={e => startHandleDrag(editandoDuracaoIndex, pi, e)}
