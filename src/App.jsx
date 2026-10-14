@@ -9807,7 +9807,10 @@ function Exercicios({ exercises, setExercises, meta }) {
     const html = buildShareableHtmlDoc({ title: x.name || 'Exercício', metaLines: meta, description: x.description, blocks: [block] });
     shareOrDownloadHtml(`${(x.name || 'exercicio').replace(/[^\w-]+/g, '_')}.html`, html, x.name || 'Exercício');
   };
-  const visible = filter === 'Todas' ? exercises : exercises.filter(x => x.phase === filter);
+  /* Mais recentes primeiro. A lista chega do servidor por ordem de
+     criação (created_at) e os novos entram no fim — por isso basta
+     inverter. Editar um exercício não o tira do sítio. */
+  const visible = (filter === 'Todas' ? exercises : exercises.filter(x => x.phase === filter)).slice().reverse();
 
   return (
     <div>
@@ -10209,21 +10212,11 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   const labelOf = (x) => (x.name && x.name.trim())
     ? x.name.trim()
     : `Ideia ${ideias.findIndex(i => i.id === x.id) + 1}`;
-  /* Em "Todas" as ideias vinham pela ordem de criação — misturadas por
-     momento. Ordenam-se agora pela ordem dos momentos de jogo (mesma de
-     EXERCISE_PHASES): organização defensiva, transição ofensiva,
-     organização ofensiva, transição defensiva, bola parada, preparação
-     física, ativação e individual. Dentro do mesmo momento mantém-se a
-     ordem de criação (sort estável). Um filtro já ativo mostra só esse
-     momento, por isso a ordenação aqui não muda nada visualmente — só
-     importa mesmo com "Todas". */
-  const ordemMomento = (fase) => {
-    const i = EXERCISE_PHASES.indexOf(fase);
-    return i === -1 ? EXERCISE_PHASES.length : i;
-  };
+  /* Mais recentes primeiro (como nos Exercícios): a lista chega por ordem
+     de criação e as novas entram no fim, por isso basta inverter. */
   const visible = (filter === 'Todas' ? ideias : ideias.filter(x => x.phase === filter))
     .slice()
-    .sort((a, b) => ordemMomento(a.phase) - ordemMomento(b.phase));
+    .reverse();
 
   return (
     <div>
