@@ -14977,7 +14977,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             const total = (value.sequence || []).length;
             const seguinte = desdeValido + 2;
             const antes = desdeValido === 0 ? '' : desdeValido === 1 ? ' O Animar 1 fica como está.' : ` Os Animar 1 a ${desdeValido} ficam como estão.`;
-            return `A ver o início do Animar ${desdeValido + 1}. Se animares um movimento agora, ele passa a ser o Animar ${desdeValido + 1} e ${seguinte === total ? `o Animar ${total} é apagado` : `os Animar ${seguinte} a ${total} são apagados`}.${antes} O desfazer (↶) repõe tudo.`;
+            /* Duas maneiras de editar a partir daqui, e o aviso diz as duas:
+               CORRIGIR um item (arrastar, rodar, mudar o número/texto,
+               apagar) vale deste passo até ao fim e não mexe em mais nada;
+               ANIMAR um movimento novo recomeça a jogada daqui. */
+            return `A ver o início do Animar ${desdeValido + 1}. Para corrigir só um item (arrastar a baliza, rodar, mudar o número…), mexe nele: fica corrigido do Animar ${desdeValido + 1} ao ${total} e o resto fica igual. Se animares um movimento novo, ele passa a ser o Animar ${desdeValido + 1} e ${seguinte === total ? `o Animar ${total} é apagado` : `os Animar ${seguinte} a ${total} são apagados`}.${antes} O desfazer (↶) repõe tudo.`;
           })()}
         </div>
       )}
