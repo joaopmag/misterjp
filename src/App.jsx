@@ -4004,6 +4004,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         {/* Sem limite de largura em ecrã largo: o conteúdo acompanha a
             janela, já que a barra lateral ocupa a parte esquerda. */}
         <div style={{ maxWidth: '100%', padding: isMobile ? '18px 14px 60px' : '28px 32px 60px' }}>
+          <TreinosParaEditorCtx.Provider value={{ sessions, players }}>
           {tab === 'geral' && <Overview season={season} setSeason={setSeason} players={players} setPlayers={setPlayers} sessions={sessions} setSessions={setSessions} exercises={exercises} monitoring={monitoring} matches={matches} setMatches={setMatches} standings={standings} setStandings={setStandings} convocatorias={convocatorias} setConvocatorias={setConvocatorias} lastEdits={lastEdits} tarefas={tarefas} setTarefas={setTarefas} membros={membros} euId={euId} onVerTarefas={() => goTab('tarefas')} teamId={teamId} onIr={goTab} clipes={clipes} />}
           {tab === 'plantel' && (
             <Plantel
@@ -4142,6 +4143,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               sessions={sessions} matches={matches} players={players} monitoring={monitoring} standings={standings} />
           )}
           {tab === 'diario' && <Diario diario={diario} setDiario={setDiario} diarioMeta={diarioMeta} userEmail={userEmail} players={players} matches={matches} setMatches={setMatches} season={season} sessions={sessions} />}
+          </TreinosParaEditorCtx.Provider>
         </div>
         </main>
         <BotaoTopo alvoRef={mainRef} isMobile={isMobile} />
@@ -8230,6 +8232,59 @@ function distribuirPlantel({ players, attendance, convidados, overrides, tatica 
   return lugares
     .map(l => ({ ...l, lista: porLugar.get(l.id) }))
     .filter(l => l.lista.length || l.id !== 'fora');
+}
+
+/* JOGADORES DO TREINO NO EDITOR DE EXERCÍCIOS.
+
+   O editor do esquema tático (DiagramEditor) pode carregar os jogadores
+   de uma sessão do Planeamento — os presentes, nos lugares do Quadro de
+   posições dessa sessão (com o que o treinador arrumou à mão). Cada um
+   entra como um jogador normal do editor (mexe-se, anima-se, apaga-se
+   como os outros), com a posição no círculo e o NOME por baixo.
+
+   As sessões e o plantel chegam por contexto (posto à volta do conteúdo
+   da app), para não ter de passar props por todos os sítios onde o
+   editor aparece. */
+const TreinosParaEditorCtx = React.createContext({ sessions: [], players: [] });
+
+// Sessões que interessam para carregar: de ontem para a frente, com gente.
+function sessoesParaCarregar(sessions) {
+  const desde = addDays(todayStr(), -1);
+  return (sessions || [])
+    .filter(s => s && s.date && s.date >= desde && ((s.attendance || []).length || (s.convidados || []).length))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .slice(0, 8);
+}
+
+// Os elementos do editor para os presentes de uma sessão, nos lugares do quadro.
+function elementosDaSessao(sessao, players, equipa) {
+  const lugares = distribuirPlantel({
+    players, attendance: sessao.attendance, convidados: sessao.convidados,
+    overrides: sessao.prancheta, tatica: sessao.pranchetaTatica,
+  });
+  const els = [];
+  let foraI = 0;
+  lugares.forEach(l => {
+    const lista = l.lista || [];
+    lista.forEach((j, i) => {
+      let x; let y;
+      if (l.id === 'fora') {
+        // Sem lugar na táctica: em fila, junto à linha lateral de baixo.
+        x = 12 + (foraI++) * 6; y = 73;
+      } else {
+        const [px, py] = l.ponto || [0.5, 0.5];
+        x = 1 + px * 105;
+        // Vários no mesmo lugar: lado a lado, ao longo da largura do campo.
+        y = 1 + py * 68 + (i - (lista.length - 1) / 2) * 5.2;
+      }
+      els.push({
+        id: uid(), kind: l.id === 'GR' ? 'keeper' : 'player', team: equipa || 'A',
+        number: l.id === 'fora' ? (j.pos || '') : l.rotulo, nome: j.nome,
+        x: Math.max(-2, Math.min(107, x)), y: Math.max(-2, Math.min(76, y)),
+      });
+    });
+  });
+  return els;
 }
 
 /* O quadro desenhado. `aoTocar` transforma-o em editável: sem ele é só
@@ -13046,6 +13101,14 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
                 <text x={el.x} y={el.y + 0.71 * k} transform={rodarTexto(el.x, el.y)} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.42 : 2) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {elementLabel(el.number, isKeeper)}
                 </text>
+                {/* Nome por baixo (jogadores carregados de um treino). */}
+                {el.nome && (
+                  <text x={el.x} y={el.y + 3.75 * k} transform={rodarTexto(el.x, el.y)} textAnchor="middle" fontSize={1.45 * k} fontWeight="600"
+                    fill={printMode ? '#1A1A1A' : '#F0E7D6'} stroke={printMode ? '#FFFFFF' : '#12241A'} strokeWidth={0.35 * k} paintOrder="stroke"
+                    style={{ fontFamily: "'Inter', sans-serif" }}>
+                    {el.nome}
+                  </text>
+                )}
               </g>
             </g>
           );
@@ -13827,6 +13890,17 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const vistaCampo = value && value.vista === 'meio' ? 'meio' : 'completo';
   const gVistaRef = useRef(null);
   const mudarVista = (v) => { if (v !== vistaCampo) commit({ ...value, vista: v === 'meio' ? 'meio' : undefined }); };
+  // JOGADORES DO TREINO (ver elementosDaSessao): junta ao campo os presentes
+  // de uma sessão, na cor escolhida, nos lugares do Quadro de posições.
+  const treinosCtx = React.useContext(TreinosParaEditorCtx);
+  const sessoesCarregaveis = sessoesParaCarregar(treinosCtx.sessions);
+  const carregarSessao = (id) => {
+    const s = sessoesCarregaveis.find(x => x.id === id);
+    if (!s) return;
+    const novos = elementosDaSessao(s, treinosCtx.players || [], activeColor || 'A');
+    if (!novos.length) return;
+    commit({ ...value, elements: [...elements, ...novos] });
+  };
   const beginGesture = () => {
     setPast(p => [...p.slice(-HISTORY_LIMIT + 1), value]);
     setFuture([]);
@@ -14817,9 +14891,23 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           />
         ))}
         <span style={{ fontSize: 11, color: T.warn }}>{teamInfo(activeColor).label}</span>
+        {/* JOGADORES DO TREINO — carrega os presentes de uma sessão do
+            Planeamento (hoje primeiro), nos lugares do Quadro de posições. */}
+        {sessoesCarregaveis.length > 0 && (
+          <Select value="" onChange={e => { carregarSessao(e.target.value); e.target.value = ''; }}
+            title="Junta ao campo os jogadores presentes num treino do Planeamento, com o nome e nos lugares do Quadro de posições, na cor escolhida"
+            style={{ marginLeft: 'auto', width: 'auto', maxWidth: 260, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 8px', borderRadius: 16 }}>
+            <option value="">Jogadores do treino…</option>
+            {sessoesCarregaveis.map(s => {
+              const n = (s.attendance || []).length + (s.convidados || []).length;
+              const quando = s.date === todayStr() ? 'Hoje' : fmtShort(s.date);
+              return <option key={s.id} value={s.id}>{quando}{s.focus ? ` · ${String(s.focus).slice(0, 28)}` : ''} · {n} jogadores</option>;
+            })}
+          </Select>
+        )}
         {/* VISTA DO CAMPO — campo inteiro (horizontal) ou meio-campo
             (vertical). Só muda o enquadramento: nada do desenho se perde. */}
-        <div style={{ marginLeft: 'auto', display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ marginLeft: sessoesCarregaveis.length > 0 ? 0 : 'auto', display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden', flexShrink: 0 }}>
           {[['completo', 'Campo inteiro'], ['meio', 'Meio-campo']].map(([id, rot]) => (
             <button key={id} type="button" onPointerDown={(e) => { e.preventDefault(); mudarVista(id); }}
               title={id === 'meio' ? 'Meio-campo na vertical, com a baliza em cima' : 'Campo inteiro na horizontal'}
@@ -15557,6 +15645,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
    exercício, para não duplicar a mesma lógica de desenho. */
 function AnimOverlay({ items, iconScale = 1 }) {
   const k = iconScale || 1;
+  const rodarTexto = useRodarTexto();
   return (
     <>
       {items.map(it => {
@@ -15604,8 +15693,14 @@ function AnimOverlay({ items, iconScale = 1 }) {
               <circle cx={it.x} cy={it.y} r={2 * k} fill={tm ? tm.fill : T.warn} stroke={TEXT_ON_ACCENT} strokeWidth={0.28 * k} opacity="0.92" />
             )}
             {it.mover && (
-              <text x={it.x} y={it.y + 0.72 * k} textAnchor="middle" fontSize={(elementLabel(it.mover.number, isKeeper).length > 2 ? 1.45 : 2.05) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+              <text x={it.x} y={it.y + 0.72 * k} transform={rodarTexto(it.x, it.y)} textAnchor="middle" fontSize={(elementLabel(it.mover.number, isKeeper).length > 2 ? 1.45 : 2.05) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                 {elementLabel(it.mover.number, isKeeper)}
+              </text>
+            )}
+            {it.mover && it.mover.nome && (
+              <text x={it.x} y={it.y + 3.75 * k} transform={rodarTexto(it.x, it.y)} textAnchor="middle" fontSize={1.45 * k} fontWeight="600"
+                fill="#F0E7D6" stroke="#12241A" strokeWidth={0.35 * k} paintOrder="stroke" style={{ fontFamily: "'Inter', sans-serif" }}>
+                {it.mover.nome}
               </text>
             )}
           </g>
