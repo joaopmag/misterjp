@@ -37575,10 +37575,11 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
           transition: lupaV.aArrastar ? 'none' : 'transform 0.2s ease-out',
         }}
       />
-      {/* Com zoom, uma camada por cima apanha o arrastar (e o toque, que
-          continua a pausar/retomar). */}
-      {emEcraInteiro && lupaV.lupa.z > 1 && (
-        <div {...lupaV.handlers(alternar)} style={{ position: 'absolute', inset: 0, zIndex: 2, cursor: lupaV.aArrastar ? 'grabbing' : 'grab', touchAction: 'none' }} />
+      {/* Em ecrã inteiro, uma camada por cima apanha a pinça (o zoom começa
+          com dois dedos, também a 100%), o arrastar e o toque, que continua
+          a pausar/retomar. */}
+      {emEcraInteiro && (
+        <div {...lupaV.handlers(alternar)} style={{ position: 'absolute', inset: 0, zIndex: 2, touchAction: 'none', cursor: lupaV.lupa.z > 1 ? (lupaV.aArrastar ? 'grabbing' : 'grab') : 'pointer' }} />
       )}
       {emEcraInteiro && <ControlosLupa {...lupaV} />}
       </div>
@@ -41374,10 +41375,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                         </svg>
                       )}
                       </div>
-                    {/* LUPA: com zoom, uma camada por cima do vídeo apanha o
-                        arrastar, a pinça e a roda; um toque pausa/retoma. */}
-                    {ytFull && !modoDesenhoBib && !isBlocked && lupaBib.lupa.z > 1 && (
-                      <div {...lupaBib.handlers(alternarLupaBib)} style={{ position: 'absolute', inset: 0, zIndex: 5, cursor: lupaBib.aArrastar ? 'grabbing' : 'grab', touchAction: 'none' }} />
+                    {/* LUPA: em ecrã inteiro há SEMPRE uma camada por cima do
+                        vídeo que apanha a pinça (para começar o zoom com dois
+                        dedos, também a 100%), o arrastar e a roda; um toque
+                        pausa/retoma. Nos jogos completos, a 100% deixa livre a
+                        faixa de baixo, onde está a barra do próprio YouTube. */}
+                    {ytFull && !modoDesenhoBib && !isBlocked && (
+                      <div {...lupaBib.handlers(alternarLupaBib)} style={{
+                        position: 'absolute', top: 0, left: 0, right: 0,
+                        bottom: !ativoEClipe && lupaBib.lupa.z <= 1 ? '18%' : 0,
+                        zIndex: 5, touchAction: 'none',
+                        cursor: lupaBib.lupa.z > 1 ? (lupaBib.aArrastar ? 'grabbing' : 'grab') : 'pointer',
+                      }} />
                     )}
                     {ytFull && !modoDesenhoBib && !isBlocked && <ControlosLupa {...lupaBib} />}
                     {/* Campo de texto — aparece exatamente onde se tocou,
