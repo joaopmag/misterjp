@@ -32380,13 +32380,19 @@ function PlayerAdversarioTab({ code, teamId }) {
           {chave.length === 0 ? (
             <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 16 }}>Nenhum jogador-chave marcado ainda.</div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, marginBottom: 16 }}>
               {chave.map(x => (
                 <div key={x.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 12 }}>
                   <div style={{ color: T.cream, fontWeight: 500, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {x.camisola ? <span style={{ color: '#E84A5F', fontWeight: 800, marginRight: 6, ...mono }}>{x.camisola}</span> : null}{x.name}
                   </div>
-                  <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{x.position || ''}{x.club ? ` · ${x.club}` : ''}</div>
+                  <div style={{ color: T.mutedDim, fontSize: 11.5, marginTop: 2 }}>{[x.position, x.dominantFoot ? `pé ${x.dominantFoot.toLowerCase()}` : '', x.club].filter(Boolean).join(' · ')}</div>
+                  {/* As características escritas no adversário (que vivem na
+                      ficha do jogador) — as primeiras linhas, para ler de
+                      relance. */}
+                  {x.traits && (
+                    <div style={{ color: T.cream, fontSize: 12, lineHeight: 1.45, marginTop: 8, display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap' }}>{x.traits}</div>
+                  )}
                 </div>
               ))}
             </div>
@@ -36139,17 +36145,33 @@ function AdversariosApp({ adversarios, setAdversarios, scouting, setScouting, vi
         // Ficha que já existe: completa o que faltar (posição, clube) e o
         // número, que é o que se escreveu agora.
         const x = scoutingFinal[idx];
+        /* Características: numa ficha que já estava ligada a este
+           adversário, o texto do formulário É o da ficha (foi de lá que
+           veio) — substitui. Numa ficha que só agora se liga pelo nome, o
+           que se escreveu aqui junta-se ao que já lá estava, sem apagar. */
+        const textoNovo = String(l.caracteristicas || '').trim();
+        const textoAtual = String(x.traits || '').trim();
+        const jaLigada = l.localId === x.id;
+        let traits = x.traits;
+        if (jaLigada) { if (textoNovo !== textoAtual) traits = textoNovo; }
+        else if (textoNovo && textoNovo !== textoAtual && !textoAtual.includes(textoNovo)) traits = textoAtual ? `${textoAtual}\n\n${textoNovo}` : textoNovo;
         const novaX = {
           ...x,
           ...(!x.position && l.posicao ? { position: l.posicao } : {}),
           ...(!x.club && clube ? { club: clube } : {}),
           ...(camisola !== String(x.camisola || '') ? { camisola } : {}),
+          ...(l.pe && l.pe !== x.dominantFoot ? { dominantFoot: l.pe } : {}),
+          ...(traits !== x.traits ? { traits } : {}),
         };
         if (Object.keys(novaX).some(k => novaX[k] !== x[k])) scoutingFinal[idx] = novaX;
         idFinal = x.id;
       } else {
         // Ficha nova no Scouting: o clube é este adversário.
-        const novo = { id: uid(), name: nome, position: l.posicao || '', club: clube, camisola };
+        const novo = {
+          id: uid(), name: nome, position: l.posicao || '', club: clube, camisola,
+          ...(l.pe ? { dominantFoot: l.pe } : {}),
+          ...(String(l.caracteristicas || '').trim() ? { traits: String(l.caracteristicas).trim() } : {}),
+        };
         scoutingFinal.push(novo);
         idFinal = novo.id;
       }
@@ -36574,8 +36596,8 @@ function AdversarioForm({ adversario, scouting, adversarios, onBack, onSave, onA
       .filter(Boolean)
       // O id real da ficha já existente serve logo como `localId` — é
       // estável e não muda ao guardar, ao contrário de uma linha nova.
-      .map(x => ({ localId: x.id, nome: x.name || '', posicao: x.position || '', camisola: x.camisola || '' }));
-    return iniciais.length ? iniciais : [{ localId: uid(), nome: '', posicao: '', camisola: '' }];
+      .map(x => ({ localId: x.id, nome: x.name || '', posicao: x.position || '', camisola: x.camisola || '', pe: x.dominantFoot || '', caracteristicas: x.traits || '' }));
+    return iniciais.length ? iniciais : [{ localId: uid(), nome: '', posicao: '', camisola: '', pe: '', caracteristicas: '' }];
   });
   // O quadro de posições precisa de UM id por jogador para arrumar os
   // "mexidos à mão" — mas os jogadores-chave só ganham um id real (o da
@@ -36681,14 +36703,16 @@ function AdversarioForm({ adversario, scouting, adversarios, onBack, onSave, onA
       </div>
       <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
         Um nome que já exista em "Jogadores" liga-se a essa ficha; um nome novo cria lá uma ficha com nome, número,
-        posição e o clube (este adversário) — pronta a completar mais tarde, por exemplo depois de o veres jogar.
+        posição e o clube (este adversário). O pé dominante e as características que escreveres aqui ficam também
+        na ficha do jogador.
       </div>
       <datalist id="jogadores-scouting-existentes">
         {nomesExistentes.map(nome => <option key={nome} value={nome} />)}
       </datalist>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {linhas.map((l, i) => (
-          <div key={l.localId} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div key={l.localId} style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 10, background: T.surface }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {/* Nº da camisola — aparece no campo, à frente do nome. */}
             <Input
               type="number" inputMode="numeric" min={1} max={99} value={l.camisola || ''}
@@ -36707,9 +36731,25 @@ function AdversarioForm({ adversario, scouting, adversarios, onBack, onSave, onA
               <X size={16} />
             </button>
           </div>
+          {/* O QUE SE OBSERVOU DO JOGADOR — vai direto para a ficha dele em
+              "Jogadores" (Pé dominante e Características), ao Guardar. Numa
+              ficha que já existia, o texto que aparece aqui É o da ficha:
+              editar aqui é editar lá. */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <Select value={l.pe || ''} onChange={e => atualizarLinha(i, 'pe', e.target.value)} title="Pé dominante" style={{ width: 150, flexShrink: 0 }}>
+              <option value="">Pé dominante</option>
+              {DOMINANT_FEET.filter(Boolean).map(p => <option key={p} value={p}>{p}</option>)}
+            </Select>
+            <TextArea
+              value={l.caracteristicas || ''} onChange={e => atualizarLinha(i, 'caracteristicas', e.target.value)}
+              placeholder="Características: perfil físico, com bola, sem bola, pontos fortes/fracos... (fica na ficha do jogador)"
+              style={{ flex: '1 1 260px', minHeight: 64 }}
+            />
+          </div>
+          </div>
         ))}
       </div>
-      <Btn variant="ghost" onClick={() => setLinhas([...linhas, { localId: uid(), nome: '', posicao: '', camisola: '' }])}>
+      <Btn variant="ghost" onClick={() => setLinhas([...linhas, { localId: uid(), nome: '', posicao: '', camisola: '', pe: '', caracteristicas: '' }])}>
         <Plus size={14} /> Adicionar jogador-chave
       </Btn>
 
