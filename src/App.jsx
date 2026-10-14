@@ -14107,55 +14107,38 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         const elementosFinais = baseElements.map(el => (moved.has(el.id) ? { ...el, x: moved.get(el.id).x, y: moved.get(el.id).y } : el));
         let indiceGravado;
         if (emRecuo) {
-          /* Em recuo, desenhar um movimento novo para um jogador que já
-             tinha coreografia gravada mais à frente SUBSTITUI essa
-             coreografia dele dali para a frente — não se soma no fim.
-             "O resto que está feito não mexe": só o(s) elemento(s) que
-             se acabaram de mover é que perdem o que faziam depois; toda
-             a gente e tudo o resto em cada passo seguinte fica tal como
-             estava. É a mesma ideia do "desde" já usada para texto e
-             posição, aplicada agora a uma animação a sério (com seta),
-             não só a uma correção estática. */
-          const moverIds = new Set(chains.map(c => c.mover && c.mover.id).filter(Boolean));
-          const idxNovo = desdeValido + 1;
-          indiceGravado = idxNovo;
+          /* EDITAR A MEIO DA COREOGRAFIA = RECOMEÇAR DALI.
+
+             A prancheta está a mostrar o campo tal como estava no início do
+             Animar k+1 (o "desde animar k+1" escolhido). Animar agora:
+               · mantém tudo o que vem ANTES (Animar 1 … k) como estava;
+               · o movimento novo PASSA A SER o Animar k+1;
+               · os passos que vinham a seguir são apagados — a jogada
+                 seguiu outro caminho. A partir daqui continua-se a animar
+                 normalmente, se se quiser mais passos.
+             Antes, o movimento novo era metido a meio e o resto da
+             coreografia antiga continuava a correr por cima dele, o que
+             dava jogadas sem sentido (e linhas que não animavam). O aviso
+             por cima do campo diz isto antes de se animar, e "Anular"
+             repõe tudo. */
           const seq = value.sequence || [];
-          const passoExistente = seq[idxNovo];
+          const k = desdeValido;
+          indiceGravado = k;
+          // Desenhos fixos que só nasceram em passos DEPOIS deste também
+          // desaparecem com eles.
+          const idsDoPasso = new Set(((seq[k] && seq[k].staticArrows) || []).map(a => a.id));
+          const idsPosteriores = new Set();
+          seq.slice(k + 1).forEach(s => (s.staticArrows || []).forEach(a => { if (!idsDoPasso.has(a.id)) idsPosteriores.add(a.id); }));
+          const fixasFinais = arrows.filter(a => !animatedIds.has(a.id) && !idsPosteriores.has(a.id));
           const novoPasso = {
-            elements: [
-              ...((passoExistente && passoExistente.elements) || []).filter(el => !moverIds.has(el.id)),
-              ...elementosFinais.filter(el => moverIds.has(el.id)),
-            ],
-            arrows: [
-              ...((passoExistente && passoExistente.arrows) || []).filter(a => !moverIds.has(a.ownerId)),
-              ...animArrows.map(a => ({ ...a })),
-            ],
-            staticArrows: (passoExistente && passoExistente.staticArrows) || stepSnapshot.staticArrows,
+            ...stepSnapshot,
+            staticArrows: fixasFinais.map(a => ({ ...a })),
           };
-          const sequencia = seq.slice(0, idxNovo);
-          sequencia.push(novoPasso);
-          // A partir daqui, este(s) elemento(s) desaparecem da coreografia
-          // antiga — a história deles recomeçou no passo que se acabou de
-          // gravar. Os outros elementos de cada passo seguinte continuam
-          // exatamente como estavam.
-          for (let i = idxNovo + 1; i < seq.length; i++) {
-            sequencia.push({
-              ...seq[i],
-              elements: (seq[i].elements || []).filter(el => !moverIds.has(el.id)),
-              arrows: (seq[i].arrows || []).filter(a => !moverIds.has(a.ownerId)),
-            });
-          }
-          /* `value.elements` (a base para o que vier depois de "Animar")
-             só muda se este passo novo for mesmo o último — se ainda
-             houver passos a seguir (não estava no fim da coreografia),
-             o estado "atual" continua a ser o do verdadeiro último
-             passo, que esta edição não tocou. */
-          const ultimoPasso = sequencia[sequencia.length - 1];
           commit({
             ...value,
-            elements: idxNovo === sequencia.length - 1 ? elementosFinais : ultimoPasso.elements,
-            arrows: idxNovo === sequencia.length - 1 ? arrows.filter(a => !animatedIds.has(a.id)) : value.arrows,
-            sequence: sequencia,
+            elements: elementosFinais,
+            arrows: fixasFinais,
+            sequence: [...seq.slice(0, k), novoPasso],
           });
         } else {
           indiceGravado = (value.sequence || []).length;
@@ -14990,7 +14973,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           fontSize: 12, ...body,
         }}>
           <Clock size={14} />
-          A ver o Animar {desdeValido + 1} — o que desenhares agora soma-se ao fim da coreografia, sem apagar os passos seguintes.
+          {(() => {
+            const total = (value.sequence || []).length;
+            const seguinte = desdeValido + 2;
+            const antes = desdeValido === 0 ? '' : desdeValido === 1 ? ' O Animar 1 fica como está.' : ` Os Animar 1 a ${desdeValido} ficam como estão.`;
+            return `A ver o início do Animar ${desdeValido + 1}. Se animares um movimento agora, ele passa a ser o Animar ${desdeValido + 1} e ${seguinte === total ? `o Animar ${total} é apagado` : `os Animar ${seguinte} a ${total} são apagados`}.${antes} O desfazer (↶) repõe tudo.`;
+          })()}
         </div>
       )}
 
