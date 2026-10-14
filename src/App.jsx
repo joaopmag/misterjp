@@ -38272,96 +38272,166 @@ const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor
 
 /* LEITOR "VÍDEO JUNTO" — vários clipes num SÓ leitor, com UMA barra.
 
-   Os clipes de um vídeo do jogador (Os meus vídeos) tocam como se fossem
-   um clipe só: a barra vai de 0 ao total (a soma de todos), com marcas
-   onde cada clipe começa; arrastar para qualquer ponto vai ao clipe certo
-   e ao segundo certo dele, mesmo que seja de outro jogo. No fim de um
-   clipe passa sozinho ao seguinte; no fim do último volta ao início.
+   Usado no lugar do leitor da Biblioteca quando o jogador abre um dos
+   "Os meus vídeos": mesmo aspeto (barra amarela, -2s/+2s, tempo, Ecrã
+   inteiro), mas a barra vai de 0 ao total de todos os clipes, com uma
+   risca onde cada um começa.
 
-   Por dentro é um leitor do YouTube: clipes do MESMO vídeo saltam dentro
-   dele (sem recarregar); de um vídeo diferente, troca-se o vídeo e
-   continua a tocar. */
-function LeitorJunto({ segmentos, titulo, onFechar }) {
+   PASSAGEM SEM CORTE ENTRE CLIPES. Há dois leitores do YouTube, um por
+   cima do outro: enquanto um toca, o outro já tem o clipe SEGUINTE
+   carregado, posto no início e em pausa (e sem som). No fim do clipe,
+   troca-se qual se vê e o seguinte arranca logo — sem esperar que
+   carregue. Depois o leitor que ficou escondido prepara o próximo. */
+function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   const segs = (segmentos || []).filter(s => s && s.youtubeId && s.fim > s.inicio);
   const durs = segs.map(s => s.fim - s.inicio);
   const offs = durs.reduce((acc, d, k) => { acc.push(k ? acc[k - 1] + durs[k - 1] : 0); return acc; }, []);
   const total = durs.reduce((t, d) => t + d, 0);
 
-  const iframeRef = useRef(null);
+  const iframes = [useRef(null), useRef(null)];
   const caixaRef = useRef(null);
   const [i, setI] = useState(0);
   const [local, setLocal] = useState(segs[0] ? segs[0].inicio : 0);
   const [aTocar, setATocar] = useState(false);
-  // O que está carregado no iframe: muda só quando é preciso OUTRO vídeo.
-  const [carga, setCarga] = useState({ youtubeId: segs[0] && segs[0].youtubeId, t: segs[0] ? segs[0].inicio : 0, auto: false, n: 0 });
+  const [vis, setVis] = useState(0); // qual dos dois leitores se vê
+  // Cada leitor: que vídeo tem carregado, onde arranca, e um contador
+  // para o recriar quando muda de vídeo.
+  const [slots, setSlots] = useState(() => [
+    { youtubeId: segs[0] && segs[0].youtubeId, t: segs[0] ? segs[0].inicio : 0, n: 0, auto: false, preparar: false },
+    { youtubeId: segs[1] ? segs[1].youtubeId : (segs[0] && segs[0].youtubeId), t: segs[1] ? segs[1].inicio : 0, n: 0, auto: false, preparar: !!segs[1] },
+  ]);
   const [ecraInteiro, setEcraInteiro] = useState(false);
-  const iRef = useRef(0);
-  const saltoRef = useRef(0);
-  const aTocarRef = useRef(false);
-  const cargaRef = useRef(carga);
-  useEffect(() => { iRef.current = i; }, [i]);
-  useEffect(() => { aTocarRef.current = aTocar; }, [aTocar]);
-  useEffect(() => { cargaRef.current = carga; }, [carga]);
+  const ref = useRef({ i: 0, vis: 0, slots, alvo: [0, segs[1] ? 1 : -1], pronto: [false, false], salto: 0, aTocar: false });
+  ref.current.slots = slots;
+  useEffect(() => { ref.current.aTocar = aTocar; }, [aTocar]);
 
-  const comando = (func, args) => {
-    const win = iframeRef.current && iframeRef.current.contentWindow;
+  const cmd = (s, func, args) => {
+    const el = iframes[s].current;
+    const win = el && el.contentWindow;
     if (win) win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
   };
-  // Vai ao clipe k, segundo t (do vídeo original). `tocar`: continua a tocar.
-  const irPara = (k, t, tocar) => {
-    const s = segs[k];
-    if (!s) return;
-    saltoRef.current = Date.now();
-    iRef.current = k;
-    setI(k);
-    setLocal(t);
-    if (cargaRef.current.youtubeId === s.youtubeId) {
-      comando('seekTo', [t, true]);
-      if (tocar) comando('playVideo');
+  const mudarSlot = (s, novo) => {
+    setSlots(prev => {
+      const cop = prev.slice();
+      cop[s] = { ...novo, n: prev[s].n + 1 };
+      ref.current.slots = cop;
+      return cop;
+    });
+  };
+  // Põe o leitor `s` pronto no início do clipe k: carregado, em pausa e sem som.
+  const prepararSlot = (s, k) => {
+    const r = ref.current;
+    r.alvo[s] = k;
+    if (k < 0 || k >= segs.length) return;
+    const seg = segs[k];
+    if (r.slots[s].youtubeId === seg.youtubeId && r.pronto[s]) {
+      cmd(s, 'mute'); cmd(s, 'seekTo', [seg.inicio, true]);
+      setTimeout(() => { if (ref.current.vis !== s) cmd(s, 'pauseVideo'); }, 400);
     } else {
-      const nova = { youtubeId: s.youtubeId, t, auto: !!tocar, n: cargaRef.current.n + 1 };
-      cargaRef.current = nova;
-      setCarga(nova);
+      r.pronto[s] = false;
+      mudarSlot(s, { youtubeId: seg.youtubeId, t: seg.inicio, auto: false, preparar: true });
+    }
+  };
+  // Toca o clipe k a partir do segundo t no leitor visível.
+  const tocarAqui = (k, t, tocar) => {
+    const r = ref.current;
+    const s = r.vis;
+    const seg = segs[k];
+    r.salto = Date.now();
+    r.i = k; setI(k); setLocal(t);
+    r.alvo[s] = k;
+    if (r.slots[s].youtubeId === seg.youtubeId && r.pronto[s]) {
+      cmd(s, 'unMute'); cmd(s, 'seekTo', [t, true]);
+      if (tocar) cmd(s, 'playVideo'); else setTimeout(() => cmd(s, 'pauseVideo'), 300);
+    } else {
+      r.pronto[s] = false;
+      mudarSlot(s, { youtubeId: seg.youtubeId, t, auto: !!tocar, preparar: false });
+    }
+    prepararSlot(1 - s, k + 1 < segs.length ? k + 1 : -1);
+  };
+  // Fim de um clipe: passa ao seguinte sem parar (troca de leitor).
+  const avancar = () => {
+    const r = ref.current;
+    const k = r.i + 1;
+    if (k >= segs.length) {
+      cmd(r.vis, 'pauseVideo');
+      tocarAqui(0, segs[0].inicio, false);
+      return;
+    }
+    const outro = 1 - r.vis;
+    if (r.alvo[outro] === k && r.pronto[outro]) {
+      const antigo = r.vis;
+      r.vis = outro; setVis(outro);
+      r.i = k; setI(k); setLocal(segs[k].inicio);
+      r.salto = Date.now();
+      cmd(outro, 'unMute'); cmd(outro, 'seekTo', [segs[k].inicio, true]); cmd(outro, 'playVideo');
+      cmd(antigo, 'pauseVideo'); cmd(antigo, 'mute');
+      prepararSlot(antigo, k + 1 < segs.length ? k + 1 : -1);
+    } else {
+      tocarAqui(k, segs[k].inicio, true);
     }
   };
   const irParaGlobal = (g) => {
     const gg = Math.max(0, Math.min(total - 0.05, g));
     let k = 0;
     while (k < segs.length - 1 && gg >= offs[k] + durs[k]) k++;
-    irPara(k, segs[k].inicio + (gg - offs[k]), aTocarRef.current);
+    const t = segs[k].inicio + (gg - offs[k]);
+    const r = ref.current;
+    if (k === r.i) {
+      r.salto = Date.now(); setLocal(t);
+      cmd(r.vis, 'seekTo', [t, true]);
+      return;
+    }
+    tocarAqui(k, t, r.aTocar);
   };
 
   useEffect(() => {
     const onMessage = (event) => {
       if (!event.origin || !event.origin.includes('youtube.com')) return;
-      const win = iframeRef.current && iframeRef.current.contentWindow;
-      if (win && event.source !== win) return;
+      const s = iframes.findIndex(rf => rf.current && event.source === rf.current.contentWindow);
+      if (s < 0) return;
       let data = event.data;
       try { data = typeof data === 'string' ? JSON.parse(data) : data; } catch (e) { return; }
       if (!data) return;
+      const r = ref.current;
+      if (s !== r.vis) return; // o leitor escondido só se prepara
       if (data.event === 'onStateChange' && typeof data.info === 'number') setATocar(data.info === 1 || data.info === 3);
       if (data.event === 'infoDelivery' && data.info) {
         if (typeof data.info.playerState === 'number') setATocar(data.info.playerState === 1 || data.info.playerState === 3);
         const t = data.info.currentTime;
         if (typeof t !== 'number') return;
-        const k = iRef.current;
-        const s = segs[k];
-        if (!s) return;
-        const aSaltar = Date.now() - saltoRef.current < 900;
-        if (!aSaltar && t >= s.fim - 0.15) {
-          if (k < segs.length - 1) irPara(k + 1, segs[k + 1].inicio, true);
-          else { comando('pauseVideo'); irPara(0, segs[0].inicio, false); }
-        } else if (!aSaltar && t < s.inicio - 0.6) {
-          comando('seekTo', [s.inicio, true]);
-        } else {
-          setLocal(Math.min(s.fim, Math.max(s.inicio, t)));
-        }
+        const seg = segs[r.i];
+        if (!seg) return;
+        const aSaltar = Date.now() - r.salto < 900;
+        if (!aSaltar && t >= seg.fim - 0.12) avancar();
+        else if (!aSaltar && t < seg.inicio - 0.6) cmd(s, 'seekTo', [seg.inicio, true]);
+        else setLocal(Math.min(seg.fim, Math.max(seg.inicio, t)));
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segmentos]);
+
+  const aoCarregar = (s) => {
+    const el = iframes[s].current;
+    const win = el && el.contentWindow;
+    if (!win) return;
+    win.postMessage(JSON.stringify({ event: 'listening', id: s + 1, channel: 'widget' }), '*');
+    const slot = ref.current.slots[s];
+    setTimeout(() => {
+      ref.current.pronto[s] = true;
+      if (slot.preparar) {
+        // Escondido: carrega o arranque (seekTo põe-no a tocar) e pára já,
+        // sem som — fica pronto a arrancar sem esperar.
+        cmd(s, 'mute'); cmd(s, 'seekTo', [slot.t, true]);
+        setTimeout(() => { if (ref.current.vis !== s) cmd(s, 'pauseVideo'); }, 500);
+      } else {
+        cmd(s, 'unMute'); cmd(s, 'seekTo', [slot.t, true]);
+        if (slot.auto) cmd(s, 'playVideo');
+      }
+    }, 350);
+  };
 
   useEffect(() => {
     const aoMudar = () => setEcraInteiro(!!caixaRef.current && document.fullscreenElement === caixaRef.current);
@@ -38377,67 +38447,72 @@ function LeitorJunto({ segmentos, titulo, onFechar }) {
     else setEcraInteiro(true); // iPhone: ocupa a janela toda
   };
 
-  const aoCarregar = () => {
-    const win = iframeRef.current && iframeRef.current.contentWindow;
-    if (!win) return;
-    win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
-    // O "start" do YouTube só aceita segundos inteiros: acerta ao décimo.
-    const c = cargaRef.current;
-    setTimeout(() => { comando('seekTo', [c.t, true]); if (c.auto) comando('playVideo'); }, 350);
-  };
-
   if (!segs.length) return <div style={{ fontSize: 12.5, color: T.mutedDim, padding: 10 }}>Os clipes deste vídeo já não existem.</div>;
-  const s = segs[i] || segs[0];
-  const global = offs[i] + Math.max(0, local - s.inicio);
-  const btn = { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 4, display: 'flex', flexShrink: 0 };
-  const cssInteiro = ecraInteiro && !document.fullscreenElement
-    ? { position: 'fixed', inset: 0, zIndex: 80, borderRadius: 0 } : {};
+  const seg = segs[i] || segs[0];
+  const global = offs[i] + Math.max(0, local - seg.inicio);
+  const btn = { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4, flexShrink: 0 };
+  const cssInteiro = ecraInteiro && !document.fullscreenElement ? { position: 'fixed', inset: 0, zIndex: 80, borderRadius: 0 } : {};
+  const alternarPlay = () => cmd(vis, aTocar ? 'pauseVideo' : 'playVideo');
 
   return (
-    <div ref={caixaRef} style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', background: '#000', display: 'flex', flexDirection: 'column', ...(ecraInteiro ? { height: '100%' } : {}), ...cssInteiro }}>
-      <div style={{ position: 'relative', width: '100%', ...(ecraInteiro ? { flex: 1, minHeight: 0 } : { aspectRatio: '16/9' }) }}>
-        <iframe
-          key={carga.n} ref={iframeRef} onLoad={aoCarregar} title={titulo || 'O meu vídeo'}
-          src={`https://www.youtube.com/embed/${carga.youtubeId}?start=${Math.floor(carga.t)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0${carga.auto ? '&autoplay=1' : ''}`}
-          allow="autoplay; encrypted-media; picture-in-picture"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
-        />
-      </div>
-      <div style={{ padding: '8px 12px 10px', background: '#111', borderTop: `1px solid ${T.line}` }}>
-        {/* Uma barra para todos os clipes: cada risca é onde um começa. */}
-        <div style={{ position: 'relative', height: 22 }}>
-          <input
-            type="range" min={0} max={total} step={0.1} value={Math.min(total, global)}
-            onChange={e => irParaGlobal(Number(e.target.value))}
-            aria-label="Posição no vídeo"
-            style={{ position: 'absolute', inset: 0, width: '100%', accentColor: T.gold, cursor: 'pointer', margin: 0 }}
-          />
-          {offs.slice(1).map((o, k) => (
-            <span key={k} style={{ position: 'absolute', top: 4, bottom: 4, width: 2, left: `calc(${(o / total) * 100}% - 1px)`, background: '#fff', opacity: 0.7, pointerEvents: 'none', borderRadius: 1 }} />
+    <div>
+      <div ref={caixaRef} style={{ position: 'relative', overflow: 'hidden', background: '#000', display: 'flex', flexDirection: 'column', borderRadius: 8, ...(ecraInteiro ? { height: '100%' } : {}), ...cssInteiro }}>
+        <div style={{ position: 'relative', width: '100%', ...(ecraInteiro ? { flex: 1, minHeight: 0 } : { paddingTop: '56.25%' }) }}>
+          {[0, 1].map(s => (
+            <iframe
+              key={`${s}-${slots[s].n}`} ref={iframes[s]} onLoad={() => aoCarregar(s)} title={titulo || 'O meu vídeo'}
+              src={`https://www.youtube.com/embed/${slots[s].youtubeId}?start=${Math.floor(slots[s].t)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0${slots[s].auto ? '&autoplay=1' : ''}${slots[s].preparar ? '&mute=1' : ''}`}
+              allow="autoplay; encrypted-media; picture-in-picture"
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, opacity: vis === s ? 1 : 0, pointerEvents: 'none', zIndex: vis === s ? 1 : 0 }}
+            />
           ))}
+          {/* Toque no vídeo = pausar / retomar (os leitores não recebem toques). */}
+          <div onClick={alternarPlay} style={{ position: 'absolute', inset: 0, zIndex: 2, cursor: 'pointer' }} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => comando(aTocar ? 'pauseVideo' : 'playVideo')} title={aTocar ? 'Pausar' : 'Reproduzir'} style={btn}>
-            {aTocar ? <Pause size={18} /> : <Play size={18} />}
-          </button>
-          <button onClick={() => irPara(0, segs[0].inicio, aTocar)} title="Voltar ao início" style={btn}><RotateCcw size={16} /></button>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: '#ddd', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...body }}>
-            {segs.length > 1 ? `${i + 1}/${segs.length} · ` : ''}{s.titulo || ''}
+        {/* A BARRA — a mesma dos clipes, mas para o vídeo inteiro. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: isNarrow ? 6 : 10, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
+          <button onClick={alternarPlay} title={aTocar ? 'Pausar' : 'Reproduzir'} style={btn}>{aTocar ? <Pause size={16} /> : <Play size={16} />}</button>
+          <button onClick={() => tocarAqui(0, segs[0].inicio, aTocar)} title="Voltar ao início" style={btn}><RotateCcw size={14} /></button>
+          {!isNarrow && <button onClick={() => irParaGlobal(global - 2)} title="Recuar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>-2s</button>}
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
+            <input
+              type="range" min={0} max={total} step={0.1} value={Math.min(total, global)}
+              onChange={e => irParaGlobal(Number(e.target.value))}
+              aria-label="Posição no vídeo"
+              style={{ width: '100%', accentColor: T.gold, cursor: 'pointer' }}
+            />
+            {offs.slice(1).map((o, k) => (
+              <span key={k} style={{ position: 'absolute', top: '50%', height: 10, marginTop: -5, width: 2, left: `calc(${(o / total) * 100}% - 1px)`, background: '#fff', opacity: 0.6, pointerEvents: 'none', borderRadius: 1 }} />
+            ))}
+          </div>
+          {!isNarrow && <button onClick={() => irParaGlobal(global + 2)} title="Avançar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>+2s</button>}
+          <span style={{ fontSize: 11.5, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>{fmtMMSS(global)} / {fmtMMSS(total)}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: '#ffffffcc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, ...body }}>
+            {segs.length > 1 ? `${i + 1}/${segs.length} · ` : ''}{seg.titulo || ''}
           </span>
-          <span style={{ fontSize: 12, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>
-            {fmtMMSS(global)} / {fmtMMSS(total)}
-          </span>
-          <button onClick={alternarEcra} title={ecraInteiro ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'} style={btn}>
-            {ecraInteiro ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
-          {onFechar && !ecraInteiro && <button onClick={onFechar} title="Fechar" style={btn}><X size={16} /></button>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+            {onFechar && !ecraInteiro && (
+              <button onClick={onFechar} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', ...body }}><X size={13} /> Fechar</button>
+            )}
+            <button onClick={alternarEcra} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', ...body }}>
+              {ecraInteiro ? <Minimize2 size={13} /> : <Maximize2 size={13} />} {ecraInteiro ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'}
+            </button>
+          </div>
         </div>
       </div>
+      {!ecraInteiro && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 16, color: T.cream, fontWeight: 600, ...body }}>{titulo}</div>
+          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2, ...mono }}>{segs.length} clipes · {fmtMMSS(total)}</div>
+        </div>
+      )}
     </div>
   );
 }
 
-function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGravar, aGravar }) {
+function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGravar, aGravar, aberto, onAbrir, onFecharAberto }) {
   /* Guardados NO SERVIDOR (api, ver os_meus_videos.sql), para aparecerem
      em qualquer aparelho. Se o servidor ainda não tiver as funções (ou não
      houver rede), guarda-se NESTE aparelho e avisa-se. Os que já estavam
@@ -38447,7 +38522,6 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
   const [aviso, setAviso] = useState('');
   const [editar, setEditar] = useState(null); // { id?, nome, ids }
   const [aGuardar, setAGuardar] = useState(false);
-  const [aberto, setAberto] = useState(null); // id do vídeo aberto no leitor
   useEffect(() => {
     let cancelado = false;
     (async () => {
@@ -38539,9 +38613,15 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
               <div style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}</div>
             </div>
             {aberto === v.id ? (
-              <Btn variant="ghost" onClick={() => setAberto(null)}><X size={13} /> Fechar</Btn>
+              <Btn variant="ghost" onClick={onFecharAberto}><X size={13} /> Fechar</Btn>
             ) : (
-              <Btn disabled={!ids.length} onClick={() => { if (aDar) onParar(); setAberto(v.id); }}><Play size={13} /> Ver</Btn>
+              <Btn disabled={!ids.length} onClick={() => {
+                if (aDar) onParar();
+                onAbrir({
+                  id: v.id, nome: v.nome,
+                  segmentos: ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, inicio: Number(c.clipInicio), fim: Number(c.clipFim), titulo: c.title }; }),
+                });
+              }}><Play size={13} /> Ver</Btn>
             )}
             <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnIcone}><Pencil size={14} /></button>
             {onGravar && (
@@ -38549,16 +38629,6 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
             )}
             <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
           </div>
-          {/* O vídeo junto: todos os clipes no mesmo leitor, uma barra só. */}
-          {aberto === v.id && (
-            <div style={{ paddingBottom: 10 }}>
-              <LeitorJunto
-                titulo={v.nome}
-                segmentos={ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, inicio: Number(c.clipInicio), fim: Number(c.clipFim), titulo: c.title }; })}
-                onFechar={() => setAberto(null)}
-              />
-            </div>
-          )}
           </React.Fragment>
         );
       })}
@@ -38638,6 +38708,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [grupo, setGrupo] = useState(null);
   // "Ver cortes em seguida" — ids dos cortes a reproduzir por ordem.
   const [sequencia, setSequencia] = useState(null);
+  // Portal: um dos "Os meus vídeos" aberto no leitor (vários clipes num só).
+  const [compAtiva, setCompAtiva] = useState(null); // { id, nome, segmentos }
+  const leitorColunaRef = useRef(null);
+  // Escolher um clipe da lista sai do vídeo junto e volta ao leitor normal.
+  useEffect(() => { setCompAtiva(null); }, [activeId]);
   // Corte de um jogo de adversário ainda sem ficha: fica aqui à espera
   // de se escolher/criar a ficha (ver `FichaAdversarioRapida`).
   const [pedirFicha, setPedirFicha] = useState(null);
@@ -41351,7 +41426,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   );
 
   /* ---------- CANAL: secções, cartões e caminho ---------- */
-  const abrirSecao = (id) => { setSecao(id); setGrupo(null); setBusca(''); setSequencia(null); setModoFeed(false); };
+  const abrirSecao = (id) => { setSecao(id); setGrupo(null); setBusca(''); setSequencia(null); setModoFeed(false); setCompAtiva(null); };
   const abrirGrupo = (key) => {
     setGrupo(key); setSequencia(null); setModoFeed(false);
     const g = gruposDaSecao.find(x => x.key === key);
@@ -41762,6 +41837,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         <CompilacoesAtleta
           clipes={itensMeus} chave={chaveCompilacoes} api={compilacoesApi}
           aTocar={sequencia} aGravar={!!gravacaoBib}
+          aberto={compAtiva && compAtiva.id}
+          onAbrir={(v) => {
+            setSequencia(null);
+            setCompAtiva(v);
+            setTimeout(() => { if (leitorColunaRef.current) leitorColunaRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+          }}
+          onFecharAberto={() => setCompAtiva(null)}
           onVer={(ids) => { if (!ids.length) return; setSequencia(ids); setActiveId(ids[0]); }}
           onParar={() => setSequencia(null)}
           onGravar={podeGravarSeparador() ? (ids, nome) => gravarSequenciaBib(ids, nome) : null}
@@ -41802,8 +41884,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
-          <div>
-            {active && (
+          <div ref={leitorColunaRef}>
+            {/* Portal: "Os meus vídeos" abre AQUI, no lugar do leitor dos
+                clipes — os clipes todos num só, com uma barra. */}
+            {compAtiva && (
+              <LeitorJunto key={compAtiva.id} titulo={compAtiva.nome} segmentos={compAtiva.segmentos} isNarrow={isNarrow} onFechar={() => setCompAtiva(null)} />
+            )}
+            {!compAtiva && active && (
               <>
                 {active.youtubeId ? (
                   // Toca sempre diretamente na caixa (tal como um vídeo
@@ -42404,7 +42491,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               </div>
                             </Modal>
                           )}
-                          {ativoEClipe && (
+                          {/* Desenhar é só para a equipa técnica — no Portal não. */}
+                          {ativoEClipe && !criarClipeAtleta && (
                           <button
                             onClick={modoDesenhoBib ? cancelarDesenhoBib : comecarDesenhoBib}
                             style={{
