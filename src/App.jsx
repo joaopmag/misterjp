@@ -9865,7 +9865,8 @@ function Exercicios({ exercises, setExercises, meta }) {
               style={{ width: '100%', display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}
             />
           ) : (
-            <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <svg viewBox={viewBoxDaVista(printExercise.diagram && printExercise.diagram.vista)} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+              <VistaCampo vista={printExercise.diagram && printExercise.diagram.vista}>
               <PitchMarkings printMode />
               <SpaceZonesReadOnly diagram={printExercise.diagram} spaceText={printExercise.space} printMode />
               <DiagramElements
@@ -9875,6 +9876,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                 iconScale={iconScaleForPhase(printExercise.phase)}
                 printMode
               />
+              </VistaCampo>
             </svg>
           )}
         </div>,
@@ -9971,15 +9973,17 @@ function IdeiaNoDossier({ ideia, numero }) {
         {passos.map((p, i) => (
           <div key={i} style={{ breakInside: 'avoid' }}>
             <svg
-              viewBox={PITCH_VIEWBOX}
+              viewBox={viewBoxDaVista(ideia.diagram && ideia.diagram.vista)}
               style={{
                 width: '100%', aspectRatio: PITCH_ASPECT, display: 'block',
                 background: '#fff', border: '1px solid #ccc', borderRadius: 6,
               }}
             >
+              <VistaCampo vista={ideia.diagram && ideia.diagram.vista}>
               <PitchMarkings printMode />
               <SpaceZonesReadOnly diagram={ideia.diagram} printMode />
               <DiagramElements elements={p.elements} arrows={p.arrows} interactive={false} printMode />
+              </VistaCampo>
             </svg>
             {p.rotulo ? (
               <div style={{ fontSize: 10.5, color: '#777', marginTop: 3 }}>
@@ -10360,7 +10364,8 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
           <div style={{ margin: '0 0 14px', fontSize: 12.5, borderTop: '1px solid #ccc', borderBottom: '1px solid #ccc', padding: '8px 0' }}>
             <strong>Fase de jogo:</strong> {printIdeia.phase}
           </div>
-          <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox={viewBoxDaVista(printIdeia.diagram && printIdeia.diagram.vista)} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <VistaCampo vista={printIdeia.diagram && printIdeia.diagram.vista}>
             <PitchMarkings printMode />
             <SpaceZonesReadOnly diagram={printIdeia.diagram} printMode />
             <DiagramElements
@@ -10369,6 +10374,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
               interactive={false}
               printMode
             />
+            </VistaCampo>
           </svg>
         </div>,
         document.body
@@ -11626,6 +11632,38 @@ const PITCH_VIEWBOX = '-4 -3 115 84';
 const PITCH_ASPECT = '115 / 84';
 // Limites para o mapeamento do rato (ver toPoint no DiagramEditor).
 const PITCH_BOX = { x: -4, y: -3, w: 115, h: 84 };
+
+/* VISTA DO CAMPO — "completo" (horizontal, o de sempre) ou "meio"
+   (meio-campo na VERTICAL, com a baliza da direita em cima).
+
+   As posições gravadas são SEMPRE as do campo inteiro (x 0–107, y 0–70):
+   a vista só muda como se olha para ele. Por isso trocar de vista não
+   estraga nada — o que estiver na outra metade continua lá, só fica fora
+   do enquadramento. A rotação é feita por um <g> à volta do desenho
+   (`VistaCampo`); os textos rodam ao contrário (`useRodarTexto`) para se
+   continuarem a ler direitos.
+
+   O enquadramento do meio-campo tem exatamente a mesma proporção do campo
+   inteiro (115 × 84), para nenhum contentor precisar de mudar de forma. */
+const VISTA_MEIO = { u0: -3, v0: -3.36, w: 84, h: 84 * 84 / 115 };
+const PITCH_VIEWBOX_MEIO = `${VISTA_MEIO.u0} ${VISTA_MEIO.v0} ${VISTA_MEIO.w} ${VISTA_MEIO.h.toFixed(3)}`;
+// (x, y) do campo → (u, v) no ecrã: u = y, v = 107 − x.
+const VISTA_MEIO_TRANSFORM = 'matrix(0 -1 1 0 0 107)';
+function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : PITCH_VIEWBOX; }
+const VistaCampoCtx = React.createContext('completo');
+function VistaCampo({ vista, gRef, children }) {
+  const v = vista === 'meio' ? 'meio' : 'completo';
+  return (
+    <VistaCampoCtx.Provider value={v}>
+      <g ref={gRef} transform={v === 'meio' ? VISTA_MEIO_TRANSFORM : undefined}>{children}</g>
+    </VistaCampoCtx.Provider>
+  );
+}
+// Rotação que mantém um texto direito na vista vertical (à volta de cx, cy).
+function useRodarTexto() {
+  const v = React.useContext(VistaCampoCtx);
+  return (cx, cy) => (v === 'meio' ? `rotate(90 ${cx} ${cy})` : undefined);
+}
 /* Altura em percentagem da largura — é o truque do "padding-top" que
    reserva o espaço certo antes de o SVG carregar. Calculado a partir do
    enquadramento para nunca poder ficar dessincronizado dele: era um dos
@@ -12755,6 +12793,7 @@ function iconScaleForPhase(phase) {
 
 function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandleDown, selectedArrowId, interactive, placingActive, printMode, iconScale = 1 }) {
   const k = iconScale || 1;
+  const rodarTexto = useRodarTexto();
   // Enquanto a ferramenta ativa é para colocar um novo item (jogador,
   // guarda-redes, bola, cone, baliza, estaca, técnico) ou desenhar uma
   // seta/linha, as áreas de toque dos elementos e das setas já colocadas
@@ -12948,9 +12987,10 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
             <g key={el.id}>
               {hitsEnabled && (
                 <rect x={tx - boxW / 2} y={topo} width={boxW} height={boxH}
+                  transform={rodarTexto(tx, topo + boxH / 2)}
                   onPointerDown={handler} style={hitStyle} />
               )}
-              <g style={{ pointerEvents: 'none' }}>
+              <g style={{ pointerEvents: 'none' }} transform={rodarTexto(tx, topo + boxH / 2)}>
                 <rect x={tx - boxW / 2} y={topo} width={boxW} height={boxH} rx={size * 0.32}
                   fill={printMode ? '#FFFFFF' : '#12241AE6'} stroke={printMode ? '#999' : '#F0E7D577'} strokeWidth="0.2" />
                 <text x={tx} textAnchor="middle" fontSize={size} fontWeight="600" fill={fill}
@@ -12971,7 +13011,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
               {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(1.9 * k, 1.6)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
                 <circle cx={el.x} cy={el.y} r={1.5 * k} fill="#F0E7D6" stroke="#C9A227" strokeWidth={0.3 * k} />
-                <text x={el.x} y={el.y + 0.62 * k} textAnchor="middle" fontSize={1.85 * k} fontWeight="700" fill="#111111" style={{ fontFamily: "'Oswald', sans-serif" }}>T</text>
+                <text x={el.x} y={el.y + 0.62 * k} transform={rodarTexto(el.x, el.y)} textAnchor="middle" fontSize={1.85 * k} fontWeight="700" fill="#111111" style={{ fontFamily: "'Oswald', sans-serif" }}>T</text>
               </g>
             </g>
           );
@@ -13003,7 +13043,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
                 ) : (
                   <circle cx={el.x} cy={el.y} r={1.9 * k} fill={tm.fill} stroke={printMode ? '#1A1A1A' : TEXT_ON_ACCENT} strokeWidth={0.27 * k} />
                 )}
-                <text x={el.x} y={el.y + 0.71 * k} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.42 : 2) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
+                <text x={el.x} y={el.y + 0.71 * k} transform={rodarTexto(el.x, el.y)} textAnchor="middle" fontSize={(elementLabel(el.number, isKeeper).length > 2 ? 1.42 : 2) * k} fontWeight="700" fill={tm.text} style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {elementLabel(el.number, isKeeper)}
                 </text>
               </g>
@@ -13283,13 +13323,13 @@ function computeDiagramAnimationFrames(diagram, zones, phase) {
   const pushFrame = (elements, holdMs, staticArrows = diagram.arrows || []) => {
     frames.push({
       svg: ReactDOMServer.renderToStaticMarkup(
-        <>
+        <VistaCampo vista={diagram.vista}>
           <PitchMarkings />
           {zones.map(z => (
             <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
           ))}
           <DiagramElements elements={elements} arrows={staticArrows} interactive={false} iconScale={iconEscala} />
-        </>
+        </VistaCampo>
       ),
       holdMs,
     });
@@ -13363,7 +13403,7 @@ function buildDiagramBlockHtml(diagram, space, blockId, phase) {
   const { frames, hasAnimation } = computeDiagramAnimationFrames(diagram || {}, zones, phase);
   const html = `
     <div class="pitch-wrap">
-      <svg id="pitch-${blockId}" viewBox="${PITCH_VIEWBOX}" preserveAspectRatio="xMidYMid meet">${frames[0] ? frames[0].svg : ''}</svg>
+      <svg id="pitch-${blockId}" viewBox="${viewBoxDaVista(diagram && diagram.vista)}" preserveAspectRatio="xMidYMid meet">${frames[0] ? frames[0].svg : ''}</svg>
     </div>
     ${hasAnimation ? `
     <div class="controls">
@@ -13782,6 +13822,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     setFuture([]);
     onChange(newValue);
   };
+  // VISTA DO CAMPO (ver VistaCampo): gravada no próprio desenho, para a
+  // ficha, a impressão, a apresentação e as miniaturas mostrarem igual.
+  const vistaCampo = value && value.vista === 'meio' ? 'meio' : 'completo';
+  const gVistaRef = useRef(null);
+  const mudarVista = (v) => { if (v !== vistaCampo) commit({ ...value, vista: v === 'meio' ? 'meio' : undefined }); };
   const beginGesture = () => {
     setPast(p => [...p.slice(-HISTORY_LIMIT + 1), value]);
     setFuture([]);
@@ -13839,13 +13884,18 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const toPoint = (e) => {
     const svg = svgRef.current;
     const { x: vx, y: vy, w: vw, h: vh } = PITCH_BOX;
+    // No meio-campo vertical só se coloca na metade que se vê (x ≥ ~49).
+    const xMin = vistaCampo === 'meio' ? 107 - (VISTA_MEIO.v0 + VISTA_MEIO.h) : vx;
+    const xMax = vistaCampo === 'meio' ? 107 - VISTA_MEIO.v0 : vx + vw;
     const limitar = (px, py) => ({
-      x: Math.max(vx, Math.min(vx + vw, px)),
+      x: Math.max(xMin, Math.min(xMax, px)),
       y: Math.max(vy, Math.min(vy + vh, py)),
     });
     if (!svg) return limitar(0, 0);
     try {
-      const ctm = svg.getScreenCTM();
+      // A matriz do <g> da vista já inclui a rotação do meio-campo: dá
+      // logo as coordenadas do campo, rodado ou não.
+      const ctm = (gVistaRef.current || svg).getScreenCTM();
       if (ctm) {
         const pt = svg.createSVGPoint();
         pt.x = e.clientX;
@@ -13855,6 +13905,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       }
     } catch (err) { /* browsers sem createSVGPoint: usa-se o cálculo abaixo */ }
     const rect = svg.getBoundingClientRect();
+    if (vistaCampo === 'meio') {
+      const u = ((e.clientX - rect.left) / rect.width) * VISTA_MEIO.w + VISTA_MEIO.u0;
+      const v = ((e.clientY - rect.top) / rect.height) * VISTA_MEIO.h + VISTA_MEIO.v0;
+      return limitar(107 - v, u);
+    }
     return limitar(
       ((e.clientX - rect.left) / rect.width) * vw + vx,
       ((e.clientY - rect.top) / rect.height) * vh + vy,
@@ -14779,6 +14834,25 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           />
         ))}
         <span style={{ fontSize: 11, color: T.warn }}>{teamInfo(activeColor).label}</span>
+        {/* VISTA DO CAMPO — campo inteiro (horizontal) ou meio-campo
+            (vertical). Só muda o enquadramento: nada do desenho se perde. */}
+        <div style={{ marginLeft: 'auto', display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden', flexShrink: 0 }}>
+          {[['completo', 'Campo inteiro'], ['meio', 'Meio-campo']].map(([id, rot]) => (
+            <button key={id} type="button" onPointerDown={(e) => { e.preventDefault(); mudarVista(id); }}
+              title={id === 'meio' ? 'Meio-campo na vertical, com a baliza em cima' : 'Campo inteiro na horizontal'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', border: 'none', cursor: 'pointer', ...body, fontSize: 12,
+                background: vistaCampo === id ? T.gold : 'transparent', color: vistaCampo === id ? TEXT_ON_ACCENT : T.muted,
+              }}>
+              <svg width={id === 'meio' ? 11 : 16} height={id === 'meio' ? 14 : 11} viewBox={id === 'meio' ? '0 0 11 14' : '0 0 16 11'} aria-hidden="true">
+                {id === 'meio'
+                  ? <><rect x="0.75" y="0.75" width="9.5" height="12.5" fill="none" stroke="currentColor" strokeWidth="1.2" /><rect x="3" y="0.75" width="5" height="3" fill="none" stroke="currentColor" strokeWidth="1" /></>
+                  : <><rect x="0.75" y="0.75" width="14.5" height="9.5" fill="none" stroke="currentColor" strokeWidth="1.2" /><line x1="8" y1="0.75" x2="8" y2="10.25" stroke="currentColor" strokeWidth="1" /></>}
+              </svg>
+              {rot}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* No telemóvel os botões entram numa grelha de colunas iguais: com
@@ -14931,7 +15005,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       >
         <svg
           ref={svgRef}
-          viewBox={PITCH_VIEWBOX}
+          viewBox={viewBoxDaVista(vistaCampo)}
           /* "meet" e não "none": mesmo que o contentor fique com uma
              proporção ligeiramente diferente (arredondamentos, limites de
              largura), o desenho encaixa dentro sem esticar. Com "none" um
@@ -14977,6 +15051,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           onPointerUp={finishInteraction}
           onPointerCancel={finishInteraction}
         >
+          <VistaCampo vista={vistaCampo} gRef={gVistaRef}>
           <PitchMarkings />
           {zones.map(z => {
             const meters = resizingZoneId === z.id && liveZoneSize ? liveZoneSize : { w: z.w, h: z.h };
@@ -15042,6 +15117,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           )}
           <AnimOverlay items={animItems} iconScale={iconEscala * escalaEcra} />
           <AnimOverlay items={presentAnimItems} iconScale={iconEscala * escalaEcra} />
+          </VistaCampo>
         </svg>
       </div>
 
@@ -15468,12 +15544,14 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           {exerciseInfo?.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
           )}
-          <svg viewBox={PITCH_VIEWBOX} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <svg viewBox={viewBoxDaVista(vistaCampo)} style={{ width: '100%', aspectRatio: PITCH_ASPECT, display: 'block', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+            <VistaCampo vista={vistaCampo}>
             <PitchMarkings printMode />
             {zones.map(z => (
               <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
             ))}
             <DiagramElements elements={elements} arrows={arrows} interactive={false} iconScale={iconEscala} printMode />
+            </VistaCampo>
           </svg>
         </div>,
         document.body
@@ -15551,15 +15629,17 @@ function DiagramThumb({ diagram, space, phase, height = 95, fill = false }) {
   if (!hasDiagram && !zones.length) return null;
   return (
     <svg
-      viewBox={PITCH_VIEWBOX}
+      viewBox={viewBoxDaVista(diagram && diagram.vista)}
       preserveAspectRatio={fill ? 'xMidYMid slice' : 'xMidYMid meet'}
       style={{ width: '100%', height, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}
     >
+      <VistaCampo vista={diagram && diagram.vista}>
       <PitchMarkings />
       {zones.map(z => (
         <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
       ))}
       <DiagramElements elements={diagram?.elements || []} arrows={diagram?.arrows || []} interactive={false} iconScale={iconScaleForPhase(phase)} />
+      </VistaCampo>
     </svg>
   );
 }
@@ -16234,17 +16314,19 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
           ? { position: 'fixed', inset: 0, zIndex: 100, background: '#0e1a12', display: 'flex', flexDirection: 'column', padding: 12 }
           : { position: 'relative', ...PITCH_FIT }
       }>
-        <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio="xMidYMid meet" style={
+        <svg viewBox={viewBoxDaVista(exercise.diagram && exercise.diagram.vista)} preserveAspectRatio="xMidYMid meet" style={
           isFull
             ? { flex: 1, width: '100%', minHeight: 0, background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
             : { position: 'absolute', inset: 0, width: '100%', height: '100%', background: '#1e3a24', borderRadius: 8, border: `1px solid ${T.line}` }
         }>
+          <VistaCampo vista={exercise.diagram && exercise.diagram.vista}>
           <PitchMarkings />
           {zones.map(z => (
             <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
           ))}
           <DiagramElements elements={frameElements.filter(el => !animItems.some(it => it.mover?.id === el.id))} arrows={frameArrows} interactive={false} iconScale={iconEscala} />
           <AnimOverlay items={animItems} iconScale={iconEscala} />
+          </VistaCampo>
           {/* Marca dentro do próprio SVG: assim acompanha o campo em ecrã
               inteiro e aparece também quando se guarda a imagem. */}
           <text
@@ -21296,18 +21378,20 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                                 {i + 1}. {ex.name}
                               </div>
                               <svg
-                                viewBox={PITCH_VIEWBOX}
+                                viewBox={viewBoxDaVista(ex.diagram && ex.diagram.vista)}
                                 style={{
                                   width: '100%', aspectRatio: PITCH_ASPECT, display: 'block',
                                   background: '#fff', border: '1px solid #ccc', borderRadius: 6,
                                 }}
                               >
+                                <VistaCampo vista={ex.diagram && ex.diagram.vista}>
                                 <PitchMarkings printMode />
                                 <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
                                 <DiagramElements
                                   elements={d.elements} arrows={d.arrows}
                                   interactive={false} iconScale={iconScaleForPhase(ex.phase)} printMode
                                 />
+                                </VistaCampo>
                               </svg>
                             </div>
                           );
@@ -22013,7 +22097,8 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
         // pequenos demais para se perceber o desenho. Os outros sítios
         // que usam este mesmo diagrama (Ficha de Jogador, Prancheta)
         // ficam exatamente como estavam.
-        <svg viewBox={PITCH_VIEWBOX} style={{ width: '82%', aspectRatio: PITCH_ASPECT, display: 'block', margin: '0 auto', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+        <svg viewBox={viewBoxDaVista(ex.diagram && ex.diagram.vista)} style={{ width: '82%', aspectRatio: PITCH_ASPECT, display: 'block', margin: '0 auto', background: '#fff', border: '1px solid #ccc', borderRadius: 8 }}>
+          <VistaCampo vista={ex.diagram && ex.diagram.vista}>
           <PitchMarkings printMode />
           <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} printMode />
           {(() => {
@@ -22028,6 +22113,7 @@ function PrintExerciseBlock({ e, ex, index, equipas, trocas }) {
               />
             );
           })()}
+          </VistaCampo>
         </svg>
       )}
       {!ex.attachment && (
@@ -23434,16 +23520,18 @@ function DayModal({ date, daySessions, exercises, players, onClose, onPrint, onP
                       </div>
                     )}
                     <div style={{ position: 'relative', width: '100%', paddingTop: PITCH_PADDING_TOP }}>
-                      <svg viewBox={PITCH_VIEWBOX} preserveAspectRatio="xMidYMid meet" style={{
+                      <svg viewBox={viewBoxDaVista(ex.diagram && ex.diagram.vista)} preserveAspectRatio="xMidYMid meet" style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
                         background: '#1e3a24', borderRadius: 6, border: `1px solid ${T.line}`,
                       }}>
+                        <VistaCampo vista={ex.diagram && ex.diagram.vista}>
                         <PitchMarkings />
                         <SpaceZonesReadOnly diagram={ex.diagram} spaceText={ex.space} />
                         {(() => {
                           const d = diagramaParaImpressao(ex.diagram);
                           return <DiagramElements elements={d.elements} arrows={d.arrows} interactive={false} iconScale={iconScaleForPhase(ex.phase)} />;
                         })()}
+                        </VistaCampo>
                       </svg>
                     </div>
                     <div style={{ textAlign: 'right', marginTop: 4 }}>
