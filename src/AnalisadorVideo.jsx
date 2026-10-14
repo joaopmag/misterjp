@@ -2085,6 +2085,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const [originalAtivoId, setOriginalAtivoId] = useState(null);
   const [signedUrl, setSignedUrl] = useState(null);
+  /* REDE DE SEGURANÇA DO VIDEO-WORKER (serviço à parte, no Railway).
+     Um vídeo novo fica "A preparar…" (pronto: false) até o worker o
+     recodificar. Se o worker estiver em baixo, isso nunca acontecia e o
+     vídeo ficava preso para sempre. Agora:
+       · "Abrir já, sem esperar" abre-o logo, tal como foi carregado
+         (só nesta sessão — se o worker acabar depois, fica o preparado);
+       · ao fim de PRAZO_PREPARACAO_MIN sem resposta, passa sozinho a
+         disponível, com a nota de que não foi preparado. */
+  const [abrirSemEsperar, setAbrirSemEsperar] = useState(() => new Set());
   const [videoPronto, setVideoPronto] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -2275,7 +2284,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // UM vídeo específico agora mesmo). O Realtime continua a ser o
   // caminho normal; isto é só um reforço para quando ele falha em
   // silêncio.
+  // Vídeos à espera há demasiado tempo → disponíveis tal como vieram.
+  const PRAZO_PREPARACAO_MIN = 180;
+  const libertarPresos = () => {
+    const limite = Date.now() - PRAZO_PREPARACAO_MIN * 60 * 1000;
+    const presos = videosOriginais.filter(v => v.pronto === false && v.criadoEm && new Date(v.criadoEm).getTime() < limite);
+    if (!presos.length) return;
+    const ids = new Set(presos.map(v => v.id));
+    setVideosOriginais(prev => prev.map(v => (ids.has(v.id) && v.pronto === false
+      ? { ...v, pronto: true, erroPreparacao: 'O serviço de preparação não respondeu — o vídeo ficou disponível tal como foi carregado.' }
+      : v)));
+  };
   useEffect(() => {
+    libertarPresos();
     const idsAPreparar = videosOriginais.filter(v => v.pronto === false).map(v => v.id);
     if (idsAPreparar.length === 0) return undefined;
     let falhasSeguidas = 0;
@@ -2292,6 +2313,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         return;
       }
       falhasSeguidas = 0;
+      libertarPresos();
       setVideosOriginais(prev => prev.map(v => {
         const atualizado = data.find(r => r.id === v.id);
         return atualizado ? { ...atualizado.data, id: v.id } : v;
@@ -2316,7 +2338,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // link temporário para o poder reproduzir.
   useEffect(() => {
     setSignedUrl(null);
-    if (!originalAtivo || originalAtivo.pronto === false) return;
+    if (!originalAtivo || (originalAtivo.pronto === false && !abrirSemEsperar.has(originalAtivo.id))) return;
     let cancelado = false;
     const tentar = async () => {
       for (let tentativa = 0; tentativa < 5 && !cancelado; tentativa++) {
@@ -2338,7 +2360,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     tentar();
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originalAtivo?.id, originalAtivo?.pronto]);
+  }, [originalAtivo?.id, originalAtivo?.pronto, originalAtivo && abrirSemEsperar.has(originalAtivo.id)]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -3155,11 +3177,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {/* (Sem a margem de 18px à direita em ecrã inteiro — era a barra preta;
                  servia quando a coluna da direita desaparecia em ecrã inteiro.) */}
               <div style={{ position: 'absolute', inset: 0, ...estiloZoomEditor }}>
-              {originalAtivo?.pronto === false ? (
-                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: TV.muted, gap: 8, textAlign: 'center', padding: 20 }}>
+              {originalAtivo?.pronto === false && !abrirSemEsperar.has(originalAtivo.id) ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: TV.muted, gap: 10, textAlign: 'center', padding: 20 }}>
                   <Loader2 size={20} className="spin" />
-                  <span style={{ fontSize: 12.5, ...body }}>
-                    A preparar este vídeo para arrancar depressa (só acontece uma vez) — pode demorar alguns minutos, dependendo do tamanho.
+                  <span style={{ fontSize: 12.5, ...body, maxWidth: 460, lineHeight: 1.5 }}>
+                    A preparar este vídeo para arrancar depressa e não encravar ao saltar (só acontece uma vez) — pode demorar alguns minutos, dependendo do tamanho.
+                  </span>
+                  <button type="button"
+                    onPointerDown={e => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); setAbrirSemEsperar(prev => new Set(prev).add(originalAtivo.id)); }}
+                    style={{ marginTop: 4, background: 'none', border: `1px solid ${TV.muted}`, color: '#fff', borderRadius: 16, padding: '6px 14px', cursor: 'pointer', fontSize: 12.5, ...body }}>
+                    Abrir já, sem esperar
+                  </button>
+                  <span style={{ fontSize: 11, ...body, maxWidth: 420, opacity: 0.8 }}>
+                    Abre tal como foi carregado: pode demorar a arrancar e encravar ao saltar. Se ao fim de 3 horas continuar por preparar, fica disponível sozinho.
                   </span>
                 </div>
               ) : signedUrl ? (

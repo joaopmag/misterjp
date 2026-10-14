@@ -3131,19 +3131,35 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         // ir consultar nada aqui.
         pronto: false,
       };
+      const VIDEO_WORKER_URL = import.meta.env.VITE_VIDEO_WORKER_URL;
+      /* REDE DE SEGURANÇA: sem worker configurado, ninguém viria marcar o
+         vídeo como pronto e ele ficava "A preparar…" para sempre no
+         Analisador. Nesse caso fica disponível logo, tal como veio. */
+      if (!VIDEO_WORKER_URL) novo.pronto = true;
       setVideosOriginais(prev => [...(prev || []), novo]);
       setUploadVideoEstado({ ativo: false, progresso: 100, finalizando: false, erro: '' });
 
-      const VIDEO_WORKER_URL = import.meta.env.VITE_VIDEO_WORKER_URL;
       if (VIDEO_WORKER_URL) {
-        // Fogo-e-esquece: não se espera pela resposta (pode demorar minutos).
-        // Se isto falhar (rede, worker em baixo), o vídeo fica disponível
-        // na mesma, só sem o arranque rápido — não bloqueia o treinador.
+        // Fogo-e-esquece: não se espera pelo processamento (pode demorar
+        // minutos) — só pela resposta de "aceite", que é imediata. Se o
+        // worker não responder ou recusar (em baixo, plano expirado no
+        // Railway, rede), o vídeo passa logo a disponível tal como veio,
+        // em vez de ficar preso em "A preparar…".
+        const libertar = (motivo) => setVideosOriginais(prev => (prev || []).map(v => (v.id === novo.id && v.pronto === false
+          ? { ...v, pronto: true, erroPreparacao: motivo }
+          : v)));
+        const controlo = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const travao = controlo ? setTimeout(() => controlo.abort(), 30000) : null;
         fetch(`${VIDEO_WORKER_URL}/processar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ teamId, storagePath: caminho, id: novo.id }),
-        }).catch(() => {});
+          ...(controlo ? { signal: controlo.signal } : {}),
+        }).then((r) => {
+          if (!r.ok) libertar(`O serviço de preparação recusou o vídeo (${r.status}) — ficou disponível tal como foi carregado.`);
+        }).catch(() => {
+          libertar('O serviço de preparação não respondeu — o vídeo ficou disponível tal como foi carregado.');
+        }).finally(() => { if (travao) clearTimeout(travao); });
       }
     } catch (e) {
       setUploadVideoEstado({ ativo: false, progresso: 0, finalizando: false, erro: `Não consegui carregar o vídeo: ${e.message || e}` });
