@@ -38613,9 +38613,9 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
               <div style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}</div>
             </div>
             {aberto === v.id ? (
-              <Btn variant="ghost" onClick={onFecharAberto}><X size={13} /> Fechar</Btn>
+              <Btn variant="ghost" onClick={onFecharAberto} style={{ minWidth: 96, justifyContent: 'center' }}><X size={13} /> Fechar</Btn>
             ) : (
-              <Btn disabled={!ids.length} onClick={() => {
+              <Btn disabled={!ids.length} style={{ minWidth: 96, justifyContent: 'center' }} onClick={() => {
                 if (aDar) onParar();
                 onAbrir({
                   id: v.id, nome: v.nome,
@@ -41840,8 +41840,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           aberto={compAtiva && compAtiva.id}
           onAbrir={(v) => {
             setSequencia(null);
+            // Abre no lugar do leitor SEM mexer na página (antes deslizava
+            // até ao leitor — o jogador perdia o sítio onde estava).
             setCompAtiva(v);
-            setTimeout(() => { if (leitorColunaRef.current) leitorColunaRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
           }}
           onFecharAberto={() => setCompAtiva(null)}
           onVer={(ids) => { if (!ids.length) return; setSequencia(ids); setActiveId(ids[0]); }}
