@@ -31303,6 +31303,33 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
     if (onClipeCriado) onClipeCriado(titulo, jogoDoClipe);
   };
 
+  /* OS MEUS VÍDEOS no servidor (ver os_meus_videos.sql). Cada função
+     devolve os dados ou lança um erro; quem chama (CompilacoesAtleta)
+     decide o que mostrar. */
+  const compilacoesApi = React.useMemo(() => ({
+    ler: async () => {
+      const { data, error } = await supabase.rpc('checkin_meus_videos', { p_code: code, p_team: teamId });
+      if (error) throw error;
+      const d = lerJson(data);
+      if (!d) throw new Error('codigo_invalido');
+      return (d.videos || []).filter(Boolean);
+    },
+    guardar: async ({ id, nome, ids }) => {
+      const { data, error } = await supabase.rpc('checkin_video_guardar', { p_code: code, p_team: teamId, p_id: id || '', p_nome: nome, p_ids: ids });
+      if (error) throw error;
+      const d = lerJson(data);
+      if (!d || !d.ok) throw new Error((d && d.erro) || 'erro');
+      return d.video;
+    },
+    apagar: async (id) => {
+      const { data, error } = await supabase.rpc('checkin_video_apagar', { p_code: code, p_team: teamId, p_id: id });
+      if (error) throw error;
+      const d = lerJson(data);
+      if (d && !d.ok && d.erro !== 'video_invalido') throw new Error(d.erro || 'erro');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [code, teamId]);
+
   // Editar um clipe do próprio jogador (tempos, título e texto).
   const editarClipeAtleta = async ({ clipeId, inicio, fim, titulo, nota }) => {
     let resposta;
@@ -31405,6 +31432,7 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
           apagarClipeAtleta={apagarClipeAtleta}
           editarClipeAtleta={editarClipeAtleta}
           chaveCompilacoes={`misterjp:compilacoes:${teamId}:${hashCurto(String(code || ''))}`}
+          compilacoesApi={compilacoesApi}
           emptyText="Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver."
         />
       )}
@@ -38242,22 +38270,72 @@ function gravarCompilacoes(chave, lista) {
 }
 const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 
-function CompilacoesAtleta({ clipes, chave, onVer, onParar, aTocar }) {
+function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGravar, aGravar }) {
+  /* Guardados NO SERVIDOR (api, ver os_meus_videos.sql), para aparecerem
+     em qualquer aparelho. Se o servidor ainda não tiver as funções (ou não
+     houver rede), guarda-se NESTE aparelho e avisa-se. Os que já estavam
+     guardados no aparelho sobem para o servidor sozinhos, uma vez. */
   const [lista, setLista] = useState(() => lerCompilacoes(chave));
+  const [noServidor, setNoServidor] = useState(false);
+  const [aviso, setAviso] = useState('');
   const [editar, setEditar] = useState(null); // { id?, nome, ids }
-  useEffect(() => { setLista(lerCompilacoes(chave)); }, [chave]);
-  const guardarLista = (nova) => { setLista(nova); gravarCompilacoes(chave, nova); };
+  const [aGuardar, setAGuardar] = useState(false);
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      if (!api) { setLista(lerCompilacoes(chave)); return; }
+      try {
+        let doServidor = await api.ler();
+        const locais = lerCompilacoes(chave);
+        if (locais.length) {
+          for (const v of [...locais].reverse()) {
+            try { await api.guardar({ nome: v.nome, ids: v.ids }); } catch (e) { /* clipe já apagado, etc. */ }
+          }
+          gravarCompilacoes(chave, []);
+          doServidor = await api.ler();
+        }
+        if (cancelado) return;
+        setLista(doServidor); setNoServidor(true); setAviso('');
+      } catch (e) {
+        if (cancelado) return;
+        setLista(lerCompilacoes(chave)); setNoServidor(false);
+        setAviso('Por agora os teus vídeos ficam guardados só neste aparelho.');
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [chave, api]);
+  const guardarLocal = (nova) => { setLista(nova); gravarCompilacoes(chave, nova); };
   const porId = new Map(clipes.map(c => [c.id, c]));
   const duracao = (ids) => ids.reduce((t, id) => { const c = porId.get(id); return t + (c ? Math.max(0, (c.clipFim || 0) - (c.clipInicio || 0)) : 0); }, 0);
   const validos = (ids) => (ids || []).filter(id => porId.has(id));
   const aTocarId = aTocar && lista.find(v => JSON.stringify(validos(v.ids)) === JSON.stringify(aTocar));
 
-  const guardar = () => {
-    if (!editar || !editar.ids.length) return;
+  const guardar = async () => {
+    if (!editar || !editar.ids.length || aGuardar) return;
     const nome = (editar.nome || '').trim() || `O meu vídeo ${lista.length + 1}`;
-    if (editar.id) guardarLista(lista.map(v => (v.id === editar.id ? { ...v, nome, ids: editar.ids } : v)));
-    else guardarLista([{ id: uid(), nome, ids: editar.ids, criadoEm: new Date().toISOString() }, ...lista]);
+    if (noServidor) {
+      setAGuardar(true);
+      try {
+        const v = await api.guardar({ id: editar.id, nome, ids: editar.ids });
+        setLista(prev => (editar.id ? prev.map(x => (x.id === v.id ? v : x)) : [v, ...prev]));
+        setEditar(null); setAviso('');
+      } catch (e) {
+        setAviso('O vídeo não ficou guardado. Verifica a internet e tenta outra vez.');
+      }
+      setAGuardar(false);
+      return;
+    }
+    if (editar.id) guardarLocal(lista.map(v => (v.id === editar.id ? { ...v, nome, ids: editar.ids } : v)));
+    else guardarLocal([{ id: uid(), nome, ids: editar.ids, criadoEm: new Date().toISOString() }, ...lista]);
     setEditar(null);
+  };
+  const apagar = async (v) => {
+    if (!window.confirm(`Apagar "${v.nome}"? Os clipes continuam lá.`)) return;
+    if (noServidor) {
+      try { await api.apagar(v.id); setLista(prev => prev.filter(x => x.id !== v.id)); } catch (e) { setAviso('Não foi possível apagar. Tenta outra vez.'); }
+      return;
+    }
+    guardarLocal(lista.filter(x => x.id !== v.id));
   };
   const alternar = (id) => setEditar(e => ({ ...e, ids: e.ids.includes(id) ? e.ids.filter(x => x !== id) : [...e.ids, id] }));
   const mover = (i, d) => setEditar(e => {
@@ -38280,6 +38358,7 @@ function CompilacoesAtleta({ clipes, chave, onVer, onParar, aTocar }) {
       {!editar && !lista.length && (
         <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>Junta os teus clipes — do mesmo jogo ou de jogos diferentes — num vídeo só, e vê tudo seguido.</div>
       )}
+      {aviso && <div style={{ fontSize: 12, color: T.warn, margin: '4px 0 8px' }}>{aviso}</div>}
 
       {!editar && lista.map(v => {
         const ids = validos(v.ids);
@@ -38296,7 +38375,10 @@ function CompilacoesAtleta({ clipes, chave, onVer, onParar, aTocar }) {
               <Btn disabled={!ids.length} onClick={() => onVer(ids)}><Play size={13} /> Ver</Btn>
             )}
             <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnIcone}><Pencil size={14} /></button>
-            <button type="button" title="Apagar" onClick={() => { if (window.confirm(`Apagar "${v.nome}"? Os clipes continuam lá.`)) guardarLista(lista.filter(x => x.id !== v.id)); }} style={btnIcone}><Trash2 size={14} /></button>
+            {onGravar && (
+              <button type="button" title="Gravar este vídeo num ficheiro (computador)" disabled={!ids.length || aGravar} onClick={() => onGravar(ids, v.nome)} style={{ ...btnIcone, opacity: !ids.length || aGravar ? 0.4 : 1 }}><Download size={14} /></button>
+            )}
+            <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
           </div>
         );
       })}
@@ -38338,7 +38420,7 @@ function CompilacoesAtleta({ clipes, chave, onVer, onParar, aTocar }) {
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <Btn disabled={!editar.ids.length} onClick={guardar}><Check size={14} /> Guardar vídeo</Btn>
+            <Btn disabled={!editar.ids.length || aGuardar} onClick={guardar}>{aGuardar ? <Loader2 size={14} className="spin" /> : <Check size={14} />} Guardar vídeo</Btn>
             <Btn variant="ghost" onClick={() => setEditar(null)}>Cancelar</Btn>
             {editar.ids.length > 0 && <span style={{ fontSize: 12, color: T.mutedDim, ...mono }}>{editar.ids.length} {editar.ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(editar.ids))}</span>}
           </div>
@@ -38348,7 +38430,7 @@ function CompilacoesAtleta({ clipes, chave, onVer, onParar, aTocar }) {
   );
 }
 
-const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes }, ref) {
+const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, addLabel, emptyText, emptyFirstLabel, semBotaoTopo, addButtonVariant, semCatalogo, recentesPrimeiro, modoCanal, matches, adversarios, setAdversarios, todosVideos, setTodosVideos, equipasCompeticao, soLeitura, provaDeEquipa, adversariosProntos, criarClipeAtleta, apagarClipeAtleta, editarClipeAtleta, teamIdFichas, chaveCompilacoes, compilacoesApi }, ref) {
   const [modal, setModal] = useState(null);
   // `irParaItem`: usado pelo Portal ("Os meus clipes") para abrir o jogo
   // certo e selecionar o clipe. `irParaRef` é preenchido mais abaixo,
@@ -39931,7 +40013,22 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const g = gravacaoBibRef.current;
     if (!g || !g.comecouEm || Date.now() - g.comecouEm < 1500 || !ativoEClipe) return;
     if (pausaEmCursoRef.current) return;
-    if (liveTime >= clipFimEf - 0.2) acabarGravacaoBib();
+    if (liveTime >= clipFimEf - 0.2) {
+      // A gravar UMA LISTA de clipes ("Os meus vídeos"): pausa a gravação,
+      // passa ao clipe seguinte e retoma quando ele começar (o mesmo
+      // arranque de 4s antes, para não gravar a informação do YouTube).
+      const i = g.seq ? g.seq.indexOf(active.id) : -1;
+      if (i >= 0 && i < g.seq.length - 1) {
+        if (g.ctl.pausar) g.ctl.pausar();
+        enviarComandoYoutube('pauseVideo');
+        g.comecouEm = 0;
+        g.preRoll = true;
+        g.pendenteId = g.seq[i + 1];
+        setActiveId(g.seq[i + 1]);
+        return;
+      }
+      acabarGravacaoBib();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveTime]);
   /* (Fica DEPOIS de `active`/`ativoEClipe`: as dependências do efeito
@@ -40275,7 +40372,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const aTocarNormalmente = Math.abs(liveTime - anterior) < 2;
     // Em "Ver cortes em seguida", o fim de um corte passa ao seguinte
     // em vez de o repetir; no último, volta ao início dele e pára.
-    if (aTocarNormalmente && liveTime >= clipFimEf && sequencia && sequencia.includes(active.id)) {
+    if (aTocarNormalmente && liveTime >= clipFimEf && sequencia && sequencia.includes(active.id) && !gravacaoBibRef.current) {
       const i = sequencia.indexOf(active.id);
       if (i < sequencia.length - 1) {
         setActiveId(sequencia[i + 1]);
@@ -40366,6 +40463,28 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       return;
     }
     arrancarGravacaoBib(ctl);
+  };
+  /* GRAVAR UMA LISTA DE CLIPES NUM SÓ FICHEIRO ("Os meus vídeos" do
+     Portal). Uma gravação só: em cada clipe grava do início ao fim, pausa
+     enquanto o seguinte carrega e retoma no início dele. No fim abre a
+     janela de sempre (ver, descarregar, partilhar). Só no computador. */
+  const gravarSequenciaBib = async (ids, nome) => {
+    if (!ids || !ids.length) return;
+    if (!podeGravarSeparador()) {
+      setAvisoGravacaoBib('Gravar vídeo só funciona no computador (Chrome, Edge ou Safari).');
+      return;
+    }
+    if (modoDesenhoBib) cancelarDesenhoBib();
+    largarParagemBib();
+    let ctl;
+    try { ctl = await prepararGravacaoSeparador(areaVideoBibRef.current); } catch (e) { return; }
+    setSequencia(ids);
+    const g = { ctl, nome: nome || 'O meu vídeo', comecouEm: 0, preRoll: true, arranque: 0, pendenteId: null, seq: ids };
+    gravacaoBibRef.current = g;
+    setGravacaoBib({ desde: Date.now() });
+    ctl.acabou.then(() => { if (gravacaoBibRef.current === g) acabarGravacaoBib(); });
+    if (active && active.id === ids[0]) arrancarGravacaoBib(ctl, g);
+    else { g.pendenteId = ids[0]; setActiveId(ids[0]); }
   };
   const arrancarGravacaoBib = (ctl, gExistente) => {
     /* SEM A INFORMAÇÃO DO YOUTUBE NO VÍDEO. Ao arrancar, o YouTube mostra
@@ -41461,10 +41580,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           de jogos diferentes) num vídeo e vê-os todos seguidos. */}
       {modoCanal && !termo && secao === 'meus' && chaveCompilacoes && itensMeus.length > 0 && (
         <CompilacoesAtleta
-          clipes={itensMeus} chave={chaveCompilacoes}
-          aTocar={sequencia}
+          clipes={itensMeus} chave={chaveCompilacoes} api={compilacoesApi}
+          aTocar={sequencia} aGravar={!!gravacaoBib}
           onVer={(ids) => { if (!ids.length) return; setSequencia(ids); setActiveId(ids[0]); }}
           onParar={() => setSequencia(null)}
+          onGravar={podeGravarSeparador() ? (ids, nome) => gravarSequenciaBib(ids, nome) : null}
         />
       )}
 

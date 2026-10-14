@@ -1670,7 +1670,9 @@ export async function prepararGravacaoSeparador(elemento) {
   // "Parar partilha" na barra do browser também acaba a gravação.
   if (faixa) faixa.addEventListener('ended', terminar);
   return {
-    comecar: () => { if (rec.state === 'inactive') rec.start(500); },
+    // `comecar` também retoma uma gravação em pausa (listas de clipes).
+    comecar: () => { if (rec.state === 'inactive') rec.start(500); else if (rec.state === 'paused') rec.resume(); },
+    pausar: () => { if (rec.state === 'recording') rec.pause(); },
     parar: () => { terminar(); return acabou; },
     acabou,
   };
