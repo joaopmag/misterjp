@@ -15620,6 +15620,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             {exerciseInfo?.space && <div style={{ gridColumn: 3, gridRow: 1 }}><strong>Espaço:</strong> {exerciseInfo.space}</div>}
             {exerciseInfo?.playersCount && <div style={{ gridColumn: 1, gridRow: 2 }}><strong>Nº jogadores:</strong> {exerciseInfo.playersCount}</div>}
             {exerciseInfo?.material && <div style={{ gridColumn: 2, gridRow: 2 }}><strong>Material:</strong> {exerciseInfo.material}</div>}
+            {emRecuo && <div style={{ gridColumn: 3, gridRow: 2 }}><strong>Momento:</strong> Animar {desdeValido + 1} de {(value.sequence || []).length}</div>}
           </div>
           {exerciseInfo?.description && (
             <p style={{ margin: '0 0 14px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{exerciseInfo.description}</p>
@@ -15630,7 +15631,18 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             {zones.map(z => (
               <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} printMode />
             ))}
-            <DiagramElements elements={elements} arrows={arrows} interactive={false} iconScale={iconEscala} printMode />
+            {/* Imprime O QUE SE ESTÁ A VER: com "desde animar N" escolhido
+                (a meio da coreografia), sai o início do Animar N — as
+                posições desse momento, os desenhos fixos que já existiam e
+                as setas do movimento desse passo. Sem recuo, sai o campo
+                tal como está agora. */}
+            <DiagramElements
+              elements={emRecuo ? elementosRecuo : elements}
+              arrows={emRecuo
+                ? [...stepStaticArrows(value.sequence[desdeValido], value), ...((value.sequence[desdeValido].arrows) || [])]
+                : arrows}
+              interactive={false} iconScale={iconEscala} printMode
+            />
             </VistaCampo>
           </svg>
         </div>,
