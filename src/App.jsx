@@ -42056,12 +42056,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, ...body,
                   color: on ? TEXT_ON_ACCENT : T.muted, padding: 0, whiteSpace: 'nowrap',
                 }}>{name} ({countIn(name)})</button>
-                {on && !soLeitura && (
+                {/* LARGURA FIXA: o lápis e o X existem sempre em todos os
+                    separadores, só ficam invisíveis nos que não estão
+                    escolhidos. Antes apareciam só no ativo, o separador
+                    crescia e empurrava os do lado a cada clique. */}
+                {!soLeitura && (
                   <>
-                    <button onClick={() => { setRenaming(name); setRenameValue(name); }} title="Mudar o nome da pasta"
-                      style={{ background: 'none', border: 'none', color: TEXT_ON_ACCENT, cursor: 'pointer', display: 'flex' }}><Pencil size={12} /></button>
-                    <button onClick={() => dissolveFolder(name)} title="Desfazer a pasta (os itens ficam sem pasta)"
-                      style={{ background: 'none', border: 'none', color: TEXT_ON_ACCENT, cursor: 'pointer', display: 'flex' }}><X size={13} /></button>
+                    <button onClick={() => { if (on) { setRenaming(name); setRenameValue(name); } }} title={on ? 'Mudar o nome da pasta' : undefined}
+                      tabIndex={on ? 0 : -1} aria-hidden={!on}
+                      style={{ background: 'none', border: 'none', color: TEXT_ON_ACCENT, cursor: on ? 'pointer' : 'default', display: 'flex', visibility: on ? 'visible' : 'hidden', pointerEvents: on ? 'auto' : 'none' }}><Pencil size={12} /></button>
+                    <button onClick={() => { if (on) dissolveFolder(name); }} title={on ? 'Desfazer a pasta (os itens ficam sem pasta)' : undefined}
+                      tabIndex={on ? 0 : -1} aria-hidden={!on}
+                      style={{ background: 'none', border: 'none', color: TEXT_ON_ACCENT, cursor: on ? 'pointer' : 'default', display: 'flex', visibility: on ? 'visible' : 'hidden', pointerEvents: on ? 'auto' : 'none' }}><X size={13} /></button>
                   </>
                 )}
               </span>
@@ -46119,24 +46125,30 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
     : [];
 
   const navBtn = { background: 'none', border: `1px solid ${T.line}`, borderRadius: 6, color: T.cream, cursor: 'pointer', padding: '4px 6px' };
+  /* As setas têm SEMPRE o mesmo tamanho (o grande, bom para largar uma
+     tarefa em cima). Antes cresciam só ao começar a arrastar, e o
+     calendário inteiro descia uns píxeis: era isso que fazia a página
+     mexer. Durante o arrasto muda só a cor e o tracejado. */
+  const setaBtn = { ...navBtn, padding: '8px 10px' };
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 8 }}>
         <button onClick={() => setWeekStart(addDays(weekStart, -7))} aria-label="Semana anterior"
           onDragOver={setaDragOver(-1)} onDragLeave={pararSeta} onDrop={e => { e.preventDefault(); pararSeta(); }}
-          style={{ ...navBtn, ...(podeMudarSemana ? { borderStyle: 'dashed', borderColor: T.gold, color: T.warn, padding: '8px 10px' } : {}), ...(setaArmada === -1 ? { background: 'rgba(201,162,39,.18)' } : {}) }}><ChevronLeft size={16} style={{ pointerEvents: 'none', display: 'block' }} /></button>
+          style={{ ...setaBtn, ...(podeMudarSemana ? { borderStyle: 'dashed', borderColor: T.gold, color: T.warn } : {}), ...(setaArmada === -1 ? { background: 'rgba(201,162,39,.18)' } : {}) }}><ChevronLeft size={16} style={{ pointerEvents: 'none', display: 'block' }} /></button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
           <div style={{ ...display, color: T.warn, fontSize: 15, fontWeight: 600 }}>
             Semana de {fmtShort(days[0])} a {fmtShort(days[6])}
           </div>
-          {!estaSemana && (
-            <button onClick={() => setWeekStart(getMonday(hoje))} style={{ ...navBtn, ...body, fontSize: 11.5, padding: '3px 9px', color: T.muted }}>Hoje</button>
-          )}
+          {/* O botão "Hoje" ocupa sempre o seu lugar (só fica invisível na
+              semana atual), para o título não saltar ao mudar de semana. */}
+          <button onClick={() => setWeekStart(getMonday(hoje))} tabIndex={estaSemana ? -1 : 0} aria-hidden={estaSemana}
+            style={{ ...navBtn, ...body, fontSize: 11.5, padding: '3px 9px', color: T.muted, visibility: estaSemana ? 'hidden' : 'visible', pointerEvents: estaSemana ? 'none' : 'auto' }}>Hoje</button>
         </div>
         <button onClick={() => setWeekStart(addDays(weekStart, 7))} aria-label="Semana seguinte"
           onDragOver={setaDragOver(1)} onDragLeave={pararSeta} onDrop={e => { e.preventDefault(); pararSeta(); }}
-          style={{ ...navBtn, ...(podeMudarSemana ? { borderStyle: 'dashed', borderColor: T.gold, color: T.warn, padding: '8px 10px' } : {}), ...(setaArmada === 1 ? { background: 'rgba(201,162,39,.18)' } : {}) }}><ChevronRight size={16} style={{ pointerEvents: 'none', display: 'block' }} /></button>
+          style={{ ...setaBtn, ...(podeMudarSemana ? { borderStyle: 'dashed', borderColor: T.gold, color: T.warn } : {}), ...(setaArmada === 1 ? { background: 'rgba(201,162,39,.18)' } : {}) }}><ChevronRight size={16} style={{ pointerEvents: 'none', display: 'block' }} /></button>
       </div>
 
       <div style={{
