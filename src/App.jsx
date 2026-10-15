@@ -38309,19 +38309,15 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
      nada por cima — só se troca qual se vê e liga-se o som. */
   const PRE_ROLL = 4;
   /* CLIPES QUE COMEÇAM NOS PRIMEIROS SEGUNDOS DO VÍDEO: não há 4 segundos
-     antes do início para o arranque escondido (testado: com só 2 s, o
-     título e o símbolo do YouTube ainda se viam na troca, e o vídeo
-     encravava). Nesses casos o escondido arranca do início do vídeo em
-     CÂMARA LENTA (0,25×–0,75×), para os poucos segundos que há durarem
-     ~4 s de relógio; na troca volta à velocidade normal. */
-  const VELOCIDADES = [0.25, 0.5, 0.75];
-  const velocidadePara = (lead) => {
-    if (lead >= PRE_ROLL - 0.5) return 1;
-    const alvo = lead / PRE_ROLL;
-    let v = 0.25;
-    VELOCIDADES.forEach(x => { if (x <= alvo + 0.001) v = x; });
-    return v;
-  };
+     antes do início para o arranque escondido. Testado (diagnóstico,
+     out/2026): com só 2 s o YouTube ainda mostrava o título e o símbolo;
+     e em câmara lenta, ao voltar à velocidade normal, o vídeo ficava ~8 s
+     a carregar. O que funciona: o escondido arranca do início do vídeo
+     com até SALTO_MAX segundos a mais de antecedência — por isso, nesses
+     clipes, a troca entra até 1,5 s DEPOIS do início do clipe (perde-se
+     esse bocadinho, mas a passagem fica limpa e sem encravar). */
+  const SALTO_MAX = 1.5;
+  const antecedenciaPara = (lead) => (lead >= PRE_ROLL - 0.5 ? lead : Math.min(PRE_ROLL - 0.5, lead + SALTO_MAX));
   /* DIAGNÓSTICO (?diag=1 no endereço): mostra por cima do vídeo o que cada
      leitor está a fazer — para ver, num vídeo do ecrã, se o leitor
      escondido está mesmo a tocar antes da troca. */
@@ -38394,11 +38390,10 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       // Já vai a tocar mesmo no início do seguinte? Então só se troca —
       // sem saltar (um salto mostrava o círculo de carregar do YouTube).
       const tp = r.tempo[outro];
-      const jaNoSitio = r.aRodar[outro] && tp >= segs[k].inicio - 1.5 && tp <= segs[k].inicio + 1;
+      const jaNoSitio = r.aRodar[outro] && tp >= segs[k].inicio - 1.5 && tp <= segs[k].inicio + SALTO_MAX + 0.8;
       r.vis = outro; setVis(outro);
       r.i = k; setI(k); setLocal(segs[k].inicio);
       r.salto = Date.now();
-      if (r.vel && r.vel[outro] !== 1) { cmd(outro, 'setPlaybackRate', [1]); r.vel[outro] = 1; }
       cmd(outro, 'unMute');
       if (!jaNoSitio) { cmd(outro, 'seekTo', [segs[k].inicio, true]); cmd(outro, 'playVideo'); }
       r.aRodar[outro] = false;
@@ -38454,17 +38449,14 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         // Faltam PRE_ROLL segundos: o escondido começa já a tocar (sem som).
         const outro = 1 - s;
         const lead = r.lead[outro] || 0;
-        const vel = velocidadePara(lead);
-        const antecedencia = lead / vel; // segundos de relógio de arranque escondido
-        if (!aSaltar && lead > 0.3 && r.alvo[outro] === r.i + 1 && r.pronto[outro] && !r.aRodar[outro] && t >= seg.fim - antecedencia && t < seg.fim - 0.12) {
+        const antecedencia = antecedenciaPara(lead); // segundos de arranque escondido
+        if (!aSaltar && antecedencia > 0.3 && r.alvo[outro] === r.i + 1 && r.pronto[outro] && !r.aRodar[outro] && t >= seg.fim - antecedencia && t < seg.fim - 0.12) {
           r.aRodar[outro] = true;
-          r.vel = r.vel || [1, 1];
-          r.vel[outro] = vel;
-          // Alinha: quando o atual acabar, o escondido estará no início exato.
+          // Alinha: quando o atual acabar, o escondido estará no início do
+          // seguinte (ou até SALTO_MAX depois, nos clipes do início do vídeo).
           const prox = segs[r.i + 1];
           cmd(outro, 'mute');
-          cmd(outro, 'setPlaybackRate', [vel]);
-          cmd(outro, 'seekTo', [Math.max(0, prox.inicio - (seg.fim - t) * vel), true]);
+          cmd(outro, 'seekTo', [Math.max(0, prox.inicio - (seg.fim - t)), true]);
           cmd(outro, 'playVideo');
         }
         if (!aSaltar && t >= seg.fim - 0.12) avancar();
