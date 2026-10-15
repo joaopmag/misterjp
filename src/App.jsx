@@ -38277,8 +38277,8 @@ const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor
    inteiro), mas a barra vai de 0 ao total de todos os clipes, com uma
    risca onde cada um começa.
 
-   COMO A PASSAGEM FICA CONTÍNUA (afinado com o diagnóstico ?diag=1 em
-   out/2026, com o treinador):
+   COMO A PASSAGEM FICA CONTÍNUA (afinado em out/2026 com o treinador,
+   com um diagnóstico no ecrã que já foi retirado):
    · UM LEITOR DO YOUTUBE POR CLIPE, todos carregados LOGO ao abrir, cada
      um parado (sem som) uns segundos antes do início do seu clipe. Ficam
      uns por cima dos outros; só o do clipe atual se vê.
@@ -38314,8 +38314,6 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   const [local, setLocal] = useState(segs[0] ? segs[0].inicio : 0);
   const [aTocar, setATocar] = useState(false);
   const [ecraInteiro, setEcraInteiro] = useState(false);
-  const diag = typeof window !== 'undefined' && /[?&#]diag=1/.test(window.location.href);
-  const [, setDiagTick] = useState(0);
   const n = segs.length;
   const ref = useRef(null);
   if (!ref.current) {
@@ -38402,7 +38400,6 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         if (typeof data.info.playerState === 'number') r.estado[k] = data.info.playerState;
       }
       if (data.event === 'onStateChange' && typeof data.info === 'number') r.estado[k] = data.info;
-      if (diag) setDiagTick(x => x + 1);
       if (k !== r.vis) return; // os outros só esperam
       if (typeof r.estado[k] === 'number') setATocar(r.estado[k] === 1 || r.estado[k] === 3);
       if (!(data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number')) return;
@@ -38440,7 +38437,6 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       // Ao carregar em "Ver", o vídeo começa logo a tocar.
       if (k === 0 && !ref.current.comecou) tocarEm(0, segs[0].inicio, true);
       else if (k !== ref.current.vis) estacionar(k);
-      if (diag) setDiagTick(x => x + 1);
     }, 350);
   };
 
@@ -38484,14 +38480,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, opacity: vis === k ? 1 : 0.01, pointerEvents: 'none', zIndex: vis === k ? 1 : 0 }}
             />
           ))}
-          {diag && (
-            <div style={{ position: 'absolute', top: 4, left: 4, zIndex: 3, background: '#000c', color: '#0f0', fontSize: 11, padding: '4px 6px', ...mono, pointerEvents: 'none', lineHeight: 1.4 }}>
-              {segs.map((s, k) => (
-                <div key={k}>L{k}{vis === k ? '*' : ' '} pronto={String(ref.current.pronto[k])} roda={String(ref.current.aRodar[k])} est={String(ref.current.estado[k])} t={Number(ref.current.tempo[k] || 0).toFixed(1)}</div>
-              ))}
-            </div>
-          )}
-          {!diag && prontos < n && !ref.current.comecou && (
+          {prontos < n && !ref.current.comecou && (
             <div style={{ position: 'absolute', right: 8, bottom: 8, zIndex: 3, background: '#000a', color: '#fff', fontSize: 11, padding: '3px 8px', borderRadius: 10, pointerEvents: 'none', ...body }}>
               A preparar {prontos}/{n}…
             </div>
