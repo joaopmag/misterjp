@@ -38370,6 +38370,27 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   const [deitarCss, setDeitarCss] = useState(false);
   const areaRef = useRef(null);
   const lupa = useLupa(areaRef, ecraInteiro && !deitarCss);
+  /* PREENCHER O ECRÃ: num telemóvel deitado o ecrã é mais comprido do que
+     16:9 e o vídeo ficava com barras pretas dos lados. Em ecrã inteiro,
+     amplia-se o vídeo até encher a largura (corta um pouco em cima e em
+     baixo, como as apps de vídeo fazem no telemóvel). */
+  const [encher, setEncher] = useState(1);
+  useEffect(() => {
+    if (!ecraInteiro) { setEncher(1); return undefined; }
+    const medir = () => {
+      const el = areaRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const w = deitarCss ? r.height : r.width;
+      const h = deitarCss ? r.width : r.height;
+      if (!w || !h) return;
+      const asp = w / h;
+      setEncher(asp > 16 / 9 ? asp / (16 / 9) : 1);
+    };
+    const t = setTimeout(medir, 150);
+    window.addEventListener('resize', medir);
+    return () => { clearTimeout(t); window.removeEventListener('resize', medir); };
+  }, [ecraInteiro, deitarCss]);
   // BARRA SEM SALTOS: o YouTube só diz o tempo ~4 vezes por segundo; entre
   // avisos, a barra avança sozinha ao ritmo do relógio.
   const ultimoRef = useRef({ t: segmentos && segmentos[0] ? segmentos[0].inicio : 0, quando: Date.now() });
@@ -38562,6 +38583,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         <div ref={areaRef} style={{ position: 'relative', width: '100%', overflow: 'hidden', ...(ecraInteiro ? { flex: 1, minHeight: 0 } : { paddingTop: '56.25%' }) }}>
           {/* LUPA (ecrã inteiro): pinça, roda do rato e arrastar, como nos clipes. */}
           <div style={{ position: 'absolute', inset: 0, transform: lupa.transform || 'none', transformOrigin: '0 0', transition: lupa.aArrastar ? 'none' : 'transform 0.2s ease-out' }}>
+          <div style={{ position: 'absolute', inset: 0, transform: encher > 1.001 ? `scale(${encher})` : 'none', transformOrigin: '50% 50%' }}>
           {segs.map((s, k) => (
             <iframe
               key={k} ref={el => { iframesRef.current[k] = el; }} onLoad={() => aoCarregar(k)} title={`${titulo || 'O meu vídeo'} ${k + 1}`}
@@ -38570,6 +38592,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, opacity: vis === k ? 1 : 0.01, pointerEvents: 'none', zIndex: vis === k ? 1 : 0 }}
             />
           ))}
+          </div>
           </div>
           {prontos < n && !ref.current.comecou && (
             <div style={{ position: 'absolute', right: 8, bottom: 8, zIndex: 3, background: '#000a', color: '#fff', fontSize: 11, padding: '3px 8px', borderRadius: 10, pointerEvents: 'none', ...body }}>
@@ -38747,11 +38770,22 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
         const aDar = aTocarId && aTocarId.id === v.id;
         return (
           <React.Fragment key={v.id}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: `1px solid ${T.line}` }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.nome}</div>
-              <div style={{ fontSize: 11.5, color: T.mutedDim, ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}</div>
-            </div>
+          {/* Em cima: o nome e os ícones. Em baixo: "3 clipes · 2:23" numa
+              linha só, à esquerda, e Ver/Fechar à direita. Cabe em
+              qualquer ecrã sem partir linhas nem mexer na página. */}
+          <div style={{ padding: '8px 0', borderTop: `1px solid ${T.line}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.nome}</div>
+            <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnIcone}><Pencil size={14} /></button>
+            <button type="button" title="Partilhar este vídeo (envia um link — abre em qualquer telemóvel, sem login)" disabled={!ids.length}
+              onClick={() => partilhar(v.nome, ids)} style={{ ...btnIcone, opacity: !ids.length ? 0.4 : 1 }}><Share2 size={14} /></button>
+            {onGravar && (
+              <button type="button" title="Gravar este vídeo num ficheiro (computador)" disabled={!ids.length || aGravar} onClick={() => onGravar(ids, v.nome)} style={{ ...btnIcone, opacity: !ids.length || aGravar ? 0.4 : 1 }}><Download size={14} /></button>
+            )}
+            <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...mono }}>{ids.length} {ids.length === 1 ? 'clipe' : 'clipes'} · {mmss(duracao(ids))}</div>
             {aberto === v.id ? (
               <Btn variant="ghost" onClick={onFecharAberto} style={{ minWidth: 96, justifyContent: 'center' }}><X size={13} /> Fechar</Btn>
             ) : (
@@ -38763,13 +38797,7 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
                 });
               }}><Play size={13} /> Ver</Btn>
             )}
-            <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnIcone}><Pencil size={14} /></button>
-            <button type="button" title="Partilhar este vídeo (envia um link — abre em qualquer telemóvel, sem login)" disabled={!ids.length}
-              onClick={() => partilhar(v.nome, ids)} style={{ ...btnIcone, opacity: !ids.length ? 0.4 : 1 }}><Share2 size={14} /></button>
-            {onGravar && (
-              <button type="button" title="Gravar este vídeo num ficheiro (computador)" disabled={!ids.length || aGravar} onClick={() => onGravar(ids, v.nome)} style={{ ...btnIcone, opacity: !ids.length || aGravar ? 0.4 : 1 }}><Download size={14} /></button>
-            )}
-            <button type="button" title="Apagar" onClick={() => apagar(v)} style={btnIcone}><Trash2 size={14} /></button>
+          </div>
           </div>
           </React.Fragment>
         );
@@ -41596,11 +41624,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14,
       flexDirection: isNarrow ? 'column' : 'row', ...(isNarrow ? { alignItems: 'stretch' } : {}),
     }}>
+      {/* No telemóvel os três separadores cabem sempre no ecrã (três colunas
+          iguais) — antes deslizavam para o lado e a página mexia. */}
       <div style={{
-        display: 'flex', gap: 8, alignItems: 'center',
-        ...(isNarrow
-          ? { overflowX: 'auto', margin: '0 -14px', padding: '0 14px 2px', scrollbarWidth: 'none' }
-          : {}),
+        display: isNarrow ? 'grid' : 'flex', gap: isNarrow ? 6 : 8, alignItems: 'center',
+        ...(isNarrow ? { gridTemplateColumns: `repeat(${secoesCanal.length}, minmax(0, 1fr))` } : {}),
       }}>
         {secoesCanal.map(s => {
           const on = (secao === s.id || (s.id === 'jogos' && secao === 'meus')) && !termo;
@@ -41609,9 +41637,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             : s.id === 'meus' ? itensMeus.length
             : itensTema.length;
           return (
-            <button key={s.id} onClick={() => abrirSecao(s.id)} style={pill(on)}>
-              <s.Icon size={14} /> {s.label}
-              <span style={{ ...mono, fontSize: 11.5, opacity: 0.75 }}>{n}</span>
+            <button key={s.id} onClick={() => abrirSecao(s.id)} style={{
+              ...pill(on),
+              ...(isNarrow ? { minWidth: 0, justifyContent: 'center', padding: '7px 6px', fontSize: 12.5, gap: 5, whiteSpace: 'nowrap', overflow: 'hidden' } : {}),
+            }}>
+              {!isNarrow && <s.Icon size={14} />}
+              <span style={isNarrow ? { overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 } : undefined}>{s.label}</span>
+              <span style={{ ...mono, fontSize: 11.5, opacity: 0.75, flexShrink: 0 }}>{n}</span>
             </button>
           );
         })}
@@ -41709,15 +41741,34 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               textAlign: 'left', padding: 0, cursor: 'pointer', overflow: 'hidden', ...body,
               background: T.surface, border: `1px solid ${T.gold}`, borderRadius: 10, display: 'flex', flexDirection: 'column',
             }}>
+              {/* A CAPA: os teus próprios lances, em leque, como cromos
+                  na mão — os últimos três clipes que fizeste. */}
               <div style={{
-                aspectRatio: '16 / 9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 6,
-                background: 'linear-gradient(150deg, #3a1d20 0%, #1d2a22 100%)',
+                aspectRatio: '16 / 9', position: 'relative', overflow: 'hidden',
+                background: 'radial-gradient(120% 90% at 50% 100%, #3a2a12 0%, #1d2a22 70%)',
               }}>
-                <Scissors size={26} color={T.warn} />
-                <span style={{ ...mono, fontSize: 20, color: T.cream }}>{itensMeus.length}</span>
+                {itensMeus.length === 0 ? (
+                  <div style={{ position: 'absolute', inset: '18% 28%', border: `1.5px dashed ${T.gold}88`, borderRadius: 8, display: 'grid', placeItems: 'center' }}>
+                    <Plus size={20} color={T.gold} />
+                  </div>
+                ) : [...itensMeus].slice(-3).map((c, j, arr) => {
+                  const pos = arr.length === 1 ? [0] : arr.length === 2 ? [-1, 1] : [-1, 0, 1];
+                  const p = pos[j];
+                  return (
+                    <img key={c.id} alt="" src={`https://img.youtube.com/vi/${c.youtubeId}/mqdefault.jpg`}
+                      style={{
+                        position: 'absolute', width: '52%', aspectRatio: '16 / 9', objectFit: 'cover', left: '24%', top: '20%',
+                        borderRadius: 6, border: '2px solid #fff', boxShadow: '0 6px 14px rgba(0,0,0,.45)', background: '#000',
+                        transform: `translateX(${p * 34}%) translateY(${Math.abs(p) * 7}%) rotate(${p * 9}deg)`,
+                        zIndex: p === 0 || arr.length < 3 ? 2 + j : 1,
+                      }} />
+                  );
+                })}
+                {itensMeus.length > 0 && (
+                  <span style={{ position: 'absolute', right: 8, top: 8, zIndex: 5, background: T.gold, color: TEXT_ON_ACCENT, borderRadius: 12, padding: '1px 8px', fontSize: 12, fontWeight: 700, ...mono }}>{itensMeus.length}</span>
+                )}
               </div>
               <div style={{ padding: '9px 11px 11px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <span style={{ fontSize: 11, color: T.warn, ...mono }}>Só teus</span>
                 <div style={{ fontSize: 13.5, color: T.cream, fontWeight: 600 }}>Os meus clipes</div>
                 <div style={{ fontSize: 11.5, color: T.mutedDim }}>
                   {itensMeus.length ? `${itensMeus.length} ${itensMeus.length === 1 ? 'clipe' : 'clipes'}` : 'Abre um jogo e carrega em "Criar clipe"'}
