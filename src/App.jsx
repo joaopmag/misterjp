@@ -38341,6 +38341,25 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       return cop;
     });
   };
+  /* AQUECER o leitor escondido (diagnóstico, out/2026): parado e escondido,
+     o YouTube só tinha ~3 s de vídeo carregado — na troca, a imagem
+     chegava a esses 3 s e ficava ~8 s a carregar ("encrava"). Agora, logo
+     que fica preparado, toca uns segundos SEM SOM a partir do arranque
+     (o YouTube carrega bem esse bocado e sobe a qualidade) e volta ao
+     sítio, em pausa. Na troca já tem esse bocado todo carregado. */
+  const AQUECER_MS = 7000;
+  const aquecer = (s, t) => {
+    cmd(s, 'mute'); cmd(s, 'seekTo', [t, true]); cmd(s, 'playVideo');
+    const marca = Date.now();
+    ref.current.aquecerDesde = ref.current.aquecerDesde || [0, 0];
+    ref.current.aquecerDesde[s] = marca;
+    setTimeout(() => {
+      const r = ref.current;
+      if (r.aquecerDesde[s] !== marca || r.vis === s || r.aRodar[s]) return;
+      cmd(s, 'seekTo', [t, true]);
+      setTimeout(() => { if (ref.current.vis !== s && !ref.current.aRodar[s]) cmd(s, 'pauseVideo'); }, 300);
+    }, AQUECER_MS);
+  };
   // Põe o leitor `s` pronto no início do clipe k: carregado, em pausa e sem som.
   const prepararSlot = (s, k) => {
     const r = ref.current;
@@ -38351,8 +38370,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     r.aRodar[s] = false;
     r.lead[s] = seg.inicio - parque;
     if (r.slots[s].youtubeId === seg.youtubeId && r.pronto[s]) {
-      cmd(s, 'mute'); cmd(s, 'seekTo', [parque, true]);
-      setTimeout(() => { if (ref.current.vis !== s && !ref.current.aRodar[s]) cmd(s, 'pauseVideo'); }, 400);
+      aquecer(s, parque);
     } else {
       r.pronto[s] = false;
       mudarSlot(s, { youtubeId: seg.youtubeId, t: parque, auto: false, preparar: true });
@@ -38480,8 +38498,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       if (slot.preparar) {
         // Escondido: carrega o arranque (seekTo põe-no a tocar) e pára já,
         // sem som — fica pronto a arrancar sem esperar.
-        cmd(s, 'mute'); cmd(s, 'seekTo', [slot.t, true]);
-        setTimeout(() => { if (ref.current.vis !== s && !ref.current.aRodar[s]) cmd(s, 'pauseVideo'); }, 500);
+        aquecer(s, slot.t);
       } else {
         cmd(s, 'unMute'); cmd(s, 'seekTo', [slot.t, true]);
         if (slot.auto) cmd(s, 'playVideo');
