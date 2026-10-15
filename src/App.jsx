@@ -8911,7 +8911,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
       {statsFor ? (
         <PlayerProfilePage
           player={statsFor} sessions={sessions} matches={matches} clinico={clinico}
-          monitoring={monitoring} desenvolvimento={desenvolvimento} diario={diario}
+          monitoring={monitoring} desenvolvimento={desenvolvimento} diario={diario} convocatorias={convocatorias}
           onAbrirLesao={(id) => setLesaoPerfil({ tipo: 'ficha', id })}
           onBack={fecharPerfil}
           onShare={() => doShare(statsFor)}
@@ -9158,6 +9158,45 @@ function jogosOficiaisDe(matches) {
   return (matches || []).filter(m => !isFriendlyMatch(m));
 }
 
+/* ASSIDUIDADE TAL COMO EM PRESENÇAS — a mesma conta, para a ficha do
+   jogador dizer o mesmo número que a página Presenças:
+   · dias já passados, treinos E jogos (no jogo, convocado = presente);
+   · as sessões criadas a partir de um jogo não contam a dobrar;
+   · dias de folga (Descanso) não contam;
+   · dias em que esteve lesionado ou no outro escalão saem do denominador
+     (não é ausência). */
+function assiduidadeComoPresencas(pid, sessions, matches, convocatorias, clinico) {
+  const hojeIso = todayStr();
+  const idsDeJogos = new Set((matches || []).map(m => m.id));
+  const sessoesProprias = (sessions || []).filter(x => !(x.sourceMatchId && idsDeJogos.has(x.sourceMatchId)));
+  const trainingDays = groupSessionsByDate(sessoesProprias).filter(d => !d.list.every(s => s.phase === 'Descanso'));
+  const matchDays = (matches || []).filter(m => m.date).map(m => ({ date: m.date, match: m }));
+  const dias = [...trainingDays, ...matchDays].filter(d => d.date < hojeIso);
+  const convocadosOf = (match) => {
+    if (Array.isArray(match.attendance)) return match.attendance;
+    const conv = (convocatorias || []).find(c => c.data === match.date);
+    return [...new Set([...(match.convocados || []), ...((conv && conv.convocados) || [])])];
+  };
+  const presente = (d) => (d.match ? convocadosOf(d.match).includes(pid) : dayPresent(d.list, pid));
+  const estado = (d) => {
+    const lista = (campo) => (d.match ? (d.match[campo] || []) : (d.list || []).flatMap(x => x[campo] || []));
+    if (lista('faltas').includes(pid)) return 'falta';
+    if (lista('lesionados').includes(pid)) return 'lesionado';
+    if (lista('escalao').includes(pid)) return 'escalao';
+    if (presente(d)) return 'presente';
+    if (diaAutoLesionado(pid, d.date, clinico)) return 'lesionado';
+    return 'ausente';
+  };
+  const conta = (lista) => {
+    const possiveis = lista.filter(d => contaParaMedias(estado(d))).length;
+    const presentes = lista.filter(presente).length;
+    return { presentes, possiveis, pct: possiveis ? Math.round((presentes / possiveis) * 100) : null };
+  };
+  const geral = conta(dias);
+  const treino = conta(dias.filter(d => !d.match));
+  return { pct: geral.pct, presentes: geral.presentes, possiveis: geral.possiveis, treinoPresentes: treino.presentes, treinoPossiveis: treino.possiveis };
+}
+
 function playerStats(player, sessions, matches) {
   /* Dias de folga (fase "Descanso") não contam para a assiduidade — não
      há presenças nem notas a registar num dia sem treino.
@@ -9169,7 +9208,11 @@ function playerStats(player, sessions, matches) {
   const trainingSessions = (sessions || []).filter(s => (
     s.phase !== 'Descanso' && !(s.sourceMatchId && idsDeJogos.has(s.sourceMatchId))
   ));
-  const days = groupSessionsByDate(trainingSessions);
+  /* Só contam os dias JÁ PASSADOS (como em Presenças): os treinos
+     planeados para a frente entravam no denominador e a assiduidade
+     aparecia baixíssima (ex.: 7 presenças em 48 dias, 15%). */
+  const hojeIso = todayStr();
+  const days = groupSessionsByDate(trainingSessions).filter(d => d.date < hojeIso);
   const attended = days.filter(d => dayPresent(d.list, player.id)).length;
   const attendancePct = days.length ? Math.round((attended / days.length) * 100) : null;
 
@@ -9399,8 +9442,10 @@ function CadastroDisciplinar({ diario, playerId, card, sectionTitle }) {
   );
 }
 
-function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, diario = [], onBack, onShare, onPrint, onEdit, onAbrirLesao }) {
+function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, desenvolvimento, diario = [], convocatorias = [], onBack, onShare, onPrint, onEdit, onAbrirLesao }) {
   const s = playerStats(player, sessions, jogosOficiaisDe(matches));
+  // A mesma assiduidade que aparece em Presenças (ver assiduidadeComoPresencas).
+  const assid = assiduidadeComoPresencas(player.id, sessions, matches, convocatorias, clinico);
   const [fotoAmpliada, setFotoAmpliada] = useState(false);
 
   const ocorrencias = (clinico || [])
@@ -9502,7 +9547,7 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
       {/* NÚMEROS EM DESTAQUE */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginBottom: 20 }}>
         <div style={card}>
-          <div style={{ ...mono, fontSize: 19, fontWeight: 500, color: T.warn }}>{s.attendancePct === null ? '—' : `${s.attendancePct}%`}</div>
+          <div style={{ ...mono, fontSize: 19, fontWeight: 500, color: T.warn }}>{assid.pct === null ? '—' : `${assid.pct}%`}</div>
           <div style={{ fontSize: 10.5, color: T.mutedDim, marginTop: 2 }}>Assiduidade</div>
         </div>
         <div style={card}>
@@ -9533,7 +9578,7 @@ function PlayerProfilePage({ player, sessions, matches, monitoring, clinico, des
 
           <div style={sectionTitle}>Treino</div>
           <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-            {linha('Presenças', `${s.attended}/${s.totalSessions}`)}
+            {linha('Presenças', `${assid.treinoPresentes}/${assid.treinoPossiveis}`)}
             {linha('Nota média de treino', s.avgTrainingRating ?? '—')}
           </div>
 
@@ -42837,23 +42882,33 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                   <AttachmentPreview item={active} />
                 )}
                 <div style={{ marginTop: 10, color: T.cream, fontSize: 15, fontWeight: 500 }}>{active.title}</div>
-                {active.jornada && <div style={{ color: T.mutedDim, fontSize: 12.5 }}>{active.jornada}</div>}
-                {typeof active.clipInicio === 'number' && typeof active.clipFim === 'number' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12.5, color: T.mutedDim }}>
-                    <Scissors size={12} />
-                    <span>Corte {fmtMMSS(active.clipInicio)}–{fmtMMSS(active.clipFim)}</span>
-                    {active.clipOrigemTitulo && (
-                      <>
-                        <span>·</span>
-                        {items.some(v => v.id === active.clipOrigemId) ? (
-                          <button
-                            onClick={() => irPara(items.find(v => v.id === active.clipOrigemId))}
-                            style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', padding: 0, fontSize: 12.5, ...body }}
-                          >{active.clipOrigemTitulo}</button>
-                        ) : (
-                          <span>{active.clipOrigemTitulo}</span>
-                        )}
-                      </>
+                {/* Por baixo do título, sem partir linhas (também no telemóvel):
+                    a jornada à esquerda e o tempo do corte à direita; depois o
+                    jogo de onde veio, numa linha só. */}
+                {(() => {
+                  const eCorte = typeof active.clipInicio === 'number' && typeof active.clipFim === 'number';
+                  if (!active.jornada && !eCorte) return null;
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, fontSize: 12.5, color: T.mutedDim }}>
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{active.jornada || ''}</span>
+                      {eCorte && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', flexShrink: 0, ...mono, fontSize: 12 }}>
+                          <Scissors size={12} /> {fmtMMSS(active.clipInicio)}–{fmtMMSS(active.clipFim)}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+                {typeof active.clipInicio === 'number' && typeof active.clipFim === 'number' && active.clipOrigemTitulo && (
+                  <div style={{ marginTop: 3, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {items.some(v => v.id === active.clipOrigemId) ? (
+                      <button
+                        onClick={() => irPara(items.find(v => v.id === active.clipOrigemId))}
+                        title={active.clipOrigemTitulo}
+                        style={{ background: 'none', border: 'none', color: T.warn, cursor: 'pointer', padding: 0, fontSize: 12.5, ...body, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}
+                      >{active.clipOrigemTitulo}</button>
+                    ) : (
+                      <span style={{ color: T.mutedDim }}>{active.clipOrigemTitulo}</span>
                     )}
                   </div>
                 )}
