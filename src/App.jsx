@@ -31221,9 +31221,20 @@ const ERROS_CLIPE_ATLETA = {
 };
 
 function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
-  const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
-  const [videos, setVideosState] = useState([]);
-  const [meusClipes, setMeusClipes] = useState([]);
+  /* Abre logo com o que se viu da última vez (guardado neste aparelho) —
+     antes, "Os meus clipes" e a contagem só apareciam uns segundos depois,
+     à espera do servidor. Quando o servidor responde, troca-se. */
+  const chaveCacheBib = `misterjp:portal-bib:${teamId}:${hashCurto(String(code || ''))}`;
+  const cacheBib = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem(chaveCacheBib) || 'null') || null; } catch (e) { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [estado, setEstado] = useState(() => (cacheBib ? 'pronto' : 'a-carregar')); // a-carregar | pronto | erro
+  const [videos, setVideosState] = useState(() => (cacheBib && Array.isArray(cacheBib.videos) ? cacheBib.videos : []));
+  const [meusClipes, setMeusClipes] = useState(() => (cacheBib && Array.isArray(cacheBib.meus) ? cacheBib.meus : []));
+  useEffect(() => {
+    try { localStorage.setItem(chaveCacheBib, JSON.stringify({ videos, meus: meusClipes })); } catch (e) { /* sem espaço */ }
+  }, [videos, meusClipes, chaveCacheBib]);
   // Se a leitura dos clipes do jogador falhar, diz-se no ecrã (antes
   // falhava em silêncio e os clipes simplesmente não apareciam).
   const [erroMeusClipes, setErroMeusClipes] = useState(false);
@@ -31246,6 +31257,7 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
 
   useEffect(() => {
     let cancelado = false;
+    // Os dois pedidos AO MESMO TEMPO (antes eram um depois do outro).
     (async () => {
       try {
         const { data, error } = await supabase.rpc('checkin_biblioteca', { p_code: code, p_team: teamId });
@@ -31257,11 +31269,13 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
         setVideosState(((d && d.videos) || []).slice());
         setEstado('pronto');
       } catch (e) {
-        if (!cancelado) setEstado('erro');
+        if (!cancelado) setEstado(prev => (prev === 'pronto' ? prev : 'erro'));
       }
-      // Os clipes do próprio jogador vêm à parte. Se falharem (por
-      // exemplo, função ainda não criada no Supabase), a Biblioteca
-      // continua a abrir na mesma, só sem eles.
+    })();
+    // Os clipes do próprio jogador vêm à parte. Se falharem (por
+    // exemplo, função ainda não criada no Supabase), a Biblioteca
+    // continua a abrir na mesma, só sem eles.
+    (async () => {
       try {
         const { data, error } = await supabase.rpc('checkin_meus_clipes', { p_code: code, p_team: teamId });
         if (cancelado) return;
@@ -38333,7 +38347,13 @@ const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor
      avança. */
 const PRE_ROLL_JUNTO = 5;
 function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
-  const segs = (segmentos || []).filter(s => s && s.youtubeId && s.fim > s.inicio);
+  /* Clipes (do 2.º em diante) que começam nos primeiros PRE_ROLL s do
+     vídeo entram PRE_ROLL s depois (ver acima). A barra conta-os a partir
+     daí — senão saltava esses segundos na passagem. */
+  const segs = React.useMemo(() => (segmentos || [])
+    .filter(s => s && s.youtubeId && s.fim > s.inicio)
+    .map((s, k) => (k > 0 && s.inicio < PRE_ROLL_JUNTO && s.fim - 0.5 > s.inicio
+      ? { ...s, inicio: Math.min(PRE_ROLL_JUNTO, s.fim - 0.5) } : s)), [segmentos]);
   const durs = segs.map(s => s.fim - s.inicio);
   const offs = durs.reduce((acc, d, k) => { acc.push(k ? acc[k - 1] + durs[k - 1] : 0); return acc; }, []);
   const total = durs.reduce((t, d) => t + d, 0);
@@ -38345,6 +38365,15 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   const [local, setLocal] = useState(segs[0] ? segs[0].inicio : 0);
   const [aTocar, setATocar] = useState(false);
   const [ecraInteiro, setEcraInteiro] = useState(false);
+  // Ecrã inteiro "à mão" (iPhone: sem ecrã inteiro do browser) — e se o
+  // telemóvel estiver ao alto, roda-se o leitor para ocupar o ecrã deitado.
+  const [deitarCss, setDeitarCss] = useState(false);
+  const areaRef = useRef(null);
+  const lupa = useLupa(areaRef, ecraInteiro && !deitarCss);
+  // BARRA SEM SALTOS: o YouTube só diz o tempo ~4 vezes por segundo; entre
+  // avisos, a barra avança sozinha ao ritmo do relógio.
+  const ultimoRef = useRef({ t: segmentos && segmentos[0] ? segmentos[0].inicio : 0, quando: Date.now() });
+  const [, setQuadro] = useState(0);
   const n = segs.length;
   const ref = useRef(null);
   if (!ref.current) {
@@ -38355,6 +38384,14 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     };
   }
   useEffect(() => { ref.current.aTocar = aTocar; }, [aTocar]);
+  useEffect(() => {
+    if (!aTocar) return undefined;
+    let id = 0;
+    const passo = () => { setQuadro(x => (x + 1) % 1000000); id = requestAnimationFrame(passo); };
+    id = requestAnimationFrame(passo);
+    return () => cancelAnimationFrame(id);
+  }, [aTocar]);
+  const marcarLocal = (t) => { ultimoRef.current = { t, quando: Date.now() }; setLocal(t); };
 
   const cmd = (k, func, args) => {
     const el = iframesRef.current[k];
@@ -38379,7 +38416,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     r.comecou = true;
     if (antigo !== k) { cmd(antigo, 'pauseVideo'); cmd(antigo, 'mute'); }
     mostrar(k);
-    setLocal(t);
+    marcarLocal(t);
     r.aRodar[k] = false;
     cmd(k, 'unMute'); cmd(k, 'seekTo', [t, true]);
     if (tocar) cmd(k, 'playVideo'); else setTimeout(() => cmd(k, 'pauseVideo'), 300);
@@ -38400,7 +38437,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     const jaNoSitio = r.aRodar[k] && tp >= segs[k].inicio - 1.5 && tp <= Math.max(segs[k].inicio, PRE_ROLL_JUNTO) + 1;
     r.salto = Date.now();
     mostrar(k);
-    setLocal(jaNoSitio ? Math.max(segs[k].inicio, tp) : segs[k].inicio);
+    marcarLocal(jaNoSitio ? Math.max(segs[k].inicio, tp) : segs[k].inicio);
     cmd(k, 'unMute');
     if (!jaNoSitio) {
       cmd(k, 'seekTo', [segs[k].inicio, true]);
@@ -38451,7 +38488,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       }
       if (!aSaltar && t >= seg.fim - 0.12) avancar();
       else if (!aSaltar && t < seg.inicio - 1.6) cmd(k, 'seekTo', [seg.inicio, true]);
-      else setLocal(Math.min(seg.fim, Math.max(seg.inicio, t)));
+      else marcarLocal(Math.min(seg.fim, Math.max(seg.inicio, t)));
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -38476,20 +38513,41 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     document.addEventListener('fullscreenchange', aoMudar);
     return () => document.removeEventListener('fullscreenchange', aoMudar);
   }, []);
+  /* ECRÃ INTEIRO DEITADO: no Android pede-se ecrã inteiro e trava-se o
+     ecrã na horizontal; no iPhone (sem ecrã inteiro para páginas) ocupa a
+     janela e, se o telemóvel estiver ao alto, roda-se o leitor 90°. */
   const alternarEcra = () => {
     const el = caixaRef.current;
     if (!el) return;
-    if (document.fullscreenElement) { if (document.exitFullscreen) document.exitFullscreen(); return; }
-    if (ecraInteiro) { setEcraInteiro(false); return; }
-    if (el.requestFullscreen) el.requestFullscreen().catch(() => setEcraInteiro(true));
-    else setEcraInteiro(true); // iPhone: ocupa a janela toda
+    if (document.fullscreenElement) {
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) { /* nada */ }
+      if (document.exitFullscreen) document.exitFullscreen();
+      return;
+    }
+    if (ecraInteiro) { setEcraInteiro(false); setDeitarCss(false); return; }
+    const aMao = () => { setEcraInteiro(true); setDeitarCss(window.innerHeight > window.innerWidth); };
+    if (el.requestFullscreen) {
+      el.requestFullscreen().then(() => {
+        try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* nada */ }
+      }).catch(aMao);
+    } else aMao();
   };
+  useEffect(() => {
+    if (!ecraInteiro || document.fullscreenElement) return undefined;
+    const aoRodar = () => setDeitarCss(window.innerHeight > window.innerWidth);
+    window.addEventListener('resize', aoRodar);
+    return () => window.removeEventListener('resize', aoRodar);
+  }, [ecraInteiro]);
 
   if (!n) return <div style={{ fontSize: 12.5, color: T.mutedDim, padding: 10 }}>Os clipes deste vídeo já não existem.</div>;
   const seg = segs[vis] || segs[0];
-  const global = offs[vis] + Math.max(0, local - seg.inicio);
+  const localSuave = aTocar ? Math.min(seg.fim, ultimoRef.current.t + (Date.now() - ultimoRef.current.quando) / 1000) : local;
+  const global = offs[vis] + Math.max(0, Math.min(seg.fim, localSuave) - seg.inicio);
   const btn = { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 4, flexShrink: 0 };
-  const cssInteiro = ecraInteiro && !document.fullscreenElement ? { position: 'fixed', inset: 0, zIndex: 80, borderRadius: 0 } : {};
+  const cssInteiro = !ecraInteiro || document.fullscreenElement ? {}
+    : deitarCss
+      ? { position: 'fixed', top: 0, left: 0, width: '100vh', height: '100vw', transform: 'rotate(90deg) translateY(-100%)', transformOrigin: 'top left', zIndex: 80, borderRadius: 0 }
+      : { position: 'fixed', inset: 0, zIndex: 80, borderRadius: 0 };
   const alternarPlay = () => {
     const r = ref.current;
     if (aTocar) { cmd(r.vis, 'pauseVideo'); return; }
@@ -38501,7 +38559,9 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   return (
     <div>
       <div ref={caixaRef} style={{ position: 'relative', overflow: 'hidden', background: '#000', display: 'flex', flexDirection: 'column', borderRadius: 8, ...(ecraInteiro ? { height: '100%' } : {}), ...cssInteiro }}>
-        <div style={{ position: 'relative', width: '100%', ...(ecraInteiro ? { flex: 1, minHeight: 0 } : { paddingTop: '56.25%' }) }}>
+        <div ref={areaRef} style={{ position: 'relative', width: '100%', overflow: 'hidden', ...(ecraInteiro ? { flex: 1, minHeight: 0 } : { paddingTop: '56.25%' }) }}>
+          {/* LUPA (ecrã inteiro): pinça, roda do rato e arrastar, como nos clipes. */}
+          <div style={{ position: 'absolute', inset: 0, transform: lupa.transform || 'none', transformOrigin: '0 0', transition: lupa.aArrastar ? 'none' : 'transform 0.2s ease-out' }}>
           {segs.map((s, k) => (
             <iframe
               key={k} ref={el => { iframesRef.current[k] = el; }} onLoad={() => aoCarregar(k)} title={`${titulo || 'O meu vídeo'} ${k + 1}`}
@@ -38510,13 +38570,18 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, opacity: vis === k ? 1 : 0.01, pointerEvents: 'none', zIndex: vis === k ? 1 : 0 }}
             />
           ))}
+          </div>
           {prontos < n && !ref.current.comecou && (
             <div style={{ position: 'absolute', right: 8, bottom: 8, zIndex: 3, background: '#000a', color: '#fff', fontSize: 11, padding: '3px 8px', borderRadius: 10, pointerEvents: 'none', ...body }}>
               A preparar {prontos}/{n}…
             </div>
           )}
-          {/* Toque no vídeo = pausar / retomar (os leitores não recebem toques). */}
-          <div onClick={alternarPlay} style={{ position: 'absolute', inset: 0, zIndex: 4, cursor: 'pointer' }} />
+          {/* Toque no vídeo = pausar / retomar (os leitores não recebem toques).
+              Em ecrã inteiro a mesma camada também faz a lupa. */}
+          {ecraInteiro && !deitarCss
+            ? <div {...lupa.handlers(alternarPlay)} style={{ position: 'absolute', inset: 0, zIndex: 4, touchAction: 'none', cursor: lupa.lupa.z > 1 ? (lupa.aArrastar ? 'grabbing' : 'grab') : 'pointer' }} />
+            : <div onClick={alternarPlay} style={{ position: 'absolute', inset: 0, zIndex: 4, cursor: 'pointer' }} />}
+          {ecraInteiro && !deitarCss && <ControlosLupa {...lupa} />}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: isNarrow ? 6 : 10, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
           <button onClick={alternarPlay} title={aTocar ? 'Pausar' : 'Reproduzir'} style={btn}>{aTocar ? <Pause size={16} /> : <Play size={16} />}</button>
