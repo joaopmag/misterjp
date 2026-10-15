@@ -46191,7 +46191,13 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
               style={{
                 background: destacado ? 'rgba(201,162,39,.08)' : T.surface,
                 border: `1px ${destacado ? 'dashed' : 'solid'} ${destacado || isToday ? T.gold : T.line}`,
-                borderRadius: 8, padding: isMobile ? '10px 10px' : 8, minHeight: isMobile ? 0 : 160, minWidth: 0,
+                /* ALTURA FIXA no computador: todos os dias têm sempre a mesma
+                   altura, cheios ou vazios. Largar uma tarefa num dia já não
+                   faz o calendário crescer nem empurra a página para baixo;
+                   quando há mais tarefas do que cabem, a lista desliza por
+                   dentro do próprio dia. */
+                borderRadius: 8, padding: isMobile ? '10px 10px' : 8, minWidth: 0,
+                ...(isMobile ? { minHeight: 0 } : { height: 340 + alturaContexto }),
                 display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: isMobile ? 10 : 0,
               }}
             >
@@ -46222,7 +46228,13 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
                 </div>
               )}
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6 }}>
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6,
+                ...(isMobile ? {} : {
+                  flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden',
+                  scrollbarWidth: 'thin', scrollbarGutter: 'stable', marginRight: -4, paddingRight: 2,
+                }),
+              }}>
                 {lista.map(({ t, oc }) => {
                   const arrastavel = !isMobile && (!t.recorrencia || !!oc);
                   const chave = { id: t.id, base: oc ? oc.base : null };
@@ -47604,9 +47616,15 @@ function ArquivoConcluidas({ feitas, membros, euId, players, hoje, onAbrir, onAl
                       </div>
                       {varios && exp && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: '4px 10px 8px 35px' }}>
-                          {j.itens.map(t => (t._grupo
-                            ? <button key={t.id} type="button" onClick={() => onAbrir(t)} style={{ ...body, fontSize: 12, color: T.cream, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 9px', cursor: 'pointer' }}>Ver o grupo ({t._grupo.length})</button>
-                            : <button key={t.id} type="button" onClick={() => onAbrir(t)} style={{ ...body, fontSize: 12, color: T.cream, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 9px', cursor: 'pointer' }}>{nomeDe(t)}</button>))}
+                          {/* Num grupo, mostra-se logo QUEM concluiu (um nome por
+                              atleta, clica-se para abrir a resposta dele), em vez
+                              de um botão "Ver o grupo" que obrigava a mais um clique. */}
+                          {j.itens.flatMap(t => (t._grupo ? t._grupo.filter(feitaNoGrupo) : [t])).map(r => (
+                            <button key={r.id} type="button" onClick={() => onAbrir(r)} title={`Abrir a tarefa de ${nomeDe(r)}`}
+                              style={{ ...body, display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: T.cream, background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 14, padding: '2px 9px', cursor: 'pointer' }}>
+                              <Check size={11} color={T.good} style={{ flexShrink: 0 }} />{nomeDe(r)}
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
