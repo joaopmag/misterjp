@@ -37888,6 +37888,30 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
    computador em desenvolvimento, dava links que não abrem a quem os recebe. */
 const URL_PUBLICA_APP = 'https://misterjp.vercel.app/';
 
+/* LINK DE UM "VÍDEO JUNTO" (Os meus vídeos, Portal do Atleta).
+   O link LEVA O VÍDEO DENTRO: a lista dos clipes (vídeo do YouTube,
+   início, fim, título) vai no próprio endereço, em base64. Abre sem login
+   e sem base de dados (ver PaginaVideoJunto), e funciona para sempre —
+   mesmo que o jogador apague o vídeo na app. */
+function codificarJunto(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let bin = '';
+  bytes.forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function descodificarJunto(txt) {
+  try {
+    const b64 = String(txt || '').replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
+    const bytes = Uint8Array.from(bin, ch => ch.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch (e) { return null; }
+}
+function linkDoVideoJunto(nome, segmentos) {
+  const s = (segmentos || []).map(x => [x.youtubeId, Math.round(Number(x.inicio) * 10) / 10, Math.round(Number(x.fim) * 10) / 10, String(x.titulo || '').slice(0, 40)]);
+  return `${URL_PUBLICA_APP}?junto=${codificarJunto({ n: String(nome || '').slice(0, 80), s })}`;
+}
+
 function linkDoCorteYoutube(youtubeId, inicio, fim, titulo) {
   const ini = Math.max(0, Math.floor(Number(inicio) || 0));
   const f = Math.max(ini + 1, Math.ceil(Number(fim) || 0));
@@ -38603,6 +38627,18 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
     return { ...e, ids };
   });
   const btnIcone = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 4, display: 'inline-flex' };
+  /* PARTILHAR: no telemóvel abre a folha de partilha do sistema (WhatsApp,
+     Instagram, Mensagens, Guardar…); no computador copia o link. O link
+     leva o vídeo dentro (ver linkDoVideoJunto) — o jogador fica com ele. */
+  const partilhar = async (nome, ids) => {
+    const segmentos = ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, inicio: c.clipInicio, fim: c.clipFim, titulo: c.title }; });
+    const url = linkDoVideoJunto(nome, segmentos);
+    try {
+      if (navigator.share) { await navigator.share({ title: nome, text: nome, url }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(url); setAviso('Link copiado — cola-o onde quiseres partilhar.'); }
+    catch (e) { window.prompt('Copia o link do vídeo:', url); }
+  };
 
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
@@ -38640,6 +38676,8 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
               }}><Play size={13} /> Ver</Btn>
             )}
             <button type="button" title="Editar" onClick={() => setEditar({ id: v.id, nome: v.nome, ids })} style={btnIcone}><Pencil size={14} /></button>
+            <button type="button" title="Partilhar este vídeo (envia um link — abre em qualquer telemóvel, sem login)" disabled={!ids.length}
+              onClick={() => partilhar(v.nome, ids)} style={{ ...btnIcone, opacity: !ids.length ? 0.4 : 1 }}><Share2 size={14} /></button>
             {onGravar && (
               <button type="button" title="Gravar este vídeo num ficheiro (computador)" disabled={!ids.length || aGravar} onClick={() => onGravar(ids, v.nome)} style={{ ...btnIcone, opacity: !ids.length || aGravar ? 0.4 : 1 }}><Download size={14} /></button>
             )}
@@ -49217,6 +49255,33 @@ function PaginaClipe() {
   );
 }
 
+/* PÁGINA PÚBLICA DE UM VÍDEO JUNTO (?junto=<lista em base64>) — o destino
+   do "Partilhar" de Os meus vídeos. O mesmo leitor do Portal (clipes
+   seguidos, passagem contínua, uma barra só), sem login. */
+function PaginaVideoJunto() {
+  const dados = descodificarJunto(new URLSearchParams(window.location.search).get('junto'));
+  const nome = dados && typeof dados.n === 'string' ? dados.n : '';
+  const segmentos = React.useMemo(() => ((dados && Array.isArray(dados.s)) ? dados.s : [])
+    .filter(x => Array.isArray(x) && /^[A-Za-z0-9_-]{6,20}$/.test(String(x[0])) && Number(x[2]) > Number(x[1]))
+    .slice(0, 60)
+    .map(x => ({ youtubeId: String(x[0]), inicio: Math.max(0, Number(x[1])), fim: Number(x[2]), titulo: String(x[3] || '') })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  []);
+  const estreito = typeof window !== 'undefined' && window.innerWidth < 600;
+  useEffect(() => { document.title = nome ? `${nome} · Vídeo` : 'Vídeo'; }, [nome]);
+  return (
+    <div style={{ minHeight: '100vh', background: T.bg, color: T.cream, ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
+      <div style={{ width: '100%', maxWidth: 900 }}>
+        {!segmentos.length ? (
+          <div style={{ fontSize: 14, color: T.bad, padding: '40px 0', textAlign: 'center' }}>Este link de vídeo não é válido.</div>
+        ) : (
+          <LeitorJunto titulo={nome || 'Vídeo'} segmentos={segmentos} isNarrow={estreito} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* PÁGINA PÚBLICA DE UM CORTE (?corte=<youtubeId>&i=<início>&f=<fim>&t=<título>)
 
    É o destino dos links "Partilhar" dos cortes do YouTube. Abre sem
@@ -49524,6 +49589,10 @@ export default function AppRoot() {
   // (nem devem precisar de) conta de treinador — por isso esta
   // verificação acontece ANTES do portão de login, e nunca mostra o ecrã
   // de autenticação da plataforma.
+  // Link partilhado de um vídeo junto (Os meus vídeos): página pública.
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('junto')) {
+    return <ErrorBoundary><PaginaVideoJunto /></ErrorBoundary>;
+  }
   // Link partilhado de um corte: página pública, sem login (ver PaginaCorte).
   if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('corte')) {
     return <ErrorBoundary><PaginaCorte /></ErrorBoundary>;
