@@ -31321,6 +31321,13 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
       if (!d || !d.ok) throw new Error((d && d.erro) || 'erro');
       return d.video;
     },
+    partilhar: async (id) => {
+      const { data, error } = await supabase.rpc('checkin_video_partilhar', { p_code: code, p_team: teamId, p_id: id });
+      if (error) throw error;
+      const d = lerJson(data);
+      if (!d || !d.ok) throw new Error((d && d.erro) || 'erro');
+      return d.codigo;
+    },
     apagar: async (id) => {
       const { data, error } = await supabase.rpc('checkin_video_apagar', { p_code: code, p_team: teamId, p_id: id });
       if (error) throw error;
@@ -38489,7 +38496,6 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     if (!r.comecou) { tocarEm(0, segs[0].inicio, true); return; }
     cmd(r.vis, 'unMute'); cmd(r.vis, 'playVideo');
   };
-  const texto = `${n > 1 ? `${vis + 1}/${n} · ` : ''}${seg.titulo || ''}`;
   const prontos = ref.current.pronto.filter(Boolean).length;
 
   return (
@@ -38531,7 +38537,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
           <span style={{ fontSize: 11.5, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>{fmtMMSS(global)} / {fmtMMSS(total)}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: '#ffffffcc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, ...body }}>{texto}</span>
+          <span />
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
             {onFechar && !ecraInteiro && (
               <button onClick={onFechar} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fff', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px', ...body }}><X size={13} /> Fechar</button>
@@ -38544,8 +38550,8 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       </div>
       {!ecraInteiro && (
         <div style={{ marginTop: 10 }}>
+          {/* Só o título — sem quantos clipes tem nem qual está a tocar. */}
           <div style={{ fontSize: 16, color: T.cream, fontWeight: 600, ...body }}>{titulo}</div>
-          <div style={{ fontSize: 12, color: T.mutedDim, marginTop: 2, ...mono }}>{n} clipes · {fmtMMSS(total)}</div>
         </div>
       )}
     </div>
@@ -38557,7 +38563,14 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
      em qualquer aparelho. Se o servidor ainda não tiver as funções (ou não
      houver rede), guarda-se NESTE aparelho e avisa-se. Os que já estavam
      guardados no aparelho sobem para o servidor sozinhos, uma vez. */
-  const [lista, setLista] = useState(() => lerCompilacoes(chave));
+  /* A PÁGINA NÃO PODE MEXER: a lista do servidor chega uns instantes
+     depois de abrir — e o painel crescia, empurrando tudo. Mostra-se logo
+     a última lista conhecida (guardada neste aparelho) e só se troca
+     quando chega a do servidor; o texto de "ainda não tens vídeos" só
+     aparece depois de se saber de certeza. */
+  const chaveCache = `${chave}:servidor`;
+  const [lista, setLista] = useState(() => { const loc = lerCompilacoes(chave); return loc.length ? loc : lerCompilacoes(`${chave}:servidor`); });
+  const [carregado, setCarregado] = useState(false);
   const [noServidor, setNoServidor] = useState(false);
   const [aviso, setAviso] = useState('');
   const [editar, setEditar] = useState(null); // { id?, nome, ids }
@@ -38577,16 +38590,18 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
           doServidor = await api.ler();
         }
         if (cancelado) return;
-        setLista(doServidor); setNoServidor(true); setAviso('');
+        setLista(doServidor); setNoServidor(true); setAviso(''); setCarregado(true);
       } catch (e) {
         if (cancelado) return;
-        setLista(lerCompilacoes(chave)); setNoServidor(false);
+        setLista(lerCompilacoes(chave)); setNoServidor(false); setCarregado(true);
         setAviso('Por agora os teus vídeos ficam guardados só neste aparelho.');
       }
     })();
     return () => { cancelado = true; };
   }, [chave, api]);
   const guardarLocal = (nova) => { setLista(nova); gravarCompilacoes(chave, nova); };
+  // Cópia da lista do servidor neste aparelho, para a próxima abertura.
+  useEffect(() => { if (noServidor) gravarCompilacoes(chaveCache, lista); }, [lista, noServidor, chaveCache]);
   const porId = new Map(clipes.map(c => [c.id, c]));
   const duracao = (ids) => ids.reduce((t, id) => { const c = porId.get(id); return t + (c ? Math.max(0, (c.clipFim || 0) - (c.clipInicio || 0)) : 0); }, 0);
   const validos = (ids) => (ids || []).filter(id => porId.has(id));
@@ -38632,7 +38647,15 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
      leva o vídeo dentro (ver linkDoVideoJunto) — o jogador fica com ele. */
   const partilhar = async (nome, ids) => {
     const segmentos = ids.map(id => { const c = porId.get(id); return { youtubeId: c.youtubeId, inicio: c.clipInicio, fim: c.clipFim, titulo: c.title }; });
-    const url = linkDoVideoJunto(nome, segmentos);
+    /* Link CURTO (site + nome do vídeo + 4 letras): o vídeo tem de estar no
+       servidor. Se não estiver (ou o servidor ainda não tiver a função),
+       usa-se o link comprido, que leva o vídeo dentro. */
+    let url = null;
+    const v = lista.find(x => x.nome === nome && JSON.stringify(validos(x.ids)) === JSON.stringify(ids));
+    if (noServidor && api && api.partilhar && v && v.id) {
+      try { const codigo = await api.partilhar(v.id); if (codigo) url = `${URL_PUBLICA_APP}?video=${encodeURIComponent(codigo)}`; } catch (e) { /* link comprido */ }
+    }
+    if (!url) url = linkDoVideoJunto(nome, segmentos);
     try {
       if (navigator.share) { await navigator.share({ title: nome, text: nome, url }); return; }
     } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -38649,7 +38672,7 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
           <Btn variant="ghost" onClick={() => setEditar({ nome: '', ids: [] })}><Plus size={14} /> Juntar clipes num vídeo</Btn>
         )}
       </div>
-      {!editar && !lista.length && (
+      {!editar && !lista.length && carregado && (
         <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>Junta os teus clipes — do mesmo jogo ou de jogos diferentes — num vídeo só, com uma barra só, como se fosse um clipe.</div>
       )}
       {aviso && <div style={{ fontSize: 12, color: T.warn, margin: '4px 0 8px' }}>{aviso}</div>}
@@ -49259,20 +49282,36 @@ function PaginaClipe() {
    do "Partilhar" de Os meus vídeos. O mesmo leitor do Portal (clipes
    seguidos, passagem contínua, uma barra só), sem login. */
 function PaginaVideoJunto() {
-  const dados = descodificarJunto(new URLSearchParams(window.location.search).get('junto'));
+  const params = new URLSearchParams(window.location.search);
+  const codigo = params.get('video');
+  const dadosLink = codigo ? null : descodificarJunto(params.get('junto'));
+  // Link curto (?video=código): o vídeo vem do servidor (video_publico).
+  const [doServidor, setDoServidor] = useState(codigo ? 'a-carregar' : null);
+  useEffect(() => {
+    if (!codigo) return;
+    supabase.rpc('video_publico', { p_codigo: codigo }).then(({ data, error }) => {
+      const d = !error && data ? (typeof data === 'string' ? JSON.parse(data) : data) : null;
+      setDoServidor(d && Array.isArray(d.segmentos) ? d : 'invalido');
+    }).catch(() => setDoServidor('invalido'));
+  }, [codigo]);
+  const dados = codigo
+    ? (doServidor && typeof doServidor === 'object' ? { n: doServidor.nome, s: doServidor.segmentos.map(x => [x.youtubeId, x.inicio, x.fim, x.titulo]) } : null)
+    : dadosLink;
   const nome = dados && typeof dados.n === 'string' ? dados.n : '';
   const segmentos = React.useMemo(() => ((dados && Array.isArray(dados.s)) ? dados.s : [])
     .filter(x => Array.isArray(x) && /^[A-Za-z0-9_-]{6,20}$/.test(String(x[0])) && Number(x[2]) > Number(x[1]))
     .slice(0, 60)
     .map(x => ({ youtubeId: String(x[0]), inicio: Math.max(0, Number(x[1])), fim: Number(x[2]), titulo: String(x[3] || '') })),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  []);
+  [doServidor]);
   const estreito = typeof window !== 'undefined' && window.innerWidth < 600;
   useEffect(() => { document.title = nome ? `${nome} · Vídeo` : 'Vídeo'; }, [nome]);
   return (
     <div style={{ minHeight: '100vh', background: T.bg, color: T.cream, ...body, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px' }}>
       <div style={{ width: '100%', maxWidth: 900 }}>
-        {!segmentos.length ? (
+        {doServidor === 'a-carregar' ? (
+          <div style={{ fontSize: 14, color: T.mutedDim, padding: '40px 0', textAlign: 'center' }}>A abrir o vídeo…</div>
+        ) : !segmentos.length ? (
           <div style={{ fontSize: 14, color: T.bad, padding: '40px 0', textAlign: 'center' }}>Este link de vídeo não é válido.</div>
         ) : (
           <LeitorJunto titulo={nome || 'Vídeo'} segmentos={segmentos} isNarrow={estreito} />
@@ -49590,7 +49629,7 @@ export default function AppRoot() {
   // verificação acontece ANTES do portão de login, e nunca mostra o ecrã
   // de autenticação da plataforma.
   // Link partilhado de um vídeo junto (Os meus vídeos): página pública.
-  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('junto')) {
+  if (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).has('junto') || new URLSearchParams(window.location.search).has('video'))) {
     return <ErrorBoundary><PaginaVideoJunto /></ErrorBoundary>;
   }
   // Link partilhado de um corte: página pública, sem login (ver PaginaCorte).
