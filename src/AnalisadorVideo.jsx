@@ -2321,6 +2321,84 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return lista.sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
   })();
 
+  /* As linhas dos clipes de um cartão (usadas no cartão — os primeiros
+     CLIPES_VISIVEIS — e no painel "Ver todos", com a lista inteira). */
+  const renderClipesCartao = (g, lista) => lista.map((c, ci, arr) => {
+                      // Separador de jogo: quando o jogador tem clipes de
+                      // mais de um jogo, cada bloco começa com o nome do
+                      // jogo e um play que vê só os clipes dele desse jogo.
+                      const jogo = jogoDoClipeAtleta(c);
+                      const novoJogo = g.nJogos > 1 && (ci === 0 || jogoDoClipeAtleta(arr[ci - 1]).chave !== jogo.chave);
+                      const doJogo = novoJogo ? g.clipes.filter(x => jogoDoClipeAtleta(x).chave === jogo.chave) : null;
+                      return (
+                      <React.Fragment key={c.id}>
+                      {novoJogo && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px 6px 14px', background: T.surfaceRaise, borderBottom: `1px solid ${T.line}` }}>
+                          <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: T.gold, flexShrink: 0 }} />
+                          <span title={jogo.nome} style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: T.cream, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jogo.nome}</span>
+                          <button onClick={() => setSequenciaAtleta({ clipes: doJogo, indice: 0 })}
+                            title={`Ver os ${doJogo.length} clipes de ${g.nome} neste jogo`}
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer', ...body,
+                              background: 'transparent', border: `1px solid ${T.gold}`, color: T.gold,
+                              borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 600,
+                            }}>
+                            <Play size={10} fill={T.gold} /> {doJogo.length}
+                          </button>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}` }}>
+                      <button onClick={() => setClipeAtletaAberto(c)}
+                        style={{
+                          flex: 1, minWidth: 0, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 4px 9px 12px', cursor: 'pointer',
+                          background: 'transparent', border: 'none', ...body,
+                        }}>
+                        <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
+                          style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                            <span style={{ fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{c.titulo || '(sem título)'}</span>
+                            {/* O jogador apagou-o no Portal: para ele desaparece,
+                               mas o treinador continua a tê-lo (marcado pelo
+                               servidor em `apagadoPeloAtleta`). */}
+                            {c.apagadoPeloAtleta && (
+                              <span title="O jogador apagou este clipe no Portal. Continua disponível aqui para o treinador."
+                                style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 600, color: T.mutedDim, border: `1px solid ${T.line}`, borderRadius: 4, padding: '0 5px', lineHeight: '15px' }}>
+                                Apagado no Portal
+                              </span>
+                            )}
+                          </span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.mutedDim, ...mono, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                            <Scissors size={10} style={{ flexShrink: 0 }} /> {mmss(c.clipInicio)}–{mmss(c.clipFim)}
+                            {dataCurta(c.criadoEm) && <span style={{ ...body, marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis' }}>· {dataCurta(c.criadoEm)}</span>}
+                          </span>
+                          {c.note
+                            ? <span style={{ display: 'block', fontSize: 11.5, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.note}</span>
+                            : c.originalTitulo && <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.originalTitulo}</span>}
+                        </span>
+                      </button>
+                      <button
+                        onClick={async () => { if (await partilharClipeAtleta(c) === 'copiado') { setCopiedId(c.id); setTimeout(() => setCopiedId(null), 1600); } }}
+                        title="Partilhar só o corte" aria-label={`Partilhar o clipe ${c.titulo || ''}`}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', display: 'flex', flexShrink: 0 }}>
+                        {copiedId === c.id ? <Check size={15} color={T.good} /> : <Share2 size={15} color={T.muted} />}
+                      </button>
+                      <button
+                        onClick={() => removerClipe(c)}
+                        title="Apagar o clipe só daqui (o jogador continua a tê-lo no Portal)" aria-label={`Apagar o clipe ${c.titulo || ''}`}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px 10px 2px', display: 'flex', flexShrink: 0 }}>
+                        <Trash2 size={15} color={T.muted} />
+                      </button>
+                      </div>
+                      </React.Fragment>
+                      );
+  });
+  /* "VER TODOS" ABRE UM PAINEL POR CIMA, em vez de esticar o cartão: a
+     grelha nunca muda de tamanho, por isso a página não mexe nada. */
+  const [cartaoPainel, setCartaoPainel] = useState(null); // chave do jogador
+  // Abrir um clipe (ou vê-los seguidos) a partir do painel fecha o painel.
+  useEffect(() => { if (clipeAtletaAberto || sequenciaAtleta) setCartaoPainel(null); }, [clipeAtletaAberto, sequenciaAtleta]);
+
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
   // Outro vídeo = outro enquadramento: a calibração e a referência recomeçam.
   useEffect(() => { setCalibracao(null); setCalibrando(null); setRefFJ(null); }, [originalAtivoId]);
@@ -3634,91 +3712,47 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     )}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {(cartoesAbertos.has(g.chave) ? g.clipes : g.clipes.slice(0, CLIPES_VISIVEIS)).map((c, ci, arr) => {
-                      // Separador de jogo: quando o jogador tem clipes de
-                      // mais de um jogo, cada bloco começa com o nome do
-                      // jogo e um play que vê só os clipes dele desse jogo.
-                      const jogo = jogoDoClipeAtleta(c);
-                      const novoJogo = g.nJogos > 1 && (ci === 0 || jogoDoClipeAtleta(arr[ci - 1]).chave !== jogo.chave);
-                      const doJogo = novoJogo ? g.clipes.filter(x => jogoDoClipeAtleta(x).chave === jogo.chave) : null;
-                      return (
-                      <React.Fragment key={c.id}>
-                      {novoJogo && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px 6px 14px', background: T.surfaceRaise, borderBottom: `1px solid ${T.line}` }}>
-                          <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 2, background: T.gold, flexShrink: 0 }} />
-                          <span title={jogo.nome} style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: T.cream, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{jogo.nome}</span>
-                          <button onClick={() => setSequenciaAtleta({ clipes: doJogo, indice: 0 })}
-                            title={`Ver os ${doJogo.length} clipes de ${g.nome} neste jogo`}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer', ...body,
-                              background: 'transparent', border: `1px solid ${T.gold}`, color: T.gold,
-                              borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 600,
-                            }}>
-                            <Play size={10} fill={T.gold} /> {doJogo.length}
-                          </button>
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}` }}>
-                      <button onClick={() => setClipeAtletaAberto(c)}
-                        style={{
-                          flex: 1, minWidth: 0, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 4px 9px 12px', cursor: 'pointer',
-                          background: 'transparent', border: 'none', ...body,
-                        }}>
-                        <img src={`https://img.youtube.com/vi/${c.youtubeId}/default.jpg`} alt=""
-                          style={{ width: 56, height: 42, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: T.surfaceRaise }} />
-                        <span style={{ minWidth: 0, flex: 1 }}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                            <span style={{ fontSize: 13, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{c.titulo || '(sem título)'}</span>
-                            {/* O jogador apagou-o no Portal: para ele desaparece,
-                               mas o treinador continua a tê-lo (marcado pelo
-                               servidor em `apagadoPeloAtleta`). */}
-                            {c.apagadoPeloAtleta && (
-                              <span title="O jogador apagou este clipe no Portal. Continua disponível aqui para o treinador."
-                                style={{ flexShrink: 0, fontSize: 9.5, fontWeight: 600, color: T.mutedDim, border: `1px solid ${T.line}`, borderRadius: 4, padding: '0 5px', lineHeight: '15px' }}>
-                                Apagado no Portal
-                              </span>
-                            )}
-                          </span>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.mutedDim, ...mono, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-                            <Scissors size={10} style={{ flexShrink: 0 }} /> {mmss(c.clipInicio)}–{mmss(c.clipFim)}
-                            {dataCurta(c.criadoEm) && <span style={{ ...body, marginLeft: 4, overflow: 'hidden', textOverflow: 'ellipsis' }}>· {dataCurta(c.criadoEm)}</span>}
-                          </span>
-                          {c.note
-                            ? <span style={{ display: 'block', fontSize: 11.5, color: T.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.note}</span>
-                            : c.originalTitulo && <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.originalTitulo}</span>}
-                        </span>
-                      </button>
-                      <button
-                        onClick={async () => { if (await partilharClipeAtleta(c) === 'copiado') { setCopiedId(c.id); setTimeout(() => setCopiedId(null), 1600); } }}
-                        title="Partilhar só o corte" aria-label={`Partilhar o clipe ${c.titulo || ''}`}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', display: 'flex', flexShrink: 0 }}>
-                        {copiedId === c.id ? <Check size={15} color={T.good} /> : <Share2 size={15} color={T.muted} />}
-                      </button>
-                      <button
-                        onClick={() => removerClipe(c)}
-                        title="Apagar o clipe só daqui (o jogador continua a tê-lo no Portal)" aria-label={`Apagar o clipe ${c.titulo || ''}`}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px 10px 2px', display: 'flex', flexShrink: 0 }}>
-                        <Trash2 size={15} color={T.muted} />
-                      </button>
-                      </div>
-                      </React.Fragment>
-                      );
-                    })}
+                    {renderClipesCartao(g, g.clipes.slice(0, CLIPES_VISIVEIS))}
                   </div>
                   {g.clipes.length > CLIPES_VISIVEIS && (
-                    <button onClick={() => alternarCartao(g.chave)}
+                    <button onClick={() => setCartaoPainel(g.chave)}
                       style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', ...body,
                         background: 'transparent', border: 'none', color: T.muted, padding: '9px 12px', fontSize: 12.5, fontWeight: 600,
                       }}>
-                      {cartoesAbertos.has(g.chave)
-                        ? <><ChevronUp size={14} /> Mostrar menos</>
-                        : <><ChevronDown size={14} /> Mostrar mais {g.clipes.length - CLIPES_VISIVEIS}</>}
+                      <ChevronDown size={14} /> Ver todos ({g.clipes.length})
                     </button>
                   )}
                 </div>
               ))}
             </div>
+            {(() => {
+              const g = cartaoPainel && cartoesAtletas.find(x => x.chave === cartaoPainel);
+              if (!g) return null;
+              return (
+                <div onClick={() => setCartaoPainel(null)} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+                  <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '86vh', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px 12px 16px', borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
+                      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body }}>{g.nome}</span>
+                        <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>{g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}{g.nJogos > 1 ? ` · ${g.nJogos} jogos` : ''}</span>
+                      </span>
+                      {g.clipes.length > 1 && (
+                        <button onClick={() => { setCartaoPainel(null); setSequenciaAtleta({ clipes: g.clipes, indice: 0 }); }}
+                          title={`Ver os ${g.clipes.length} clipes de ${g.nome} seguidos`}
+                          style={{ width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', background: T.goldFundo, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Play size={15} fill="#111" color="#111" style={{ marginLeft: 2 }} />
+                        </button>
+                      )}
+                      <button onClick={() => setCartaoPainel(null)} title="Fechar" style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', padding: 6, display: 'flex' }}><X size={18} /></button>
+                    </div>
+                    <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                      {renderClipesCartao(g, g.clipes)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             </>
           )
         )}
