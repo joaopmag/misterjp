@@ -38298,7 +38298,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   // para o recriar quando muda de vídeo.
   const [slots, setSlots] = useState(() => [
     { youtubeId: segs[0] && segs[0].youtubeId, t: segs[0] ? segs[0].inicio : 0, n: 0, auto: false, preparar: false },
-    { youtubeId: segs[1] ? segs[1].youtubeId : (segs[0] && segs[0].youtubeId), t: segs[1] ? Math.max(0, segs[1].inicio - 4) : 0, n: 0, auto: false, preparar: !!segs[1] },
+    { youtubeId: segs[1] ? segs[1].youtubeId : (segs[0] && segs[0].youtubeId), t: segs[1] ? Math.max(0, segs[1].inicio - 5) : 0, n: 0, auto: false, preparar: !!segs[1] },
   ]);
   const [ecraInteiro, setEcraInteiro] = useState(false);
   /* ARRANQUE ESCONDIDO: o YouTube mostra, ao começar a tocar, o título,
@@ -38307,7 +38307,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
      (sem som) PRE_ROLL segundos ANTES do início do clipe seguinte; quando
      o clipe atual acaba, ele já vai no início do seguinte, a tocar e sem
      nada por cima — só se troca qual se vê e liga-se o som. */
-  const PRE_ROLL = 4;
+  const PRE_ROLL = 5;
   /* CLIPES QUE COMEÇAM NOS PRIMEIROS SEGUNDOS DO VÍDEO: não há 4 segundos
      antes do início para o arranque escondido. Testado (diagnóstico,
      out/2026): com só 2 s o YouTube ainda mostrava o título e o símbolo;
@@ -38341,24 +38341,12 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       return cop;
     });
   };
-  /* AQUECER o leitor escondido (diagnóstico, out/2026): parado e escondido,
-     o YouTube só tinha ~3 s de vídeo carregado — na troca, a imagem
-     chegava a esses 3 s e ficava ~8 s a carregar ("encrava"). Agora, logo
-     que fica preparado, toca uns segundos SEM SOM a partir do arranque
-     (o YouTube carrega bem esse bocado e sobe a qualidade) e volta ao
-     sítio, em pausa. Na troca já tem esse bocado todo carregado. */
-  const AQUECER_MS = 7000;
+  /* PARAR o leitor escondido no ponto de arranque, sem som e SEM tocar.
+     (Diagnóstico, out/2026: pô-lo a tocar para "aquecer" roubava rede ao
+     leitor da frente, que encravava — ver PREPARAR DEPOIS.) */
   const aquecer = (s, t) => {
-    cmd(s, 'mute'); cmd(s, 'seekTo', [t, true]); cmd(s, 'playVideo');
-    const marca = Date.now();
-    ref.current.aquecerDesde = ref.current.aquecerDesde || [0, 0];
-    ref.current.aquecerDesde[s] = marca;
-    setTimeout(() => {
-      const r = ref.current;
-      if (r.aquecerDesde[s] !== marca || r.vis === s || r.aRodar[s]) return;
-      cmd(s, 'seekTo', [t, true]);
-      setTimeout(() => { if (ref.current.vis !== s && !ref.current.aRodar[s]) cmd(s, 'pauseVideo'); }, 300);
-    }, AQUECER_MS);
+    cmd(s, 'mute'); cmd(s, 'seekTo', [t, true]);
+    setTimeout(() => { if (ref.current.vis !== s && !ref.current.aRodar[s]) cmd(s, 'pauseVideo'); }, 500);
   };
   // Põe o leitor `s` pronto no início do clipe k: carregado, em pausa e sem som.
   const prepararSlot = (s, k) => {
@@ -38416,7 +38404,14 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       if (!jaNoSitio) { cmd(outro, 'seekTo', [segs[k].inicio, true]); cmd(outro, 'playVideo'); }
       r.aRodar[outro] = false;
       cmd(antigo, 'pauseVideo'); cmd(antigo, 'mute');
-      prepararSlot(antigo, k + 1 < segs.length ? k + 1 : -1);
+      /* PREPARAR DEPOIS (diagnóstico, out/2026): carregar logo o clipe
+         seguinte no leitor de trás, no instante da troca, disputava a rede
+         com o leitor que acabava de passar para a frente — e esse ficava
+         10+ segundos a carregar ("encrava"). Agora o de trás só começa a
+         preparar-se quando o da frente já está a tocar bem (3 s), ou mais
+         cedo se o clipe for curto. */
+      r.alvo[antigo] = -1;
+      r.pendentePrep = { s: antigo, k: k + 1 < segs.length ? k + 1 : -1 };
     } else {
       tocarAqui(k, segs[k].inicio, true);
     }
@@ -38463,6 +38458,11 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         if (typeof data.info.playerState === 'number') r.estado[s] = data.info.playerState;
         const seg = segs[r.i];
         if (!seg) return;
+        if (r.pendentePrep && r.estado[s] === 1 && (t - seg.inicio >= 3 || seg.fim - t <= 15)) {
+          const p = r.pendentePrep;
+          r.pendentePrep = null;
+          prepararSlot(p.s, p.k);
+        }
         const aSaltar = Date.now() - r.salto < 900;
         // Faltam PRE_ROLL segundos: o escondido começa já a tocar (sem som).
         const outro = 1 - s;
