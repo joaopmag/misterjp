@@ -2323,12 +2323,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   /* As linhas dos clipes de um cartão (usadas no cartão — os primeiros
      CLIPES_VISIVEIS — e no painel "Ver todos", com a lista inteira). */
-  const renderClipesCartao = (g, lista) => lista.map((c, ci, arr) => {
+  // compacto (no cartão): sem separadores de jogo e cada linha com a mesma
+  // altura — os cartões ficam todos iguais, tenham os clipes que tiverem.
+  const ALTURA_LINHA_CARTAO = 64;
+  const renderClipesCartao = (g, lista, compacto) => lista.map((c, ci, arr) => {
                       // Separador de jogo: quando o jogador tem clipes de
                       // mais de um jogo, cada bloco começa com o nome do
                       // jogo e um play que vê só os clipes dele desse jogo.
                       const jogo = jogoDoClipeAtleta(c);
-                      const novoJogo = g.nJogos > 1 && (ci === 0 || jogoDoClipeAtleta(arr[ci - 1]).chave !== jogo.chave);
+                      const novoJogo = !compacto && g.nJogos > 1 && (ci === 0 || jogoDoClipeAtleta(arr[ci - 1]).chave !== jogo.chave);
                       const doJogo = novoJogo ? g.clipes.filter(x => jogoDoClipeAtleta(x).chave === jogo.chave) : null;
                       return (
                       <React.Fragment key={c.id}>
@@ -2347,7 +2350,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                           </button>
                         </div>
                       )}
-                      <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${T.line}`, ...(compacto ? { height: ALTURA_LINHA_CARTAO, overflow: 'hidden', boxSizing: 'border-box' } : {}) }}>
                       <button onClick={() => setClipeAtletaAberto(c)}
                         style={{
                           flex: 1, minWidth: 0, display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', padding: '9px 4px 9px 12px', cursor: 'pointer',
@@ -2395,9 +2398,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   });
   /* "VER TODOS" ABRE UM PAINEL POR CIMA, em vez de esticar o cartão: a
      grelha nunca muda de tamanho, por isso a página não mexe nada. */
-  const [cartaoPainel, setCartaoPainel] = useState(null); // chave do jogador
-  // Abrir um clipe (ou vê-los seguidos) a partir do painel fecha o painel.
-  useEffect(() => { if (clipeAtletaAberto || sequenciaAtleta) setCartaoPainel(null); }, [clipeAtletaAberto, sequenciaAtleta]);
+  const [cartaoPainel, setCartaoPainel] = useState(null); // { chave, left, width, top } — onde abrir a coluna
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
   // Outro vídeo = outro enquadramento: a calibração e a referência recomeçam.
@@ -3675,7 +3676,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 overflowAnchor 'none': o browser deixa de "corrigir" o scroll
                 sozinho quando a lista cresce (era isso que fazia a página
                 mexer toda ao carregar em "Mostrar mais"). */}
-            <div ref={grelhaAtletasRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'start', overflowAnchor: 'none', minHeight: alturaReservadaGrelha || undefined }}>
+            <div ref={grelhaAtletasRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, alignItems: 'stretch', overflowAnchor: 'none' }}>
               {cartoesAtletas.map(g => (
                 <div key={g.chave} ref={el => { if (el) cartaoRefs.current[g.chave] = el; else delete cartaoRefs.current[g.chave]; }}
                   style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -3711,13 +3712,20 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       </button>
                     )}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {renderClipesCartao(g, g.clipes.slice(0, CLIPES_VISIVEIS))}
+                  <div style={{ display: 'flex', flexDirection: 'column', height: ALTURA_LINHA_CARTAO * CLIPES_VISIVEIS, overflow: 'hidden' }}>
+                    {renderClipesCartao(g, g.clipes.slice(0, CLIPES_VISIVEIS), true)}
                   </div>
-                  {g.clipes.length > CLIPES_VISIVEIS && (
-                    <button onClick={() => setCartaoPainel(g.chave)}
+                  {/* Sempre presente (mesmo com poucos clipes), para todos os
+                      cartões terem o mesmo tamanho. Abre a lista inteira numa
+                      coluna por cima do próprio cartão, da mesma largura. */}
+                  {(
+                    <button onClick={(e) => {
+                      const el = cartaoRefs.current[g.chave];
+                      const r = el ? el.getBoundingClientRect() : null;
+                      setCartaoPainel({ chave: g.chave, left: r ? r.left : null, width: r ? r.width : null, top: r ? Math.max(12, r.top) : null });
+                    }}
                       style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', ...body,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', ...body, marginTop: 'auto',
                         background: 'transparent', border: 'none', color: T.muted, padding: '9px 12px', fontSize: 12.5, fontWeight: 600,
                       }}>
                       <ChevronDown size={14} /> Ver todos ({g.clipes.length})
@@ -3727,18 +3735,28 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               ))}
             </div>
             {(() => {
-              const g = cartaoPainel && cartoesAtletas.find(x => x.chave === cartaoPainel);
-              if (!g) return null;
+              const g = cartaoPainel && cartoesAtletas.find(x => x.chave === cartaoPainel.chave);
+              // Com um clipe aberto, o painel fica escondido — e volta ao
+              // fechar o clipe (X), para continuar a ver os outros.
+              if (!g || clipeAtletaAberto || sequenciaAtleta) return null;
+              const emColuna = cartaoPainel.left != null && typeof window !== 'undefined' && window.innerWidth >= 700;
               return (
-                <div onClick={() => setCartaoPainel(null)} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-                  <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '86vh', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div onClick={() => setCartaoPainel(null)} style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.55)', ...(emColuna ? {} : { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }) }}>
+                  <div onClick={e => e.stopPropagation()} style={{
+                    background: T.surface, border: `1px solid ${T.gold}`, borderRadius: 10, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+                    ...(emColuna
+                      // COLUNA por cima do próprio cartão, com a largura dele.
+                      ? { position: 'absolute', left: cartaoPainel.left, width: cartaoPainel.width, top: cartaoPainel.top, maxHeight: `calc(100vh - ${cartaoPainel.top + 12}px)` }
+                      : { width: '100%', maxWidth: 560, maxHeight: '86vh' }),
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 12px 12px 16px', borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
                       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <span style={{ fontSize: 15, fontWeight: 600, color: T.cream, ...body }}>{g.nome}</span>
                         <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>{g.clipes.length} {g.clipes.length === 1 ? 'clipe' : 'clipes'}{g.nJogos > 1 ? ` · ${g.nJogos} jogos` : ''}</span>
                       </span>
                       {g.clipes.length > 1 && (
-                        <button onClick={() => { setCartaoPainel(null); setSequenciaAtleta({ clipes: g.clipes, indice: 0 }); }}
+                        <button onClick={() => setSequenciaAtleta({ clipes: g.clipes, indice: 0 })}
                           title={`Ver os ${g.clipes.length} clipes de ${g.nome} seguidos`}
                           style={{ width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', background: T.goldFundo, border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           <Play size={15} fill="#111" color="#111" style={{ marginLeft: 2 }} />
