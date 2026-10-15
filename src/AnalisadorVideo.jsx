@@ -2278,7 +2278,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   const clipesStaff = clipes.filter(c => !ehClipeAtleta(c));
-  const clipesAtletas = clipes.filter(ehClipeAtleta);
+  // Os que o treinador apagou deixam de aparecer aqui — mas o jogador
+  // continua a tê-los no Portal (ver removerClipe).
+  const clipesAtletas = clipes.filter(c => ehClipeAtleta(c) && !c.apagadoPeloTreinador);
   // Um cartão por jogador, criado sozinho a partir do primeiro clipe
   // dele. Ordem alfabética; dentro do cartão, o clipe mais recente primeiro.
   // Jogos com clipes de atletas — mais recente primeiro (o do último clipe
@@ -2555,6 +2557,21 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   const removerClipe = (clip, onRemovido) => {
+    /* CLIPE DE UM JOGADOR: cada lado apaga só para si. O jogador, no
+       Portal, marca `apagadoPeloAtleta` (o treinador continua a vê-lo);
+       o treinador, aqui, marca `apagadoPeloTreinador` (o jogador continua a
+       tê-lo). O registo só é apagado de vez quando os DOIS o apagaram. */
+    if (ehClipeAtleta(clip)) {
+      const executarAtleta = () => {
+        if (clip.apagadoPeloAtleta) setClipes(prev => prev.filter(c => c.id !== clip.id));
+        else setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, apagadoPeloTreinador: true } : c)));
+        onRemovido?.();
+      };
+      const msg = clip.apagadoPeloAtleta ? 'O jogador já o tinha apagado no Portal — fica apagado de vez.' : 'Sai daqui, mas o jogador continua a tê-lo no Portal.';
+      if (askConfirm) askConfirm({ title: 'Apagar clipe?', label: 'Este clipe', confirmLabel: 'Apagar', onConfirm: executarAtleta, note: msg });
+      else if (window.confirm(`Apagar este clipe? ${msg}`)) executarAtleta();
+      return;
+    }
     const executar = async () => {
       // Os clipes dos atletas não têm ficheiro (são só marcas no YouTube).
       if (clip.storagePath) {
@@ -3679,7 +3696,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                       </button>
                       <button
                         onClick={() => removerClipe(c)}
-                        title="Apagar o clipe (também desaparece para o jogador)" aria-label={`Apagar o clipe ${c.titulo || ''}`}
+                        title="Apagar o clipe só daqui (o jogador continua a tê-lo no Portal)" aria-label={`Apagar o clipe ${c.titulo || ''}`}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px 10px 2px', display: 'flex', flexShrink: 0 }}>
                         <Trash2 size={15} color={T.muted} />
                       </button>
