@@ -38498,7 +38498,13 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
               key={`${s}-${slots[s].n}`} ref={iframes[s]} onLoad={() => aoCarregar(s)} title={titulo || 'O meu vídeo'}
               src={`https://www.youtube.com/embed/${slots[s].youtubeId}?start=${Math.floor(slots[s].t)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0${slots[s].auto ? '&autoplay=1' : ''}${slots[s].preparar ? '&mute=1' : ''}`}
               allow="autoplay; encrypted-media; picture-in-picture"
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, opacity: vis === s ? 1 : 0, pointerEvents: 'none', zIndex: vis === s ? 1 : 0 }}
+              /* Os dois leitores estão SEMPRE "visíveis" para o browser — o
+                 de trás fica só tapado pelo da frente (z-index), nunca
+                 transparente. O YouTube repara quando um leitor passa de
+                 invisível a visível e volta a mostrar o título, o símbolo
+                 de pausa e os botões por cima; tapado, não há essa
+                 passagem, e a troca fica limpa. */
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, pointerEvents: 'none', zIndex: vis === s ? 1 : 0, background: '#000' }}
             />
           ))}
           {/* Toque no vídeo = pausar / retomar (os leitores não recebem toques). */}
