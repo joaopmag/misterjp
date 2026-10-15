@@ -3634,7 +3634,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              isto, em alguns Windows/Chrome abria BRANCA com o texto claro por
              cima — parecia um "flash" branco vazio. */
           select { color-scheme: ${TEMA_ATUAL === 'claro' ? 'light' : 'dark'}; }
-          select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; }
+          select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; } @keyframes mjpEntrar { from { opacity: 0; } to { opacity: 1; } }
           @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
           /* Sem barra nenhuma — nem fina, nem grossa. Continua tudo a
              deslocar-se na mesma (arrasto, roda do rato, gesto no
@@ -3765,7 +3765,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
            isto, em alguns Windows/Chrome abria BRANCA com o texto claro por
            cima — parecia um "flash" branco vazio. */
         select { color-scheme: ${TEMA_ATUAL === 'claro' ? 'light' : 'dark'}; }
-        select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; }
+        select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; } @keyframes mjpEntrar { from { opacity: 0; } to { opacity: 1; } }
         table { border-collapse: collapse; width: 100%; }
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
         html { -webkit-text-size-adjust: 100%; }
@@ -38925,6 +38925,24 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const [sequencia, setSequencia] = useState(null);
   // Portal: um dos "Os meus vídeos" aberto no leitor (vários clipes num só).
   const [compAtiva, setCompAtiva] = useState(null); // { id, nome, segmentos }
+  const vistaBibRef = useRef(null);
+  const [alturaVistaBib, setAlturaVistaBib] = useState(0);
+  const ultimaAlturaBibRef = useRef(0);
+  // Antes de trocar de vista, guarda-se a altura que estava; ao fim de um
+  // instante (a vista nova já desenhada), larga-se.
+  useEffect(() => {
+    setAlturaVistaBib(ultimaAlturaBibRef.current);
+    const t = setTimeout(() => setAlturaVistaBib(0), 450);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secao, grupo]);
+  useEffect(() => {
+    const el = vistaBibRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => { if (vistaBibRef.current) ultimaAlturaBibRef.current = vistaBibRef.current.getBoundingClientRect().height; });
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
   const leitorColunaRef = useRef(null);
   // Escolher um clipe da lista sai do vídeo junto e volta ao leitor normal.
   useEffect(() => { setCompAtiva(null); }, [activeId]);
@@ -42089,6 +42107,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         />
       )}
 
+      {/* TROCAR DE SEPARADOR SEM SOLAVANCOS: os cartões de Jogos (deitados)
+          e os de Temas/listas têm alturas muito diferentes — a página
+          encolhia e saltava. A área guarda a altura que tinha durante a
+          troca (só cresce até a nova vista assentar) e a vista nova entra
+          num fade curto. */}
+      <div key={`${secao}|${grupo || ''}|${termo ? 'p' : ''}`} ref={vistaBibRef} style={{ minHeight: alturaVistaBib || undefined, animation: 'mjpEntrar .18s ease-out' }}>
       {items.length === 0 ? (
         <EmptyState text={emptyText} action={soLeitura ? null : <Btn onClick={() => setModal('new')}><Plus size={15} /> {emptyFirstLabel}</Btn>} />
       ) : modoCanal && !termo && secao !== 'temas' && secao !== 'meus' && !grupoAtual ? (
@@ -43002,6 +43026,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           </div>
         </div>
       )}
+      </div>
 
       {pedirFicha && (
         <FichaAdversarioRapida
@@ -49221,7 +49246,7 @@ function CheckinApp() {
            isto, em alguns Windows/Chrome abria BRANCA com o texto claro por
            cima — parecia um "flash" branco vazio. */
         select { color-scheme: ${TEMA_ATUAL === 'claro' ? 'light' : 'dark'}; }
-        select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; }
+        select option, select optgroup { background-color: ${T.surface}; color: ${T.cream}; } @keyframes mjpEntrar { from { opacity: 0; } to { opacity: 1; } }
         @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
         /* Reserva sempre o espaço da barra de scroll vertical, mesmo
            quando o conteúdo é curto e não precisa dela. Sem isto, uma

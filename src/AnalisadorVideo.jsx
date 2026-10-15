@@ -2226,6 +2226,21 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Separador da biblioteca de clipes: 'staff' (os clipes cortados aqui)
   // ou 'atletas' (Análise individual em clipes, criados no Portal).
   const [separadorClipes, setSeparadorClipes] = useState('staff');
+  const areaCortesRef = useRef(null);
+  const [alturaAreaCortes, setAlturaAreaCortes] = useState(0);
+  // Quantos cartões de vídeo cabem numa linha (172px + 10px de espaço).
+  const grelhaOriginaisRef = useRef(null);
+  const [porLinhaOriginais, setPorLinhaOriginais] = useState(6);
+  const [verTodosOriginais, setVerTodosOriginais] = useState(false);
+  useEffect(() => {
+    const medir = () => {
+      const el = grelhaOriginaisRef.current;
+      if (el) setPorLinhaOriginais(Math.max(1, Math.floor((el.getBoundingClientRect().width + 10) / 182)));
+    };
+    medir();
+    window.addEventListener('resize', medir);
+    return () => window.removeEventListener('resize', medir);
+  });
   const [clipeAtletaAberto, setClipeAtletaAberto] = useState(null);
   // "Ver seguidos": { clipes, indice } — todos os clipes de um jogador,
   // um atrás do outro, na ordem do cartão.
@@ -3173,8 +3188,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
          cima do leitor). Com um vídeo aberto, mostra-se só uma barra fina
          com "Voltar", sempre à vista sem ser preciso subir a página. */}
       {!originalAtivo ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
-          {videosOriginais.map(v => (
+        <>
+        {/* DUAS LINHAS de vídeos carregados; o cartão "Carregar vídeo" é o
+            último da 2.ª linha. Com mais vídeos, "Ver mais" abre o resto. */}
+        <div ref={grelhaOriginaisRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+          {(verTodosOriginais ? videosOriginais : videosOriginais.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(v => (
             <button key={v.id} onClick={() => { setOriginalAtivoId(v.id); limparMarcas(); }}
               style={{
                 display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
@@ -3231,6 +3249,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {uploadVideoEstado?.ativo ? (uploadVideoEstado.finalizando ? 'A finalizar…' : `A carregar… ${uploadVideoEstado.progresso}%`) : 'Carregar vídeo'}
           </button>
         </div>
+        {videosOriginais.length > porLinhaOriginais * 2 - 1 && (
+          <button onClick={() => setVerTodosOriginais(v => !v)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, padding: '2px 0', marginBottom: 6, ...body }}>
+            {verTodosOriginais
+              ? <><ChevronUp size={14} /> Ver menos</>
+              : <><ChevronDown size={14} /> Ver mais ({videosOriginais.length - (porLinhaOriginais * 2 - 1)})</>}
+          </button>
+        )}
+        </>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
           <Btn variant="ghost" onClick={() => setOriginalAtivoId(null)}>
@@ -3249,9 +3276,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         </div>
       )}
 
-      {!originalAtivo && (
+      {!originalAtivo && videosOriginais.length === 0 && (
         <div style={{ color: T.mutedDim, fontSize: 13, padding: '30px 0', textAlign: 'center' }}>
-          Carrega o vídeo de um jogo ou treino para começares a marcar clipes.
+          Carrega o vídeo de um jogo ou treino para começares a marcar cortes.
         </div>
       )}
 
@@ -3644,16 +3671,21 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         </BancadaVideo.Provider>
       )}
 
-      {/* Biblioteca de clipes — permanente, independente do vídeo original */}
-      <div style={{ marginTop: 26 }}>
+      {/* Biblioteca de cortes — permanente, independente do vídeo original.
+          A área guarda a maior altura que já teve, para trocar entre
+          "Cortes" e "Análise individual" sem a página encolher e saltar. */}
+      <div ref={areaCortesRef} style={{ marginTop: originalAtivo ? 26 : 14, minHeight: alturaAreaCortes || undefined }}>
         <div role="tablist" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
           {[
-            { id: 'staff', label: `Clipes (${(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).length})`, Icon: Tag },
+            { id: 'staff', label: `Cortes (${(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).length})`, Icon: Tag },
             { id: 'atletas', label: `Análise individual em clipes (${clipesAtletas.length})`, Icon: User },
           ].map(({ id, label, Icon }) => {
             const on = separadorClipes === id;
             return (
-              <button key={id} role="tab" aria-selected={on} onClick={() => setSeparadorClipes(id)}
+              <button key={id} role="tab" aria-selected={on} onClick={() => {
+                if (areaCortesRef.current) setAlturaAreaCortes(h => Math.max(h, areaCortesRef.current.getBoundingClientRect().height));
+                setSeparadorClipes(id);
+              }}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 7, padding: '7px 12px', borderRadius: 8, cursor: 'pointer',
                   ...display, fontSize: 14, fontWeight: 600,
@@ -3775,7 +3807,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           )
         )}
 
-        {separadorClipes === 'staff' && clipesStaff.length === 0 && <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0' }}>Ainda não há clipes guardados.</div>}
+        {separadorClipes === 'staff' && clipesStaff.length === 0 && <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0' }}>Ainda não há cortes guardados.</div>}
 
         {separadorClipes === 'staff' && clipesStaff.length > 0 && (
           <>
