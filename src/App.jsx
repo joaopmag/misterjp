@@ -38277,37 +38277,40 @@ const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor
    inteiro), mas a barra vai de 0 ao total de todos os clipes, com uma
    risca onde cada um começa.
 
-   A PASSAGEM ENTRE CLIPES. O YouTube, sempre que um vídeo começa a tocar
-   ou salta, mostra por cima o título, o símbolo de play/pausa e os botões
-   — e não deixa tirar isso. Por isso a passagem faz-se atrás de uma
-   CORTINA nossa (escura, com "2/3 · título" do clipe que vem): o clipe
-   seguinte arranca ARRANQUE segundos ANTES do início dele, sem som e
-   tapado; quando chega ao início exato, liga-se o som e a cortina sai.
-   O que o YouTube mostra no arranque fica sempre por trás da cortina.
-
-   Para a cortina ser curta, há dois leitores: enquanto um toca, o outro
-   já tem o clipe seguinte carregado e parado no sítio do arranque. */
-const ARRANQUE_JUNTO = 2.6; // o título do YouTube some ao fim de ~2–3 s a tocar
+   PASSAGEM SEM CORTE ENTRE CLIPES. Há dois leitores do YouTube, um por
+   cima do outro: enquanto um toca, o outro já tem o clipe SEGUINTE
+   carregado, posto no início e em pausa (e sem som). No fim do clipe,
+   troca-se qual se vê e o seguinte arranca logo — sem esperar que
+   carregue. Depois o leitor que ficou escondido prepara o próximo. */
 function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   const segs = (segmentos || []).filter(s => s && s.youtubeId && s.fim > s.inicio);
   const durs = segs.map(s => s.fim - s.inicio);
   const offs = durs.reduce((acc, d, k) => { acc.push(k ? acc[k - 1] + durs[k - 1] : 0); return acc; }, []);
   const total = durs.reduce((t, d) => t + d, 0);
-  const arranqueDe = (k) => Math.max(0, segs[k].inicio - ARRANQUE_JUNTO);
 
   const iframes = [useRef(null), useRef(null)];
   const caixaRef = useRef(null);
   const [i, setI] = useState(0);
   const [local, setLocal] = useState(segs[0] ? segs[0].inicio : 0);
   const [aTocar, setATocar] = useState(false);
-  const [vis, setVis] = useState(0);
-  const [cortina, setCortina] = useState(null); // texto da cortina, ou null
+  const [vis, setVis] = useState(0); // qual dos dois leitores se vê
+  // Cada leitor: que vídeo tem carregado, onde arranca, e um contador
+  // para o recriar quando muda de vídeo.
   const [slots, setSlots] = useState(() => [
     { youtubeId: segs[0] && segs[0].youtubeId, t: segs[0] ? segs[0].inicio : 0, n: 0, auto: false, preparar: false },
-    { youtubeId: segs[1] ? segs[1].youtubeId : (segs[0] && segs[0].youtubeId), t: segs[1] ? Math.max(0, segs[1].inicio - ARRANQUE_JUNTO) : 0, n: 0, auto: false, preparar: !!segs[1] },
+    // O 2.º leitor já fica à espera uns segundos ANTES do clipe 2 (ver PRE_ROLL).
+    { youtubeId: segs[1] ? segs[1].youtubeId : (segs[0] && segs[0].youtubeId), t: segs[1] ? Math.max(0, segs[1].inicio - 4) : 0, n: 0, auto: false, preparar: !!segs[1] },
   ]);
   const [ecraInteiro, setEcraInteiro] = useState(false);
-  const ref = useRef({ i: 0, vis: 0, slots, alvo: [0, segs[1] ? 1 : -1], pronto: [false, false], salto: 0, aTocar: false, revelar: null, primeiro: true });
+  /* ARRANQUE ESCONDIDO: o YouTube mostra, ao começar a tocar, o título,
+     o círculo de carregar e o símbolo de play — durante uns segundos.
+     Para nada disso se ver na passagem, o leitor escondido começa a tocar
+     (sem som) PRE_ROLL segundos ANTES do início do clipe seguinte; quando
+     o clipe atual acaba, ele já vai no início do seguinte, a tocar e sem
+     nada por cima — só se troca qual se vê e liga-se o som. */
+  const PRE_ROLL = 4;
+  const ref = useRef({ i: 0, vis: 0, slots, alvo: [0, segs[1] ? 1 : -1], pronto: [false, false], salto: 0, aTocar: false, tempo: [0, 0], aRodar: [false, false],
+    lead: [0, segs[1] ? segs[1].inicio - Math.max(0, segs[1].inicio - PRE_ROLL) : 0] });
   ref.current.slots = slots;
   useEffect(() => { ref.current.aTocar = aTocar; }, [aTocar]);
 
@@ -38324,77 +38327,70 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       return cop;
     });
   };
-  const textoClipe = (k) => `${segs.length > 1 ? `${k + 1}/${segs.length} · ` : ''}${segs[k].titulo || ''}`;
-  // Cortina até o leitor visível chegar ao início do clipe k.
-  const porCortina = (k) => {
-    const r = ref.current;
-    r.revelar = { k, em: segs[k].inicio, desde: Date.now() };
-    setCortina(textoClipe(k));
-  };
-  const tirarCortina = () => {
-    const r = ref.current;
-    if (!r.revelar) return;
-    r.revelar = null;
-    cmd(r.vis, 'unMute');
-    setCortina(null);
-  };
-  // Põe o leitor `s` pronto para o clipe k: carregado, sem som, parado no arranque.
+  // Põe o leitor `s` pronto no início do clipe k: carregado, em pausa e sem som.
   const prepararSlot = (s, k) => {
     const r = ref.current;
     r.alvo[s] = k;
     if (k < 0 || k >= segs.length) return;
     const seg = segs[k];
-    const t = arranqueDe(k);
+    const parque = Math.max(0, seg.inicio - PRE_ROLL);
+    r.aRodar[s] = false;
+    r.lead[s] = seg.inicio - parque; // quanto antes do fim arranca (≤ PRE_ROLL)
     if (r.slots[s].youtubeId === seg.youtubeId && r.pronto[s]) {
-      cmd(s, 'mute'); cmd(s, 'seekTo', [t, true]);
-      setTimeout(() => { if (ref.current.vis !== s) cmd(s, 'pauseVideo'); }, 500);
+      cmd(s, 'mute'); cmd(s, 'seekTo', [parque, true]);
+      setTimeout(() => { if (ref.current.vis !== s && !ref.current.aRodar[s]) cmd(s, 'pauseVideo'); }, 400);
     } else {
       r.pronto[s] = false;
-      mudarSlot(s, { youtubeId: seg.youtubeId, t, auto: false, preparar: true });
+      mudarSlot(s, { youtubeId: seg.youtubeId, t: parque, auto: false, preparar: true });
     }
   };
-  /* Arranca o clipe k no leitor visível, atrás da cortina (`limpo`) ou à
-     vista no segundo t (saltos na barra, que são do próprio jogador). */
-  const tocarAqui = (k, t, tocar, limpo) => {
+  // Toca o clipe k a partir do segundo t no leitor visível.
+  const tocarAqui = (k, t, tocar) => {
     const r = ref.current;
     const s = r.vis;
     const seg = segs[k];
-    const desde = limpo ? arranqueDe(k) : t;
     r.salto = Date.now();
-    r.i = k; setI(k); setLocal(limpo ? seg.inicio : t);
+    r.i = k; setI(k); setLocal(t);
     r.alvo[s] = k;
-    if (limpo && tocar) porCortina(k);
     if (r.slots[s].youtubeId === seg.youtubeId && r.pronto[s]) {
-      if (limpo && tocar) cmd(s, 'mute'); else cmd(s, 'unMute');
-      cmd(s, 'seekTo', [desde, true]);
+      cmd(s, 'unMute'); cmd(s, 'seekTo', [t, true]);
       if (tocar) cmd(s, 'playVideo'); else setTimeout(() => cmd(s, 'pauseVideo'), 300);
     } else {
       r.pronto[s] = false;
-      mudarSlot(s, { youtubeId: seg.youtubeId, t: desde, auto: !!tocar, preparar: false, mudo: !!(limpo && tocar) });
+      mudarSlot(s, { youtubeId: seg.youtubeId, t, auto: !!tocar, preparar: false });
     }
     prepararSlot(1 - s, k + 1 < segs.length ? k + 1 : -1);
   };
-  // Fim de um clipe: o seguinte, atrás da cortina (troca de leitor se já estiver pronto).
+  // Fim de um clipe: passa ao seguinte sem parar (troca de leitor).
   const avancar = () => {
     const r = ref.current;
     const k = r.i + 1;
     if (k >= segs.length) {
       cmd(r.vis, 'pauseVideo');
-      tocarAqui(0, segs[0].inicio, false, false);
+      tocarAqui(0, segs[0].inicio, false);
       return;
     }
     const outro = 1 - r.vis;
     if (r.alvo[outro] === k && r.pronto[outro]) {
       const antigo = r.vis;
-      porCortina(k);
+      // Já vai a tocar mesmo no início do seguinte? Então só se troca —
+      // sem saltar (um salto mostrava o círculo de carregar do YouTube).
+      /* Já vai a tocar perto do início do seguinte (o arranque escondido
+         pode chegar um pouco atrasado ou adiantado)? Então só se troca —
+         sem saltar: um salto voltava a mostrar o círculo do YouTube. Uma
+         fração de segundo antes do início não se nota; um salto, nota-se. */
+      const tp = r.tempo[outro];
+      const jaNoSitio = r.aRodar[outro] && tp >= segs[k].inicio - 1.5 && tp <= segs[k].inicio + 1;
       r.vis = outro; setVis(outro);
       r.i = k; setI(k); setLocal(segs[k].inicio);
       r.salto = Date.now();
-      cmd(outro, 'mute'); cmd(outro, 'seekTo', [arranqueDe(k), true]); cmd(outro, 'playVideo');
+      cmd(outro, 'unMute');
+      if (!jaNoSitio) { cmd(outro, 'seekTo', [segs[k].inicio, true]); cmd(outro, 'playVideo'); }
+      r.aRodar[outro] = false;
       cmd(antigo, 'pauseVideo'); cmd(antigo, 'mute');
       prepararSlot(antigo, k + 1 < segs.length ? k + 1 : -1);
     } else {
-      tocarAqui(k, segs[k].inicio, true, true);
+      tocarAqui(k, segs[k].inicio, true);
     }
   };
   const irParaGlobal = (g) => {
@@ -38403,13 +38399,12 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     while (k < segs.length - 1 && gg >= offs[k] + durs[k]) k++;
     const t = segs[k].inicio + (gg - offs[k]);
     const r = ref.current;
-    if (r.revelar) tirarCortina();
     if (k === r.i) {
       r.salto = Date.now(); setLocal(t);
       cmd(r.vis, 'seekTo', [t, true]);
       return;
     }
-    tocarAqui(k, t, r.aTocar, false);
+    tocarAqui(k, t, r.aTocar);
   };
 
   useEffect(() => {
@@ -38421,7 +38416,11 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       try { data = typeof data === 'string' ? JSON.parse(data) : data; } catch (e) { return; }
       if (!data) return;
       const r = ref.current;
-      if (s !== r.vis) return; // o leitor de trás só se prepara
+      if (s !== r.vis) {
+        // O escondido só se prepara: guarda-se onde vai, para a troca.
+        if (data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number') r.tempo[s] = data.info.currentTime;
+        return;
+      }
       if (data.event === 'onStateChange' && typeof data.info === 'number') setATocar(data.info === 1 || data.info === 3);
       if (data.event === 'infoDelivery' && data.info) {
         if (typeof data.info.playerState === 'number') setATocar(data.info.playerState === 1 || data.info.playerState === 3);
@@ -38429,15 +38428,16 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         if (typeof t !== 'number') return;
         const seg = segs[r.i];
         if (!seg) return;
-        // Atrás da cortina: espera pelo início exato do clipe (com um
-        // limite, para nunca ficar tapado se o YouTube se atrasar).
-        if (r.revelar) {
-          if (t >= r.revelar.em - 0.05 || Date.now() - r.revelar.desde > 6000) tirarCortina();
-          return;
-        }
         const aSaltar = Date.now() - r.salto < 900;
+        // Faltam PRE_ROLL segundos: o escondido começa já a tocar (sem som).
+        const outro = 1 - s;
+        const lead = r.lead[outro] || 0;
+        if (!aSaltar && lead > 0.3 && r.alvo[outro] === r.i + 1 && r.pronto[outro] && !r.aRodar[outro] && t >= seg.fim - lead && t < seg.fim - 0.12) {
+          r.aRodar[outro] = true;
+          cmd(outro, 'mute'); cmd(outro, 'playVideo');
+        }
         if (!aSaltar && t >= seg.fim - 0.12) avancar();
-        else if (!aSaltar && t < seg.inicio - 0.6) cmd(s, 'seekTo', [seg.inicio, true]);
+        else if (!aSaltar && t < seg.inicio - 1.6) cmd(s, 'seekTo', [seg.inicio, true]);
         else setLocal(Math.min(seg.fim, Math.max(seg.inicio, t)));
       }
     };
@@ -38455,11 +38455,12 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     setTimeout(() => {
       ref.current.pronto[s] = true;
       if (slot.preparar) {
+        // Escondido: carrega o arranque (seekTo põe-no a tocar) e pára já,
+        // sem som — fica pronto a arrancar sem esperar.
         cmd(s, 'mute'); cmd(s, 'seekTo', [slot.t, true]);
-        setTimeout(() => { if (ref.current.vis !== s) cmd(s, 'pauseVideo'); }, 500);
+        setTimeout(() => { if (ref.current.vis !== s && !ref.current.aRodar[s]) cmd(s, 'pauseVideo'); }, 500);
       } else {
-        if (slot.mudo) cmd(s, 'mute'); else cmd(s, 'unMute');
-        cmd(s, 'seekTo', [slot.t, true]);
+        cmd(s, 'unMute'); cmd(s, 'seekTo', [slot.t, true]);
         if (slot.auto) cmd(s, 'playVideo');
       }
     }, 350);
@@ -38486,11 +38487,10 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   const cssInteiro = ecraInteiro && !document.fullscreenElement ? { position: 'fixed', inset: 0, zIndex: 80, borderRadius: 0 } : {};
   const alternarPlay = () => {
     const r = ref.current;
-    if (aTocar) { cmd(vis, 'pauseVideo'); return; }
-    // O primeiro "play" também arranca limpo, atrás da cortina.
-    if (r.primeiro && r.i === 0 && local <= seg.inicio + 0.2) { r.primeiro = false; tocarAqui(0, seg.inicio, true, true); return; }
-    r.primeiro = false;
-    cmd(vis, 'playVideo');
+    cmd(vis, aTocar ? 'pauseVideo' : 'playVideo');
+    // Pausar a meio do arranque escondido: o escondido pára também (e volta
+    // ao sítio dele), para não chegar adiantado ao início do clipe.
+    if (aTocar && r.aRodar[1 - vis]) { r.aRodar[1 - vis] = false; prepararSlot(1 - vis, r.alvo[1 - vis]); }
   };
 
   return (
@@ -38500,25 +38500,18 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
           {[0, 1].map(s => (
             <iframe
               key={`${s}-${slots[s].n}`} ref={iframes[s]} onLoad={() => aoCarregar(s)} title={titulo || 'O meu vídeo'}
-              src={`https://www.youtube.com/embed/${slots[s].youtubeId}?start=${Math.floor(slots[s].t)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0&iv_load_policy=3${slots[s].auto ? '&autoplay=1' : ''}${slots[s].preparar || slots[s].mudo ? '&mute=1' : ''}`}
+              src={`https://www.youtube.com/embed/${slots[s].youtubeId}?start=${Math.floor(slots[s].t)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0${slots[s].auto ? '&autoplay=1' : ''}${slots[s].preparar ? '&mute=1' : ''}`}
               allow="autoplay; encrypted-media; picture-in-picture"
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, pointerEvents: 'none', zIndex: vis === s ? 1 : 0, background: '#000' }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, opacity: vis === s ? 1 : 0, pointerEvents: 'none', zIndex: vis === s ? 1 : 0 }}
             />
           ))}
-          {/* A CORTINA da passagem — tapa o arranque do YouTube. */}
-          <div style={{
-            position: 'absolute', inset: 0, zIndex: 3, background: '#0B0F0C', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: cortina ? 1 : 0, transition: cortina ? 'opacity 0.12s ease-out' : 'opacity 0.25s ease-in', pointerEvents: 'none',
-          }}>
-            {cortina && <span style={{ color: '#ffffffd9', fontSize: isNarrow ? 13 : 15, fontWeight: 600, padding: '0 20px', textAlign: 'center', ...body }}>{cortina}</span>}
-          </div>
           {/* Toque no vídeo = pausar / retomar (os leitores não recebem toques). */}
-          <div onClick={alternarPlay} style={{ position: 'absolute', inset: 0, zIndex: 4, cursor: 'pointer' }} />
+          <div onClick={alternarPlay} style={{ position: 'absolute', inset: 0, zIndex: 2, cursor: 'pointer' }} />
         </div>
         {/* A BARRA — a mesma dos clipes, mas para o vídeo inteiro. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: isNarrow ? 6 : 10, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
           <button onClick={alternarPlay} title={aTocar ? 'Pausar' : 'Reproduzir'} style={btn}>{aTocar ? <Pause size={16} /> : <Play size={16} />}</button>
-          <button onClick={() => tocarAqui(0, segs[0].inicio, aTocar, aTocar)} title="Voltar ao início" style={btn}><RotateCcw size={14} /></button>
+          <button onClick={() => tocarAqui(0, segs[0].inicio, aTocar)} title="Voltar ao início" style={btn}><RotateCcw size={14} /></button>
           {!isNarrow && <button onClick={() => irParaGlobal(global - 2)} title="Recuar 2 segundos" style={{ ...btn, fontSize: 11.5, ...mono }}>-2s</button>}
           <div style={{ position: 'relative', flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}>
             <input
@@ -38536,7 +38529,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0 }}>
           <span style={{ fontSize: 12, color: '#ffffffcc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, ...body }}>
-            {textoClipe(i)}
+            {segs.length > 1 ? `${i + 1}/${segs.length} · ` : ''}{seg.titulo || ''}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
             {onFechar && !ecraInteiro && (
