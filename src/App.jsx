@@ -38292,12 +38292,11 @@ const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor
      muda qual se vê e liga-se o som — sem saltar.
    · Clipes que começam nos primeiros segundos do vídeo (não há PRE_ROLL
      segundos antes): o escondido arranca na mesma PRE_ROLL segundos antes
-     da troca, do início do vídeo — e por isso vai ADIANTADO. Pouco antes
-     da troca (já com o título e o símbolo do YouTube passados) recua para
-     ficar alinhado com o início exato (se o clipe começar no segundo 0,
-     recua para o 0 mesmo em cima da troca). Um recuo com o vídeo a tocar
-     não volta a mostrar nada do YouTube. (Câmara lenta foi testada e
-     encravava ao voltar ao normal; começar mais tarde deixava o símbolo.)
+     da troca, do início do vídeo — e entra ADIANTADO (o clipe entra até
+     PRE_ROLL s depois do início dele). Testado: recuar para acertar
+     (seekTo) faz o YouTube voltar a mostrar o título e o símbolo; câmara
+     lenta encravava ao voltar ao normal; começar mais tarde deixava o
+     símbolo. Entrar uns segundos depois é a única forma limpa.
    · O leitor escondido nunca fica 100% transparente (opacidade 0,01):
      tapado por completo dava ecrã preto; transparente a 100% nem sempre
      avança. */
@@ -38368,10 +38367,11 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     }
     const antigo = r.vis;
     const tp = r.tempo[k];
-    const jaNoSitio = r.aRodar[k] && tp >= segs[k].inicio - 1.5 && tp <= segs[k].inicio + 0.8;
+    // Clipes do início do vídeo vêm adiantados (até PRE_ROLL s): entram aí.
+    const jaNoSitio = r.aRodar[k] && tp >= segs[k].inicio - 1.5 && tp <= Math.max(segs[k].inicio, PRE_ROLL_JUNTO) + 1;
     r.salto = Date.now();
     mostrar(k);
-    setLocal(segs[k].inicio);
+    setLocal(jaNoSitio ? Math.max(segs[k].inicio, tp) : segs[k].inicio);
     cmd(k, 'unMute');
     if (!jaNoSitio) {
       cmd(k, 'seekTo', [segs[k].inicio, true]);
@@ -38420,22 +38420,6 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         cmd(prox, 'mute');
         cmd(prox, 'seekTo', [Math.max(0, pos), true]);
         cmd(prox, 'playVideo');
-      }
-      // Recuo de alinhamento (clipes do início do vídeo): já passou o título
-      // e o símbolo do YouTube — põe-no exatamente onde tem de estar.
-      if (!aSaltar && prox < n && r.aRodar[prox] && !r.alinhado[prox]) {
-        const falta = seg.fim - t;
-        /* Quando recuar: o mais tarde possível que ainda deixe acertar ao
-           décimo (até 1,2 s antes da troca). Um clipe que começa no
-           segundo 0 não deixa recuar para "antes do início": recua para o
-           0 mesmo em cima da troca (0,25 s antes) — entra 0,25 s depois do
-           início, o que não se nota, e o título e o símbolo do YouTube já
-           passaram há 5 s. */
-        const margem = Math.max(0.25, Math.min(segs[prox].inicio, 1.2));
-        if (falta <= margem) {
-          r.alinhado[prox] = true;
-          cmd(prox, 'seekTo', [Math.max(0, segs[prox].inicio - falta), true]);
-        }
       }
       if (!aSaltar && t >= seg.fim - 0.12) avancar();
       else if (!aSaltar && t < seg.inicio - 1.6) cmd(k, 'seekTo', [seg.inicio, true]);
