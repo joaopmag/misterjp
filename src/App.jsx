@@ -38294,8 +38294,9 @@ const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor
      segundos antes): o escondido arranca na mesma PRE_ROLL segundos antes
      da troca, do início do vídeo — e por isso vai ADIANTADO. Pouco antes
      da troca (já com o título e o símbolo do YouTube passados) recua para
-     ficar alinhado com o início exato. Um recuo com o vídeo a tocar não
-     volta a mostrar nada do YouTube. (Câmara lenta foi testada e
+     ficar alinhado com o início exato (se o clipe começar no segundo 0,
+     recua para o 0 mesmo em cima da troca). Um recuo com o vídeo a tocar
+     não volta a mostrar nada do YouTube. (Câmara lenta foi testada e
      encravava ao voltar ao normal; começar mais tarde deixava o símbolo.)
    · O leitor escondido nunca fica 100% transparente (opacidade 0,01):
      tapado por completo dava ecrã preto; transparente a 100% nem sempre
@@ -38424,10 +38425,16 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       // e o símbolo do YouTube — põe-no exatamente onde tem de estar.
       if (!aSaltar && prox < n && r.aRodar[prox] && !r.alinhado[prox]) {
         const falta = seg.fim - t;
-        const margem = Math.min(segs[prox].inicio, 1.2);
-        if (margem >= 0.25 && falta <= margem) {
+        /* Quando recuar: o mais tarde possível que ainda deixe acertar ao
+           décimo (até 1,2 s antes da troca). Um clipe que começa no
+           segundo 0 não deixa recuar para "antes do início": recua para o
+           0 mesmo em cima da troca (0,25 s antes) — entra 0,25 s depois do
+           início, o que não se nota, e o título e o símbolo do YouTube já
+           passaram há 5 s. */
+        const margem = Math.max(0.25, Math.min(segs[prox].inicio, 1.2));
+        if (falta <= margem) {
           r.alinhado[prox] = true;
-          cmd(prox, 'seekTo', [segs[prox].inicio - falta, true]);
+          cmd(prox, 'seekTo', [Math.max(0, segs[prox].inicio - falta), true]);
         }
       }
       if (!aSaltar && t >= seg.fim - 0.12) avancar();
