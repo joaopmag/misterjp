@@ -38291,24 +38291,22 @@ const mmss = (s) => { const t = Math.max(0, Math.round(s)); return `${Math.floor
      símbolo de play do YouTube passam aí, escondidos. Na troca só se
      muda qual se vê e liga-se o som — sem saltar.
    · Clipes que começam nos primeiros segundos do vídeo (não há PRE_ROLL
-     segundos antes): o escondido arranca do início do vídeo com até
-     SALTO_MAX s a mais, e a troca entra até esse tanto depois do início
-     do clipe. (Câmara lenta foi testada e encravava ao voltar ao normal.)
+     segundos antes): o escondido arranca na mesma PRE_ROLL segundos antes
+     da troca, do início do vídeo — e por isso vai ADIANTADO. Pouco antes
+     da troca (já com o título e o símbolo do YouTube passados) recua para
+     ficar alinhado com o início exato. Um recuo com o vídeo a tocar não
+     volta a mostrar nada do YouTube. (Câmara lenta foi testada e
+     encravava ao voltar ao normal; começar mais tarde deixava o símbolo.)
    · O leitor escondido nunca fica 100% transparente (opacidade 0,01):
      tapado por completo dava ecrã preto; transparente a 100% nem sempre
      avança. */
 const PRE_ROLL_JUNTO = 5;
-const SALTO_MAX_JUNTO = 1.5;
 function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
   const segs = (segmentos || []).filter(s => s && s.youtubeId && s.fim > s.inicio);
   const durs = segs.map(s => s.fim - s.inicio);
   const offs = durs.reduce((acc, d, k) => { acc.push(k ? acc[k - 1] + durs[k - 1] : 0); return acc; }, []);
   const total = durs.reduce((t, d) => t + d, 0);
   const parqueDe = (k) => Math.max(0, segs[k].inicio - PRE_ROLL_JUNTO);
-  const antecedenciaDe = (k) => {
-    const lead = segs[k].inicio - parqueDe(k);
-    return lead >= PRE_ROLL_JUNTO - 0.5 ? lead : Math.min(PRE_ROLL_JUNTO - 0.5, lead + SALTO_MAX_JUNTO);
-  };
 
   const iframesRef = useRef([]);
   const caixaRef = useRef(null);
@@ -38324,6 +38322,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     ref.current = {
       vis: 0, salto: 0, aTocar: false, comecou: false,
       pronto: Array(n).fill(false), aRodar: Array(n).fill(false), tempo: Array(n).fill(0), estado: Array(n).fill(null),
+      alinhado: Array(n).fill(false),
     };
   }
   useEffect(() => { ref.current.aTocar = aTocar; }, [aTocar]);
@@ -38368,12 +38367,16 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     }
     const antigo = r.vis;
     const tp = r.tempo[k];
-    const jaNoSitio = r.aRodar[k] && tp >= segs[k].inicio - 1.5 && tp <= segs[k].inicio + SALTO_MAX_JUNTO + 0.8;
+    const jaNoSitio = r.aRodar[k] && tp >= segs[k].inicio - 1.5 && tp <= segs[k].inicio + 0.8;
     r.salto = Date.now();
     mostrar(k);
     setLocal(segs[k].inicio);
     cmd(k, 'unMute');
-    if (!jaNoSitio) { cmd(k, 'seekTo', [segs[k].inicio, true]); cmd(k, 'playVideo'); }
+    if (!jaNoSitio) {
+      cmd(k, 'seekTo', [segs[k].inicio, true]);
+      // Se já vem a tocar, basta acertar a posição (sem "play", que mostrava o símbolo).
+      if (!r.aRodar[k]) cmd(k, 'playVideo');
+    }
     r.aRodar[k] = false;
     cmd(antigo, 'pauseVideo'); cmd(antigo, 'mute');
   };
@@ -38407,13 +38410,24 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
       const aSaltar = Date.now() - r.salto < 900;
       // ARRANQUE ESCONDIDO do seguinte, alinhado com o fim deste.
       const prox = k + 1;
-      if (!aSaltar && prox < n && r.pronto[prox] && !r.aRodar[prox] && r.estado[k] === 1) {
-        const ant = antecedenciaDe(prox);
-        if (ant > 0.3 && t >= seg.fim - ant && t < seg.fim - 0.12) {
-          r.aRodar[prox] = true;
-          cmd(prox, 'mute');
-          cmd(prox, 'seekTo', [Math.max(0, segs[prox].inicio - (seg.fim - t)), true]);
-          cmd(prox, 'playVideo');
+      if (!aSaltar && prox < n && r.pronto[prox] && !r.aRodar[prox] && r.estado[k] === 1
+        && t >= seg.fim - PRE_ROLL_JUNTO && t < seg.fim - 0.12) {
+        const falta = seg.fim - t;
+        const pos = segs[prox].inicio - falta;
+        r.aRodar[prox] = true;
+        r.alinhado[prox] = pos >= 0; // no início do vídeo não dá: vai adiantado
+        cmd(prox, 'mute');
+        cmd(prox, 'seekTo', [Math.max(0, pos), true]);
+        cmd(prox, 'playVideo');
+      }
+      // Recuo de alinhamento (clipes do início do vídeo): já passou o título
+      // e o símbolo do YouTube — põe-no exatamente onde tem de estar.
+      if (!aSaltar && prox < n && r.aRodar[prox] && !r.alinhado[prox]) {
+        const falta = seg.fim - t;
+        const margem = Math.min(segs[prox].inicio, 1.2);
+        if (margem >= 0.25 && falta <= margem) {
+          r.alinhado[prox] = true;
+          cmd(prox, 'seekTo', [segs[prox].inicio - falta, true]);
         }
       }
       if (!aSaltar && t >= seg.fim - 0.12) avancar();
@@ -38432,7 +38446,8 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     win.postMessage(JSON.stringify({ event: 'listening', id: k + 1, channel: 'widget' }), '*');
     setTimeout(() => {
       ref.current.pronto[k] = true;
-      if (k === 0 && !ref.current.comecou) { cmd(0, 'seekTo', [segs[0].inicio, true]); setTimeout(() => { if (!ref.current.comecou) cmd(0, 'pauseVideo'); }, 400); }
+      // Ao carregar em "Ver", o vídeo começa logo a tocar.
+      if (k === 0 && !ref.current.comecou) tocarEm(0, segs[0].inicio, true);
       else if (k !== ref.current.vis) estacionar(k);
       if (diag) setDiagTick(x => x + 1);
     }, 350);
