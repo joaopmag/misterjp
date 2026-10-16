@@ -45975,7 +45975,7 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
       onDragEnd={onDragEnd}
       style={{
         display: 'flex', gap: 6, alignItems: 'flex-start',
-        background: T.bg, borderRadius: 6, padding: '6px 7px',
+        background: T.bg, borderRadius: 6, padding: '4px 6px',
         border: `1px solid ${lembreteParaMim ? T.crimsonBright : (atrasada ? T.bad : T.line)}`,
         opacity: aArrastar ? 0.45 : 1, cursor: arrastavel ? 'grab' : undefined,
       }}
@@ -45996,14 +45996,14 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
       >{feita ? <Check size={9} style={{ color: T.sobreVerde }} /> : (bloqueada && <Lock size={8} style={{ color: T.mutedDim }} />)}</button>
       <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={() => onAbrir(tarefa, ocorrencia)}>
         <div style={{
-          ...LINHAS(2), fontSize: 11.5, lineHeight: 1.3,
+          ...LINHAS(2), fontSize: 11.5, lineHeight: 1.22,
           color: feita ? T.mutedDim : T.cream, textDecoration: feita ? 'line-through' : 'none',
         }}>{tarefa.titulo}</div>
         {tarefa._grupo && <ResumoGrupo tarefa={tarefa} membros={membros} euId={euId} players={players} pequeno />}
         {jogador && (
           <div
             title={`Atribuída a ${jogador.name}`}
-            style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 10.5, color: T.gold, fontWeight: 600, minWidth: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, fontSize: 10.5, lineHeight: 1.25, color: T.gold, fontWeight: 600, minWidth: 0 }}
           >
             <UserCheck size={10} style={{ flexShrink: 0 }} />
             <span style={LINHAS(1)}>{shortPlayerName(jogador, players)}</span>
@@ -46013,16 +46013,16 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
         {aniversariantes.length > 0 && (
           <div
             title={aniversariantes.map(p => p.name).join(', ')}
-            style={{ display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 3, fontSize: 10.5, color: T.gold, lineHeight: 1.3 }}
+            style={{ display: 'flex', alignItems: 'flex-start', gap: 4, marginTop: 2, fontSize: 10.5, color: T.gold, lineHeight: 1.25 }}
           >
             <PartyPopper size={10} style={{ flexShrink: 0, marginTop: 1 }} />
             <span style={LINHAS(2)}>{aniversariantes.map(p => shortPlayerName(p, players)).join(', ')}</span>
           </div>
         )}
-        <div style={{ display: (tarefa._grupo && !tarefa._paraJogadores) ? 'none' : 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 10, color: T.mutedDim, minWidth: 0 }}>
+        <div style={{ display: (tarefa._grupo && !tarefa._paraJogadores) ? 'none' : 'flex', alignItems: 'center', gap: 4, marginTop: 2, fontSize: 10, lineHeight: 1.25, color: T.mutedDim, minWidth: 0 }}>
           <span style={{
-            width: 14, height: 14, borderRadius: '50%', background: cor, flexShrink: 0,
-            display: 'grid', placeItems: 'center', fontSize: 7.5, color: '#0d140e', fontWeight: 600, ...mono,
+            width: 12, height: 12, borderRadius: '50%', background: cor, flexShrink: 0,
+            display: 'grid', placeItems: 'center', fontSize: 7, color: '#0d140e', fontWeight: 600, ...mono,
           }}>{nome.charAt(0).toUpperCase()}</span>
           <span style={{ ...LINHAS(1), minWidth: 0 }} title={jogador ? `Acompanha: ${nome}` : nome}>{nomeCurto}</span>
           {lembreteParaMim && <Bell size={10} style={{ flexShrink: 0, color: T.crimsonBright }} aria-label="Tens um lembrete" />}
@@ -46036,15 +46036,15 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
               ? 'Já houve um lembrete nas últimas 12 horas'
               : (temWhatsApp ? `Lembrar ${alvo.nome} por WhatsApp` : `Lembrar ${alvo.nome} na app (sem telemóvel na ficha da equipa)`)}
             style={{
-              ...body, display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 4,
-              fontSize: 9.5, padding: '1px 6px', borderRadius: 10, background: 'transparent',
+              ...body, display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 3,
+              fontSize: 9.5, lineHeight: 1.3, padding: '0 6px', borderRadius: 10, background: 'transparent',
               border: `1px solid ${T.line}`, color: lembrado ? T.mutedDim : T.cream,
               cursor: lembrado ? 'default' : 'pointer',
             }}
           >{temWhatsApp && !lembrado ? <MessageCircle size={9} color="#25D366" /> : <Bell size={9} />} {lembrado ? 'Enviado' : 'Lembrar'}</button>
         )}
         {mudada && (
-          <div style={{ fontSize: 9.5, color: T.warn, marginTop: 3 }}>
+          <div style={{ fontSize: 9.5, lineHeight: 1.25, color: T.warn, marginTop: 2 }}>
             só esta semana (habitual: {dayLabel(ocorrencia.base)})
           </div>
         )}
@@ -46055,17 +46055,18 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
 
 /* LISTA DE UM DIA DO CALENDÁRIO, SEM BARRA DE DESLIZAR.
    O dia tem altura fixa. Mostram-se os cartões que cabem inteiros; os
-   restantes ficam escondidos e aparece um "+N mais" no fundo. Ao clicar,
+   restantes ficam escondidos e aparece um "+N" ao lado do "+ tarefa". Ao clicar,
    a lista completa abre POR CIMA do dia (não empurra nada na página) e
    fecha com o X, com Esc ou clicando fora. As concluídas vão sempre para
    o fim da lista, por isso são as primeiras a ficar escondidas.
    Mede-se depois de desenhar (todos os cartões estão lá, os que não cabem
    só ficam invisíveis), por isso a medição não muda a altura de nada. */
-function ListaDoDiaSemScroll({ cartoes, aberto, aArrastar, onAbrir, onFechar }) {
+function ListaDoDiaSemScroll({ cartoes, aberto, aArrastar, onAbrir, onFechar, onNova }) {
   const caixa = useRef(null);
   const painel = useRef(null);
   const [cabem, setCabem] = useState(cartoes.length);
-  const RESERVA = 26; // espaço do "+N mais"
+  // O "+N mais" fica na linha do "+ tarefa", por isso não ocupa espaço da lista.
+  const RESERVA = 0;
   const medir = useCallback(() => {
     const el = caixa.current;
     if (!el) return;
@@ -46120,18 +46121,23 @@ function ListaDoDiaSemScroll({ cartoes, aberto, aArrastar, onAbrir, onFechar }) 
     <>
       <div ref={caixa} style={{
         position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'hidden',
-        display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6,
+        display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6,
       }}>
         {cartoes.map((c, i) => (
           <div key={c.key || i} style={{ flexShrink: 0, visibility: i < cabem ? 'visible' : 'hidden' }}>{c}</div>
         ))}
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginTop: 'auto' }}>
         {escondidos > 0 && (
-          <button data-mais="1" type="button" onClick={onAbrir} style={{
-            position: 'absolute', left: 0, right: 0, bottom: 0, height: 22,
-            fontSize: 11, color: T.cream, background: T.surfaceRaise || T.surface, border: `1px solid ${T.line}`,
-            borderRadius: 6, cursor: 'pointer', ...body,
-          }}>+{escondidos} mais</button>
+          <button type="button" onClick={onAbrir} title="Ver todas as tarefas deste dia" style={{
+            flex: '0 0 auto', fontSize: 11, fontWeight: 600, color: T.cream, background: T.surfaceRaise || T.surface,
+            border: `1px solid ${T.line}`, borderRadius: 6, padding: '4px 7px', cursor: 'pointer', ...body,
+          }}>+{escondidos}</button>
         )}
+        <button type="button" onClick={onNova} style={{
+          flex: 1, minWidth: 0, fontSize: 11, color: T.mutedDim, background: 'none',
+          border: `1px dashed ${T.line}`, borderRadius: 6, padding: '4px 0', cursor: 'pointer', ...body,
+        }}>+ tarefa</button>
       </div>
       {aberto && pos && createPortal(
         <div ref={painel} style={{
@@ -46299,10 +46305,10 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
                 /* ALTURA FIXA no computador: todos os dias têm sempre a mesma
                    altura, cheios ou vazios. Largar uma tarefa num dia já não
                    faz o calendário crescer nem empurra a página para baixo.
-                   Cabem cerca de 3 cartões; quando há mais, aparece "+N mais"
-                   (sem barra de deslizar), ver ListaDoDiaSemScroll. */
+                   Cabem 3 cartões; quando há mais, aparece um "+N" ao lado
+                   do "+ tarefa" (sem barra de deslizar), ver ListaDoDiaSemScroll. */
                 borderRadius: 8, padding: isMobile ? '10px 10px' : 8, minWidth: 0,
-                ...(isMobile ? { minHeight: 0 } : { height: 400 + alturaContexto, position: 'relative' }),
+                ...(isMobile ? { minHeight: 0 } : { height: 356 + alturaContexto, position: 'relative' }),
                 display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: isMobile ? 10 : 0,
               }}
             >
@@ -46365,14 +46371,15 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
                     aArrastar={!!arrastada}
                     onAbrir={() => setDiaAberto(d)}
                     onFechar={() => setDiaAberto(null)}
+                    onNova={() => onNovaNoDia(d)}
                   />
                 );
               })()}
 
-              <button onClick={() => onNovaNoDia(d)} style={{
+              {isMobile && <button onClick={() => onNovaNoDia(d)} style={{
                 marginTop: 'auto', width: '100%', fontSize: 11, color: T.mutedDim, background: 'none',
                 border: `1px dashed ${T.line}`, borderRadius: 6, padding: '4px 0', cursor: 'pointer', ...body,
-              }}>+ tarefa</button>
+              }}>+ tarefa</button>}
               </div>
             </div>
           );
