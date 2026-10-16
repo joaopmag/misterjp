@@ -30896,7 +30896,8 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
                 {primeiro}{numero ? <span style={{ color: cor.base, marginLeft: 8 }}>#{numero}</span> : null}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'max-content minmax(0, 1fr)', columnGap: 10, rowGap: 4, alignItems: 'start' }}>
-                {linhaBilhete('Jogo', `${info.casaFora === 'Fora' ? 'Fora' : info.casaFora === 'Casa' ? 'Em casa' : ''}${info.casaFora ? ' · ' : ''}vs ${adv}`)}
+                {/* Só o adversário: o placard por cima já mostra quem joga em casa. */}
+                {linhaBilhete('Jogo', `vs ${adv}`)}
                 {linhaBilhete('Hora', [info.hora, info.local].filter(Boolean).join(' · '))}
                 {linhaBilhete('Concentração', [info.horaConc, info.localConc].filter(Boolean).join(' · '))}
               </div>
@@ -31948,7 +31949,7 @@ function PlayerCacifo({
                       <path d="M41 21 Q46 26 49 32" fill="none" stroke="#1c2226" strokeWidth="1" strokeDasharray="2 1.5" />
                       <path d="M30 6 L30 2 L34 2 L34 6" fill="#A6192E" />
                     </svg>
-                    <div className="cf-lab" style={{ marginTop: 9 }}>Ideia de Jogo</div>
+                    <div className="cf-lab" style={{ marginTop: 9 }}>Ideia<br />de Jogo</div>
                   </button>
 
                   <button type="button" className="cf-obj cf-it" onClick={abrirSalaVideo} aria-label="Sala de Vídeo"
@@ -31965,7 +31966,7 @@ function PlayerCacifo({
                       <rect x="9" y="35" width="46" height="1.6" rx=".8" fill="#ffffff44" />
                       <rect x="9" y="35" width="19" height="1.6" rx=".8" fill="#C9A227" />
                     </svg>
-                    <div className="cf-lab" style={{ marginTop: 9 }}>Sala de Vídeo</div>
+                    <div className="cf-lab" style={{ marginTop: 9 }}>Sala<br />de Vídeo</div>
                     <div className="cf-mini" style={{ minHeight: 10 }}>{novosVideos > 0 ? `${novosVideos} ${novosVideos === 1 ? 'novo' : 'novos'}` : ''}</div>
                   </button>
 
