@@ -30519,7 +30519,7 @@ function EcraAniversario({ player, onEntrar }) {
       {papelinhos.map(c => (
         <span key={c.k} data-festa-papel="" style={{
           position: 'fixed', top: 0, left: `${c.left}%`, width: c.larg, height: c.larg * 0.45, background: c.cor, borderRadius: 1,
-          opacity: 0.85, transform: `rotate(${c.rot}deg)`, animation: `festa-cair ${c.dur}s linear ${c.atraso}s infinite`, pointerEvents: 'none',
+          opacity: 0.85, transform: `rotate(${c.rot}deg)`, animation: `festa-cair ${c.dur}s linear ${c.atraso}s infinite both`, pointerEvents: 'none',
         }} />
       ))}
       {/* Centrado na vertical: em ecrãs altos (iPad ao alto) o conteúdo
@@ -30533,7 +30533,9 @@ function EcraAniversario({ player, onEntrar }) {
       }}>
         <div style={{ fontSize: 11, color: T.gold, letterSpacing: '.24em', textTransform: 'uppercase' }}>Hoje é dia de festa</div>
         {/* A CAMISOLA DOS ANOS */}
-        <div style={{ animation: 'festa-camisola 1.4s cubic-bezier(.2,.8,.2,1) both' }}>
+        {/* data-entrada-anima: a camisola entra enquanto a porta abre (é uma
+            animação leve), em vez de deixar um buraco vazio até ao fim. */}
+        <div data-entrada-anima="" style={{ animation: 'festa-camisola 1.4s cubic-bezier(.2,.8,.2,1) both' }}>
           <div style={{ animation: 'festa-flutuar 3s ease-in-out 1.4s infinite' }}>
             <svg viewBox="0 0 200 210" width="210" height="220" aria-label={`Camisola ${apelido} ${idade ?? ''}`}>
               <defs>
@@ -33764,7 +33766,9 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, tamEmblema, recol
   const folha = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden', willChange: 'transform',
     // Arranca devagar e trava devagar (ease-in-out).
-    transition: 'transform .8s cubic-bezier(.65,0,.35,1)',
+    // No último terço do caminho, a folha também se apaga: não fica um fio
+    // branco agarrado às bordas enquanto o ecrã cresce.
+    transition: 'transform .8s cubic-bezier(.65,0,.35,1), opacity .3s ease-in .45s',
   };
   const metade = (lado) => (
     <>
@@ -33784,8 +33788,8 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, tamEmblema, recol
   return (
     <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
       {/* Depois de abertas (já fora do buraco da porta), as folhas saem de cena. */}
-      {!recolhido && <div style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{metade('E')}</div>}
-      {!recolhido && <div style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{metade('D')}</div>}
+      {!recolhido && <div style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none', opacity: aberto ? 0 : 1 }}>{metade('E')}</div>}
+      {!recolhido && <div style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none', opacity: aberto ? 0 : 1 }}>{metade('D')}</div>}
       {/* A junta das folhas: 1 px no ecrã (nas unidades da caixa, 1/esc0). */}
       {!recolhido && <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: c.fixo ? 1 : c.raio / 3, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />}
     </div>
@@ -33894,12 +33898,15 @@ function TransicaoEntrada({ focoInteiro, children }) {
           obrigava a redesenhar a camada que está a crescer, e era isso que
           engasgava. Arrancam quando o ecrã já está na página inteira. */}
       {ativa && <style>{PE_SEM_GUTTER}</style>}
-      {ativa && <style>{`.mjp-entrada-ativa *, .mjp-entrada-ativa *::before, .mjp-entrada-ativa *::after { animation-play-state: paused !important; } .mjp-entrada-ativa [data-festa-papel] { visibility: hidden !important; }`}</style>}
+      {ativa && <style>{`.mjp-entrada-ativa *, .mjp-entrada-ativa *::before, .mjp-entrada-ativa *::after { animation-play-state: paused !important; } .mjp-entrada-ativa [data-entrada-anima] { animation-play-state: running !important; } .mjp-entrada-ativa [data-festa-papel] { visibility: hidden !important; }`}</style>}
       {/* O resto do ecrã de entrada fica por baixo da janela que cresce e
           desvanece-se enquanto a porta abre. */}
       {ativa && ent && ent.resto && <PeRestoEntrada html={ent.resto} apagar={vidroAberto} />}
-      <div ref={janelaRef} className={ativa ? 'mjp-entrada-ativa' : undefined} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', transformOrigin: '0 0', background: T.bg } : undefined}>
-        <div ref={conteudoRef} style={ativa ? { position: 'absolute', inset: 0, transformOrigin: '0 0' } : undefined}>
+      <div ref={janelaRef} className={ativa ? 'mjp-entrada-ativa' : undefined} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', transformOrigin: '0 0', background: T.bg, willChange: 'transform' } : undefined}>
+        {/* will-change: as duas camadas ficam prontas (já desenhadas) antes de
+            o crescimento arrancar. Sem isto, o browser preparava-as no
+            primeiro frame da animação e havia um pequeno engasgo. */}
+        <div ref={conteudoRef} style={ativa ? { position: 'absolute', inset: 0, transformOrigin: '0 0', willChange: 'transform' } : undefined}>
           {children}
           {/* O vidro está no mesmo referencial do ecrã: abre, apaga-se e,
               enquanto isso, cresce e é cortado com ele — nada fica preso no
