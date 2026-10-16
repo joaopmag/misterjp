@@ -29665,6 +29665,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   useEffect(() => { if (activeType === null) setCacifoAberto(false); }, [activeType]);
   // Wellness/PSE abertos a partir da garrafa do cacifo voltam ao cacifo.
   const [voltarQuestionario, setVoltarQuestionario] = useState(null);
+  // Onde abrir uma área vinda do cacifo (ex.: Competição › estatísticas).
+  const [focoArea, setFocoArea] = useState(null);
   const [selectedDate, setSelectedDate] = useState(todayStr());
   // Quando a notificação do ecrã inicial é tocada, guarda aqui a tarefa a
   // abrir de imediato — o PlayerTarefasView lê isto e já entra direto no
@@ -30150,7 +30152,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }
 
   if (activeType === 'competicao') {
-    return <PlayerCompeticaoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />;
+    return <PlayerCompeticaoView code={code} teamId={teamId} foco={focoArea} onBack={() => { setFocoArea(null); setActiveType('portal'); }} />;
   }
 
   if (activeType === 'desenvolvimento') {
@@ -30176,7 +30178,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         equipa={equipa} code={code} teamId={teamId}
         animar={!cacifoAberto} onAberto={() => setCacifoAberto(true)}
         onBack={() => setActiveType(null)}
-        onAbrir={(id) => { setCacifoAberto(true); setActiveType(id); }}
+        onAbrir={(id, foco) => { setCacifoAberto(true); setFocoArea(foco || null); setActiveType(id); }}
         onAbrirWellness={() => { if (wellnessWindow.open) { setCacifoAberto(true); setVoltarQuestionario('portal'); setActiveType('wellness'); } }}
         onAbrirRpe={() => { if (rpeWindow.open) { setCacifoAberto(true); setVoltarQuestionario('portal'); setActiveType('rpe'); } }}
         dadosConv={dadosConvJogo} dadosComp={dadosCompJogo}
@@ -31544,8 +31546,8 @@ const CACIFO_W = 300;
 const CACIFO_H = 480;
 const CACIFO_CSS = `
   .cf-palco { position: relative; width: ${CACIFO_W}px; height: ${CACIFO_H}px; perspective: 1300px; transform-origin: 0 0; }
-  .cf-rig { position: absolute; top: 0; left: 75px; width: 150px; height: ${CACIFO_H}px; transition: left .7s ease .1s; }
-  .cf-aberto .cf-rig { left: 150px; }
+  .cf-rig { position: absolute; top: 0; width: 150px; height: ${CACIFO_H}px; transition: left .7s ease .1s; z-index: 2; }
+  .cf-vizinho { position: absolute; top: 0; width: 150px; height: ${CACIFO_H}px; z-index: 1; filter: brightness(.72); }
   .cf-corpo { position: absolute; inset: 0; background: #0f1612; border: 5px solid #2c4336; border-radius: 6px; overflow: hidden; pointer-events: none; }
   .cf-aberto .cf-corpo { pointer-events: auto; }
   .cf-porta { position: absolute; inset: 0; transform-origin: left center; transform-style: preserve-3d; -webkit-transform-style: preserve-3d; transition: transform 1.3s cubic-bezier(.35,.75,.25,1) .8s; z-index: 5; pointer-events: none; }
@@ -31568,8 +31570,8 @@ const CACIFO_CSS = `
     text-align: center; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
   .cf-obj:active { filter: brightness(1.2); }
   .cf-obj:focus-visible { outline: 2px solid #C9A227; outline-offset: 2px; border-radius: 4px; }
-  .cf-lab { font-size: 11px; font-weight: 600; color: #F1EBDA; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cf-mini { font-size: 11px; color: #C9A227; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-lab { font-size: 11px; font-weight: 600; color: #F1EBDA; line-height: 1.2; overflow-wrap: anywhere; }
+  .cf-mini { font-size: 11px; color: #C9A227; line-height: 1.2; overflow-wrap: anywhere; }
   .cf-papel { position: absolute; background: #F4EEDC; color: #2a2418; border-radius: 2px; box-sizing: border-box; }
   .cf-papel small { display: block; font-size: 10.5px; color: #6b5e45; }
   .cf-mao { font-family: 'Caveat', cursive; }
@@ -31631,6 +31633,27 @@ function quandoCurto(data, hora) {
   return [dia, h].filter(Boolean).join(' ');
 }
 
+// Cacifo de um colega, fechado (só decoração, nos ecrãs largos).
+function CacifoVizinho({ x, numero }) {
+  return (
+    <div className="cf-vizinho" style={{ left: x }} aria-hidden="true">
+      <svg width="150" height={CACIFO_H} viewBox={`0 0 150 ${CACIFO_H}`} style={{ display: 'block' }}>
+        <rect x="1" y="0" width="148" height={CACIFO_H} rx="6" fill="#2c4336" />
+        <rect x="9" y="8" width="132" height={CACIFO_H - 16} rx="4" fill="#33503f" stroke="#4e6a58" />
+        <g fill="#1d2e24"><path d="M28 22 h94 l-4 6 h-94z" /><path d="M28 34 h94 l-4 6 h-94z" /><path d="M28 46 h94 l-4 6 h-94z" /></g>
+        <rect x="33" y="73" width="84" height="104" rx="8" fill="#4e6a58" />
+        <rect x="40" y="80" width="70" height="90" rx="4" fill="#1f2d25" />
+        <rect x="27" y="190" width="96" height="40" rx="3" fill="#8A6A0E" />
+        <text x="75" y="219" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="22" fill="#2a2418">{numero}</text>
+        <circle cx="116" cy="300" r="18.5" fill="#7d8a82" />
+        <circle cx="116" cy="300" r="15.5" fill="#121618" />
+        <circle cx="116" cy="300" r="7.5" fill="#2a2f33" />
+        <g fill="#1d2e24"><path d="M28 422 h94 l-4 6 h-94z" /><path d="M28 434 h94 l-4 6 h-94z" /><path d="M28 446 h94 l-4 6 h-94z" /></g>
+      </svg>
+    </div>
+  );
+}
+
 function PlayerCacifo({
   player, equipa, code, teamId, animar, onAberto, onBack, onAbrir, onAbrirWellness, onAbrirRpe,
   dadosConv, dadosComp, missoes, nTarefas, session, doneWellness, doneRpe, wellnessWindow, rpeWindow,
@@ -31640,15 +31663,22 @@ function PlayerCacifo({
   const tablet = usePkhMedia(PKH_TABLET_ALTO);
   const g = usePkhMedia('(min-height: 820px)') && (largo || tablet);
   const areaRef = useRef(null);
-  const [escala, setEscala] = useState(0);
+  /* Telemóvel: o palco tem 300 de largura e escala até encher a largura.
+     Ecrã mais largo do que alto (computador, tablet deitado): escala pela
+     altura e o palco alarga-se até à largura toda da página — os cacifos
+     dos colegas, fechados, enchem os lados, como na fila do balneário. */
+  const [medida, setMedida] = useState({ s: 0, W: CACIFO_W });
+  const escala = medida.s;
   React.useLayoutEffect(() => {
     const el = areaRef.current;
     if (!el) return undefined;
     const medir = () => {
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;
-      const s = Math.max(0.5, Math.min(w / CACIFO_W, h / CACIFO_H, 2.4));
-      setEscala(prev => (Math.abs(prev - s) < 0.002 ? prev : s));
+      let s, W;
+      if (w / CACIFO_W > h / CACIFO_H) { s = Math.max(0.5, Math.min(h / CACIFO_H, 2.6)); W = Math.max(CACIFO_W, Math.floor(w / s)); }
+      else { s = Math.max(0.5, w / CACIFO_W); W = CACIFO_W; }
+      setMedida(prev => (Math.abs(prev.s - s) < 0.002 && prev.W === W ? prev : { s, W }));
     };
     medir();
     if (typeof ResizeObserver === 'undefined') {
@@ -31778,6 +31808,18 @@ function PlayerCacifo({
   const nT = nTarefas || 0;
 
   const atraso = (s) => (animar ? { transitionDelay: `${s}s` } : undefined);
+  // Palco largo: o cacifo (porta + interior) ao centro e os vizinhos à volta.
+  // O da esquerda fica por trás da porta quando ela abre.
+  const largoPalco = medida.W > CACIFO_W;
+  const rigLeft = Math.round((medida.W - CACIFO_W) / 2) + 150;
+  const vizinhos = [];
+  if (largoPalco) {
+    const usados = new Set([numero]);
+    const numeros = [3, 5, 8, 10, 11, 14, 17, 21, 22, 30, 4, 6, 9, 13, 15, 18, 20, 24, 27, 33].map(String).filter(n => !usados.has(n));
+    let k = 0;
+    for (let x = rigLeft - 150; x > -150; x -= 150) vizinhos.push({ x, numero: numeros[k++ % numeros.length] });
+    for (let x = rigLeft + 150; x < medida.W; x += 150) vizinhos.push({ x, numero: numeros[k++ % numeros.length] });
+  }
   const nomePlaca = primeiro.toUpperCase();
   const tamNome = nomePlaca.length <= 5 ? 15 : nomePlaca.length <= 8 ? 12.5 : 10.5;
 
@@ -31812,19 +31854,19 @@ function PlayerCacifo({
           }}>
             <ChevronLeft size={g ? 16 : 14} /> Balneário
           </button>
-          <div style={{ ...display, fontSize: g ? 22 : 17, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>O meu cacifo</div>
         </div>
 
         <div ref={areaRef} style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: CACIFO_W * escala, height: CACIFO_H * escala, flexShrink: 0, visibility: escala ? 'visible' : 'hidden' }}>
-            <div className={`cf-palco${aberto ? ' cf-aberto' : ''}${animar ? '' : ' cf-ja'}`} style={{ transform: `scale(${escala || 1})` }}>
-              <div className="cf-rig">
+          <div style={{ width: medida.W * escala, height: CACIFO_H * escala, flexShrink: 0, visibility: escala ? 'visible' : 'hidden' }}>
+            <div className={`cf-palco${aberto ? ' cf-aberto' : ''}${animar ? '' : ' cf-ja'}`} style={{ width: medida.W, transform: `scale(${escala || 1})` }}>
+              {vizinhos.map(v => <CacifoVizinho key={v.x} x={v.x} numero={v.numero} />)}
+              <div className="cf-rig" style={{ left: largoPalco ? rigLeft : (aberto ? 150 : 75) }}>
                 {/* ---------------- DENTRO DO CACIFO ---------------- */}
                 <div className="cf-corpo">
                   <div className="cf-luz" />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('ideiaJogo')} aria-label="Ideia de Jogo"
-                    style={{ left: 4, top: 12, width: 66, height: 84, ...atraso(1.8) }}>
+                    style={{ left: 2, top: 8, width: 68, height: 90, ...atraso(1.8) }}>
                     <svg width="46" height="54" viewBox="0 0 46 54" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                       <rect x="6" y="2" width="36" height="50" rx="3" fill="#1d4d3a" />
                       <rect x="6" y="2" width="6" height="50" fill="#143a2b" />
@@ -31832,23 +31874,23 @@ function PlayerCacifo({
                       <rect x="17" y="19" width="14" height="2" fill="#8A9A8C" />
                       <circle cx="27" cy="36" r="7" fill="none" stroke="#C9A227" strokeWidth="1.5" />
                     </svg>
-                    <div className="cf-lab" style={{ marginTop: 4 }}>Ideia de Jogo</div>
+                    <div className="cf-lab" style={{ marginTop: 3 }}>Ideia de<br />Jogo</div>
                   </button>
 
                   <button type="button" className="cf-obj cf-it" onClick={abrirSalaVideo} aria-label="Sala de Vídeo"
-                    style={{ left: 72, top: 16, width: 66, height: 80, ...atraso(1.9) }}>
+                    style={{ left: 72, top: 12, width: 66, height: 86, ...atraso(1.9) }}>
                     <div style={{ position: 'relative', background: '#060908', border: '3px solid #2a2f2c', borderRadius: 6, height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', transform: 'rotate(-4deg)' }}>
                       <Play size={18} color="#C9A227" fill="#C9A227" />
                       <span style={{ fontSize: 11, color: '#C9A227', height: 14, lineHeight: '14px' }}>{novosVideos > 0 ? `${novosVideos} ${novosVideos === 1 ? 'novo' : 'novos'}` : ''}</span>
                     </div>
-                    <div className="cf-lab" style={{ marginTop: 7 }}>Sala de Vídeo</div>
+                    <div className="cf-lab" style={{ marginTop: 6 }}>Sala de<br />Vídeo</div>
                   </button>
 
                   <div style={{ position: 'absolute', left: 0, right: 0, top: 100, height: 5, background: '#2c4336' }} />
                   <div style={{ position: 'absolute', left: 8, right: 8, top: 116, height: 4, background: '#8A9A8C', borderRadius: 2 }} />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('jogos')} aria-label="Jogo"
-                    style={{ left: 0, top: 116, width: 140, height: 196, ...atraso(2) }}>
+                    style={{ left: 0, top: 116, width: 140, height: 200, ...atraso(2) }}>
                     <svg width="118" height="126" viewBox="0 0 132 140" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                       <path d="M66 0 l0 12" stroke="#8A9A8C" strokeWidth="2" />
                       <path d="M36 16 L52 10 Q66 20 80 10 L96 16 L124 40 L108 58 L98 50 L98 136 L34 136 L34 50 L24 58 L8 40 Z" fill={cor.base} stroke="#C9A227" strokeWidth="2" />
@@ -31869,25 +31911,25 @@ function PlayerCacifo({
 
                   <div style={{ position: 'absolute', left: 0, right: 0, top: 318, height: 5, background: '#2c4336' }} />
 
-                  <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('competicao')} aria-label="Estatísticas da época"
-                    style={{ left: mostraGarrafa ? 2 : 19, top: 352, width: 102, height: 98, ...atraso(2.2) }}>
-                    <svg width="102" height="70" viewBox="0 0 140 96" style={{ display: 'block' }} aria-hidden="true">
+                  <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('competicao', 'estatisticas')} aria-label="Estatísticas da época"
+                    style={{ left: mostraGarrafa ? 0 : 23, top: 362, width: 94, height: 96, ...atraso(2.2) }}>
+                    <svg width="94" height="64" viewBox="0 0 140 96" style={{ display: 'block' }} aria-hidden="true">
                       <path d="M30 40 C25 40 24 35 25 30 L26 16 Q27 11 32 11 L42 11 Q46 11 47 15 L52 23 Q68 25 86 28 Q104 31 112 36 L114 40 Z" fill="#1c2226" />
                       <path d="M26 18 Q35 21 44 17" fill="none" stroke="#C9A227" strokeWidth="2.5" />
                       <g stroke="#F1EBDA" strokeWidth="1.6" strokeLinecap="round"><path d="M55 25 l-1.5 4" /><path d="M62 26 l-1.5 4" /><path d="M69 27 l-1.5 4" /></g>
                       <path d="M4 44 L136 44 L132 40 L8 40 Z" fill="#cfc6ae" />
                       <rect x="6" y="44" width="128" height="50" rx="2" fill="#E9E2CF" />
                       <rect x="6" y="44" width="128" height="7" fill="#C9A227" />
-                      <text x="70" y="70" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="16" fill="#2a2418">{est ? `${est.jogos || 0} J · ${est.minutos || 0}'` : 'Sem jogos'}</text>
-                      <text x="70" y="88" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="16" fill="#5a4d33">{est ? `${est.golos || 0} G · ${est.assistencias || 0} A` : 'ainda'}</text>
+                      <text x="70" y="70" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="18" fill="#2a2418">{est ? `${est.jogos || 0} J · ${est.minutos || 0}'` : 'Sem jogos'}</text>
+                      <text x="70" y="88" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="18" fill="#5a4d33">{est ? `${est.golos || 0} G · ${est.assistencias || 0} A` : 'ainda'}</text>
                     </svg>
-                    <div className="cf-lab" style={{ marginTop: 6 }}>Estatísticas</div>
+                    <div className="cf-lab" style={{ marginTop: 8 }}>Estatísticas</div>
                   </button>
 
                   {mostraGarrafa && (
                     <button type="button" className="cf-obj cf-it" onClick={() => (wAberto ? onAbrirWellness() : onAbrirRpe())}
                       aria-label={wAberto ? 'Responder ao Wellness' : 'Responder à PSE'}
-                      style={{ left: 102, top: 356, width: 38, height: 94, ...atraso(2.3) }}>
+                      style={{ left: 92, top: 360, width: 48, height: 98, ...atraso(2.3) }}>
                       <svg width="30" height="66" viewBox="0 0 34 78" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                         <rect x="14" y="0" width="6" height="7" rx="1.5" fill="#1c2226" />
                         <rect x="9" y="6" width="16" height="9" rx="2" fill="#1c2226" />
@@ -31899,7 +31941,7 @@ function PlayerCacifo({
                         <circle cx="21.5" cy="59" r="3.4" fill={corPonto(doneRpe, pAberto)} className={pAberto ? 'cf-pisca' : undefined} />
                         <path d="M10 20 L10 27" stroke="#ffffff" strokeOpacity=".3" strokeWidth="2" strokeLinecap="round" />
                       </svg>
-                      <div className="cf-lab cf-pisca" style={{ marginTop: 10, color: '#F09595' }}>{legendaGarrafa}</div>
+                      <div className="cf-lab cf-pisca" style={{ marginTop: 8, color: '#F09595', fontSize: legendaGarrafa.length > 7 ? 10 : 11 }}>{legendaGarrafa}</div>
                     </button>
                   )}
                 </div>
@@ -31960,14 +32002,14 @@ function PlayerCacifo({
                   {/* -------- dentro da porta -------- */}
                   <div className="cf-face cf-tras">
                     <button type="button" className="cf-obj cf-papel" onClick={() => onAbrir('treino')} aria-label="Treino de hoje"
-                      style={{ left: 14, top: 16, width: 112, height: 52, padding: '9px 8px 6px', transform: 'rotate(-2deg)', textAlign: 'left' }}>
+                      style={{ left: 14, top: 14, width: 116, height: 62, padding: '9px 8px 6px', transform: 'rotate(-2deg)', textAlign: 'left' }}>
                       <span className="cf-iman" />
                       <small>Treino de hoje</small>
-                      <div className="cf-mao" style={{ fontSize: 16, lineHeight: 1.05, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{treinoTxt}</div>
+                      <div className="cf-mao" style={{ fontSize: treinoTxt.length > 22 ? 14 : 16, lineHeight: 1.05 }}>{treinoTxt}</div>
                     </button>
 
                     <button type="button" className="cf-obj cf-papel" onClick={() => onAbrir('competicao')} aria-label="Classificação"
-                      style={{ left: 10, top: 88, width: 130, height: 84, padding: '6px 6px 5px', transform: 'rotate(1.5deg)', textAlign: 'left' }}>
+                      style={{ left: 10, top: 92, width: 130, height: 84, padding: '6px 6px 5px', transform: 'rotate(1.5deg)', textAlign: 'left' }}>
                       <span className="cf-iman" />
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: '#6b5e45', marginBottom: 2 }}>
                         <Trophy size={13} color="#8A6A0E" /> Classificação
@@ -31975,7 +32017,7 @@ function PlayerCacifo({
                       {tabela.length ? tabela.map(l => (
                         <div key={l.pos} style={{ display: 'grid', gridTemplateColumns: '14px 1fr auto', gap: 3, fontSize: 11, padding: '1px 3px', background: l.nos ? '#C9A227' : 'transparent', borderRadius: 2 }}>
                           <span>{l.pos}</span>
-                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: l.nos ? 600 : 400 }}>{l.nome}</span>
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', fontWeight: l.nos ? 600 : 400, fontSize: l.nome.length > 17 ? 8.5 : l.nome.length > 13 ? 9.5 : 11, alignSelf: 'center' }}>{l.nome}</span>
                           <span>{l.pts}</span>
                         </div>
                       )) : (
@@ -31984,13 +32026,13 @@ function PlayerCacifo({
                     </button>
 
                     <button type="button" className="cf-obj" onClick={() => onAbrir('tarefas')} aria-label={`Tarefas${nT ? `: ${nT} por fazer` : ''}`}
-                      style={{ left: 16, top: 190, width: 118, height: 86 }}>
+                      style={{ left: 16, top: 194, width: 118, height: 86 }}>
                       <div style={{ background: '#6b4a2e', borderRadius: 4, padding: '14px 6px 6px', position: 'relative', height: 62, boxSizing: 'border-box', textAlign: 'left', overflow: 'hidden' }}>
                         <span style={{ position: 'absolute', top: -3, left: 45, width: 28, height: 8, background: '#9aa69e', borderRadius: 2 }} />
                         {postits.length ? postits.map((p, k) => (
                           <span key={k} className="cf-mao" style={{
-                            display: 'inline-block', maxWidth: 50, verticalAlign: 'top', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                            background: k ? '#9FE1CB' : '#F2D35B', color: k ? '#04342C' : '#3a2e05', fontSize: 15, padding: '1px 5px', marginRight: 3,
+                            display: 'inline-block', width: 48, maxHeight: 36, verticalAlign: 'top', overflow: 'hidden', lineHeight: 1,
+                            background: k ? '#9FE1CB' : '#F2D35B', color: k ? '#04342C' : '#3a2e05', fontSize: 14, padding: '2px 4px', marginRight: 4,
                             transform: `rotate(${k ? 3 : -4}deg)`,
                           }}>{p}</span>
                         )) : (
@@ -32004,7 +32046,7 @@ function PlayerCacifo({
                     </button>
 
                     <button type="button" className="cf-obj" onClick={() => onAbrir('desenvolvimento')} aria-label="Desenvolvimento"
-                      style={{ left: 12, top: 292, width: 126, height: 124, background: '#1d2a22', border: '1px solid #4e6a58', borderRadius: 6, padding: 6, boxSizing: 'border-box' }}>
+                      style={{ left: 12, top: 298, width: 126, height: 124, background: '#1d2a22', border: '1px solid #4e6a58', borderRadius: 6, padding: 6, boxSizing: 'border-box' }}>
                       <svg width="84" height="74" viewBox="0 0 84 74" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                         <g fill="none" stroke="#4e6a58"><polygon points="42,4 78,28 64,70 20,70 6,28" /><polygon points="42,20 62,33 54,58 30,58 22,33" /></g>
                         <polygon points="42,10 70,30 56,62 26,58 16,32" fill="#C9A22755" stroke="#C9A227" strokeWidth="1.5" />
@@ -32078,8 +32120,16 @@ function PlayerJogosHome({ code, teamId, onBack }) {
    foi escolha explícita não comparar atletas entre si aqui, ao
    contrário do "Estatísticas" que o staff vê no separador Jogos, que é
    do plantel todo. */
-function PlayerCompeticaoView({ code, teamId, onBack }) {
+function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
   const [estado, dados] = usePortalFetch('checkin_competicao', code, teamId);
+  /* Vindo da caixa das chuteiras (cacifo): abre já nas estatísticas do
+     jogador, que estão no fim da página — de uma vez, sem deslizar. */
+  const estatRef = useRef(null);
+  useEffect(() => {
+    if (foco !== 'estatisticas' || estado !== 'pronto') return undefined;
+    const r = requestAnimationFrame(() => { if (estatRef.current) estatRef.current.scrollIntoView({ block: 'start' }); });
+    return () => cancelAnimationFrame(r);
+  }, [foco, estado]);
   const isNarrow = useIsMobile(560);
   const [viewId, setViewId] = useState(null);
   const [roundIdx, setRoundIdx] = useState(0);
@@ -32288,7 +32338,7 @@ function PlayerCompeticaoView({ code, teamId, onBack }) {
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>
+      <div ref={estatRef} style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12, scrollMarginTop: 16 }}>
         As tuas estatísticas na competição
       </div>
       {!est || est.jogos === 0 ? (
