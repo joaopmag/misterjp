@@ -35876,10 +35876,14 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   s += `<circle cx="186" cy="80" r="3" fill="${cor.base}" stroke="#fff" stroke-width=".7"/><circle cx="196" cy="94" r="3" fill="#f2ede0"/><circle cx="178" cy="98" r="3" fill="#f2ede0"/>`;
   // Porta da entrada do Portal: a TV dá as boas-vindas ao jogador.
   if (boasVindas) {
-    s += `<rect x="88" y="50" width="124" height="70" rx="2" fill="#0d1a12"/>`
+    // Num grupo próprio: na chegada pela porta, a página inicial desvanece-o
+    // (classe pkh-boasvindas) para a TV passar suavemente ao Portal do Atleta.
+    s += `<g class="pkh-boasvindas">`
+      + `<rect x="88" y="50" width="124" height="70" rx="2" fill="#0d1a12"/>`
       + `<rect x="88" y="50" width="124" height="70" rx="2" fill="${cor.base}" opacity=".35"/>`
       + `<text x="150" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="#FFC23D" font-family="Oswald, sans-serif" letter-spacing="3">BEM-VINDO,</text>`
-      + `<text x="150" y="104" text-anchor="middle" font-size="${String(boasVindas).length > 9 ? 16 : 22}" font-weight="600" fill="#fff" font-family="Oswald, sans-serif" letter-spacing="2">${pkhEsc(String(boasVindas).toUpperCase())}!</text>`;
+      + `<text x="150" y="104" text-anchor="middle" font-size="${String(boasVindas).length > 9 ? 16 : 22}" font-weight="600" fill="#fff" font-family="Oswald, sans-serif" letter-spacing="2">${pkhEsc(String(boasVindas).toUpperCase())}!</text>`
+      + `</g>`;
   }
   if (badge > 0) s += `<circle cx="212" cy="49" r="7" fill="#E5484D" stroke="#07090a" stroke-width="1.5"/><text x="212" y="52.6" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" font-family="JetBrains Mono, monospace">${badge > 9 ? '9+' : badge}</text>`;
   s += '</g>';
@@ -36113,9 +36117,12 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
   const svgBalneario = React.useMemo(() => pkhBalneario({
     cor, numero, nome: primeiro, foto: (player && player.photo) || '', iniciais,
     logo: (equipa && equipa.logo) || '', inicialClube: clube ? clube[0].toUpperCase() : '', badge: nBadge,
-    // Vindo da porta: a TV continua a dar as boas-vindas enquanto o balneário cresce.
-    boasVindas: faseChegada !== 'fim' ? primeiro : '',
-  }, enq.W, enq.H, enq.tv), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H, enq.tv && enq.tv.escala, enq.tv && enq.tv.jogador, faseChegada === 'fim']); // eslint-disable-line react-hooks/exhaustive-deps
+    /* Vindo da porta: a TV dá as boas-vindas enquanto o balneário cresce e,
+       já com o ecrã inteiro, desvanece-se e deixa ver o Portal do Atleta
+       (antes era um corte seco). O desenho não muda no fim — só a
+       opacidade do grupo, por CSS — para a transição poder correr. */
+    boasVindas: chegada ? primeiro : '',
+  }, enq.W, enq.H, enq.tv), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H, enq.tv && enq.tv.escala, enq.tv && enq.tv.jogador, chegada]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{
@@ -36123,6 +36130,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
       touchAction: 'manipulation', ...body,
     }}>
       <style>{PKH_CSS}</style>
+      {chegada && <style>{`.pkh-boasvindas { transition: opacity .7s ease-in-out .35s; opacity: ${faseChegada === 'fim' ? 0 : 1}; }`}</style>}
       {largo && <PkhFaixasLaterais larguraConteudo={PKH_LARGURA_LARGA} />}
       <div style={{
         position: 'relative', height: '100%', maxWidth: largo ? PKH_LARGURA_LARGA : tablet ? PKH_LARGURA_TABLET : 460, margin: '0 auto',
