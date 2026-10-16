@@ -35794,7 +35794,10 @@ function PkhCampo({ apagado, noite, wEstado, wTexto, pEstado, pTexto, semSegunda
      lateral), em vez de ficar pequeno ao centro. */
   const caixaRef = useRef(null);
   const [W, setW] = useState(300);
-  useEffect(() => {
+  /* Medido ANTES de pintar (useLayoutEffect): com useEffect, ao voltar ao
+     ecrã inicial via-se primeiro o campo estreito (300) e logo a seguir o
+     campo alargado — a imagem dava um salto. */
+  React.useLayoutEffect(() => {
     const el = caixaRef.current;
     if (!el) return undefined;
     const medir = () => {
