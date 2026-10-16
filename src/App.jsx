@@ -664,7 +664,7 @@ function resumoClinico(estado, { comNivel = true } = {}) {
    continuam a abrir alguma coisa em vez de darem página em branco — um
    atalho guardado ou um separador aberto no telemóvel não têm de morrer
    por causa de uma reorganização da navegação. */
-const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', estatisticas: 'jogos', analisejogo: 'jogos' };
+const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', estatisticas: 'jogos', analisejogo: 'jogos', fichaadversario: 'scouting', ideiasjogo: 'jogos' };
 const tabValida = (id) => TABS_ANTIGAS[id] || id;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -3480,6 +3480,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const euId = session && session.user && session.user.id;
   const { membros, recarregar: recarregarMembros } = useMembros(teamId);
 
+  CTX_TAREFAS_EXTRA.adversarios = adversarios || [];
+  CTX_TAREFAS_EXTRA.adversariosMeta = adversariosMeta || {};
   const NAV = [
     { id: 'geral', label: 'Visão Geral', icon: LayoutGrid },
     { id: 'plantel', label: 'Plantel', icon: Users },
@@ -3533,6 +3535,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       clinico: [clinicoMeta],
       biblioteca: [videosMeta, apresentacoesMeta],
       documentos: [documentosMeta],
+      fichaadversario: [adversariosMeta],
+      ideiasjogo: [matchesMeta],
       diario: [diarioMeta],
     },
   };
@@ -4054,7 +4058,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : tabPedida === 'analisejogo' ? 'analisejogo' : 'jogos'}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : tabPedida === 'analisejogo' ? 'analisejogo' : tabPedida === 'ideiasjogo' ? 'ideiasjogo' : 'jogos'}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
           {/* Sempre montado, escondido com CSS (não desmontado) — o mesmo
              motivo da Biblioteca logo abaixo: sem isto, trocar de separador
              e voltar perdia o vídeo selecionado, a posição de reprodução e
@@ -4063,7 +4067,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} />
           </div>
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} teamId={teamId} />}
-          {tab === 'scouting' && <Scouting scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
+          {tab === 'scouting' && <Scouting abaInicial={tabPedida === 'fichaadversario' ? 'adversarios' : ''} scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
 
              Continuam ambas SEMPRE MONTADAS (escondidas com CSS, não
@@ -27875,6 +27879,18 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abaInicial]);
   const [modalVoltarFicha, setModalVoltarFicha] = useState(false); // true só quando o editor abriu a partir da ficha
+  /* Chegou pela missão "Escrever as ideias para o jogo": abre o editor do
+     próximo jogo que ainda não tem ideias (é lá que está o campo). */
+  useEffect(() => {
+    if (abaInicial !== 'ideiasjogo') return;
+    const hoje = todayStr();
+    const proximos = [...(matches || [])].filter(m => m && m.date && m.date >= hoje && !jogoNaoJogado(m))
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const alvo = proximos.find(m => !String(m.ideias || '').trim()) || proximos[0];
+    setAba('jogos');
+    if (alvo) { setModalVoltarFicha(false); setModal(alvo); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abaInicial]);
   const [ficha, setFicha] = useState(null);
   /* O jogo a imprimir. A folha vive fora da app (montada no body) e só
      existe enquanto a impressão acontece — o mesmo padrão do Planeamento.
@@ -36446,10 +36462,11 @@ ${x.notes ? `<h2>Notas gerais</h2><p class="desc">${escapeHtmlText(x.notes)}</p>
 `;
 }
 
-function Scouting({ scouting, setScouting, adversarios, setAdversarios, videos, setVideos }) {
+function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversarios, videos, setVideos }) {
   const botaoCartao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 5, display: 'flex', borderRadius: 6 };
   const umaLinhaEstilo = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
-  const [subTab, setSubTab] = useState('jogadores');
+  const [subTab, setSubTab] = useState(abaInicial === 'adversarios' ? 'adversarios' : 'jogadores');
+  useEffect(() => { if (abaInicial === 'adversarios') setSubTab('adversarios'); }, [abaInicial]);
   const [modal, setModal] = useState(null);
   const [filter, setFilter] = useState('');
   const [printScout, setPrintScout] = useState(null);
@@ -45566,7 +45583,57 @@ const RECORRENCIA_LABEL = {
   wellness_pse: 'Enquanto faltar Wellness/PSE',
   aniversario: 'Aniversário de jogador',
   pos_jogo: 'Depois de cada jogo (até estar feito)',
+  adversario_semana: 'A meio da semana, antes de jogo oficial (ficha do adversário)',
+  vespera_jogo: 'Na véspera de cada jogo (ideias para o jogo)',
 };
+// Repetições que só fazem sentido para a equipa técnica.
+const RECORRENCIAS_SO_STAFF = ['adversario_semana', 'vespera_jogo'];
+/* Caminho que cada uma destas repetições usa por omissão (a missão leva
+   logo ao sítio certo e fecha sozinha quando o trabalho aparece). */
+const CAMINHO_DA_RECORRENCIA = { adversario_semana: 'fichaadversario', vespera_jogo: 'ideiasjogo' };
+
+/* Dados que as regras das tarefas precisam e que não vêm no `ctx` de cada
+   ecrã (as fichas de adversário e quando foram gravadas). A app atualiza
+   isto em cada renderização. */
+const CTX_TAREFAS_EXTRA = { adversarios: [], adversariosMeta: {} };
+
+const jogoNaoJogado = (m) => /cancel|adiad/i.test(String((m && m.result) || ''));
+
+/* FICHA DO ADVERSÁRIO, A MEIO DA SEMANA — para cada jogo OFICIAL ainda por
+   jogar, a missão abre na quarta-feira antes do jogo (jogos de sexta a
+   segunda) ou dois dias antes (jogos a meio da semana: terça a quinta) e
+   fica até ao dia do jogo. Está feita quando a ficha desse adversário
+   (Scouting › Adversários) foi criada ou gravada desde o dia em que a
+   missão abriu. */
+function inicioFichaAdversario(dataJogo) {
+  const dow = new Date(`${dataJogo}T00:00:00`).getDay();
+  if (dow === 2 || dow === 3 || dow === 4) return addDays(dataJogo, -2);
+  const recuo = { 5: 2, 6: 3, 0: 4, 1: 5 }[dow];
+  return addDays(dataJogo, -recuo);
+}
+function fichaAdversarioFeita(m, inicio, ctx) {
+  const lista = (ctx && ctx.adversarios) || CTX_TAREFAS_EXTRA.adversarios;
+  const metas = (ctx && ctx.adversariosMeta) || CTX_TAREFAS_EXTRA.adversariosMeta;
+  const ficha = fichaDaEquipa(m.opponent, lista);
+  if (!ficha) return false;
+  const meta = metas && metas[ficha.id];
+  if (!meta || !meta.at) return false;
+  return new Date(meta.at).getTime() >= new Date(`${inicio}T00:00:00`).getTime();
+}
+function jogosParaFichaAdversario(matches, dia, ctx) {
+  return (matches || [])
+    .filter(m => m && m.date && m.opponent && !isFriendlyMatch(m) && !jogoNaoJogado(m))
+    .map(m => ({ m, inicio: inicioFichaAdversario(m.date) }))
+    .filter(x => x.inicio <= dia && dia <= x.m.date && !fichaAdversarioFeita(x.m, x.inicio, ctx));
+}
+/* IDEIAS PARA O JOGO, NA VÉSPERA — para cada jogo (oficial ou amigável),
+   abre na véspera e fica até ao dia do jogo enquanto o campo "Ideias para
+   o jogo" da ficha do jogo estiver vazio. */
+function jogosSemIdeias(matches, dia) {
+  return (matches || [])
+    .filter(m => m && m.date && !jogoNaoJogado(m) && !String(m.ideias || '').trim())
+    .filter(m => addDays(m.date, -1) <= dia && dia <= m.date);
+}
 /* Jogos já realizados (até 14 dias atrás) sem estatísticas: nenhum
    jogador com minutos registados no relatório do jogo. É isto que mantém
    viva a missão "Introduzir as estatísticas": aparece no dia a seguir ao
@@ -45641,6 +45708,20 @@ function tarefaAtivaHoje(tarefa, hoje, ctx) {
       : jogosSemEstatisticas(ctx.matches, hoje);
     if (hoje === hj) return falta.length > 0;
     return falta.some(m => addDays(m.date, 1) === hoje);
+  }
+  if (r.tipo === 'adversario_semana') {
+    const hj = todayStr();
+    // Dias futuros (Calendário): só no dia em que a missão vai abrir.
+    if (hoje > hj) {
+      return (ctx.matches || []).some(m => m && m.date && m.opponent && !isFriendlyMatch(m) && !jogoNaoJogado(m)
+        && inicioFichaAdversario(m.date) === hoje);
+    }
+    return jogosParaFichaAdversario(ctx.matches, hoje, ctx).length > 0;
+  }
+  if (r.tipo === 'vespera_jogo') {
+    const hj = todayStr();
+    if (hoje > hj) return (ctx.matches || []).some(m => m && m.date && !jogoNaoJogado(m) && addDays(m.date, -1) === hoje);
+    return jogosSemIdeias(ctx.matches, hoje).length > 0;
   }
   return true;
 }
@@ -47126,6 +47207,10 @@ const CAMINHOS_STAFF = [
   // Abre Relatórios de jogo com a caixa "Análise do jogo" do último jogo
   // ainda sem análise.
   { id: 'analisejogo', rotulo: 'Relatórios de jogo · análise do jogo', acao: 'Escrever a análise do jogo', icon: MessageCircle },
+  // Abre Scouting › Adversários.
+  { id: 'fichaadversario', rotulo: 'Scouting · ficha do adversário', acao: 'Preparar a ficha do adversário', icon: Shield },
+  // Abre a ficha do próximo jogo ainda sem ideias, no campo "Ideias para o jogo".
+  { id: 'ideiasjogo', rotulo: 'Jogos · ideias para o jogo', acao: 'Escrever as ideias para o jogo', icon: Lightbulb },
   { id: 'diario', rotulo: 'Diário / ocorrência', acao: 'Registar no Diário', icon: BookOpen },
   { id: 'monitorizacao', rotulo: 'Monitorização', acao: 'Rever a monitorização', icon: Activity },
   { id: 'desenvolvimento', rotulo: 'Desenvolvimento', acao: 'Avaliar o desenvolvimento', icon: TrendingUp },
@@ -47165,6 +47250,8 @@ const CRITERIO_STAFF = {
   clinico: 'atualizares o Boletim Clínico',
   biblioteca: 'carregares ou editares algo na Sala de Vídeo',
   documentos: 'carregares ou editares um documento',
+  fichaadversario: 'gravares a ficha do adversário',
+  ideiasjogo: 'escreveres as ideias para o jogo',
 };
 const caminhoVerificavel = (t) => !!(t && !t.jogadorId && t.caminho && CRITERIO_STAFF[t.caminho]);
 function inicioDaMissao(t, base) {
@@ -47184,6 +47271,14 @@ function missaoStaffFeita(t, base, provas) {
     const hoje = todayStr();
     const jogados = (provas.matches || []).filter(m => m && m.date && m.date < hoje);
     return jogados.length > 0 && jogosSemEstatisticas(provas.matches, hoje).length === 0;
+  }
+  /* Ficha do adversário e ideias para o jogo: fechadas quando já não
+     falta nenhuma (a regra da repetição), não por qualquer gravação. */
+  if (t.caminho === 'fichaadversario' && t.recorrencia) {
+    return jogosParaFichaAdversario(provas.matches, todayStr(), null).length === 0;
+  }
+  if (t.caminho === 'ideiasjogo' && t.recorrencia) {
+    return jogosSemIdeias(provas.matches, todayStr()).length === 0;
   }
   const email = String(provas.email || '').toLowerCase();
   if (!email) return false;
@@ -47387,7 +47482,7 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
      não houver; nada é gravado). */
 const ZONA_CODIGO = {
   analise: 'AV', scouting: 'SC', planeamento: 'PL', jogos: 'JG', estatisticas: 'ES', monitorizacao: 'MO',
-  desenvolvimento: 'DS', ideiajogo: 'IJ', exercicios: 'EX', presencas: 'PR', clinico: 'BC', biblioteca: 'SV', documentos: 'DC',
+  desenvolvimento: 'DS', ideiajogo: 'IJ', exercicios: 'EX', presencas: 'PR', clinico: 'BC', biblioteca: 'SV', documentos: 'DC', fichaadversario: 'FA', ideiasjogo: 'IP',
   analisejogo: 'AJ', diario: 'DI',
 };
 function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equipa, epoca }) {
@@ -47889,10 +47984,14 @@ function MissaoModal({ alvo, inicial, ocorrencia, membros, players, euId, tarefa
                   if (!tipo) { setComum({ ...comum, prazo: (comum.recorrencia && comum.recorrencia.desde) || comum.prazo || '', recorrencia: null }); return; }
                   const diaDoPrazo = comum.prazo ? [new Date(`${comum.prazo}T00:00:00`).getDay()] : null;
                   setComum({ ...comum, prazo: '', recorrencia: { ...(comum.recorrencia || {}), tipo, dias: (comum.recorrencia && comum.recorrencia.dias) || diaDoPrazo || [1, 2, 3, 4, 5], desde: (comum.recorrencia && comum.recorrencia.desde) || comum.prazo || todayStr() } });
+                  // Ficha do adversário / ideias para o jogo: leva logo ao sítio certo.
+                  if (modo === 'staff' && CAMINHO_DA_RECORRENCIA[tipo] && !blocos[0].caminho) mudarBloco(0, { caminho: CAMINHO_DA_RECORRENCIA[tipo] });
                 }}
               >
                 <option value="">Não repete</option>
-                {Object.entries(RECORRENCIA_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                {Object.entries(RECORRENCIA_LABEL)
+                  .filter(([id]) => modo === 'staff' || !RECORRENCIAS_SO_STAFF.includes(id) || (comum.recorrencia && comum.recorrencia.tipo === id))
+                  .map(([id, label]) => <option key={id} value={id}>{label}</option>)}
               </Select>
             </Field>
             {modo === 'jogadores' && (
