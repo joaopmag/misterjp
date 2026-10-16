@@ -33744,7 +33744,7 @@ function PortaAEspera() {
 const PE_SEM_GUTTER = `html, body { overflow: hidden !important; } html { scrollbar-gutter: auto !important; background: ${T.bg}; }`;
 function PeRestoEntrada({ html, apagar }) {
   return (
-    <div aria-hidden="true" style={{
+    <div aria-hidden="true" data-resto-entrada="" style={{
       position: 'fixed', inset: 0, zIndex: 0, isolation: 'isolate', pointerEvents: 'none',
       opacity: apagar ? 0 : 1, transition: 'opacity .55s cubic-bezier(.4,0,.2,1)', willChange: 'opacity',
     }} dangerouslySetInnerHTML={{ __html: html }} />
@@ -33790,10 +33790,10 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, tamEmblema, recol
   return (
     <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
       {/* Depois de abertas (já fora do buraco da porta), as folhas saem de cena. */}
-      {!recolhido && <div style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none', opacity: aberto ? 0 : 1 }}>{metade('E')}</div>}
-      {!recolhido && <div style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none', opacity: aberto ? 0 : 1 }}>{metade('D')}</div>}
+      {!recolhido && <div data-folha="E" style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none', opacity: aberto ? 0 : 1 }}>{metade('E')}</div>}
+      {!recolhido && <div data-folha="D" style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none', opacity: aberto ? 0 : 1 }}>{metade('D')}</div>}
       {/* A junta das folhas: 1 px no ecrã (nas unidades da caixa, 1/esc0). */}
-      {!recolhido && <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: c.fixo ? 1 : c.raio / 3, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />}
+      {!recolhido && <div data-junta="" style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: c.fixo ? 1 : c.raio / 3, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />}
     </div>
   );
 }
@@ -33856,10 +33856,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
          (e parecia mais claro) no instante em que a porta passava para aqui. */
       desfoque: 7 / esc0,
     });
-    let cancelado = false, aJ = null, aC = null;
-    const N = 36;
-    const kJ = [], kC = [];
-    for (let k = 0; k <= N; k++) { const q = passo(curva(k / N)); kJ.push({ transform: q.janela }); kC.push({ transform: q.conteudo }); }
+    let cancelado = false;
     /* Espera que o ecrã de trás acabe de se montar (o do jogo é pesado)
        antes de abrir: assim a abertura nunca apanha um engasgo.
        Com a porta fechada nada muda: o balneário continua atrás do vidro.
@@ -33885,29 +33882,56 @@ function TransicaoEntrada({ focoInteiro, children }) {
       };
       r1 = requestAnimationFrame(f);
     };
+    /* RELÓGIO COM TRAVÃO. A abertura é desenhada frame a frame com um
+       relógio próprio que nunca avança mais de 34 ms por frame. Se o
+       browser se atrasar (ecrãs pesados, como o do jogo, ainda a ser
+       desenhados), a porta abranda nesse instante em vez de saltar para a
+       frente; com frames normais, as durações são as de sempre. Assim todos
+       os ecrãs que saem da porta se comportam exatamente como o dos
+       parabéns.
+       Passagem, no relógio da animação:
+         0 ms    as folhas começam a abrir (0,65 s), cada uma com a sua
+                 metade da imagem da porta (que nunca muda); o ecrã novo vai
+                 aparecendo na abertura; o resto do ecrã de entrada
+                 desvanece-se (0,55 s);
+         300 ms  o ecrã cresce até à página inteira (1 s, a acelerar e a
+                 travar devagar); as folhas apagam-se enquanto saem
+                 (até aos 550 ms);
+         600 ms  as folhas, já invisíveis, saem de cena;
+         1300 ms fim. */
+    const lim = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+    const entrada = (p) => p * p;
+    const saida = (p) => 1 - Math.pow(1 - p, 3);
     esperarCalma(() => {
-      r2 = requestAnimationFrame(() => {
+      if (cancelado) return;
+      const folhas = Array.from(con.querySelectorAll('[data-folha]'));
+      const junta = con.querySelector('[data-junta]');
+      const resto = document.querySelector('[data-resto-entrada]');
+      [...folhas, junta, resto].forEach(el => { if (el) el.style.transition = 'none'; });
+      let v = 0, ult = 0, recolhidas = false;
+      const quadro = (t) => {
         if (cancelado) return;
-        /* Passagem suave, por esta ordem:
-           0 ms    as folhas começam a abrir (0,65 s), cada uma com a sua
-                   metade da imagem da porta (que nunca muda); o ecrã novo
-                   vai aparecendo na abertura. O resto do ecrã de entrada
-                   desvanece-se ao mesmo tempo;
-           300 ms  com a porta a abrir, o ecrã cresce até à página inteira
-                   (1 s, a acelerar e a travar devagar); as folhas apagam-se
-                   enquanto saem;
-           600 ms  as folhas, já invisíveis, saem de cena. */
-        setVidroAberto(true);
-        tempo = setTimeout(() => { if (!cancelado) setVidroRecolhido(true); }, 600);
-        const op = { duration: 1000, delay: 300, easing: 'linear', fill: 'forwards' };
-        aJ = jan.animate(kJ, op);
-        aC = con.animate(kC, op);
-        aJ.onfinish = () => {
-          jan.style.transform = ''; con.style.transform = '';
-          try { aJ.cancel(); aC.cancel(); } catch (e) { /* nada */ }
-          acabar();
-        };
-      });
+        if (ult) v += Math.min(t - ult, 34);
+        ult = t;
+        const pf = curva(lim(v / 650)), of = 1 - entrada(lim((v - 300) / 250));
+        if (!recolhidas) folhas.forEach(el => {
+          el.style.transform = `translateX(${el.dataset.folha === 'E' ? -101 * pf : 101 * pf}%)`;
+          el.style.opacity = String(of);
+        });
+        if (junta) junta.style.opacity = String(1 - lim(v / 120));
+        if (resto) resto.style.opacity = String(1 - saida(lim(v / 550)));
+        if (!recolhidas && v >= 600) {
+          recolhidas = true;
+          folhas.forEach(el => { el.style.display = 'none'; });
+          if (junta) junta.style.display = 'none';
+        }
+        const q = passo(curva(lim((v - 300) / 1000)));
+        jan.style.transform = q.janela;
+        con.style.transform = q.conteudo;
+        if (v >= 1300) { jan.style.transform = ''; con.style.transform = ''; acabar(); return; }
+        r2 = requestAnimationFrame(quadro);
+      };
+      r2 = requestAnimationFrame(quadro);
     });
     return () => { cancelado = true; clearTimeout(tempo); cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
