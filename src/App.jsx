@@ -27478,8 +27478,8 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
   const [grupo, setGrupo] = useState(() => (porPreencher(oficiais) || !porPreencher(amigaveis) ? 'oficial' : 'amigavel'));
   const [aberto, setAberto] = useState(null);
   const estreito = useIsMobile(560);
-  // Chegou pela missão: abre logo o relatório pedido.
-  useEffect(() => {
+  // Chegou pela missão: abre logo o relatório pedido (antes de pintar a lista).
+  React.useLayoutEffect(() => {
     if (!abrirId) return;
     const m0 = (matches || []).find(x => x.id === abrirId);
     const m = m0 ? comResultado(m0, standings) : null;
@@ -27494,8 +27494,8 @@ function RelatoriosJogo({ matches, players, season, standings, onSave, abrirId, 
   const [painel, setPainel] = useState(null); // { id, modo: 'ler' | 'escrever' }
   const alternarLer = (id) => setPainel(p => (p && p.id === id && p.modo === 'ler' ? null : { id, modo: 'ler' }));
   const abrirEscrita = (id) => setPainel({ id, modo: 'escrever' });
-  // Chegou pela missão "Escrever a análise do jogo".
-  useEffect(() => {
+  // Chegou pela missão "Escrever a análise do jogo" (antes de pintar).
+  React.useLayoutEffect(() => {
     if (!abrirAnaliseId) return;
     const m = (matches || []).find(x => x.id === abrirAnaliseId);
     if (m) { setGrupo(competitionLabel(m.competition) === FRIENDLY ? 'amigavel' : 'oficial'); abrirEscrita(m.id); }
@@ -27871,7 +27871,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   /* Chegou pela missão "Introduzir as estatísticas": abre logo o editor do
      jogo mais recente que ainda não tem estatísticas (ou, se já estão
      todas, o último jogo realizado). */
-  useEffect(() => {
+  // Antes de pintar (useLayoutEffect): abre logo o sítio certo, sem mostrar a lista primeiro.
+  React.useLayoutEffect(() => {
     if (abaInicial !== 'estatisticas') return;
     const hoje = todayStr();
     const alvo = jogosSemEstatisticas(matches, addDays(hoje, 1))[0]
@@ -27884,7 +27885,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
      jogo com a caixa da análise aberta no jogo mais recente ainda sem
      nenhuma análise (ou, se já têm todos, no último jogo realizado). */
   const [abrirAnalise, setAbrirAnalise] = useState(null);
-  useEffect(() => {
+  // Antes de pintar (useLayoutEffect): abre logo o sítio certo, sem mostrar a lista primeiro.
+  React.useLayoutEffect(() => {
     if (abaInicial !== 'analisejogo') return;
     const hoje = todayStr();
     const jogados = [...(matches || [])].filter(m => m && m.date && m.date <= hoje)
@@ -27897,7 +27899,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
   const [modalVoltarFicha, setModalVoltarFicha] = useState(false); // true só quando o editor abriu a partir da ficha
   /* Chegou pela missão "Escrever as ideias para o jogo": abre o editor do
      próximo jogo que ainda não tem ideias (é lá que está o campo). */
-  useEffect(() => {
+  // Antes de pintar (useLayoutEffect): abre logo o sítio certo, sem mostrar a lista primeiro.
+  React.useLayoutEffect(() => {
     if (abaInicial !== 'ideiasjogo') return;
     const hoje = todayStr();
     const proximos = [...(matches || [])].filter(m => m && m.date && m.date >= hoje && !jogoNaoJogado(m))
@@ -31213,33 +31216,11 @@ function EcraMissao({ player, tarefas, janelas = {}, onIr, onAdiar, destinoDe, c
    competição) a função nem devolve nada de propósito: não é
    "emparelhamento" de treino nenhum. */
 function PlayerTreinoView({ code, teamId, onBack }) {
-  const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
-  const [sessao, setSessao] = useState(null); // { phase, exercicios } | null
+  /* O "hoje" tem de ser o do TELEMÓVEL do atleta (p_date), não o do
+     servidor — à noite em Portugal ainda mostrava o treino de ontem. */
+  const [estado, dadosPlano] = usePortalRpc('checkin_plano_dia', code, teamId, { p_date: todayStr() });
+  const sessao = (dadosPlano && dadosPlano.sessao) || null;
   const [aVer, setAVer] = useState(null);
-
-  useEffect(() => {
-    let cancelado = false;
-    (async () => {
-      try {
-        /* O "hoje" tem de ser o do TELEMÓVEL do atleta, não o do
-           servidor — sem `p_date`, a função calculava a data sozinha
-           (provavelmente com `current_date`, em UTC), e à noite em
-           Portugal (adiantada em relação a UTC) ainda mostrava o
-           treino de ontem depois da meia-noite local. */
-        const { data, error } = await supabase.rpc('checkin_plano_dia', { p_code: code, p_team: teamId, p_date: todayStr() });
-        if (cancelado) return;
-        if (error) throw error;
-        let d = data;
-        if (Array.isArray(d)) d = d[0];
-        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
-        setSessao((d && d.sessao) || null);
-        setEstado('pronto');
-      } catch (e) {
-        if (!cancelado) setEstado('erro');
-      }
-    })();
-    return () => { cancelado = true; };
-  }, [code, teamId]);
 
   if (aVer) {
     return (
@@ -31266,7 +31247,7 @@ function PlayerTreinoView({ code, teamId, onBack }) {
       <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 20 }}>Plano do dia</div>
 
       {estado === 'a-carregar' && (
-        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+        <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
       )}
 
       {estado === 'erro' && (
@@ -31361,6 +31342,17 @@ const ERROS_CLIPE_ATLETA = {
 };
 
 function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
+  /* Miniaturas: as que já estavam carregadas (cache do browser) ficam
+     logo visíveis; as outras entram a desvanecer (ver mjp-bib). Rede de
+     segurança: ao fim de 2 s mostram-se todas, aconteça o que acontecer. */
+  const marcarMiniaturas = React.useCallback((el) => {
+    if (!el) return;
+    const ver = () => el.querySelectorAll('img').forEach(im => { if (im.complete) im.classList.add('mjp-ok'); });
+    ver();
+    const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(ver) : null;
+    if (mo) mo.observe(el, { childList: true, subtree: true });
+    setTimeout(() => { el.querySelectorAll('img').forEach(im => im.classList.add('mjp-ok')); if (mo) mo.disconnect(); }, 2000);
+  }, []);
   /* Abre logo com o que se viu da última vez (guardado neste aparelho) —
      antes, "Os meus clipes" e a contagem só apareciam uns segundos depois,
      à espera do servidor. Quando o servidor responde, troca-se. */
@@ -31552,7 +31544,7 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
       <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Sala de Vídeo</div>
 
       {estado === 'a-carregar' && (
-        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+        <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
       )}
 
       {estado === 'erro' && (
@@ -31581,6 +31573,9 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
       )}
 
       {estado === 'pronto' && (
+        <div className="mjp-bib" ref={marcarMiniaturas}
+          onLoadCapture={e => { if (e.target && e.target.tagName === 'IMG') e.target.classList.add('mjp-ok'); }}
+          onErrorCapture={e => { if (e.target && e.target.tagName === 'IMG') e.target.classList.add('mjp-ok'); }}>
         <MediaLibrary
           ref={canalRef}
           items={itensPortal}
@@ -31596,6 +31591,7 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
           compilacoesApi={compilacoesApi}
           emptyText="Ainda não há nada partilhado aqui. Fala com o treinador se achas que devia haver."
         />
+        </div>
       )}
     </div>
   );
@@ -31751,6 +31747,9 @@ function PlayerCacifo({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // As áreas do cacifo ficam já carregadas enquanto a porta abre.
+  useEffect(() => { aquecerPortal(code, teamId); }, [code, teamId]);
 
   /* ---------- abrir: com animação na entrada, já aberto ao voltar ---------- */
   const [aberto, setAberto] = useState(!animar);
@@ -32042,17 +32041,45 @@ function PlayerCacifo({
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('competicao', 'estatisticas')} aria-label="Estatísticas da época"
                     style={{ left: mostraGarrafa ? 6 : 28, top: 362, width: 84, height: 80, ...atraso(1.3) }}>
-                    <svg width="80" height="55" viewBox="0 0 140 96" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
-                      <path d="M30 40 C25 40 24 35 25 30 L26 16 Q27 11 32 11 L42 11 Q46 11 47 15 L52 23 Q68 25 86 28 Q104 31 112 36 L114 40 Z" fill="#1c2226" />
-                      <path d="M26 18 Q35 21 44 17" fill="none" stroke="#C9A227" strokeWidth="2.5" />
-                      <g stroke="#F1EBDA" strokeWidth="1.6" strokeLinecap="round"><path d="M55 25 l-1.5 4" /><path d="M62 26 l-1.5 4" /><path d="M69 27 l-1.5 4" /></g>
-                      <path d="M4 44 L136 44 L132 40 L8 40 Z" fill="#cfc6ae" />
-                      <rect x="6" y="44" width="128" height="50" rx="2" fill="#E9E2CF" />
-                      <rect x="6" y="44" width="128" height="7" fill="#C9A227" />
-                      <text x="70" y="71" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="19" fill="#2a2418">{est ? `${est.jogos || 0} J · ${est.minutos || 0}'` : 'Sem jogos'}</text>
-                      <text x="70" y="89" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="19" fill="#5a4d33">{est ? `${est.golos || 0} G · ${est.assistencias || 0} A` : 'ainda'}</text>
+                    {/* A CHUTEIRA DOURADA DA ÉPOCA: troféu num pedestal escuro com a
+                        placa dos números (Jogos · Min. · Golos · Assist.). */}
+                    <svg width="84" height="61" viewBox="0 0 166 121" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      <defs>
+                        <linearGradient id="cf-ouro" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#FFF3C4" /><stop offset=".35" stopColor="#F0C94E" /><stop offset=".7" stopColor="#C79A22" /><stop offset="1" stopColor="#7d5d0f" /></linearGradient>
+                        <linearGradient id="cf-ouro-esc" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#b8901f" /><stop offset="1" stopColor="#5e450a" /></linearGradient>
+                        <linearGradient id="cf-ouro-br" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#fff" stopOpacity="0" /><stop offset=".5" stopColor="#fff" stopOpacity=".75" /><stop offset="1" stopColor="#fff" stopOpacity="0" /></linearGradient>
+                        <linearGradient id="cf-ped" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2d3236" /><stop offset="1" stopColor="#111315" /></linearGradient>
+                        <radialGradient id="cf-halo" cx=".5" cy=".5" r=".5"><stop offset="0" stopColor="#FFE6A0" stopOpacity=".35" /><stop offset="1" stopColor="#FFE6A0" stopOpacity="0" /></radialGradient>
+                      </defs>
+                      <ellipse cx="83" cy="40" rx="70" ry="34" fill="url(#cf-halo)" />
+                      <g transform="translate(23,8)">
+                        <path d="M6 46 Q4 52 12 53 L104 53 Q118 52 120 45 Q114 47 100 47 L14 47 Z" fill="url(#cf-ouro-esc)" />
+                        <g fill="#6b4f0c"><path d="M13 53 L14 58 L18 58 L19 53 Z" /><path d="M27 53 L28 58 L32 58 L33 53 Z" /><path d="M75 53 L76 58 L80 58 L81 53 Z" /><path d="M89 53 L90 58 L94 58 L95 53 Z" /><path d="M103 52 L104 57 L108 57 L109 52 Z" /></g>
+                        <path d="M10 47 L9 24 Q9 14 18 13 L30 12 Q36 12 39 17 L44 23 Q58 24 72 27 Q94 31 108 36 Q119 40 120 45 Q114 47 100 47 Z" fill="url(#cf-ouro)" stroke="#6b520c" strokeWidth=".9" />
+                        <path d="M30 12 Q34 7 40 9 L48 22 L44 23 Z" fill="url(#cf-ouro-esc)" />
+                        <g stroke="#fff8e0" strokeWidth="1.6" strokeLinecap="round"><path d="M41 19 L47 24" /><path d="M47 20 L43 24" /><path d="M47 22 L53 27" /><path d="M53 23 L49 27" /><path d="M53 24 L59 29" /><path d="M59 25 L55 29" /><path d="M59 26 L65 30" /><path d="M65 27 L61 30" /></g>
+                        <g fill="#6b520c"><circle cx="41" cy="19" r="1" /><circle cx="47" cy="22" r="1" /><circle cx="53" cy="24" r="1" /><circle cx="59" cy="26" r="1" /><circle cx="65" cy="28" r="1" /></g>
+                        <path d="M10 47 L10 26 Q16 30 20 47 Z" fill="url(#cf-ouro-esc)" opacity=".7" />
+                        <path d="M96 33 Q112 36 120 45 Q110 46 98 46 Q94 40 96 33 Z" fill="url(#cf-ouro-esc)" opacity=".45" />
+                        <path d="M22 40 Q50 30 86 38" fill="none" stroke="#6b520c" strokeWidth="2.2" opacity=".55" />
+                        <path d="M12 44 L116 44" stroke="#6b520c" strokeWidth=".6" strokeDasharray="2 1.5" opacity=".7" />
+                        <path d="M14 18 Q40 22 70 28 Q95 33 112 40" fill="none" stroke="url(#cf-ouro-br)" strokeWidth="3" opacity=".8" />
+                        <circle cx="104" cy="38" r="1.6" fill="#fff" opacity=".9" />
+                      </g>
+                      <path d="M30 68 L136 68 L142 76 L24 76 Z" fill="#3a3f44" />
+                      <rect x="14" y="76" width="138" height="44" rx="3" fill="url(#cf-ped)" />
+                      <rect x="20" y="81" width="126" height="34" rx="2" fill="none" stroke="#C9A227" strokeWidth="1" />
+                      <g textAnchor="middle" fontFamily="Oswald, sans-serif" fontWeight="600">
+                        <g fontSize="15" fill="#FFD86A">
+                          <text x="38" y="100">{est ? (est.jogos || 0) : 0}</text><text x="68" y="100" fontSize={String((est && est.minutos) || 0).length > 3 ? 12 : 15}>{est ? `${est.minutos || 0}'` : "0'"}</text>
+                          <text x="98" y="100">{est ? (est.golos || 0) : 0}</text><text x="128" y="100">{est ? (est.assistencias || 0) : 0}</text>
+                        </g>
+                        <g fontSize="6" fill="#a89a74" fontFamily="Inter, sans-serif" fontWeight="600">
+                          <text x="38" y="109">JOGOS</text><text x="68" y="109">MIN.</text><text x="98" y="109">GOLOS</text><text x="128" y="109">ASSIST.</text>
+                        </g>
+                      </g>
                     </svg>
-                    <div className="cf-lab" style={{ marginTop: 7 }}>Estatísticas</div>
+                    <div className="cf-lab" style={{ marginTop: 4 }}>Estatísticas</div>
                   </button>
 
                   {mostraGarrafa && (
@@ -32301,7 +32328,7 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
     return (
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
         {voltar}
-        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+        <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
       </div>
     );
   }
@@ -32592,7 +32619,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
     return (
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
         {voltar}
-        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+        <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
       </div>
     );
   }
@@ -32624,7 +32651,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
     return (
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
         {voltar}
-        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+        <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
       </div>
     );
   }
@@ -32779,7 +32806,7 @@ function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirI
     return (
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
         {voltar('Voltar', onBack)}
-        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+        <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
       </div>
     );
   }
@@ -33009,34 +33036,80 @@ async function submeterAutoavaliacaoSeCompleta(code, teamId, dadosConhecidos) {
   }
 }
 
-function usePortalFetch(rpcName, code, teamId) {
-  const [estado, setEstado] = useState('a-carregar');
-  const [dados, setDados] = useState(null);
+/* MEMÓRIA DO PORTAL (só nesta sessão). Cada área guarda aqui o que
+   recebeu; ao voltar a abri-la mostra logo o que tinha (sem "A carregar…"
+   nem o conteúdo a saltar) e atualiza em silêncio por trás. O cacifo
+   aquece-a ao abrir (aquecerPortal), por isso a 1.ª visita também é
+   imediata na maior parte das vezes. */
+const PORTAL_MEM = new Map();
+/* Estilos globais do Portal: o "A carregar…" só aparece se demorar mais de
+   0,4 s (em pedidos rápidos não pisca), e as miniaturas da Sala de Vídeo
+   entram a desvanecer quando acabam de carregar (em vez de passarem de
+   uma caixa preta para a imagem de golpe). */
+if (typeof document !== 'undefined' && !document.getElementById('mjp-portal-css')) {
+  const st = document.createElement('style');
+  st.id = 'mjp-portal-css';
+  st.textContent = '@keyframes mjp-surgir { from { opacity: 0; } to { opacity: 1; } }'
+    + ' .mjp-carregar { animation: mjp-surgir .25s ease-out .4s both; }'
+    + ' .mjp-bib img { opacity: 0; transition: opacity .35s ease-out; } .mjp-bib img.mjp-ok { opacity: 1; }';
+  document.head.appendChild(st);
+}
+const chaveMem = (rpc, code, teamId, extra) => `${rpc}|${code}|${teamId}|${extra || ''}`;
+function lerMem(k) { const v = PORTAL_MEM.get(k); return v && Date.now() - v.t < 15 * 60000 ? v.d : undefined; }
+function gravarMem(k, d) { PORTAL_MEM.set(k, { t: Date.now(), d }); }
+function normalizarRpc(data) {
+  let d = data;
+  if (Array.isArray(d)) d = d[0];
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
+  return d;
+}
+const AQUECER_EM_CURSO = new Set();
+function aquecerPortal(code, teamId) {
+  if (!code || !teamId) return;
+  [['checkin_ideia_jogo', {}], ['checkin_plano_dia', { p_date: todayStr() }], ['checkin_convocatoria', {}], ['checkin_competicao', {}]].forEach(([rpc, extra]) => {
+    const k = chaveMem(rpc, code, teamId, extra.p_date);
+    if (lerMem(k) !== undefined || AQUECER_EM_CURSO.has(k)) return;
+    AQUECER_EM_CURSO.add(k);
+    Promise.resolve(supabase.rpc(rpc, { p_code: code, p_team: teamId, ...extra }))
+      .then(({ data, error }) => { if (!error) gravarMem(k, normalizarRpc(data) || {}); })
+      .catch(() => {})
+      .finally(() => AQUECER_EM_CURSO.delete(k));
+  });
+}
+/* Pedido de uma área com a memória acima: devolve [estado, dados]. */
+function usePortalRpc(rpcName, code, teamId, extra) {
+  const k = chaveMem(rpcName, code, teamId, extra && extra.p_date);
+  const [estado, setEstado] = useState(() => (lerMem(k) !== undefined ? 'pronto' : 'a-carregar'));
+  const [dados, setDados] = useState(() => (lerMem(k) !== undefined ? lerMem(k) : null));
   useEffect(() => {
     let cancelado = false;
     (async () => {
       try {
-        const pre = tirarPrebusca(rpcName, code, teamId);
-        const { data, error } = pre ? await pre : await supabase.rpc(rpcName, { p_code: code, p_team: teamId });
+        const pre = !extra ? tirarPrebusca(rpcName, code, teamId) : null;
+        const { data, error } = pre ? await pre : await supabase.rpc(rpcName, { p_code: code, p_team: teamId, ...(extra || {}) });
         if (cancelado) return;
         if (error) throw error;
-        let d = data;
-        if (Array.isArray(d)) d = d[0];
-        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
-        setDados(d || {});
+        const d = normalizarRpc(data) || {};
+        gravarMem(k, d);
+        setDados(d);
         setEstado('pronto');
       } catch (e) {
-        if (!cancelado) setEstado('erro');
+        // Com dados já à vista, um erro de atualização não os apaga.
+        if (!cancelado) setEstado(v => (v === 'pronto' ? v : 'erro'));
       }
     })();
     return () => { cancelado = true; };
-  }, [rpcName, code, teamId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rpcName, code, teamId, k]);
   return [estado, dados];
+}
+function usePortalFetch(rpcName, code, teamId) {
+  return usePortalRpc(rpcName, code, teamId);
 }
 
 function PlayerConvocatoriasTab({ code, teamId }) {
   const [estado, dados] = usePortalFetch('checkin_convocatoria', code, teamId);
-  if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
+  if (estado === 'a-carregar') return <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
   if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
   const lista = (dados && dados.convocatorias) || [];
   const nossoClube = (dados && dados.clube) || 'Equipa';
@@ -33110,7 +33183,7 @@ function PlayerConvocatoriasTab({ code, teamId }) {
 function PlayerPlanoJogoTab({ code, teamId }) {
   const [estado, dados] = usePortalFetch('checkin_plano_jogo', code, teamId);
   const [aVer, setAVer] = useState(null);
-  if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
+  if (estado === 'a-carregar') return <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
   if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
   const ideias = (dados && dados.ideias) || [];
   if (aVer) {
@@ -33164,7 +33237,7 @@ function PlayerAdversarioTab({ code, teamId }) {
   const [taticaViewing, setTaticaViewing] = useState(null);
   const [selecionadoId, setSelecionadoId] = useState(null);
 
-  if (estado === 'a-carregar') return <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
+  if (estado === 'a-carregar') return <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
   if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
   const lista = (dados && dados.adversarios) || [];
   if (lista.length === 0) {
@@ -33319,28 +33392,9 @@ function PlayerAdversarioTab({ code, teamId }) {
 const MOMENTOS_JOGO = ['Organização Defensiva', 'Transição Ofensiva', 'Organização Ofensiva', 'Transição Defensiva', 'Bola Parada'];
 
 function PlayerIdeiaJogoView({ code, teamId, onBack }) {
-  const [estado, setEstado] = useState('a-carregar'); // a-carregar | pronto | erro
-  const [dados, setDados] = useState(null); // { proximoJogo, ideias }
+  const [estado, dadosIdeia] = usePortalRpc('checkin_ideia_jogo', code, teamId);
+  const dados = dadosIdeia ? { proximoJogo: null, ideias: [], ...dadosIdeia } : null;
   const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
-
-  useEffect(() => {
-    let cancelado = false;
-    (async () => {
-      try {
-        const { data, error } = await supabase.rpc('checkin_ideia_jogo', { p_code: code, p_team: teamId });
-        if (cancelado) return;
-        if (error) throw error;
-        let d = data;
-        if (Array.isArray(d)) d = d[0];
-        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica como está */ } }
-        setDados(d || { proximoJogo: null, ideias: [] });
-        setEstado('pronto');
-      } catch (e) {
-        if (!cancelado) setEstado('erro');
-      }
-    })();
-    return () => { cancelado = true; };
-  }, [code, teamId]);
 
   if (aVer) {
     return (
@@ -33363,7 +33417,7 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
       <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Ideia de Jogo</div>
 
       {estado === 'a-carregar' && (
-        <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
+        <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
       )}
 
       {estado === 'erro' && (
