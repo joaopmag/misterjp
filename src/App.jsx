@@ -29866,7 +29866,10 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         };
       });
   })();
-  const missoesJogo = missoesJogoTodas.filter(m => !missoesJogoVistas.includes(m.id));
+  /* O ecrã do jogo aparece em TODAS as entradas, desde que a convocatória
+     fica visível (véspera e dia do jogo) até à hora do jogo. "Bora" ou
+     "Mais tarde" só o tiram da frente nesta entrada. */
+  const missoesJogo = missoesJogoTodas;
   /* MODO DE TESTE do ecrã de jogo, sem esperar por um jogo a sério:
      abrir o Portal com ?testejogo=vespera ou ?testejogo=dia no fim do
      endereço. Usa a primeira convocatória que houver (ou um jogo de
@@ -30118,6 +30121,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     // Missão automática de véspera / dia de jogo: marca como vista e vai.
     if (alvo && alvo._jogo) {
       marcarMissaoJogoVista(alvo.id);
+      adiarMissao(alvo.id); // nesta entrada já não volta a abrir por cima
       setActiveType('jogos');
       return;
     }
@@ -33699,7 +33703,8 @@ function PortaVidroSo({ rect, aberto, logo, cor }) {
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
     background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
-    backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)', transition: 'transform 1.1s cubic-bezier(.4,.1,.2,1)',
+    backdropFilter: aberto ? 'none' : 'blur(7px)', WebkitBackdropFilter: aberto ? 'none' : 'blur(7px)',
+    transition: 'transform .95s cubic-bezier(.45,0,.25,1)', willChange: 'transform',
   };
   const emblema = (lado) => (
     <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: logo ? 0.6 : 1 }}>
@@ -33719,54 +33724,79 @@ function PortaVidroSo({ rect, aberto, logo, cor }) {
    `focoInteiro`: o ecrã todo vai para o buraco da porta (parabéns, missão);
    senão vai o elemento marcado com data-entrada-foco (o balneário). */
 function TransicaoEntrada({ focoInteiro, children }) {
-  const wrapRef = useRef(null);
+  /* Duas camadas: a "janela" (o buraco da porta, que cresce até ao ecrã) e
+     o conteúdo lá dentro (que encolhe na mesma medida e se desloca, para o
+     foco ficar sempre certo). Tudo com transform — o browser anima isto sem
+     redesenhar o ecrã a cada frame, por isso não engasga mesmo em ecrãs
+     pesados como o do jogo. Os passos são calculados à mão (com a curva já
+     aplicada) para a janela e o conteúdo andarem sempre certos um com o
+     outro. */
+  const janelaRef = useRef(null), conteudoRef = useRef(null);
   const [ent] = useState(() => (entradaRecente() ? ENTRADA : null));
   const [ativa, setAtiva] = useState(!!ent);
   const [vidroAberto, setVidroAberto] = useState(false);
   React.useLayoutEffect(() => {
     if (!ent) return undefined;
     ENTRADA = null;
-    const w = wrapRef.current;
+    const jan = janelaRef.current, con = conteudoRef.current;
     const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const acabar = () => { setAtiva(false); window.dispatchEvent(new CustomEvent('mjp-entrada-fim')); };
-    if (!w || reduzir || typeof w.animate !== 'function') { acabar(); return undefined; }
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const alvoEl = !focoInteiro ? w.querySelector('[data-entrada-foco]') : null;
+    if (!jan || !con || reduzir || typeof jan.animate !== 'function') { acabar(); return undefined; }
+    // Medidas reais da janela (no telemóvel, 100vh pode não ser a altura visível).
+    const vw = jan.clientWidth || window.innerWidth, vh = jan.clientHeight || window.innerHeight;
+    const alvoEl = !focoInteiro ? con.querySelector('[data-entrada-foco]') : null;
     const f = alvoEl ? alvoEl.getBoundingClientRect() : { left: 0, top: 0, width: vw, height: vh };
     const d = ent.rect;
-    // "Cobrir" o buraco da porta com o foco, centrado.
-    const esc = Math.max(d.width / f.width, d.height / f.height);
+    const esc0 = Math.max(d.width / f.width, d.height / f.height);
     const fcx = f.left + f.width / 2, fcy = f.top + f.height / 2;
-    const tx = (d.left + d.width / 2) - esc * fcx, ty = (d.top + d.height / 2) - esc * fcy;
-    const ins = {
-      t: fcy - d.height / 2 / esc, b: vh - (fcy + d.height / 2 / esc),
-      l: fcx - d.width / 2 / esc, r: vw - (fcx + d.width / 2 / esc),
+    const tx0 = (d.left + d.width / 2) - esc0 * fcx, ty0 = (d.top + d.height / 2) - esc0 * fcy;
+    const lerp = (a1, b1, p) => a1 + (b1 - a1) * p;
+    // Curva suave nas duas pontas (sem arranque seco nem travagem brusca).
+    const curva = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+    const passo = (p) => {
+      const wl = lerp(d.left, 0, p), wt = lerp(d.top, 0, p), ww = lerp(d.width, vw, p), wh = lerp(d.height, vh, p);
+      const sx = ww / vw, sy = wh / vh;
+      const esc = lerp(esc0, 1, p), tx = lerp(tx0, 0, p), ty = lerp(ty0, 0, p);
+      return {
+        janela: `translate(${wl}px, ${wt}px) scale(${sx}, ${sy})`,
+        conteudo: `scale(${1 / sx}, ${1 / sy}) translate(${tx - wl}px, ${ty - wt}px) scale(${esc})`,
+      };
     };
-    const de = {
-      transform: `translate(${tx}px, ${ty}px) scale(${esc})`,
-      clipPath: `inset(${ins.t}px ${ins.r}px ${ins.b}px ${ins.l}px round ${(3 / esc).toFixed(1)}px)`,
-    };
-    w.style.transformOrigin = '0 0';
-    w.style.transform = de.transform;
-    w.style.clipPath = de.clipPath;
-    // O vidro abre já; ainda a meio da abertura, o ecrã começa a crescer.
-    const r = requestAnimationFrame(() => setVidroAberto(true));
-    const anim = w.animate([
-      { transform: de.transform, clipPath: de.clipPath },
-      { transform: 'translate(0px, 0px) scale(1)', clipPath: 'inset(0px 0px 0px 0px round 0px)' },
-    ], { duration: 1050, delay: 600, easing: 'cubic-bezier(.55,0,.2,1)', fill: 'forwards' });
-    anim.onfinish = () => {
-      w.style.transform = ''; w.style.clipPath = ''; w.style.transformOrigin = '';
-      anim.cancel();
-      acabar();
-    };
-    return () => { cancelAnimationFrame(r); };
+    const inicio = passo(0);
+    jan.style.transform = inicio.janela;
+    con.style.transform = inicio.conteudo;
+    let cancelado = false, aJ = null, aC = null;
+    const N = 36;
+    const kJ = [], kC = [];
+    for (let k = 0; k <= N; k++) { const q = passo(curva(k / N)); kJ.push({ transform: q.janela }); kC.push({ transform: q.conteudo }); }
+    /* Espera que o ecrã de trás acabe de se montar (o do jogo é pesado)
+       antes de abrir: assim a abertura nunca apanha um engasgo. */
+    let r1 = 0, r2 = 0;
+    const tempo = setTimeout(() => {
+      r1 = requestAnimationFrame(() => {
+        r2 = requestAnimationFrame(() => {
+          if (cancelado) return;
+          setVidroAberto(true);
+          const op = { duration: 1050, delay: 280, easing: 'linear', fill: 'forwards' };
+          aJ = jan.animate(kJ, op);
+          aC = con.animate(kC, op);
+          aJ.onfinish = () => {
+            jan.style.transform = ''; con.style.transform = '';
+            try { aJ.cancel(); aC.cancel(); } catch (e) { /* nada */ }
+            acabar();
+          };
+        });
+      });
+    }, 140);
+    return () => { cancelado = true; clearTimeout(tempo); cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
     <>
-      <div ref={wrapRef} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', background: T.bg, willChange: 'transform, clip-path' } : undefined}>
-        {children}
+      <div ref={janelaRef} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', transformOrigin: '0 0', willChange: 'transform', background: T.bg } : undefined}>
+        <div ref={conteudoRef} style={ativa ? { position: 'absolute', inset: 0, transformOrigin: '0 0', willChange: 'transform' } : undefined}>
+          {children}
+        </div>
       </div>
       {ativa && ent && <PortaVidroSo rect={ent.rect} aberto={vidroAberto} logo={ent.logo} cor={ent.cor} />}
     </>
