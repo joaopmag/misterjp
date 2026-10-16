@@ -33698,24 +33698,29 @@ function PeCartao({ jogador, cor, logo, clube }) {
 let ENTRADA = null; // { rect, logo, cor, t }
 const entradaRecente = () => !!(ENTRADA && Date.now() - ENTRADA.t < 20000);
 
-// O vidro da porta, sozinho, no sítio exato onde estava.
-function PortaVidroSo({ rect, aberto, logo, cor }) {
+// O vidro da porta, sozinho, no sítio exato onde estava. Com `caixa`, é
+// desenhado noutro referencial (dentro do ecrã que cresce): left/top/
+// width/height/tam/raio já vêm nessas unidades.
+function PortaVidroSo({ rect, aberto, logo, cor, caixa }) {
+  const c = caixa || { left: rect.left, top: rect.top, width: rect.width, height: rect.height, tam: Math.round(rect.height * 0.78), raio: 3, fixo: true };
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
     background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
     backdropFilter: aberto ? 'none' : 'blur(7px)', WebkitBackdropFilter: aberto ? 'none' : 'blur(7px)',
-    transition: 'transform .95s cubic-bezier(.45,0,.25,1)', willChange: 'transform',
+    // Abre depressa e vai-se apagando enquanto abre: a porta desaparece.
+    transition: 'transform .55s cubic-bezier(.45,0,.3,1), opacity .4s ease .12s',
+    opacity: aberto ? 0 : 1,
   };
   const emblema = (lado) => (
     <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: logo ? 0.6 : 1 }}>
-      <PeEmblema logo={logo} cor={cor} tam={Math.round(rect.height * 0.78)} branco />
+      <PeEmblema logo={logo} cor={cor} tam={c.tam} branco />
     </div>
   );
   return (
-    <div aria-hidden="true" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3, zIndex: 9999, pointerEvents: 'none' }}>
+    <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
       <div style={{ ...vidro, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{emblema('E')}</div>
       <div style={{ ...vidro, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{emblema('D')}</div>
-      <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .2s' }} />
+      <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .15s' }} />
     </div>
   );
 }
@@ -33735,6 +33740,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
   const [ent] = useState(() => (entradaRecente() ? ENTRADA : null));
   const [ativa, setAtiva] = useState(!!ent);
   const [vidroAberto, setVidroAberto] = useState(false);
+  const [caixaVidro, setCaixaVidro] = useState(null);
   React.useLayoutEffect(() => {
     if (!ent) return undefined;
     ENTRADA = null;
@@ -33765,6 +33771,11 @@ function TransicaoEntrada({ focoInteiro, children }) {
     const inicio = passo(0);
     jan.style.transform = inicio.janela;
     con.style.transform = inicio.conteudo;
+    // O buraco da porta nas medidas do ecrã de trás (antes de encolher).
+    setCaixaVidro({
+      left: fcx - d.width / 2 / esc0, top: fcy - d.height / 2 / esc0,
+      width: d.width / esc0, height: d.height / esc0, tam: Math.round((d.height * 0.78) / esc0), raio: 3 / esc0,
+    });
     let cancelado = false, aJ = null, aC = null;
     const N = 36;
     const kJ = [], kC = [];
@@ -33777,7 +33788,8 @@ function TransicaoEntrada({ focoInteiro, children }) {
         r2 = requestAnimationFrame(() => {
           if (cancelado) return;
           setVidroAberto(true);
-          const op = { duration: 1050, delay: 280, easing: 'linear', fill: 'forwards' };
+          // O vidro abre e o ecrã começa logo a crescer (um só movimento).
+          const op = { duration: 1000, delay: 110, easing: 'linear', fill: 'forwards' };
           aJ = jan.animate(kJ, op);
           aC = con.animate(kC, op);
           aJ.onfinish = () => {
@@ -33801,9 +33813,12 @@ function TransicaoEntrada({ focoInteiro, children }) {
       <div ref={janelaRef} className={ativa ? 'mjp-entrada-ativa' : undefined} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', transformOrigin: '0 0', background: T.bg } : undefined}>
         <div ref={conteudoRef} style={ativa ? { position: 'absolute', inset: 0, transformOrigin: '0 0' } : undefined}>
           {children}
+          {/* O vidro está no mesmo referencial do ecrã: abre, apaga-se e,
+              enquanto isso, cresce e é cortado com ele — nada fica preso no
+              sítio da porta. */}
+          {ativa && ent && <PortaVidroSo rect={ent.rect} caixa={caixaVidro || undefined} aberto={vidroAberto} logo={ent.logo} cor={ent.cor} />}
         </div>
       </div>
-      {ativa && ent && <PortaVidroSo rect={ent.rect} aberto={vidroAberto} logo={ent.logo} cor={ent.cor} />}
     </>
   );
 }
