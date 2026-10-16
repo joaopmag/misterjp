@@ -30246,6 +30246,16 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      mensagem do Mister sobre o jogo, e a caixa do Mister só existe quando
      há mensagem — se chegasse depois, o balneário saltava para baixo. */
   if (estadoTarefas === 'a-carregar' || estadoConvJogo === 'a-carregar' || estadoCompJogo === 'a-carregar') {
+    if (portalTransicaoRecente()) {
+      const t = PORTAL_TRANSICAO;
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: T.bg }}>
+          <div style={{ position: 'fixed', left: t.rect.left, top: t.rect.top, width: t.rect.width, height: t.rect.height, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
+            <svg viewBox={`0 0 300 ${t.H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style={{ display: 'block' }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: t.svg }} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div style={{ position: 'fixed', inset: 0, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, ...body }}>
         <Loader2 size={26} className="animate-spin" color={T.warn} />
@@ -33637,6 +33647,13 @@ function PeCartao({ jogador, cor, logo, clube }) {
   );
 }
 
+/* PASSAGEM DA PORTA PARA O ECRÃ INICIAL. Quando a porta acaba de abrir,
+   guarda-se onde está o balneário no ecrã (e o desenho). O ecrã de
+   carregamento mostra-o no mesmo sítio e o ecrã inicial faz crescer o
+   balneário dali até ao lugar dele — como se fosse o mesmo ecrã. */
+let PORTAL_TRANSICAO = null;
+const portalTransicaoRecente = () => !!(PORTAL_TRANSICAO && Date.now() - PORTAL_TRANSICAO.t < 15000);
+
 /* Porta automática de vidro fosco com o emblema do clube a toda a altura,
    cada metade do emblema numa folha. Atrás, o balneário da página inicial
    (com o cacifo do jogador) e a TV a dar as boas-vindas. */
@@ -33659,6 +33676,17 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
     cor, numero, nome: primeiro, foto: (jogador && jogador.foto) || '', iniciais: peIniciais(nome),
     logo: logo || '', inicialClube: clube ? String(clube)[0].toUpperCase() : '', badge: 0, boasVindas: primeiro || 'Atleta',
   }, 300, H), [T.corEquipa, numero, primeiro, jogador && jogador.foto, logo, clube, H]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!aberta) { PORTAL_TRANSICAO = null; return undefined; }
+    const h = setTimeout(() => {
+      const el = caixaRef.current;
+      if (el) PORTAL_TRANSICAO = { rect: el.getBoundingClientRect(), svg, H, t: Date.now() };
+    }, 1150);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aberta]);
+  // Depois de a porta abrir, o resto (letreiro, base) apaga-se: fica só o balneário.
+  const apagar = { opacity: aberta ? 0 : 1, transition: aberta ? 'opacity .5s ease 1.2s' : 'opacity .2s' };
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
     background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
@@ -33673,7 +33701,7 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
   const corSinal = aberta ? '#4CAF6A' : '#FF5A4E';
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0d120f', border: '1px solid #3a4440', borderRadius: 8, padding: '5px 12px', boxShadow: '0 0 14px rgba(255,194,61,.15)', marginBottom: 8, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0d120f', border: '1px solid #3a4440', borderRadius: 8, padding: '5px 12px', boxShadow: '0 0 14px rgba(255,194,61,.15)', marginBottom: 8, flexShrink: 0, ...apagar }}>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: corSinal, boxShadow: `0 0 8px ${corSinal}`, transition: 'all .3s' }} />
         <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
           <div style={{ fontSize: 11, letterSpacing: '.18em', color: '#8A9A8C', ...body }}>ACESSO RESERVADO</div>
@@ -33682,7 +33710,8 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
       </div>
       {/* Proporção de porta (5:6): com menos altura fica mais estreita, em
           vez de achatada (iPad deitado, telemóveis baixos). */}
-      <div style={{ flex: 1, minHeight: 120, maxHeight: 'min(48dvh, 520px)', aspectRatio: '5 / 6', width: 'auto', maxWidth: '100%', borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', padding: 7, boxSizing: 'border-box', boxShadow: '0 10px 24px rgba(0,0,0,.45)', display: 'flex' }}>
+      <div style={{ position: 'relative', flex: 1, minHeight: 120, maxHeight: 'min(48dvh, 520px)', aspectRatio: '5 / 6', width: 'auto', maxWidth: '100%', borderRadius: 8, padding: 7, boxSizing: 'border-box', display: 'flex' }}>
+        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', boxShadow: '0 10px 24px rgba(0,0,0,.45)', ...apagar }} />
         <div ref={caixaRef} style={{ position: 'relative', flex: 1, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
           <svg viewBox={`0 0 300 ${H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />
           <div style={{ ...vidro, left: 0, transform: aberta ? 'translateX(-101%)' : 'none' }}>{emblemaNoVidro('E')}</div>
@@ -33690,7 +33719,7 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
           <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberta ? 0 : 1, transition: 'opacity .2s' }} />
         </div>
       </div>
-      <div style={{ width: 'min(60%, 220px)', height: 8, borderRadius: '0 0 4px 4px', background: '#2a332d', flexShrink: 0 }} />
+      <div style={{ width: 'min(60%, 220px)', height: 8, borderRadius: '0 0 4px 4px', background: '#2a332d', flexShrink: 0, ...apagar }} />
     </div>
   );
 }
@@ -34814,7 +34843,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
 
       {ecra === 'porta' && cartao && (
         <div style={coluna}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'stretch', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '7px 10px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'stretch', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '7px 10px', flexShrink: 0, opacity: aberta ? 0 : 1, transition: aberta ? 'opacity .5s ease 1.2s' : 'opacity .2s' }}>
             <div style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', background: '#1A2A1F', border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               {cartao.jogador && cartao.jogador.foto
                 ? <img src={cartao.jogador.foto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -34845,7 +34874,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               visibility: visivel ? 'visible' : 'hidden', pointerEvents: visivel ? 'auto' : 'none',
             });
             return (
-              <div style={{ display: 'grid', width: '100%', flexShrink: 0 }}>
+              <div style={{ display: 'grid', width: '100%', flexShrink: 0, opacity: aberta ? 0 : 1, transition: aberta ? 'opacity .5s ease 1.2s' : 'opacity .2s' }}>
                 {bioAtiva && (
                   <div aria-hidden={!verBio} style={{ ...camada(verBio), justifyContent: 'center', gap: 8 }}>
                     {/* O aviso (ex.: ACESSO AUTORIZADO, a verde) fica por baixo
@@ -34892,7 +34921,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           })()}
           {/* Uma só ligação discreta; as opções abrem num painel por baixo,
               para não roubarem altura à porta e ao teclado. */}
-          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6, opacity: aberta ? 0 : 1, transition: aberta ? 'opacity .5s ease 1.2s' : 'opacity .2s' }}>
             <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
           </button>
           {maisOpcoes && (() => {
@@ -35206,7 +35235,7 @@ function PkhBolaMini({ size = 13, color = '#1A2A1F' }) {
 /* MISTER — só aparece quando tem algo a dizer (jogo, missão, aniversário).
    Texto parado, numa frase; com mais de uma mensagem, a seta passa à
    seguinte. Tocar no texto leva ao sítio da mensagem. */
-function PkhMister({ mensagens, g }) {
+function PkhMister({ mensagens, g, estilo }) {
   const lista = (mensagens || []).filter(m => m && m.tipo !== 'nada');
   const [idx, setIdx] = useState(0);
   const chave = lista.map(m => `${m.tipo}:${m.texto}`).join('|');
@@ -35219,7 +35248,7 @@ function PkhMister({ mensagens, g }) {
   return (
     <div style={{
       flexShrink: 0, display: 'flex', alignItems: 'stretch', minHeight: g ? 44 : 36, background: '#050607', border: '2px solid #2a2f33',
-      borderRadius: 8, overflow: 'hidden',
+      borderRadius: 8, overflow: 'hidden', ...(estilo || {}),
     }}>
       <span style={{
         flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, padding: g ? '0 12px' : '0 8px', background: T.goldFundo,
@@ -35650,6 +35679,43 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
   const g = usePkhMedia('(min-height: 820px)') && (largo || tablet);
   const balRef = useRef(null);
   const [enq, setEnq] = useState({ W: 300, H: 215, vb: '0 0 300 215' });
+  /* CHEGADA PELA PORTA: o balneário começa no tamanho e no sítio da porta
+     e cresce até ao lugar dele; o resto do ecrã aparece logo a seguir. */
+  const [chegada] = useState(() => portalTransicaoRecente());
+  const [faseChegada, setFaseChegada] = useState(chegada ? 'inicio' : 'fim');
+  React.useLayoutEffect(() => {
+    if (!chegada) return undefined;
+    const t = PORTAL_TRANSICAO;
+    PORTAL_TRANSICAO = null;
+    const el = balRef.current;
+    const reduzir = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!el || !t || reduzir) { setFaseChegada('fim'); return undefined; }
+    const r2 = el.getBoundingClientRect(), r1 = t.rect;
+    if (!r2.width || !r2.height) { setFaseChegada('fim'); return undefined; }
+    const esc = r1.height / r2.height;
+    const dx = (r1.left + r1.width / 2) - (r2.left + r2.width / 2);
+    const dy = (r1.top + r1.height / 2) - (r2.top + r2.height / 2);
+    const lado = Math.max(0, (r2.width - r1.width / esc) / 2);
+    const curva = 'cubic-bezier(.3,.7,.2,1)';
+    el.style.transition = 'none';
+    el.style.transformOrigin = '50% 50%';
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(${esc})`;
+    el.style.clipPath = `inset(0px ${lado}px 0px ${lado}px round ${(3 / esc).toFixed(1)}px)`;
+    el.getBoundingClientRect();
+    const r = requestAnimationFrame(() => {
+      el.style.transition = `transform .9s ${curva}, clip-path .9s ${curva}`;
+      el.style.transform = 'none';
+      el.style.clipPath = 'inset(0px 0px 0px 0px round 12px)';
+      setFaseChegada('anima');
+    });
+    const h = setTimeout(() => {
+      el.style.transition = ''; el.style.transform = ''; el.style.clipPath = ''; el.style.transformOrigin = '';
+      setFaseChegada('fim');
+    }, 1050);
+    return () => { cancelAnimationFrame(r); clearTimeout(h); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const aparecer = chegada ? { opacity: faseChegada === 'inicio' ? 0 : 1, transition: 'opacity .5s ease .55s' } : undefined;
   useEffect(() => {
     const el = balRef.current;
     if (!el) return undefined;
@@ -35701,7 +35767,9 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
   const svgBalneario = React.useMemo(() => pkhBalneario({
     cor, numero, nome: primeiro, foto: (player && player.photo) || '', iniciais,
     logo: (equipa && equipa.logo) || '', inicialClube: clube ? clube[0].toUpperCase() : '', badge: nBadge,
-  }, enq.W, enq.H, enq.tv), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H, enq.tv && enq.tv.escala, enq.tv && enq.tv.jogador]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Vindo da porta: a TV continua a dar as boas-vindas enquanto o balneário cresce.
+    boasVindas: faseChegada !== 'fim' ? primeiro : '',
+  }, enq.W, enq.H, enq.tv), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H, enq.tv && enq.tv.escala, enq.tv && enq.tv.jogador, faseChegada === 'fim']); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{
@@ -35719,7 +35787,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
             ? 'calc(22px + env(safe-area-inset-top, 0px)) 24px calc(18px + env(safe-area-inset-bottom, 0px))'
             : 'calc(14px + env(safe-area-inset-top, 0px)) 14px calc(12px + env(safe-area-inset-bottom, 0px))',
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexShrink: 0, ...aparecer }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ ...display, fontSize: g ? 30 : 22, fontWeight: 600, color: T.cream, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{greetingNow()}, {primeiro}!</div>
             <div style={{ fontSize: g ? 14 : 12, color: T.mutedDim }}>{dataDeHojeExtenso()}</div>
@@ -35734,7 +35802,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
 
         {/* O JOGO DO DIA — placard fino colado ao campo; cada metade do
             campo é o botão do questionário. */}
-        <div style={{ flexShrink: 0 }}>
+        <div style={{ flexShrink: 0, ...aparecer }}>
           <PkhPlacard hora={hora} golosW={doneWellness ? 1 : 0} golosP={doneRpe ? 1 : 0} dias={dias} g={g} />
           <PkhCampo
             noite={isToday && mins < W.startMin}
@@ -35743,10 +35811,10 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
           />
         </div>
 
-        <PkhMister mensagens={mensagensMister} g={g} />
+        <PkhMister mensagens={mensagensMister} g={g} estilo={aparecer} />
 
         {fraseChama && (
-          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, fontSize: g ? 14 : 12, color: T.muted, lineHeight: 1.3, padding: '0 2px', ...body }}>
+          <div style={{ ...aparecer, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, fontSize: g ? 14 : 12, color: T.muted, lineHeight: 1.3, padding: '0 2px', ...body }}>
             <Flame size={g ? 17 : 15} color={T.gold} style={{ flexShrink: 0 }} />
             <span>{fraseChama}</span>
           </div>
