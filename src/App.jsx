@@ -32098,8 +32098,10 @@ function PlayerCacifo({
                   {mostraGarrafa && (
                     <button type="button" className="cf-obj cf-it" onClick={() => (wAberto ? onAbrirWellness() : onAbrirRpe())}
                       aria-label={wAberto ? 'Responder ao Wellness' : 'Responder à PSE'}
-                      style={{ left: 94, top: 362, width: 42, height: 80, ...atraso(1.36) }}>
-                      <svg width="25" height="55" viewBox="0 0 34 78" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      style={{ left: 94, top: 356, width: 42, height: 96, ...atraso(1.36) }}>
+                      {/* Mesma linha de base da chuteira: a garrafa assenta no fundo do
+                          espaço do desenho (66 px) e a legenda fica à altura de "Estatísticas". */}
+                      <svg width="25" height="55" viewBox="0 0 34 78" style={{ display: 'block', margin: '11px auto 0' }} aria-hidden="true">
                         <rect x="14" y="0" width="6" height="7" rx="1.5" fill="#1c2226" />
                         <rect x="9" y="6" width="16" height="9" rx="2" fill="#1c2226" />
                         <rect x="8" y="14" width="18" height="3" fill="#C9A227" />
@@ -32110,7 +32112,7 @@ function PlayerCacifo({
                         <circle cx="21.5" cy="59" r="3.4" fill={corPonto(doneRpe, pAberto)} className={pAberto ? 'cf-pisca' : undefined} />
                         <path d="M10 20 L10 27" stroke="#ffffff" strokeOpacity=".3" strokeWidth="2" strokeLinecap="round" />
                       </svg>
-                      <div className="cf-lab cf-pisca" style={{ marginTop: 7, color: '#F09595', whiteSpace: 'nowrap' }}>{legendaGarrafa}</div>
+                      <div className="cf-lab cf-pisca" style={{ marginTop: 4, color: '#F09595', whiteSpace: 'nowrap' }}>{legendaGarrafa}</div>
                     </button>
                   )}
                 </div>
@@ -32306,7 +32308,10 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
   const nossoClube = (dados && dados.clube) || '';
   const est = (dados && dados.estatisticas) || null;
 
-  useEffect(() => {
+  /* Antes de pintar (useLayoutEffect): abre logo na jornada mais recente.
+     Com useEffect via-se primeiro a Jornada 1 e só depois saltava para a
+     certa — os nomes das equipas "piscavam". */
+  React.useLayoutEffect(() => {
     const hoje = todayStr();
     let melhorIdx = 0, melhorData = null;
     rounds.forEach((r, i) => {
@@ -32317,7 +32322,7 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
     setRoundIdx(melhorIdx);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comp && comp.id]);
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     if (roundIdx >= rounds.length && rounds.length > 0) setRoundIdx(rounds.length - 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rounds.length]);
