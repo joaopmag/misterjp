@@ -3700,7 +3700,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {separadorClipes === 'atletas' && (
           clipesAtletas.length === 0 ? (
             <div style={{ color: T.mutedDim, fontSize: 13, padding: '18px 0', ...body }}>
-              Ainda nenhum jogador criou clipes. No Portal do Atleta, em Biblioteca, os jogadores podem marcar lances nos vídeos dos jogos. Cada jogador que gravar um clipe ganha aqui o seu cartão.
+              Ainda nenhum jogador criou clipes. No Portal do Atleta, na Sala de Vídeo, os jogadores podem marcar lances nos vídeos dos jogos. Cada jogador que gravar um clipe ganha aqui o seu cartão.
             </div>
           ) : (
             <>

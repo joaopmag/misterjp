@@ -664,7 +664,7 @@ function resumoClinico(estado, { comNivel = true } = {}) {
    continuam a abrir alguma coisa em vez de darem página em branco — um
    atalho guardado ou um separador aberto no telemóvel não têm de morrer
    por causa de uma reorganização da navegação. */
-const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', documentos: 'biblioteca', estatisticas: 'jogos', analisejogo: 'jogos' };
+const TABS_ANTIGAS = { simulador: 'planeamento', convocatorias: 'jogos', videos: 'biblioteca', apresentacoes: 'biblioteca', estatisticas: 'jogos', analisejogo: 'jogos' };
 const tabValida = (id) => TABS_ANTIGAS[id] || id;
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -3493,9 +3493,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     { id: 'monitorizacao', label: 'Monitorização', icon: Activity },
     { id: 'desenvolvimento', label: 'Desenvolvimento', icon: TrendingUp },
     { id: 'scouting', label: 'Scouting', icon: Search },
-    { id: 'biblioteca', label: 'Biblioteca', icon: Presentation },
+    { id: 'biblioteca', label: 'Sala de Vídeo', icon: Tv },
     { id: 'tarefas', label: 'Tarefas', icon: ClipboardList, badge: tarefasAMinhaPorta(tarefas, euId, { sessions, matches, players, monitoring }) },
     { id: 'diario', label: 'Diário', icon: BookOpen },
+    { id: 'documentos', label: 'Documentos', icon: FileSpreadsheet },
   ];
 
 
@@ -3506,7 +3507,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     if (typeof window === 'undefined') return 'videos';
     const h = window.location.hash.replace('#', '').trim();
     if (h === 'apresentacoes') return 'apresentacoes';
-    if (h === 'documentos') return 'documentos';
     return 'videos';
   });
   /* O id pedido ANTES de ser redirecionado. É o que permite a um
@@ -3531,7 +3531,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       ideiajogo: [ideiasMeta],
       exercicios: [exercisesMeta],
       clinico: [clinicoMeta],
-      biblioteca: [videosMeta, apresentacoesMeta, documentosMeta],
+      biblioteca: [videosMeta, apresentacoesMeta],
+      documentos: [documentosMeta],
       diario: [diarioMeta],
     },
   };
@@ -3583,7 +3584,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     modalHandoffAtivo = true;
     setTimeout(() => { modalHandoffAtivo = false; }, 0);
     setTabPedida(id);
-    if (id === 'videos' || id === 'apresentacoes' || id === 'documentos') setBiblioteca(id);
+    if (id === 'videos' || id === 'apresentacoes') setBiblioteca(id);
     setTab(tabValida(id));
     setNavOpen(false);
   };
@@ -4072,7 +4073,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              eram dois separadores e continua a ser agora que são duas
              sub-abas: o `display: none` é justamente o que o permite. */}
           <div style={{ display: tab === 'biblioteca' ? 'block' : 'none' }}>
-            <SectionHeader title="Biblioteca" subtitle="Vídeos, apresentações e documentos da equipa." />
+            <SectionHeader title="Sala de Vídeo" subtitle="Vídeos e apresentações da equipa." />
             {/* Um botão só, na mesma linha dos separadores, alinhado à
                 direita — o rótulo e o clique mudam consoante a sub-aba
                 aberta, mas é sempre este único botão a aparecer, nunca um
@@ -4086,7 +4087,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 tabs={[
                   { id: 'videos', label: 'Canal', icon: Tv, count: (videos || []).length },
                   { id: 'apresentacoes', label: 'Apresentações', icon: Presentation, count: (apresentacoes || []).length },
-                  { id: 'documentos', label: 'Documentos', icon: FileSpreadsheet, count: (documentos || []).length },
                 ]}
                 semMargem
               />
@@ -4095,9 +4095,6 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               )}
               {biblioteca === 'apresentacoes' && (
                 <Btn onClick={() => apresentacoesRef.current?.abrirNovo()}><Plus size={15} /> Adicionar ficheiro</Btn>
-              )}
-              {biblioteca === 'documentos' && (
-                <Btn onClick={() => documentosRef.current?.abrirNovo()}><Plus size={15} /> Carregar modelo</Btn>
               )}
             </div>
             <div style={{ display: biblioteca === 'videos' ? 'block' : 'none' }}>
@@ -4123,13 +4120,16 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 emptyFirstLabel="Adicionar o primeiro ficheiro"
               />
             </div>
-            {/* DOCUMENTOS — antes era um separador de topo próprio; passou
-                para aqui, como terceira sub-aba da Biblioteca, mesmo ao
-                lado de "Apresentações" (que já tem o botão "Adicionar
-                ficheiro"). Mantido SEMPRE MONTADO, tal como as outras duas
-                sub-abas, pela mesma razão: trocar de sub-aba não deve
-                perder o estado do que estava aberto. */}
-            <div style={{ display: biblioteca === 'documentos' ? 'block' : 'none' }}>
+          </div>
+          {/* DOCUMENTOS — separador próprio outra vez (saiu da Sala de Vídeo,
+              que agora é só vídeo e apresentações). Sempre montado, como
+              antes, para não perder o que estava aberto ao trocar. */}
+          <div style={{ display: tab === 'documentos' ? 'block' : 'none' }}>
+            <SectionHeader
+              title="Documentos" subtitle="Modelos e documentos da equipa."
+              action={<Btn onClick={() => documentosRef.current?.abrirNovo()}><Plus size={15} /> Carregar modelo</Btn>}
+            />
+            <div>
               <DocumentosApp
                 ref={documentosRef}
                 documentos={documentos} setDocumentos={setDocumentos} players={players} sessions={sessions}
@@ -4684,7 +4684,7 @@ const RELATO_SECOES = {
   scouting: { label: 'Scouting', tab: 'scouting', icon: Search, art: 'o observado' },
   adversarios: { label: 'Adversários', tab: 'jogos', icon: Shield, art: 'o adversário' },
   videos: { label: 'Canal', tab: 'biblioteca', icon: Tv, art: 'o vídeo' },
-  documentos: { label: 'Documentos', tab: 'biblioteca', icon: FileSpreadsheet, art: 'o documento' },
+  documentos: { label: 'Documentos', tab: 'documentos', icon: FileSpreadsheet, art: 'o documento' },
   video_originais: { label: 'Análise de Vídeo', tab: 'analise', icon: Video, art: 'o vídeo' },
   video_clips: { label: 'Clipes', tab: 'analise', icon: Scissors, art: 'o clipe' },
   apresentacoes: { label: 'Apresentações', tab: 'biblioteca', icon: Presentation, art: 'a apresentação' },
@@ -6517,7 +6517,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
       <div style={{ height: 16 }} />
       <Panel title="Portal do Atleta">
         <div style={{ fontSize: 12, color: T.mutedDim, marginBottom: 12, lineHeight: 1.5 }}>
-          Envia este link aos atletas. Abre o Portal do Atleta (questionários de wellness e PSE, biblioteca, clipes e o resto do que partilhas com eles), sem mostrar a plataforma do staff.
+          Envia este link aos atletas. Abre o Portal do Atleta (questionários de wellness e PSE, sala de vídeo, clipes e o resto do que partilhas com eles), sem mostrar a plataforma do staff.
           Cada atleta entra com o seu código individual, {souDono ? 'na lista logo abaixo' : 'que quem administra a equipa lhe dá'}.
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -29658,6 +29658,13 @@ function checkinWindowState(type, dateStr, now = new Date()) {
 function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnostico, code, teamId, equipa }) {
   const loggedPlayerId = player && player.id;
   const [activeType, setActiveType] = useState(null); // null = ecrã pessoal, 'wellness' | 'rpe' = questionário aberto
+  /* O CACIFO abre-se com a animação só quando se vem do balneário; ao
+     voltar de uma área (Treino, Jogo…) já está aberto. Volta a animar
+     depois de se regressar ao ecrã inicial. */
+  const [cacifoAberto, setCacifoAberto] = useState(false);
+  useEffect(() => { if (activeType === null) setCacifoAberto(false); }, [activeType]);
+  // Wellness/PSE abertos a partir da garrafa do cacifo voltam ao cacifo.
+  const [voltarQuestionario, setVoltarQuestionario] = useState(null);
   const [selectedDate, setSelectedDate] = useState(todayStr());
   // Quando a notificação do ecrã inicial é tocada, guarda aqui a tarefa a
   // abrir de imediato — o PlayerTarefasView lê isto e já entra direto no
@@ -29932,6 +29939,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     if (it) completarMissao(it, `Clipe criado: ${titulo}`);
   };
   const autoavaliacaoSubmetida = () => {
+    esquecerCacheCacifo('dev', teamId, code);
     const it = missoesPorFazer.find(x => x.destino === 'autoavaliacao');
     if (it) completarMissao(it, 'Autoavaliação submetida');
   };
@@ -30105,7 +30113,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return comBarraMissao(
       <WellnessWizard
         player={player} initial={lastWellness} date={selectedDate}
-        onBack={() => setActiveType(null)}
+        onBack={() => { const v = voltarQuestionario; setVoltarQuestionario(null); setActiveType(v); }}
         onSubmit={fields => upsert('wellness', fields)}
       />
     );
@@ -30119,7 +30127,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
            só recebe as sessões). A fase "Jogo" na sessão é o que permite
            ao atleta responder ao PSE do jogo em vez do de treino. */
         contexto={sessionForDate && sessionForDate.phase === 'Jogo' ? 'jogo' : 'treino'}
-        onBack={() => setActiveType(null)}
+        onBack={() => { const v = voltarQuestionario; setVoltarQuestionario(null); setActiveType(v); }}
         onSubmit={fields => upsert('rpe', fields)}
       />
     );
@@ -30163,16 +30171,19 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
 
   if (activeType === 'portal') {
     return (
-      <PlayerPortalHome
+      <PlayerCacifo
+        player={fotoPlantel ? { ...player, photo: fotoPlantel } : player}
+        equipa={equipa} code={code} teamId={teamId}
+        animar={!cacifoAberto} onAberto={() => setCacifoAberto(true)}
         onBack={() => setActiveType(null)}
-        onOpenIdeiaJogo={() => setActiveType('ideiaJogo')}
-        onOpenTreino={() => setActiveType('treino')}
-        onOpenBiblioteca={() => setActiveType('biblioteca')}
-        onOpenJogos={() => setActiveType('jogos')}
-        onOpenCompeticao={() => setActiveType('competicao')}
-        onOpenDesenvolvimento={() => setActiveType('desenvolvimento')}
-        onOpenTarefas={() => setActiveType('tarefas')}
-        tarefasPendentes={tarefasPorFazer.length}
+        onAbrir={(id) => { setCacifoAberto(true); setActiveType(id); }}
+        onAbrirWellness={() => { if (wellnessWindow.open) { setCacifoAberto(true); setVoltarQuestionario('portal'); setActiveType('wellness'); } }}
+        onAbrirRpe={() => { if (rpeWindow.open) { setCacifoAberto(true); setVoltarQuestionario('portal'); setActiveType('rpe'); } }}
+        dadosConv={dadosConvJogo} dadosComp={dadosCompJogo}
+        missoes={missoesPorFazer} nTarefas={tarefasPorFazer.length}
+        session={sessionForDate}
+        doneWellness={hasDate('wellness', selectedDate)} doneRpe={hasDate('rpe', selectedDate)}
+        wellnessWindow={wellnessWindow} rpeWindow={rpeWindow}
       />
     );
   }
@@ -31454,7 +31465,7 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
         <ChevronLeft size={15} /> Voltar
       </button>
 
-      <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Biblioteca</div>
+      <div style={{ ...display, fontSize: 18, color: T.cream, marginBottom: 12 }}>Sala de Vídeo</div>
 
       {estado === 'a-carregar' && (
         <div style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>
@@ -31506,65 +31517,508 @@ function PlayerBibliotecaView({ code, teamId, onBack, onClipeCriado }) {
   );
 }
 
-/* UM TEMA DO PORTAL — o círculo grande com o ícone, mais uma bolinha de
-   futebol sobreposta a marcar de que jogo se trata (todos os temas
-   aqui são sobre futebol — a bola amarra isso visualmente, mesmo
-   quando o ícone principal, por si só, não deixaria isso óbvio, como
-   um cérebro). `tonsDeCinza` tira a cor ao ícone principal (usado no
-   cérebro, para não ficar rosa). */
-function TemaCirculo({ Icon, label, onClick, badge }) {
-  return (
-    <button onClick={onClick} style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-      background: 'none', border: 'none', cursor: 'pointer', ...body, padding: 0,
-    }}>
-      <span style={{ position: 'relative' }}>
-        <span style={{
-          width: 104, height: 104, borderRadius: '50%', background: T.surface, border: `1px solid ${T.line}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Icon size={38} color={T.gold} strokeWidth={1.6} />
-        </span>
-        {badge > 0 && (
-          <span style={{
-            position: 'absolute', top: 2, right: 2, minWidth: 22, height: 22, borderRadius: 11, padding: '0 5px',
-            background: T.crimsonBright, color: TEXT_ON_ACCENT, ...mono, fontSize: 11.5,
-            display: 'grid', placeItems: 'center', border: `2px solid ${T.bg}`,
-          }}>{badge}</span>
-        )}
-      </span>
-      <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, textAlign: 'center' }}>{label}</span>
-    </button>
-  );
+/* O MEU CACIFO — a página de conteúdos do Portal do Atleta, a seguir ao
+   balneário. Ao entrar, a fechadura roda, a porta abre sozinha e a luz do
+   cacifo acende; ao voltar de uma área, o cacifo já está aberto.
+
+   · DENTRO DO CACIFO: o caderno (Ideia de Jogo), o tablet (Sala de Vídeo),
+     a camisola pendurada (Jogo: convocatória), a caixa das chuteiras com
+     as estatísticas da época (Competição) e — só quando há uma janela
+     aberta e algo por responder — a garrafa do Wellness/PSE.
+   · DENTRO DA PORTA: a folha do treino de hoje, a classificação, a
+     prancheta das Tarefas e a ficha do Desenvolvimento.
+   · POR FORA: a foto num visor, a placa com o número e o nome, a
+     fechadura de código e o emblema.
+
+   Tudo é desenhado num palco de tamanho FIXO (300×480) que depois se
+   escala para caber no ecrã — o mesmo desenho no telemóvel, no tablet e
+   no computador, sem nada a mexer quando os dados chegam (cada texto tem
+   o seu espaço reservado). O cacifo é um objeto escuro de propósito: não
+   muda com o modo claro, como o placard e a TV do balneário.
+
+   Os dados vêm do que o quiosque já tem (convocatória, competição,
+   tarefas, Wellness/PSE) e de três pedidos pequenos guardados neste
+   aparelho (treino do dia, autoavaliação, vídeos), que só se repetem de
+   tempos a tempos — para não pesar na Egress. */
+const CACIFO_W = 300;
+const CACIFO_H = 480;
+const CACIFO_CSS = `
+  .cf-palco { position: relative; width: ${CACIFO_W}px; height: ${CACIFO_H}px; perspective: 1300px; transform-origin: 0 0; }
+  .cf-rig { position: absolute; top: 0; left: 75px; width: 150px; height: ${CACIFO_H}px; transition: left .7s ease .1s; }
+  .cf-aberto .cf-rig { left: 150px; }
+  .cf-corpo { position: absolute; inset: 0; background: #0f1612; border: 5px solid #2c4336; border-radius: 6px; overflow: hidden; pointer-events: none; }
+  .cf-aberto .cf-corpo { pointer-events: auto; }
+  .cf-porta { position: absolute; inset: 0; transform-origin: left center; transform-style: preserve-3d; -webkit-transform-style: preserve-3d; transition: transform 1.3s cubic-bezier(.35,.75,.25,1) .8s; z-index: 5; pointer-events: none; }
+  .cf-aberto .cf-porta { transform: rotateY(-165deg); }
+  .cf-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 6px; overflow: hidden; }
+  .cf-tras { background: #243a2e; transform: rotateY(180deg); border: 1px solid #4e6a58; }
+  .cf-aberto .cf-tras { pointer-events: auto; }
+  .cf-roda { transition: transform .8s cubic-bezier(.45,1.5,.5,1); transform-origin: 116px 300px; }
+  .cf-aberto .cf-roda { transform: rotate(-290deg); }
+  .cf-luz { position: absolute; top: 0; left: 8px; right: 8px; height: 4px; background: #F6E7B0; opacity: 0; transition: opacity .4s 1.5s; }
+  .cf-aberto .cf-luz { opacity: 1; }
+  .cf-it { opacity: 0; transform: translateY(8px); transition: opacity .45s, transform .45s; }
+  .cf-aberto .cf-it { opacity: 1; transform: none; }
+  .cf-ja .cf-rig, .cf-ja .cf-porta, .cf-ja .cf-roda, .cf-ja .cf-luz, .cf-ja .cf-it { transition: none !important; }
+  @media (prefers-reduced-motion: reduce) {
+    .cf-rig, .cf-porta, .cf-roda, .cf-luz, .cf-it { transition: none !important; }
+    .cf-pisca { animation: none !important; }
+  }
+  .cf-obj { position: absolute; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; font: inherit; color: inherit;
+    text-align: center; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  .cf-obj:active { filter: brightness(1.2); }
+  .cf-obj:focus-visible { outline: 2px solid #C9A227; outline-offset: 2px; border-radius: 4px; }
+  .cf-lab { font-size: 11px; font-weight: 600; color: #F1EBDA; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-mini { font-size: 11px; color: #C9A227; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cf-papel { position: absolute; background: #F4EEDC; color: #2a2418; border-radius: 2px; box-sizing: border-box; }
+  .cf-papel small { display: block; font-size: 10.5px; color: #6b5e45; }
+  .cf-mao { font-family: 'Caveat', cursive; }
+  .cf-iman { position: absolute; top: -4px; left: 50%; margin-left: -6px; width: 12px; height: 8px; border-radius: 3px; background: #C9A227; }
+  .cf-pisca { animation: cf-pisca 1.2s infinite; }
+  @keyframes cf-pisca { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+`;
+const CACIFO_FONTE = "@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap');";
+
+function lerCacheCacifo(chave) {
+  try { return JSON.parse(localStorage.getItem(chave) || 'null'); } catch (e) { return null; }
+}
+function gravarCacheCacifo(chave, valor) {
+  try { localStorage.setItem(chave, JSON.stringify(valor)); } catch (e) { /* sem espaço: volta a pedir */ }
+}
+function chaveCacifo(tipo, teamId, code) {
+  return `misterjp:cacifo:${tipo}:${teamId}:${hashCurto(String(code || ''))}`;
+}
+// Depois de submeter a autoavaliação, a ficha do cacifo tem de mudar logo.
+function esquecerCacheCacifo(tipo, teamId, code) {
+  try { localStorage.removeItem(chaveCacifo(tipo, teamId, code)); } catch (e) { /* nada */ }
 }
 
-function PlayerPortalHome({ onBack, onOpenIdeiaJogo, onOpenTreino, onOpenBiblioteca, onOpenJogos, onOpenCompeticao, onOpenDesenvolvimento, onOpenTarefas, tarefasPendentes }) {
+/* Um pedido pequeno com cópia neste aparelho: mostra logo o que se viu da
+   última vez e só volta a pedir ao servidor quando a cópia tem mais de
+   `minutos`. `reduzir` guarda só o que o cacifo precisa. */
+function useDadoCacifo(rpc, args, chave, minutos, reduzir) {
+  const [dado, setDado] = useState(() => { const c = lerCacheCacifo(chave); return c ? c.d : null; });
+  useEffect(() => {
+    const c = lerCacheCacifo(chave);
+    if (c) setDado(c.d);
+    if (c && Date.now() - (c.t || 0) < minutos * 60000) return undefined;
+    let cancelado = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc(rpc, args);
+        if (cancelado || error) return;
+        let d = data;
+        if (Array.isArray(d)) d = d[0];
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica */ } }
+        const r = reduzir ? reduzir(d || null) : (d || null);
+        setDado(r);
+        gravarCacheCacifo(chave, { t: Date.now(), d: r });
+      } catch (e) { /* fica com a cópia */ }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chave]);
+  return dado;
+}
+
+const DIAS_CURTOS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+function quandoCurto(data, hora) {
+  if (!data) return '';
+  const hoje = todayStr();
+  const dia = data === hoje ? 'Hoje' : data === addDays(hoje, 1) ? 'Amanhã'
+    : DIAS_CURTOS[new Date(`${data}T12:00:00`).getDay()] || '';
+  const h = String(hora || '').trim().replace(/^(\d{1,2})[:h](\d{2}).*$/, '$1h$2').replace(/h00$/, 'h');
+  return [dia, h].filter(Boolean).join(' ');
+}
+
+function PlayerCacifo({
+  player, equipa, code, teamId, animar, onAberto, onBack, onAbrir, onAbrirWellness, onAbrirRpe,
+  dadosConv, dadosComp, missoes, nTarefas, session, doneWellness, doneRpe, wellnessWindow, rpeWindow,
+}) {
+  /* ---------- tamanho do ecrã: o mesmo enquadramento da entrada ---------- */
+  const largo = usePkhMedia(PKH_LARGO);
+  const tablet = usePkhMedia(PKH_TABLET_ALTO);
+  const g = usePkhMedia('(min-height: 820px)') && (largo || tablet);
+  const areaRef = useRef(null);
+  const [escala, setEscala] = useState(0);
+  React.useLayoutEffect(() => {
+    const el = areaRef.current;
+    if (!el) return undefined;
+    const medir = () => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (!w || !h) return;
+      const s = Math.max(0.5, Math.min(w / CACIFO_W, h / CACIFO_H, 2.4));
+      setEscala(prev => (Math.abs(prev - s) < 0.002 ? prev : s));
+    };
+    medir();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', medir);
+      return () => window.removeEventListener('resize', medir);
+    }
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* ---------- abrir: com animação na entrada, já aberto ao voltar ---------- */
+  const [aberto, setAberto] = useState(!animar);
+  useEffect(() => {
+    if (!animar) return undefined;
+    const a = setTimeout(() => setAberto(true), 350);
+    const b = setTimeout(() => { if (onAberto) onAberto(); }, 2600);
+    return () => { clearTimeout(a); clearTimeout(b); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* ---------- dados ---------- */
+  const hoje = todayStr();
+  const plano = useDadoCacifo('checkin_plano_dia', { p_code: code, p_team: teamId, p_date: hoje },
+    `${chaveCacifo('treino', teamId, code)}:${hoje}`, 15,
+    (d) => {
+      const s = d && d.sessao;
+      return s ? { phase: s.phase || '', n: (s.exercicios || []).length } : { vazio: true };
+    });
+  const dev = useDadoCacifo('checkin_desenvolvimento', { p_code: code, p_team: teamId },
+    chaveCacifo('dev', teamId, code), 30,
+    (d) => ({ registoId: (d && d.registoId) || null, enviado: !!(d && d.enviado) }));
+
+  // Vídeos: a mesma cópia que a Sala de Vídeo usa para abrir logo
+  // (`misterjp:portal-bib:…`). Só se pede ao servidor de 30 em 30 minutos.
+  const chaveBib = `misterjp:portal-bib:${teamId}:${hashCurto(String(code || ''))}`;
+  const chaveVistos = chaveCacifo('vistos', teamId, code);
+  const [idsVideos, setIdsVideos] = useState(() => {
+    const c = lerCacheCacifo(chaveBib);
+    return c && Array.isArray(c.videos) ? c.videos.map(v => v && v.id).filter(Boolean) : null;
+  });
+  useEffect(() => {
+    const chaveT = chaveCacifo('bib-t', teamId, code);
+    const t = Number(lerCacheCacifo(chaveT) || 0);
+    if (Date.now() - t < 30 * 60000 && idsVideos) return undefined;
+    let cancelado = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc('checkin_biblioteca', { p_code: code, p_team: teamId });
+        if (cancelado || error) return;
+        let d = data;
+        if (Array.isArray(d)) d = d[0];
+        if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { /* fica */ } }
+        const videos = ((d && d.videos) || []).slice();
+        const antiga = lerCacheCacifo(chaveBib) || {};
+        gravarCacheCacifo(chaveBib, { videos, meus: Array.isArray(antiga.meus) ? antiga.meus : [] });
+        gravarCacheCacifo(chaveT, Date.now());
+        setIdsVideos(videos.map(v => v && v.id).filter(Boolean));
+      } catch (e) { /* fica com a cópia */ }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId, code]);
+  // Na primeira vez neste aparelho, o que já lá está não conta como novo.
+  const [vistos, setVistos] = useState(() => lerCacheCacifo(chaveVistos));
+  useEffect(() => {
+    if (idsVideos && !Array.isArray(vistos)) { setVistos(idsVideos); gravarCacheCacifo(chaveVistos, idsVideos); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsVideos]);
+  const novosVideos = idsVideos && Array.isArray(vistos) ? idsVideos.filter(id => !vistos.includes(id)).length : 0;
+  const abrirSalaVideo = () => {
+    if (idsVideos) gravarCacheCacifo(chaveVistos, idsVideos.slice(-400));
+    onAbrir('biblioteca');
+  };
+
+  /* ---------- o que cada objeto mostra ---------- */
+  const nomeCompleto = String((player && player.name) || '').trim();
+  const primeiro = nomeCompleto ? nomeCompleto.split(/\s+/)[0] : 'Atleta';
+  const iniciais = nomeCompleto ? nomeCompleto.split(/\s+/).filter(Boolean).map(p => p[0]).filter((_, i, a) => i === 0 || i === a.length - 1).join('').toUpperCase() : '?';
+  const numero = player && player.number != null && String(player.number).trim() !== '' ? String(player.number).trim() : '';
+  const cor = coresCamisola(T.corEquipa);
+  const foto = (player && player.photo) || '';
+  const logo = (equipa && equipa.logo) || '';
+  const clube = String((equipa && (equipa.clube || equipa.nome)) || '').trim();
+  const sigla = clube ? clube.split(/\s+/).filter(w => w.length > 2 || /^[A-Z]{2,}$/.test(w)).map(w => w[0]).join('').toUpperCase().slice(0, 3) : '';
+
+  // Jogo: a próxima convocatória partilhada (hoje ou depois).
+  const proxConv = ((dadosConv && dadosConv.convocatorias) || [])
+    .filter(c => c && c.data && c.data >= hoje)
+    .sort((a, b) => String(a.data).localeCompare(String(b.data)))[0] || null;
+
+  // Competição: as três linhas à volta da nossa equipa.
+  const nossoClube = (dadosComp && dadosComp.clube) || clube;
+  const tabela = (() => {
+    try {
+      const comp = activeCompetitionOf(dadosComp && dadosComp.standings);
+      const equipas = competitionTable(comp);
+      if (!equipas.length) return [];
+      const b = String(nossoClube || '').toLowerCase();
+      const eNos = (t) => !!(b && t && t.name && (String(t.name).toLowerCase() === b || String(t.name).toLowerCase().includes(b) || b.includes(String(t.name).toLowerCase())));
+      let i = equipas.findIndex(eNos);
+      if (i < 0) i = 0;
+      const ini = Math.max(0, Math.min(i - 1, equipas.length - 3));
+      return equipas.slice(ini, ini + 3).map((t, k) => ({ pos: ini + k + 1, nome: t.name || '', pts: t.P != null ? t.P : '', nos: eNos(t) }));
+    } catch (e) { return []; }
+  })();
+  const est = (dadosComp && dadosComp.estatisticas) || null;
+
+  // Treino de hoje.
+  const treinoTxt = !plano ? '…' : plano.vazio ? 'Sem treino hoje'
+    : plano.phase === 'Descanso' ? 'Dia de descanso'
+      : [plano.phase, plano.n ? `${plano.n} ex.` : ''].filter(Boolean).join(' · ') || 'Ver o plano';
+
+  // Desenvolvimento.
+  const devTxt = !dev ? '…' : dev.enviado ? 'Submetida' : dev.registoId ? 'Por fazer' : 'Sem avaliação aberta';
+  const devFalta = !!(dev && dev.registoId && !dev.enviado);
+
+  // Garrafa: só com uma janela aberta e algo por responder (regras do ecrã inicial).
+  const isRestDay = !!(session && session.phase === 'Descanso');
+  const wAberto = !!(wellnessWindow && wellnessWindow.open) && !doneWellness;
+  const pAberto = !!(rpeWindow && rpeWindow.open) && !!session && !isRestDay && !doneRpe;
+  const mostraGarrafa = wAberto || pAberto;
+  const legendaGarrafa = wAberto && pAberto ? 'W · PSE' : wAberto ? 'Wellness' : 'PSE';
+  const corPonto = (feito, emFalta) => (feito ? '#1D9E75' : emFalta ? '#D14056' : '#6f7c74');
+
+  const postits = (missoes || []).slice(0, 2).map(m => String(m.titulo || 'Missão'));
+  const nT = nTarefas || 0;
+
+  const atraso = (s) => (animar ? { transitionDelay: `${s}s` } : undefined);
+  const nomePlaca = primeiro.toUpperCase();
+  const tamNome = nomePlaca.length <= 5 ? 15 : nomePlaca.length <= 8 ? 12.5 : 10.5;
+
+  const marcas = Array.from({ length: 40 }, (_, i) => {
+    const a = (i * 9 * Math.PI) / 180, longa = i % 5 === 0, r1 = longa ? 9.5 : 11.8, r2 = 14.3;
+    return (
+      <line key={i} x1={116 + r1 * Math.sin(a)} y1={300 - r1 * Math.cos(a)} x2={116 + r2 * Math.sin(a)} y2={300 - r2 * Math.cos(a)}
+        stroke={i === 0 ? '#C9A227' : '#e8e3d2'} strokeWidth={longa ? 1.1 : 0.6} />
+    );
+  });
+
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
-      <button onClick={onBack} style={{
-        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '8px 14px', cursor: 'pointer', ...body, fontSize: 13.5, marginBottom: 20,
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1, background: T.bg, overflow: 'hidden', overscrollBehavior: 'none',
+      touchAction: 'manipulation', ...body,
+    }}>
+      <style>{`${CACIFO_FONTE}${PKH_CSS}${CACIFO_CSS}`}</style>
+      {largo && <PkhFaixasLaterais larguraConteudo={PKH_LARGURA_LARGA} />}
+      <div style={{
+        position: 'relative', height: '100%', maxWidth: largo ? PKH_LARGURA_LARGA : tablet ? PKH_LARGURA_TABLET : 460, margin: '0 auto',
+        display: 'flex', flexDirection: 'column', gap: g ? 12 : 8, boxSizing: 'border-box',
+        padding: largo
+          ? `calc(${g ? 20 : 12}px + env(safe-area-inset-top, 0px)) 0 calc(${g ? 18 : 10}px + env(safe-area-inset-bottom, 0px))`
+          : tablet
+            ? 'calc(22px + env(safe-area-inset-top, 0px)) 24px calc(18px + env(safe-area-inset-bottom, 0px))'
+            : 'calc(14px + env(safe-area-inset-top, 0px)) 14px calc(12px + env(safe-area-inset-bottom, 0px))',
       }}>
-        <ChevronLeft size={15} /> Voltar
-      </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <button type="button" onClick={onBack} style={{
+            display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: `1px solid ${T.line}`,
+            borderRadius: 8, color: T.cream, padding: g ? '8px 14px' : '6px 11px', cursor: 'pointer', ...body, fontSize: g ? 14 : 12.5, flexShrink: 0,
+          }}>
+            <ChevronLeft size={g ? 16 : 14} /> Balneário
+          </button>
+          <div style={{ ...display, fontSize: g ? 22 : 17, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>O meu cacifo</div>
+        </div>
 
-      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Portal do Atleta</div>
-      <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 28 }}>Conteúdos que a equipa técnica partilha contigo.</div>
+        <div ref={areaRef} style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: CACIFO_W * escala, height: CACIFO_H * escala, flexShrink: 0, visibility: escala ? 'visible' : 'hidden' }}>
+            <div className={`cf-palco${aberto ? ' cf-aberto' : ''}${animar ? '' : ' cf-ja'}`} style={{ transform: `scale(${escala || 1})` }}>
+              <div className="cf-rig">
+                {/* ---------------- DENTRO DO CACIFO ---------------- */}
+                <div className="cf-corpo">
+                  <div className="cf-luz" />
 
-      {/* UM CÍRCULO GRANDE POR TEMA — mais Vídeos e Composição Corporal
-          entram aqui ao lado, à medida que forem sendo construídos. A
-          página usa agora a largura toda do ecrã (antes ficava presa a
-          uma coluna estreita, sempre centrada, por isso um único tema
-          parecia perdido no meio do ecrã em vez de arrumado numa
-          grelha com espaço para crescer). */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 28, maxWidth: 760 }}>
-        <TemaCirculo Icon={Lightbulb} label="Ideia de Jogo" onClick={onOpenIdeiaJogo} />
-        <TemaCirculo Icon={CalendarDays} label="Treino" onClick={onOpenTreino} />
-        <TemaCirculo Icon={Tv} label="Biblioteca" onClick={onOpenBiblioteca} />
-        <TemaCirculo Icon={Trophy} label="Jogo" onClick={onOpenJogos} />
-        <TemaCirculo Icon={ListOrdered} label="Competição" onClick={onOpenCompeticao} />
-        <TemaCirculo Icon={TrendingUp} label="Desenvolvimento" onClick={onOpenDesenvolvimento} />
-        <TemaCirculo Icon={ClipboardList} label="Tarefas" onClick={onOpenTarefas} badge={tarefasPendentes} />
+                  <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('ideiaJogo')} aria-label="Ideia de Jogo"
+                    style={{ left: 4, top: 12, width: 66, height: 84, ...atraso(1.8) }}>
+                    <svg width="46" height="54" viewBox="0 0 46 54" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      <rect x="6" y="2" width="36" height="50" rx="3" fill="#1d4d3a" />
+                      <rect x="6" y="2" width="6" height="50" fill="#143a2b" />
+                      <rect x="17" y="12" width="20" height="3" fill="#C9A227" />
+                      <rect x="17" y="19" width="14" height="2" fill="#8A9A8C" />
+                      <circle cx="27" cy="36" r="7" fill="none" stroke="#C9A227" strokeWidth="1.5" />
+                    </svg>
+                    <div className="cf-lab" style={{ marginTop: 4 }}>Ideia de Jogo</div>
+                  </button>
+
+                  <button type="button" className="cf-obj cf-it" onClick={abrirSalaVideo} aria-label="Sala de Vídeo"
+                    style={{ left: 72, top: 16, width: 66, height: 80, ...atraso(1.9) }}>
+                    <div style={{ position: 'relative', background: '#060908', border: '3px solid #2a2f2c', borderRadius: 6, height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', transform: 'rotate(-4deg)' }}>
+                      <Play size={18} color="#C9A227" fill="#C9A227" />
+                      <span style={{ fontSize: 11, color: '#C9A227', height: 14, lineHeight: '14px' }}>{novosVideos > 0 ? `${novosVideos} ${novosVideos === 1 ? 'novo' : 'novos'}` : ''}</span>
+                    </div>
+                    <div className="cf-lab" style={{ marginTop: 7 }}>Sala de Vídeo</div>
+                  </button>
+
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: 100, height: 5, background: '#2c4336' }} />
+                  <div style={{ position: 'absolute', left: 8, right: 8, top: 116, height: 4, background: '#8A9A8C', borderRadius: 2 }} />
+
+                  <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('jogos')} aria-label="Jogo"
+                    style={{ left: 0, top: 116, width: 140, height: 196, ...atraso(2) }}>
+                    <svg width="118" height="126" viewBox="0 0 132 140" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      <path d="M66 0 l0 12" stroke="#8A9A8C" strokeWidth="2" />
+                      <path d="M36 16 L52 10 Q66 20 80 10 L96 16 L124 40 L108 58 L98 50 L98 136 L34 136 L34 50 L24 58 L8 40 Z" fill={cor.base} stroke="#C9A227" strokeWidth="2" />
+                      <path d="M52 10 Q66 24 80 10" fill="none" stroke="#C9A227" strokeWidth="3" />
+                      <text x="66" y="62" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="13" fill={cor.texto}>{nomePlaca.slice(0, 12)}</text>
+                      <text x="66" y="112" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize={numero.length > 2 ? 34 : 46} fill={cor.texto}>{numero || iniciais.slice(0, 2)}</text>
+                    </svg>
+                    <div style={{ height: 17, display: 'flex', justifyContent: 'center' }}>
+                      {proxConv && (proxConv.convocado === true ? (
+                        <span style={{ background: '#C9A227', color: '#1A2A1F', fontSize: 11, fontWeight: 600, borderRadius: 9, padding: '1px 8px' }}>Convocado</span>
+                      ) : proxConv.convocado === false ? (
+                        <span style={{ border: '1px solid #6f7c74', color: '#b9c4bc', fontSize: 11, borderRadius: 9, padding: '0 7px' }}>Não convocado</span>
+                      ) : null)}
+                    </div>
+                    <div className="cf-lab" style={{ marginTop: 3, padding: '0 6px' }}>{proxConv ? `Jogo · ${quandoCurto(proxConv.data, proxConv.horaJogo)}` : 'Jogo'}</div>
+                    <div className="cf-mini" style={{ padding: '0 6px' }}>{proxConv ? `vs ${proxConv.adversario || 'Adversário'}` : 'Sem jogo marcado'}</div>
+                  </button>
+
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: 318, height: 5, background: '#2c4336' }} />
+
+                  <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('competicao')} aria-label="Estatísticas da época"
+                    style={{ left: mostraGarrafa ? 2 : 19, top: 352, width: 102, height: 98, ...atraso(2.2) }}>
+                    <svg width="102" height="70" viewBox="0 0 140 96" style={{ display: 'block' }} aria-hidden="true">
+                      <path d="M30 40 C25 40 24 35 25 30 L26 16 Q27 11 32 11 L42 11 Q46 11 47 15 L52 23 Q68 25 86 28 Q104 31 112 36 L114 40 Z" fill="#1c2226" />
+                      <path d="M26 18 Q35 21 44 17" fill="none" stroke="#C9A227" strokeWidth="2.5" />
+                      <g stroke="#F1EBDA" strokeWidth="1.6" strokeLinecap="round"><path d="M55 25 l-1.5 4" /><path d="M62 26 l-1.5 4" /><path d="M69 27 l-1.5 4" /></g>
+                      <path d="M4 44 L136 44 L132 40 L8 40 Z" fill="#cfc6ae" />
+                      <rect x="6" y="44" width="128" height="50" rx="2" fill="#E9E2CF" />
+                      <rect x="6" y="44" width="128" height="7" fill="#C9A227" />
+                      <text x="70" y="70" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="16" fill="#2a2418">{est ? `${est.jogos || 0} J · ${est.minutos || 0}'` : 'Sem jogos'}</text>
+                      <text x="70" y="88" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="16" fill="#5a4d33">{est ? `${est.golos || 0} G · ${est.assistencias || 0} A` : 'ainda'}</text>
+                    </svg>
+                    <div className="cf-lab" style={{ marginTop: 6 }}>Estatísticas</div>
+                  </button>
+
+                  {mostraGarrafa && (
+                    <button type="button" className="cf-obj cf-it" onClick={() => (wAberto ? onAbrirWellness() : onAbrirRpe())}
+                      aria-label={wAberto ? 'Responder ao Wellness' : 'Responder à PSE'}
+                      style={{ left: 102, top: 356, width: 38, height: 94, ...atraso(2.3) }}>
+                      <svg width="30" height="66" viewBox="0 0 34 78" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                        <rect x="14" y="0" width="6" height="7" rx="1.5" fill="#1c2226" />
+                        <rect x="9" y="6" width="16" height="9" rx="2" fill="#1c2226" />
+                        <rect x="8" y="14" width="18" height="3" fill="#C9A227" />
+                        <path d="M7 19 Q7 17 10 17 L24 17 Q27 17 27 19 L28 30 Q25 34 25 38 Q25 42 28 46 L28 73 Q28 77 24 77 L10 77 Q6 77 6 73 L6 46 Q9 42 9 38 Q9 34 6 30 Z" fill={cor.base} />
+                        <path d="M6.3 30 L27.7 30 M6.3 46 L27.7 46" stroke="#C9A227" strokeWidth="1.5" />
+                        <rect x="7" y="51" width="20" height="16" rx="2" fill="#F1EBDA" />
+                        <circle cx="12.5" cy="59" r="3.4" fill={corPonto(doneWellness, wAberto)} className={wAberto ? 'cf-pisca' : undefined} />
+                        <circle cx="21.5" cy="59" r="3.4" fill={corPonto(doneRpe, pAberto)} className={pAberto ? 'cf-pisca' : undefined} />
+                        <path d="M10 20 L10 27" stroke="#ffffff" strokeOpacity=".3" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                      <div className="cf-lab cf-pisca" style={{ marginTop: 10, color: '#F09595' }}>{legendaGarrafa}</div>
+                    </button>
+                  )}
+                </div>
+
+                {/* ---------------- A PORTA ---------------- */}
+                <div className="cf-porta">
+                  <div className="cf-face">
+                    <svg width="150" height={CACIFO_H} viewBox={`0 0 150 ${CACIFO_H}`} style={{ display: 'block' }} aria-hidden="true">
+                      <defs>
+                        <clipPath id="cf-visor"><rect x="40" y="80" width="70" height="90" rx="4" /></clipPath>
+                      </defs>
+                      <rect x="0" y="0" width="150" height={CACIFO_H} rx="6" fill="#2c4336" />
+                      <rect x="8" y="8" width="134" height={CACIFO_H - 16} rx="4" fill="#33503f" stroke="#4e6a58" />
+                      <g fill="#9aa69e"><rect x="0" y="42" width="4" height="26" rx="1" /><rect x="0" y="227" width="4" height="26" rx="1" /><rect x="0" y="412" width="4" height="26" rx="1" /></g>
+                      <g fill="#1d2e24"><path d="M28 22 h94 l-4 6 h-94z" /><path d="M28 34 h94 l-4 6 h-94z" /><path d="M28 46 h94 l-4 6 h-94z" /></g>
+                      <rect x="33" y="73" width="84" height="104" rx="8" fill="#C9A227" />
+                      <rect x="37" y="77" width="76" height="96" rx="6" fill="#8A6A0E" />
+                      <rect x="40" y="80" width="70" height="90" rx="4" fill="#5d7266" />
+                      {foto ? (
+                        <image href={foto} x="40" y="80" width="70" height="90" preserveAspectRatio="xMidYMid slice" clipPath="url(#cf-visor)" />
+                      ) : (
+                        <g>
+                          <circle cx="75" cy="111" r="15" fill="#c8b9a0" />
+                          <path d="M47 170 Q49 135 75 132 Q101 135 103 170 Z" fill={cor.base} />
+                          <text x="75" y="116" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="12" fill="#5d4a2e">{iniciais}</text>
+                        </g>
+                      )}
+                      <path d="M84 80 L110 80 L110 95 L64 170 L46 170 Z" fill="#ffffff" opacity=".07" />
+                      <g fill="#8A6A0E"><circle cx="38" cy="78" r="1.6" /><circle cx="112" cy="78" r="1.6" /><circle cx="38" cy="172" r="1.6" /><circle cx="112" cy="172" r="1.6" /></g>
+                      <rect x="27" y="190" width="96" height="40" rx="3" fill="#C9A227" />
+                      <rect x="31" y="194" width="88" height="32" rx="2" fill="none" stroke="#8A6A0E" />
+                      <text x="49" y="219" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize={numero.length > 2 ? 15 : 22} fill="#1A2A1F">{numero || iniciais.slice(0, 2)}</text>
+                      <line x1="62" y1="199" x2="62" y2="221" stroke="#8A6A0E" />
+                      <text x="90" y="216" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize={tamNome} fill="#1A2A1F">{nomePlaca.slice(0, 11)}</text>
+                      <circle cx="116" cy="300" r="20" fill="#1d2e24" />
+                      <circle cx="116" cy="300" r="18.5" fill="#c3ccc6" />
+                      <circle cx="116" cy="300" r="16.5" fill="#7d8a82" />
+                      <circle cx="116" cy="300" r="15.5" fill="#121618" />
+                      <g className="cf-roda">
+                        {marcas}
+                        <circle cx="116" cy="300" r="7.5" fill="#2a2f33" />
+                        <circle cx="116" cy="300" r="7.5" fill="none" stroke="#6f7c74" strokeWidth="2" strokeDasharray="1.2 1.2" />
+                        <circle cx="116" cy="300" r="4.5" fill="#3a4045" />
+                      </g>
+                      <path d="M116 284 l-2.4 -4 h4.8 z" fill="#C9A227" />
+                      {logo ? (
+                        <image href={logo} x="55" y="360" width="40" height="40" preserveAspectRatio="xMidYMid meet" opacity=".35" style={{ filter: 'grayscale(1)' }} />
+                      ) : (
+                        <g>
+                          <circle cx="75" cy="380" r="20" fill="none" stroke="#4e6a58" strokeWidth="1.5" />
+                          <text x="75" y="385" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="13" fill="#4e6a58">{sigla}</text>
+                        </g>
+                      )}
+                      <g fill="#1d2e24"><path d="M28 422 h94 l-4 6 h-94z" /><path d="M28 434 h94 l-4 6 h-94z" /><path d="M28 446 h94 l-4 6 h-94z" /></g>
+                    </svg>
+                  </div>
+
+                  {/* -------- dentro da porta -------- */}
+                  <div className="cf-face cf-tras">
+                    <button type="button" className="cf-obj cf-papel" onClick={() => onAbrir('treino')} aria-label="Treino de hoje"
+                      style={{ left: 14, top: 16, width: 112, height: 52, padding: '9px 8px 6px', transform: 'rotate(-2deg)', textAlign: 'left' }}>
+                      <span className="cf-iman" />
+                      <small>Treino de hoje</small>
+                      <div className="cf-mao" style={{ fontSize: 16, lineHeight: 1.05, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{treinoTxt}</div>
+                    </button>
+
+                    <button type="button" className="cf-obj cf-papel" onClick={() => onAbrir('competicao')} aria-label="Classificação"
+                      style={{ left: 10, top: 88, width: 130, height: 84, padding: '6px 6px 5px', transform: 'rotate(1.5deg)', textAlign: 'left' }}>
+                      <span className="cf-iman" />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: '#6b5e45', marginBottom: 2 }}>
+                        <Trophy size={13} color="#8A6A0E" /> Classificação
+                      </div>
+                      {tabela.length ? tabela.map(l => (
+                        <div key={l.pos} style={{ display: 'grid', gridTemplateColumns: '14px 1fr auto', gap: 3, fontSize: 11, padding: '1px 3px', background: l.nos ? '#C9A227' : 'transparent', borderRadius: 2 }}>
+                          <span>{l.pos}</span>
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: l.nos ? 600 : 400 }}>{l.nome}</span>
+                          <span>{l.pts}</span>
+                        </div>
+                      )) : (
+                        <div className="cf-mao" style={{ fontSize: 16, marginTop: 6 }}>Ainda sem tabela</div>
+                      )}
+                    </button>
+
+                    <button type="button" className="cf-obj" onClick={() => onAbrir('tarefas')} aria-label={`Tarefas${nT ? `: ${nT} por fazer` : ''}`}
+                      style={{ left: 16, top: 190, width: 118, height: 86 }}>
+                      <div style={{ background: '#6b4a2e', borderRadius: 4, padding: '14px 6px 6px', position: 'relative', height: 62, boxSizing: 'border-box', textAlign: 'left', overflow: 'hidden' }}>
+                        <span style={{ position: 'absolute', top: -3, left: 45, width: 28, height: 8, background: '#9aa69e', borderRadius: 2 }} />
+                        {postits.length ? postits.map((p, k) => (
+                          <span key={k} className="cf-mao" style={{
+                            display: 'inline-block', maxWidth: 50, verticalAlign: 'top', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            background: k ? '#9FE1CB' : '#F2D35B', color: k ? '#04342C' : '#3a2e05', fontSize: 15, padding: '1px 5px', marginRight: 3,
+                            transform: `rotate(${k ? 3 : -4}deg)`,
+                          }}>{p}</span>
+                        )) : (
+                          <span className="cf-mao" style={{ display: 'inline-block', background: '#dfe9d6', color: '#27500A', fontSize: 15, padding: '1px 6px', transform: 'rotate(-2deg)' }}>Tudo feito</span>
+                        )}
+                      </div>
+                      {nT > 0 && (
+                        <span style={{ position: 'absolute', top: -8, right: -6, minWidth: 20, height: 20, borderRadius: 10, background: '#D14056', color: '#fff', fontSize: 11.5, fontWeight: 600, display: 'grid', placeItems: 'center', padding: '0 5px' }}>{nT}</span>
+                      )}
+                      <div className="cf-lab" style={{ marginTop: 4 }}>Tarefas</div>
+                    </button>
+
+                    <button type="button" className="cf-obj" onClick={() => onAbrir('desenvolvimento')} aria-label="Desenvolvimento"
+                      style={{ left: 12, top: 292, width: 126, height: 124, background: '#1d2a22', border: '1px solid #4e6a58', borderRadius: 6, padding: 6, boxSizing: 'border-box' }}>
+                      <svg width="84" height="74" viewBox="0 0 84 74" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                        <g fill="none" stroke="#4e6a58"><polygon points="42,4 78,28 64,70 20,70 6,28" /><polygon points="42,20 62,33 54,58 30,58 22,33" /></g>
+                        <polygon points="42,10 70,30 56,62 26,58 16,32" fill="#C9A22755" stroke="#C9A227" strokeWidth="1.5" />
+                        <polygon points="42,16 64,32 50,58 32,62 20,30" fill="none" stroke="#9FE1CB" strokeWidth="1.2" strokeDasharray="3 2" />
+                      </svg>
+                      <div className="cf-lab">Desenvolvimento</div>
+                      <div className="cf-mini" style={{ color: devFalta ? '#F2D35B' : '#9FE1CB' }}>{devTxt}</div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -34624,7 +35078,7 @@ function StreakCard({ dias }) {
      do próprio jogador iluminado, com a camisola dele (nome e número) e a
      fotografia do plantel.
    Os horários vêm sempre de CHECKIN_WINDOWS: mudar lá muda aqui. */
-const PKH_TICKER = 'IDEIA DE JOGO · TREINO · BIBLIOTECA · JOGO · COMPETIÇÃO · DESENVOLVIMENTO · TAREFAS';
+const PKH_TICKER = 'IDEIA DE JOGO · TREINO · SALA DE VÍDEO · JOGO · COMPETIÇÃO · DESENVOLVIMENTO · TAREFAS';
 // Ecrã fixo, sem scroll: não se reserva o espaço da barra de scroll (a regra
 // geral do Portal "scrollbar-gutter: stable" deixava aqui uma faixa branca
 // à direita, muito visível na app instalada) e o fundo da janela é o da app.
@@ -45448,7 +45902,7 @@ const DESTINOS_MISSAO = [
   { id: 'treino', rotulo: 'Treino do dia', acao: 'Ver o treino de hoje', icon: CalendarDays, rota: 'treino' },
   { id: 'jogos', rotulo: 'Jogo / convocatória', acao: 'Ver o plano de jogo', icon: Trophy, rota: 'jogos' },
   { id: 'ideiaJogo', rotulo: 'Ideia de Jogo', acao: 'Ler a ideia de jogo', icon: Lightbulb, rota: 'ideiaJogo' },
-  { id: 'biblioteca', rotulo: 'Vídeos', acao: 'Ver os vídeos', icon: Tv, rota: 'biblioteca' },
+  { id: 'biblioteca', rotulo: 'Sala de Vídeo', acao: 'Ver os vídeos', icon: Tv, rota: 'biblioteca' },
   /* Fecha sozinha quando o jogador grava um clipe em "Os meus clipes":
      é uma prova real de que fez, ao contrário de um "Já fiz". */
   { id: 'clipe', rotulo: 'Criar clipe', acao: 'Criar um clipe', icon: Scissors, auto: true, rota: 'biblioteca' },
@@ -45492,7 +45946,7 @@ function inferirDestinoMissao(texto) {
   if (/convocat|plano de jogo|\bjogo\b|adversari/.test(s)) return 'jogos';
   if (/treino|sessao/.test(s)) return 'treino';
   if (/clipe|clip\b|cortar|corte/.test(s)) return 'clipe';
-  if (/video|analis/.test(s)) return 'biblioteca';
+  if (/video|analis|sala de video/.test(s)) return 'biblioteca';
   return null;
 }
 
@@ -46633,7 +47087,8 @@ const CAMINHOS_STAFF = [
   { id: 'exercicios', rotulo: 'Exercícios', acao: 'Preparar exercícios', icon: Dumbbell },
   { id: 'presencas', rotulo: 'Presenças', acao: 'Registar presenças', icon: UserCheck },
   { id: 'clinico', rotulo: 'Boletim Clínico', acao: 'Atualizar o boletim clínico', icon: Stethoscope },
-  { id: 'biblioteca', rotulo: 'Biblioteca', acao: 'Organizar a biblioteca', icon: Presentation },
+  { id: 'biblioteca', rotulo: 'Sala de Vídeo', acao: 'Organizar a Sala de Vídeo', icon: Tv },
+  { id: 'documentos', rotulo: 'Documentos', acao: 'Preparar os documentos', icon: FileSpreadsheet },
 ];
 /* MISSÕES DA EQUIPA TÉCNICA QUE SE VERIFICAM SOZINHAS.
    Não há "Concluir" à mão nas missões com caminho: fecham quando a app vê
@@ -46662,7 +47117,8 @@ const CRITERIO_STAFF = {
   ideiajogo: 'gravares um esquema na Ideia de Jogo',
   exercicios: 'gravares um exercício',
   clinico: 'atualizares o Boletim Clínico',
-  biblioteca: 'carregares ou editares algo na Biblioteca',
+  biblioteca: 'carregares ou editares algo na Sala de Vídeo',
+  documentos: 'carregares ou editares um documento',
 };
 const caminhoVerificavel = (t) => !!(t && !t.jogadorId && t.caminho && CRITERIO_STAFF[t.caminho]);
 function inicioDaMissao(t, base) {
@@ -46885,7 +47341,7 @@ function ListaMultipla({ itens, escolhidos, onAlternar, resumo, atalhos, onLimpa
      não houver; nada é gravado). */
 const ZONA_CODIGO = {
   analise: 'AV', scouting: 'SC', planeamento: 'PL', jogos: 'JG', estatisticas: 'ES', monitorizacao: 'MO',
-  desenvolvimento: 'DS', ideiajogo: 'IJ', exercicios: 'EX', presencas: 'PR', clinico: 'BC', biblioteca: 'BB',
+  desenvolvimento: 'DS', ideiajogo: 'IJ', exercicios: 'EX', presencas: 'PR', clinico: 'BC', biblioteca: 'SV', documentos: 'DC',
   analisejogo: 'AJ', diario: 'DI',
 };
 function EcraEntradaEquipa({ tarefas, setTarefas, membros, euId, ctx, onIr, equipa, epoca }) {
