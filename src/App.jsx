@@ -33690,9 +33690,7 @@ function PeCartao({ jogador, cor, logo, clube }) {
    desenhado ATRÁS do vidro, encaixado no buraco da porta; o vidro abre e,
    ainda a abrir, esse ecrã cresce até à página inteira. É sempre o mesmo
    ecrã, por isso não há imagens trocadas nem paragens a meio. */
-let ENTRADA = null; // { rect, alvo, logo, cor, t, dur }
-const PORTA_APROX_MS = 2600;
-const PORTA_APROX_CURVA = 'cubic-bezier(.25,.6,.3,1)';
+let ENTRADA = null; // { rect, fundo: { svg, H }, logo, cor, t }
 
 /* PRÉ-BUSCA: com o PIN certo, os pedidos que o Portal faz ao abrir partem
    todos logo, em paralelo (antes iam um a seguir ao outro, já com a porta
@@ -33717,38 +33715,13 @@ function tirarPrebusca(rpc, code, teamId) {
 }
 const entradaRecente = () => !!(ENTRADA && Date.now() - ENTRADA.t < 20000);
 
-/* A porta enquanto o Portal acaba de carregar: continua o movimento de
-   aproximação a partir de onde estava (até ao alvo), sem parar. Ao sair,
-   regista onde ficou, para a abertura começar exatamente daí. */
+// A porta fechada enquanto o Portal acaba de carregar (igual à da entrada).
 function PortaAEspera() {
-  const ref = useRef(null);
   const [ent] = useState(() => ENTRADA);
-  React.useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el || !ent || !ent.alvo || typeof el.animate !== 'function') return undefined;
-    const de = ent.rect, para = ent.alvo;
-    const falta = Math.max(0, (ent.t + (ent.dur || 0)) - Date.now());
-    let a = null;
-    if (falta > 60) {
-      const s0 = de.height / para.height;
-      a = el.animate([
-        { transform: `translate(${de.left - para.left}px, ${de.top - para.top}px) scale(${s0})` },
-        { transform: 'translate(0px, 0px) scale(1)' },
-      ], { duration: falta, easing: 'cubic-bezier(.2,.5,.35,1)', fill: 'forwards' });
-    }
-    return () => {
-      if (ENTRADA && el) ENTRADA.rect = el.getBoundingClientRect();
-      if (a) { try { a.cancel(); } catch (e) { /* nada */ } }
-    };
-  }, []);
   if (!ent) return null;
-  const alvo = ent.alvo || ent.rect;
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg }}>
-      <div ref={ref} style={{ position: 'fixed', left: alvo.left, top: alvo.top, width: alvo.width, height: alvo.height, transformOrigin: '0 0' }}>
-        <PortaVidroSo rect={alvo} aberto={false} logo={ent.logo} cor={ent.cor}
-          caixa={{ left: 0, top: 0, width: alvo.width, height: alvo.height, tam: Math.round(alvo.height * 0.78), raio: 3 }} />
-      </div>
+      <PortaVidroSo rect={ent.rect} aberto={false} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel />
     </div>
   );
 }
@@ -33756,7 +33729,7 @@ function PortaAEspera() {
 // O vidro da porta, sozinho, no sítio exato onde estava. Com `caixa`, é
 // desenhado noutro referencial (dentro do ecrã que cresce): left/top/
 // width/height/tam/raio já vêm nessas unidades.
-function PortaVidroSo({ rect, aberto, logo, cor, caixa }) {
+function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel }) {
   const c = caixa || { left: rect.left, top: rect.top, width: rect.width, height: rect.height, tam: Math.round(rect.height * 0.78), raio: 3, fixo: true };
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
@@ -33773,6 +33746,11 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa }) {
   );
   return (
     <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
+      {fundo && (
+        <svg viewBox={`0 0 300 ${fundo.H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%"
+          style={{ display: 'block', position: 'absolute', inset: 0, background: '#121614', opacity: fundoVisivel ? 1 : 0, transition: 'opacity .35s ease' }}
+          dangerouslySetInnerHTML={{ __html: fundo.svg }} />
+      )}
       <div style={{ ...vidro, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{emblema('E')}</div>
       <div style={{ ...vidro, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{emblema('D')}</div>
       <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .15s' }} />
@@ -33795,6 +33773,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
   const [ent] = useState(() => (entradaRecente() ? ENTRADA : null));
   const [ativa, setAtiva] = useState(!!ent);
   const [vidroAberto, setVidroAberto] = useState(false);
+  const [fundoVisivel, setFundoVisivel] = useState(true);
   const [caixaVidro, setCaixaVidro] = useState(null);
   React.useLayoutEffect(() => {
     if (!ent) return undefined;
@@ -33839,14 +33818,19 @@ function TransicaoEntrada({ focoInteiro, children }) {
     for (let k = 0; k <= N; k++) { const q = passo(curva(k / N)); kJ.push({ transform: q.janela }); kC.push({ transform: q.conteudo }); }
     /* Espera que o ecrã de trás acabe de se montar (o do jogo é pesado)
        antes de abrir: assim a abertura nunca apanha um engasgo. */
-    let r1 = 0, r2 = 0;
-    const tempo = setTimeout(() => {
-      // Dois frames para o ecrã de trás assentar, e abre.
-      r1 = requestAnimationFrame(() => {
-        r2 = requestAnimationFrame(() => {
+    /* 1) Com o vidro ainda fechado, o balneário que se via atrás dele dá
+          lugar (num instante suave) ao ecrã que vai abrir — o jogo, os
+          parabéns, a missão ou o ecrã inicial. Assim, quando a porta abre,
+          esse ecrã já lá está.
+       2) O vidro abre e desaparece, e o ecrã cresce até à página inteira. */
+    let r1 = 0, r2 = 0, tempo = 0;
+    r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => {
+        if (cancelado) return;
+        setFundoVisivel(false);
+        tempo = setTimeout(() => {
           if (cancelado) return;
           setVidroAberto(true);
-          // O vidro abre e o ecrã começa logo a crescer (um só movimento).
           const op = { duration: 1000, delay: 110, easing: 'linear', fill: 'forwards' };
           aJ = jan.animate(kJ, op);
           aC = con.animate(kC, op);
@@ -33855,9 +33839,9 @@ function TransicaoEntrada({ focoInteiro, children }) {
             try { aJ.cancel(); aC.cancel(); } catch (e) { /* nada */ }
             acabar();
           };
-        });
+        }, 380);
       });
-    }, 0);
+    });
     return () => { cancelado = true; clearTimeout(tempo); cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -33874,7 +33858,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
           {/* O vidro está no mesmo referencial do ecrã: abre, apaga-se e,
               enquanto isso, cresce e é cortado com ele — nada fica preso no
               sítio da porta. */}
-          {ativa && ent && <PortaVidroSo rect={ent.rect} caixa={caixaVidro || undefined} aberto={vidroAberto} logo={ent.logo} cor={ent.cor} />}
+          {ativa && ent && <PortaVidroSo rect={ent.rect} caixa={caixaVidro || undefined} aberto={vidroAberto} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel={fundoVisivel} />}
         </div>
       </div>
     </>
@@ -33887,14 +33871,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
 function PePorta({ aberta, jogador, cor, logo, clube }) {
   const caixaRef = useRef(null);
   const portaRef = useRef(null);
-  const [aprox, setAprox] = useState(null); // { dx, dy, s }
-  // Ao sair do ecrã da porta (o Portal ficou pronto), regista onde a porta
-  // está NESTE instante — pode ainda ir a meio da aproximação.
-  const abertaRef = useRef(aberta);
-  abertaRef.current = aberta;
-  React.useLayoutEffect(() => () => {
-    if (abertaRef.current && ENTRADA && caixaRef.current) ENTRADA.rect = caixaRef.current.getBoundingClientRect();
-  }, []);
+
   const [tam, setTam] = useState({ w: 260, h: 180 });
   useEffect(() => {
     const el = caixaRef.current;
@@ -33915,24 +33892,15 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
   /* Acesso autorizado: guarda onde está o vidro (o ecrã seguinte vai
      aparecer atrás dele) e o resto da porta apaga-se. O vidro só abre já
      com o Portal pronto por trás (ver TransicaoEntrada). */
-  /* Acesso autorizado: enquanto o resto do ecrã se apaga, a porta desliza
-     para o centro e aproxima-se (como quem caminha até ela). É aí, já no
-     centro, que vai abrir — e é esse o sítio guardado para a entrada. */
+  /* Acesso autorizado: o resto do ecrã apaga-se e a porta fica onde está.
+     Guarda-se o sítio do vidro e o que se vê atrás dele (o balneário), para
+     o ecrã seguinte começar exatamente daqui. */
   useEffect(() => {
-    if (!aberta) { ENTRADA = null; setAprox(null); return undefined; }
-    const el = caixaRef.current, porta = portaRef.current;
-    if (!el || !porta) return undefined;
-    const r = el.getBoundingClientRect(), b = porta.getBoundingClientRect();
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const altAlvo = Math.min(vh * 0.6, (vw * 0.86 * r.height) / r.width);
-    const esc = Math.max(1, Math.min(1.7, altAlvo / r.height));
-    const bcx = b.left + b.width / 2, bcy = b.top + b.height / 2;
-    const cx = vw / 2, cy = vh * 0.48;
-    const ox = (r.left + r.width / 2) - bcx, oy = (r.top + r.height / 2) - bcy;
-    const ncx = cx + ox * esc, ncy = cy + oy * esc;
-    const alvo = { left: ncx - (r.width * esc) / 2, top: ncy - (r.height * esc) / 2, width: r.width * esc, height: r.height * esc };
-    ENTRADA = { rect: alvo, alvo, logo: logo || '', cor, t: Date.now(), dur: PORTA_APROX_MS };
-    setAprox({ dx: cx - bcx, dy: cy - bcy, s: esc });
+    if (!aberta) { ENTRADA = null; return undefined; }
+    const el = caixaRef.current;
+    if (!el) return undefined;
+    const r = el.getBoundingClientRect();
+    ENTRADA = { rect: { left: r.left, top: r.top, width: r.width, height: r.height }, fundo: { svg, H }, logo: logo || '', cor, t: Date.now() };
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberta]);
@@ -33963,10 +33931,6 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
           vez de achatada (iPad deitado, telemóveis baixos). */}
       <div ref={portaRef} style={{
         position: 'relative', zIndex: 2, flex: 1, minHeight: 120, maxHeight: 'min(48dvh, 520px)', aspectRatio: '5 / 6', width: 'auto', maxWidth: '100%', borderRadius: 8, padding: 7, boxSizing: 'border-box', display: 'flex',
-        transform: aprox ? `translate(${aprox.dx}px, ${aprox.dy}px) scale(${aprox.s})` : 'none',
-        // Movimento longo que vai abrandando: enquanto o Portal carrega, a
-        // porta continua a aproximar-se devagar em vez de parar no centro.
-        transition: `transform ${PORTA_APROX_MS}ms ${PORTA_APROX_CURVA}`,
       }}>
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', boxShadow: '0 10px 24px rgba(0,0,0,.45)', ...apagar }} />
         <div ref={caixaRef} style={{ position: 'relative', flex: 1, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
@@ -34386,12 +34350,10 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   const abrirEEntrar = async (sessao) => {
     setAberta(true);
     setAviso('ACESSO AUTORIZADO'); setCorAviso('#8EE6A0');
-    // Os pedidos do Portal partem já, todos ao mesmo tempo; enquanto isso, o
-    // resto do ecrã apaga-se e a porta aproxima-se do centro (0,6 s). O
-    // vidro abre com o Portal pronto atrás dele.
+    // Os pedidos do Portal partem já, todos ao mesmo tempo; enquanto isso,
+    // o resto do ecrã apaga-se (0,3 s) e a porta fica fechada no seu sítio.
+    // O vidro abre com o ecrã seguinte já pronto atrás dele.
     prebuscarPortal(sessao, teamId);
-    // Só o tempo de o resto do ecrã se apagar; a porta continua a
-    // aproximar-se até o Portal abrir (não há paragem no centro).
     await new Promise(r => setTimeout(r, 350));
     const ok = await entrar(sessao);
     if (!ok) { ENTRADA = null; setAberta(false); setPin(''); mostrarErro('Não foi possível entrar. Tenta outra vez.'); }
