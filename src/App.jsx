@@ -29701,6 +29701,11 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      'portal' = cacifo. Dentro de uma área (ex.: das Tarefas para uma
      missão) mantém-se a origem de quem abriu as Tarefas. */
   const [origem, setOrigem] = useState(null);
+  /* Voltar do cacifo ao balneário: o ecrã inicial entra a desvanecer (0,3 s)
+     em vez de aparecer de golpe. Só opacidade (sem transform), para não
+     mexer nos elementos fixos do ecrã. */
+  const [voltouCacifo, setVoltouCacifo] = useState(false);
+  useEffect(() => { if (!voltouCacifo) return undefined; const t = setTimeout(() => setVoltouCacifo(false), 450); return () => clearTimeout(t); }, [voltouCacifo]);
   const voltar = () => setActiveType(origem);
   // Onde abrir uma área vinda do cacifo (ex.: Competição › estatísticas).
   const [focoArea, setFocoArea] = useState(null);
@@ -30220,7 +30225,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         player={fotoPlantel ? { ...player, photo: fotoPlantel } : player}
         equipa={equipa} code={code} teamId={teamId}
         animar={!cacifoAberto} onAberto={() => setCacifoAberto(true)}
-        onBack={() => setActiveType(null)}
+        onBack={() => { setVoltouCacifo(true); setActiveType(null); }}
         onAbrir={(id, foco) => { setCacifoAberto(true); setOrigem('portal'); setFocoArea(foco || null); setActiveType(id); }}
         onAbrirWellness={() => { if (wellnessWindow.open) { setCacifoAberto(true); setOrigem('portal'); setActiveType('wellness'); } }}
         onAbrirRpe={() => { if (rpeWindow.open) { setCacifoAberto(true); setOrigem('portal'); setActiveType('rpe'); } }}
@@ -30325,6 +30330,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
 
   return (
     <TransicaoEntrada focoInteiro={!!ecraMissao}>
+    {voltouCacifo && <style>{'@keyframes mjp-voltar { from { opacity: 0; } to { opacity: 1; } }'}</style>}
+    <div style={voltouCacifo ? { animation: 'mjp-voltar .32s ease-out both' } : undefined}>
     {ecraMissao}
     {toastCumprida}
     <PlayerKioskHome
@@ -30342,6 +30349,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       mensagensMister={mensagensMister}
       diasSequenciaChama={diasSequenciaChama}
     />
+    </div>
     </TransicaoEntrada>
   );
 }
@@ -34062,6 +34070,8 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
   const svg = React.useMemo(() => pkhBalneario({
     cor, numero, nome: primeiro, foto: (jogador && jogador.foto) || '', iniciais: peIniciais(nome),
     logo: logo || '', inicialClube: clube ? String(clube)[0].toUpperCase() : '', badge: 0, boasVindas: primeiro || 'Atleta',
+    // A mesma luz do ecrã inicial (de madrugada, só a luz de presença): a imagem da porta não muda ao abrir.
+    apagado: (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes() < CHECKIN_WINDOWS.wellness.startMin ? 'presenca' : false; })(),
   }, 300, H), [T.corEquipa, numero, primeiro, jogador && jogador.foto, logo, clube, H]); // eslint-disable-line react-hooks/exhaustive-deps
   /* Acesso autorizado: guarda onde está o vidro (o ecrã seguinte vai
      aparecer atrás dele) e o resto da porta apaga-se. O vidro só abre já
@@ -35697,7 +35707,7 @@ function PkhMister({ mensagens, g, estilo }) {
    do meio-campo, entre as duas linhas de fundo) é o botão do Wellness e o
    da PSE. A metade por responder AGORA tem contorno dourado e pisca
    devagar; a outra fica escurecida, com o estado escrito. */
-function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWellness, onPse, g, largo }) {
+function PkhCampo({ apagado, noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWellness, onPse, g, largo }) {
   /* O CAMPO EM PERSPETIVA, NOITE DE JOGO (a combinar com o balneário
      premium): visto da bancada, com bancada escura e público na cor da
      equipa ao fundo, placas LED douradas, relva às riscas, linhas
@@ -35745,7 +35755,7 @@ function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWelln
     return (
       <g key={u}>
         <polygon points={pp([a, b, [b[0] + d, b[1] - 3], [a[0] + d, a[1] - 3]])} fill="rgba(255,255,255,.12)" />
-        <polyline points={pp([a, [a[0], a[1] - h], [b[0], b[1] - h], b])} fill="none" stroke="#fff" strokeWidth="1.5" />
+        <polyline points={pp([a, [a[0], a[1] - h], [b[0], b[1] - h], b])} fill="none" stroke={apagado ? "#5d6b66" : "#fff"} strokeWidth="1.5" />
       </g>
     );
   };
@@ -35754,7 +35764,7 @@ function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWelln
     const t = String(texto || '');
     const [cx, cy] = P(lado === 'w' ? 0.27 : 0.73, 0.5);
     const corTxt = feito ? '#8EE6A0' : aberto ? '#FFC23D' : 'rgba(255,255,255,.75)';
-    const halo = { stroke: '#163d27', strokeWidth: 3.2, paintOrder: 'stroke', strokeLinejoin: 'round' };
+    const halo = { stroke: apagado ? '#0d2117' : '#163d27', strokeWidth: 3.2, paintOrder: 'stroke', strokeLinejoin: 'round' };
     const zona = lado === 'w' ? quad(0, 0.5, 0, 1) : quad(0.5, 1, 0, 1);
     return (
       <g role="button" tabIndex={aberto ? 0 : -1} aria-label={`${nome}: ${t}`} aria-disabled={!aberto}
@@ -35774,7 +35784,7 @@ function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWelln
   };
   // Público na bancada: pontinhos na cor da equipa (de -300 a 600 para encher ecrãs largos).
   const publico = [];
-  for (let i = -60; i < Math.ceil(W / 5) + 60; i++) publico.push(<rect key={i} x={i * 5 + 1} y={15 + (((i % 3) + 3) % 3) * 5} width="3" height="3" fill={i % 4 ? eq.escuro : eq.base} opacity=".8" />);
+  for (let i = -60; i < Math.ceil(W / 5) + 60; i++) publico.push(<rect key={i} x={i * 5 + 1} y={15 + (((i % 3) + 3) % 3) * 5} width="3" height="3" fill={apagado ? '#1c211f' : (i % 4 ? eq.escuro : eq.base)} opacity=".8" />);
   return (
     <div style={{
       background: '#0b0d0c', border: '3px solid #2a2f33', borderTop: 0, borderRadius: '0 0 12px 12px', overflow: 'hidden', flexShrink: 0,
@@ -35790,18 +35800,19 @@ function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWelln
           <rect x="-300" y="0" width={W + 600} height="170" fill="url(#pkh-campo-ceu)" />
           <rect x="-300" y="12" width={W + 600} height="20" fill="#141a17" />
           {publico}
-          <rect x="-300" y="30" width={W + 600} height="5" fill="#FFC23D" /><rect x="-300" y="31.5" width={W + 600} height="2" fill="#FFF4D6" opacity=".6" />
-          <rect x="-300" y="35" width={W + 600} height="135" fill="#2a6142" />
-          {Array.from({ length: W > 420 ? 16 : 12 }, (_, k, arr) => (k % 2 ? <polygon key={k} points={quad(k / (W > 420 ? 16 : 12), (k + 1) / (W > 420 ? 16 : 12), -0.01, 1.07)} fill="#24563a" /> : null))}
-          <g fill="none" stroke="#FFF4D6" strokeWidth="3.4" opacity=".35" filter="url(#pkh-campo-led)">{linhas}</g>
-          <g fill="none" stroke="#FFF4D6" strokeWidth="1.4" opacity=".9">{linhas}</g>
+          <rect x="-300" y="30" width={W + 600} height="5" fill={apagado ? '#2a2618' : '#FFC23D'} />{!apagado && <rect x="-300" y="31.5" width={W + 600} height="2" fill="#FFF4D6" opacity=".6" />}
+          <rect x="-300" y="35" width={W + 600} height="135" fill={apagado ? '#132e20' : '#2a6142'} />
+          {Array.from({ length: W > 420 ? 16 : 12 }, (_, k, arr) => (k % 2 ? <polygon key={k} points={quad(k / (W > 420 ? 16 : 12), (k + 1) / (W > 420 ? 16 : 12), -0.01, 1.07)} fill={apagado ? '#10281b' : '#24563a'} /> : null))}
+          {!apagado && <g fill="none" stroke="#FFF4D6" strokeWidth="3.4" opacity=".35" filter="url(#pkh-campo-led)">{linhas}</g>}
+          <g fill="none" stroke={apagado ? '#9fb0c8' : '#FFF4D6'} strokeWidth="1.4" opacity={apagado ? 0.35 : 0.9}>{linhas}</g>
           {baliza(0, -1)}{baliza(1, 1)}
         </g>
         {metade('w', 'WELLNESS', wEstado, wTexto, onWellness)}
         {metade('p', semSegunda ? 'FOLGA' : 'PSE', pEstado, pTexto, onPse)}
         <g aria-hidden="true" style={{ pointerEvents: 'none' }}>
-          <ellipse cx="18" cy="16" rx="60" ry="34" fill="url(#pkh-campo-hol)" /><ellipse cx={W - 18} cy="16" rx="60" ry="34" fill="url(#pkh-campo-hol)" />
-          <rect x="8" y="6" width="20" height="7" rx="1.5" fill="#FFF4D6" /><rect x={W - 28} y="6" width="20" height="7" rx="1.5" fill="#FFF4D6" />
+          {!apagado && <><ellipse cx="18" cy="16" rx="60" ry="34" fill="url(#pkh-campo-hol)" /><ellipse cx={W - 18} cy="16" rx="60" ry="34" fill="url(#pkh-campo-hol)" /></>}
+          <rect x="8" y="6" width="20" height="7" rx="1.5" fill={apagado ? '#3a3f3c' : '#FFF4D6'} /><rect x={W - 28} y="6" width="20" height="7" rx="1.5" fill={apagado ? '#3a3f3c' : '#FFF4D6'} />
+          {apagado && <><circle cx={W / 2 + 70} cy="12" r="5" fill="#dfe6f0" opacity=".85" /><circle cx={W / 2 + 72} cy="10.5" r="4.4" fill="#0b0d0c" /></>}
         </g>
       </svg>
     </div>
@@ -35864,7 +35875,7 @@ function PkhSequencia({ dias, g }) {
 /* W = largura do desenho (altura fixa 215). 300 no telemóvel; em ecrã largo
    a sala alarga-se (paredes mais compridas, mais cacifos), em vez de se
    cortar o desenho. */
-function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge, boasVindas }, W = 300, H = 215, tv = null) {
+function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, badge, boasVindas, apagado }, W = 300, H = 215, tv = null) {
   // H > 215 quando o espaço é mais alto do que o desenho: a sala estica na
   // vertical (em vez de se cortar dos lados) e a TV fica sempre ao centro.
   const VX = W / 2, VY = (95 * H) / 215, S = 0.5, BL = VX * S, BR = W - VX * S, BT = VY * S, BB = H - (H - VY) * S;
@@ -35892,7 +35903,7 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
       + `<path d="M0 38 L20 46 M100 38 L80 46" stroke="${cor.mangas}" stroke-width="3"/>`;
     if (numero) {
       s += `<text x="50" y="30" text-anchor="middle" font-size="${fNome}" font-weight="600" fill="${cor.texto}" font-family="Oswald, sans-serif" letter-spacing="1.5">${nomeCamisola}</text>`
-        + `<text x="50" y="82" text-anchor="middle" font-size="${numero.length > 2 ? 34 : 44}" font-weight="700" fill="${cor.texto}" stroke="${cor.contorno}" stroke-width="2.5" paint-order="stroke" font-family="Oswald, sans-serif">${pkhEsc(numero)}</text>`;
+        + `<text x="50" y="86" text-anchor="middle" font-size="${numero.length > 2 ? 40 : 54}" font-weight="700" fill="${cor.texto}" stroke="${cor.contorno}" stroke-width="2.5" paint-order="stroke" font-family="Oswald, sans-serif">${pkhEsc(numero)}</text>`;
     } else {
       s += `<text x="50" y="66" text-anchor="middle" font-size="${fNome + 4}" font-weight="600" fill="${cor.texto}" stroke="${cor.contorno}" stroke-width="1.5" paint-order="stroke" font-family="Oswald, sans-serif" letter-spacing="1.5">${nomeCamisola}</text>`;
     }
@@ -35915,12 +35926,17 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
     nicho: ['#3a3020', '#2a241a', '#17140f'], cupula: ['#FFE9A8', '#C9A227'], cupulaBorda: '#7a5f14',
     led: '#FFD86A', ledBrilho: '#FFC23D', moldura: '#0b0e0c', assento: '#3a2c1e', assentoFrente: '#22190f', chaoTipo: 'madeira',
   };
-  const U = String(cor.base).replace(/[^a-z0-9]/gi, '');
+  if (apagado) Object.assign(Tm, {
+    teto: ['#060807', '#0a0c0b'], chao: ['#0a0c0b', '#0f1210'], paredeE: '#0c0f0d', paredeD: '#0b0e0c', fundo: '#0e1210',
+    nicho: ['#14120d', '#0f0e0a', '#090806'], cupula: ['#2a2516', '#16130c'], cupulaBorda: '#2f2814',
+    led: apagado === 'presenca' ? '#5a4b22' : '#26221a', ledBrilho: apagado === 'presenca' ? '#7a6224' : 'rgba(0,0,0,0)', moldura: '#060807', assento: '#1a140e', assentoFrente: '#100c08',
+  });
+  const U = String(cor.base).replace(/[^a-z0-9]/gi, '') + (apagado ? 'x' + apagado : '');
   s += '<defs>'
     + `<linearGradient id="ev-teto${U}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${Tm.teto[0]}"/><stop offset="1" stop-color="${Tm.teto[1]}"/></linearGradient>`
     + `<linearGradient id="ev-chao${U}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${Tm.chao[0]}"/><stop offset="1" stop-color="${Tm.chao[1]}"/></linearGradient>`
     + `<linearGradient id="ev-nicho${U}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${Tm.nicho[0]}"/><stop offset=".6" stop-color="${Tm.nicho[1]}"/><stop offset="1" stop-color="${Tm.nicho[2]}"/></linearGradient>`
-    + `<linearGradient id="ev-nichoJ${U}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFF6DA"/><stop offset=".6" stop-color="#F3D98C"/><stop offset="1" stop-color="#b8973c"/></linearGradient>`
+    + `<linearGradient id="ev-nichoJ${U}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${apagado ? (apagado === 'presenca' ? '#4a3f22' : '#221e14') : '#FFF6DA'}"/><stop offset=".6" stop-color="${apagado ? (apagado === 'presenca' ? '#3a3119' : '#1a170f') : '#F3D98C'}"/><stop offset="1" stop-color="${apagado ? '#14110b' : '#b8973c'}"/></linearGradient>`
     + `<radialGradient id="ev-cupula${U}" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="${Tm.cupula[0]}"/><stop offset=".7" stop-color="${Tm.cupula[1]}"/><stop offset="1" stop-color="${Tm.cupulaBorda === 'equipa' ? cor.base : Tm.cupulaBorda}"/></radialGradient>`
     + `<filter id="ev-led${U}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.8"/></filter>`
     + '</defs>';
@@ -35978,7 +35994,7 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
       s += poly([wp(a - 0.01, 0.11), wp(b + 0.01, 0.11), wp(b + 0.01, 0.74), wp(a - 0.01, 0.74)].map(M), Tm.moldura);
       // nicho iluminado
       const n4 = [wp(a, 0.13), wp(b, 0.13), wp(b, 0.62), wp(a, 0.62)].map(M);
-      if (meu) s += `<polygon points="${pts(n4)}" fill="none" stroke="#FFC23D" stroke-width="6" opacity=".5" filter="url(#pkh-brilho)"/>`;
+      if (meu) s += `<polygon points="${pts(n4)}" fill="none" stroke="#FFC23D" stroke-width="6" opacity="${apagado ? (apagado === 'presenca' ? .18 : 0) : .5}" filter="url(#pkh-brilho)"/>`;
       s += poly(n4, meu ? `url(#ev-nichoJ${U})` : `url(#ev-nicho${U})`, meu ? '#FFD86A' : Tm.led, meu ? 1.8 : 0.9);
       // camisola (os colegas; a do jogador vai à parte, maior)
       if (!meu) {
@@ -36009,7 +36025,7 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   const eJog = tv && tv.jogador ? tv.jogador : 1;
   const topoJog = ry - rr - 4;
   s += `<g transform="translate(${cx.toFixed(1)},${topoJog.toFixed(1)}) scale(${eJog.toFixed(3)}) translate(${(-cx).toFixed(1)},${(-topoJog).toFixed(1)})">`;
-  s += `<ellipse cx="${cx.toFixed(1)}" cy="${(cy + 4).toFixed(1)}" rx="30" ry="52" fill="#FFC23D" opacity=".32" filter="url(#pkh-brilho2)"/>`;
+  s += `<ellipse cx="${cx.toFixed(1)}" cy="${(cy + 4).toFixed(1)}" rx="30" ry="52" fill="#FFC23D" opacity="${apagado ? (apagado === 'presenca' ? .1 : 0) : .32}" filter="url(#pkh-brilho2)"/>`;
   s += `<g transform="translate(${(cx - 22 * zoom).toFixed(1)},${cy.toFixed(1)}) scale(${(0.44 * zoom).toFixed(3)})">${camisolaFrente}</g>`;
   s += `<circle cx="${cx.toFixed(1)}" cy="${(ry + 1.5).toFixed(1)}" r="${rr + 3}" fill="#000" opacity=".35"/>`;
   s += `<g transform="translate(${cx.toFixed(1)},${ry.toFixed(1)}) scale(${rr / 50})">`;
@@ -36018,6 +36034,12 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
     : `<circle r="50" fill="#1A2A1F"/><text y="17" text-anchor="middle" font-size="${iniciais.length > 2 ? 34 : 46}" font-weight="600" fill="#FFD86A" font-family="Oswald, sans-serif">${pkhEsc(iniciais)}</text>`;
   s += '<circle r="50" fill="none" stroke="#FFD86A" stroke-width="7"/></g>';
   s += '</g>';
+  if (apagado) s += `<rect x="0" y="0" width="${W}" height="${H}" fill="#000" opacity="${apagado === 'presenca' ? .38 : .5}"/>`;
+  if (apagado) {
+    // Com as luzes apagadas, a TV do Portal é a única luz: um brilho verde-frio no chão e nas paredes.
+    s += `<ellipse cx="${VX}" cy="${(BB + 10).toFixed(1)}" rx="${(W * 0.45).toFixed(1)}" ry="${((H - BB) * 0.7).toFixed(1)}" fill="#9fe0bf" opacity=".10" filter="url(#pkh-brilho2)"/>`;
+    s += `<ellipse cx="${VX}" cy="${((BT + BB) / 2).toFixed(1)}" rx="${((BR - BL) * 0.6).toFixed(1)}" ry="${((BB - BT) * 0.6).toFixed(1)}" fill="#9fe0bf" opacity=".10" filter="url(#pkh-brilho2)"/>`;
+  }
   // A TV da análise = a entrada do Portal.
   // `tv` (telemóveis baixos): a TV sobe e encolhe o necessário para o botão
   // "Entrar no Portal" caber por baixo dela, sem a tapar.
@@ -36275,6 +36297,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
     ro.observe(el);
     return () => ro.disconnect();
   }, [largo, tablet]);
+  const luzesApagadas = isToday && mins < W.startMin;
   const svgBalneario = React.useMemo(() => pkhBalneario({
     cor, numero, nome: primeiro, foto: (player && player.photo) || '', iniciais,
     logo: (equipa && equipa.logo) || '', inicialClube: clube ? clube[0].toUpperCase() : '', badge: nBadge,
@@ -36283,7 +36306,8 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
        (antes era um corte seco). O desenho não muda no fim — só a
        opacidade do grupo, por CSS — para a transição poder correr. */
     boasVindas: chegada ? primeiro : '',
-  }, enq.W, enq.H, enq.tv), [T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H, enq.tv && enq.tv.escala, enq.tv && enq.tv.jogador, chegada]); // eslint-disable-line react-hooks/exhaustive-deps
+    apagado: luzesApagadas ? 'presenca' : false,
+  }, enq.W, enq.H, enq.tv), [luzesApagadas, T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H, enq.tv && enq.tv.escala, enq.tv && enq.tv.jogador, chegada]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{
@@ -36320,7 +36344,10 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
         <div style={{ flexShrink: 0, ...aparecer }}>
           <PkhPlacard hora={hora} golosW={doneWellness ? 1 : 0} golosP={doneRpe ? 1 : 0} dias={dias} g={g} />
           <PkhCampo
-            noite={isToday && mins < W.startMin}
+            /* Da meia-noite até abrir o Wellness (06:30) está tudo fechado:
+               as luzes do estádio apagam-se (e as do balneário ficam só com
+               a luz de presença). */
+            apagado={luzesApagadas}
             wEstado={wEstado} wTexto={wTexto} pEstado={pEstado} pTexto={pTexto} semSegunda={isRestDay}
             onWellness={onOpenWellness} onPse={onOpenRpe} g={g} largo={largo}
           />
