@@ -32104,14 +32104,9 @@ function PlayerJogosHome({ code, teamId, onBack }) {
    do plantel todo. */
 function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
   const [estado, dados] = usePortalFetch('checkin_competicao', code, teamId);
-  /* Vindo da caixa das chuteiras (cacifo): abre já nas estatísticas do
-     jogador, que estão no fim da página — de uma vez, sem deslizar. */
-  const estatRef = useRef(null);
-  useEffect(() => {
-    if (foco !== 'estatisticas' || estado !== 'pronto') return undefined;
-    const r = requestAnimationFrame(() => { if (estatRef.current) estatRef.current.scrollIntoView({ block: 'start' }); });
-    return () => cancelAnimationFrame(r);
-  }, [foco, estado]);
+  /* Vindo da caixa das chuteiras (cacifo): mostra SÓ as estatísticas do
+     jogador — sem a classificação nem as jornadas por cima. */
+  const soEstatisticas = foco === 'estatisticas';
   const isNarrow = useIsMobile(560);
   const [viewId, setViewId] = useState(null);
   const [roundIdx, setRoundIdx] = useState(0);
@@ -32173,6 +32168,7 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
   }
 
   const nome = splitCompetitionName((comp && comp.name) || 'Competição');
+
   const hasData = teams.length > 0 || rounds.length > 0;
 
   const dataCurta = (d) => (d
@@ -32186,6 +32182,46 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
     </div>
   );
 
+  const blocoEstatisticas = (
+    <>
+      {!soEstatisticas && (
+        <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12 }}>
+          As tuas estatísticas na competição
+        </div>
+      )}
+      {!est || est.jogos === 0 ? (
+        <EmptyState text="Ainda sem jogos de competição registados." />
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isNarrow ? 'repeat(auto-fill, minmax(96px, 1fr))' : 'repeat(9, 1fr)',
+          gap: 10,
+          maxWidth: isNarrow ? 720 : '100%',
+        }}>
+          {tileEstat(est.jogos, 'Convocatórias')}
+          {tileEstat(est.titular, 'Titular')}
+          {tileEstat(est.suplenteUtilizado, 'Suplente uti', 'Jogos em que entrou vindo do banco')}
+          {tileEstat(est.minutos, 'Minutos')}
+          {tileEstat(est.golos, 'Golos')}
+          {tileEstat(est.assistencias, 'Assistências')}
+          {tileEstat(est.amarelos, 'Amarelos')}
+          {tileEstat(est.vermelhos, 'Vermelhos')}
+          {tileEstat(est.notaMedia ?? '—', 'Nota média')}
+        </div>
+      )}
+    </>
+  );
+
+  if (soEstatisticas) {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
+        {voltar}
+        <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>As tuas estatísticas</div>
+        <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 20 }}>{nome.title ? `${nome.title}${nome.subtitle ? ` · ${nome.subtitle}` : ''}` : 'Competição'}</div>
+        {blocoEstatisticas}
+      </div>
+    );
+  }
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
       {voltar}
@@ -32320,29 +32356,7 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
         </div>
       )}
 
-      <div ref={estatRef} style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12, scrollMarginTop: 16 }}>
-        As tuas estatísticas na competição
-      </div>
-      {!est || est.jogos === 0 ? (
-        <EmptyState text="Ainda sem jogos de competição registados." />
-      ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isNarrow ? 'repeat(auto-fill, minmax(96px, 1fr))' : 'repeat(9, 1fr)',
-          gap: 10,
-          maxWidth: isNarrow ? 720 : '100%',
-        }}>
-          {tileEstat(est.jogos, 'Convocatórias')}
-          {tileEstat(est.titular, 'Titular')}
-          {tileEstat(est.suplenteUtilizado, 'Suplente uti', 'Jogos em que entrou vindo do banco')}
-          {tileEstat(est.minutos, 'Minutos')}
-          {tileEstat(est.golos, 'Golos')}
-          {tileEstat(est.assistencias, 'Assistências')}
-          {tileEstat(est.amarelos, 'Amarelos')}
-          {tileEstat(est.vermelhos, 'Vermelhos')}
-          {tileEstat(est.notaMedia ?? '—', 'Nota média')}
-        </div>
-      )}
+      {blocoEstatisticas}
     </div>
   );
 }
