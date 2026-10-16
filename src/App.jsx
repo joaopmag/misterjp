@@ -32935,7 +32935,8 @@ function usePortalFetch(rpcName, code, teamId) {
     let cancelado = false;
     (async () => {
       try {
-        const { data, error } = await supabase.rpc(rpcName, { p_code: code, p_team: teamId });
+        const pre = tirarPrebusca(rpcName, code, teamId);
+        const { data, error } = pre ? await pre : await supabase.rpc(rpcName, { p_code: code, p_team: teamId });
         if (cancelado) return;
         if (error) throw error;
         let d = data;
@@ -33696,6 +33697,28 @@ function PeCartao({ jogador, cor, logo, clube }) {
    ainda a abrir, esse ecrã cresce até à página inteira. É sempre o mesmo
    ecrã, por isso não há imagens trocadas nem paragens a meio. */
 let ENTRADA = null; // { rect, logo, cor, t }
+
+/* PRÉ-BUSCA: com o PIN certo, os pedidos que o Portal faz ao abrir partem
+   todos logo, em paralelo (antes iam um a seguir ao outro, já com a porta
+   à espera). Quando o Portal os pede, já estão prontos (ou a caminho). */
+const PREBUSCA = new Map();
+function prebuscarPortal(code, teamId) {
+  if (!code || !teamId) return;
+  const chamar = (rpc, args) => {
+    const k = `${rpc}|${code}|${teamId}`;
+    if (!PREBUSCA.has(k)) PREBUSCA.set(k, { t: Date.now(), p: Promise.resolve(supabase.rpc(rpc, args)) });
+  };
+  chamar('checkin_bootstrap', { p_code: code, p_days: CHECKIN_DAYS_BACK, p_team: teamId });
+  ['checkin_tarefas', 'checkin_tarefas_destinos', 'checkin_convocatoria', 'checkin_competicao']
+    .forEach(r => chamar(r, { p_code: code, p_team: teamId }));
+}
+function tirarPrebusca(rpc, code, teamId) {
+  const k = `${rpc}|${code}|${teamId}`;
+  const v = PREBUSCA.get(k);
+  if (!v) return null;
+  PREBUSCA.delete(k);
+  return Date.now() - v.t < 30000 ? v.p : null;
+}
 const entradaRecente = () => !!(ENTRADA && Date.now() - ENTRADA.t < 20000);
 
 // O vidro da porta, sozinho, no sítio exato onde estava. Com `caixa`, é
@@ -33784,6 +33807,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
        antes de abrir: assim a abertura nunca apanha um engasgo. */
     let r1 = 0, r2 = 0;
     const tempo = setTimeout(() => {
+      // Dois frames para o ecrã de trás assentar, e abre.
       r1 = requestAnimationFrame(() => {
         r2 = requestAnimationFrame(() => {
           if (cancelado) return;
@@ -33799,7 +33823,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
           };
         });
       });
-    }, 140);
+    }, 0);
     return () => { cancelado = true; clearTimeout(tempo); cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -33828,6 +33852,8 @@ function TransicaoEntrada({ focoInteiro, children }) {
    (com o cacifo do jogador) e a TV a dar as boas-vindas. */
 function PePorta({ aberta, jogador, cor, logo, clube }) {
   const caixaRef = useRef(null);
+  const portaRef = useRef(null);
+  const [aprox, setAprox] = useState(null); // { dx, dy, s }
   const [tam, setTam] = useState({ w: 260, h: 180 });
   useEffect(() => {
     const el = caixaRef.current;
@@ -33848,10 +33874,26 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
   /* Acesso autorizado: guarda onde está o vidro (o ecrã seguinte vai
      aparecer atrás dele) e o resto da porta apaga-se. O vidro só abre já
      com o Portal pronto por trás (ver TransicaoEntrada). */
+  /* Acesso autorizado: enquanto o resto do ecrã se apaga, a porta desliza
+     para o centro e aproxima-se (como quem caminha até ela). É aí, já no
+     centro, que vai abrir — e é esse o sítio guardado para a entrada. */
   useEffect(() => {
-    if (!aberta) { ENTRADA = null; return undefined; }
-    const el = caixaRef.current;
-    if (el) ENTRADA = { rect: el.getBoundingClientRect(), logo: logo || '', cor, t: Date.now() };
+    if (!aberta) { ENTRADA = null; setAprox(null); return undefined; }
+    const el = caixaRef.current, porta = portaRef.current;
+    if (!el || !porta) return undefined;
+    const r = el.getBoundingClientRect(), b = porta.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const altAlvo = Math.min(vh * 0.6, (vw * 0.86 * r.height) / r.width);
+    const esc = Math.max(1, Math.min(1.7, altAlvo / r.height));
+    const bcx = b.left + b.width / 2, bcy = b.top + b.height / 2;
+    const cx = vw / 2, cy = vh * 0.48;
+    const ox = (r.left + r.width / 2) - bcx, oy = (r.top + r.height / 2) - bcy;
+    const ncx = cx + ox * esc, ncy = cy + oy * esc;
+    ENTRADA = {
+      rect: { left: ncx - (r.width * esc) / 2, top: ncy - (r.height * esc) / 2, width: r.width * esc, height: r.height * esc },
+      logo: logo || '', cor, t: Date.now(),
+    };
+    setAprox({ dx: cx - bcx, dy: cy - bcy, s: esc });
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberta]);
@@ -33880,7 +33922,11 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
       </div>
       {/* Proporção de porta (5:6): com menos altura fica mais estreita, em
           vez de achatada (iPad deitado, telemóveis baixos). */}
-      <div style={{ position: 'relative', flex: 1, minHeight: 120, maxHeight: 'min(48dvh, 520px)', aspectRatio: '5 / 6', width: 'auto', maxWidth: '100%', borderRadius: 8, padding: 7, boxSizing: 'border-box', display: 'flex' }}>
+      <div ref={portaRef} style={{
+        position: 'relative', zIndex: 2, flex: 1, minHeight: 120, maxHeight: 'min(48dvh, 520px)', aspectRatio: '5 / 6', width: 'auto', maxWidth: '100%', borderRadius: 8, padding: 7, boxSizing: 'border-box', display: 'flex',
+        transform: aprox ? `translate(${aprox.dx}px, ${aprox.dy}px) scale(${aprox.s})` : 'none',
+        transition: 'transform .6s cubic-bezier(.45,0,.25,1)',
+      }}>
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', boxShadow: '0 10px 24px rgba(0,0,0,.45)', ...apagar }} />
         <div ref={caixaRef} style={{ position: 'relative', flex: 1, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
           <svg viewBox={`0 0 300 ${H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />
@@ -34299,9 +34345,11 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   const abrirEEntrar = async (sessao) => {
     setAberta(true);
     setAviso('ACESSO AUTORIZADO'); setCorAviso('#8EE6A0');
-    // O resto da porta apaga-se (0,3 s) e entra-se logo; o vidro abre já
-    // com o Portal pronto atrás dele.
-    await new Promise(r => setTimeout(r, 320));
+    // Os pedidos do Portal partem já, todos ao mesmo tempo; enquanto isso, o
+    // resto do ecrã apaga-se e a porta aproxima-se do centro (0,6 s). O
+    // vidro abre com o Portal pronto atrás dele.
+    prebuscarPortal(sessao, teamId);
+    await new Promise(r => setTimeout(r, 620));
     const ok = await entrar(sessao);
     if (!ok) { ENTRADA = null; setAberta(false); setPin(''); mostrarErro('Não foi possível entrar. Tenta outra vez.'); }
   };
@@ -50078,7 +50126,8 @@ function CheckinApp() {
   }, [equipaDoLink]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const buscar = async (code) => {
-    const { data, error } = await supabase.rpc('checkin_bootstrap', {
+    const pre = tirarPrebusca('checkin_bootstrap', code, equipaDoLink);
+    const { data, error } = pre ? await pre : await supabase.rpc('checkin_bootstrap', {
       p_code: code, p_days: CHECKIN_DAYS_BACK, p_team: equipaDoLink,
     });
     if (error) throw error;
