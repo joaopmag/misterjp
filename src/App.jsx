@@ -33721,7 +33721,7 @@ function PortaAEspera() {
   if (!ent) return null;
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg }}>
-      <PortaVidroSo rect={ent.rect} aberto={false} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel />
+      <PortaVidroSo rect={ent.rect} aberto={false} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel tamEmblema={ent.tam} />
     </div>
   );
 }
@@ -33729,14 +33729,15 @@ function PortaAEspera() {
 // O vidro da porta, sozinho, no sítio exato onde estava. Com `caixa`, é
 // desenhado noutro referencial (dentro do ecrã que cresce): left/top/
 // width/height/tam/raio já vêm nessas unidades.
-function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel }) {
-  const c = caixa || { left: rect.left, top: rect.top, width: rect.width, height: rect.height, tam: Math.round(rect.height * 0.78), raio: 3, fixo: true };
+function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel, tamEmblema }) {
+  const c = caixa || { left: rect.left, top: rect.top, width: rect.width, height: rect.height, tam: tamEmblema || Math.round(rect.height * 0.78), raio: 3, fixo: true };
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
     background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
-    backdropFilter: aberto ? 'none' : 'blur(7px)', WebkitBackdropFilter: aberto ? 'none' : 'blur(7px)',
-    // Abre depressa e vai-se apagando enquanto abre: a porta desaparece.
-    transition: 'transform .55s cubic-bezier(.45,0,.3,1), opacity .4s ease .12s',
+    // O fosco mantém-se enquanto abre (tirá-lo de repente fazia um "flash"):
+    // a folha desliza e vai ficando transparente, e o fosco vai com ela.
+    backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)',
+    transition: 'transform .6s cubic-bezier(.4,0,.3,1), opacity .45s ease-out',
     opacity: aberto ? 0 : 1,
   };
   const emblema = (lado) => (
@@ -33748,7 +33749,7 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel }) {
     <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
       {fundo && (
         <svg viewBox={`0 0 300 ${fundo.H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%"
-          style={{ display: 'block', position: 'absolute', inset: 0, background: '#121614', opacity: fundoVisivel ? 1 : 0, transition: 'opacity .35s ease' }}
+          style={{ display: 'block', position: 'absolute', inset: 0, background: '#121614', opacity: fundoVisivel ? 1 : 0, transition: 'opacity .6s cubic-bezier(.45,0,.55,1)' }}
           dangerouslySetInnerHTML={{ __html: fundo.svg }} />
       )}
       <div style={{ ...vidro, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{emblema('E')}</div>
@@ -33810,7 +33811,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
     // O buraco da porta nas medidas do ecrã de trás (antes de encolher).
     setCaixaVidro({
       left: fcx - d.width / 2 / esc0, top: fcy - d.height / 2 / esc0,
-      width: d.width / esc0, height: d.height / esc0, tam: Math.round((d.height * 0.78) / esc0), raio: 3 / esc0,
+      width: d.width / esc0, height: d.height / esc0, tam: (ent.tam || d.height * 0.78) / esc0, raio: 3 / esc0,
     });
     let cancelado = false, aJ = null, aC = null;
     const N = 36;
@@ -33839,7 +33840,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
             try { aJ.cancel(); aC.cancel(); } catch (e) { /* nada */ }
             acabar();
           };
-        }, 380);
+        }, 640);
       });
     });
     return () => { cancelado = true; clearTimeout(tempo); cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
@@ -33900,7 +33901,10 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
     const el = caixaRef.current;
     if (!el) return undefined;
     const r = el.getBoundingClientRect();
-    ENTRADA = { rect: { left: r.left, top: r.top, width: r.width, height: r.height }, fundo: { svg, H }, logo: logo || '', cor, t: Date.now() };
+    ENTRADA = {
+      rect: { left: r.left, top: r.top, width: r.width, height: r.height }, fundo: { svg, H },
+      tam: Math.round(tam.h * 0.78), logo: logo || '', cor, t: Date.now(),
+    };
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberta]);
