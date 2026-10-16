@@ -33724,7 +33724,7 @@ function PortaAEspera() {
     <div style={{ position: 'fixed', inset: 0, background: T.bg }}>
       <style>{PE_SEM_GUTTER}</style>
       {ent.resto && <PeRestoEntrada html={ent.resto} apagar={false} />}
-      <PortaVidroSo rect={ent.rect} aberto={false} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel tamEmblema={ent.tam} />
+      <PortaVidroSo rect={ent.rect} aberto={false} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} tamEmblema={ent.tam} />
     </div>
   );
 }
@@ -33752,36 +33752,41 @@ function PeRestoEntrada({ html, apagar }) {
 // O vidro da porta, sozinho, no sítio exato onde estava. Com `caixa`, é
 // desenhado noutro referencial (dentro do ecrã que cresce): left/top/
 // width/height/tam/raio já vêm nessas unidades.
-function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel, tamEmblema, recolhido }) {
+function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, tamEmblema, recolhido }) {
   const c = caixa || { left: rect.left, top: rect.top, width: rect.width, height: rect.height, tam: tamEmblema || Math.round(rect.height * 0.78), raio: 3, fixo: true };
-  const vidro = {
-    position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
-    background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
-    // O fosco mantém-se enquanto abre (tirá-lo de repente fazia um "flash"):
-    // a folha desliza e vai ficando transparente, e o fosco vai com ela.
-    backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)',
-    /* As folhas arrancam devagar e travam devagar (ease-in-out), e só se
-       apagam depois de já irem a meio — nunca há um corte seco. */
-    transition: 'transform .75s cubic-bezier(.65,0,.35,1), opacity .4s ease-out .2s',
-    opacity: aberto ? 0 : 1,
+  /* CADA FOLHA LEVA CONSIGO A SUA METADE DO QUE SE VÊ ATRÁS DO VIDRO (o
+     balneário, desfocado). Assim a imagem da porta nunca muda: quando as
+     folhas deslizam, o ecrã novo vai aparecendo na abertura, à medida que
+     a porta abre — como numa porta de verdade. Vale para todos os ecrãs que
+     saem da porta (ecrã inicial, parabéns, missão, jogo).
+     O desfoque é um filtro fixo na imagem (e não um backdrop-filter, que
+     tinha de ser recalculado a cada frame enquanto o ecrã cresce). */
+  const folha = {
+    position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden', willChange: 'transform',
+    // Arranca devagar e trava devagar (ease-in-out).
+    transition: 'transform .8s cubic-bezier(.65,0,.35,1)',
   };
-  const emblema = (lado) => (
-    <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: logo ? 0.6 : 1 }}>
-      <PeEmblema logo={logo} cor={cor} tam={c.tam} branco />
-    </div>
+  const metade = (lado) => (
+    <>
+      {fundo && (
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', overflow: 'hidden', background: '#121614' }}>
+          <svg viewBox={`0 0 300 ${fundo.H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%"
+            style={{ display: 'block', position: 'absolute', inset: 0, filter: 'blur(7px)', transform: 'scale(1.06)' }}
+            dangerouslySetInnerHTML={{ __html: fundo.svg }} />
+        </div>
+      )}
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))' }} />
+      <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: logo ? 0.6 : 1 }}>
+        <PeEmblema logo={logo} cor={cor} tam={c.tam} branco />
+      </div>
+    </>
   );
   return (
     <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
-      {fundo && !recolhido && (
-        <svg viewBox={`0 0 300 ${fundo.H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%"
-          style={{ display: 'block', position: 'absolute', inset: 0, background: '#121614', opacity: fundoVisivel ? 1 : 0, transition: 'opacity .22s ease-out' }}
-          dangerouslySetInnerHTML={{ __html: fundo.svg }} />
-      )}
-      {/* Depois de abertas, as folhas saem de cena: o fosco (blur) a crescer
-          com o ecrã era o que engasgava a animação. */}
-      {!recolhido && <div style={{ ...vidro, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{emblema('E')}</div>}
-      {!recolhido && <div style={{ ...vidro, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{emblema('D')}</div>}
-      {!recolhido && <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .15s' }} />}
+      {/* Depois de abertas (já fora do buraco da porta), as folhas saem de cena. */}
+      {!recolhido && <div style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{metade('E')}</div>}
+      {!recolhido && <div style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{metade('D')}</div>}
+      {!recolhido && <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />}
     </div>
   );
 }
@@ -33802,7 +33807,6 @@ function TransicaoEntrada({ focoInteiro, children }) {
   const [ativa, setAtiva] = useState(!!ent);
   const [vidroAberto, setVidroAberto] = useState(false);
   const [vidroRecolhido, setVidroRecolhido] = useState(false);
-  const [fundoVisivel, setFundoVisivel] = useState(true);
   const [caixaVidro, setCaixaVidro] = useState(null);
   React.useLayoutEffect(() => {
     if (!ent) return undefined;
@@ -33856,21 +33860,16 @@ function TransicaoEntrada({ focoInteiro, children }) {
       r2 = requestAnimationFrame(() => {
         if (cancelado) return;
         /* Passagem suave, por esta ordem:
-           0 ms    o balneário atrás do vidro fosco dá lugar ao ecrã que
-                   entra, numa troca rápida (0,22 s): a porta abre já com o
-                   ecrã novo lá dentro, sem as duas imagens sobrepostas;
-           120 ms  as folhas começam a abrir e o resto do ecrã de entrada
-                   desvanece-se;
-           380 ms  com a porta já meio aberta, o ecrã cresce até à página
-                   inteira (1 s, a acelerar e a travar devagar);
-           800 ms  as folhas, já invisíveis, saem de cena. */
-        setFundoVisivel(false);
-        tempo = setTimeout(() => {
-          if (cancelado) return;
-          setVidroAberto(true);
-          tempo = setTimeout(() => { if (!cancelado) setVidroRecolhido(true); }, 680);
-        }, 120);
-        const op = { duration: 1000, delay: 380, easing: 'linear', fill: 'forwards' };
+           0 ms    as folhas começam a abrir, cada uma com a sua metade da
+                   imagem da porta (que nunca muda); o ecrã novo vai
+                   aparecendo na abertura. O resto do ecrã de entrada
+                   desvanece-se ao mesmo tempo;
+           280 ms  com a porta a abrir, o ecrã cresce até à página inteira
+                   (1 s, a acelerar e a travar devagar);
+           900 ms  as folhas, já fora da porta, saem de cena. */
+        setVidroAberto(true);
+        tempo = setTimeout(() => { if (!cancelado) setVidroRecolhido(true); }, 900);
+        const op = { duration: 1000, delay: 280, easing: 'linear', fill: 'forwards' };
         aJ = jan.animate(kJ, op);
         aC = con.animate(kC, op);
         aJ.onfinish = () => {
@@ -33900,7 +33899,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
           {/* O vidro está no mesmo referencial do ecrã: abre, apaga-se e,
               enquanto isso, cresce e é cortado com ele — nada fica preso no
               sítio da porta. */}
-          {ativa && ent && <PortaVidroSo rect={ent.rect} caixa={caixaVidro || undefined} aberto={vidroAberto} recolhido={vidroRecolhido} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel={fundoVisivel} />}
+          {ativa && ent && <PortaVidroSo rect={ent.rect} caixa={caixaVidro || undefined} aberto={vidroAberto} recolhido={vidroRecolhido} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} />}
         </div>
       </div>
     </>
@@ -33956,7 +33955,7 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
     background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
-    backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)', transition: 'transform 1.1s cubic-bezier(.4,.1,.2,1)',
+    transition: 'transform 1.1s cubic-bezier(.4,.1,.2,1)',
   };
   // O emblema ocupa a porta toda; cada folha mostra a sua metade.
   const emblemaNoVidro = (lado) => (
@@ -33982,7 +33981,9 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
       }}>
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', boxShadow: '0 10px 24px rgba(0,0,0,.45)', ...apagar }} />
         <div ref={caixaRef} style={{ position: 'relative', flex: 1, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
-          <svg viewBox={`0 0 300 ${H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />
+          {/* Desfocado com o MESMO filtro das folhas da porta que abre no
+              Portal (PortaVidroSo): a imagem fica idêntica na passagem. */}
+          <svg viewBox={`0 0 300 ${H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0, filter: 'blur(7px)', transform: 'scale(1.06)' }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />
           <div style={{ ...vidro, left: 0 }}>{emblemaNoVidro('E')}</div>
           <div style={{ ...vidro, right: 0 }}>{emblemaNoVidro('D')}</div>
           <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)' }} />
