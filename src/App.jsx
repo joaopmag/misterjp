@@ -46053,10 +46053,113 @@ function CartaoTarefaCalendario({ tarefa, dia, ocorrencia, hoje, membros, euId, 
   );
 }
 
+/* LISTA DE UM DIA DO CALENDÁRIO, SEM BARRA DE DESLIZAR.
+   O dia tem altura fixa. Mostram-se os cartões que cabem inteiros; os
+   restantes ficam escondidos e aparece um "+N mais" no fundo. Ao clicar,
+   a lista completa abre POR CIMA do dia (não empurra nada na página) e
+   fecha com o X, com Esc ou clicando fora. As concluídas vão sempre para
+   o fim da lista, por isso são as primeiras a ficar escondidas.
+   Mede-se depois de desenhar (todos os cartões estão lá, os que não cabem
+   só ficam invisíveis), por isso a medição não muda a altura de nada. */
+function ListaDoDiaSemScroll({ cartoes, aberto, aArrastar, onAbrir, onFechar }) {
+  const caixa = useRef(null);
+  const painel = useRef(null);
+  const [cabem, setCabem] = useState(cartoes.length);
+  const RESERVA = 26; // espaço do "+N mais"
+  const medir = useCallback(() => {
+    const el = caixa.current;
+    if (!el) return;
+    const H = el.clientHeight;
+    const filhos = [...el.children].filter(c => !c.dataset.mais);
+    const fundo = (c) => c.offsetTop + c.offsetHeight;
+    if (!filhos.length || fundo(filhos[filhos.length - 1]) <= H) { setCabem(filhos.length); return; }
+    let n = 0;
+    while (n < filhos.length && fundo(filhos[n]) <= H - RESERVA) n += 1;
+    setCabem(n);
+  }, []);
+  React.useLayoutEffect(medir);
+  useEffect(() => {
+    const el = caixa.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => medir());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [medir]);
+  // O painel é desenhado por cima da página (fora da grelha, que cortava
+  // o que passasse dos limites), alinhado com o dia.
+  const [pos, setPos] = useState(null);
+  React.useLayoutEffect(() => {
+    if (!aberto) { setPos(null); return; }
+    const dia = caixa.current && caixa.current.closest('[data-dia-cal]');
+    if (!dia) return;
+    const r = dia.getBoundingClientRect();
+    const width = Math.max(r.width, 230);
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
+    const top = Math.max(8, r.top);
+    setPos({ top, left, width, maxHeight: window.innerHeight - top - 12 });
+  }, [aberto]);
+  useEffect(() => {
+    if (!aberto) return undefined;
+    // Se a página deslizar ou a janela mudar de tamanho, fecha (para não
+    // ficar a flutuar fora do sítio).
+    const fecharJa = (e) => { if (painel.current && e && e.target && painel.current.contains(e.target)) return; onFechar(); };
+    window.addEventListener('scroll', fecharJa, true);
+    window.addEventListener('resize', fecharJa);
+    return () => { window.removeEventListener('scroll', fecharJa, true); window.removeEventListener('resize', fecharJa); };
+  }, [aberto, onFechar]);
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const fora = (e) => { if (painel.current && !painel.current.contains(e.target)) onFechar(); };
+    const esc = (e) => { if (e.key === 'Escape') onFechar(); };
+    document.addEventListener('mousedown', fora);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', fora); document.removeEventListener('keydown', esc); };
+  }, [aberto, onFechar]);
+  const escondidos = Math.max(0, cartoes.length - cabem);
+  return (
+    <>
+      <div ref={caixa} style={{
+        position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'hidden',
+        display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6,
+      }}>
+        {cartoes.map((c, i) => (
+          <div key={c.key || i} style={{ flexShrink: 0, visibility: i < cabem ? 'visible' : 'hidden' }}>{c}</div>
+        ))}
+        {escondidos > 0 && (
+          <button data-mais="1" type="button" onClick={onAbrir} style={{
+            position: 'absolute', left: 0, right: 0, bottom: 0, height: 22,
+            fontSize: 11, color: T.cream, background: T.surfaceRaise || T.surface, border: `1px solid ${T.line}`,
+            borderRadius: 6, cursor: 'pointer', ...body,
+          }}>+{escondidos} mais</button>
+        )}
+      </div>
+      {aberto && pos && createPortal(
+        <div ref={painel} style={{
+          position: 'fixed', top: pos.top, left: pos.left, width: pos.width, maxHeight: pos.maxHeight, overflowY: 'auto', scrollbarWidth: 'thin', zIndex: 1000,
+          background: T.surface, border: `1px solid ${T.gold}`, borderRadius: 8, padding: 8,
+          boxShadow: '0 12px 32px rgba(0,0,0,.45)', display: 'flex', flexDirection: 'column', gap: 5,
+          // Enquanto se arrasta um cartão, o painel deixa passar o rato para
+          // se poder largar nos dias que estão por baixo.
+          pointerEvents: aArrastar ? 'none' : 'auto', opacity: aArrastar ? 0.55 : 1,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+            <span style={{ fontSize: 11, color: T.mutedDim }}>{cartoes.length} tarefas</span>
+            <button type="button" onClick={onFechar} aria-label="Fechar" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', padding: 2 }}><X size={14} /></button>
+          </div>
+          {cartoes}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeConcluir, onLembrar, onAbrir, onAlternarEm, onMover, onMoverOcorrencia, onNovaNoDia }) {
   const [weekStart, setWeekStart] = useState(() => getMonday(hoje));
   const [arrastada, setArrastada] = useState(null);
   const [sobre, setSobre] = useState(null);
+  // Dia com a lista toda aberta por cima (o "+N mais").
+  const [diaAberto, setDiaAberto] = useState(null);
   const isMobile = useIsMobile(700);
   /* ARRASTAR PARA OUTRA SEMANA. Leva-se a tarefa até à seta (‹ ou ›) e
      deixa-se lá parada: ao fim de meio segundo a semana muda, e continua
@@ -46084,13 +46187,14 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
   // já não avisa o fim do arrasto ao cartão: limpa-se aqui, na janela.
   useEffect(() => {
     if (!arrastada) return undefined;
-    const fim = () => { setArrastada(null); setSobre(null); pararSeta(); };
+    const fim = () => { setArrastada(null); setSobre(null); setDiaAberto(null); pararSeta(); };
     window.addEventListener('dragend', fim);
     window.addEventListener('drop', fim);
     return () => { window.removeEventListener('dragend', fim); window.removeEventListener('drop', fim); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrastada]);
   useEffect(() => () => pararSeta(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setDiaAberto(null); }, [weekStart]);
   const days = [...Array(7)].map((_, i) => addDays(weekStart, i));
   const estaSemana = weekStart === getMonday(hoje);
   const { sessions, matches } = ctx;
@@ -46173,6 +46277,7 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
           return (
             <div
               key={d}
+              data-dia-cal={d}
               onDragOver={e => {
                 if (!arrastada) return;
                 e.preventDefault();
@@ -46193,11 +46298,11 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
                 border: `1px ${destacado ? 'dashed' : 'solid'} ${destacado || isToday ? T.gold : T.line}`,
                 /* ALTURA FIXA no computador: todos os dias têm sempre a mesma
                    altura, cheios ou vazios. Largar uma tarefa num dia já não
-                   faz o calendário crescer nem empurra a página para baixo;
-                   quando há mais tarefas do que cabem, a lista desliza por
-                   dentro do próprio dia. */
+                   faz o calendário crescer nem empurra a página para baixo.
+                   Cabem cerca de 3 cartões; quando há mais, aparece "+N mais"
+                   (sem barra de deslizar), ver ListaDoDiaSemScroll. */
                 borderRadius: 8, padding: isMobile ? '10px 10px' : 8, minWidth: 0,
-                ...(isMobile ? { minHeight: 0 } : { height: 340 + alturaContexto }),
+                ...(isMobile ? { minHeight: 0 } : { height: 400 + alturaContexto, position: 'relative' }),
                 display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: isMobile ? 10 : 0,
               }}
             >
@@ -46228,14 +46333,8 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
                 </div>
               )}
 
-              <div style={{
-                display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6,
-                ...(isMobile ? {} : {
-                  flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden',
-                  scrollbarWidth: 'thin', scrollbarGutter: 'stable', marginRight: -4, paddingRight: 2,
-                }),
-              }}>
-                {lista.map(({ t, oc }) => {
+              {(() => {
+                const cartao = ({ t, oc }) => {
                   const arrastavel = !isMobile && (!t.recorrencia || !!oc);
                   const chave = { id: t.id, base: oc ? oc.base : null };
                   return (
@@ -46255,8 +46354,20 @@ function TarefasCalendario({ tarefas, hoje, ctx, membros, euId, players, podeCon
                       onDragEnd={arrastavel ? (() => { setArrastada(null); setSobre(null); }) : undefined}
                     />
                   );
-                })}
-              </div>
+                };
+                if (isMobile) {
+                  return <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 6 }}>{lista.map(cartao)}</div>;
+                }
+                return (
+                  <ListaDoDiaSemScroll
+                    cartoes={lista.map(cartao)}
+                    aberto={diaAberto === d}
+                    aArrastar={!!arrastada}
+                    onAbrir={() => setDiaAberto(d)}
+                    onFechar={() => setDiaAberto(null)}
+                  />
+                );
+              })()}
 
               <button onClick={() => onNovaNoDia(d)} style={{
                 marginTop: 'auto', width: '100%', fontSize: 11, color: T.mutedDim, background: 'none',
