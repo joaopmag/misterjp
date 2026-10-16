@@ -31623,7 +31623,7 @@ const CACIFO_CSS = `
   .cf-aberto .cf-tras { pointer-events: auto; }
   .cf-roda { transition: transform .8s cubic-bezier(.45,1.5,.5,1); transform-origin: 116px 300px; }
   .cf-aberto .cf-roda { transform: rotate(-290deg); }
-  .cf-luz { position: absolute; top: 0; left: 8px; right: 8px; height: 4px; background: #F6E7B0; opacity: 0; transition: opacity .4s 1.5s; }
+  .cf-luz { position: absolute; top: 0; left: 8px; right: 8px; height: 4px; background: #F6E7B0; opacity: 0; transition: opacity .4s 1s; }
   .cf-aberto .cf-luz { opacity: 1; }
   .cf-it { opacity: 0; transform: translateY(8px); transition: opacity .45s, transform .45s; }
   .cf-aberto .cf-it { opacity: 1; transform: none; }
@@ -31847,6 +31847,9 @@ function PlayerCacifo({
   const postits = (missoes || []).slice(0, 2).map(m => String(m.titulo || 'Missão'));
   const nT = nTarefas || 0;
 
+  /* Os objetos de dentro entram logo que a porta passa do meio da volta
+     (por volta de 1,1 s): antes só apareciam aos 1,8–2,3 s e, com a porta
+     já aberta, o cacifo ficava uns instantes vazio. */
   const atraso = (s) => (animar ? { transitionDelay: `${s}s` } : undefined);
   const nomePlaca = primeiro.toUpperCase();
   const tamNome = nomePlaca.length <= 5 ? 15 : nomePlaca.length <= 8 ? 12.5 : 10.5;
@@ -31893,7 +31896,7 @@ function PlayerCacifo({
                   <div className="cf-luz" />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('ideiaJogo')} aria-label="Ideia de Jogo"
-                    style={{ left: 2, top: 24, width: 68, height: 84, ...atraso(1.8) }}>
+                    style={{ left: 2, top: 24, width: 68, height: 84, ...atraso(1.05) }}>
                     {/* Caderno tático aberto: notas e uma lâmpada à esquerda,
                         meio campo com cruzes, bola e seta à direita. */}
                     <svg width="62" height="48" viewBox="0 0 64 50" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
@@ -31915,7 +31918,7 @@ function PlayerCacifo({
                   </button>
 
                   <button type="button" className="cf-obj cf-it" onClick={abrirSalaVideo} aria-label="Sala de Vídeo"
-                    style={{ left: 72, top: 24, width: 66, height: 84, ...atraso(1.9) }}>
+                    style={{ left: 72, top: 24, width: 66, height: 84, ...atraso(1.12) }}>
                     {/* Tablet com um lance pausado. */}
                     <svg width="62" height="48" viewBox="0 0 64 50" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                       <rect x="3" y="5" width="58" height="40" rx="5" fill="#1c2226" />
@@ -31936,7 +31939,7 @@ function PlayerCacifo({
                   <div style={{ position: 'absolute', left: 8, right: 8, top: 144, height: 4, background: '#8A9A8C', borderRadius: 2 }} />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('jogos')} aria-label="Jogo"
-                    style={{ left: 0, top: 144, width: 140, height: 186, ...atraso(2) }}>
+                    style={{ left: 0, top: 144, width: 140, height: 186, ...atraso(1.2) }}>
                     <svg width="108" height="128" viewBox="0 0 132 156" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                       <path d="M66 0 l0 26" stroke="#8A9A8C" strokeWidth="2" />
                       <g transform="translate(0,16)">
@@ -31960,7 +31963,7 @@ function PlayerCacifo({
                   <div style={{ position: 'absolute', left: 0, right: 0, top: 336, height: 5, background: '#2c4336' }} />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('competicao', 'estatisticas')} aria-label="Estatísticas da época"
-                    style={{ left: mostraGarrafa ? 6 : 28, top: 362, width: 84, height: 80, ...atraso(2.2) }}>
+                    style={{ left: mostraGarrafa ? 6 : 28, top: 362, width: 84, height: 80, ...atraso(1.3) }}>
                     <svg width="80" height="55" viewBox="0 0 140 96" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                       <path d="M30 40 C25 40 24 35 25 30 L26 16 Q27 11 32 11 L42 11 Q46 11 47 15 L52 23 Q68 25 86 28 Q104 31 112 36 L114 40 Z" fill="#1c2226" />
                       <path d="M26 18 Q35 21 44 17" fill="none" stroke="#C9A227" strokeWidth="2.5" />
@@ -31977,7 +31980,7 @@ function PlayerCacifo({
                   {mostraGarrafa && (
                     <button type="button" className="cf-obj cf-it" onClick={() => (wAberto ? onAbrirWellness() : onAbrirRpe())}
                       aria-label={wAberto ? 'Responder ao Wellness' : 'Responder à PSE'}
-                      style={{ left: 94, top: 362, width: 42, height: 80, ...atraso(2.3) }}>
+                      style={{ left: 94, top: 362, width: 42, height: 80, ...atraso(1.36) }}>
                       <svg width="25" height="55" viewBox="0 0 34 78" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                         <rect x="14" y="0" width="6" height="7" rx="1.5" fill="#1c2226" />
                         <rect x="9" y="6" width="16" height="9" rx="2" fill="#1c2226" />
@@ -35649,7 +35652,7 @@ function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWelln
         {/* O nome fica centrado na linha do meio do campo (a altura do
             centro), e o estado logo por baixo. */}
         <text x={cx} y="75" dominantBaseline="central" textAnchor="middle" fontSize="15" fontWeight="600" fill={feito || aberto ? '#fff' : 'rgba(255,255,255,.75)'} fontFamily="Oswald, sans-serif" letterSpacing="1" style={halo}>{nome}</text>
-        <text x={cx} y="91" dominantBaseline="central" textAnchor="middle" fontSize={t.length > 22 ? 7.5 : 9} fill={corTxt} fontFamily="Inter, sans-serif" style={halo}>{feito ? `✓ ${t}` : t}</text>
+        <text x={cx} y="91" dominantBaseline="central" textAnchor="middle" fontSize="8" fill={corTxt} fontFamily="Inter, sans-serif" style={halo}>{feito ? `✓ ${t}` : t}</text>
       </g>
     );
   };
