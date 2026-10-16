@@ -31734,8 +31734,9 @@ function PlayerCacifo({
   const [aberto, setAberto] = useState(!animar);
   useEffect(() => {
     if (!animar) return undefined;
-    const a = setTimeout(() => setAberto(true), 350);
-    const b = setTimeout(() => { if (onAberto) onAberto(); }, 2600);
+    // 0,15 s com o cacifo fechado (antes 0,35 s); o resto da abertura igual.
+    const a = setTimeout(() => setAberto(true), 150);
+    const b = setTimeout(() => { if (onAberto) onAberto(); }, 2400);
     return () => { clearTimeout(a); clearTimeout(b); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
