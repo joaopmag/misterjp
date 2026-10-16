@@ -35698,65 +35698,111 @@ function PkhMister({ mensagens, g, estilo }) {
    da PSE. A metade por responder AGORA tem contorno dourado e pisca
    devagar; a outra fica escurecida, com o estado escrito. */
 function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWellness, onPse, g, largo }) {
-  const G = 'rgba(255,255,255,.62)';
+  /* O CAMPO EM PERSPETIVA, NOITE DE JOGO (a combinar com o balneário
+     premium): visto da bancada, com bancada escura e público na cor da
+     equipa ao fundo, placas LED douradas, relva às riscas, linhas
+     branco-quente com brilho, balizas nas pontas e holofotes quentes nos
+     cantos. Cada metade é o botão do Wellness e o da PSE: por responder =
+     dourado a pulsar; feito = verde com ✓; fechado = escurecido.
+     O desenho continua para os lados do quadro (relva e bancada): em ecrãs
+     largos o painel enche-se sem esticar nem achatar o campo. */
+  const eq = coresCamisola(T.corEquipa);
+  /* Largura do desenho = proporção real do painel (altura fixa 170): em
+     ecrãs largos o campo alarga-se em perspetiva (como visto da bancada
+     lateral), em vez de ficar pequeno ao centro. */
+  const caixaRef = useRef(null);
+  const [W, setW] = useState(300);
+  useEffect(() => {
+    const el = caixaRef.current;
+    if (!el) return undefined;
+    const medir = () => {
+      const w = el.clientWidth, h = el.clientHeight;
+      if (!w || !h) return;
+      const nw = Math.round(Math.max(300, Math.min(620, (170 * w) / h)));
+      setW(v => (Math.abs(v - nw) > 2 ? nw : v));
+    };
+    medir();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(medir); ro.observe(el); return () => ro.disconnect();
+  }, []);
+  const TP = { y: 34, x0: W * 0.193, x1: W * 0.807 }, BT = { y: 162, x0: 6, x1: W - 6 };
+  const P = (u, v) => {
+    const xt = TP.x0 + (TP.x1 - TP.x0) * u, xb = BT.x0 + (BT.x1 - BT.x0) * u;
+    return [xt + (xb - xt) * v, TP.y + (BT.y - TP.y) * v];
+  };
+  const pp = a => a.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const quad = (u0, u1, v0, v1) => pp([P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)]);
+  const elipse = (cu, cv, ru, rv) => pp(Array.from({ length: 41 }, (_, i) => { const t = (i / 40) * 2 * Math.PI; return P(cu + ru * Math.cos(t), cv + rv * Math.sin(t)); }));
+  const linhas = (
+    <>
+      <polygon points={quad(0, 1, 0, 1)} /><polyline points={pp([P(0.5, 0), P(0.5, 1)])} /><polyline points={elipse(0.5, 0.5, 0.075, 0.16)} />
+      <polygon points={quad(0, 0.15, 0.22, 0.78)} /><polygon points={quad(0.85, 1, 0.22, 0.78)} />
+      <polygon points={quad(0, 0.055, 0.37, 0.63)} /><polygon points={quad(0.945, 1, 0.37, 0.63)} />
+    </>
+  );
+  const baliza = (u, dir) => {
+    const a = P(u, 0.42), b = P(u, 0.58), h = (b[1] - a[1]) * 0.55 + 6, d = dir * 7;
+    return (
+      <g key={u}>
+        <polygon points={pp([a, b, [b[0] + d, b[1] - 3], [a[0] + d, a[1] - 3]])} fill="rgba(255,255,255,.12)" />
+        <polyline points={pp([a, [a[0], a[1] - h], [b[0], b[1] - h], b])} fill="none" stroke="#fff" strokeWidth="1.5" />
+      </g>
+    );
+  };
   const metade = (lado, nome, estado, texto, onClick) => {
-    const x = lado === 'w' ? 11 : 150;
-    /* O texto fica no espaço livre entre a meia-lua da grande área e o
-       círculo central, com um contorno da cor da relva por baixo das
-       letras, para as linhas do campo não as cortarem. */
-    const cx = lado === 'w' ? 93 : 207;
     const aberto = estado === 'aberto', feito = estado === 'feito';
-    const corTxt = feito ? '#8EE6A0' : aberto ? '#FFC23D' : 'rgba(255,255,255,.7)';
     const t = String(texto || '');
-    const halo = { stroke: feito ? '#316b47' : aberto ? '#3e6237' : '#1b3f2b', strokeWidth: 3, paintOrder: 'stroke', strokeLinejoin: 'round' };
+    const [cx, cy] = P(lado === 'w' ? 0.27 : 0.73, 0.5);
+    const corTxt = feito ? '#8EE6A0' : aberto ? '#FFC23D' : 'rgba(255,255,255,.75)';
+    const halo = { stroke: '#163d27', strokeWidth: 3.2, paintOrder: 'stroke', strokeLinejoin: 'round' };
+    const zona = lado === 'w' ? quad(0, 0.5, 0, 1) : quad(0.5, 1, 0, 1);
     return (
       <g role="button" tabIndex={aberto ? 0 : -1} aria-label={`${nome}: ${t}`} aria-disabled={!aberto}
         onClick={() => { if (aberto && onClick) onClick(); }}
         onKeyDown={(e) => { if (aberto && onClick && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick(); } }}
         style={{ cursor: aberto ? 'pointer' : 'default', outline: 'none' }}>
-        <rect x={x} y="8" width="139" height="134"
-          fill={feito ? 'rgba(120,220,140,.16)' : aberto ? 'rgba(201,162,39,.16)' : 'rgba(0,0,0,.26)'}
-          stroke={aberto ? '#C9A227' : feito ? '#8EE6A0' : 'none'} strokeWidth={aberto ? 2.6 : 1.6}>
+        <polygon points={zona}
+          fill={feito ? 'rgba(120,220,140,.16)' : aberto ? 'rgba(201,162,39,.18)' : 'rgba(0,0,0,.28)'}
+          stroke={aberto ? '#E9C24A' : feito ? '#8EE6A0' : 'none'} strokeWidth={aberto ? 2.4 : 1.6}>
           {aberto && <animate attributeName="stroke-opacity" values="1;.35;1" dur="1.8s" repeatCount="indefinite" />}
-        </rect>
-        {/* O nome fica centrado na linha do meio do campo (a altura do
-            centro), e o estado logo por baixo. */}
-        <text x={cx} y="75" dominantBaseline="central" textAnchor="middle" fontSize="15" fontWeight="600" fill={feito || aberto ? '#fff' : 'rgba(255,255,255,.75)'} fontFamily="Oswald, sans-serif" letterSpacing="1" style={halo}>{nome}</text>
-        <text x={cx} y="91" dominantBaseline="central" textAnchor="middle" fontSize="8" fill={corTxt} fontFamily="Inter, sans-serif" style={halo}>{feito ? `✓ ${t}` : t}</text>
+        </polygon>
+        <text x={cx} y={cy - 6} dominantBaseline="central" textAnchor="middle" fontSize="16" fontWeight="600" letterSpacing="1"
+          fill={feito || aberto ? '#fff' : 'rgba(255,255,255,.82)'} fontFamily="Oswald, sans-serif" style={halo}>{nome}</text>
+        <text x={cx} y={cy + 10} dominantBaseline="central" textAnchor="middle" fontSize="8.5" fill={corTxt} fontFamily="Inter, sans-serif" style={halo}>{feito ? `✓ ${t}` : t}</text>
       </g>
     );
   };
+  // Público na bancada: pontinhos na cor da equipa (de -300 a 600 para encher ecrãs largos).
+  const publico = [];
+  for (let i = -60; i < Math.ceil(W / 5) + 60; i++) publico.push(<rect key={i} x={i * 5 + 1} y={15 + (((i % 3) + 3) % 3) * 5} width="3" height="3" fill={i % 4 ? eq.escuro : eq.base} opacity=".8" />);
   return (
     <div style={{
-      background: '#24563a', border: '3px solid #2a2f33', borderTop: 0, borderRadius: '0 0 12px 12px', overflow: 'hidden', flexShrink: 0,
+      background: '#0b0d0c', border: '3px solid #2a2f33', borderTop: 0, borderRadius: '0 0 12px 12px', overflow: 'hidden', flexShrink: 0,
       filter: noite ? 'brightness(.5) saturate(.6)' : 'none', transition: 'filter .8s',
     }}>
-      <svg viewBox="0 0 300 150" preserveAspectRatio="xMidYMid meet" style={{ display: 'block', width: '100%', height: 'auto', maxHeight: largo ? (g ? '20dvh' : '24dvh') : '26dvh' }}>
-        <g stroke={G} strokeWidth="1.5" fill="none" aria-hidden="true">
-          <rect x="11" y="8" width="278" height="134" /><line x1="150" y1="8" x2="150" y2="142" /><circle cx="150" cy="75" r="19" />
-          <rect x="11" y="40" width="36" height="70" /><rect x="253" y="40" width="36" height="70" />
-          <rect x="11" y="60" width="13" height="30" /><rect x="276" y="60" width="13" height="30" />
-          {/* Meias-luas das grandes áreas e cantos */}
-          <path d="M47 57.3 A19 19 0 0 1 47 92.7" /><path d="M253 57.3 A19 19 0 0 0 253 92.7" />
-          <path d="M14 8 A3 3 0 0 1 11 11" /><path d="M286 8 A3 3 0 0 0 289 11" />
-          <path d="M11 139 A3 3 0 0 1 14 142" /><path d="M286 142 A3 3 0 0 1 289 139" />
-        </g>
-        {/* Marcas de penálti e centro */}
-        <g fill={G} aria-hidden="true">
-          <circle cx="150" cy="75" r="1.6" /><circle cx="40" cy="75" r="1.4" /><circle cx="260" cy="75" r="1.4" />
-        </g>
-        {/* Balizas, por fora das linhas de fundo, com rede */}
+      <svg ref={caixaRef} viewBox={`0 0 ${W} 170`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', width: '100%', height: largo ? (g ? '24dvh' : '27dvh') : 'auto', aspectRatio: largo ? undefined : '300 / 170', maxHeight: largo ? 280 : '30dvh' }}>
         <defs>
-          <pattern id="pkh-rede" width="2.4" height="2.4" patternUnits="userSpaceOnUse">
-            <path d="M0 0 L0 2.4 M0 0 L2.4 0" stroke="rgba(255,255,255,.35)" strokeWidth=".5" />
-          </pattern>
+          <filter id="pkh-campo-led" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.6" /></filter>
+          <radialGradient id="pkh-campo-hol" cx=".5" cy=".5" r=".5"><stop offset="0" stopColor="#FFE6A0" stopOpacity=".6" /><stop offset="1" stopColor="#FFE6A0" stopOpacity="0" /></radialGradient>
+          <linearGradient id="pkh-campo-ceu" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#0b0d0c" /><stop offset="1" stopColor="#151a17" /></linearGradient>
         </defs>
         <g aria-hidden="true">
-          <rect x="4" y="67" width="7" height="16" fill="url(#pkh-rede)" stroke="#fff" strokeWidth="1.5" />
-          <rect x="289" y="67" width="7" height="16" fill="url(#pkh-rede)" stroke="#fff" strokeWidth="1.5" />
+          <rect x="-300" y="0" width={W + 600} height="170" fill="url(#pkh-campo-ceu)" />
+          <rect x="-300" y="12" width={W + 600} height="20" fill="#141a17" />
+          {publico}
+          <rect x="-300" y="30" width={W + 600} height="5" fill="#FFC23D" /><rect x="-300" y="31.5" width={W + 600} height="2" fill="#FFF4D6" opacity=".6" />
+          <rect x="-300" y="35" width={W + 600} height="135" fill="#2a6142" />
+          {Array.from({ length: W > 420 ? 16 : 12 }, (_, k, arr) => (k % 2 ? <polygon key={k} points={quad(k / (W > 420 ? 16 : 12), (k + 1) / (W > 420 ? 16 : 12), -0.01, 1.07)} fill="#24563a" /> : null))}
+          <g fill="none" stroke="#FFF4D6" strokeWidth="3.4" opacity=".35" filter="url(#pkh-campo-led)">{linhas}</g>
+          <g fill="none" stroke="#FFF4D6" strokeWidth="1.4" opacity=".9">{linhas}</g>
+          {baliza(0, -1)}{baliza(1, 1)}
         </g>
         {metade('w', 'WELLNESS', wEstado, wTexto, onWellness)}
         {metade('p', semSegunda ? 'FOLGA' : 'PSE', pEstado, pTexto, onPse)}
+        <g aria-hidden="true" style={{ pointerEvents: 'none' }}>
+          <ellipse cx="18" cy="16" rx="60" ry="34" fill="url(#pkh-campo-hol)" /><ellipse cx={W - 18} cy="16" rx="60" ry="34" fill="url(#pkh-campo-hol)" />
+          <rect x="8" y="6" width="20" height="7" rx="1.5" fill="#FFF4D6" /><rect x={W - 28} y="6" width="20" height="7" rx="1.5" fill="#FFF4D6" />
+        </g>
       </svg>
     </div>
   );
@@ -35840,24 +35886,13 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   const nomeCamisola = pkhEsc(String(nome || '').toUpperCase());
   const camisolaFrente = (() => {
     const fNome = nomeCamisola.length > 9 ? 9 : nomeCamisola.length > 6 ? 11 : 13;
-    // Pendurada como no cacifo: varão cromado curto, cruzeta de madeira (vê-se
-    // pela gola) e gancho de balneário em "J" pousado no varão.
-    let s = '<defs><linearGradient id="pkh-mad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C48A4E"/><stop offset="1" stop-color="#7A4A22"/></linearGradient>'
-      + '<linearGradient id="pkh-var" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E6EAEC"/><stop offset=".5" stop-color="#9AA3A8"/><stop offset="1" stop-color="#5E676C"/></linearGradient></defs>'
-      + '<rect x="-6" y="-36" width="6" height="12" rx="2" fill="#2a2f2b"/><rect x="100" y="-36" width="6" height="12" rx="2" fill="#2a2f2b"/>'
-      + '<rect x="-6" y="-33" width="112" height="6" rx="3" fill="url(#pkh-var)"/>'
-      + `<path d="M38 0 Q50 -6 62 0 Q50 12 38 0 Z" fill="${cor.contorno}"/>`
-      + '<path d="M8 22 Q28 2 50 0 Q72 2 92 22" fill="none" stroke="url(#pkh-mad)" stroke-width="6" stroke-linecap="round"/>'
-      + `<path d="M16 10 L38 0 Q50 10 62 0 L84 10 L100 38 L80 46 L80 104 Q50 108 20 104 L20 46 L0 38 Z" fill="${cor.base}" stroke="#FFD86A" stroke-width="2.5"/>`
-      + '<rect x="45.5" y="-6" width="9" height="6" rx="1.5" fill="#8d969b"/>'
-      + '<path d="M50 -6 L50 -18" stroke="#d9dee0" stroke-width="3.5" stroke-linecap="round"/>'
-      + '<path d="M50 -18 C50 -32 56 -38 63 -38 C70 -38 73 -34 73 -28" fill="none" stroke="#454b50" stroke-width="6" stroke-linecap="round"/>'
-      + '<path d="M52 -22 C53 -30 57 -35 63 -35.5" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.5" stroke-linecap="round"/>'
+    // Sem cruzeta: a camisola fica logo por baixo da fotografia.
+    let s = `<path d="M16 10 L38 0 Q50 10 62 0 L84 10 L100 38 L80 46 L80 104 Q50 108 20 104 L20 46 L0 38 Z" fill="${cor.base}" stroke="#FFD86A" stroke-width="2.5"/>`
       + `<path d="M38 0 Q50 10 62 0" fill="none" stroke="${cor.mangas}" stroke-width="3"/>`
       + `<path d="M0 38 L20 46 M100 38 L80 46" stroke="${cor.mangas}" stroke-width="3"/>`;
     if (numero) {
       s += `<text x="50" y="30" text-anchor="middle" font-size="${fNome}" font-weight="600" fill="${cor.texto}" font-family="Oswald, sans-serif" letter-spacing="1.5">${nomeCamisola}</text>`
-        + `<text x="50" y="86" text-anchor="middle" font-size="${numero.length > 2 ? 40 : 54}" font-weight="700" fill="${cor.texto}" stroke="${cor.contorno}" stroke-width="2.5" paint-order="stroke" font-family="Oswald, sans-serif">${pkhEsc(numero)}</text>`;
+        + `<text x="50" y="82" text-anchor="middle" font-size="${numero.length > 2 ? 34 : 44}" font-weight="700" fill="${cor.texto}" stroke="${cor.contorno}" stroke-width="2.5" paint-order="stroke" font-family="Oswald, sans-serif">${pkhEsc(numero)}</text>`;
     } else {
       s += `<text x="50" y="66" text-anchor="middle" font-size="${fNome + 4}" font-weight="600" fill="${cor.texto}" stroke="${cor.contorno}" stroke-width="1.5" paint-order="stroke" font-family="Oswald, sans-serif" letter-spacing="1.5">${nomeCamisola}</text>`;
     }
@@ -35968,7 +36003,7 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   // O lugar do jogador: camisola pendurada de frente + retrato por cima.
   const gancho = wp((T6L[0] + T6L[1]) / 2, 0.40); // = 0.19 no telemóvel, como antes
   const zoom = Math.min(1.25, 1 + (kW - 1) * 0.35); // 1 no telemóvel
-  const cx = gancho[0] + 9 * zoom, cy = gancho[1] + 12, ry = gancho[1] - 22 * zoom, rr = 16 * zoom;
+  const cx = gancho[0] + 9 * zoom, cy = gancho[1] - 1, ry = gancho[1] - 22 * zoom, rr = 16 * zoom;
   // Telemóveis baixos: a fotografia e a camisola sobem/encolhem para
   // caberem INTEIRAS (nunca se corta a camisola do jogador).
   const eJog = tv && tv.jogador ? tv.jogador : 1;
