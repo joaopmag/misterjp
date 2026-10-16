@@ -30294,14 +30294,14 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // Ordem: o aniversário primeiro, depois o jogo, depois as tarefas.
   if (player && isBirthdayToday(player.birthdate)) {
     const primeiroNome = String(player.name || '').trim().split(/\s+/)[0] || '';
-    mensagensMister.push({ tipo: 'festa', texto: `Parabéns, ${primeiroNome}! Toda a equipa técnica te deseja um ótimo dia` });
+    mensagensMister.push({ tipo: 'festa', texto: `Parabéns, ${primeiroNome}! Toda a equipa técnica deseja-te um ótimo dia.` });
   }
   if (jogoNoPainel) {
     const i = jogoNoPainel._info || {};
-    const jogoTxt = i.casaFora === 'Fora' ? `${i.adv} × ${i.nos}` : `${i.nos} × ${i.adv}`;
+    // Curta, na voz do Mister: quando, contra quem e um empurrão.
     mensagensMister.push({
       tipo: 'jogo',
-      texto: `${i.vespera ? 'Amanhã há jogo' : 'Hoje é dia de jogo'} · ${jogoTxt}${i.hora ? ` · ${i.hora}` : ''} ▸ Vê a convocatória, o plano de jogo e o adversário`,
+      texto: `${i.vespera ? 'Amanhã' : 'Hoje'} há jogo${i.hora ? ` às ${i.hora}` : ''}${i.adv ? ` vs ${i.adv}` : ''}. ${i.vespera ? 'Prepara-te!' : 'Foco total!'}`,
       onTocar: () => { if (!jogoNoPainel._teste) marcarMissaoJogoVista(jogoNoPainel.id); setActiveType('jogos'); },
     });
   }
@@ -33721,8 +33721,23 @@ function PortaAEspera() {
   if (!ent) return null;
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg }}>
+      {ent.resto && <PeRestoEntrada html={ent.resto} apagar={false} />}
       <PortaVidroSo rect={ent.rect} aberto={false} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel tamEmblema={ent.tam} />
     </div>
+  );
+}
+
+/* O RESTO DO ECRÃ DE ENTRADA (cabeçalho com a bola verde, letreiro
+   "ACESSO AUTORIZADO", impressão digital…) continua à vista enquanto o
+   Portal carrega: é uma cópia fiel do ecrã, tirada no momento da entrada.
+   Só se desvanece quando a porta abre, ao mesmo tempo que o vidro. A
+   camada isola-se (isolation) para ficar sempre por baixo da porta. */
+function PeRestoEntrada({ html, apagar }) {
+  return (
+    <div aria-hidden="true" style={{
+      position: 'fixed', inset: 0, zIndex: 0, isolation: 'isolate', pointerEvents: 'none',
+      opacity: apagar ? 0 : 1, transition: 'opacity .55s cubic-bezier(.4,0,.2,1)', willChange: 'opacity',
+    }} dangerouslySetInnerHTML={{ __html: html }} />
   );
 }
 
@@ -33749,7 +33764,7 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel, tam
     <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
       {fundo && (
         <svg viewBox={`0 0 300 ${fundo.H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%"
-          style={{ display: 'block', position: 'absolute', inset: 0, background: '#121614', opacity: fundoVisivel ? 1 : 0, transition: 'opacity .6s cubic-bezier(.45,0,.55,1)' }}
+          style={{ display: 'block', position: 'absolute', inset: 0, background: '#121614', opacity: fundoVisivel ? 1 : 0, transition: 'opacity .5s cubic-bezier(.4,0,.2,1)' }}
           dangerouslySetInnerHTML={{ __html: fundo.svg }} />
       )}
       <div style={{ ...vidro, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{emblema('E')}</div>
@@ -33818,29 +33833,25 @@ function TransicaoEntrada({ focoInteiro, children }) {
     const kJ = [], kC = [];
     for (let k = 0; k <= N; k++) { const q = passo(curva(k / N)); kJ.push({ transform: q.janela }); kC.push({ transform: q.conteudo }); }
     /* Espera que o ecrã de trás acabe de se montar (o do jogo é pesado)
-       antes de abrir: assim a abertura nunca apanha um engasgo. */
-    /* 1) Com o vidro ainda fechado, o balneário que se via atrás dele dá
-          lugar (num instante suave) ao ecrã que vai abrir — o jogo, os
-          parabéns, a missão ou o ecrã inicial. Assim, quando a porta abre,
-          esse ecrã já lá está.
-       2) O vidro abre e desaparece, e o ecrã cresce até à página inteira. */
+       antes de abrir: assim a abertura nunca apanha um engasgo.
+       Com a porta fechada nada muda: o balneário continua atrás do vidro.
+       No MESMO instante: o vidro abre, o balneário dá lugar ao ecrã que
+       entra (o jogo, os parabéns, a missão ou o ecrã inicial), o resto do
+       ecrã de entrada desvanece-se e a janela cresce até à página inteira. */
     let r1 = 0, r2 = 0, tempo = 0;
     r1 = requestAnimationFrame(() => {
       r2 = requestAnimationFrame(() => {
         if (cancelado) return;
+        setVidroAberto(true);
         setFundoVisivel(false);
-        tempo = setTimeout(() => {
-          if (cancelado) return;
-          setVidroAberto(true);
-          const op = { duration: 1000, delay: 110, easing: 'linear', fill: 'forwards' };
-          aJ = jan.animate(kJ, op);
-          aC = con.animate(kC, op);
-          aJ.onfinish = () => {
-            jan.style.transform = ''; con.style.transform = '';
-            try { aJ.cancel(); aC.cancel(); } catch (e) { /* nada */ }
-            acabar();
-          };
-        }, 640);
+        const op = { duration: 950, delay: 120, easing: 'linear', fill: 'forwards' };
+        aJ = jan.animate(kJ, op);
+        aC = con.animate(kC, op);
+        aJ.onfinish = () => {
+          jan.style.transform = ''; con.style.transform = '';
+          try { aJ.cancel(); aC.cancel(); } catch (e) { /* nada */ }
+          acabar();
+        };
       });
     });
     return () => { cancelado = true; clearTimeout(tempo); cancelAnimationFrame(r1); cancelAnimationFrame(r2); };
@@ -33853,6 +33864,9 @@ function TransicaoEntrada({ focoInteiro, children }) {
           obrigava a redesenhar a camada que está a crescer, e era isso que
           engasgava. Arrancam quando o ecrã já está na página inteira. */}
       {ativa && <style>{`.mjp-entrada-ativa *, .mjp-entrada-ativa *::before, .mjp-entrada-ativa *::after { animation-play-state: paused !important; }`}</style>}
+      {/* O resto do ecrã de entrada fica por baixo da janela que cresce e
+          desvanece-se enquanto a porta abre. */}
+      {ativa && ent && ent.resto && <PeRestoEntrada html={ent.resto} apagar={vidroAberto} />}
       <div ref={janelaRef} className={ativa ? 'mjp-entrada-ativa' : undefined} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', transformOrigin: '0 0', background: T.bg } : undefined}>
         <div ref={conteudoRef} style={ativa ? { position: 'absolute', inset: 0, transformOrigin: '0 0' } : undefined}>
           {children}
@@ -33908,8 +33922,10 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberta]);
-  // Depois de a porta abrir, o resto (letreiro, base) apaga-se: fica só o balneário.
-  const apagar = { opacity: aberta ? 0 : 1, transition: 'opacity .3s ease' };
+  /* Com o acesso autorizado, o letreiro, a moldura e a base ficam à vista
+     (o letreiro fica verde). Só se desvanecem quando a porta abre, já no
+     Portal (ver PeRestoEntrada). */
+  const apagar = {};
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
     background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
@@ -33922,13 +33938,14 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
     </div>
   );
   const corSinal = aberta ? '#4CAF6A' : '#FF5A4E';
+  // (o sinal verde e o letreiro mudam no instante em que o acesso é autorizado)
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0d120f', border: '1px solid #3a4440', borderRadius: 8, padding: '5px 12px', boxShadow: '0 0 14px rgba(255,194,61,.15)', marginBottom: 8, flexShrink: 0, ...apagar }}>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: corSinal, boxShadow: `0 0 8px ${corSinal}`, transition: 'all .3s' }} />
         <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
-          <div style={{ fontSize: 11, letterSpacing: '.18em', color: '#8A9A8C', ...body }}>ACESSO RESERVADO</div>
-          <div style={{ ...display, fontSize: 17, fontWeight: 600, letterSpacing: '.24em', color: aberta ? '#8EE6A0' : '#FFC23D' }}>PLANTEL</div>
+          <div style={{ fontSize: 11, letterSpacing: '.18em', color: aberta ? '#8EE6A0' : '#8A9A8C', transition: 'color .3s', ...body }}>{aberta ? 'ACESSO AUTORIZADO' : 'ACESSO RESERVADO'}</div>
+          <div style={{ ...display, fontSize: 17, fontWeight: 600, letterSpacing: '.24em', color: aberta ? '#8EE6A0' : '#FFC23D', transition: 'color .3s' }}>PLANTEL</div>
         </div>
       </div>
       {/* Proporção de porta (5:6): com menos altura fica mais estreita, em
@@ -34335,6 +34352,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   const [tremer, setTremer] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [aberta, setAberta] = useState(false);
+  const ecraRef = useRef(null);
   const [codigoAntigo, setCodigoAntigo] = useState('');
   // Navegador que não guarda nada (janela privada, cookies bloqueados…).
   const [semMemoria, setSemMemoria] = useState(false);
@@ -34358,7 +34376,19 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     // o resto do ecrã apaga-se (0,3 s) e a porta fica fechada no seu sítio.
     // O vidro abre com o ecrã seguinte já pronto atrás dele.
     prebuscarPortal(sessao, teamId);
-    await new Promise(r => setTimeout(r, 350));
+    /* O estado autorizado (bolas verdes, letreiro e aviso a verde) fica à
+       vista pelo menos 0,65 s; os pedidos do Portal já correm em paralelo.
+       Depois tira-se uma cópia do ecrã, que fica por baixo da porta até
+       ela abrir (ver PeRestoEntrada). */
+    await new Promise(r => setTimeout(r, 650));
+    try {
+      if (ENTRADA && ecraRef.current) {
+        // Sem o <style> do ecrã (regras globais do html/body não vão na cópia).
+        const copia = ecraRef.current.cloneNode(true);
+        copia.querySelectorAll('style').forEach(n => n.remove());
+        ENTRADA.resto = copia.outerHTML;
+      }
+    } catch (e) { /* sem cópia, fica só a porta */ }
     const ok = await entrar(sessao);
     if (!ok) { ENTRADA = null; setAberta(false); setPin(''); mostrarErro('Não foi possível entrar. Tenta outra vez.'); }
   };
@@ -34791,7 +34821,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   });
 
   return (
-    <div style={ecraFixo}>
+    <div ref={ecraRef} style={ecraFixo}>
       <style>{PE_CSS}</style>
       {ecra === 'rececao' && (
         <div style={{ ...coluna, justifyContent: 'center' }}>
@@ -35072,7 +35102,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
 
       {ecra === 'porta' && cartao && (
         <div style={coluna}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'stretch', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '7px 10px', flexShrink: 0, opacity: aberta ? 0 : 1, transition: 'opacity .3s ease' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'stretch', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '7px 10px', flexShrink: 0 }}>
             <div style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', background: '#1A2A1F', border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               {cartao.jogador && cartao.jogador.foto
                 ? <img src={cartao.jogador.foto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -35103,7 +35133,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               visibility: visivel ? 'visible' : 'hidden', pointerEvents: visivel ? 'auto' : 'none',
             });
             return (
-              <div style={{ display: 'grid', width: '100%', flexShrink: 0, opacity: aberta ? 0 : 1, transition: 'opacity .3s ease' }}>
+              <div style={{ display: 'grid', width: '100%', flexShrink: 0 }}>
                 {bioAtiva && (
                   <div aria-hidden={!verBio} style={{ ...camada(verBio), justifyContent: 'center', gap: 8 }}>
                     {/* O aviso (ex.: ACESSO AUTORIZADO, a verde) fica por baixo
@@ -35150,7 +35180,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           })()}
           {/* Uma só ligação discreta; as opções abrem num painel por baixo,
               para não roubarem altura à porta e ao teclado. */}
-          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6, opacity: aberta ? 0 : 1, transition: 'opacity .3s ease' }}>
+          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
           </button>
           {maisOpcoes && (() => {
@@ -35510,10 +35540,14 @@ function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWelln
   const G = 'rgba(255,255,255,.62)';
   const metade = (lado, nome, estado, texto, onClick) => {
     const x = lado === 'w' ? 11 : 150;
-    const cx = x + 69.5;
+    /* O texto fica no espaço livre entre a meia-lua da grande área e o
+       círculo central, com um contorno da cor da relva por baixo das
+       letras, para as linhas do campo não as cortarem. */
+    const cx = lado === 'w' ? 93 : 207;
     const aberto = estado === 'aberto', feito = estado === 'feito';
     const corTxt = feito ? '#8EE6A0' : aberto ? '#FFC23D' : 'rgba(255,255,255,.7)';
     const t = String(texto || '');
+    const halo = { stroke: feito ? '#316b47' : aberto ? '#3e6237' : '#1b3f2b', strokeWidth: 3, paintOrder: 'stroke', strokeLinejoin: 'round' };
     return (
       <g role="button" tabIndex={aberto ? 0 : -1} aria-label={`${nome}: ${t}`} aria-disabled={!aberto}
         onClick={() => { if (aberto && onClick) onClick(); }}
@@ -35524,8 +35558,10 @@ function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWelln
           stroke={aberto ? '#C9A227' : feito ? '#8EE6A0' : 'none'} strokeWidth={aberto ? 2.6 : 1.6}>
           {aberto && <animate attributeName="stroke-opacity" values="1;.35;1" dur="1.8s" repeatCount="indefinite" />}
         </rect>
-        <text x={cx} y="72" textAnchor="middle" fontSize="19" fontWeight="600" fill={feito || aberto ? '#fff' : 'rgba(255,255,255,.75)'} fontFamily="Oswald, sans-serif" letterSpacing="1">{nome}</text>
-        <text x={cx} y="91" textAnchor="middle" fontSize={t.length > 22 ? 9 : 10.5} fill={corTxt} fontFamily="Inter, sans-serif">{feito ? `✓ ${t}` : t}</text>
+        {/* O nome fica centrado na linha do meio do campo (a altura do
+            centro), e o estado logo por baixo. */}
+        <text x={cx} y="75" dominantBaseline="central" textAnchor="middle" fontSize="15" fontWeight="600" fill={feito || aberto ? '#fff' : 'rgba(255,255,255,.75)'} fontFamily="Oswald, sans-serif" letterSpacing="1" style={halo}>{nome}</text>
+        <text x={cx} y="91" dominantBaseline="central" textAnchor="middle" fontSize={t.length > 22 ? 7.5 : 9} fill={corTxt} fontFamily="Inter, sans-serif" style={halo}>{feito ? `✓ ${t}` : t}</text>
       </g>
     );
   };
@@ -35539,6 +35575,24 @@ function PkhCampo({ noite, wEstado, wTexto, pEstado, pTexto, semSegunda, onWelln
           <rect x="11" y="8" width="278" height="134" /><line x1="150" y1="8" x2="150" y2="142" /><circle cx="150" cy="75" r="19" />
           <rect x="11" y="40" width="36" height="70" /><rect x="253" y="40" width="36" height="70" />
           <rect x="11" y="60" width="13" height="30" /><rect x="276" y="60" width="13" height="30" />
+          {/* Meias-luas das grandes áreas e cantos */}
+          <path d="M47 57.3 A19 19 0 0 1 47 92.7" /><path d="M253 57.3 A19 19 0 0 0 253 92.7" />
+          <path d="M14 8 A3 3 0 0 1 11 11" /><path d="M286 8 A3 3 0 0 0 289 11" />
+          <path d="M11 139 A3 3 0 0 1 14 142" /><path d="M286 142 A3 3 0 0 1 289 139" />
+        </g>
+        {/* Marcas de penálti e centro */}
+        <g fill={G} aria-hidden="true">
+          <circle cx="150" cy="75" r="1.6" /><circle cx="40" cy="75" r="1.4" /><circle cx="260" cy="75" r="1.4" />
+        </g>
+        {/* Balizas, por fora das linhas de fundo, com rede */}
+        <defs>
+          <pattern id="pkh-rede" width="2.4" height="2.4" patternUnits="userSpaceOnUse">
+            <path d="M0 0 L0 2.4 M0 0 L2.4 0" stroke="rgba(255,255,255,.35)" strokeWidth=".5" />
+          </pattern>
+        </defs>
+        <g aria-hidden="true">
+          <rect x="4" y="67" width="7" height="16" fill="url(#pkh-rede)" stroke="#fff" strokeWidth="1.5" />
+          <rect x="289" y="67" width="7" height="16" fill="url(#pkh-rede)" stroke="#fff" strokeWidth="1.5" />
         </g>
         {metade('w', 'WELLNESS', wEstado, wTexto, onWellness)}
         {metade('p', semSegunda ? 'FOLGA' : 'PSE', pEstado, pTexto, onPse)}
