@@ -31546,8 +31546,8 @@ const CACIFO_W = 300;
 const CACIFO_H = 480;
 const CACIFO_CSS = `
   .cf-palco { position: relative; width: ${CACIFO_W}px; height: ${CACIFO_H}px; perspective: 1300px; transform-origin: 0 0; }
-  .cf-rig { position: absolute; top: 0; width: 150px; height: ${CACIFO_H}px; transition: left .7s ease .1s; z-index: 2; }
-  .cf-vizinho { position: absolute; top: 0; width: 150px; height: ${CACIFO_H}px; z-index: 1; filter: brightness(.72); }
+  .cf-rig { position: absolute; top: 0; left: 75px; width: 150px; height: ${CACIFO_H}px; transition: left .7s ease .1s; }
+  .cf-aberto .cf-rig { left: 150px; }
   .cf-corpo { position: absolute; inset: 0; background: #0f1612; border: 5px solid #2c4336; border-radius: 6px; overflow: hidden; pointer-events: none; }
   .cf-aberto .cf-corpo { pointer-events: auto; }
   .cf-porta { position: absolute; inset: 0; transform-origin: left center; transform-style: preserve-3d; -webkit-transform-style: preserve-3d; transition: transform 1.3s cubic-bezier(.35,.75,.25,1) .8s; z-index: 5; pointer-events: none; }
@@ -31567,11 +31567,12 @@ const CACIFO_CSS = `
     .cf-pisca { animation: none !important; }
   }
   .cf-obj { position: absolute; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; font: inherit; color: inherit;
-    text-align: center; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+    text-align: center; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; }
   .cf-obj:active { filter: brightness(1.2); }
   .cf-obj:focus-visible { outline: 2px solid #C9A227; outline-offset: 2px; border-radius: 4px; }
-  .cf-lab { font-size: 11px; font-weight: 600; color: #F1EBDA; line-height: 1.2; overflow-wrap: anywhere; }
-  .cf-mini { font-size: 11px; color: #C9A227; line-height: 1.2; overflow-wrap: anywhere; }
+  .cf-lab { font-size: 9.5px; font-weight: 600; color: #F1EBDA; line-height: 1.2; overflow-wrap: anywhere; }
+  .cf-mini { font-size: 8px; color: #C9A227; line-height: 1.25; margin-top: 1px; overflow-wrap: anywhere; }
   .cf-papel { position: absolute; background: #F4EEDC; color: #2a2418; border-radius: 2px; box-sizing: border-box; }
   .cf-papel small { display: block; font-size: 10.5px; color: #6b5e45; }
   .cf-mao { font-family: 'Caveat', cursive; }
@@ -31633,27 +31634,6 @@ function quandoCurto(data, hora) {
   return [dia, h].filter(Boolean).join(' ');
 }
 
-// Cacifo de um colega, fechado (só decoração, nos ecrãs largos).
-function CacifoVizinho({ x, numero }) {
-  return (
-    <div className="cf-vizinho" style={{ left: x }} aria-hidden="true">
-      <svg width="150" height={CACIFO_H} viewBox={`0 0 150 ${CACIFO_H}`} style={{ display: 'block' }}>
-        <rect x="1" y="0" width="148" height={CACIFO_H} rx="6" fill="#2c4336" />
-        <rect x="9" y="8" width="132" height={CACIFO_H - 16} rx="4" fill="#33503f" stroke="#4e6a58" />
-        <g fill="#1d2e24"><path d="M28 22 h94 l-4 6 h-94z" /><path d="M28 34 h94 l-4 6 h-94z" /><path d="M28 46 h94 l-4 6 h-94z" /></g>
-        <rect x="33" y="73" width="84" height="104" rx="8" fill="#4e6a58" />
-        <rect x="40" y="80" width="70" height="90" rx="4" fill="#1f2d25" />
-        <rect x="27" y="190" width="96" height="40" rx="3" fill="#8A6A0E" />
-        <text x="75" y="219" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="22" fill="#2a2418">{numero}</text>
-        <circle cx="116" cy="300" r="18.5" fill="#7d8a82" />
-        <circle cx="116" cy="300" r="15.5" fill="#121618" />
-        <circle cx="116" cy="300" r="7.5" fill="#2a2f33" />
-        <g fill="#1d2e24"><path d="M28 422 h94 l-4 6 h-94z" /><path d="M28 434 h94 l-4 6 h-94z" /><path d="M28 446 h94 l-4 6 h-94z" /></g>
-      </svg>
-    </div>
-  );
-}
-
 function PlayerCacifo({
   player, equipa, code, teamId, animar, onAberto, onBack, onAbrir, onAbrirWellness, onAbrirRpe,
   dadosConv, dadosComp, missoes, nTarefas, session, doneWellness, doneRpe, wellnessWindow, rpeWindow,
@@ -31663,22 +31643,16 @@ function PlayerCacifo({
   const tablet = usePkhMedia(PKH_TABLET_ALTO);
   const g = usePkhMedia('(min-height: 820px)') && (largo || tablet);
   const areaRef = useRef(null);
-  /* Telemóvel: o palco tem 300 de largura e escala até encher a largura.
-     Ecrã mais largo do que alto (computador, tablet deitado): escala pela
-     altura e o palco alarga-se até à largura toda da página — os cacifos
-     dos colegas, fechados, enchem os lados, como na fila do balneário. */
-  const [medida, setMedida] = useState({ s: 0, W: CACIFO_W });
-  const escala = medida.s;
+  // O cacifo (porta + interior) escala para caber no espaço que sobra.
+  const [escala, setEscala] = useState(0);
   React.useLayoutEffect(() => {
     const el = areaRef.current;
     if (!el) return undefined;
     const medir = () => {
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;
-      let s, W;
-      if (w / CACIFO_W > h / CACIFO_H) { s = Math.max(0.5, Math.min(h / CACIFO_H, 2.6)); W = Math.max(CACIFO_W, Math.floor(w / s)); }
-      else { s = Math.max(0.5, w / CACIFO_W); W = CACIFO_W; }
-      setMedida(prev => (Math.abs(prev.s - s) < 0.002 && prev.W === W ? prev : { s, W }));
+      const v = Math.max(0.5, Math.min(w / CACIFO_W, h / CACIFO_H, 2.6));
+      setEscala(prev => (Math.abs(prev - v) < 0.002 ? prev : v));
     };
     medir();
     if (typeof ResizeObserver === 'undefined') {
@@ -31808,18 +31782,6 @@ function PlayerCacifo({
   const nT = nTarefas || 0;
 
   const atraso = (s) => (animar ? { transitionDelay: `${s}s` } : undefined);
-  // Palco largo: o cacifo (porta + interior) ao centro e os vizinhos à volta.
-  // O da esquerda fica por trás da porta quando ela abre.
-  const largoPalco = medida.W > CACIFO_W;
-  const rigLeft = Math.round((medida.W - CACIFO_W) / 2) + 150;
-  const vizinhos = [];
-  if (largoPalco) {
-    const usados = new Set([numero]);
-    const numeros = [3, 5, 8, 10, 11, 14, 17, 21, 22, 30, 4, 6, 9, 13, 15, 18, 20, 24, 27, 33].map(String).filter(n => !usados.has(n));
-    let k = 0;
-    for (let x = rigLeft - 150; x > -150; x -= 150) vizinhos.push({ x, numero: numeros[k++ % numeros.length] });
-    for (let x = rigLeft + 150; x < medida.W; x += 150) vizinhos.push({ x, numero: numeros[k++ % numeros.length] });
-  }
   const nomePlaca = primeiro.toUpperCase();
   const tamNome = nomePlaca.length <= 5 ? 15 : nomePlaca.length <= 8 ? 12.5 : 10.5;
 
@@ -31857,80 +31819,100 @@ function PlayerCacifo({
         </div>
 
         <div ref={areaRef} style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ width: medida.W * escala, height: CACIFO_H * escala, flexShrink: 0, visibility: escala ? 'visible' : 'hidden' }}>
-            <div className={`cf-palco${aberto ? ' cf-aberto' : ''}${animar ? '' : ' cf-ja'}`} style={{ width: medida.W, transform: `scale(${escala || 1})` }}>
-              {vizinhos.map(v => <CacifoVizinho key={v.x} x={v.x} numero={v.numero} />)}
-              <div className="cf-rig" style={{ left: largoPalco ? rigLeft : (aberto ? 150 : 75) }}>
+          <div style={{ width: CACIFO_W * escala, height: CACIFO_H * escala, flexShrink: 0, visibility: escala ? 'visible' : 'hidden' }}>
+            <div className={`cf-palco${aberto ? ' cf-aberto' : ''}${animar ? '' : ' cf-ja'}`} style={{ transform: `scale(${escala || 1})` }}>
+              <div className="cf-rig">
                 {/* ---------------- DENTRO DO CACIFO ---------------- */}
                 <div className="cf-corpo">
                   <div className="cf-luz" />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('ideiaJogo')} aria-label="Ideia de Jogo"
-                    style={{ left: 2, top: 8, width: 68, height: 90, ...atraso(1.8) }}>
-                    <svg width="46" height="54" viewBox="0 0 46 54" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
-                      <rect x="6" y="2" width="36" height="50" rx="3" fill="#1d4d3a" />
-                      <rect x="6" y="2" width="6" height="50" fill="#143a2b" />
-                      <rect x="17" y="12" width="20" height="3" fill="#C9A227" />
-                      <rect x="17" y="19" width="14" height="2" fill="#8A9A8C" />
-                      <circle cx="27" cy="36" r="7" fill="none" stroke="#C9A227" strokeWidth="1.5" />
+                    style={{ left: 2, top: 24, width: 68, height: 84, ...atraso(1.8) }}>
+                    {/* Caderno tático aberto: notas e uma lâmpada à esquerda,
+                        meio campo com cruzes, bola e seta à direita. */}
+                    <svg width="62" height="48" viewBox="0 0 64 50" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      <path d="M32 8 L32 46" stroke="#14281f" strokeWidth="2" />
+                      <path d="M4 10 Q18 6 32 10 L32 46 Q18 42 4 46 Z" fill="#F4EEDC" />
+                      <path d="M32 10 Q46 6 60 10 L60 46 Q46 42 32 46 Z" fill="#ECE5CF" />
+                      <g stroke="#c9bfa3" strokeWidth=".8"><path d="M8 18 H28" /><path d="M8 24 H28" /><path d="M8 30 H28" /><path d="M8 36 H24" /></g>
+                      <circle cx="14" cy="27" r="5" fill="none" stroke="#C9A227" strokeWidth="1.4" />
+                      <path d="M12.5 33 h3" stroke="#C9A227" strokeWidth="1.4" />
+                      <rect x="36" y="14" width="20" height="28" fill="none" stroke="#3B6D11" strokeWidth="1" />
+                      <path d="M36 28 H56" stroke="#3B6D11" strokeWidth=".8" />
+                      <circle cx="46" cy="28" r="3.5" fill="none" stroke="#3B6D11" strokeWidth=".8" />
+                      <g stroke="#A6192E" strokeWidth="1.4"><path d="M39 17 l3 3 M42 17 l-3 3" /><path d="M49 33 l3 3 M52 33 l-3 3" /></g>
+                      <circle cx="44" cy="37" r="1.8" fill="none" stroke="#1c2226" strokeWidth="1.2" />
+                      <path d="M41 21 Q46 26 49 32" fill="none" stroke="#1c2226" strokeWidth="1" strokeDasharray="2 1.5" />
+                      <path d="M30 6 L30 2 L34 2 L34 6" fill="#A6192E" />
                     </svg>
-                    <div className="cf-lab" style={{ marginTop: 3 }}>Ideia de<br />Jogo</div>
+                    <div className="cf-lab" style={{ marginTop: 9 }}>Ideia de Jogo</div>
                   </button>
 
                   <button type="button" className="cf-obj cf-it" onClick={abrirSalaVideo} aria-label="Sala de Vídeo"
-                    style={{ left: 72, top: 12, width: 66, height: 86, ...atraso(1.9) }}>
-                    <div style={{ position: 'relative', background: '#060908', border: '3px solid #2a2f2c', borderRadius: 6, height: 46, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', transform: 'rotate(-4deg)' }}>
-                      <Play size={18} color="#C9A227" fill="#C9A227" />
-                      <span style={{ fontSize: 11, color: '#C9A227', height: 14, lineHeight: '14px' }}>{novosVideos > 0 ? `${novosVideos} ${novosVideos === 1 ? 'novo' : 'novos'}` : ''}</span>
-                    </div>
-                    <div className="cf-lab" style={{ marginTop: 6 }}>Sala de<br />Vídeo</div>
+                    style={{ left: 72, top: 24, width: 66, height: 84, ...atraso(1.9) }}>
+                    {/* Tablet com um lance pausado. */}
+                    <svg width="62" height="48" viewBox="0 0 64 50" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      <rect x="3" y="5" width="58" height="40" rx="5" fill="#1c2226" />
+                      <rect x="7" y="9" width="50" height="30" rx="1.5" fill="#2E6B3F" />
+                      <g stroke="#7FB08A" strokeWidth=".7" fill="none"><path d="M32 9 V39" /><circle cx="32" cy="24" r="5" /><rect x="7" y="17" width="7" height="14" /><rect x="50" y="17" width="7" height="14" /></g>
+                      <g fill="#D14056"><circle cx="20" cy="20" r="1.8" /><circle cx="25" cy="30" r="1.8" /></g>
+                      <g fill="#F1EBDA"><circle cx="40" cy="16" r="1.8" /><circle cx="44" cy="28" r="1.8" /></g>
+                      <circle cx="32" cy="24" r="8" fill="#0f1612" fillOpacity=".55" />
+                      <path d="M29.5 20 L36 24 L29.5 28 Z" fill="#C9A227" />
+                      <rect x="9" y="35" width="46" height="1.6" rx=".8" fill="#ffffff44" />
+                      <rect x="9" y="35" width="19" height="1.6" rx=".8" fill="#C9A227" />
+                    </svg>
+                    <div className="cf-lab" style={{ marginTop: 9 }}>Sala de Vídeo</div>
+                    <div className="cf-mini" style={{ minHeight: 10 }}>{novosVideos > 0 ? `${novosVideos} ${novosVideos === 1 ? 'novo' : 'novos'}` : ''}</div>
                   </button>
 
-                  <div style={{ position: 'absolute', left: 0, right: 0, top: 100, height: 5, background: '#2c4336' }} />
-                  <div style={{ position: 'absolute', left: 8, right: 8, top: 116, height: 4, background: '#8A9A8C', borderRadius: 2 }} />
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: 122, height: 5, background: '#2c4336' }} />
+                  <div style={{ position: 'absolute', left: 8, right: 8, top: 144, height: 4, background: '#8A9A8C', borderRadius: 2 }} />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('jogos')} aria-label="Jogo"
-                    style={{ left: 0, top: 116, width: 140, height: 200, ...atraso(2) }}>
-                    <svg width="118" height="126" viewBox="0 0 132 140" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
-                      <path d="M66 0 l0 12" stroke="#8A9A8C" strokeWidth="2" />
+                    style={{ left: 0, top: 144, width: 140, height: 186, ...atraso(2) }}>
+                    <svg width="108" height="128" viewBox="0 0 132 156" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      <path d="M66 0 l0 26" stroke="#8A9A8C" strokeWidth="2" />
+                      <g transform="translate(0,16)">
                       <path d="M36 16 L52 10 Q66 20 80 10 L96 16 L124 40 L108 58 L98 50 L98 136 L34 136 L34 50 L24 58 L8 40 Z" fill={cor.base} stroke="#C9A227" strokeWidth="2" />
                       <path d="M52 10 Q66 24 80 10" fill="none" stroke="#C9A227" strokeWidth="3" />
                       <text x="66" y="62" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="13" fill={cor.texto}>{nomePlaca.slice(0, 12)}</text>
                       <text x="66" y="112" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize={numero.length > 2 ? 34 : 46} fill={cor.texto}>{numero || iniciais.slice(0, 2)}</text>
+                      </g>
                     </svg>
-                    <div style={{ height: 17, display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ height: 15, marginTop: 3, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                       {proxConv && (proxConv.convocado === true ? (
-                        <span style={{ background: '#C9A227', color: '#1A2A1F', fontSize: 11, fontWeight: 600, borderRadius: 9, padding: '1px 8px' }}>Convocado</span>
+                        <span style={{ background: '#C9A227', color: '#1A2A1F', fontSize: 9, fontWeight: 600, borderRadius: 9, padding: '1px 7px' }}>Convocado</span>
                       ) : proxConv.convocado === false ? (
-                        <span style={{ border: '1px solid #6f7c74', color: '#b9c4bc', fontSize: 11, borderRadius: 9, padding: '0 7px' }}>Não convocado</span>
+                        <span style={{ border: '1px solid #6f7c74', color: '#b9c4bc', fontSize: 9, borderRadius: 9, padding: '0 6px' }}>Não convocado</span>
                       ) : null)}
                     </div>
-                    <div className="cf-lab" style={{ marginTop: 3, padding: '0 6px' }}>{proxConv ? `Jogo · ${quandoCurto(proxConv.data, proxConv.horaJogo)}` : 'Jogo'}</div>
+                    <div className="cf-lab" style={{ marginTop: 2, padding: '0 6px' }}>{proxConv ? `Jogo · ${quandoCurto(proxConv.data, proxConv.horaJogo)}` : 'Jogo'}</div>
                     <div className="cf-mini" style={{ padding: '0 6px' }}>{proxConv ? `vs ${proxConv.adversario || 'Adversário'}` : 'Sem jogo marcado'}</div>
                   </button>
 
-                  <div style={{ position: 'absolute', left: 0, right: 0, top: 318, height: 5, background: '#2c4336' }} />
+                  <div style={{ position: 'absolute', left: 0, right: 0, top: 336, height: 5, background: '#2c4336' }} />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('competicao', 'estatisticas')} aria-label="Estatísticas da época"
-                    style={{ left: mostraGarrafa ? 0 : 23, top: 362, width: 94, height: 96, ...atraso(2.2) }}>
-                    <svg width="94" height="64" viewBox="0 0 140 96" style={{ display: 'block' }} aria-hidden="true">
+                    style={{ left: mostraGarrafa ? 6 : 28, top: 362, width: 84, height: 80, ...atraso(2.2) }}>
+                    <svg width="80" height="55" viewBox="0 0 140 96" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                       <path d="M30 40 C25 40 24 35 25 30 L26 16 Q27 11 32 11 L42 11 Q46 11 47 15 L52 23 Q68 25 86 28 Q104 31 112 36 L114 40 Z" fill="#1c2226" />
                       <path d="M26 18 Q35 21 44 17" fill="none" stroke="#C9A227" strokeWidth="2.5" />
                       <g stroke="#F1EBDA" strokeWidth="1.6" strokeLinecap="round"><path d="M55 25 l-1.5 4" /><path d="M62 26 l-1.5 4" /><path d="M69 27 l-1.5 4" /></g>
                       <path d="M4 44 L136 44 L132 40 L8 40 Z" fill="#cfc6ae" />
                       <rect x="6" y="44" width="128" height="50" rx="2" fill="#E9E2CF" />
                       <rect x="6" y="44" width="128" height="7" fill="#C9A227" />
-                      <text x="70" y="70" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="18" fill="#2a2418">{est ? `${est.jogos || 0} J · ${est.minutos || 0}'` : 'Sem jogos'}</text>
-                      <text x="70" y="88" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="18" fill="#5a4d33">{est ? `${est.golos || 0} G · ${est.assistencias || 0} A` : 'ainda'}</text>
+                      <text x="70" y="71" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="19" fill="#2a2418">{est ? `${est.jogos || 0} J · ${est.minutos || 0}'` : 'Sem jogos'}</text>
+                      <text x="70" y="89" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="19" fill="#5a4d33">{est ? `${est.golos || 0} G · ${est.assistencias || 0} A` : 'ainda'}</text>
                     </svg>
-                    <div className="cf-lab" style={{ marginTop: 8 }}>Estatísticas</div>
+                    <div className="cf-lab" style={{ marginTop: 7 }}>Estatísticas</div>
                   </button>
 
                   {mostraGarrafa && (
                     <button type="button" className="cf-obj cf-it" onClick={() => (wAberto ? onAbrirWellness() : onAbrirRpe())}
                       aria-label={wAberto ? 'Responder ao Wellness' : 'Responder à PSE'}
-                      style={{ left: 92, top: 360, width: 48, height: 98, ...atraso(2.3) }}>
-                      <svg width="30" height="66" viewBox="0 0 34 78" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      style={{ left: 94, top: 362, width: 42, height: 80, ...atraso(2.3) }}>
+                      <svg width="25" height="55" viewBox="0 0 34 78" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                         <rect x="14" y="0" width="6" height="7" rx="1.5" fill="#1c2226" />
                         <rect x="9" y="6" width="16" height="9" rx="2" fill="#1c2226" />
                         <rect x="8" y="14" width="18" height="3" fill="#C9A227" />
@@ -31941,7 +31923,7 @@ function PlayerCacifo({
                         <circle cx="21.5" cy="59" r="3.4" fill={corPonto(doneRpe, pAberto)} className={pAberto ? 'cf-pisca' : undefined} />
                         <path d="M10 20 L10 27" stroke="#ffffff" strokeOpacity=".3" strokeWidth="2" strokeLinecap="round" />
                       </svg>
-                      <div className="cf-lab cf-pisca" style={{ marginTop: 8, color: '#F09595', fontSize: legendaGarrafa.length > 7 ? 10 : 11 }}>{legendaGarrafa}</div>
+                      <div className="cf-lab cf-pisca" style={{ marginTop: 7, color: '#F09595', whiteSpace: 'nowrap' }}>{legendaGarrafa}</div>
                     </button>
                   )}
                 </div>
@@ -32002,22 +31984,22 @@ function PlayerCacifo({
                   {/* -------- dentro da porta -------- */}
                   <div className="cf-face cf-tras">
                     <button type="button" className="cf-obj cf-papel" onClick={() => onAbrir('treino')} aria-label="Treino de hoje"
-                      style={{ left: 14, top: 14, width: 116, height: 62, padding: '9px 8px 6px', transform: 'rotate(-2deg)', textAlign: 'left' }}>
+                      style={{ left: 14, top: 14, width: 116, height: 58, padding: '9px 8px 6px', transform: 'rotate(-2deg)', textAlign: 'left' }}>
                       <span className="cf-iman" />
                       <small>Treino de hoje</small>
-                      <div className="cf-mao" style={{ fontSize: treinoTxt.length > 22 ? 14 : 16, lineHeight: 1.05 }}>{treinoTxt}</div>
+                      <div className="cf-mao" style={{ fontSize: treinoTxt.length > 20 ? 13.5 : 16, lineHeight: 1.05 }}>{treinoTxt}</div>
                     </button>
 
                     <button type="button" className="cf-obj cf-papel" onClick={() => onAbrir('competicao')} aria-label="Classificação"
-                      style={{ left: 10, top: 92, width: 130, height: 84, padding: '6px 6px 5px', transform: 'rotate(1.5deg)', textAlign: 'left' }}>
+                      style={{ left: 10, top: 117, width: 130, height: 70, padding: '6px 6px 5px', transform: 'rotate(1.5deg)', textAlign: 'left' }}>
                       <span className="cf-iman" />
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 600, color: '#6b5e45', marginBottom: 2 }}>
-                        <Trophy size={13} color="#8A6A0E" /> Classificação
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 600, color: '#6b5e45', marginBottom: 2 }}>
+                        <Trophy size={11} color="#8A6A0E" /> Classificação
                       </div>
                       {tabela.length ? tabela.map(l => (
-                        <div key={l.pos} style={{ display: 'grid', gridTemplateColumns: '14px 1fr auto', gap: 3, fontSize: 11, padding: '1px 3px', background: l.nos ? '#C9A227' : 'transparent', borderRadius: 2 }}>
+                        <div key={l.pos} style={{ display: 'grid', gridTemplateColumns: '14px 1fr auto', gap: 3, fontSize: 10, padding: '1px 3px', background: l.nos ? '#C9A227' : 'transparent', borderRadius: 2 }}>
                           <span>{l.pos}</span>
-                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', fontWeight: l.nos ? 600 : 400, fontSize: l.nome.length > 17 ? 8.5 : l.nome.length > 13 ? 9.5 : 11, alignSelf: 'center' }}>{l.nome}</span>
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', fontWeight: l.nos ? 600 : 400, fontSize: l.nome.length > 17 ? 8 : l.nome.length > 14 ? 9 : 10, alignSelf: 'center' }}>{l.nome}</span>
                           <span>{l.pts}</span>
                         </div>
                       )) : (
@@ -32026,28 +32008,28 @@ function PlayerCacifo({
                     </button>
 
                     <button type="button" className="cf-obj" onClick={() => onAbrir('tarefas')} aria-label={`Tarefas${nT ? `: ${nT} por fazer` : ''}`}
-                      style={{ left: 16, top: 194, width: 118, height: 86 }}>
-                      <div style={{ background: '#6b4a2e', borderRadius: 4, padding: '14px 6px 6px', position: 'relative', height: 62, boxSizing: 'border-box', textAlign: 'left', overflow: 'hidden' }}>
+                      style={{ left: 16, top: 234, width: 118, height: 78 }}>
+                      <div style={{ background: '#6b4a2e', borderRadius: 4, padding: '14px 6px 6px', position: 'relative', height: 60, boxSizing: 'border-box', textAlign: 'left', overflow: 'hidden' }}>
                         <span style={{ position: 'absolute', top: -3, left: 45, width: 28, height: 8, background: '#9aa69e', borderRadius: 2 }} />
                         {postits.length ? postits.map((p, k) => (
                           <span key={k} className="cf-mao" style={{
-                            display: 'inline-block', width: 48, maxHeight: 36, verticalAlign: 'top', overflow: 'hidden', lineHeight: 1,
-                            background: k ? '#9FE1CB' : '#F2D35B', color: k ? '#04342C' : '#3a2e05', fontSize: 14, padding: '2px 4px', marginRight: 4,
+                            display: 'inline-block', width: 50, maxHeight: 34, verticalAlign: 'top', overflow: 'hidden', lineHeight: 1,
+                            background: k ? '#9FE1CB' : '#F2D35B', color: k ? '#04342C' : '#3a2e05', fontSize: 13, padding: '2px 4px', marginRight: 4,
                             transform: `rotate(${k ? 3 : -4}deg)`,
                           }}>{p}</span>
                         )) : (
-                          <span className="cf-mao" style={{ display: 'inline-block', background: '#dfe9d6', color: '#27500A', fontSize: 15, padding: '1px 6px', transform: 'rotate(-2deg)' }}>Tudo feito</span>
+                          <span className="cf-mao" style={{ display: 'inline-block', alignSelf: 'flex-start', background: '#dfe9d6', color: '#27500A', fontSize: 14, padding: '1px 6px', transform: 'rotate(-2deg)' }}>Tudo feito</span>
                         )}
                       </div>
                       {nT > 0 && (
-                        <span style={{ position: 'absolute', top: -8, right: -6, minWidth: 20, height: 20, borderRadius: 10, background: '#D14056', color: '#fff', fontSize: 11.5, fontWeight: 600, display: 'grid', placeItems: 'center', padding: '0 5px' }}>{nT}</span>
+                        <span style={{ position: 'absolute', top: -8, right: -6, minWidth: 18, height: 18, borderRadius: 9, background: '#D14056', color: '#fff', fontSize: 10.5, fontWeight: 600, display: 'grid', placeItems: 'center', padding: '0 4px', boxSizing: 'border-box' }}>{nT}</span>
                       )}
                       <div className="cf-lab" style={{ marginTop: 4 }}>Tarefas</div>
                     </button>
 
                     <button type="button" className="cf-obj" onClick={() => onAbrir('desenvolvimento')} aria-label="Desenvolvimento"
-                      style={{ left: 12, top: 298, width: 126, height: 124, background: '#1d2a22', border: '1px solid #4e6a58', borderRadius: 6, padding: 6, boxSizing: 'border-box' }}>
-                      <svg width="84" height="74" viewBox="0 0 84 74" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                      style={{ left: 12, top: 357, width: 126, height: 104, background: '#1d2a22', border: '1px solid #4e6a58', borderRadius: 6, padding: 6, boxSizing: 'border-box' }}>
+                      <svg width="74" height="64" viewBox="0 0 84 74" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                         <g fill="none" stroke="#4e6a58"><polygon points="42,4 78,28 64,70 20,70 6,28" /><polygon points="42,20 62,33 54,58 30,58 22,33" /></g>
                         <polygon points="42,10 70,30 56,62 26,58 16,32" fill="#C9A22755" stroke="#C9A227" strokeWidth="1.5" />
                         <polygon points="42,16 64,32 50,58 32,62 20,30" fill="none" stroke="#9FE1CB" strokeWidth="1.2" strokeDasharray="3 2" />
