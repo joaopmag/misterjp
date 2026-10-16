@@ -3003,7 +3003,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // Missões com caminho: "Ir para …" pede a troca de separador por aqui.
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
-    const ir = (e) => { if (e && e.detail) goTab(e.detail); };
+    // Guarda de onde se saiu (ex.: Tarefas), para fechar a janela da missão e voltar lá.
+    const ir = (e) => { if (e && e.detail) { const de = tab; goTab(e.detail); setOrigemMissao(de); } };
     window.addEventListener('mjp-ir-separador', ir);
     return () => window.removeEventListener('mjp-ir-separador', ir);
   });
@@ -3513,6 +3514,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   });
   /* O id pedido ANTES de ser redirecionado. É o que permite a um
      #convocatorias antigo abrir Jogos já na sub-aba certa. */
+  /* Separador de onde se abriu uma missão ("Ir para …", ex.: das Tarefas).
+     Fechar a janela que a missão abriu volta a esse separador. */
+  const [origemMissao, setOrigemMissao] = useState(null);
   const [tabPedida, setTabPedida] = useState(() => {
     if (typeof window === 'undefined') return 'geral';
     return window.location.hash.replace('#', '').trim() || 'geral';
@@ -3573,6 +3577,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   }, [tarefas, tarefasReady, euId, userEmail, matches, videosMeta, videosOriginaisMeta, clipesMeta, scoutingMeta, adversariosMeta, sessionsMeta, matchesMeta, convocatoriasMeta, monitoringMeta, desenvolvimentoMeta, ideiasMeta, exercisesMeta, clinicoMeta, apresentacoesMeta, documentosMeta]);
 
   const goTab = (id) => {
+    setOrigemMissao(null);
     /* Trocar de separador na barra lateral pode desmontar um ecrã que
        tinha uma "marca" própria no histórico do browser (Portal do
        Atleta, um simulador, etc. — ver `useDetailBack`). Ao desmontar,
@@ -4074,7 +4079,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'clinico' && <BoletimClinico players={players} clinico={clinico} setClinico={setClinico} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} />}
-          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : tabPedida === 'analisejogo' ? 'analisejogo' : tabPedida === 'ideiasjogo' ? 'ideiasjogo' : 'jogos'}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
+          {tab === 'jogos' && <Jogos matches={matches} setMatches={setMatches} players={players} setPlayers={setPlayers} standings={standings} setStandings={setStandings} standingsMeta={standingsMeta} season={season} setSeason={setSeason} sessions={sessions} setSessions={setSessions} convocatorias={convocatorias} setConvocatorias={setConvocatorias} autorizarLimparConvocatorias={autorizarLimparConvocatorias} clinico={clinico} abaInicial={tabPedida === 'convocatorias' ? 'convocatorias' : tabPedida === 'estatisticas' ? 'estatisticas' : tabPedida === 'analisejogo' ? 'analisejogo' : tabPedida === 'ideiasjogo' ? 'ideiasjogo' : 'jogos'} voltarOrigem={origemMissao && origemMissao !== 'jogos' ? () => goTab(origemMissao) : null}  tarefas={tarefas} souDono={((membros || []).find(m => m.user_id === euId) || {}).papel === 'owner'} userEmail={userEmail} />}
           {/* Sempre montado, escondido com CSS (não desmontado) — o mesmo
              motivo da Biblioteca logo abaixo: sem isto, trocar de separador
              e voltar perdia o vídeo selecionado, a posição de reprodução e
@@ -27860,7 +27865,15 @@ function RelatorioJogoModal({ match, players, season, onClose, onSave }) {
   );
 }
 
-function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial, tarefas, souDono, userEmail }) {
+function Jogos({ matches, setMatches, players, setPlayers, standings, setStandings, standingsMeta, season, setSeason, sessions, setSessions, convocatorias, setConvocatorias, autorizarLimparConvocatorias, clinico, abaInicial, tarefas, souDono, userEmail, voltarOrigem }) {
+  // A janela do jogo foi aberta por uma missão: ao fechar, volta-se de onde se veio.
+  const modalDaMissao = useRef(false);
+  const fecharModal = () => {
+    setModal(null);
+    if (modalDaMissao.current && voltarOrigem) { modalDaMissao.current = false; voltarOrigem(); return true; }
+    modalDaMissao.current = false;
+    return false;
+  };
   /* Convocatórias deixaram de ter separador próprio e vivem aqui: nascem
      com o jogo (`syncMatchConvocatoria` mantém-lhes adversário, data e
      jornada sincronizados), por isso eram já a outra vista da mesma
@@ -27907,7 +27920,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
       .sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const alvo = proximos.find(m => !String(m.ideias || '').trim()) || proximos[0];
     setAba('jogos');
-    if (alvo) { setModalVoltarFicha(false); setModal(alvo); }
+    if (alvo) { setModalVoltarFicha(false); setModal(alvo); modalDaMissao.current = true; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abaInicial]);
   const [ficha, setFicha] = useState(null);
@@ -27969,7 +27982,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
       }
     }
     if (isEdicao && modalVoltarFicha) trocarJanela(() => setModal(null), () => setFicha(registo));
-    else setModal(null);
+    else fecharModal();
   };
   const remove = (id) => removeWithUndo(matches, setMatches, id, itemLabel(matches.find(x => x.id === id), 'Jogo'));
 
@@ -28156,7 +28169,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
           season={season}
           clinico={clinico}
           onIntegrarConvidado={setPlayers ? (c) => integrarConvidado({ convidado: c, players, setPlayers }) : null}
-          onClose={() => (modalVoltarFicha ? trocarJanela(() => setModal(null), () => setFicha(modal)) : setModal(null))}
+          onClose={() => (modalVoltarFicha ? trocarJanela(() => setModal(null), () => setFicha(modal)) : fecharModal())}
           onSave={save}
         />
       )}
