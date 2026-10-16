@@ -30293,8 +30293,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   const mensagensMister = [];
   // Ordem: o aniversário primeiro, depois o jogo, depois as tarefas.
   if (player && isBirthdayToday(player.birthdate)) {
-    const primeiroNome = String(player.name || '').trim().split(/\s+/)[0] || '';
-    mensagensMister.push({ tipo: 'festa', texto: `Parabéns, ${primeiroNome}! Toda a equipa técnica deseja-te um ótimo dia.` });
+    // Sem o nome: já aparece no cumprimento por cima.
+    mensagensMister.push({ tipo: 'festa', texto: 'Parabéns! Toda a equipa técnica deseja-te um ótimo dia.' });
   }
   if (jogoNoPainel) {
     const i = jogoNoPainel._info || {};
@@ -33771,7 +33771,7 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, tamEmblema, recol
       {fundo && (
         <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', overflow: 'hidden', background: '#121614' }}>
           <svg viewBox={`0 0 300 ${fundo.H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%"
-            style={{ display: 'block', position: 'absolute', inset: 0, filter: 'blur(7px)', transform: 'scale(1.06)' }}
+            style={{ display: 'block', position: 'absolute', inset: 0, filter: `blur(${c.desfoque || 7}px)`, transform: 'scale(1.06)' }}
             dangerouslySetInnerHTML={{ __html: fundo.svg }} />
         </div>
       )}
@@ -33786,7 +33786,8 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, tamEmblema, recol
       {/* Depois de abertas (já fora do buraco da porta), as folhas saem de cena. */}
       {!recolhido && <div style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{metade('E')}</div>}
       {!recolhido && <div style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{metade('D')}</div>}
-      {!recolhido && <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />}
+      {/* A junta das folhas: 1 px no ecrã (nas unidades da caixa, 1/esc0). */}
+      {!recolhido && <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: c.fixo ? 1 : c.raio / 3, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />}
     </div>
   );
 }
@@ -33844,6 +33845,10 @@ function TransicaoEntrada({ focoInteiro, children }) {
     setCaixaVidro({
       left: fcx - d.width / 2 / esc0, top: fcy - d.height / 2 / esc0,
       width: d.width / esc0, height: d.height / esc0, tam: (ent.tam || d.height * 0.78) / esc0, raio: 3 / esc0,
+      /* O desfoque também tem de estar nestas unidades: o ecrã de trás está
+         encolhido (esc0) e, com 7 px fixos, o balneário ficava mais nítido
+         (e parecia mais claro) no instante em que a porta passava para aqui. */
+      desfoque: 7 / esc0,
     });
     let cancelado = false, aJ = null, aC = null;
     const N = 36;
