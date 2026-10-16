@@ -30516,7 +30516,7 @@ function EcraAniversario({ player, onEntrar }) {
       `}</style>
       {/* chuva de papelinhos, sempre */}
       {papelinhos.map(c => (
-        <span key={c.k} style={{
+        <span key={c.k} data-festa-papel="" style={{
           position: 'fixed', top: 0, left: `${c.left}%`, width: c.larg, height: c.larg * 0.45, background: c.cor, borderRadius: 1,
           opacity: 0.85, transform: `rotate(${c.rot}deg)`, animation: `festa-cair ${c.dur}s linear ${c.atraso}s infinite`, pointerEvents: 'none',
         }} />
@@ -33744,7 +33744,7 @@ function PeRestoEntrada({ html, apagar }) {
 // O vidro da porta, sozinho, no sítio exato onde estava. Com `caixa`, é
 // desenhado noutro referencial (dentro do ecrã que cresce): left/top/
 // width/height/tam/raio já vêm nessas unidades.
-function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel, tamEmblema }) {
+function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel, tamEmblema, recolhido }) {
   const c = caixa || { left: rect.left, top: rect.top, width: rect.width, height: rect.height, tam: tamEmblema || Math.round(rect.height * 0.78), raio: 3, fixo: true };
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
@@ -33752,7 +33752,9 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel, tam
     // O fosco mantém-se enquanto abre (tirá-lo de repente fazia um "flash"):
     // a folha desliza e vai ficando transparente, e o fosco vai com ela.
     backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)',
-    transition: 'transform .6s cubic-bezier(.4,0,.3,1), opacity .45s ease-out',
+    /* As folhas arrancam devagar e travam devagar (ease-in-out), e só se
+       apagam depois de já irem a meio — nunca há um corte seco. */
+    transition: 'transform .75s cubic-bezier(.65,0,.35,1), opacity .4s ease-out .2s',
     opacity: aberto ? 0 : 1,
   };
   const emblema = (lado) => (
@@ -33762,14 +33764,16 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, fundoVisivel, tam
   );
   return (
     <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
-      {fundo && (
+      {fundo && !recolhido && (
         <svg viewBox={`0 0 300 ${fundo.H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%"
-          style={{ display: 'block', position: 'absolute', inset: 0, background: '#121614', opacity: fundoVisivel ? 1 : 0, transition: 'opacity .5s cubic-bezier(.4,0,.2,1)' }}
+          style={{ display: 'block', position: 'absolute', inset: 0, background: '#121614', opacity: fundoVisivel ? 1 : 0, transition: 'opacity .22s ease-out' }}
           dangerouslySetInnerHTML={{ __html: fundo.svg }} />
       )}
-      <div style={{ ...vidro, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{emblema('E')}</div>
-      <div style={{ ...vidro, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{emblema('D')}</div>
-      <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .15s' }} />
+      {/* Depois de abertas, as folhas saem de cena: o fosco (blur) a crescer
+          com o ecrã era o que engasgava a animação. */}
+      {!recolhido && <div style={{ ...vidro, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{emblema('E')}</div>}
+      {!recolhido && <div style={{ ...vidro, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{emblema('D')}</div>}
+      {!recolhido && <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .15s' }} />}
     </div>
   );
 }
@@ -33789,6 +33793,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
   const [ent] = useState(() => (entradaRecente() ? ENTRADA : null));
   const [ativa, setAtiva] = useState(!!ent);
   const [vidroAberto, setVidroAberto] = useState(false);
+  const [vidroRecolhido, setVidroRecolhido] = useState(false);
   const [fundoVisivel, setFundoVisivel] = useState(true);
   const [caixaVidro, setCaixaVidro] = useState(null);
   React.useLayoutEffect(() => {
@@ -33842,9 +33847,22 @@ function TransicaoEntrada({ focoInteiro, children }) {
     r1 = requestAnimationFrame(() => {
       r2 = requestAnimationFrame(() => {
         if (cancelado) return;
-        setVidroAberto(true);
+        /* Passagem suave, por esta ordem:
+           0 ms    o balneário atrás do vidro fosco dá lugar ao ecrã que
+                   entra, numa troca rápida (0,22 s): a porta abre já com o
+                   ecrã novo lá dentro, sem as duas imagens sobrepostas;
+           120 ms  as folhas começam a abrir e o resto do ecrã de entrada
+                   desvanece-se;
+           380 ms  com a porta já meio aberta, o ecrã cresce até à página
+                   inteira (1 s, a acelerar e a travar devagar);
+           800 ms  as folhas, já invisíveis, saem de cena. */
         setFundoVisivel(false);
-        const op = { duration: 950, delay: 120, easing: 'linear', fill: 'forwards' };
+        tempo = setTimeout(() => {
+          if (cancelado) return;
+          setVidroAberto(true);
+          tempo = setTimeout(() => { if (!cancelado) setVidroRecolhido(true); }, 680);
+        }, 120);
+        const op = { duration: 1000, delay: 380, easing: 'linear', fill: 'forwards' };
         aJ = jan.animate(kJ, op);
         aC = con.animate(kC, op);
         aJ.onfinish = () => {
@@ -33863,7 +33881,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
           estádio, placard a cair, bilhete a entrar…) ficam em pausa: cada uma
           obrigava a redesenhar a camada que está a crescer, e era isso que
           engasgava. Arrancam quando o ecrã já está na página inteira. */}
-      {ativa && <style>{`.mjp-entrada-ativa *, .mjp-entrada-ativa *::before, .mjp-entrada-ativa *::after { animation-play-state: paused !important; }`}</style>}
+      {ativa && <style>{`.mjp-entrada-ativa *, .mjp-entrada-ativa *::before, .mjp-entrada-ativa *::after { animation-play-state: paused !important; } .mjp-entrada-ativa [data-festa-papel] { visibility: hidden !important; }`}</style>}
       {/* O resto do ecrã de entrada fica por baixo da janela que cresce e
           desvanece-se enquanto a porta abre. */}
       {ativa && ent && ent.resto && <PeRestoEntrada html={ent.resto} apagar={vidroAberto} />}
@@ -33873,7 +33891,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
           {/* O vidro está no mesmo referencial do ecrã: abre, apaga-se e,
               enquanto isso, cresce e é cortado com ele — nada fica preso no
               sítio da porta. */}
-          {ativa && ent && <PortaVidroSo rect={ent.rect} caixa={caixaVidro || undefined} aberto={vidroAberto} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel={fundoVisivel} />}
+          {ativa && ent && <PortaVidroSo rect={ent.rect} caixa={caixaVidro || undefined} aberto={vidroAberto} recolhido={vidroRecolhido} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel={fundoVisivel} />}
         </div>
       </div>
     </>
