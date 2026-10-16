@@ -33867,7 +33867,25 @@ function TransicaoEntrada({ focoInteiro, children }) {
        entra (o jogo, os parabéns, a missão ou o ecrã inicial), o resto do
        ecrã de entrada desvanece-se e a janela cresce até à página inteira. */
     let r1 = 0, r2 = 0, tempo = 0;
-    r1 = requestAnimationFrame(() => {
+    /* SÓ ABRE COM O BROWSER LIVRE. Ecrãs pesados (o do jogo) continuam a
+       trabalhar depois de aparecerem (efeitos, contagem, imagens): se a
+       porta abrisse logo, a animação corria "às escuras" durante esse
+       trabalho e o primeiro frame visível já mostrava o ecrã quase inteiro,
+       sem se ver a porta a abrir. Aqui espera-se por 4 frames seguidos
+       fluidos (no máximo 2 s), com a porta fechada e o "acesso autorizado"
+       à vista; depois a abertura é igual em todos os ecrãs. */
+    const esperarCalma = (seguir) => {
+      let ult = 0, bons = 0, ini = 0;
+      const f = (t) => {
+        if (cancelado) return;
+        if (!ini) { ini = t; ult = t; r1 = requestAnimationFrame(f); return; }
+        bons = (t - ult) < 34 ? bons + 1 : 0;
+        ult = t;
+        if (bons >= 4 || t - ini > 2000) seguir(); else r1 = requestAnimationFrame(f);
+      };
+      r1 = requestAnimationFrame(f);
+    };
+    esperarCalma(() => {
       r2 = requestAnimationFrame(() => {
         if (cancelado) return;
         /* Passagem suave, por esta ordem:
