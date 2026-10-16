@@ -36241,6 +36241,9 @@ const PKH_LARGURA_LARGA = 'min(41vw, 820px)';
    computador. */
 const PKH_TABLET_ALTO = '(min-width: 700px) and (max-aspect-ratio: 5/4)';
 const PKH_LARGURA_TABLET = 'min(88vw, 720px)';
+// Último enquadramento medido do balneário: ao voltar ao ecrã inicial já
+// desenha no tamanho certo, sem reajuste no segundo frame.
+const PKH_ENQ_MEM = { v: null };
 function usePkhMedia(q) {
   const [largo, setLargo] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q).matches : false));
   useEffect(() => {
@@ -36322,7 +36325,8 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
   // tamanhos do telemóvel, para tudo caber sem cortar o balneário).
   const g = usePkhMedia('(min-height: 820px)') && (largo || tablet);
   const balRef = useRef(null);
-  const [enq, setEnq] = useState({ W: 300, H: 215, vb: '0 0 300 215' });
+  const [enq, setEnqBase] = useState(() => PKH_ENQ_MEM.v || { W: 300, H: 215, vb: '0 0 300 215' });
+  const setEnq = f => setEnqBase(prev => { const n = f(prev); PKH_ENQ_MEM.v = n; return n; });
   /* CHEGADA PELA PORTA: o balneário começa no tamanho e no sítio da porta
      e cresce até ao lugar dele; o resto do ecrã aparece logo a seguir. */
   const [chegada] = useState(() => entradaRecente());
@@ -36335,7 +36339,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
     return () => { window.removeEventListener('mjp-entrada-fim', fim); clearTimeout(seguranca); };
   }, [chegada]);
   const aparecer = undefined;
-  useEffect(() => {
+  React.useLayoutEffect(() => {
     const el = balRef.current;
     if (!el) return undefined;
     const calcular = () => {
