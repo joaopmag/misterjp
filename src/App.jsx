@@ -30246,7 +30246,13 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      mensagem do Mister sobre o jogo, e a caixa do Mister só existe quando
      há mensagem — se chegasse depois, o balneário saltava para baixo. */
   if (estadoTarefas === 'a-carregar' || estadoConvJogo === 'a-carregar' || estadoCompJogo === 'a-carregar') {
-    if (vooAtivo()) return <div style={{ position: 'fixed', inset: 0, background: T.bg }} />;
+    if (entradaRecente()) {
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: T.bg }}>
+          <PortaVidroSo rect={ENTRADA.rect} aberto={false} logo={ENTRADA.logo} cor={ENTRADA.cor} />
+        </div>
+      );
+    }
     return (
       <div style={{ position: 'fixed', inset: 0, background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, ...body }}>
         <Loader2 size={26} className="animate-spin" color={T.warn} />
@@ -30257,7 +30263,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
 
   // DIA DE ANOS: antes de tudo (até da missão), a página da festa.
   if (player && isBirthdayToday(player.birthdate) && !aniversarioVisto) {
-    return <EcraAniversario player={player} onEntrar={() => setAniversarioVisto(true)} />;
+    return <TransicaoEntrada focoInteiro><EcraAniversario player={player} onEntrar={() => setAniversarioVisto(true)} /></TransicaoEntrada>;
   }
 
   /* PAINEL LED DO MISTER (ecrã inicial) — a voz do mister, por ordem:
@@ -30271,6 +30277,11 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      4) nada disto → "Sem missões pendentes · Bom treino" (sem toque). */
   const jogoNoPainel = missoesJogoTodas[0] || missoesJogo.find(m => m._teste) || null;
   const mensagensMister = [];
+  // Ordem: o aniversário primeiro, depois o jogo, depois as tarefas.
+  if (player && isBirthdayToday(player.birthdate)) {
+    const primeiroNome = String(player.name || '').trim().split(/\s+/)[0] || '';
+    mensagensMister.push({ tipo: 'festa', texto: `Parabéns, ${primeiroNome}! Toda a equipa técnica te deseja um ótimo dia` });
+  }
   if (jogoNoPainel) {
     const i = jogoNoPainel._info || {};
     const jogoTxt = i.casaFora === 'Fora' ? `${i.adv} × ${i.nos}` : `${i.nos} × ${i.adv}`;
@@ -30287,16 +30298,12 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       onTocar: () => irParaMissao(it),
     });
   });
-  if (player && isBirthdayToday(player.birthdate)) {
-    const primeiroNome = String(player.name || '').trim().split(/\s+/)[0] || '';
-    mensagensMister.push({ tipo: 'festa', texto: `Parabéns, ${primeiroNome}! Toda a equipa técnica te deseja um ótimo dia` });
-  }
   if (!jogoNoPainel && !missoesPorFazer.length) {
     mensagensMister.push({ tipo: 'nada', texto: 'Sem missões pendentes · Bom treino' });
   }
 
   return (
-    <>
+    <TransicaoEntrada focoInteiro={!!ecraMissao}>
     {ecraMissao}
     {toastCumprida}
     <PlayerKioskHome
@@ -30314,7 +30321,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       mensagensMister={mensagensMister}
       diasSequenciaChama={diasSequenciaChama}
     />
-    </>
+    </TransicaoEntrada>
   );
 }
 
@@ -30420,8 +30427,23 @@ function BolaFutebol({ tamanho = 46 }) {
 }
 function EcraAniversario({ player, onEntrar }) {
   const [golo, setGolo] = useState(false);
-  // Vindo da porta: o balneário que estava a crescer sai da frente da festa.
-  useEffect(() => { if (vooAtivo()) vooDesvanecer(); }, []);
+  /* PÁGINA FIXA: nada desliza ao tocar. Em vez de deslizar nos ecrãs
+     baixos, o conteúdo encolhe o necessário para caber inteiro. */
+  const festaFora = useRef(null), festaDentro = useRef(null);
+  const [festaEscala, setFestaEscala] = useState(1);
+  React.useLayoutEffect(() => {
+    const fora = festaFora.current, dentro = festaDentro.current;
+    if (!fora || !dentro) return undefined;
+    const medir = () => {
+      const h = fora.clientHeight, c = dentro.scrollHeight;
+      const e = c > h && c > 0 ? Math.max(0.55, h / c) : 1;
+      setFestaEscala(prev => (Math.abs(prev - e) < 0.005 ? prev : e));
+    };
+    medir();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(medir); ro.observe(fora); ro.observe(dentro);
+    return () => ro.disconnect();
+  }, []);
   const nome = String(player.name || '').trim();
   const primeiro = nome.split(/\s+/)[0] || 'Campeão';
   // Nas costas da camisola, o MESMO nome da mensagem ("Parabéns, Telmo!").
@@ -30455,10 +30477,11 @@ function EcraAniversario({ player, onEntrar }) {
   };
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 90, overflowY: 'auto', overflowX: 'hidden', ...body,
+      position: 'fixed', inset: 0, zIndex: 90, overflow: 'hidden', overscrollBehavior: 'none', touchAction: 'manipulation', ...body,
       background: `radial-gradient(circle at 50% 0%, ${cc.contorno} 0%, ${T.bg} 70%)`,
-    }}>
+    }} ref={festaFora}>
       <style>{`
+        html, body { overflow: hidden !important; overscroll-behavior: none; }
         @keyframes festa-cair { 0% { transform: translateY(-10vh) rotate(0deg); } 100% { transform: translateY(110vh) rotate(720deg); } }
         @keyframes festa-camisola { 0% { transform: perspective(700px) rotateY(-180deg) scale(.6); opacity: 0; } 60% { opacity: 1; } 100% { transform: perspective(700px) rotateY(0deg) scale(1); opacity: 1; } }
         @keyframes festa-flutuar { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
@@ -30487,10 +30510,11 @@ function EcraAniversario({ player, onEntrar }) {
       {/* Centrado na vertical: em ecrãs altos (iPad ao alto) o conteúdo
           ficava todo em cima, com metade do ecrã vazia por baixo. Em ecrãs
           baixos continua a começar em cima e a deslizar, como antes. */}
-      <div style={{
-        position: 'relative', maxWidth: 420, minHeight: '100%', boxSizing: 'border-box', margin: '0 auto',
+      <div ref={festaDentro} style={{
+        position: 'relative', maxWidth: 420, minHeight: festaEscala < 1 ? 0 : '100%', boxSizing: 'border-box', margin: '0 auto',
         padding: 'calc(30px + env(safe-area-inset-top, 0px)) 20px calc(40px + env(safe-area-inset-bottom, 0px))',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 10,
+        transform: festaEscala < 1 ? `scale(${festaEscala})` : undefined, transformOrigin: 'top center',
       }}>
         <div style={{ fontSize: 11, color: T.gold, letterSpacing: '.24em', textTransform: 'uppercase' }}>Hoje é dia de festa</div>
         {/* A CAMISOLA DOS ANOS */}
@@ -33644,109 +33668,93 @@ function PeCartao({ jogador, cor, logo, clube }) {
    guarda-se onde está o balneário no ecrã (e o desenho). O ecrã de
    carregamento mostra-o no mesmo sítio e o ecrã inicial faz crescer o
    balneário dali até ao lugar dele — como se fosse o mesmo ecrã. */
-/* O VOO DO BALNEÁRIO. Uma camada solta, presa ao <body> (vive fora dos
-   ecrãs, por isso não é interrompida quando a porta dá lugar ao ecrã
-   inicial). Começa em cima da porta assim que ela abre e cresce logo, sem
-   parar, até ao sítio onde vai ficar o balneário do ecrã inicial. Enquanto
-   esse ecrã ainda não existe, voa para o sítio previsto; quando aparece,
-   corrige o destino a meio do voo. No fim desvanece por cima do balneário
-   verdadeiro. Só transform/clip-path/opacity: é o que anima sem soluços. */
-const VOO = { el: null, anim: null, inicio: 0, dur: 1000, aterrar: null };
-const VOO_CURVA = 'cubic-bezier(.32,.72,.24,1)';
-const vooAtivo = () => !!(VOO.el && Date.now() - VOO.inicio < 8000);
-function vooRemover() {
-  if (VOO.anim) { try { VOO.anim.cancel(); } catch (e) { /* nada */ } }
-  if (VOO.el && VOO.el.parentNode) VOO.el.parentNode.removeChild(VOO.el);
-  VOO.el = null; VOO.anim = null; VOO.aterrar = null;
+/* A ENTRADA PELA PORTA — o ecrã seguinte está mesmo atrás da porta.
+   Com o PIN certo (ou a impressão digital), o resto do ecrã da porta
+   apaga-se e fica só o vidro. Quando o Portal está pronto, o ecrã que vem
+   a seguir (o balneário da página inicial, os parabéns ou a missão) já está
+   desenhado ATRÁS do vidro, encaixado no buraco da porta; o vidro abre e,
+   ainda a abrir, esse ecrã cresce até à página inteira. É sempre o mesmo
+   ecrã, por isso não há imagens trocadas nem paragens a meio. */
+let ENTRADA = null; // { rect, logo, cor, t }
+const entradaRecente = () => !!(ENTRADA && Date.now() - ENTRADA.t < 20000);
+
+// O vidro da porta, sozinho, no sítio exato onde estava.
+function PortaVidroSo({ rect, aberto, logo, cor }) {
+  const vidro = {
+    position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
+    background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
+    backdropFilter: 'blur(7px)', WebkitBackdropFilter: 'blur(7px)', transition: 'transform 1.1s cubic-bezier(.4,.1,.2,1)',
+  };
+  const emblema = (lado) => (
+    <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: logo ? 0.6 : 1 }}>
+      <PeEmblema logo={logo} cor={cor} tam={Math.round(rect.height * 0.78)} branco />
+    </div>
+  );
+  return (
+    <div aria-hidden="true" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3, zIndex: 9999, pointerEvents: 'none' }}>
+      <div style={{ ...vidro, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>{emblema('E')}</div>
+      <div style={{ ...vidro, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>{emblema('D')}</div>
+      <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberto ? 0 : 1, transition: 'opacity .2s' }} />
+    </div>
+  );
 }
-// Onde o balneário do ecrã inicial deve ficar (mesmas medidas da página).
-function vooAlvoPrevisto() {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const mq = (q) => !!(window.matchMedia && window.matchMedia(q).matches);
-  const largo = mq(PKH_LARGO), tablet = mq(PKH_TABLET_ALTO);
-  const g = mq('(min-height: 820px)') && (largo || tablet);
-  const colW = largo ? Math.min(vw * 0.41, 820) : tablet ? Math.min(vw * 0.88, 720) - 48 : Math.min(vw, 460) - 28;
-  const left = (vw - colW) / 2;
-  const topo = largo ? (g ? 20 : 12) : tablet ? 22 : 14;
-  const fundo = largo ? (g ? 18 : 10) : tablet ? 18 : 12;
-  const gap = g ? 12 : 8;
-  const campo = Math.min(colW * 0.5, vh * (largo ? (g ? 0.2 : 0.24) : 0.26));
-  const top = topo + (g ? 52 : 42) + gap + (g ? 46 : 38) + campo + gap;
-  return { left, top, width: colW, height: Math.max(120, vh - fundo - top) };
-}
-function vooColocar(el, alvo) {
-  Object.assign(el.style, { left: `${alvo.left}px`, top: `${alvo.top}px`, width: `${alvo.width}px`, height: `${alvo.height}px` });
-}
-// Transform + recorte que fazem a caixa `alvo` parecer-se com `de`.
-function vooDe(de, alvo) {
-  const esc = de.height / alvo.height;
-  const dx = (de.left + de.width / 2) - (alvo.left + alvo.width / 2);
-  const dy = (de.top + de.height / 2) - (alvo.top + alvo.height / 2);
-  const lado = Math.max(0, (alvo.width - de.width / esc) / 2);
-  return { transform: `translate(${dx}px, ${dy}px) scale(${esc})`, clipPath: `inset(0px ${lado}px 0px ${lado}px round ${(3 / esc).toFixed(1)}px)` };
-}
-function vooDesenho(el, desenhar, alvo) {
-  const W = alvo.width / alvo.height > 300 / 215 ? Math.round(Math.max(300, Math.min(780, (215 * alvo.width) / alvo.height))) : 300;
-  const H = Math.round(Math.max(215, Math.min(420, (W * alvo.height) / alvo.width)));
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style="display:block">${desenhar(W, H)}</svg>`;
-}
-function vooIniciar(porta, desenhar) {
-  vooRemover();
-  if (typeof document === 'undefined') return;
-  const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduzir || typeof document.body.animate !== 'function') return;
-  const alvo = vooAlvoPrevisto();
-  const el = document.createElement('div');
-  Object.assign(el.style, {
-    position: 'fixed', zIndex: '9999', overflow: 'hidden', background: '#121614', pointerEvents: 'none',
-    transformOrigin: '50% 50%', willChange: 'transform, clip-path, opacity', borderRadius: '12px',
-  });
-  vooColocar(el, alvo);
-  vooDesenho(el, desenhar, alvo);
-  document.body.appendChild(el);
-  VOO.el = el; VOO.inicio = Date.now(); VOO.dur = 1000; VOO.desenhar = desenhar;
-  const de = vooDe(porta, alvo);
-  VOO.anim = el.animate([
-    { transform: de.transform, clipPath: de.clipPath, opacity: 0 },
-    { opacity: 1, offset: 0.15 },
-    { transform: 'none', clipPath: 'inset(0px 0px 0px 0px round 12px)', opacity: 1 },
-  ], { duration: VOO.dur, easing: VOO_CURVA, fill: 'forwards' });
-  // Rede de segurança: se o ecrã inicial nunca chegar a aparecer (dia de
-  // anos, erro…), a camada desvanece sozinha.
-  setTimeout(() => { if (VOO.el === el) vooDesvanecer(); }, 7000);
-}
-function vooDesvanecer(depois) {
-  const el = VOO.el;
-  if (!el) { if (depois) depois(); return; }
-  const a = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: 'ease-out', fill: 'forwards' });
-  a.onfinish = () => { if (VOO.el === el) vooRemover(); else if (el.parentNode) el.parentNode.removeChild(el); };
-  if (depois) depois();
-}
-/* O ecrã inicial já existe: o voo acaba no sítio exato do balneário dele.
-   `revelar` mostra o balneário verdadeiro por baixo; depois a camada sai. */
-function vooAterrar(destino, revelar) {
-  const el = VOO.el;
-  if (!el) { revelar(); return; }
-  const alvo = destino.getBoundingClientRect();
-  const atual = (() => {
-    // Caixa visível neste instante (com o transform e o recorte do voo).
-    const r = el.getBoundingClientRect();
-    const m = /inset\(\s*[\d.]+px\s+([\d.]+)px/.exec(getComputedStyle(el).clipPath || '');
-    const t = getComputedStyle(el).transform;
-    const esc = t && t !== 'none' ? (new DOMMatrixReadOnly(t)).a : 1;
-    const lado = m ? Number(m[1]) * esc : 0;
-    return { left: r.left + lado, top: r.top, width: Math.max(1, r.width - 2 * lado), height: r.height };
-  })();
-  const falta = Math.max(380, VOO.dur - (Date.now() - VOO.inicio));
-  if (VOO.anim) { try { VOO.anim.cancel(); } catch (e) { /* nada */ } }
-  vooColocar(el, alvo);
-  if (VOO.desenhar) vooDesenho(el, VOO.desenhar, alvo);
-  const de = vooDe(atual, alvo);
-  VOO.anim = el.animate([
-    { transform: de.transform, clipPath: de.clipPath, opacity: 1 },
-    { transform: 'none', clipPath: 'inset(0px 0px 0px 0px round 12px)', opacity: 1 },
-  ], { duration: falta, easing: VOO_CURVA, fill: 'forwards' });
-  VOO.anim.onfinish = () => { revelar(); vooDesvanecer(); };
+
+/* Envolve o primeiro ecrã do Portal. Sem entrada pela porta, não faz nada.
+   `focoInteiro`: o ecrã todo vai para o buraco da porta (parabéns, missão);
+   senão vai o elemento marcado com data-entrada-foco (o balneário). */
+function TransicaoEntrada({ focoInteiro, children }) {
+  const wrapRef = useRef(null);
+  const [ent] = useState(() => (entradaRecente() ? ENTRADA : null));
+  const [ativa, setAtiva] = useState(!!ent);
+  const [vidroAberto, setVidroAberto] = useState(false);
+  React.useLayoutEffect(() => {
+    if (!ent) return undefined;
+    ENTRADA = null;
+    const w = wrapRef.current;
+    const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const acabar = () => { setAtiva(false); window.dispatchEvent(new CustomEvent('mjp-entrada-fim')); };
+    if (!w || reduzir || typeof w.animate !== 'function') { acabar(); return undefined; }
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const alvoEl = !focoInteiro ? w.querySelector('[data-entrada-foco]') : null;
+    const f = alvoEl ? alvoEl.getBoundingClientRect() : { left: 0, top: 0, width: vw, height: vh };
+    const d = ent.rect;
+    // "Cobrir" o buraco da porta com o foco, centrado.
+    const esc = Math.max(d.width / f.width, d.height / f.height);
+    const fcx = f.left + f.width / 2, fcy = f.top + f.height / 2;
+    const tx = (d.left + d.width / 2) - esc * fcx, ty = (d.top + d.height / 2) - esc * fcy;
+    const ins = {
+      t: fcy - d.height / 2 / esc, b: vh - (fcy + d.height / 2 / esc),
+      l: fcx - d.width / 2 / esc, r: vw - (fcx + d.width / 2 / esc),
+    };
+    const de = {
+      transform: `translate(${tx}px, ${ty}px) scale(${esc})`,
+      clipPath: `inset(${ins.t}px ${ins.r}px ${ins.b}px ${ins.l}px round ${(3 / esc).toFixed(1)}px)`,
+    };
+    w.style.transformOrigin = '0 0';
+    w.style.transform = de.transform;
+    w.style.clipPath = de.clipPath;
+    // O vidro abre já; ainda a meio da abertura, o ecrã começa a crescer.
+    const r = requestAnimationFrame(() => setVidroAberto(true));
+    const anim = w.animate([
+      { transform: de.transform, clipPath: de.clipPath },
+      { transform: 'translate(0px, 0px) scale(1)', clipPath: 'inset(0px 0px 0px 0px round 0px)' },
+    ], { duration: 1050, delay: 600, easing: 'cubic-bezier(.55,0,.2,1)', fill: 'forwards' });
+    anim.onfinish = () => {
+      w.style.transform = ''; w.style.clipPath = ''; w.style.transformOrigin = '';
+      anim.cancel();
+      acabar();
+    };
+    return () => { cancelAnimationFrame(r); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <>
+      <div ref={wrapRef} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', background: T.bg, willChange: 'transform, clip-path' } : undefined}>
+        {children}
+      </div>
+      {ativa && ent && <PortaVidroSo rect={ent.rect} aberto={vidroAberto} logo={ent.logo} cor={ent.cor} />}
+    </>
+  );
 }
 
 /* Porta automática de vidro fosco com o emblema do clube a toda a altura,
@@ -33771,22 +33779,18 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
     cor, numero, nome: primeiro, foto: (jogador && jogador.foto) || '', iniciais: peIniciais(nome),
     logo: logo || '', inicialClube: clube ? String(clube)[0].toUpperCase() : '', badge: 0, boasVindas: primeiro || 'Atleta',
   }, 300, H), [T.corEquipa, numero, primeiro, jogador && jogador.foto, logo, clube, H]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Acesso autorizado: guarda onde está o vidro (o ecrã seguinte vai
+     aparecer atrás dele) e o resto da porta apaga-se. O vidro só abre já
+     com o Portal pronto por trás (ver TransicaoEntrada). */
   useEffect(() => {
-    if (!aberta) { vooRemover(); return undefined; }
-    // Quase no fim da abertura do vidro, o balneário começa logo a crescer.
-    const h = setTimeout(() => {
-      const el = caixaRef.current;
-      if (!el) return;
-      vooIniciar(el.getBoundingClientRect(), (W, Hd) => pkhBalneario({
-        cor, numero, nome: primeiro, foto: (jogador && jogador.foto) || '', iniciais: peIniciais(nome),
-        logo: logo || '', inicialClube: clube ? String(clube)[0].toUpperCase() : '', badge: 0, boasVindas: primeiro || 'Atleta',
-      }, W, Hd));
-    }, 850);
-    return () => clearTimeout(h);
+    if (!aberta) { ENTRADA = null; return undefined; }
+    const el = caixaRef.current;
+    if (el) ENTRADA = { rect: el.getBoundingClientRect(), logo: logo || '', cor, t: Date.now() };
+    return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aberta]);
   // Depois de a porta abrir, o resto (letreiro, base) apaga-se: fica só o balneário.
-  const apagar = { opacity: aberta ? 0 : 1, transition: aberta ? 'opacity .35s ease .75s' : 'opacity .2s' };
+  const apagar = { opacity: aberta ? 0 : 1, transition: 'opacity .3s ease' };
   const vidro = {
     position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden',
     background: 'linear-gradient(160deg, rgba(225,240,248,.6), rgba(170,200,215,.4))',
@@ -33814,9 +33818,9 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', boxShadow: '0 10px 24px rgba(0,0,0,.45)', ...apagar }} />
         <div ref={caixaRef} style={{ position: 'relative', flex: 1, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
           <svg viewBox={`0 0 300 ${H}`} preserveAspectRatio="xMidYMid slice" width="100%" height="100%" style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />
-          <div style={{ ...vidro, left: 0, transform: aberta ? 'translateX(-101%)' : 'none' }}>{emblemaNoVidro('E')}</div>
-          <div style={{ ...vidro, right: 0, transform: aberta ? 'translateX(101%)' : 'none' }}>{emblemaNoVidro('D')}</div>
-          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)', opacity: aberta ? 0 : 1, transition: 'opacity .2s' }} />
+          <div style={{ ...vidro, left: 0 }}>{emblemaNoVidro('E')}</div>
+          <div style={{ ...vidro, right: 0 }}>{emblemaNoVidro('D')}</div>
+          <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)' }} />
         </div>
       </div>
       <div style={{ width: 'min(60%, 220px)', height: 8, borderRadius: '0 0 4px 4px', background: '#2a332d', flexShrink: 0, ...apagar }} />
@@ -34229,11 +34233,11 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   const abrirEEntrar = async (sessao) => {
     setAberta(true);
     setAviso('ACESSO AUTORIZADO'); setCorAviso('#8EE6A0');
-    // O vidro abre e o balneário começa logo a crescer (o voo); a entrada
-    // corre ao mesmo tempo, sem esperas paradas.
-    await new Promise(r => setTimeout(r, 900));
+    // O resto da porta apaga-se (0,3 s) e entra-se logo; o vidro abre já
+    // com o Portal pronto atrás dele.
+    await new Promise(r => setTimeout(r, 320));
     const ok = await entrar(sessao);
-    if (!ok) { vooRemover(); setAberta(false); setPin(''); mostrarErro('Não foi possível entrar. Tenta outra vez.'); }
+    if (!ok) { ENTRADA = null; setAberta(false); setPin(''); mostrarErro('Não foi possível entrar. Tenta outra vez.'); }
   };
 
   const validarCodigo = async () => {
@@ -34945,7 +34949,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
 
       {ecra === 'porta' && cartao && (
         <div style={coluna}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'stretch', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '7px 10px', flexShrink: 0, opacity: aberta ? 0 : 1, transition: aberta ? 'opacity .35s ease .75s' : 'opacity .2s' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'stretch', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '7px 10px', flexShrink: 0, opacity: aberta ? 0 : 1, transition: 'opacity .3s ease' }}>
             <div style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', background: '#1A2A1F', border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               {cartao.jogador && cartao.jogador.foto
                 ? <img src={cartao.jogador.foto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -34976,7 +34980,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               visibility: visivel ? 'visible' : 'hidden', pointerEvents: visivel ? 'auto' : 'none',
             });
             return (
-              <div style={{ display: 'grid', width: '100%', flexShrink: 0, opacity: aberta ? 0 : 1, transition: aberta ? 'opacity .35s ease .75s' : 'opacity .2s' }}>
+              <div style={{ display: 'grid', width: '100%', flexShrink: 0, opacity: aberta ? 0 : 1, transition: 'opacity .3s ease' }}>
                 {bioAtiva && (
                   <div aria-hidden={!verBio} style={{ ...camada(verBio), justifyContent: 'center', gap: 8 }}>
                     {/* O aviso (ex.: ACESSO AUTORIZADO, a verde) fica por baixo
@@ -35023,7 +35027,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           })()}
           {/* Uma só ligação discreta; as opções abrem num painel por baixo,
               para não roubarem altura à porta e ao teclado. */}
-          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6, opacity: aberta ? 0 : 1, transition: aberta ? 'opacity .35s ease .75s' : 'opacity .2s' }}>
+          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6, opacity: aberta ? 0 : 1, transition: 'opacity .3s ease' }}>
             <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
           </button>
           {maisOpcoes && (() => {
@@ -35783,22 +35787,16 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
   const [enq, setEnq] = useState({ W: 300, H: 215, vb: '0 0 300 215' });
   /* CHEGADA PELA PORTA: o balneário começa no tamanho e no sítio da porta
      e cresce até ao lugar dele; o resto do ecrã aparece logo a seguir. */
-  const [chegada] = useState(() => vooAtivo());
+  const [chegada] = useState(() => entradaRecente());
   const [faseChegada, setFaseChegada] = useState(chegada ? 'inicio' : 'fim');
-  const [balVisivel, setBalVisivel] = useState(!chegada);
-  React.useLayoutEffect(() => {
+  useEffect(() => {
     if (!chegada) return undefined;
-    const el = balRef.current;
-    if (!el) { vooDesvanecer(); setBalVisivel(true); setFaseChegada('fim'); return undefined; }
-    setFaseChegada('anima');
-    vooAterrar(el, () => {
-      setBalVisivel(true);
-      setTimeout(() => setFaseChegada('fim'), 300);
-    });
-    return undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const aparecer = chegada ? { opacity: faseChegada === 'inicio' ? 0 : 1, transition: 'opacity .45s ease .15s' } : undefined;
+    const fim = () => setFaseChegada('fim');
+    window.addEventListener('mjp-entrada-fim', fim);
+    const seguranca = setTimeout(fim, 4000);
+    return () => { window.removeEventListener('mjp-entrada-fim', fim); clearTimeout(seguranca); };
+  }, [chegada]);
+  const aparecer = undefined;
   useEffect(() => {
     const el = balRef.current;
     if (!el) return undefined;
@@ -35904,9 +35902,9 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
         )}
 
         {/* BALNEÁRIO — a entrada do Portal (sempre disponível, sem janela horária). */}
-        <button ref={balRef} type="button" onClick={onOpenPortal} aria-label="Entrar no Portal do Atleta" style={{
+        <button ref={balRef} data-entrada-foco="1" type="button" onClick={onOpenPortal} aria-label="Entrar no Portal do Atleta" style={{
           flex: 1, minHeight: g ? 160 : 96, position: 'relative', borderRadius: 12, overflow: 'hidden', border: `1px solid ${T.line}`,
-          background: '#121614', padding: 0, cursor: 'pointer', display: 'block', width: '100%', visibility: balVisivel ? 'visible' : 'hidden',
+          background: '#121614', padding: 0, cursor: 'pointer', display: 'block', width: '100%',
         }}>
           <svg
             viewBox={enq.vb} preserveAspectRatio="xMinYMid slice" width="100%" height="100%"
