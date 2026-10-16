@@ -31664,7 +31664,18 @@ const CACIFO_CSS = `
   .cf-pisca { animation: cf-pisca 1.2s infinite; }
   @keyframes cf-pisca { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 `;
-const CACIFO_FONTE = "@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap');";
+/* A letra manuscrita (Caveat) carrega UMA vez, logo ao abrir a app, e
+   fica na página: antes vinha num @import dentro do cacifo, voltava a ser
+   pedida cada vez que o cacifo aparecia e os papéis ("Sem treino hoje",
+   "Missão cumprida") mudavam de letra à frente do atleta. */
+const CACIFO_FONTE = '';
+if (typeof document !== 'undefined' && !document.getElementById('mjp-fonte-caveat')) {
+  const ln = document.createElement('link');
+  ln.id = 'mjp-fonte-caveat'; ln.rel = 'stylesheet';
+  ln.href = 'https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap';
+  document.head.appendChild(ln);
+  ln.onload = () => { try { document.fonts && document.fonts.load('700 16px Caveat'); document.fonts && document.fonts.load('500 16px Caveat'); } catch (e) { /* nada */ } };
+}
 
 function lerCacheCacifo(chave) {
   try { return JSON.parse(localStorage.getItem(chave) || 'null'); } catch (e) { return null; }
@@ -32040,10 +32051,12 @@ function PlayerCacifo({
                   <div style={{ position: 'absolute', left: 0, right: 0, top: 336, height: 5, background: '#2c4336' }} />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('competicao', 'estatisticas')} aria-label="Estatísticas da época"
-                    style={{ left: mostraGarrafa ? 6 : 28, top: 362, width: 84, height: 80, ...atraso(1.3) }}>
+                    style={{ left: mostraGarrafa ? 2 : 6, top: mostraGarrafa ? 356 : 346, width: mostraGarrafa ? 92 : 128, height: mostraGarrafa ? 96 : 120, ...atraso(1.3) }}>
                     {/* A CHUTEIRA DOURADA DA ÉPOCA: troféu num pedestal escuro com a
                         placa dos números (Jogos · Min. · Golos · Assist.). */}
-                    <svg width="84" height="61" viewBox="0 0 166 121" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                    {/* Ocupa a largura do compartimento (mais pequena só quando a garrafa
+                        do Wellness/PSE também está lá), para os números lerem bem. */}
+                    <svg width={mostraGarrafa ? 90 : 126} height={mostraGarrafa ? 66 : 92} viewBox="0 0 166 121" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
                       <defs>
                         <linearGradient id="cf-ouro" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#FFF3C4" /><stop offset=".35" stopColor="#F0C94E" /><stop offset=".7" stopColor="#C79A22" /><stop offset="1" stopColor="#7d5d0f" /></linearGradient>
                         <linearGradient id="cf-ouro-esc" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#b8901f" /><stop offset="1" stopColor="#5e450a" /></linearGradient>
@@ -36164,17 +36177,28 @@ function PkhObjeto({ tipo, tam }) {
   );
 }
 
-function PkhFaixasLaterais({ larguraConteudo }) {
-  const itens = React.useMemo(() => [0, 1].flatMap(lado => Array.from({ length: 17 }, (_, k) => ({
+/* As marcas de giz das faixas laterais são as MESMAS em todos os ecrãs do
+   Portal (balneário, cacifo…) e o movimento segue o relógio: ao passar de
+   um ecrã para o outro continuam exatamente onde estavam, em vez de
+   saltarem para posições novas (antes eram sorteadas a cada ecrã). */
+const PKH_FAIXAS_ITENS = (() => {
+  let semente = 20261017;
+  const rnd = () => { semente = (semente * 16807) % 2147483647; return (semente - 1) / 2147483646; };
+  return [0, 1].flatMap(lado => Array.from({ length: 17 }, (_, k) => ({
     lado, k,
     tipo: PKH_OBJETOS[(k + lado * 9) % PKH_OBJETOS.length],
-    left: 6 + Math.random() * 70,
-    y: Math.random() * 100,
-    tam: Math.round(24 + Math.random() * 26),
-    dur: 18 + Math.random() * 14,
-    rot: Math.round(Math.random() * 360),
-    op: 0.12 + Math.random() * 0.14,
-  }))), []);
+    left: 6 + rnd() * 70,
+    y: rnd() * 100,
+    tam: Math.round(24 + rnd() * 26),
+    dur: 18 + rnd() * 14,
+    rot: Math.round(rnd() * 360),
+    op: 0.12 + rnd() * 0.14,
+  })));
+})();
+function PkhFaixasLaterais({ larguraConteudo }) {
+  const itens = PKH_FAIXAS_ITENS;
+  // Fase de cada marca a partir do relógio (igual em qualquer ecrã que a desenhe).
+  const t0 = React.useMemo(() => Date.now() / 1000, []);
   const larg = `calc((100vw - ${larguraConteudo}) / 2)`;
   return (
     <>
@@ -36189,7 +36213,7 @@ function PkhFaixasLaterais({ larguraConteudo }) {
               opacity: i.tipo === 'bola' ? i.op + 0.08 : i.op,
               '--y': `${i.y}vh`, '--rot': `${i.rot}deg`,
               // atraso negativo = cada marca já começa a meio do caminho
-              animation: `pkh-subir ${i.dur.toFixed(1)}s linear ${(-((108 - i.y) / 120) * i.dur).toFixed(1)}s infinite`,
+              animation: `pkh-subir ${i.dur.toFixed(1)}s linear ${(-(((108 - i.y) / 120) * i.dur + t0) % i.dur).toFixed(2)}s infinite`,
             }}>
               <PkhObjeto tipo={i.tipo} tam={i.tam} />
             </div>
