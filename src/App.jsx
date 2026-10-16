@@ -3603,6 +3603,14 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         <style>{`
           ${FONTS}
           * { box-sizing: border-box; }
+        /* TOQUE NO TELEMÓVEL: sem o retângulo de realce do browser à volta do
+           que se toca, e sem o contorno de foco quando se usa o dedo/rato (o
+           contorno continua para quem navega com o teclado). */
+        * { -webkit-tap-highlight-color: transparent; }
+        button, a, [role="button"], summary, label, input[type="checkbox"], input[type="radio"] { touch-action: manipulation; }
+        :focus:not(:focus-visible) { outline: none; }
+        button:focus:not(:focus-visible), [role="button"]:focus:not(:focus-visible), [tabindex]:focus:not(:focus-visible) { outline: none; }
+        svg g[role="button"]:focus { outline: none; }
 
           /* ARRASTAMENTO LATERAL NO TELEMÓVEL.
 
@@ -3728,6 +3736,14 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       <style>{`
         ${FONTS}
         * { box-sizing: border-box; }
+        /* TOQUE NO TELEMÓVEL: sem o retângulo de realce do browser à volta do
+           que se toca, e sem o contorno de foco quando se usa o dedo/rato (o
+           contorno continua para quem navega com o teclado). */
+        * { -webkit-tap-highlight-color: transparent; }
+        button, a, [role="button"], summary, label, input[type="checkbox"], input[type="radio"] { touch-action: manipulation; }
+        :focus:not(:focus-visible) { outline: none; }
+        button:focus:not(:focus-visible), [role="button"]:focus:not(:focus-visible), [tabindex]:focus:not(:focus-visible) { outline: none; }
+        svg g[role="button"]:focus { outline: none; }
         ::selection { background: ${T.gold}55; }
         .navbtn:hover { background: ${T.surfaceRaise}; }
         @keyframes brilhoQuadroTatico {
@@ -50105,6 +50121,14 @@ function CheckinApp() {
       <style>{`
         ${FONTS}
         * { box-sizing: border-box; }
+        /* TOQUE NO TELEMÓVEL: sem o retângulo de realce do browser à volta do
+           que se toca, e sem o contorno de foco quando se usa o dedo/rato (o
+           contorno continua para quem navega com o teclado). */
+        * { -webkit-tap-highlight-color: transparent; }
+        button, a, [role="button"], summary, label, input[type="checkbox"], input[type="radio"] { touch-action: manipulation; }
+        :focus:not(:focus-visible) { outline: none; }
+        button:focus:not(:focus-visible), [role="button"]:focus:not(:focus-visible), [tabindex]:focus:not(:focus-visible) { outline: none; }
+        svg g[role="button"]:focus { outline: none; }
         ::selection { background: ${T.gold}55; }
         input:focus, select:focus, textarea:focus { border-color: ${T.gold} !important; }
         /* Lista nativa das caixas de escolha (ex.: a nota nas Presenças): sem
