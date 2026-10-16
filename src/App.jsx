@@ -31931,10 +31931,13 @@ function PlayerCacifo({
                   </svg>
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('ideiaJogo')} aria-label="Ideia de Jogo"
-                    style={{ left: 2, top: 24, width: 68, height: 84, ...atraso(1.05) }}>
+                    style={{ left: 2, top: 24, width: 68, height: 94, ...atraso(1.05) }}>
+                    {/* Caderno e tablet: desenho com a mesma altura (sem encolher)
+                        e legenda na mesma linha. O tablet tem ainda, por baixo,
+                        a linha dos vídeos novos. */}
                     {/* Caderno tático aberto: notas e uma lâmpada à esquerda,
                         meio campo com cruzes, bola e seta à direita. */}
-                    <svg width="62" height="48" viewBox="0 0 64 50" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                    <svg width="62" height="48" viewBox="0 0 64 50" style={{ display: 'block', margin: '0 auto', flexShrink: 0 }} aria-hidden="true">
                       <path d="M32 8 L32 46" stroke="#14281f" strokeWidth="2" />
                       <path d="M4 10 Q18 6 32 10 L32 46 Q18 42 4 46 Z" fill="#F4EEDC" />
                       <path d="M32 10 Q46 6 60 10 L60 46 Q46 42 32 46 Z" fill="#ECE5CF" />
@@ -31953,9 +31956,9 @@ function PlayerCacifo({
                   </button>
 
                   <button type="button" className="cf-obj cf-it" onClick={abrirSalaVideo} aria-label="Sala de Vídeo"
-                    style={{ left: 72, top: 24, width: 66, height: 84, ...atraso(1.12) }}>
+                    style={{ left: 72, top: 24, width: 66, height: 94, ...atraso(1.12) }}>
                     {/* Tablet com um lance pausado. */}
-                    <svg width="62" height="48" viewBox="0 0 64 50" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
+                    <svg width="62" height="48" viewBox="0 0 64 50" style={{ display: 'block', margin: '0 auto', flexShrink: 0 }} aria-hidden="true">
                       <rect x="3" y="5" width="58" height="40" rx="5" fill="#1c2226" />
                       <rect x="7" y="9" width="50" height="30" rx="1.5" fill="#2E6B3F" />
                       <g stroke="#7FB08A" strokeWidth=".7" fill="none"><path d="M32 9 V39" /><circle cx="32" cy="24" r="5" /><rect x="7" y="17" width="7" height="14" /><rect x="50" y="17" width="7" height="14" /></g>
