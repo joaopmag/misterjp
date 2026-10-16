@@ -30301,7 +30301,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     // Curta, na voz do Mister: quando, contra quem e um empurrão.
     mensagensMister.push({
       tipo: 'jogo',
-      texto: `${i.vespera ? 'Amanhã' : 'Hoje'} há jogo${i.hora ? ` às ${i.hora}` : ''}${i.adv ? ` vs ${i.adv}` : ''}. ${i.vespera ? 'Prepara-te!' : 'Foco total!'}`,
+      texto: `${i.vespera ? 'Amanhã' : 'Hoje'} há jogo${i.adv ? ` vs ${i.adv}` : ''}. ${i.vespera ? 'Prepara-te!' : 'Foco total!'}`,
       onTocar: () => { if (!jogoNoPainel._teste) marcarMissaoJogoVista(jogoNoPainel.id); setActiveType('jogos'); },
     });
   }
@@ -30496,6 +30496,7 @@ function EcraAniversario({ player, onEntrar }) {
     }} ref={festaFora}>
       <style>{`
         html, body { overflow: hidden !important; overscroll-behavior: none; }
+        html { scrollbar-gutter: auto !important; }
         @keyframes festa-cair { 0% { transform: translateY(-10vh) rotate(0deg); } 100% { transform: translateY(110vh) rotate(720deg); } }
         @keyframes festa-camisola { 0% { transform: perspective(700px) rotateY(-180deg) scale(.6); opacity: 0; } 60% { opacity: 1; } 100% { transform: perspective(700px) rotateY(0deg) scale(1); opacity: 1; } }
         @keyframes festa-flutuar { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
@@ -33721,6 +33722,7 @@ function PortaAEspera() {
   if (!ent) return null;
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg }}>
+      <style>{PE_SEM_GUTTER}</style>
       {ent.resto && <PeRestoEntrada html={ent.resto} apagar={false} />}
       <PortaVidroSo rect={ent.rect} aberto={false} logo={ent.logo} cor={ent.cor} fundo={ent.fundo} fundoVisivel tamEmblema={ent.tam} />
     </div>
@@ -33732,6 +33734,12 @@ function PortaAEspera() {
    Portal carrega: é uma cópia fiel do ecrã, tirada no momento da entrada.
    Só se desvanece quando a porta abre, ao mesmo tempo que o vidro. A
    camada isola-se (isolation) para ficar sempre por baixo da porta. */
+/* Enquanto a porta está em cena, a página não reserva o espaço da barra de
+   scroll. O ecrã de entrada já não o reserva, mas o Portal sim
+   ("scrollbar-gutter: stable"): na troca de um para o outro, a largura útil
+   encolhia e tudo o que está centrado saltava uns pixéis para a esquerda
+   antes de a porta abrir. */
+const PE_SEM_GUTTER = `html, body { overflow: hidden !important; } html { scrollbar-gutter: auto !important; background: ${T.bg}; }`;
 function PeRestoEntrada({ html, apagar }) {
   return (
     <div aria-hidden="true" style={{
@@ -33881,6 +33889,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
           estádio, placard a cair, bilhete a entrar…) ficam em pausa: cada uma
           obrigava a redesenhar a camada que está a crescer, e era isso que
           engasgava. Arrancam quando o ecrã já está na página inteira. */}
+      {ativa && <style>{PE_SEM_GUTTER}</style>}
       {ativa && <style>{`.mjp-entrada-ativa *, .mjp-entrada-ativa *::before, .mjp-entrada-ativa *::after { animation-play-state: paused !important; } .mjp-entrada-ativa [data-festa-papel] { visibility: hidden !important; }`}</style>}
       {/* O resto do ecrã de entrada fica por baixo da janela que cresce e
           desvanece-se enquanto a porta abre. */}
