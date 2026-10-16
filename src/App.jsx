@@ -33768,7 +33768,9 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, tamEmblema, recol
     // Arranca devagar e trava devagar (ease-in-out).
     // No último terço do caminho, a folha também se apaga: não fica um fio
     // branco agarrado às bordas enquanto o ecrã cresce.
-    transition: 'transform .8s cubic-bezier(.65,0,.35,1), opacity .3s ease-in .45s',
+    // Folhas mais rápidas (0,65 s) e já invisíveis aos 0,55 s: o desfoque
+    // delas a andar por cima do ecrã que cresce custava frames.
+    transition: 'transform .65s cubic-bezier(.65,0,.35,1), opacity .25s ease-in .3s',
   };
   const metade = (lado) => (
     <>
@@ -33869,16 +33871,17 @@ function TransicaoEntrada({ focoInteiro, children }) {
       r2 = requestAnimationFrame(() => {
         if (cancelado) return;
         /* Passagem suave, por esta ordem:
-           0 ms    as folhas começam a abrir, cada uma com a sua metade da
-                   imagem da porta (que nunca muda); o ecrã novo vai
-                   aparecendo na abertura. O resto do ecrã de entrada
+           0 ms    as folhas começam a abrir (0,65 s), cada uma com a sua
+                   metade da imagem da porta (que nunca muda); o ecrã novo
+                   vai aparecendo na abertura. O resto do ecrã de entrada
                    desvanece-se ao mesmo tempo;
-           280 ms  com a porta a abrir, o ecrã cresce até à página inteira
-                   (1 s, a acelerar e a travar devagar);
-           900 ms  as folhas, já fora da porta, saem de cena. */
+           300 ms  com a porta a abrir, o ecrã cresce até à página inteira
+                   (1 s, a acelerar e a travar devagar); as folhas apagam-se
+                   enquanto saem;
+           600 ms  as folhas, já invisíveis, saem de cena. */
         setVidroAberto(true);
-        tempo = setTimeout(() => { if (!cancelado) setVidroRecolhido(true); }, 900);
-        const op = { duration: 1000, delay: 280, easing: 'linear', fill: 'forwards' };
+        tempo = setTimeout(() => { if (!cancelado) setVidroRecolhido(true); }, 600);
+        const op = { duration: 1000, delay: 300, easing: 'linear', fill: 'forwards' };
         aJ = jan.animate(kJ, op);
         aC = con.animate(kC, op);
         aJ.onfinish = () => {
