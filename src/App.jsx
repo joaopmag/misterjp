@@ -31020,7 +31020,10 @@ function EcraMissao({ player, tarefas, janelas = {}, onIr, onAdiar, destinoDe, c
         @keyframes pr-subir { 0% { transform: translateY(0) rotate(var(--rot)); } 100% { transform: translateY(-120vh) rotate(calc(var(--rot) + 220deg)); } }
         @keyframes pr-entrar { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
       `}</style>
-      <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14, animation: 'pr-entrar .5s ease-out both' }}>
+      {/* data-entrada-anima: a prancheta entra enquanto a porta abre (como a
+          camisola dos parabéns). Em pausa, ficava invisível até a porta
+          acabar e o ecrã parecia vazio durante quase 1 s. */}
+      <div data-entrada-anima="" style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14, animation: 'pr-entrar .5s ease-out both' }}>
 
         {/* A PRANCHETA */}
         <div style={{ position: 'relative', background: 'linear-gradient(160deg, #3b2a1d 0%, #24180f 100%)', borderRadius: 18, padding: '30px 14px 16px', boxShadow: '0 20px 44px rgba(0,0,0,.5)' }}>
@@ -31113,7 +31116,7 @@ function EcraMissao({ player, tarefas, janelas = {}, onIr, onAdiar, destinoDe, c
               const tit = String(tt.titulo || '').trim();
               const tb = tit ? tit.charAt(0).toUpperCase() + tit.slice(1) : (destinoDe ? destinoDe(tt) : destinoMissao(tt.destino)).rotulo;
               return (
-          <div key={ativa ? `f${folha}` : `o${tt.id}`} aria-hidden={!ativa} style={{
+          <div data-entrada-anima="" key={ativa ? `f${folha}` : `o${tt.id}`} aria-hidden={!ativa} style={{
             gridArea: '1 / 1', visibility: ativa ? 'visible' : 'hidden',
             /* ESCRITO NAS LINHAS: a folha tem uma linha a cada 26 px e todo o
                texto anda nesse mesmo passo (altura de linha 26 px, sem margens
