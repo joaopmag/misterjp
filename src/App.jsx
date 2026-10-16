@@ -29709,7 +29709,14 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      mexer nos elementos fixos do ecrã. */
   const [voltouCacifo, setVoltouCacifo] = useState(false);
   useEffect(() => { if (!voltouCacifo) return undefined; const t = setTimeout(() => setVoltouCacifo(false), 450); return () => clearTimeout(t); }, [voltouCacifo]);
-  const voltar = () => setActiveType(origem);
+  /* Missão aberta a partir das Tarefas: o retroceder (ou o X) dessa área
+     volta às Tarefas; das Tarefas volta-se depois à origem de antes. */
+  const [deTarefas, setDeTarefas] = useState(false);
+  const voltar = () => {
+    if (deTarefas && activeType !== 'tarefas') { setDeTarefas(false); setActiveType('tarefas'); return; }
+    setDeTarefas(false);
+    setActiveType(origem);
+  };
   // Onde abrir uma área vinda do cacifo (ex.: Competição › estatísticas).
   const [focoArea, setFocoArea] = useState(null);
   const [selectedDate, setSelectedDate] = useState(todayStr());
@@ -30157,7 +30164,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     setActiveType(d.rota);
   };
   // Missões e mensagens abertas a partir do ecrã inicial voltam ao ecrã inicial.
-  const irParaMissaoDoInicio = (alvo) => { setOrigem(null); irParaMissao(alvo); };
+  const irParaMissaoDoInicio = (alvo) => { setOrigem(null); setDeTarefas(false); irParaMissao(alvo); };
   if (activeType === 'wellness') {
     const existing = monitoring.find(m => m.playerId === loggedPlayerId && m.date === selectedDate && typeof m.sono === 'number');
     const lastWellness = existing || monitoring
@@ -30187,7 +30194,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }
 
   if (activeType === 'ideiaJogo') {
-    return comBarraMissao(<PlayerIdeiaJogoView code={code} teamId={teamId} onBack={voltar} />);
+    return comBarraMissao(<PlayerIdeiaJogoView code={code} teamId={teamId} onBack={voltar} fecharVolta={deTarefas} />);
   }
 
   if (activeType === 'treino') {
@@ -30215,7 +30222,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       <PlayerTarefasView
         code={code} teamId={teamId} onBack={voltar}
         tarefas={listaTarefas.map(comDestino)} estado={estadoTarefas}
-        onIrMissao={irParaMissao}
+        onIrMissao={(alvo) => { setDeTarefas(true); irParaMissao(alvo); }}
         tarefaAbrirId={tarefaParaAbrir} onTarefaAberta={() => setTarefaParaAbrir(null)}
         onNotaGravada={(id, patch) => setTarefasAjustes(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
       />
@@ -30229,7 +30236,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         equipa={equipa} code={code} teamId={teamId}
         animar={!cacifoAberto} onAberto={() => setCacifoAberto(true)}
         onBack={() => { setVoltouCacifo(true); setActiveType(null); }}
-        onAbrir={(id, foco) => { setCacifoAberto(true); setOrigem('portal'); setFocoArea(foco || null); setActiveType(id); }}
+        onAbrir={(id, foco) => { setCacifoAberto(true); setOrigem('portal'); setDeTarefas(false); setFocoArea(foco || null); setActiveType(id); }}
         onAbrirWellness={() => { if (wellnessWindow.open) { setCacifoAberto(true); setOrigem('portal'); setActiveType('wellness'); } }}
         onAbrirRpe={() => { if (rpeWindow.open) { setCacifoAberto(true); setOrigem('portal'); setActiveType('rpe'); } }}
         dadosConv={dadosConvJogo} dadosComp={dadosCompJogo}
@@ -33409,7 +33416,7 @@ function PlayerAdversarioTab({ code, teamId }) {
 // momentos de jogo que a app já usa (`PHASES`), pela mesma ordem.
 const MOMENTOS_JOGO = ['Organização Defensiva', 'Transição Ofensiva', 'Organização Ofensiva', 'Transição Defensiva', 'Bola Parada'];
 
-function PlayerIdeiaJogoView({ code, teamId, onBack }) {
+function PlayerIdeiaJogoView({ code, teamId, onBack, fecharVolta }) {
   const [estado, dadosIdeia] = usePortalRpc('checkin_ideia_jogo', code, teamId);
   const dados = dadosIdeia ? { proximoJogo: null, ideias: [], ...dadosIdeia } : null;
   const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
@@ -33418,7 +33425,8 @@ function PlayerIdeiaJogoView({ code, teamId, onBack }) {
     return (
       <ExercisePresentation
         exercise={{ ...aVer, name: aVer.name || aVer.phase || 'Ideia de jogo' }}
-        onClose={() => setAVer(null)}
+        /* Vindo de uma tarefa, fechar a ideia volta às Tarefas. */
+        onClose={() => { setAVer(null); if (fecharVolta) onBack(); }}
       />
     );
   }
@@ -36241,6 +36249,25 @@ const PKH_LARGURA_LARGA = 'min(41vw, 820px)';
    computador. */
 const PKH_TABLET_ALTO = '(min-width: 700px) and (max-aspect-ratio: 5/4)';
 const PKH_LARGURA_TABLET = 'min(88vw, 720px)';
+// Imagens do balneário (emblema, fotografia) já carregadas, por endereço.
+// Ao reconstruir o SVG, a <image> nova é trocada pela antiga, que já está
+// descodificada e pinta logo, em vez de aparecer só um frame depois.
+const PKH_IMG_MEM = new Map();
+function pkhReusarImagens(raiz) {
+  if (!raiz) return;
+  raiz.querySelectorAll('image').forEach(nova => {
+    const href = nova.getAttribute('href') || nova.getAttribute('xlink:href');
+    if (!href) return;
+    const velha = PKH_IMG_MEM.get(href);
+    if (!velha || velha === nova) { PKH_IMG_MEM.set(href, nova); return; }
+    if (velha.isConnected) return;
+    try {
+      Array.from(velha.attributes).forEach(at => { if (at.name !== 'href' && at.name !== 'xlink:href' && !nova.hasAttribute(at.name)) velha.removeAttribute(at.name); });
+      Array.from(nova.attributes).forEach(at => { if (at.name !== 'href' && at.name !== 'xlink:href') velha.setAttribute(at.name, at.value); });
+      nova.replaceWith(velha);
+    } catch (e) { PKH_IMG_MEM.set(href, nova); }
+  });
+}
 // Último enquadramento medido do balneário: ao voltar ao ecrã inicial já
 // desenha no tamanho certo, sem reajuste no segundo frame.
 const PKH_ENQ_MEM = { v: null };
@@ -36398,6 +36425,11 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
     boasVindas: chegada ? primeiro : '',
     apagado: luzesApagadas ? 'presenca' : false,
   }, enq.W, enq.H, enq.tv), [luzesApagadas, T.corEquipa, numero, primeiro, player && player.photo, iniciais, equipa && equipa.logo, clube, nBadge, enq.W, enq.H, enq.tv && enq.tv.escala, enq.tv && enq.tv.jogador, chegada]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Emblema no teto e fotografia: reaproveita as mesmas imagens já
+     carregadas da visita anterior, para aparecerem no primeiro frame ao
+     voltar ao ecrã inicial (uma imagem nova só pinta um frame depois). */
+  const svgBalRef = useRef(null);
+  React.useLayoutEffect(() => { pkhReusarImagens(svgBalRef.current); }, [svgBalneario]);
 
   return (
     <div style={{
@@ -36459,7 +36491,7 @@ function PlayerKioskHome({ player, equipa, session, selectedDate, doneWellness, 
         }}>
           <svg
             viewBox={enq.vb} preserveAspectRatio="xMinYMid slice" width="100%" height="100%"
-            style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true"
+            style={{ display: 'block', position: 'absolute', inset: 0 }} aria-hidden="true" ref={svgBalRef}
             dangerouslySetInnerHTML={{ __html: svgBalneario }}
           />
           <span style={{ position: 'absolute', left: 0, right: 0, bottom: enq.tv ? 6 : 9, display: 'flex', justifyContent: 'center' }}>
