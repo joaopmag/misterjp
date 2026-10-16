@@ -29695,8 +29695,13 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
      depois de se regressar ao ecrã inicial. */
   const [cacifoAberto, setCacifoAberto] = useState(false);
   useEffect(() => { if (activeType === null) setCacifoAberto(false); }, [activeType]);
-  // Wellness/PSE abertos a partir da garrafa do cacifo voltam ao cacifo.
-  const [voltarQuestionario, setVoltarQuestionario] = useState(null);
+  /* DE ONDE SE VEIO: o "retroceder" de qualquer área (tarefas, missão,
+     jogo, Wellness/PSE…) volta ao sítio de onde ela foi aberta.
+     null = ecrã inicial (Mister, missões, campo do Wellness/PSE);
+     'portal' = cacifo. Dentro de uma área (ex.: das Tarefas para uma
+     missão) mantém-se a origem de quem abriu as Tarefas. */
+  const [origem, setOrigem] = useState(null);
+  const voltar = () => setActiveType(origem);
   // Onde abrir uma área vinda do cacifo (ex.: Competição › estatísticas).
   const [focoArea, setFocoArea] = useState(null);
   const [selectedDate, setSelectedDate] = useState(todayStr());
@@ -30143,6 +30148,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     }
     setActiveType(d.rota);
   };
+  // Missões e mensagens abertas a partir do ecrã inicial voltam ao ecrã inicial.
+  const irParaMissaoDoInicio = (alvo) => { setOrigem(null); irParaMissao(alvo); };
   if (activeType === 'wellness') {
     const existing = monitoring.find(m => m.playerId === loggedPlayerId && m.date === selectedDate && typeof m.sono === 'number');
     const lastWellness = existing || monitoring
@@ -30151,7 +30158,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     return comBarraMissao(
       <WellnessWizard
         player={player} initial={lastWellness} date={selectedDate}
-        onBack={() => { const v = voltarQuestionario; setVoltarQuestionario(null); setActiveType(v); }}
+        onBack={voltar}
         onSubmit={fields => upsert('wellness', fields)}
       />
     );
@@ -30165,40 +30172,40 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
            só recebe as sessões). A fase "Jogo" na sessão é o que permite
            ao atleta responder ao PSE do jogo em vez do de treino. */
         contexto={sessionForDate && sessionForDate.phase === 'Jogo' ? 'jogo' : 'treino'}
-        onBack={() => { const v = voltarQuestionario; setVoltarQuestionario(null); setActiveType(v); }}
+        onBack={voltar}
         onSubmit={fields => upsert('rpe', fields)}
       />
     );
   }
 
   if (activeType === 'ideiaJogo') {
-    return comBarraMissao(<PlayerIdeiaJogoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />);
+    return comBarraMissao(<PlayerIdeiaJogoView code={code} teamId={teamId} onBack={voltar} />);
   }
 
   if (activeType === 'treino') {
-    return comBarraMissao(<PlayerTreinoView code={code} teamId={teamId} onBack={() => setActiveType('portal')} />);
+    return comBarraMissao(<PlayerTreinoView code={code} teamId={teamId} onBack={voltar} />);
   }
 
   if (activeType === 'biblioteca') {
-    return comBarraMissao(<PlayerBibliotecaView code={code} teamId={teamId} onBack={() => setActiveType('portal')} onClipeCriado={clipeCriado} />);
+    return comBarraMissao(<PlayerBibliotecaView code={code} teamId={teamId} onBack={voltar} onClipeCriado={clipeCriado} />);
   }
 
   if (activeType === 'jogos') {
-    return comBarraMissao(<PlayerJogosHome code={code} teamId={teamId} onBack={() => setActiveType('portal')} />);
+    return comBarraMissao(<PlayerJogosHome code={code} teamId={teamId} onBack={voltar} />);
   }
 
   if (activeType === 'competicao') {
-    return <PlayerCompeticaoView code={code} teamId={teamId} foco={focoArea} onBack={() => { setFocoArea(null); setActiveType('portal'); }} />;
+    return <PlayerCompeticaoView code={code} teamId={teamId} foco={focoArea} onBack={() => { setFocoArea(null); voltar(); }} />;
   }
 
   if (activeType === 'desenvolvimento') {
-    return comBarraMissao(<PlayerDesenvolvimentoView code={code} teamId={teamId} onBack={() => { setActiveType('portal'); }} onSubmetido={autoavaliacaoSubmetida} />);
+    return comBarraMissao(<PlayerDesenvolvimentoView code={code} teamId={teamId} onBack={voltar} onSubmetido={autoavaliacaoSubmetida} />);
   }
 
   if (activeType === 'tarefas') {
     return (
       <PlayerTarefasView
-        code={code} teamId={teamId} onBack={() => setActiveType('portal')}
+        code={code} teamId={teamId} onBack={voltar}
         tarefas={listaTarefas.map(comDestino)} estado={estadoTarefas}
         onIrMissao={irParaMissao}
         tarefaAbrirId={tarefaParaAbrir} onTarefaAberta={() => setTarefaParaAbrir(null)}
@@ -30214,9 +30221,9 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         equipa={equipa} code={code} teamId={teamId}
         animar={!cacifoAberto} onAberto={() => setCacifoAberto(true)}
         onBack={() => setActiveType(null)}
-        onAbrir={(id, foco) => { setCacifoAberto(true); setFocoArea(foco || null); setActiveType(id); }}
-        onAbrirWellness={() => { if (wellnessWindow.open) { setCacifoAberto(true); setVoltarQuestionario('portal'); setActiveType('wellness'); } }}
-        onAbrirRpe={() => { if (rpeWindow.open) { setCacifoAberto(true); setVoltarQuestionario('portal'); setActiveType('rpe'); } }}
+        onAbrir={(id, foco) => { setCacifoAberto(true); setOrigem('portal'); setFocoArea(foco || null); setActiveType(id); }}
+        onAbrirWellness={() => { if (wellnessWindow.open) { setCacifoAberto(true); setOrigem('portal'); setActiveType('wellness'); } }}
+        onAbrirRpe={() => { if (rpeWindow.open) { setCacifoAberto(true); setOrigem('portal'); setActiveType('rpe'); } }}
         dadosConv={dadosConvJogo} dadosComp={dadosCompJogo}
         missoes={missoesPorFazer} nTarefas={tarefasPorFazer.length}
         session={sessionForDate}
@@ -30235,13 +30242,13 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   const jogoNoEcra = missoesParaMostrar.find(t => t._jogo);
   const tarefasNoEcra = missoesParaMostrar.filter(t => !t._jogo);
   const ecraMissao = jogoNoEcra ? (
-    <EcraJogo player={player} missao={jogoNoEcra} onIr={irParaMissao} onAdiar={adiarMissao} />
+    <EcraJogo player={player} missao={jogoNoEcra} onIr={irParaMissaoDoInicio} onAdiar={adiarMissao} />
   ) : tarefasNoEcra.length > 0 ? (
     <EcraMissao
       player={player}
       tarefas={tarefasNoEcra}
       janelas={{ wellness: wellnessWindow, rpe: rpeWindow }}
-      onIr={irParaMissao}
+      onIr={irParaMissaoDoInicio}
       onAdiar={adiarMissao}
     />
   ) : null;
@@ -30302,14 +30309,14 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     mensagensMister.push({
       tipo: 'jogo',
       texto: `${i.vespera ? 'Amanhã' : 'Hoje'} há jogo${i.adv ? ` vs ${i.adv}` : ''}. ${i.vespera ? 'Prepara-te!' : 'Foco total!'}`,
-      onTocar: () => { if (!jogoNoPainel._teste) marcarMissaoJogoVista(jogoNoPainel.id); setActiveType('jogos'); },
+      onTocar: () => { if (!jogoNoPainel._teste) marcarMissaoJogoVista(jogoNoPainel.id); setOrigem(null); setActiveType('jogos'); },
     });
   }
   missoesPorFazer.forEach(it => {
     mensagensMister.push({
       tipo: 'missao',
       texto: `${it.titulo || 'Missão'}${it.passoTxt ? ` (${it.passoTxt})` : ''} ▸ Toca para começar`,
-      onTocar: () => irParaMissao(it),
+      onTocar: () => irParaMissaoDoInicio(it),
     });
   });
   if (!jogoNoPainel && !missoesPorFazer.length) {
@@ -30327,8 +30334,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
       selectedDate={selectedDate}
       doneWellness={hasDate('wellness', selectedDate)} doneRpe={hasDate('rpe', selectedDate)}
       wellnessWindow={wellnessWindow} rpeWindow={rpeWindow}
-      onOpenWellness={() => { if (wellnessWindow.open) setActiveType('wellness'); }}
-      onOpenRpe={() => { if (rpeWindow.open) setActiveType('rpe'); }}
+      onOpenWellness={() => { if (wellnessWindow.open) { setOrigem(null); setActiveType('wellness'); } }}
+      onOpenRpe={() => { if (rpeWindow.open) { setOrigem(null); setActiveType('rpe'); } }}
       onOpenPortal={() => setActiveType('portal')}
       onLogout={onLogout}
       tarefasPendentes={tarefasPorFazer}
@@ -31623,13 +31630,19 @@ const CACIFO_CSS = `
   .cf-aberto .cf-tras { pointer-events: auto; }
   .cf-roda { transition: transform .8s cubic-bezier(.45,1.5,.5,1); transform-origin: 116px 300px; }
   .cf-aberto .cf-roda { transform: rotate(-290deg); }
-  .cf-luz { position: absolute; top: 0; left: 8px; right: 8px; height: 4px; background: #F6E7B0; opacity: 0; transition: opacity .4s 1s; }
-  .cf-aberto .cf-luz { opacity: 1; }
+  .cf-luz { position: absolute; top: 0; left: 0; display: block; pointer-events: none; opacity: 0; }
+  .cf-aberto .cf-luz { opacity: 1; animation: cf-ligar .55s linear 1s both; }
+  .cf-cone { opacity: 0; }
+  .cf-aberto .cf-cone { opacity: 1; animation: cf-cone .5s ease-out 1.3s both; }
+  @keyframes cf-ligar { 0% { opacity: 0; } 12% { opacity: .85; } 22% { opacity: .2; } 36% { opacity: 1; } 100% { opacity: 1; } }
+  @keyframes cf-cone { from { opacity: 0; } to { opacity: 1; } }
+  .cf-ja .cf-luz, .cf-ja .cf-cone { animation: none !important; }
   .cf-it { opacity: 0; transform: translateY(8px); transition: opacity .45s, transform .45s; }
   .cf-aberto .cf-it { opacity: 1; transform: none; }
   .cf-ja .cf-rig, .cf-ja .cf-porta, .cf-ja .cf-roda, .cf-ja .cf-luz, .cf-ja .cf-it { transition: none !important; }
   @media (prefers-reduced-motion: reduce) {
     .cf-rig, .cf-porta, .cf-roda, .cf-luz, .cf-it { transition: none !important; }
+    .cf-luz, .cf-cone { animation: none !important; }
     .cf-pisca { animation: none !important; }
   }
   .cf-obj { position: absolute; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; font: inherit; color: inherit;
@@ -31894,7 +31907,27 @@ function PlayerCacifo({
               <div className="cf-rig">
                 {/* ---------------- DENTRO DO CACIFO ---------------- */}
                 <div className="cf-corpo">
-                  <div className="cf-luz" />
+                  {/* LUZ: calha embutida no teto com fita LED quente e brilho
+                      difuso, um cone de luz suave a cair pelo cacifo, reflexo nas
+                      arestas de cima e cantos mais escuros. Acende com um piscar
+                      curto (como um LED a ligar) e o cone aparece a seguir. */}
+                  <svg className="cf-luz" width="140" height="470" viewBox="0 0 140 470" aria-hidden="true">
+                    <defs>
+                      <linearGradient id="cf-cone" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#FFE7A3" stopOpacity=".22" /><stop offset=".55" stopColor="#FFE7A3" stopOpacity=".08" /><stop offset="1" stopColor="#FFE7A3" stopOpacity="0" /></linearGradient>
+                      <linearGradient id="cf-aresta" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#FFE7A3" stopOpacity=".45" /><stop offset="1" stopColor="#FFE7A3" stopOpacity="0" /></linearGradient>
+                      <radialGradient id="cf-vinheta" cx=".5" cy=".15" r=".95"><stop offset=".55" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity=".45" /></radialGradient>
+                      <filter id="cf-brilho" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="2.2" /></filter>
+                    </defs>
+                    <rect x="0" y="0" width="140" height="470" fill="url(#cf-vinheta)" />
+                    <g className="cf-cone">
+                      <path d="M10 8 L130 8 L140 330 L0 330 Z" fill="url(#cf-cone)" />
+                      <ellipse cx="70" cy="120" rx="58" ry="4" fill="#FFE7A3" opacity=".12" />
+                      <rect x="0" y="8" width="2" height="90" fill="url(#cf-aresta)" /><rect x="138" y="8" width="2" height="90" fill="url(#cf-aresta)" />
+                    </g>
+                    <rect x="6" y="0" width="128" height="9" rx="2" fill="#1b231f" />
+                    <rect x="10" y="5" width="120" height="3" rx="1.5" fill="#FFF3CF" />
+                    <rect x="10" y="4" width="120" height="5" rx="2.5" fill="#FFE7A3" opacity=".55" filter="url(#cf-brilho)" />
+                  </svg>
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('ideiaJogo')} aria-label="Ideia de Jogo"
                     style={{ left: 2, top: 24, width: 68, height: 84, ...atraso(1.05) }}>
@@ -31937,18 +31970,50 @@ function PlayerCacifo({
                   </button>
 
                   <div style={{ position: 'absolute', left: 0, right: 0, top: 122, height: 5, background: '#2c4336' }} />
-                  <div style={{ position: 'absolute', left: 8, right: 8, top: 144, height: 4, background: '#8A9A8C', borderRadius: 2 }} />
+                  {/* VARÃO de lado a lado, cromado, com os dois suportes. */}
+                  <div style={{ position: 'absolute', left: 3, top: 141, width: 5, height: 10, borderRadius: 1.5, background: '#3a4a40' }} />
+                  <div style={{ position: 'absolute', right: 3, top: 141, width: 5, height: 10, borderRadius: 1.5, background: '#3a4a40' }} />
+                  <div style={{ position: 'absolute', left: 4, right: 4, top: 144, height: 4, borderRadius: 2, background: 'linear-gradient(180deg, #E6EAEC, #9AA3A8 50%, #5E676C)' }} />
 
                   <button type="button" className="cf-obj cf-it" onClick={() => onAbrir('jogos')} aria-label="Jogo"
                     style={{ left: 0, top: 144, width: 140, height: 186, ...atraso(1.2) }}>
-                    <svg width="108" height="128" viewBox="0 0 132 156" style={{ display: 'block', margin: '0 auto' }} aria-hidden="true">
-                      <path d="M66 0 l0 26" stroke="#8A9A8C" strokeWidth="2" />
-                      <g transform="translate(0,16)">
-                      <path d="M36 16 L52 10 Q66 20 80 10 L96 16 L124 40 L108 58 L98 50 L98 136 L34 136 L34 50 L24 58 L8 40 Z" fill={cor.base} stroke="#C9A227" strokeWidth="2" />
-                      <path d="M52 10 Q66 24 80 10" fill="none" stroke="#C9A227" strokeWidth="3" />
-                      <text x="66" y="62" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="13" fill={cor.texto}>{nomePlaca.slice(0, 12)}</text>
-                      <text x="66" y="112" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize={numero.length > 2 ? 34 : 46} fill={cor.texto}>{numero || iniciais.slice(0, 2)}</text>
-                      </g>
+                    {/* A CAMISOLA PENDURADA: cruzeta de madeira nos ombros (vê-se
+                        pela gola), gancho de balneário em "J" com porca giratória
+                        pousado no varão, sombra na parede, volume nas laterais e
+                        mangas e ligeira inclinação. Cor da equipa (coresCamisola);
+                        nas cores claras, o contorno passa a escuro. */}
+                    <svg width="108" height="128" viewBox="0 0 132 156" style={{ display: 'block', margin: '0 auto', overflow: 'visible' }} aria-hidden="true">
+                      <defs>
+                        <linearGradient id="cf-madeira" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#C48A4E" /><stop offset="1" stopColor="#7A4A22" /></linearGradient>
+                        <linearGradient id="cf-cromo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#F4F6F7" /><stop offset=".5" stopColor="#B8BFC3" /><stop offset="1" stopColor="#E2E6E8" /></linearGradient>
+                        <radialGradient id="cf-sombra" cx=".5" cy=".5" r=".5"><stop offset="0" stopColor="#000" stopOpacity=".55" /><stop offset="1" stopColor="#000" stopOpacity="0" /></radialGradient>
+                        <linearGradient id="cf-dobra" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#000" stopOpacity=".22" /><stop offset=".25" stopColor="#000" stopOpacity="0" /><stop offset=".75" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity=".22" /></linearGradient>
+                      </defs>
+                      <ellipse cx="70" cy="96" rx="52" ry="62" fill="url(#cf-sombra)" />
+                      {(() => {
+                        const clara = cor.texto !== '#FFFFFF';
+                        const borda = clara ? cor.contorno : '#C9A227';
+                        return (
+                          <g transform="rotate(-2 66 2.4)">
+                            <path d="M51 26 Q66 19 81 26 Q66 39 51 26 Z" fill={cor.contorno} />
+                            <path d="M26 44 Q46 31 66 30 Q86 31 106 44" fill="none" stroke="url(#cf-madeira)" strokeWidth="4.5" strokeLinecap="round" />
+                            <g transform="translate(0,16)">
+                              <path d="M36 16 L52 10 Q66 20 80 10 L96 16 L124 40 L108 58 L98 50 L98 136 L34 136 L34 50 L24 58 L8 40 Z" fill={cor.base} stroke={borda} strokeWidth="2" />
+                              <path d="M34 50 L98 50 L98 136 L34 136 Z" fill="url(#cf-dobra)" />
+                              <path d="M36 16 L24 58 L8 40 Z" fill="#000" opacity=".12" /><path d="M96 16 L108 58 L124 40 Z" fill="#000" opacity=".12" />
+                              <path d="M38 17 L50 12.5 M94 17 L82 12.5" stroke="#000" strokeOpacity=".25" strokeWidth="1.2" />
+                              <path d="M52 10 Q66 24 80 10" fill="none" stroke={borda} strokeWidth="3" />
+                              <text x="66" y="44" textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize="12.5" letterSpacing="1" fill={cor.texto}>{nomePlaca.slice(0, 12)}</text>
+                              <text x="66" y={numero.length > 2 ? 86 : 92} textAnchor="middle" fontFamily="Oswald, sans-serif" fontSize={numero.length > 2 ? 34 : 46} fill={cor.texto}>{numero || iniciais.slice(0, 2)}</text>
+                            </g>
+                            {/* gancho: porca giratória, haste e "J" de borracha escura pousado no varão */}
+                            <rect x="63.2" y="25.5" width="5.6" height="4.6" rx="1" fill="#8d969b" />
+                            <path d="M66 26 L66 12.5" stroke="url(#cf-cromo)" strokeWidth="2.6" strokeLinecap="round" />
+                            <path d="M66 12.5 C66 2.5 70 -1.6 75 -1.6 C80 -1.6 82.5 1.4 82.5 5.4" fill="none" stroke="#454b50" strokeWidth="4.2" strokeLinecap="round" />
+                            <path d="M67.5 9.5 C68 3.5 71 0.4 75 0" fill="none" stroke="#fff" strokeOpacity=".6" strokeWidth="1.1" strokeLinecap="round" />
+                          </g>
+                        );
+                      })()}
                     </svg>
                     <div style={{ height: 15, marginTop: 3, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                       {proxConv && (proxConv.convocado === true ? (
