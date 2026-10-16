@@ -33793,8 +33793,13 @@ function TransicaoEntrada({ focoInteiro, children }) {
   }, []);
   return (
     <>
-      <div ref={janelaRef} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', transformOrigin: '0 0', willChange: 'transform', background: T.bg } : undefined}>
-        <div ref={conteudoRef} style={ativa ? { position: 'absolute', inset: 0, transformOrigin: '0 0', willChange: 'transform' } : undefined}>
+      {/* Enquanto a porta abre, as animações do próprio ecrã (flashes do
+          estádio, placard a cair, bilhete a entrar…) ficam em pausa: cada uma
+          obrigava a redesenhar a camada que está a crescer, e era isso que
+          engasgava. Arrancam quando o ecrã já está na página inteira. */}
+      {ativa && <style>{`.mjp-entrada-ativa *, .mjp-entrada-ativa *::before, .mjp-entrada-ativa *::after { animation-play-state: paused !important; }`}</style>}
+      <div ref={janelaRef} className={ativa ? 'mjp-entrada-ativa' : undefined} style={ativa ? { position: 'fixed', inset: 0, overflow: 'hidden', transformOrigin: '0 0', background: T.bg } : undefined}>
+        <div ref={conteudoRef} style={ativa ? { position: 'absolute', inset: 0, transformOrigin: '0 0' } : undefined}>
           {children}
         </div>
       </div>
