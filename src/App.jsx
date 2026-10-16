@@ -35840,7 +35840,19 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   const nomeCamisola = pkhEsc(String(nome || '').toUpperCase());
   const camisolaFrente = (() => {
     const fNome = nomeCamisola.length > 9 ? 9 : nomeCamisola.length > 6 ? 11 : 13;
-    let s = `<path d="M16 10 L38 0 Q50 10 62 0 L84 10 L100 38 L80 46 L80 104 Q50 108 20 104 L20 46 L0 38 Z" fill="${cor.base}" stroke="#FFD86A" stroke-width="2.5"/>`
+    // Pendurada como no cacifo: varão cromado curto, cruzeta de madeira (vê-se
+    // pela gola) e gancho de balneário em "J" pousado no varão.
+    let s = '<defs><linearGradient id="pkh-mad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C48A4E"/><stop offset="1" stop-color="#7A4A22"/></linearGradient>'
+      + '<linearGradient id="pkh-var" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E6EAEC"/><stop offset=".5" stop-color="#9AA3A8"/><stop offset="1" stop-color="#5E676C"/></linearGradient></defs>'
+      + '<rect x="-6" y="-36" width="6" height="12" rx="2" fill="#2a2f2b"/><rect x="100" y="-36" width="6" height="12" rx="2" fill="#2a2f2b"/>'
+      + '<rect x="-6" y="-33" width="112" height="6" rx="3" fill="url(#pkh-var)"/>'
+      + `<path d="M38 0 Q50 -6 62 0 Q50 12 38 0 Z" fill="${cor.contorno}"/>`
+      + '<path d="M8 22 Q28 2 50 0 Q72 2 92 22" fill="none" stroke="url(#pkh-mad)" stroke-width="6" stroke-linecap="round"/>'
+      + `<path d="M16 10 L38 0 Q50 10 62 0 L84 10 L100 38 L80 46 L80 104 Q50 108 20 104 L20 46 L0 38 Z" fill="${cor.base}" stroke="#FFD86A" stroke-width="2.5"/>`
+      + '<rect x="45.5" y="-6" width="9" height="6" rx="1.5" fill="#8d969b"/>'
+      + '<path d="M50 -6 L50 -18" stroke="#d9dee0" stroke-width="3.5" stroke-linecap="round"/>'
+      + '<path d="M50 -18 C50 -32 56 -38 63 -38 C70 -38 73 -34 73 -28" fill="none" stroke="#454b50" stroke-width="6" stroke-linecap="round"/>'
+      + '<path d="M52 -22 C53 -30 57 -35 63 -35.5" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.5" stroke-linecap="round"/>'
       + `<path d="M38 0 Q50 10 62 0" fill="none" stroke="${cor.mangas}" stroke-width="3"/>`
       + `<path d="M0 38 L20 46 M100 38 L80 46" stroke="${cor.mangas}" stroke-width="3"/>`;
     if (numero) {
@@ -35857,16 +35869,16 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
     + '<clipPath id="pkh-retrato"><circle cx="0" cy="0" r="50"/></clipPath>'
     + '<clipPath id="pkh-tk"><rect x="91" y="106" width="118" height="11"/></clipPath></defs>';
   // ======== EVOLUÇÃO: balneário de clube moderno ========
-  /* Inspirado nos balneários dos clubes: fitas LED brancas no teto, cúpula
-     do emblema iluminada (borda na cor da equipa), cacifos nos dois lados
-     como nichos com luz por trás (camisola da equipa + chuteiras), faixa
-     LED por cima, assentos estofados com uma risca da cor da equipa e chão
-     de relva sintética. O cacifo do jogador é o 1.º da esquerda, mais largo
-     e com luz dourada. */
+  /* BALNEÁRIO "ESCURO PREMIUM": fitas LED douradas no teto, cúpula do
+     emblema iluminada a dourado, cacifos da parede direita como nichos com
+     luz quente (camisola da equipa + chuteiras), faixa LED por cima,
+     assentos estofados com uma risca da cor da equipa e chão em madeira
+     escura. Na parede da esquerda está só o cacifo do jogador, largo e com
+     luz dourada, com a camisola pendurada numa cruzeta e a foto por cima. */
   const Tm = {
-    teto: ['#0d1110', '#151b18'], chao: ['#24563a', '#2f6b47'], paredeE: '#1b2420', paredeD: '#19211d', fundo: '#1f2924',
-    nicho: ['#E9F4FA', '#B9D2E0', '#7d95a3'], cupula: ['#F4FAFF', '#CFE3F0'], cupulaBorda: 'equipa',
-    led: '#F7FBFF', ledBrilho: '#EAF6FF', moldura: '#0f1412', assento: '#2b3330', assentoFrente: '#151a18', chaoTipo: 'relva',
+    teto: ['#0b0d0c', '#121614'], chao: ['#151917', '#1d2320'], paredeE: '#171c19', paredeD: '#151a17', fundo: '#1a201c',
+    nicho: ['#3a3020', '#2a241a', '#17140f'], cupula: ['#FFE9A8', '#C9A227'], cupulaBorda: '#7a5f14',
+    led: '#FFD86A', ledBrilho: '#FFC23D', moldura: '#0b0e0c', assento: '#3a2c1e', assentoFrente: '#22190f', chaoTipo: 'madeira',
   };
   const U = String(cor.base).replace(/[^a-z0-9]/gi, '');
   s += '<defs>'
@@ -35912,7 +35924,7 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   // frente (em perspetiva) com o número, faixa LED por cima, chuteiras em baixo.
   const T6 = [0.0, 0.3, 0.5, 0.65, 0.77, 0.87, 0.95];
   // parede da esquerda: o cacifo do jogador é largo (está mais perto) e vêm depois três colegas
-  const T6L = [0.0, 0.56, 0.73, 0.85, 0.95];
+  const T6L = [0.0, 0.56];
   const decor = ['11', '7', '6', '3', '14', '10', '4', '23', '9', '2', '5', '17'].filter(n => n !== String(numero || ''));
   let nd = 0;
   const camisolaN = n => `<path d="M14 22 L38 10 Q50 20 62 10 L86 22 L98 44 L78 50 L78 98 L22 98 L22 50 L2 44 Z" fill="${cor.base}" stroke="${cor.contorno}" stroke-width="2"/><path d="M38 10 Q50 20 62 10" fill="none" stroke="${cor.mangas}" stroke-width="3"/><text x="50" y="80" text-anchor="middle" font-size="34" font-weight="700" fill="${cor.texto}" font-family="Oswald, sans-serif">${n}</text>`;
@@ -35970,7 +35982,6 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
     ? `<rect x="-50" y="-50" width="100" height="100" fill="#cfd9d1" clip-path="url(#pkh-retrato)"/><image href="${pkhEsc(foto)}" x="-50" y="-50" width="100" height="100" preserveAspectRatio="xMidYMin slice" clip-path="url(#pkh-retrato)"/>`
     : `<circle r="50" fill="#1A2A1F"/><text y="17" text-anchor="middle" font-size="${iniciais.length > 2 ? 34 : 46}" font-weight="600" fill="#FFD86A" font-family="Oswald, sans-serif">${pkhEsc(iniciais)}</text>`;
   s += '<circle r="50" fill="none" stroke="#FFD86A" stroke-width="7"/></g>';
-  s += `<circle cx="${cx.toFixed(1)}" cy="${(ry - rr - 1.5).toFixed(1)}" r="2" fill="#c9ced0"/>`;
   s += '</g>';
   // A TV da análise = a entrada do Portal.
   // `tv` (telemóveis baixos): a TV sobe e encolhe o necessário para o botão
