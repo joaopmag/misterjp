@@ -42046,31 +42046,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               );
             }
             return (
-              <span key={name} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '5px 10px', borderRadius: 20, flexShrink: 0,
+              <button key={name} type="button" onClick={() => setFolderFilter(on && !modoCanal ? null : name)} style={{
+                padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                flexShrink: 0, whiteSpace: 'nowrap',
                 background: on ? '#B5393F' : 'transparent',
+                color: on ? TEXT_ON_ACCENT : T.muted,
                 border: `1px solid ${on ? '#B5393F' : T.line}`,
-              }}>
-                <button onClick={() => setFolderFilter(on && !modoCanal ? null : name)} style={{
-                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, ...body,
-                  color: on ? TEXT_ON_ACCENT : T.muted, padding: 0, whiteSpace: 'nowrap',
-                }}>{name} ({countIn(name)})</button>
-                {/* LARGURA FIXA: o lápis e o X existem sempre em todos os
-                    separadores, só ficam invisíveis nos que não estão
-                    escolhidos. Antes apareciam só no ativo, o separador
-                    crescia e empurrava os do lado a cada clique. */}
-                {!soLeitura && (
-                  <>
-                    <button onClick={() => { if (on) { setRenaming(name); setRenameValue(name); } }} title={on ? 'Mudar o nome da pasta' : undefined}
-                      tabIndex={on ? 0 : -1} aria-hidden={!on}
-                      style={{ background: 'none', border: 'none', color: TEXT_ON_ACCENT, cursor: on ? 'pointer' : 'default', display: 'flex', visibility: on ? 'visible' : 'hidden', pointerEvents: on ? 'auto' : 'none' }}><Pencil size={12} /></button>
-                    <button onClick={() => { if (on) dissolveFolder(name); }} title={on ? 'Desfazer a pasta (os itens ficam sem pasta)' : undefined}
-                      tabIndex={on ? 0 : -1} aria-hidden={!on}
-                      style={{ background: 'none', border: 'none', color: TEXT_ON_ACCENT, cursor: on ? 'pointer' : 'default', display: 'flex', visibility: on ? 'visible' : 'hidden', pointerEvents: on ? 'auto' : 'none' }}><X size={13} /></button>
-                  </>
-                )}
-              </span>
+              }}>{name} ({countIn(name)})</button>
             );
           })}
 
@@ -42082,6 +42064,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               color: pastaTema === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
               border: `1px solid ${pastaTema === NO_FOLDER ? '#B5393F' : T.line}`,
             }}>Sem pasta ({countIn(NO_FOLDER)})</button>
+          )}
+
+          {/* AÇÕES DA PASTA ESCOLHIDA (mudar o nome, desfazer): ficam no fim
+              da fila, fora dos separadores. Assim os separadores têm sempre
+              o mesmo tamanho, compacto, e nada mexe quando se clica. */}
+          {!soLeitura && !renaming && pastaTema && pastaTema !== NO_FOLDER && folders.includes(pastaTema) && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0, marginLeft: 2 }}>
+              <button onClick={() => { setRenaming(pastaTema); setRenameValue(pastaTema); }} title={`Mudar o nome da pasta «${pastaTema}»`} aria-label="Mudar o nome da pasta"
+                style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', display: 'flex', padding: 5, borderRadius: 6 }}><Pencil size={13} /></button>
+              <button onClick={() => dissolveFolder(pastaTema)} title={`Desfazer a pasta «${pastaTema}» (os itens ficam sem pasta)`} aria-label="Desfazer a pasta"
+                style={{ background: 'none', border: 'none', color: T.muted, cursor: 'pointer', display: 'flex', padding: 5, borderRadius: 6 }}><X size={14} /></button>
+            </span>
           )}
         </div>
       )}
