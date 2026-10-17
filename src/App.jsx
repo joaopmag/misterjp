@@ -3164,9 +3164,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
           : v)));
         const controlo = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const travao = controlo ? setTimeout(() => controlo.abort(), 30000) : null;
+        // O serviço só aceita quem tem sessão e é membro da equipa: vai o
+        // token da sessão do Supabase (não há chave nenhuma no browser).
+        // Pede-se a sessão de novo: um upload longo pode ter passado a
+        // validade do token do início (o Supabase renova-o sozinho).
+        let tokenWorker = (session && session.access_token) || '';
+        try { const { data: { session: s2 } } = await supabase.auth.getSession(); if (s2 && s2.access_token) tokenWorker = s2.access_token; } catch (e) { /* fica o do início */ }
         fetch(`${VIDEO_WORKER_URL}/processar`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenWorker}` },
           body: JSON.stringify({ teamId, storagePath: caminho, id: novo.id }),
           ...(controlo ? { signal: controlo.signal } : {}),
         }).then((r) => {
