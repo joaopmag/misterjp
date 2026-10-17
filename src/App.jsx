@@ -30811,6 +30811,36 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
     const h = setInterval(() => setAgora(Date.now()), 1000);
     return () => clearInterval(h);
   }, []);
+  /* ATÉ AO FUNDO DO ECRÃ NO TELEMÓVEL. Por defeito a página acaba por cima
+     da barra de gestos do Android e essa faixa fica com a cor da página
+     (escura). Enquanto este ecrã está aberto: desenha-se por baixo das
+     barras (viewport-fit=cover), o fundo da página passa a verde-relva e a
+     barra de cima fica da cor do céu do estádio. Ao sair repõe-se tudo. */
+  React.useLayoutEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const html = document.documentElement, corpo = document.body;
+    const vp = document.querySelector('meta[name="viewport"]');
+    const tc = document.querySelector('meta[name="theme-color"]');
+    const antes = {
+      vp: vp && vp.getAttribute('content'), tc: tc && tc.getAttribute('content'),
+      html: html.style.getPropertyValue('background'), htmlP: html.style.getPropertyPriority('background'),
+      corpo: corpo ? corpo.style.getPropertyValue('background') : '', corpoP: corpo ? corpo.style.getPropertyPriority('background') : '',
+    };
+    try {
+      if (vp && !/viewport-fit/.test(antes.vp || '')) vp.setAttribute('content', `${antes.vp}, viewport-fit=cover`);
+      if (tc) tc.setAttribute('content', '#05080b');
+      html.style.setProperty('background', '#1f5532', 'important');
+      if (corpo) corpo.style.setProperty('background', '#1f5532', 'important');
+    } catch (e) { /* sem efeito: fica como estava */ }
+    return () => {
+      try {
+        if (vp && antes.vp != null) vp.setAttribute('content', antes.vp);
+        if (tc && antes.tc != null) tc.setAttribute('content', antes.tc);
+        if (antes.html) html.style.setProperty('background', antes.html, antes.htmlP); else html.style.removeProperty('background');
+        if (corpo) { if (antes.corpo) corpo.style.setProperty('background', antes.corpo, antes.corpoP); else corpo.style.removeProperty('background'); }
+      } catch (e) { /* nada */ }
+    };
+  }, []);
   const flashes = React.useMemo(() => Array.from({ length: 46 }, (_, k) => ({
     k, left: Math.random() * 100, top: Math.random() * 100, atraso: Math.random() * 6, dur: 2.5 + Math.random() * 4,
     tam: 1.5 + Math.random() * 2.5, dourado: Math.random() < 0.3,
@@ -30887,7 +30917,7 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 75, overflowY: 'auto', overflowX: 'hidden', ...body,
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 'calc(-1 * env(safe-area-inset-bottom, 0px))', zIndex: 75, overflowY: 'auto', overflowX: 'hidden', ...body,
       background: 'linear-gradient(180deg, #05080b 0%, #0b1712 45%, #10261a 100%)',
     }}>
       <style>{`
@@ -30946,7 +30976,7 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
         </div>
       </div>
 
-      <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '56px 16px 28px', boxSizing: 'border-box', position: 'relative' }}>
+      <div style={{ minHeight: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(56px + env(safe-area-inset-top, 0px)) 16px calc(28px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box', position: 'relative' }}>
         <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           <div style={{ textAlign: 'center', color: T_ESCURO.gold, fontSize: 11.5, fontWeight: 800, letterSpacing: '.26em', textTransform: 'uppercase' }}>
