@@ -2752,6 +2752,19 @@ function herdarOuEmpurrarMarca() {
   window.history.pushState({ mjpMarker: meuMarker }, '', window.location.hash);
   return meuMarker;
 }
+/* Passos internos de uma área do Portal do Atleta que o gesto de
+   retroceder deve fechar primeiro (ver CheckinKiosk). */
+let KIOSK_VOLTAR_INTERNO = [];
+function useKioskVoltar(ativo, fn) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  useEffect(() => {
+    if (!ativo) return undefined;
+    const h = () => ref.current();
+    KIOSK_VOLTAR_INTERNO = [...KIOSK_VOLTAR_INTERNO, h];
+    return () => { KIOSK_VOLTAR_INTERNO = KIOSK_VOLTAR_INTERNO.filter(x => x !== h); };
+  }, [ativo]);
+}
 function useDetailBack(aberto, fechar) {
   const markerRef = useRef(null);
   const fechadoPeloPop = useRef(false);
@@ -29737,6 +29750,46 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // abrir de imediato — o PlayerTarefasView lê isto e já entra direto no
   // detalhe, em vez de mostrar primeiro a lista.
   const [tarefaParaAbrir, setTarefaParaAbrir] = useState(null);
+  /* GESTO DE RETROCEDER DO TELEMÓVEL (Android) e botão retroceder do
+     browser: dentro de uma área do Portal fazem o mesmo que o "Voltar"
+     da app, em vez de sair da app. Uma só marca no histórico enquanto se
+     está numa área; depois de cada retroceder que ainda deixa o jogador
+     dentro do Portal (ex.: de uma missão para as Tarefas), volta a pôr-se
+     a marca. Vistas com passos internos (uma ideia aberta em ecrã
+     inteiro, o passo 2 do Wellness) registam-se com `useKioskVoltar` e
+     o gesto fecha primeiro esse passo. */
+  const emArea = activeType !== null;
+  const gestoVoltarRef = useRef(null);
+  gestoVoltarRef.current = () => {
+    const interno = KIOSK_VOLTAR_INTERNO[KIOSK_VOLTAR_INTERNO.length - 1];
+    if (interno) { interno(); return true; }
+    if (activeType === 'portal') { setVoltouCacifo(true); setActiveType(null); return false; }
+    const destino = deTarefas && activeType !== 'tarefas' ? 'tarefas' : origem;
+    if (activeType === 'competicao') setFocoArea(null);
+    voltar();
+    return destino !== null;
+  };
+  useEffect(() => {
+    if (!emArea || typeof window === 'undefined') return undefined;
+    let meu = herdarOuEmpurrarMarca();
+    let peloPop = false;
+    const onPop = () => {
+      const atual = window.history.state && window.history.state.mjpMarker;
+      if (atual === meu) return; // fechou-se uma janela por cima, não a área
+      const fica = gestoVoltarRef.current();
+      if (fica) {
+        meu = uid();
+        window.history.pushState({ mjpMarker: meu }, '', window.location.hash);
+      } else peloPop = true;
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (peloPop || modalHandoffAtivo) return;
+      const atual = window.history.state && window.history.state.mjpMarker;
+      if (atual === meu) window.history.back();
+    };
+  }, [emArea]);
 
   // Pedido às tarefas atribuídas a este atleta, feito aqui em cima (e não
   // só dentro de PlayerTarefasView) porque a notificação no ecrã inicial
@@ -30879,10 +30932,12 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
         </div>
       ))}
 
-      {/* O RELVADO, em perspetiva, ao fundo */}
-      <div style={{ position: 'fixed', left: '-20%', right: '-20%', bottom: 0, height: '26%', pointerEvents: 'none', perspective: 400 }}>
+      {/* O RELVADO, em perspetiva, ao fundo. Desce até ao fundo do ecrã
+          (por baixo da barra de gestos do telemóvel) e é mais alto no
+          telemóvel, para não ficar uma faixa vazia por baixo do bilhete. */}
+      <div style={{ position: 'fixed', left: '-20%', right: '-20%', bottom: 'calc(-1 * env(safe-area-inset-bottom, 0px) - 2px)', height: 'calc(min(44%, 380px) + env(safe-area-inset-bottom, 0px))', pointerEvents: 'none', perspective: 400 }}>
         <div style={{
-          position: 'absolute', inset: 0, transform: 'rotateX(55deg)', transformOrigin: '50% 100%',
+          position: 'absolute', inset: 0, transform: 'rotateX(52deg)', transformOrigin: '50% 100%',
           background: 'repeating-linear-gradient(90deg, #1e5130 0 60px, #23603a 60px 120px)',
           boxShadow: 'inset 0 30px 40px rgba(5,8,11,.9)',
         }}>
@@ -32817,6 +32872,8 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
    vai sendo escrita, otimista, e grava-se ao perder o foco do campo. */
 function PlayerTarefasView({ code, teamId, onBack, tarefas, estado, tarefaAbrirId, onTarefaAberta, onNotaGravada, onIrMissao }) {
   const [abertaId, setAbertaId] = useState(null);
+  // Gesto de retroceder com uma tarefa aberta: volta à lista das Tarefas.
+  useKioskVoltar(!!abertaId, () => setAbertaId(null));
   const [notas, setNotas] = useState({}); // id -> texto local (por cima do que veio do servidor)
   const [aGravar, setAGravar] = useState({});
   const [submetidas, setSubmetidas] = useState({}); // id -> true, depois de submetida nesta sessão
@@ -33433,6 +33490,8 @@ function PlayerIdeiaJogoView({ code, teamId, onBack, fecharVolta }) {
   const [estado, dadosIdeia] = usePortalRpc('checkin_ideia_jogo', code, teamId);
   const dados = dadosIdeia ? { proximoJogo: null, ideias: [], ...dadosIdeia } : null;
   const [aVer, setAVer] = useState(null); // ideia aberta em ecrã inteiro
+  // Gesto de retroceder com uma ideia aberta: fecha-a (como o X).
+  useKioskVoltar(!!aVer, () => { setAVer(null); if (fecharVolta) onBack(); });
 
   if (aVer) {
     return (
@@ -36133,8 +36192,13 @@ function pkhBalneario({ cor, numero, nome, foto, iniciais, logo, inicialClube, b
   if (apagado) s += `<rect x="0" y="0" width="${W}" height="${H}" fill="#000" opacity="${apagado === 'presenca' ? .38 : .5}"/>`;
   if (apagado) {
     // Com as luzes apagadas, a TV do Portal é a única luz: um brilho verde-frio no chão e nas paredes.
-    s += `<ellipse cx="${VX}" cy="${(BB + 10).toFixed(1)}" rx="${(W * 0.45).toFixed(1)}" ry="${((H - BB) * 0.7).toFixed(1)}" fill="#9fe0bf" opacity=".10" filter="url(#pkh-brilho2)"/>`;
-    s += `<ellipse cx="${VX}" cy="${((BT + BB) / 2).toFixed(1)}" rx="${((BR - BL) * 0.6).toFixed(1)}" ry="${((BB - BT) * 0.6).toFixed(1)}" fill="#9fe0bf" opacity=".10" filter="url(#pkh-brilho2)"/>`;
+    /* Gradiente radial que se desvanece até zero (sem bordas): o desfoque
+       antigo deixava uma mancha de contorno visível, sobretudo no
+       telemóvel, onde a sala estica na vertical. Mais ténue no telemóvel. */
+    const fT = W <= 300 ? 0.8 : 1;
+    s += `<defs><radialGradient id="pkh-tvluz${U}" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#9fe0bf" stop-opacity="${(0.13 * fT).toFixed(3)}"/><stop offset=".45" stop-color="#9fe0bf" stop-opacity="${(0.05 * fT).toFixed(3)}"/><stop offset="1" stop-color="#9fe0bf" stop-opacity="0"/></radialGradient></defs>`;
+    s += `<ellipse cx="${VX}" cy="${(BB + 10).toFixed(1)}" rx="${(W * 0.42).toFixed(1)}" ry="${Math.min((H - BB) * 0.6, 60).toFixed(1)}" fill="url(#pkh-tvluz${U})"/>`;
+    s += `<ellipse cx="${VX}" cy="${((BT + BB) / 2).toFixed(1)}" rx="${((BR - BL) * 0.75).toFixed(1)}" ry="${((BB - BT) * 0.75).toFixed(1)}" fill="url(#pkh-tvluz${U})"/>`;
   }
   // A TV da análise = a entrada do Portal.
   // `tv` (telemóveis baixos): a TV sobe e encolhe o necessário para o botão
@@ -36639,6 +36703,8 @@ function DoneScreen({ name, message }) {
 
 function WellnessWizard({ player, initial, date, onBack, onSubmit, notice }) {
   const [step, setStep] = useState(1);
+  // Gesto de retroceder no 2.º passo: volta ao 1.º (Sono).
+  useKioskVoltar(step === 2, () => setStep(1));
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   const [erroGravar, setErroGravar] = useState('');
@@ -43243,11 +43309,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         <div style={{
           display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16,
           ...(isNarrow
-            ? {
-                flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden',
-                margin: '0 -14px 16px', padding: '0 14px 4px',
-                WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none',
-              }
+            /* Telemóvel: faixa FIXA, sem deslizar. Os separadores cabem
+               todos numa linha; se faltar espaço, encolhe o nome (com
+               reticências) e o número fica sempre visível. */
+            ? { flexWrap: 'nowrap', overflow: 'hidden', gap: 6 }
             : { flexWrap: 'wrap' }),
         }}>
           {!modoCanal && (
@@ -43282,19 +43347,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
             }
             return (
               <button key={name} type="button" onClick={() => setFolderFilter(on && !modoCanal ? null : name)} style={{
-                padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
-                flexShrink: 0, whiteSpace: 'nowrap',
+                padding: isNarrow ? '6px 10px' : '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+                flexShrink: isNarrow ? 1 : 0, minWidth: 0, whiteSpace: 'nowrap', display: 'inline-flex', gap: 4,
                 background: on ? '#B5393F' : 'transparent',
                 color: on ? TEXT_ON_ACCENT : T.muted,
                 border: `1px solid ${on ? '#B5393F' : T.line}`,
-              }}>{name} ({countIn(name)})</button>
+              }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{name}</span><span style={{ flexShrink: 0 }}>({countIn(name)})</span></button>
             );
           })}
 
           {countIn(NO_FOLDER) > 0 && folders.length > 0 && (
             <button onClick={() => setFolderFilter(pastaTema === NO_FOLDER && !modoCanal ? null : NO_FOLDER)} style={{
-              padding: '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
-              flexShrink: 0, whiteSpace: 'nowrap',
+              padding: isNarrow ? '6px 10px' : '6px 12px', borderRadius: 20, fontSize: 12.5, cursor: 'pointer', ...body,
+              flexShrink: isNarrow ? 1 : 0, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               background: pastaTema === NO_FOLDER ? '#B5393F' : 'transparent',
               color: pastaTema === NO_FOLDER ? TEXT_ON_ACCENT : T.muted,
               border: `1px solid ${pastaTema === NO_FOLDER ? '#B5393F' : T.line}`,
