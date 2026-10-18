@@ -3182,7 +3182,15 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
         }).finally(() => { if (travao) clearTimeout(travao); });
       }
     } catch (e) {
-      setUploadVideoEstado({ ativo: false, progresso: 0, finalizando: false, erro: `Não consegui carregar o vídeo: ${e.message || e}` });
+      /* 413 = o ficheiro passa o limite de tamanho do Supabase (o limite
+         global do projeto em Storage > Settings, ou o do próprio bucket).
+         Mensagem clara em vez do texto técnico do tus. */
+      const msg = String((e && e.message) || e || '');
+      const gb = file && file.size ? (file.size / 1e9).toFixed(2).replace('.', ',') : '';
+      const erro = /\b413\b|maximum size exceeded/i.test(msg)
+        ? `O vídeo${gb ? ` (${gb} GB)` : ''} é maior do que o limite de tamanho definido no Supabase. Aumenta o limite em Storage › Settings (e no bucket "videos-originais") ou carrega um ficheiro mais pequeno.`
+        : `Não consegui carregar o vídeo: ${msg}`;
+      setUploadVideoEstado({ ativo: false, progresso: 0, finalizando: false, erro });
     } finally {
       document.removeEventListener('visibilitychange', reAdquirirWakeLock);
       wakeLock?.release().catch(() => {});
