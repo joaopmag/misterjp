@@ -3603,6 +3603,51 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarefas, tarefasReady, euId, userEmail, matches, videosMeta, videosOriginaisMeta, clipesMeta, scoutingMeta, adversariosMeta, sessionsMeta, matchesMeta, convocatoriasMeta, monitoringMeta, desenvolvimentoMeta, ideiasMeta, exercisesMeta, clinicoMeta, apresentacoesMeta, documentosMeta]);
 
+  /* CLIPES DA ANÁLISE DE VÍDEO → SALA DE VÍDEO (Canal).
+     O clipe já é um MP4 no Storage (videos-clipes): passa a ser também um
+     vídeo do Canal, sem novo upload. Leva os tempos do jogo de onde saiu
+     (clipInicio/clipFim = minuto no vídeo original) e o título desse
+     vídeo, para aparecer junto do jogo certo. Num adversário, vai para a
+     FICHA da equipa — e vê-se também no Canal › Adversários. */
+  const destinosSala = React.useMemo(() => {
+    const pastas = Array.from(new Set((videos || [])
+      .filter(v => v && !v.adversarioId && v.categoria !== 'jogo' && v.categoria !== 'adversario' && cleanFolder(v.pasta) && semAcentos(cleanFolder(v.pasta)) !== 'adversarios')
+      .map(v => cleanFolder(v.pasta)))).sort((a, b) => a.localeCompare(b, 'pt'));
+    const jogos = [...(matches || [])].filter(m => m && m.opponent)
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+      .map(m => ({ id: m.id, rotulo: [m.jornada, `vs ${m.opponent}`, m.date ? fmtDate(m.date) : ''].filter(Boolean).join(' · ') }));
+    const fichas = [...(adversarios || [])].filter(a => a && a.nome)
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt'))
+      .map(a => ({ id: a.id, rotulo: a.nome }));
+    return { pastas, jogos, fichas };
+  }, [videos, matches, adversarios]);
+  const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId }) => {
+    if (!clip || !clip.publicUrl) throw new Error('Este clipe não tem vídeo guardado.');
+    const base = {
+      id: uid(), title: (titulo || '').trim() || 'Clipe', kind: 'video', dataUrl: clip.publicUrl,
+      thumbUrl: clip.thumbUrl || null, fileName: `${(titulo || 'clipe').trim()}.mp4`,
+      clipInicio: typeof clip.origemInicio === 'number' ? clip.origemInicio : 0,
+      clipFim: typeof clip.origemFim === 'number' ? clip.origemFim : (clip.duracao || 0),
+      clipOrigemTitulo: clip.originalTitulo || '',
+      origemAnalise: { clipeId: clip.id, em: new Date().toISOString() },
+    };
+    let item;
+    if (destino === 'jogo') {
+      const m = (matches || []).find(x => x.id === jogoId);
+      if (!m) throw new Error('Escolhe o jogo.');
+      item = { ...base, categoria: 'jogo', jogoId: m.id, jornada: m.jornada || '', pasta: '' };
+    } else if (destino === 'adversario') {
+      const f = (adversarios || []).find(x => x.id === fichaId);
+      if (!f) throw new Error('Escolhe a equipa.');
+      item = { ...base, adversarioId: f.id, equipa: f.equipaCompeticao || f.nome, pasta: '' };
+    } else {
+      if (!(pasta || '').trim()) throw new Error('Escolhe ou escreve a pasta.');
+      item = { ...base, categoria: 'tema', pasta: cleanFolder(pasta) };
+    }
+    setVideos(prev => [item, ...(prev || [])]);
+    return item;
+  };
+
   const goTab = (id) => {
     setOrigemMissao(null);
     /* Trocar de separador na barra lateral pode desmontar um ecrã que
@@ -4112,7 +4157,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              e voltar perdia o vídeo selecionado, a posição de reprodução e
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
-            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} />
+            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} />
           </div>
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} teamId={teamId} />}
           {tab === 'scouting' && <Scouting abaInicial={tabPedida === 'fichaadversario' ? 'adversarios' : ''} scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
@@ -41698,6 +41743,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         });
       }
     });
+    // Clipes enviados da Análise de Vídeo para a ficha de um adversário:
+    // a equipa ganha cartão no Canal › Adversários mesmo sem outros vídeos
+    // (os clipes entram pelos "cortes da ficha", mais abaixo).
+    (todosVideos || []).forEach(v => {
+      if (!v || !v.adversarioId || !v.origemAnalise) return;
+      const f = fichasById[v.adversarioId];
+      const nome = f && (f.equipaCompeticao || f.nome);
+      if (!nome) return;
+      const k = `e:${semAcentos(nome)}`;
+      nomeEquipa[k] = nomeEquipa[k] || nome;
+      porAdv[k] = porAdv[k] || [];
+    });
     Object.entries(porJogo).forEach(([key, lista]) => {
       if (key === 'amigaveis') {
         const secoes = seccionarPorJogo(lista, byIdItens, ordemCriacao, rotuloSubJogo);
@@ -42466,6 +42523,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           <button onClick={() => selectItem(v.id)} style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center', padding: 0 }}>
             {v.youtubeId ? (
               <img src={`https://img.youtube.com/vi/${v.youtubeId}/default.jpg`} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }} />
+            ) : v.thumbUrl ? (
+              <img src={v.thumbUrl} alt="" style={{ width: 44, height: 33, objectFit: 'cover', borderRadius: 4, flexShrink: 0, background: '#000' }} />
             ) : v.social ? (
               <div style={{ width: 44, height: 33, borderRadius: 4, flexShrink: 0, background: T.surfaceRaise, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {React.createElement(socialMeta[v.social.platform].Icon, { size: 16, color: socialMeta[v.social.platform].color })}

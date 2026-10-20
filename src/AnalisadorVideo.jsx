@@ -1207,7 +1207,117 @@ function useFecharComEsc(onClose, ativo = true) {
   }, [onClose, ativo]);
 }
 
-function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir }) {
+/* ENVIAR UM CLIPE PARA A SALA DE VÍDEO (Canal da Biblioteca).
+   Três destinos, os mesmos do Canal: um TEMA (pasta), um JOGO nosso, ou
+   um ADVERSÁRIO (vai para a ficha da equipa, e vê-se também no Canal ›
+   Adversários). O clipe não volta a ser carregado: o Canal passa a
+   apontar para o mesmo MP4. */
+function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
+  const d = destinos || { pastas: [], jogos: [], fichas: [] };
+  const [titulo, setTitulo] = useState(() => (clip.note || '').trim() || [tag && tag.label, clip.originalTitulo].filter(Boolean).join(' · ') || 'Clipe');
+  const [destino, setDestino] = useState('tema');
+  const [pasta, setPasta] = useState(() => (d.pastas || [])[0] || '');
+  const [pastaNova, setPastaNova] = useState('');
+  const [jogoId, setJogoId] = useState('');
+  const [fichaId, setFichaId] = useState('');
+  const [erro, setErro] = useState('');
+  const [feito, setFeito] = useState('');
+  useFecharComEsc(onClose);
+  const campo = { width: '100%', boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 10px', color: T.cream, fontSize: 13, ...body };
+  const enviar = () => {
+    setErro('');
+    try {
+      const pastaFinal = pasta === '__nova__' ? pastaNova : pasta;
+      const rotulo = destino === 'jogo' ? `Jogos › ${(d.jogos.find(j => j.id === jogoId) || {}).rotulo || ''}`
+        : destino === 'adversario' ? `Adversários › ${(d.fichas.find(f => f.id === fichaId) || {}).rotulo || ''}`
+          : `Temas › ${pastaFinal}`;
+      onEnviar({ titulo, destino, pasta: pastaFinal, jogoId, fichaId, rotulo });
+      setFeito(destino === 'adversario' ? `${rotulo} (e ficha da equipa)` : rotulo);
+    } catch (e) { setErro(e.message || String(e)); }
+  };
+  const opcao = (id, label) => (
+    <button type="button" onClick={() => { setDestino(id); setErro(''); }} style={{
+      flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 600, ...body,
+      background: destino === id ? T.crimson || '#B5393F' : 'transparent', color: destino === id ? '#fff' : T.muted,
+      border: `1px solid ${destino === id ? (T.crimson || '#B5393F') : T.line}`,
+    }}>{label}</button>
+  );
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, ...body }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: T.cream }}>Enviar para a Sala de Vídeo</div>
+          <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
+        </div>
+        {feito ? (
+          <>
+            <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.5 }}>
+              <Check size={14} color={T.good} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              Enviado para <b>{feito}</b>.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Btn variant="ghost" onClick={() => setFeito('')}>Enviar para outro sítio</Btn>
+              <Btn variant="solid" onClick={onClose}>Fechar</Btn>
+            </div>
+          </>
+        ) : (
+          <>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
+              Título no Canal
+              <input value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={120} style={campo} />
+            </label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {opcao('tema', 'Temas')}
+              {opcao('jogo', 'Jogos')}
+              {opcao('adversario', 'Adversários')}
+            </div>
+            {destino === 'tema' && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
+                Pasta
+                <select value={pasta} onChange={e => setPasta(e.target.value)} style={campo}>
+                  {(d.pastas || []).map(p => <option key={p} value={p}>{p}</option>)}
+                  <option value="__nova__">+ Pasta nova…</option>
+                </select>
+                {(pasta === '__nova__' || !(d.pastas || []).length) && (
+                  <input value={pastaNova} onChange={e => { setPastaNova(e.target.value); if (pasta !== '__nova__') setPasta('__nova__'); }} placeholder="Nome da pasta (ex.: Bola parada)" style={campo} />
+                )}
+              </label>
+            )}
+            {destino === 'jogo' && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
+                Jogo
+                <select value={jogoId} onChange={e => setJogoId(e.target.value)} style={campo}>
+                  <option value="">Escolhe o jogo…</option>
+                  {(d.jogos || []).map(j => <option key={j.id} value={j.id}>{j.rotulo}</option>)}
+                </select>
+              </label>
+            )}
+            {destino === 'adversario' && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>
+                Equipa (ficha do adversário)
+                <select value={fichaId} onChange={e => setFichaId(e.target.value)} style={campo}>
+                  <option value="">Escolhe a equipa…</option>
+                  {(d.fichas || []).map(f => <option key={f.id} value={f.id}>{f.rotulo}</option>)}
+                </select>
+                {!(d.fichas || []).length && <span style={{ fontSize: 11.5, color: T.warn }}>Ainda não há fichas de adversários. Cria a ficha em Scouting › Adversários.</span>}
+              </label>
+            )}
+            {(clip.enviadoSala || []).length > 0 && (
+              <div style={{ fontSize: 11.5, color: T.mutedDim }}>Já enviado para: {clip.enviadoSala.map(e => e.rotulo).join('; ')}</div>
+            )}
+            {erro && <div style={{ fontSize: 12.5, color: T.bad }}>{erro}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+              <Btn variant="solid" onClick={enviar}><Film size={14} /> Enviar</Btn>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala }) {
   const [t, setT] = useState(0);
   // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
   const [aEditar, setAEditar] = useState(false);
@@ -1388,6 +1498,12 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
                 style={{ padding: '6px 10px' }} title="Gravar um vídeo com os desenhos (grava este ecrã enquanto o clipe toca)">
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: gravacaoClipe ? T.bad : '#fff', display: 'inline-block' }} />
                 <span style={{ fontSize: 11.5 }}>{gravacaoClipe ? 'A gravar… parar' : 'Vídeo c/ desenhos'}</span>
+              </Btn>
+            )}
+            {onEnviarSala && (
+              <Btn variant="ghost" onClick={onEnviarSala} style={{ padding: '6px 10px' }} title="Enviar para a Sala de Vídeo (Canal: temas, jogos ou adversários)">
+                {(clip.enviadoSala || []).length ? <Check size={14} color={T.good} /> : <Film size={14} />}
+                <span style={{ fontSize: 11.5 }}>Sala de Vídeo</span>
               </Btn>
             )}
             <Btn variant="ghost" onClick={aEditar ? () => setAEditar(false) : abrirEdicao} active={aEditar} style={{ padding: '6px 10px' }} title="Editar texto e tempos">
@@ -2119,7 +2235,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -2220,6 +2336,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [fullscreen, setFullscreen] = useState(false);
 
   const [copiedId, setCopiedId] = useState(null);
+  // Clipe a enviar para a Sala de Vídeo (janela de escolha do destino).
+  const [clipeParaSala, setClipeParaSala] = useState(null);
+  const enviarClipeSala = (clip, dados) => {
+    const item = enviarParaSala({ clip, ...dados });
+    const rotulo = dados.rotulo || (dados.destino === 'jogo' ? 'Jogos' : dados.destino === 'adversario' ? 'Adversários' : `Temas › ${dados.pasta}`);
+    const marca = { destino: dados.destino, rotulo, itemId: item && item.id, em: new Date().toISOString() };
+    const juntar = c => ({ ...c, enviadoSala: [...(c.enviadoSala || []), marca] });
+    setClipes(prev => prev.map(c => (c.id === clip.id ? juntar(c) : c)));
+    setClipeAReproduzir(prev => (prev && prev.id === clip.id ? juntar(prev) : prev));
+    setClipeParaSala(prev => (prev && prev.id === clip.id ? juntar(prev) : prev));
+  };
   const [clipeAReproduzir, setClipeAReproduzir] = useState(null);
   const [editarClipeAoAbrir, setEditarClipeAoAbrir] = useState(false); // lápis no cartão: abre o clipe já em edição
   const [filtroTag, setFiltroTag] = useState(null);
@@ -3895,6 +4022,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     }}>
                     <Trash2 size={13} color="#fff" />
                   </button>
+                  {enviarParaSala && (
+                    <button
+                      onClick={() => setClipeParaSala(clip)}
+                      title="Enviar para a Sala de Vídeo" aria-label="Enviar para a Sala de Vídeo"
+                      style={{
+                        position: 'absolute', top: 7, left: 102, width: 26, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer',
+                        background: (clip.enviadoSala || []).length ? 'rgba(46,125,80,0.85)' : 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                      }}>
+                      {(clip.enviadoSala || []).length ? <Check size={13} color="#fff" /> : <Film size={13} color="#fff" />}
+                    </button>
+                  )}
                   </div>
                 );
               })}
@@ -3947,6 +4085,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
           onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
           onChangeTrajetoria={trajetoria => mudarTrajetoriaClipe(clipeAReproduzir, trajetoria)}
+          onEnviarSala={enviarParaSala ? () => setClipeParaSala(clipeAReproduzir) : undefined}
+        />
+      )}
+      {clipeParaSala && enviarParaSala && (
+        <EnviarSalaModal
+          key={clipeParaSala.id}
+          clip={clipeParaSala}
+          tag={TAGS.find(t => t.id === clipeParaSala.tagId)}
+          destinos={destinosSala}
+          onEnviar={dados => enviarClipeSala(clipeParaSala, dados)}
+          onClose={() => setClipeParaSala(null)}
         />
       )}
     </div>
