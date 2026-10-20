@@ -4562,7 +4562,7 @@ function StandingsFullModal({ standings, season, onClose, onEdit }) {
             <tbody>
               {table.map((t, i) => (
                 <tr key={t.id} style={{ borderTop: `1px solid ${T.line}`, background: isUs(t) ? `${T.crimson}33` : 'transparent' }}>
-                  <td style={{ ...mono, padding: '7px 4px', fontSize: 12.5, color: isUs(t) ? T.warn : T.mutedDim }}>{i + 1}</td>
+                  <td style={{ ...mono, padding: '7px 4px 7px 7px', fontSize: 12.5, color: isUs(t) ? T.warn : T.mutedDim, ...estiloZona(comp, i, table.length) }}>{i + 1}</td>
                   <td
                     title={t.name}
                     style={{
@@ -4579,6 +4579,7 @@ function StandingsFullModal({ standings, season, onClose, onEdit }) {
               ))}
             </tbody>
           </table>
+          <LegendaZonas comp={comp} />
         </div>
       )}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
@@ -25950,7 +25951,7 @@ function sortStandings(teams) {
 }
 
 function LeagueStandings({ standings, setStandings, standingsMeta, matches, setMatches, season, convocatorias, setConvocatorias, sessions, setSessions }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(false); // false | true | 'config'
   const [roundIdx, setRoundIdx] = useState(0);
   const isNarrow = useIsMobile(560);
   // Repara a equipa duplicada, se existir (ver limparEquipaDuplicada).
@@ -26151,7 +26152,7 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                     const isUs = /salgueiros/i.test(t.name || '');
                     return (
                       <tr key={t.id} style={{ color: isUs ? T.gold : T.cream, background: isUs ? `${T.crimson}22` : 'transparent', borderTop: `1px solid ${T.line}` }}>
-                        <td style={{ padding: '5px 6px', ...mono }}>{i + 1}</td>
+                        <td style={{ padding: '5px 6px 5px 9px', ...mono, ...estiloZona(comp, i, teams.length) }}>{i + 1}</td>
                         <td
                           title={t.name}
                           style={{
@@ -26172,6 +26173,12 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                   })}
                 </tbody>
               </table>
+              <LegendaZonas comp={comp} />
+              {comp && !comp.campeao && !(parseInt(comp.sobem, 10) > 0) && !(parseInt(comp.descem, 10) > 0) && (
+                <button type="button" onClick={() => setEditing('config')} style={{ marginTop: 8, background: 'none', border: 'none', color: T.warn, cursor: 'pointer', padding: 0, fontSize: 12, ...body }}>
+                  Definir campeão, subida e descida desta competição
+                </button>
+              )}
             </div>
           )}
         </>
@@ -26180,6 +26187,8 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
       {editing && (
         <StandingsModal
           standings={standings}
+          tabInicial={editing === 'config' ? 'config' : 'resultados'}
+          competicaoInicial={editing === 'config' && comp ? comp.id : null}
           onClose={() => setEditing(false)}
           onSave={(data) => {
             setStandings(data);
@@ -26289,6 +26298,47 @@ function normalizeStandings(standings) {
 function activeCompetitionOf(standings) {
   const { competitions, activeId } = normalizeStandings(standings);
   return competitions.find(c => c.id === activeId) || competitions[0] || null;
+}
+
+/* ZONAS DA CLASSIFICAÇÃO: campeão, subida e descida, definidas em cada
+   competição (Editar classificação › Configuração). Sem nada definido,
+   a tabela fica como sempre foi. O campeão conta também como subida. */
+const ZONAS_CLASS = {
+  campeao: { cor: '#D9A72E', rotulo: 'Campeão' },
+  sobe: { cor: '#4CA86B', rotulo: 'Sobe' },
+  desce: { cor: '#C25A5A', rotulo: 'Desce' },
+};
+function zonaClassificacao(comp, i, n) {
+  if (!comp) return null;
+  const sobem = Math.max(0, parseInt(comp.sobem, 10) || 0);
+  const descem = Math.max(0, parseInt(comp.descem, 10) || 0);
+  if (comp.campeao && i === 0) return 'campeao';
+  if (i < sobem) return 'sobe';
+  if (descem && i >= n - descem && i >= sobem) return 'desce';
+  return null;
+}
+// Faixa colorida à esquerda da posição (o "#") na linha da tabela.
+function estiloZona(comp, i, n) {
+  const z = zonaClassificacao(comp, i, n);
+  return z ? { boxShadow: `inset 3px 0 0 ${ZONAS_CLASS[z].cor}`, color: ZONAS_CLASS[z].cor, fontWeight: 700 } : {};
+}
+function LegendaZonas({ comp }) {
+  if (!comp) return null;
+  const itens = [
+    comp.campeao && 'campeao',
+    (parseInt(comp.sobem, 10) || 0) > (comp.campeao ? 1 : 0) && 'sobe',
+    (parseInt(comp.descem, 10) || 0) > 0 && 'desce',
+  ].filter(Boolean);
+  if (!itens.length) return null;
+  return (
+    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 8, fontSize: 11.5, color: T.mutedDim }}>
+      {itens.map(z => (
+        <span key={z} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: ZONAS_CLASS[z].cor }} /> {ZONAS_CLASS[z].rotulo}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 // Classificação de uma competição: em automático calcula-se a partir dos
@@ -26781,7 +26831,7 @@ const emptyCompetition = (name = '') => ({
   id: uid(), name, teamNames: [], rounds: [], auto: true, teams: [],
 });
 
-function StandingsModal({ standings, onClose, onSave }) {
+function StandingsModal({ standings, onClose, onSave, tabInicial, competicaoInicial }) {
   /* No telemóvel a linha de um jogo (equipa, golos, golos, equipa, data,
      apagar) não cabe: são 6 colunas com larguras fixas que somam bem mais
      do que 380 px. Em vez de deixar a janela arrastar-se de lado — o que
@@ -26794,9 +26844,10 @@ function StandingsModal({ standings, onClose, onSave }) {
     initial.competitions.length ? initial.competitions : [emptyCompetition('')]
   );
   const [activeId, setActiveId] = useState(
-    initial.activeId || (initial.competitions[0] && initial.competitions[0].id) || null
+    (competicaoInicial && initial.competitions.some(c => c.id === competicaoInicial) ? competicaoInicial : null)
+    || initial.activeId || (initial.competitions[0] && initial.competitions[0].id) || null
   );
-  const [tab, setTab] = useState('resultados'); // 'config' | 'resultados'
+  const [tab, setTab] = useState(tabInicial || 'resultados'); // 'config' | 'resultados'
   const [roundIdx, setRoundIdx] = useState(0);
   const [notice, setNotice] = useState('');
 
@@ -27136,6 +27187,30 @@ function StandingsModal({ standings, onClose, onSave }) {
               <Input type="number" min="0" max="60" value={rounds.length}
                 onChange={e => setRoundsCount(e.target.value)} />
             </Field>
+          </div>
+
+          {/* Campeão, subida e descida — ficam marcados na classificação. */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Subida e descida</div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div style={{ width: 150 }}>
+                <Field label="Equipas que sobem">
+                  <Input type="number" min="0" max="30" value={comp.sobem ?? 0}
+                    onChange={e => patchComp({ sobem: Math.max(0, parseInt(e.target.value, 10) || 0) })} />
+                </Field>
+              </div>
+              <div style={{ width: 150 }}>
+                <Field label="Equipas que descem">
+                  <Input type="number" min="0" max="30" value={comp.descem ?? 0}
+                    onChange={e => patchComp({ descem: Math.max(0, parseInt(e.target.value, 10) || 0) })} />
+                </Field>
+              </div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: T.cream, cursor: 'pointer', paddingBottom: 10 }}>
+                <input type="checkbox" checked={!!comp.campeao} onChange={e => patchComp({ campeao: e.target.checked })} style={{ accentColor: T.gold }} />
+                O 1.º lugar é campeão
+              </label>
+            </div>
+            <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 6 }}>Põe 0 se a competição não tiver subida ou descida. O campeão conta como uma das equipas que sobem.</div>
           </div>
 
           <div style={{ marginBottom: 20 }}>
@@ -32708,7 +32783,7 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
                     const nossa = isUs(t);
                     return (
                       <tr key={t.id} style={{ color: nossa ? T.gold : T.cream, background: nossa ? `${T.crimson}22` : 'transparent', borderTop: `1px solid ${T.line}` }}>
-                        <td style={{ padding: '5px 6px', ...mono }}>{i + 1}</td>
+                        <td style={{ padding: '5px 6px 5px 9px', ...mono, ...estiloZona(comp, i, teams.length) }}>{i + 1}</td>
                         <td
                           title={t.name}
                           style={{
@@ -32729,6 +32804,7 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
                   })}
                 </tbody>
               </table>
+              <LegendaZonas comp={comp} />
             </div>
           )}
         </div>

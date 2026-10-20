@@ -2591,6 +2591,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return () => clearInterval(intervalo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videosOriginais.map(v => `${v.id}:${v.pronto}`).join(',')]);
+  // Lista dos vídeos: do mais recente para o mais antigo (data de carregamento).
+  const originaisPorData = React.useMemo(() => [...videosOriginais].sort((a, b) =>
+    (new Date(b.criadoEm || 0).getTime() || 0) - (new Date(a.criadoEm || 0).getTime() || 0)), [videosOriginais]);
 
   useEffect(() => {
     const aoMudar = () => setFullscreen(!!document.fullscreenElement);
@@ -3319,7 +3322,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         {/* DUAS LINHAS de vídeos carregados; o cartão "Carregar vídeo" é o
             último da 2.ª linha. Com mais vídeos, "Ver mais" abre o resto. */}
         <div ref={grelhaOriginaisRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-          {(verTodosOriginais ? videosOriginais : videosOriginais.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(v => (
+          {(verTodosOriginais ? originaisPorData : originaisPorData.slice(0, Math.max(1, porLinhaOriginais * 2 - 1))).map(v => (
             <button key={v.id} onClick={() => { setOriginalAtivoId(v.id); limparMarcas(); }}
               style={{
                 display: 'flex', flexDirection: 'column', width: 172, textAlign: 'left', cursor: 'pointer', padding: 0, ...body, overflow: 'hidden',
