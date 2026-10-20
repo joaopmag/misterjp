@@ -8402,8 +8402,16 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
      mesmos 17%). Os centrais também abrem um pouco mais para a lateral
      (ver TATICAS) — os dois ajustes juntos dão a maior folga possível
      sem inventar posições que não existem numa formação a sério. */
-  const GR_FX = 0;
-  const GR_LARGURA = '10%';
+  // Na folha impressa a letra é maior (escala): com 10% o nome do GR
+  // saía cortado ("Fon…"). Mais largo só no papel.
+  const GR_LARGURA = escuro ? '10%' : '16%';
+  /* CONTORNO DA LETRA em vez de caixa por trás: os nomes leem-se por cima
+     das linhas do campo sem as apagar (antes, um lugar com 3+ nomes tinha
+     um retângulo branco que tapava a grande área e o meio-campo).
+     text-shadow imprime-se mesmo com os gráficos de fundo desligados. */
+  const halo = escuro ? '#1E3A24' : '#fff';
+  const contornoLetra = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]
+    .map(([x, y]) => `${x}px ${y}px 0 ${halo}`).join(', ') + `, 0 0 3px ${halo}`;
 
   const corDoTexto = escuro ? '#fff' : T.corEquipa;
   // O CÍRCULO TEM SEMPRE O MESMO TAMANHO, em qualquer sítio da app —
@@ -8434,14 +8442,15 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
     fontSize: 8.5 * escala * fatorNomes, lineHeight: alturaLinha, fontWeight: 500,
     color: escuro ? (on ? '#0d140e' : T_ESCURO.cream) : '#111',
     background: on ? T.goldFundo : 'transparent',
+    textShadow: on ? 'none' : contornoLetra,
     borderRadius: 3, padding: '0 3px', cursor: editavel ? 'pointer' : 'default',
     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
   });
 
-  const conteudoDoLugar = (l) => (
+  const conteudoDoLugar = (l, nomesPorCima) => (
     <>
-      <div style={tagStyle}>{l.rotulo}</div>
-      <div style={{ marginTop: 2 }}>
+      <div style={{ ...tagStyle, background: escuro ? T.corEquipa : '#fff' }}>{l.rotulo}</div>
+      <div style={nomesPorCima ? { marginBottom: 2 } : { marginTop: 2 }}>
         {l.lista.map(j => (
           <div
             key={j.chave}
@@ -8486,8 +8495,13 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
       />
       {lugares.map(l => {
         const eGR = l.id === 'GR';
-        const [fxOriginal, fy] = l.ponto;
-        const fx = eGR ? GR_FX : fxOriginal;
+        const [fxT, fyT] = l.ponto;
+        /* AJUSTES SÓ DE DESENHO (a tática guardada não muda):
+           - nenhuma bola fica em cima das linhas laterais (folga de ~7%);
+           - os centrais afastam-se um pouco do GR (e o GR encosta um nada
+             à baliza), para os nomes do central não tocarem na bola do GR. */
+        const fy = Math.min(0.935, Math.max(0.075, fyT));
+        const fx = eGR ? Math.min(fxT, 0.04) : (fxT < 0.2 ? fxT + 0.01 : fxT);
         /* ÂNCORA QUE MUDA PERTO DAS EXTREMIDADES.
            Um lugar como "DE" ou "EE" fica perto do topo/fundo do campo;
            quando lá caem vários jogadores (titular + convidados à
@@ -8496,8 +8510,15 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
            do campo. Perto de uma margem, ancora-se pelo lado de DENTRO
            (o bloco cresce para o centro do campo, nunca para fora); no
            resto do campo mantém-se centrado, como sempre foi. */
-        const ancoraX = fx < 0.15 ? 0 : fx > 0.85 ? 100 : 50;
-        const ancoraY = fy < 0.2 ? 0 : fy > 0.8 ? 100 : 50;
+        /* A BOLA FICA SEMPRE NO PONTO DA POSIÇÃO, tenha 1 ou 4 nomes: o
+           centro da bola é o ponto (translate de metade da bola, 10 px +
+           2 px de margem), e os nomes crescem a partir dela. Antes era o
+           bloco inteiro (bola + nomes) que se centrava no ponto, por isso
+           a bola subia ou descia conforme o número de nomes.
+           Junto ao fundo do campo (DD, ED…), os nomes ficam POR CIMA da
+           bola, para não saírem do campo. */
+        const nomesPorCima = fy > 0.8;
+        const deslocY = nomesPorCima ? 'calc(-100% + 12px)' : '-12px';
         return (
           <div
             key={l.id}
@@ -8505,7 +8526,8 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
             onClick={editavel ? () => aoTocar({ tipo: 'lugar', id: l.id }) : undefined}
             style={{
               position: 'absolute', ...posCampoPrint(fx, fy), zIndex: eGR ? 1 : l.lista.length,
-              transform: `translate(-${ancoraX}%, -${ancoraY}%)`, textAlign: 'center',
+              transform: `translate(-50%, ${deslocY})`, textAlign: 'center',
+              display: 'flex', flexDirection: nomesPorCima ? 'column-reverse' : 'column', alignItems: 'center',
               // Largura pelo CONTEÚDO, não uma fatia fixa do campo — um
               // lugar com um ou dois nomes curtos não precisa dos mesmos
               // 17% que um lugar cheio, e essa largura a mais era o que
@@ -8517,15 +8539,15 @@ function PrancheteDoPlantel({ lugares, aoTocar, aoArrastar, selecionado, escala 
               // Enquanto há alguém escolhido, os lugares acendem-se: sem
               // isso não se percebe que se pode tocar neles.
               outline: editavel && selecionado ? `1px dashed ${T.gold}88` : 'none',
-              outlineOffset: 4, borderRadius: 6, padding: '2px 4px',
+              outlineOffset: 4, borderRadius: 6, padding: '2px 4px', boxSizing: 'border-box',
               /* Um fundo (quase) sólido só no lugar mais cheio evita que,
                  mesmo depois de tudo isto, um resto de transbordo de um
                  lugar vizinho se leia por cima deste. */
-              background: l.lista.length >= 3 ? (escuro ? '#1E3A24' : '#fff') : 'transparent',
+              background: 'transparent',
               ...(editavel ? arrasto.estiloAlvo(l.id) : {}),
             }}
           >
-            {conteudoDoLugar(l)}
+            {conteudoDoLugar(l, nomesPorCima)}
           </div>
         );
       })}
