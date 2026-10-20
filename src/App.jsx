@@ -40791,6 +40791,33 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // Ignorada enquanto se escreve (campos de texto, texto num desenho) e
   // com Ctrl/Alt/Cmd. preventDefault: sem isto o espaço também fazia a
   // página descer, ou "carregava" no último botão clicado.
+  /* TOQUE DUPLO NAS LATERAIS = recuar / avançar 10 s, como no YouTube
+     (o leitor incorporado não o faz sempre, sobretudo no computador e
+     com o ecrã inteiro do YouTube desligado). Toque simples = pausar /
+     reproduzir. Toques seguidos somam (20 s, 30 s…). */
+  const [saltoBib, setSaltoBib] = useState(null); // { lado: -1|1, total, k }
+  const toqueLadoRef = useRef({ lado: 0, t: 0, timer: null, total: 0, fim: null });
+  const tocarLadoBib = (lado) => {
+    const agoraMs = Date.now();
+    const st = toqueLadoRef.current;
+    if (st.lado === lado && agoraMs - st.t < 320) {
+      if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+      st.total += 10;
+      st.t = agoraMs;
+      const base = currentTimeRef.current || liveTime || 0;
+      const alvo = Math.max(0, base + lado * 10);
+      currentTimeRef.current = alvo;
+      enviarComandoYoutube('seekTo', [alvo, true]);
+      setSaltoBib({ lado, total: st.total, k: agoraMs });
+      if (st.fim) clearTimeout(st.fim);
+      st.fim = setTimeout(() => { setSaltoBib(null); st.total = 0; st.lado = 0; }, 700);
+      return;
+    }
+    if (st.timer) clearTimeout(st.timer);
+    st.lado = lado; st.t = agoraMs; st.total = 0;
+    st.timer = setTimeout(() => { st.timer = null; alternarReproducaoBib(); }, 300);
+  };
+  useEffect(() => () => { const st = toqueLadoRef.current; if (st.timer) clearTimeout(st.timer); if (st.fim) clearTimeout(st.fim); }, []);
   const alternarReproducaoBibRef = useRef(null);
   alternarReproducaoBibRef.current = () => alternarReproducaoBib();
   const temVideoBibRef = useRef(false); // atualizado mais abaixo, depois de `active`/`isBlocked` existirem
@@ -41266,6 +41293,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // vídeo limpa o modo clipe (ver o efeito de `activeId`).
   const [edicaoClipeId, setEdicaoClipeId] = useState(null);
   const edicaoPendenteRef = React.useRef(null);
+  /* Depois de gravar um clipe, fica-se no MESMO vídeo, ainda no modo de
+     corte e com as marcas limpas, para continuar a cortar o jogo. */
+  const [clipeGuardadoAviso, setClipeGuardadoAviso] = useState('');
+  useEffect(() => { if (!clipeGuardadoAviso) return undefined; const t = setTimeout(() => setClipeGuardadoAviso(''), 2600); return () => clearTimeout(t); }, [clipeGuardadoAviso]);
+  const continuarACortar = (titulo) => {
+    setClipMode(true); setClipMarcas({ inicio: null, fim: null }); setTituloClipe('');
+    setNotaClipe(''); setErroClipeAtleta(''); setAGravarClipeAtleta(false); setEdicaoClipeId(null);
+    setClipeGuardadoAviso(titulo ? `Clipe guardado: ${titulo}` : 'Clipe guardado');
+  };
   const sairDoModoClipe = () => {
     setClipMode(false); setClipMarcas({ inicio: null, fim: null }); setTituloClipe('');
     setNotaClipe(''); setErroClipeAtleta(''); setAGravarClipeAtleta(false); setEdicaoClipeId(null);
@@ -42736,8 +42772,9 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
           });
         return;
       }
-      criarClipeAtleta({ videoId: active.id, inicio, fim, titulo: tituloClipe.trim(), nota: notaClipe.trim() })
-        .then(() => sairDoModoClipe())
+      const tituloGravado = tituloClipe.trim();
+      criarClipeAtleta({ videoId: active.id, inicio, fim, titulo: tituloGravado, nota: notaClipe.trim() })
+        .then(() => continuarACortar(tituloGravado))
         .catch(e => {
           setErroClipeAtleta((e && e.message) || 'O clipe não ficou gravado. Tenta outra vez.');
           setAGravarClipeAtleta(false);
@@ -42759,9 +42796,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     };
     if (!modoCanal) {
       setItems(prev => [novo, ...prev]);
-      setActiveId(novo.id);
-      setFolderFilter('Cortes');
-      sairDoModoClipe();
+      continuarACortar(novo.title);
       return;
     }
 
@@ -42775,7 +42810,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (cat === 'adversario') {
       const equipa = equipaCorteEf || null;
       const ficha = equipa && fichaDaEquipa(equipa, adversarios);
-      if (ficha) { gravarCorteNaFicha(novo, ficha, null, null, equipa); sairDoModoClipe(); }
+      if (ficha) { gravarCorteNaFicha(novo, ficha, null, null, equipa); continuarACortar(novo.title); }
       else setPedirFicha({ corte: novo, raizId: novo.clipOrigemId, equipas: eqsAtivo, equipa });
       return;
     }
@@ -42783,9 +42818,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       ? { ...novo, categoria: 'jogo', pasta: '', jogoId: active.jogoId || (byIdItens[novo.clipOrigemId] || {}).jogoId || null }
       : { ...novo, categoria: 'tema', pasta: cleanFolder(active.pasta) };
     setItems(prev => [corte, ...prev]);
-    setActiveId(corte.id);
-    if (cat === 'tema') setFolderFilter(cleanFolder(active.pasta) || NO_FOLDER);
-    sairDoModoClipe();
+    // Fica no vídeo completo, pronto para o próximo corte.
+    continuarACortar(corte.title);
   };
 
   // Grava o corte na ficha do adversário: leva `adversarioId`, por isso
@@ -43590,6 +43624,37 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           referrerPolicy="strict-origin-when-cross-origin"
                           title={active.title}
                         />
+                      )}
+                      {/* Zonas laterais do toque duplo (±10 s) — só nos vídeos
+                          completos; deixam livres o centro, o topo (título,
+                          definições) e o fundo (barra do YouTube). */}
+                      {!isBlocked && !ativoEClipe && !modoDesenhoBib && <style>{'@keyframes mjp-salto { 0% { opacity: 0; transform: translateY(-50%) scale(.85); } 20% { opacity: 1; transform: translateY(-50%) scale(1); } 100% { opacity: 0; } }'}</style>}
+                      {!isBlocked && !ativoEClipe && !modoDesenhoBib && [-1, 1].map(lado => (
+                        <div key={lado} aria-hidden="true" onClick={() => tocarLadoBib(lado)}
+                          onDoubleClick={e => e.preventDefault()}
+                          style={{
+                            position: 'absolute', top: '16%', bottom: '24%', [lado < 0 ? 'left' : 'right']: 0, width: '30%',
+                            zIndex: 2, cursor: 'pointer', touchAction: 'manipulation', userSelect: 'none', WebkitUserSelect: 'none',
+                            WebkitTapHighlightColor: 'transparent',
+                          }}>
+                          {saltoBib && saltoBib.lado === lado && (
+                            <div key={saltoBib.k} style={{
+                              position: 'absolute', top: '50%', [lado < 0 ? 'left' : 'right']: '18%', transform: 'translateY(-50%)',
+                              background: 'rgba(0,0,0,.55)', color: '#fff', borderRadius: 999, padding: '8px 14px',
+                              fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, pointerEvents: 'none',
+                              animation: 'mjp-salto .7s ease-out both',
+                            }}>
+                              {lado < 0 ? `« ${saltoBib.total} s` : `${saltoBib.total} s »`}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {clipeGuardadoAviso && (
+                        <div role="status" style={{
+                          position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 6, pointerEvents: 'none',
+                          background: 'rgba(0,0,0,.78)', color: '#fff', border: `1px solid ${T.good}`, borderRadius: 999,
+                          padding: '6px 14px', fontSize: 12.5, maxWidth: '86%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>✓ {clipeGuardadoAviso} · marca o próximo</div>
                       )}
                       {/* DESENHOS por cima do clipe — só em clipes do YouTube
                          (ver `ativoEClipe`), onde já temos o tempo real do
