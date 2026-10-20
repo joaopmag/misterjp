@@ -39150,7 +39150,7 @@ function useLupa(areaRef, ativo) {
       if (ptrsRef.current.size === 0) {
         gestoRef.current = null;
         setAArrastar(false);
-        if (g && !g.moveu && aoTocar) aoTocar();
+        if (g && !g.moveu && aoTocar) aoTocar(e);
       } else {
         // Ficou um dedo depois da pinça: recomeça daqui, sem saltos.
         setLupa(l => { gestoRef.current = { l, pts: [...ptrsRef.current.values()], moveu: true }; return l; });
@@ -40805,7 +40805,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       st.total += 10;
       st.t = agoraMs;
       const base = currentTimeRef.current || liveTime || 0;
-      const alvo = Math.max(0, base + lado * 10);
+      let alvo = Math.max(0, base + lado * 10);
+      // Num corte, não sai dos limites do corte.
+      if (active && typeof active.clipInicio === 'number') {
+        const fimC = typeof active.clipFim === 'number' ? active.clipFim : Infinity;
+        alvo = Math.min(Math.max(alvo, active.clipInicio), Math.max(active.clipInicio, fimC - 0.3));
+      }
       currentTimeRef.current = alvo;
       enviarComandoYoutube('seekTo', [alvo, true]);
       setSaltoBib({ lado, total: st.total, k: agoraMs });
@@ -41473,7 +41478,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   const lupaBibRepor = lupaBib.repor;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { lupaBibRepor(); }, [activeId]);
-  const alternarLupaBib = () => {
+  const alternarLupaBib = (e) => {
+    /* Em ecrã inteiro esta camada fica por cima do vídeo todo: as
+       laterais fazem o toque duplo (±10 s), como fora do ecrã inteiro. */
+    if (e && e.currentTarget && typeof e.clientX === 'number') {
+      const r = e.currentTarget.getBoundingClientRect();
+      const fx = r.width ? (e.clientX - r.left) / r.width : 0.5;
+      if (fx < 0.3) { tocarLadoBib(-1); return; }
+      if (fx > 0.7) { tocarLadoBib(1); return; }
+    }
     if (ativoEClipe) alternarReproducaoBib();
     else enviarComandoYoutube(ytATocarRef.current ? 'pauseVideo' : 'playVideo');
   };
@@ -43628,8 +43641,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       {/* Zonas laterais do toque duplo (±10 s) — só nos vídeos
                           completos; deixam livres o centro, o topo (título,
                           definições) e o fundo (barra do YouTube). */}
-                      {!isBlocked && !ativoEClipe && !modoDesenhoBib && <style>{'@keyframes mjp-salto { 0% { opacity: 0; transform: translateY(-50%) scale(.85); } 20% { opacity: 1; transform: translateY(-50%) scale(1); } 100% { opacity: 0; } }'}</style>}
-                      {!isBlocked && !ativoEClipe && !modoDesenhoBib && [-1, 1].map(lado => (
+                      {!isBlocked && !modoDesenhoBib && <style>{'@keyframes mjp-salto { 0% { opacity: 0; transform: translateY(-50%) scale(.85); } 20% { opacity: 1; transform: translateY(-50%) scale(1); } 100% { opacity: 0; } }'}</style>}
+                      {!isBlocked && !modoDesenhoBib && [-1, 1].map(lado => (
                         <div key={lado} aria-hidden="true" onClick={() => tocarLadoBib(lado)}
                           onDoubleClick={e => e.preventDefault()}
                           style={{
