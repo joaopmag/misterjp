@@ -3579,7 +3579,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 display: 'flex', flexDirection: 'column', gap: 5, padding: 8,
                 borderRight: `1px solid ${TV.line}`, overflowY: 'auto', overflowX: 'hidden', width: 90, height: '100%', boxSizing: 'border-box',
               }}>
-                {FERRAMENTAS.filter(([id]) => id !== 'linha').map(([id, Icon, titulo]) => (
+                {FERRAMENTAS.filter(([id]) => id !== 'linha' && id !== 'tubo').map(([id, Icon, titulo]) => ( /* o Tubo é só da Sala de Vídeo */
                   <ToolBtn compacto key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
                 <ToolBtn compacto icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
