@@ -2688,6 +2688,45 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [cartaoPainel, setCartaoPainel] = useState(null); // { chave, left, width, top } — onde abrir a coluna
 
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
+  const desenhosDoOriginalAtivo = () => {
+    const o = videosOriginais.find(v => v.id === originalAtivoId);
+    return (o && Array.isArray(o.desenhos)) ? o.desenhos : [];
+  };
+  // Ao abrir um vídeo, vêm os desenhos que lá ficaram (a não ser que se
+  // esteja a desenhar num clipe, que traz os seus).
+  const clipeEmDesenhoRef = useRef(null);
+  clipeEmDesenhoRef.current = clipeEmDesenho;
+  const shapesRef = useRef([]);
+  shapesRef.current = shapes;
+  useEffect(() => {
+    if (clipeEmDesenhoRef.current) return;
+    setShapes(desenhosDoOriginalAtivo());
+    setHistorico([]); setFuturo([]); // o "Retroceder" não passa de um vídeo para outro
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [originalAtivoId]);
+  // E cada alteração fica gravada no vídeo (pouco depois, para não gravar a cada traço).
+  useEffect(() => {
+    if (!originalAtivoId || clipeEmDesenho) return undefined;
+    const id = originalAtivoId;
+    const tm = setTimeout(() => {
+      if (clipeEmDesenhoRef.current) return;
+      const atuais = shapesRef.current || [];
+      setVideosOriginais(prev => prev.map(v => {
+        if (v.id !== id) return v;
+        if (JSON.stringify(v.desenhos || []) === JSON.stringify(atuais)) return v;
+        return { ...v, desenhos: atuais };
+      }));
+    }, 700);
+    return () => clearTimeout(tm);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapes, originalAtivoId, clipeEmDesenho]);
+  // Só entram no clipe os desenhos que caem dentro dele.
+  const dentroDoClipe = (sh, ini, fim) => {
+    const a = sh.criadoEmTempo ?? 0;
+    if (temParagem(sh)) return a >= ini - 0.05 && a <= fim;
+    const ate = sh.mostrarAte != null ? sh.mostrarAte : (sh.duracao != null ? a + sh.duracao : Infinity);
+    return a <= fim && ate >= ini;
+  };
   // Outro vídeo = outro enquadramento: a calibração e a referência recomeçam.
   useEffect(() => { setCalibracao(null); setCalibrando(null); setRefFJ(null); }, [originalAtivoId]);
 
@@ -2832,7 +2871,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const markIn = () => { setInPoint(current); if (outPoint != null && outPoint < current) setOutPoint(null); };
   const markOut = () => { setOutPoint(current); if (inPoint == null) setInPoint(Math.max(0, current - 8)); };
-  const limparMarcas = () => { setClipeEmDesenho(null); setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); setTextoPendente(null); setTrajetoriaFocoPendente(null); setErroSeguirFoco(''); };
+  /* Os desenhos ficam guardados NO VÍDEO (jogo completo), mesmo sem criar
+     clipe: limpar as marcas de início/fim já não os apaga. Só ao sair de
+     "desenhar num clipe" é que se repõem os desenhos do vídeo. */
+  const limparMarcas = () => {
+    if (clipeEmDesenho) setShapes(desenhosDoOriginalAtivo());
+    setClipeEmDesenho(null); setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setTextoPendente(null); setTrajetoriaFocoPendente(null); setErroSeguirFoco('');
+  };
 
   // Seleciona automaticamente o vídeo assim que o upload (gerido lá em
   // cima, no App, para sobreviver à troca de separador) terminar com êxito.
@@ -2885,7 +2930,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const guardarClipe = async () => {
     if (!originalAtivo || inPoint == null || outPoint == null || outPoint <= inPoint) return;
     setAGuardarClipe(true); setErro('');
-    const shapesFinais = shapesComTextoPendente();
+    const todasAsFormas = shapesComTextoPendente();
+    if (todasAsFormas !== shapes) setShapes(todasAsFormas);
+    const shapesFinais = todasAsFormas.filter(sh => dentroDoClipe(sh, inPoint, outPoint));
     try {
       const resp = await fetch('/api/cortar-clipe', {
         method: 'POST',
@@ -4002,7 +4049,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
                 <div style={{ height: 1, background: TV.line, margin: '4px 0' }} />
                 <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
-                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes([]); }} />
+                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes(s => (clipeEmDesenho ? [] : s.filter((sh, i) => !visivelNoEditor(sh, i)))); }} />
               </div>
             </div>
           </div>
@@ -4064,7 +4111,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {inPoint != null && outPoint != null && outPoint > inPoint && (
                 <div style={{ margin: '0 14px 16px', background: TV.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${TV.line}` }}>
                   <div style={{ fontSize: 12.5, color: TV.muted, marginBottom: 8, ...mono }}>
-                    {clipeEmDesenho ? 'Desenhos do clipe' : 'Novo clipe'} · {fmt(inPoint)} – {fmt(outPoint)} ({Math.round(outPoint - inPoint)}s) {shapes.length > 0 && `· ${shapes.length} desenho(s)`}
+                    {clipeEmDesenho ? 'Desenhos do clipe' : 'Novo clipe'} · {fmt(inPoint)} – {fmt(outPoint)} ({Math.round(outPoint - inPoint)}s) {(() => { const n = clipeEmDesenho ? shapes.length : shapes.filter(sh => dentroDoClipe(sh, inPoint, outPoint)).length; return n > 0 ? `· ${n} desenho(s)` : ''; })()}
                   </div>
                   <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…"
                     style={{ width: '100%', minHeight: 54, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 13, resize: 'vertical', ...body }} />
