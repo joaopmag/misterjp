@@ -26136,9 +26136,9 @@ function LeagueStandings({ standings, setStandings, standingsMeta, matches, setM
                       const somosNos = /salgueiros/i.test(nome || '');
                       return (
                         <span style={{
-                          minWidth: 0, textAlign: lado, color: somosNos ? T.crimsonBright : T.cream,
+                          minWidth: 0, textAlign: lado, color: T.cream, opacity: somosNos ? 1 : 0.72, // a nossa equipa: branco e negrito; as outras, um pouco esbatidas
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                          fontWeight: somosNos ? 700 : 400,
+                          fontWeight: somosNos ? 800 : 400,
                         }} title={nome}>{nome}</span>
                       );
                     };
@@ -32794,9 +32794,9 @@ function PlayerCompeticaoView({ code, teamId, onBack, foco }) {
                     const somosNos = /salgueiros/i.test(nomeTxt || '');
                     return (
                       <span style={{
-                        minWidth: 0, textAlign: lado, color: somosNos ? T.crimsonBright : T.cream,
+                        minWidth: 0, textAlign: lado, color: T.cream, opacity: somosNos ? 1 : 0.72, // a nossa equipa: branco e negrito; as outras, um pouco esbatidas
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        fontWeight: somosNos ? 700 : 400,
+                        fontWeight: somosNos ? 800 : 400,
                       }} title={nomeTxt}>{nomeTxt}</span>
                     );
                   };
