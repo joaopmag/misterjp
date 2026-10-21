@@ -17,6 +17,21 @@
 //   MODAL_PROXY_KEY_ID     (o "Token ID" criado em modal.com/settings/proxy-auth-tokens)
 //   MODAL_PROXY_KEY_SECRET (o "Token Secret" da mesma página)
 
+// SEGURANÇA: só aceita quem tem sessão iniciada na app e pertence a uma
+// equipa (o token da sessão vai no pedido e confirma-se no Supabase).
+// Sem isto, quem soubesse o endereço podia gastar o Modal à vontade.
+// Variáveis precisas também aqui: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// (as mesmas do cortar-clipe).
+import { createClient } from '@supabase/supabase-js';
+
+function extrairOrigem(bruto) {
+  try { return new URL(bruto).origin; } catch { return (bruto || '').replace(/\/+$/, ''); }
+}
+const SUPABASE_URL = extrairOrigem(process.env.SUPABASE_URL);
+const supabaseAdmin = SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  : null;
+
 export const config = {
   api: { bodyParser: true },
   maxDuration: 300, // o seguimento pode demorar alguns minutos
@@ -32,6 +47,16 @@ export default async function handler(req, res) {
     });
     return res.status(500).json({ error: 'Serviço de seguimento não configurado no servidor.' });
   }
+
+  // Quem pede: sessão válida e membro de alguma equipa.
+  if (!supabaseAdmin) return res.status(500).json({ error: 'Configuração em falta no servidor (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).' });
+  const cab = req.headers.authorization || '';
+  const token = cab.startsWith('Bearer ') ? cab.slice(7).trim() : '';
+  if (!token) return res.status(401).json({ error: 'Sessão em falta. Sai e entra na app outra vez.' });
+  const { data: quem, error: erroUser } = await supabaseAdmin.auth.getUser(token);
+  if (erroUser || !quem || !quem.user) return res.status(401).json({ error: 'Sessão inválida ou expirada. Sai e entra na app outra vez.' });
+  const { data: equipas } = await supabaseAdmin.from('team_members').select('team_id').eq('user_id', quem.user.id).limit(1);
+  if (!equipas || !equipas.length) return res.status(403).json({ error: 'Sem acesso.' });
 
   try {
     const resposta = await fetch(MODAL_SEGUIDOR_URL, {

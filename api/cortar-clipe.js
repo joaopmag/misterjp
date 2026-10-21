@@ -28,6 +28,11 @@
 // (a service role key NUNCA vai para o browser — só existe aqui, no
 // servidor; é o que permite escrever no bucket público sem depender
 // da sessão de quem está a usar a app)
+//
+// SEGURANÇA: só aceita quem tem sessão iniciada na app E é membro da
+// equipa do vídeo, e só vídeos da pasta dessa equipa. Sem isto, quem
+// soubesse o endereço podia cortar QUALQUER vídeo privado (com a chave de
+// serviço) e recebia-o num link público.
 
 import { createClient } from '@supabase/supabase-js';
 import ffmpegPath from 'ffmpeg-static';
@@ -66,6 +71,20 @@ export default async function handler(req, res) {
   const { teamId, storagePath, start, end } = req.body || {};
   if (!teamId || !storagePath || start == null || end == null || end <= start) {
     return res.status(400).json({ error: 'Parâmetros em falta ou inválidos' });
+  }
+
+  // Quem pede: sessão válida e membro da equipa.
+  const cab = req.headers.authorization || '';
+  const token = cab.startsWith('Bearer ') ? cab.slice(7).trim() : '';
+  if (!token) return res.status(401).json({ error: 'Sessão em falta. Sai e entra na app outra vez.' });
+  const { data: quem, error: erroUser } = await supabaseAdmin.auth.getUser(token);
+  if (erroUser || !quem || !quem.user) return res.status(401).json({ error: 'Sessão inválida ou expirada. Sai e entra na app outra vez.' });
+  const { data: membro, error: erroMembro } = await supabaseAdmin
+    .from('team_members').select('user_id').eq('team_id', teamId).eq('user_id', quem.user.id).maybeSingle();
+  if (erroMembro) return res.status(500).json({ error: 'Não consegui confirmar a equipa.' });
+  if (!membro) return res.status(403).json({ error: 'Não pertences a esta equipa.' });
+  if (!String(storagePath).startsWith(`${teamId}/`) || String(storagePath).includes('..')) {
+    return res.status(403).json({ error: 'Este vídeo não pertence a esta equipa.' });
   }
 
   const duracao = end - start;

@@ -105,10 +105,24 @@ function posicaoNaTrajetoria(pontos, tempo) {
 // resposta toda de uma vez. Quando o Upstash estiver pronto, troca-se
 // só o corpo desta função pela versão com fila (guardada mais abaixo,
 // em comentário) — nada mais precisa de mudar.
+/* As funções do servidor (/api/cortar-clipe, /api/seguir-jogador) só
+   aceitam pedidos de quem tem sessão iniciada: vai o token da sessão do
+   Supabase, que o servidor confirma. Sem isto, qualquer pessoa com o
+   endereço podia pedir cortes de vídeos privados ou gastar o Modal. */
+async function cabecalhosComSessao() {
+  const h = { 'Content-Type': 'application/json' };
+  try {
+    const { data } = await supabase.auth.getSession();
+    const t = data && data.session && data.session.access_token;
+    if (t) h.Authorization = `Bearer ${t}`;
+  } catch (e) { /* sem sessão: o servidor recusa e a app mostra o erro */ }
+  return h;
+}
+
 async function seguirJogadorAssincrono(pedido) {
   const resp = await fetch('/api/seguir-jogador', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await cabecalhosComSessao(),
     body: JSON.stringify(pedido),
   });
   const json = await resp.json();
@@ -2758,7 +2772,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     try {
       const resp = await fetch('/api/cortar-clipe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await cabecalhosComSessao(),
         body: JSON.stringify({ teamId, storagePath: originalAtivo.storagePath, start: inPoint, end: outPoint }),
       });
       const json = await resp.json();
@@ -2929,7 +2943,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (!original || !original.storagePath) throw new Error('Escolhe o vídeo original para mudar os tempos. Sem ele, só dá para mudar o texto.');
     const resp = await fetch('/api/cortar-clipe', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await cabecalhosComSessao(),
       body: JSON.stringify({ teamId, storagePath: original.storagePath, start: inicio, end: fim }),
     });
     let json = {};
