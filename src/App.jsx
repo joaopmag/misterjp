@@ -1723,7 +1723,7 @@ function askConfirm(pedido) {
    As dezoito referências estão nesta lista e em mais lado nenhum. Uma
    coleção nova que passe a guardar ids de jogadores tem de ser
    acrescentada AQUI, ou volta o mesmo problema em silêncio. */
-function limparRastoDoJogador({ playerId, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, clinico, setClinico, desenvolvimento, setDesenvolvimento }) {
+function limparRastoDoJogador({ playerId, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, clinico, setClinico, desenvolvimento, setDesenvolvimento, autorizar = {} }) {
   const semId = (arr) => (Array.isArray(arr) ? arr.filter(x => x !== playerId) : arr);
   const semChave = (obj) => {
     if (!obj || typeof obj !== 'object') return obj;
@@ -1780,10 +1780,24 @@ function limparRastoDoJogador({ playerId, sessions, setSessions, matches, setMat
     }));
   }
 
-  /* Estas três são uma linha por registo: apagam-se, não se editam. */
-  if (setMonitoring) setMonitoring(prev => prev.filter(m => m.playerId !== playerId));
-  if (setClinico) setClinico(prev => prev.filter(o => o.playerId !== playerId));
-  if (setDesenvolvimento) setDesenvolvimento(prev => prev.filter(d => d.playerId !== playerId));
+  /* Estas três são uma linha por registo: apagam-se, não se editam.
+     Um jogador tem facilmente dezenas de registos de wellness/PSE, e o
+     travão de segurança da gravação (ver useCollectionSync) bloqueia
+     apagar 3 ou mais de uma vez. Aqui a remoção é deliberada (o
+     treinador confirmou apagar o jogador e TODA a informação dele), por
+     isso abre-se a porta para essa gravação — e só quando há mesmo 3 ou
+     mais registos a apagar, para a autorização nunca ficar pendurada. */
+  const apagarDoJogador = (setter, chave) => {
+    if (!setter) return;
+    setter(prev => {
+      const resto = prev.filter(x => x.playerId !== playerId);
+      if (prev.length - resto.length >= 3 && typeof autorizar[chave] === 'function') autorizar[chave]();
+      return resto.length === prev.length ? prev : resto;
+    });
+  };
+  apagarDoJogador(setMonitoring, 'monitoring');
+  apagarDoJogador(setClinico, 'clinico');
+  apagarDoJogador(setDesenvolvimento, 'desenvolvimento');
 }
 
 /* Quantos registos é que apagar este jogador vai levar atrás. Serve para
@@ -3049,7 +3063,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   // Ideia de Jogo — esquemas táticos do modelo de jogo (tabela "ideias").
   const [ideias, setIdeias, ideiasReady, ideiasMeta] = useCollectionSync('ideias', notifyEdit, teamId);
   const [sessions, setSessions, sessionsReady, sessionsMeta] = useCollectionSync('sessions', notifyEdit, teamId);
-  const [monitoring, setMonitoring, monitoringReady, monitoringMeta] = useCollectionSync('monitoring', notifyEdit, teamId);
+  const [monitoring, setMonitoring, monitoringReady, monitoringMeta, autorizarApagarMonitoring] = useCollectionSync('monitoring', notifyEdit, teamId);
   const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit, teamId);
   const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit, teamId);
   const [adversarios, setAdversarios, adversariosReady, adversariosMeta] = useCollectionSync('adversarios', notifyEdit, teamId);
@@ -3211,7 +3225,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   /* Uma ocorrência por registo — poucos campos, poucos bytes. Atenção:
      é preciso criar as políticas RLS da tabela `clinico` no Supabase, ou
      as gravações falham em SILÊNCIO, sem erro nenhum. */
-  const [clinico, setClinico, clinicoReady, clinicoMeta] = useCollectionSync('clinico', notifyEdit, teamId);
+  const [clinico, setClinico, clinicoReady, clinicoMeta, autorizarApagarClinico] = useCollectionSync('clinico', notifyEdit, teamId);
   const [tarefas, setTarefas, tarefasReady] = useCollectionSync('tarefas', notifyEdit, teamId);
   /* ALERTA DE ANIVERSÁRIO — AUTOMÁTICO, SEM NINGUÉM TER DE CRIAR NADA.
 
@@ -4129,6 +4143,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               monitoring={monitoring} setMonitoring={setMonitoring}
               clinico={clinico} setClinico={setClinico}
               desenvolvimento={desenvolvimento} setDesenvolvimento={setDesenvolvimento}
+              autorizarApagarRasto={{ monitoring: autorizarApagarMonitoring, clinico: autorizarApagarClinico, desenvolvimento: autorizarApagarMomento }}
               meta={playersMeta}
               diario={diario}
             />
@@ -8906,7 +8921,7 @@ function fmtDate(d) {
 /* ---------------------------------------------------------------
    PLANTEL
 ---------------------------------------------------------------- */
-function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento, diario = [] }) {
+function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatches, convocatorias, setConvocatorias, monitoring, setMonitoring, meta, clinico, setClinico, desenvolvimento, setDesenvolvimento, diario = [], autorizarApagarRasto }) {
   const [modal, setModal] = useState(null); // null | 'new' | player object (edit)
   const [modalVoltarPerfil, setModalVoltarPerfil] = useState(false); // true só quando abriu a partir do perfil
   const [statsFor, setStatsFor] = useState(null); // player object (view stats)
@@ -9001,6 +9016,7 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
             sessions, setSessions, matches, setMatches,
             convocatorias, setConvocatorias, monitoring, setMonitoring,
             clinico, setClinico, desenvolvimento, setDesenvolvimento,
+            autorizar: autorizarApagarRasto,
           });
         }, (UNDO_SECONDS + 3) * 1000);
       },
@@ -9022,8 +9038,44 @@ function Plantel({ players, setPlayers, sessions, setSessions, matches, setMatch
     });
   };
 
+  /* REGISTOS ÓRFÃOS: wellness/PSE, boletim clínico e desenvolvimento de
+     jogadores que já não estão no plantel. Ficam assim quando a limpeza ao
+     apagar um jogador foi travada (o travão de segurança das gravações em
+     massa, antes de existir a autorização para este caso). Mostra-se um
+     aviso com um botão para os apagar de vez. */
+  const idsPlantel = new Set((players || []).map(p => p.id));
+  const orfaos = (players || []).length ? {
+    monitoring: (monitoring || []).filter(m => m.playerId && !idsPlantel.has(m.playerId)).length,
+    clinico: (clinico || []).filter(m => m.playerId && !idsPlantel.has(m.playerId)).length,
+    desenvolvimento: (desenvolvimento || []).filter(m => m.playerId && !idsPlantel.has(m.playerId)).length,
+  } : { monitoring: 0, clinico: 0, desenvolvimento: 0 };
+  const totalOrfaos = orfaos.monitoring + orfaos.clinico + orfaos.desenvolvimento;
+  const limparOrfaos = () => {
+    if (!window.confirm(`Apagar ${totalOrfaos} registos de jogadores que já foram apagados do plantel? Isto não se pode desfazer.`)) return;
+    const az = autorizarApagarRasto || {};
+    const tira = (setter, chave) => {
+      if (!setter) return;
+      setter(prev => {
+        const resto = prev.filter(x => !x.playerId || idsPlantel.has(x.playerId));
+        if (prev.length - resto.length >= 3 && typeof az[chave] === 'function') az[chave]();
+        return resto.length === prev.length ? prev : resto;
+      });
+    };
+    tira(setMonitoring, 'monitoring');
+    tira(setClinico, 'clinico');
+    tira(setDesenvolvimento, 'desenvolvimento');
+  };
+
   return (
     <div>
+      {totalOrfaos > 0 && !statsFor && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14, padding: '10px 14px', borderRadius: 10, border: `1px solid ${T.warn}`, background: T.surface }}>
+          <span style={{ fontSize: 13, color: T.cream, flex: 1, minWidth: 220 }}>
+            Há {totalOrfaos} registos (wellness, PSE, clínico ou desenvolvimento) de jogadores que já foram apagados do plantel.
+          </span>
+          <Btn variant="ghost" onClick={limparOrfaos}><Trash2 size={14} /> Apagar esses registos</Btn>
+        </div>
+      )}
       {/* Um jogador selecionado ocupa a página toda — troca-se a grelha do
           plantel pelo perfil dele, com "Voltar" a repor a grelha; não é uma
           janela por cima como as outras fichas, é a própria página a
@@ -28713,6 +28765,23 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
   const remove = (id) => removeWithUndo(monitoring, setMonitoring, id, 'Registo de monitorização');
 
   const todayDateStr = todayStr();
+  /* DATA DO ÚLTIMO TREINO E DO ÚLTIMO JOGO da equipa, para as colunas
+     "Últ. PSE". Conta um dia já passado, ou o de hoje se alguém já tiver
+     respondido ao PSE (antes disso, hoje ainda não "aconteceu" e via-se a
+     coluna toda vazia de manhã). */
+  const ultimasDatasPse = React.useMemo(() => {
+    const comPse = (d, c) => monitoring.some(m => m.date === d && typeof m.pse === 'number' && rpeContexto(m, ctx) === c);
+    const valida = (d, c) => d && d <= todayDateStr && (d < todayDateStr || comPse(d, c));
+    const treinos = [...new Set(sessions.filter(x => x.date && x.phase !== 'Descanso' && x.phase !== 'Jogo').map(x => x.date))]
+      .filter(d => !matches.some(m => m.date === d))
+      .sort().reverse();
+    const jogos = [...new Set([
+      ...matches.filter(m => m.date && !jogoNaoJogado(m)).map(m => m.date),
+      ...sessions.filter(x => x.date && x.phase === 'Jogo').map(x => x.date),
+    ])].sort().reverse();
+    return { treino: treinos.find(d => valida(d, 'treino')) || null, jogo: jogos.find(d => valida(d, 'jogo')) || null };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monitoring, sessions, matches, todayDateStr]);
   const yesterdayDateStr = addDays(todayDateStr, -1);
   // Índice tático do jogador, para ordenar as respostas da mesma forma que
   // o resto da app (GR, defesas, médios, avançados).
@@ -28815,8 +28884,8 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   <th style={th2}>Estado</th>
                   <th style={th2}>Jogador</th>
                   <th style={th2}>Wellness (hoje)</th>
-                  <th style={th2}>Últ. PSE treino</th>
-                  <th style={th2}>Últ. PSE jogo</th>
+                  <th style={th2}>Últ. PSE treino{ultimasDatasPse.treino ? <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, marginLeft: 4 }}>({fmtDate(ultimasDatasPse.treino)})</span> : null}</th>
+                  <th style={th2}>Últ. PSE jogo{ultimasDatasPse.jogo ? <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, marginLeft: 4 }}>({fmtDate(ultimasDatasPse.jogo)})</span> : null}</th>
                   <th style={th2}></th>
                 </tr>
               </thead>
@@ -28825,11 +28894,15 @@ function Monitorizacao({ players, setPlayers, monitoring, setMonitoring, session
                   const sessaoHoje = sessions.find(s => s.date === todayDateStr);
                   const precisaPseHoje = !!sessaoHoje && sessaoHoje.phase !== 'Descanso';
                   return sortByPosition(players).map(p => {
+                  /* Só o ÚLTIMO treino e o ÚLTIMO jogo da equipa (ver
+                     `ultimasDatasPse`, mais acima): quem não treinou ou não
+                     respondeu nesse dia fica sem nada, em vez de mostrar
+                     um PSE antigo de outro dia. */
                   const recs = monitoring.filter(m => m.playerId === p.id).sort((a, b) => new Date(b.date) - new Date(a.date));
                   const lastWellness = recs.find(r => typeof r.sono === 'number');
                   const pseRecs = recs.filter(r => typeof r.pse === 'number');
-                  const lastRpeTreino = pseRecs.find(r => rpeContexto(r, ctx) === 'treino');
-                  const lastRpeJogo = pseRecs.find(r => rpeContexto(r, ctx) === 'jogo');
+                  const lastRpeTreino = ultimasDatasPse.treino ? pseRecs.find(r => r.date === ultimasDatasPse.treino && rpeContexto(r, ctx) === 'treino') : null;
+                  const lastRpeJogo = ultimasDatasPse.jogo ? pseRecs.find(r => r.date === ultimasDatasPse.jogo && rpeContexto(r, ctx) === 'jogo') : null;
                   const todayWellness = recs.find(r => r.date === todayDateStr && typeof r.sono === 'number');
                   const wellnessToday = wellnessAvg(todayWellness);
                   const avg = wellnessAvg(lastWellness);
@@ -39330,13 +39403,14 @@ function ControlosLupa({ lupa, mais, menos, repor }) {
    som e ecrã inteiro. Tocar no vídeo também põe em pausa/retoma.
    `semEcraInteiro`: quando quem o usa já tem o seu botão de ecrã
    inteiro (o visualizador da Biblioteca). */
-function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraInteiro, onTimeUpdate, poster }) {
+function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraInteiro, onTimeUpdate, poster, onPronto, pausado }) {
   const wrapRef = useRef(null);
   /* Ao trocar de vídeo, o novo fica invisível até ter a primeira imagem
      pronta: por trás vê-se a miniatura (poster) em vez de um ecrã preto
      com "00:00 / 00:00". Depois entra num desvanecer curto. */
   const [imagemPronta, setImagemPronta] = useState(false);
   useEffect(() => { setImagemPronta(false); }, [src]);
+  useEffect(() => { if (pausado && videoRef.current && !videoRef.current.paused) videoRef.current.pause(); }, [pausado]);
   const videoRef = useRef(null);
   const [aTocar, setATocar] = useState(false);
   const [tempo, setTempo] = useState(0);
@@ -39384,11 +39458,11 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
     }}>
       <div ref={areaRef} onWheel={emEcraInteiro ? lupaV.aoRodar : undefined} style={{
         position: 'relative', overflow: 'hidden', ...(emEcraInteiro ? { flex: 1, minHeight: 0 } : {}),
-        ...(poster ? { backgroundImage: `url("${poster}")`, backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', backgroundColor: '#000' } : {}),
+        ...(poster ? { backgroundImage: `url("${poster}")`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', backgroundColor: '#000' } : {}),
       }}>
       <video
         ref={videoRef} src={src} playsInline preload={preload} autoPlay={autoPlay}
-        onLoadedData={() => setImagemPronta(true)} onCanPlay={() => setImagemPronta(true)}
+        onLoadedData={() => { setImagemPronta(true); if (onPronto) onPronto(); }} onCanPlay={() => { setImagemPronta(true); if (onPronto) onPronto(); }}
         onClick={alternar}
         onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
         onLoadedMetadata={lerDuracao} onDurationChange={lerDuracao}
@@ -45568,6 +45642,56 @@ function PdfCanvasViewer({ dataUrl }) {
 }
 
 
+/* TROCAR DE VÍDEO SEM PISCAR. O vídeo novo carrega escondido, por trás
+   do que já está a ser mostrado (que fica parado na imagem em que estava);
+   só quando o novo tem a primeira imagem pronta é que troca. Antes, cada
+   troca mostrava um ecrã preto (ou a miniatura) durante o carregamento,
+   que nos MP4 do Storage chega a demorar 1 a 3 segundos.
+   Os dois leitores vivem na mesma lista, pela chave do vídeo: o que estava
+   a carregar passa a ser o mostrado sem ser montado de novo (não recarrega). */
+function VideoSemPiscar({ item }) {
+  const [mostradoId, setMostradoId] = useState(item.id);
+  const [itens, setItens] = useState(() => ({ [item.id]: item }));
+  const alvoId = item.id;
+  useEffect(() => {
+    setItens(prev => (prev[alvoId] ? { ...prev, [alvoId]: item } : { ...prev, [alvoId]: item }));
+    if (alvoId === mostradoId) return undefined;
+    // Rede de segurança: se o novo demorar muito, troca na mesma.
+    const t = setTimeout(() => setMostradoId(alvoId), 5000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alvoId, item.dataUrl]);
+  // Fica só o mostrado e o que está a carregar (os outros desmontam-se).
+  useEffect(() => {
+    setItens(prev => {
+      const keep = {};
+      [mostradoId, alvoId].forEach(id => { if (prev[id]) keep[id] = prev[id]; });
+      return Object.keys(keep).length === Object.keys(prev).length ? prev : keep;
+    });
+  }, [mostradoId, alvoId]);
+  const ids = [mostradoId, alvoId].filter((id, i, a) => a.indexOf(id) === i && itens[id]);
+  return (
+    <>
+      {ids.map(id => {
+        const it = itens[id];
+        const visivel = id === mostradoId;
+        return (
+          <div key={id} style={visivel
+            ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }
+            : { position: 'absolute', inset: 0, opacity: 0, pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
+            <VideoComBarra
+              src={it.dataUrl} poster={visivel && id === mostradoId && ids.length === 1 ? (it.thumbUrl || undefined) : undefined}
+              preload={visivel ? undefined : 'auto'} semEcraInteiro style={{ flex: 1, minHeight: 0 }}
+              pausado={!visivel || id !== alvoId}
+              onPronto={id === alvoId && id !== mostradoId ? () => setMostradoId(id) : undefined}
+            />
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function AttachmentPreview({ item, tall }) {
   const boxRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -45702,8 +45826,8 @@ function AttachmentPreview({ item, tall }) {
   if (item.kind === 'video') {
     return (
       <div ref={boxRef} style={wrapStyle}>
-        <div style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', flexDirection: 'column' }}>
-          <VideoComBarra key={item.id} src={item.dataUrl} poster={item.thumbUrl || undefined} semEcraInteiro style={{ flex: 1, minHeight: 0 }} />
+        <div style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          <VideoSemPiscar item={item} />
         </div>
         {FsBar}
       </div>

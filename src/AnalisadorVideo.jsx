@@ -179,6 +179,8 @@ const display = { fontFamily: "'Oswald', sans-serif" };
 const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
+// "Jogo X - 1A Parte", "_parte_2", "Part 1", "(2.ª parte)"… no fim do título.
+const RE_PARTE_CORTE = /\s*[-_–(]*\s*(?:(?:parte|part|pt)[\s_.-]*(\d+)|(\d+)\s*(?:\.?\s*[ªa°º])?\s*parte)\s*\)?\s*$/i;
 const TAGS = [
   { id: 'org_of', label: 'Organização Ofensiva', color: '#2BA59A' },
   { id: 'org_def', label: 'Organização Defensiva', color: '#7C8DB0' },
@@ -2440,6 +2442,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   const clipesStaff = clipes.filter(c => !ehClipeAtleta(c));
+  /* CORTES ORGANIZADOS POR JOGO: um bloco por jogo (as duas partes do
+     mesmo jogo juntas), do jogo mais recente para o mais antigo; dentro de
+     cada jogo, pela ordem em que os lances acontecem (parte e minuto). */
+  const parteDoTitulo = (t) => { const m = String(t || '').match(RE_PARTE_CORTE); return m ? Number(m[1] || m[2]) : 0; };
+  const jogoDoTitulo = (t) => String(t || '').replace(RE_PARTE_CORTE, '').replace(/[\s_\-–]+$/, '').trim();
   // Os que o treinador apagou deixam de aparecer aqui — mas o jogador
   // continua a tê-los no Portal (ver removerClipe).
   const clipesAtletas = clipes.filter(c => ehClipeAtleta(c) && !c.apagadoPeloTreinador);
@@ -2887,6 +2894,24 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     const mesmos = videosOriginais.filter(v => v.titulo && v.titulo === clip.originalTitulo);
     return mesmos.length === 1 ? mesmos[0] : null;
   };
+  const gruposCortes = (() => {
+    const lista = filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff;
+    const porJogo = new Map();
+    lista.forEach(c => {
+      const orig = originalDoClipe(c);
+      const tituloOrig = (orig && orig.titulo) || c.originalTitulo || '';
+      const titulo = jogoDoTitulo(tituloOrig) || 'Sem jogo';
+      const chave = titulo.toLowerCase();
+      if (!porJogo.has(chave)) porJogo.set(chave, { chave, titulo, clipes: [], recente: 0 });
+      const g = porJogo.get(chave);
+      g.clipes.push({ c, parte: parteDoTitulo(tituloOrig), t: typeof c.origemInicio === 'number' ? c.origemInicio : 0 });
+      const quando = new Date((orig && orig.criadoEm) || c.criadoEm || 0).getTime() || 0;
+      if (quando > g.recente) g.recente = quando;
+    });
+    return [...porJogo.values()]
+      .sort((a, b) => b.recente - a.recente)
+      .map(g => ({ ...g, clipes: g.clipes.sort((x, y) => (x.parte - y.parte) || (x.t - y.t)).map(x => x.c) }));
+  })();
 
   // Editar um clipe cortado: texto sempre; tempos, voltando a cortar o
   // original. Mantém o mesmo id (os links partilhados continuam válidos).
@@ -4040,8 +4065,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             {/* Cartões com miniatura, em tira horizontal — desliza-se com
                o dedo, tal como numa galeria. Toca-se num cartão para abrir
                o clipe. */}
+            {gruposCortes.map(g => (
+            <div key={g.chave} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '4px 0 8px', minWidth: 0 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>{g.titulo}</span>
+                <span style={{ fontSize: 11.5, color: T.mutedDim, flexShrink: 0, ...mono }}>{g.clipes.length} {g.clipes.length === 1 ? 'corte' : 'cortes'}</span>
+              </div>
             <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6, scrollSnapType: 'x proximity', WebkitOverflowScrolling: 'touch' }}>
-              {(filtroTag ? clipesStaff.filter(c => c.tagId === filtroTag) : clipesStaff).map(clip => {
+              {g.clipes.map(clip => {
                 const tag = TAGS.find(t => t.id === clip.tagId);
                 return (
                   <div key={clip.id} style={{ position: 'relative', flex: '0 0 auto', width: 148, scrollSnapAlign: 'start' }}>
@@ -4115,6 +4146,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 );
               })}
             </div>
+            </div>
+            ))}
           </>
         )}
       </div>
