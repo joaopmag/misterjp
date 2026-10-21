@@ -41098,6 +41098,19 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      com o ecrã inteiro do YouTube desligado). Toque simples = pausar /
      reproduzir. Toques seguidos somam (20 s, 30 s…). */
   const [saltoBib, setSaltoBib] = useState(null); // { lado: -1|1, total, k }
+  /* As zonas laterais ficam POR CIMA do leitor do YouTube. A arrastar a
+     barra do YouTube com o rato, se o cursor passasse por cima de uma
+     zona, o YouTube deixava de receber o movimento e o arrasto parava.
+     Por isso: as zonas ficam longe da barra (metade de cima do vídeo) e,
+     se o rato chegar a uma zona com o botão carregado (= a meio de um
+     arrasto), elas desligam-se uns segundos e deixam passar tudo. */
+  const [zonasLadoOff, setZonasLadoOff] = useState(false);
+  const zonasLadoTimerRef = useRef(null);
+  const desligarZonasLado = () => {
+    setZonasLadoOff(true);
+    if (zonasLadoTimerRef.current) clearTimeout(zonasLadoTimerRef.current);
+    zonasLadoTimerRef.current = setTimeout(() => setZonasLadoOff(false), 2500);
+  };
   const toqueLadoRef = useRef({ lado: 0, t: 0, timer: null, total: 0, fim: null });
   const tocarLadoBib = (lado) => {
     const agoraMs = Date.now();
@@ -43956,13 +43969,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                       )}
                       {/* Zonas laterais do toque duplo (±10 s) — só nos vídeos
                           completos; deixam livres o centro, o topo (título,
-                          definições) e o fundo (barra do YouTube). */}
+                          definições) e TODA a metade de baixo (barra do
+                          YouTube e a faixa onde ela aparece ao passar o rato). */}
                       {!isBlocked && !modoDesenhoBib && <style>{'@keyframes mjp-salto { 0% { opacity: 0; transform: translateY(-50%) scale(.85); } 20% { opacity: 1; transform: translateY(-50%) scale(1); } 100% { opacity: 0; } }'}</style>}
                       {!isBlocked && !modoDesenhoBib && [-1, 1].map(lado => (
                         <div key={lado} aria-hidden="true" onClick={() => tocarLadoBib(lado)}
                           onDoubleClick={e => e.preventDefault()}
+                          onPointerEnter={e => { if (e.pointerType === 'mouse' && e.buttons) desligarZonasLado(); }}
+                          onPointerMove={e => { if (e.pointerType === 'mouse' && e.buttons) desligarZonasLado(); }}
                           style={{
-                            position: 'absolute', top: '16%', bottom: '24%', [lado < 0 ? 'left' : 'right']: 0, width: '30%',
+                            position: 'absolute', top: '12%', bottom: '42%', [lado < 0 ? 'left' : 'right']: 0, width: '25%',
+                            pointerEvents: zonasLadoOff ? 'none' : 'auto',
                             zIndex: 2, cursor: 'pointer', touchAction: 'manipulation', userSelect: 'none', WebkitUserSelect: 'none',
                             WebkitTapHighlightColor: 'transparent',
                           }}>
