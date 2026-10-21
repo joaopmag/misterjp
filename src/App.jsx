@@ -28228,8 +28228,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
     ? sorted
     : sorted.filter(m => competitionLabel(m.competition) === compAberta);
 
-  // Relatórios por preencher (jogos já realizados), para o número no separador.
-  const relatoriosPorFazer = (matches || []).filter(m => m && m.date && m.date <= todayStr() && estadoRelatorio(comResultado(m, standings)).id !== 'feito').length;
+  // Relatórios já inseridos: jogos com dados no relatório (completos ou a meio).
+  const relatoriosInseridos = (matches || []).filter(m => m && estadoRelatorio(comResultado(m, standings)).id !== 'vazio').length;
 
   /* O MESMO CABEÇALHO nos três separadores (título, "Novo jogo" e os
      separadores). Antes, "Novo jogo" só existia em Jogos e os separadores
@@ -28245,7 +28245,8 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
           tabs={[
             { id: 'jogos', label: 'Jogos', icon: Trophy, count: (matches || []).length },
             { id: 'convocatorias', label: 'Convocatórias', icon: ClipboardList, count: (convocatorias || []).length },
-            { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosPorFazer },
+            // O número é o dos relatórios já inseridos (com dados), como em Jogos e Convocatórias.
+            { id: 'relatorios', label: 'Relatórios de jogo', curto: 'Relatórios', icon: Pencil, count: relatoriosInseridos },
           ]}
       />
     </>
