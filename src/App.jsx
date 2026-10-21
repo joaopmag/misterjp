@@ -51232,6 +51232,8 @@ class ErrorBoundary extends React.Component {
 const ETIQUETAS_CLIPE = {
   golo: 'Golo', remate: 'Remate', bp: 'Bola Parada', perda: 'Perda',
   recuperacao: 'Recuperação', transicao: 'Transição', individual: 'Ação Individual', erro: 'Erro',
+  org_of: 'Organização Ofensiva', org_def: 'Organização Defensiva',
+  trans_of: 'Transição Ofensiva', trans_def: 'Transição Defensiva',
 };
 function PaginaClipe() {
   const id = (new URLSearchParams(window.location.search).get('clipe') || '').trim();

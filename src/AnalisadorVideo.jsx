@@ -180,15 +180,23 @@ const body = { fontFamily: "'Inter', sans-serif" };
 const mono = { fontFamily: "'JetBrains Mono', monospace" };
 
 const TAGS = [
+  { id: 'org_of', label: 'Organização Ofensiva', color: '#2BA59A' },
+  { id: 'org_def', label: 'Organização Defensiva', color: '#7C8DB0' },
+  { id: 'trans_of', label: 'Transição Ofensiva', color: '#E07A2E' },
+  { id: 'trans_def', label: 'Transição Defensiva', color: TV.crimsonBright },
   { id: 'golo', label: 'Golo', color: TV.good },
   { id: 'remate', label: 'Remate', color: TV.gold },
   { id: 'bp', label: 'Bola Parada', color: TV.teamB },
   { id: 'perda', label: 'Perda', color: TV.bad },
   { id: 'recuperacao', label: 'Recuperação', color: TV.teamD },
-  { id: 'transicao', label: 'Transição', color: TV.crimsonBright },
   { id: 'individual', label: 'Ação Individual', color: TV.teamC },
   { id: 'erro', label: 'Erro', color: TV.bad },
+  // Antiga: os clipes já marcados com "Transição" continuam a mostrá-la,
+  // mas já não se escolhe (passou a Transição Ofensiva / Defensiva).
+  { id: 'transicao', label: 'Transição', color: TV.crimsonBright, antiga: true },
 ];
+// As que se podem escolher (sem as antigas).
+const TAGS_ATIVAS = TAGS.filter(t => !t.antiga);
 
 // Cores à escolha para os desenhos — útil para distinguir, por exemplo,
 // os movimentos da nossa equipa (branco) dos do adversário (vermelho).
@@ -1317,7 +1325,7 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
   );
 }
 
-function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala }) {
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala, onDesenhar }) {
   const [t, setT] = useState(0);
   // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
   const [aEditar, setAEditar] = useState(false);
@@ -1500,6 +1508,11 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
                 <span style={{ fontSize: 11.5 }}>{gravacaoClipe ? 'A gravar… parar' : 'Vídeo c/ desenhos'}</span>
               </Btn>
             )}
+            {onDesenhar && (
+              <Btn variant="ghost" onClick={onDesenhar} style={{ padding: '6px 10px' }} title="Desenhar neste clipe (setas, zonas, texto…)">
+                <ArrowUpRight size={14} /> <span style={{ fontSize: 11.5 }}>Desenhar{(clip.shapes || []).length ? ` (${clip.shapes.length})` : ''}</span>
+              </Btn>
+            )}
             {onEnviarSala && (
               <Btn variant="ghost" onClick={onEnviarSala} style={{ padding: '6px 10px' }} title="Enviar para a Sala de Vídeo (Canal: temas, jogos ou adversários)">
                 {(clip.enviadoSala || []).length ? <Check size={14} color={T.good} /> : <Film size={14} />}
@@ -1632,7 +1645,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
            clipe já estar guardado sem nenhuma. Escondida durante a edição,
            para a edição caber na mesma altura. */}
         {!aEditar && <div style={{ padding: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {TAGS.map(tg => (
+          {TAGS_ATIVAS.map(tg => (
             <button key={tg.id} onClick={() => onChangeTag(tg.id)}
               style={{
                 padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', ...body,
@@ -2303,6 +2316,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   };
 
   const [modoDesenho, setModoDesenho] = useState(false);
+  /* DESENHAR NUM CLIPE JÁ CRIADO: abre-se o vídeo original no editor, no
+     troço do clipe, com os desenhos que o clipe já tem (passados para o
+     tempo do jogo). Ao guardar, só mudam os desenhos (e o texto e a
+     etiqueta): o vídeo do clipe não volta a ser cortado. */
+  const [clipeEmDesenho, setClipeEmDesenho] = useState(null);
+  const seekPendenteRef = useRef(null);
   /* ===== RELVADO — calibração, Medir, Fora de jogo, corredores/terços =====
      Só aqui, na Análise de Vídeo (o trabalho mais ao pormenor). A
      calibração vale para o enquadramento atual: cada forma desenhada no
@@ -2638,7 +2657,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     const v = videoRef.current;
     if (!v) return;
     const onTime = () => setCurrent(v.currentTime);
-    const onMeta = () => setDuration(v.duration || 0);
+    const onMeta = () => {
+      setDuration(v.duration || 0);
+      if (seekPendenteRef.current != null) { v.currentTime = seekPendenteRef.current; setCurrent(v.currentTime); seekPendenteRef.current = null; }
+    };
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
     v.addEventListener('timeupdate', onTime);
@@ -2681,7 +2703,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const markIn = () => { setInPoint(current); if (outPoint != null && outPoint < current) setOutPoint(null); };
   const markOut = () => { setOutPoint(current); if (inPoint == null) setInPoint(Math.max(0, current - 8)); };
-  const limparMarcas = () => { setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); setTextoPendente(null); setTrajetoriaFocoPendente(null); setErroSeguirFoco(''); };
+  const limparMarcas = () => { setClipeEmDesenho(null); setInPoint(null); setOutPoint(null); setPendingTag(null); setNote(''); setShapes([]); setTextoPendente(null); setTrajetoriaFocoPendente(null); setErroSeguirFoco(''); };
 
   // Seleciona automaticamente o vídeo assim que o upload (gerido lá em
   // cima, no App, para sobreviver à troca de separador) terminar com êxito.
@@ -2814,6 +2836,50 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   /* ORIGINAL DE UM CLIPE — pelo id (clipes novos) ou, nos antigos que
      não o guardavam, pelo título, só se houver exatamente um com esse
      título (dois vídeos com o mesmo nome e o corte podia sair do errado). */
+  const desenharNoClipe = (clip) => {
+    const orig = originalDoClipe(clip);
+    if (!orig || !orig.storagePath) {
+      window.alert('Não encontrei o vídeo original deste clipe, por isso não dá para desenhar nele. Abre o clipe, carrega no lápis e escolhe o vídeo original.');
+      return;
+    }
+    const ini = typeof clip.origemInicio === 'number' ? clip.origemInicio : 0;
+    const fim = typeof clip.origemFim === 'number' ? clip.origemFim : ini + (clip.duracao || 0);
+    setClipeAReproduzir(null);
+    setEditarClipeAoAbrir(false);
+    setTextoPendente(null);
+    setTrajetoriaFocoPendente(null);
+    setInPoint(ini); setOutPoint(fim);
+    setPendingTag(clip.tagId || null);
+    setNote(clip.note || '');
+    setShapes((clip.shapes || []).map(sh => ({
+      ...sh,
+      criadoEmTempo: sh.criadoEmTempo == null ? null : sh.criadoEmTempo + ini,
+      mostrarAte: sh.mostrarAte == null ? null : sh.mostrarAte + ini,
+    })));
+    setClipeEmDesenho(clip);
+    if (originalAtivoId === orig.id && videoRef.current && videoRef.current.readyState >= 1) {
+      videoRef.current.pause(); videoRef.current.currentTime = ini; setCurrent(ini);
+    } else {
+      seekPendenteRef.current = ini;
+      setOriginalAtivoId(orig.id);
+    }
+    setModoDesenho(true);
+    setTimeout(() => { if (containerRef.current) containerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
+  };
+  const guardarDesenhosClipe = () => {
+    const clip = clipeEmDesenho;
+    if (!clip) return;
+    const ini = typeof clip.origemInicio === 'number' ? clip.origemInicio : 0;
+    const novos = shapes.map(sh => ({
+      ...sh,
+      criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo - ini),
+      mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte - ini),
+    }));
+    setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, shapes: novos, note, tagId: pendingTag || null } : c)));
+    setClipeEmDesenho(null);
+    limparMarcas();
+  };
+  const cancelarDesenhosClipe = () => { setClipeEmDesenho(null); limparMarcas(); };
   const originalDoClipe = (clip) => {
     if (!clip) return null;
     if (clip.originalId) return videosOriginais.find(v => v.id === clip.originalId) || null;
@@ -3765,7 +3831,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           {!modoDesenho && (
             <>
               <div style={{ padding: '12px 14px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {TAGS.map(tag => (
+                {TAGS_ATIVAS.map(tag => (
                   <button key={tag.id} onClick={() => setPendingTag(tag.id)}
                     style={{
                       padding: '7px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', ...body,
@@ -3780,19 +3846,27 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {inPoint != null && outPoint != null && outPoint > inPoint && (
                 <div style={{ margin: '0 14px 16px', background: TV.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${TV.line}` }}>
                   <div style={{ fontSize: 12.5, color: TV.muted, marginBottom: 8, ...mono }}>
-                    Novo clipe · {fmt(inPoint)} – {fmt(outPoint)} ({Math.round(outPoint - inPoint)}s) {shapes.length > 0 && `· ${shapes.length} desenho(s)`}
+                    {clipeEmDesenho ? 'Desenhos do clipe' : 'Novo clipe'} · {fmt(inPoint)} – {fmt(outPoint)} ({Math.round(outPoint - inPoint)}s) {shapes.length > 0 && `· ${shapes.length} desenho(s)`}
                   </div>
                   <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…"
                     style={{ width: '100%', minHeight: 54, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 13, resize: 'vertical', ...body }} />
                   {erro && (
                     <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, marginTop: 8, color: TV.cream, fontSize: 12.5 }}>{erro}</div>
                   )}
+                  {clipeEmDesenho ? (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <Btn variant="solid" onClick={guardarDesenhosClipe}><Check size={14} /> Guardar no clipe</Btn>
+                      <Btn variant="plain" onClick={cancelarDesenhosClipe}><X size={14} /> Cancelar</Btn>
+                      <span style={{ fontSize: 11.5, color: TV.mutedDim }}>Guarda os desenhos, o texto e a etiqueta. Os tempos do clipe não mudam aqui.</span>
+                    </div>
+                  ) : (
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe}>
                       {aGuardarClipe ? <Loader2 size={14} className="spin" /> : <Check size={14} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
                     </Btn>
                     <Btn variant="plain" onClick={limparMarcas} disabled={aGuardarClipe}><X size={14} /> Descartar</Btn>
                   </div>
+                  )}
                 </div>
               )}
             </>
@@ -4089,6 +4163,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
           onChangeTrajetoria={trajetoria => mudarTrajetoriaClipe(clipeAReproduzir, trajetoria)}
           onEnviarSala={enviarParaSala ? () => setClipeParaSala(clipeAReproduzir) : undefined}
+          onDesenhar={() => desenharNoClipe(clipeAReproduzir)}
         />
       )}
       {clipeParaSala && enviarParaSala && (
