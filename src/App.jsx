@@ -4666,7 +4666,7 @@ function StandingsSummary({ standings, season }) {
 
   const row = (t, i) => (
     <tr key={t.id || t.name} style={{ borderTop: `1px solid ${T.line}`, background: isUs(t) ? `${T.crimson}33` : 'transparent' }}>
-      <td style={{ ...td, ...mono, width: 22, color: isUs(t) ? T.warn : T.mutedDim }}>{i + 1}</td>
+      <td style={{ ...td, ...mono, width: 22, paddingLeft: 9, color: isUs(t) ? T.warn : T.mutedDim, ...estiloZona(comp, i, all.length) }}>{i + 1}</td>
       <td style={{ ...td, color: isUs(t) ? T.cream : T.muted, whiteSpace: 'normal' }}>{t.name || '—'}</td>
       <td style={{ ...td, ...mono, textAlign: 'right' }}>{t.J}</td>
       <td style={{ ...td, ...mono, textAlign: 'right' }}>{t.DG > 0 ? `+${t.DG}` : t.DG}</td>
@@ -4699,6 +4699,7 @@ function StandingsSummary({ standings, season }) {
           )}
         </tbody>
       </table>
+      <LegendaZonas comp={comp} />
       {all.length > TOP && !showExtra && (
         <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 8 }}>
           Tabela completa em Jogos ({all.length} equipas).
