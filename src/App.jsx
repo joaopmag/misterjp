@@ -2042,7 +2042,7 @@ function Badge({ number, label }) {
   );
 }
 
-function Btn({ children, onClick, onMouseDown, variant = 'primary', style: s = {}, type = 'button', disabled, title }) {
+function Btn({ children, onClick, onMouseDown, variant = 'primary', style: s = {}, type = 'button', disabled, title, escuro }) {
   /* PROTEÇÃO CONTRA CLIQUE DUPLO, PARA TODOS OS BOTÕES DA APP DE UMA VEZ SÓ.
 
      Um "Guardar" que cria um registo novo gera um id novo dentro do
@@ -2074,7 +2074,8 @@ function Btn({ children, onClick, onMouseDown, variant = 'primary', style: s = {
   };
   const variants = {
     primary: { background: '#B5393F', color: TEXT_ON_ACCENT, },
-    ghost: { background: 'transparent', color: T.cream, border: `1px solid ${T.line}` },
+    // `escuro`: botões por cima do vídeo (sempre escuro), também no modo claro.
+    ghost: { background: 'transparent', color: escuro ? T_ESCURO.cream : T.cream, border: `1px solid ${escuro ? T_ESCURO.line : T.line}` },
     danger: { background: 'transparent', color: T.bad, border: `1px solid ${T.bad}55` },
   };
   return (
@@ -41263,7 +41264,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         ? [{ id: uid(), tempoVideo: tempoAnotacaoBib, duracaoSegundos: Math.max(...formas.map(f => f.seg)), shapes: formas, ...(calibracaoBib ? { calibracao: calibracaoBib } : {}) }]
         : [];
       nova.forEach(a => pausasJaMostradasRef.current.add(a.id));
-      setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: nova } : v)));
+      setItensDoAtivo(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: nova } : v)));
       setApagarTodasBib(false);
       abrirPausaBib(nova[0] || null, tempoAnotacaoBib); // fica no desenho
       return;
@@ -41273,7 +41274,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       // existente, conta como quereres apagá-la a sério (não só sair
       // sem gravar, que deixaria a pausa antiga como estava).
       if (anotacaoIdEmEdicaoBib) {
-        setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: (v.anotacoesPausa || []).filter(a => a.id !== anotacaoIdEmEdicaoBib) } : v)));
+        setItensDoAtivo(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: (v.anotacoesPausa || []).filter(a => a.id !== anotacaoIdEmEdicaoBib) } : v)));
       }
       abrirPausaBib(null, tempoAnotacaoBib); // fica no desenho, em branco
       return;
@@ -41297,7 +41298,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Acabou de a ver ao desenhar — não voltar a parar no mesmo sítio
     // assim que se carrega em reproduzir (só na próxima passagem).
     pausasJaMostradasRef.current.add(novaAnotacao.id);
-    setItems(prev => prev.map(v => {
+    setItensDoAtivo(prev => prev.map(v => {
       if (v.id !== active.id) return v;
       const outras = (v.anotacoesPausa || []).filter(a => a.id !== novaAnotacao.id);
       return { ...v, anotacoesPausa: [...outras, novaAnotacao].sort((a, b) => a.tempoVideo - b.tempoVideo) };
@@ -41310,7 +41311,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   };
   const apagarAnotacaoAtualBib = () => {
     if (anotacaoIdEmEdicaoBib) {
-      setItems(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: (v.anotacoesPausa || []).filter(a => a.id !== anotacaoIdEmEdicaoBib) } : v)));
+      setItensDoAtivo(prev => prev.map(v => (v.id === active.id ? { ...v, anotacoesPausa: (v.anotacoesPausa || []).filter(a => a.id !== anotacaoIdEmEdicaoBib) } : v)));
     }
     abrirPausaBib(null, tempoAnotacaoBib); // continua no desenho, em branco
   };
@@ -42180,6 +42181,15 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   }, [items, folderFilter]);
 
   const active = visibleItems.find(v => v.id === activeId) || visibleItems[0];
+  /* Os desenhos (pausas) gravam-se no item onde ele vive de facto. Os
+     clipes enviados da Análise de Vídeo para a ficha de um adversário
+     aparecem aqui, mas vivem na lista geral dos vídeos (têm adversarioId),
+     não em `items`: gravar só em `items` não fazia nada e cada pausa nova
+     parecia substituir a anterior (nenhuma ficava gravada). */
+  const setItensDoAtivo = (fn) => {
+    if (modoCanal && active && setTodosVideos && !items.some(v => v.id === active.id)) setTodosVideos(fn);
+    else setItems(fn);
+  };
 
   const ativoEClipe = !!(active && active.youtubeId && typeof active.clipInicio === 'number');
   // Partilhar um corte que não estava aberto: quando o leitor já o tem, arranca.
@@ -44222,11 +44232,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               }} title={p.id}
                                 style={{
                                   width: 22, height: 22, borderRadius: '50%', cursor: 'pointer', padding: 0,
-                                  background: p.cor, border: corBib === p.cor ? `2px solid ${T.gold}` : `1px solid ${T.line}`,
+                                  background: p.cor, border: corBib === p.cor ? `2px solid ${T_ESCURO.gold}` : `1px solid ${T_ESCURO.line}`,
                                 }} />
                             ))}
                           </div>
-                          <div style={{ height: 1, alignSelf: 'stretch', background: T.line }} />
+                          <div style={{ height: 1, alignSelf: 'stretch', background: T_ESCURO.line }} />
                           {/* Botões simples (não o Btn): o Btn trava cliques
                               seguidos, e aqui recuam-se vários pontos de rajada. */}
                           <div style={{ display: 'flex', gap: 4, width: '100%' }}>
@@ -44236,8 +44246,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             ].map(({ on, fn, Ic, t }) => (
                               <button key={t} type="button" onClick={fn} disabled={!on} title={t} aria-label={t} style={{
                                 flex: 1, padding: '8px 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8,
-                                color: on ? T.cream : T.mutedDim, opacity: on ? 1 : 0.45, cursor: on ? 'pointer' : 'default',
+                                background: 'transparent', border: `1px solid ${T_ESCURO.line}`, borderRadius: 8,
+                                color: on ? T_ESCURO.cream : T_ESCURO.mutedDim, opacity: on ? 1 : 0.45, cursor: on ? 'pointer' : 'default',
                               }}><Ic size={15} /></button>
                             ))}
                           </div>
@@ -44248,13 +44258,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           {/* Sem pausa aberta mas com desenhos no corte, Limpar
                              marca TODOS os desenhos do corte para apagar (só a
                              sério ao Guardar; Cancelar ou "Anular" desfazem). */}
-                          <Btn variant="ghost" onClick={() => {
+                          <Btn escuro variant="ghost" onClick={() => {
                             if (shapesRascunho.length > 0) { pushHistoricoBib(); setShapesRascunho([]); setFormaSelecionadaBib(null); return; }
                             if ((active.anotacoesPausa || []).length > 0) { cancelarRetomaDesenhoBib(); setApagarTodasBib(true); }
                           }} disabled={shapesRascunho.length === 0 && ((active.anotacoesPausa || []).length === 0 || apagarTodasBib)} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <Trash2 size={14} /> Limpar
                           </Btn>
-                          <Btn variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
+                          <Btn escuro variant="ghost" onClick={cancelarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
                             <X size={14} /> Cancelar
                           </Btn>
                           <Btn variant="solid" onClick={guardarDesenhoBib} style={{ padding: '6px 2px', fontSize: 10, width: '100%', flexDirection: 'column', gap: 2 }}>
@@ -44272,10 +44282,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '5px 10px' }}>
                               {apagarTodasBib ? (
                                 <>
-                                  <span style={{ fontSize: 11.5, color: T.warn }}>Os desenhos deste corte vão ser apagados ao Guardar.</span>
-                                  <button onClick={() => setApagarTodasBib(false)} style={{ background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>Anular</button>
+                                  <span style={{ fontSize: 11.5, color: T_ESCURO.warn }}>Os desenhos deste corte vão ser apagados ao Guardar.</span>
+                                  <button onClick={() => setApagarTodasBib(false)} style={{ background: 'none', border: `1px solid ${T_ESCURO.line}`, borderRadius: 4, color: '#fff', padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>Anular</button>
                                 </>
-                              ) : <span style={{ fontSize: 11.5, color: T.mutedDim }}>Pausas neste corte:</span>}
+                              ) : <span style={{ fontSize: 11.5, color: T_ESCURO.mutedDim }}>Pausas neste corte:</span>}
                               {[...(active.anotacoesPausa || [])]
                                 .sort((a, b) => tempoPausaNoCorte(a) - tempoPausaNoCorte(b))
                                 .map(a => {
@@ -44285,7 +44295,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                       title={`Abrir esta pausa (${(a.shapes || []).length} ${(a.shapes || []).length === 1 ? 'forma' : 'formas'})`}
                                       style={{
                                         background: emEdicao ? T.goldFundo : 'none', color: emEdicao ? '#111' : '#fff',
-                                        border: `1px solid ${emEdicao ? T.gold : T.line}`, borderRadius: 4,
+                                        border: `1px solid ${emEdicao ? T_ESCURO.gold : T_ESCURO.line}`, borderRadius: 4,
                                         padding: '2px 8px', fontSize: 12, cursor: 'pointer', ...mono,
                                       }}>
                                       {fmtMMSS(tempoPausaNoCorte(a) - clipIni)}
@@ -44312,10 +44322,10 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                                   setShapesRascunho(prev => prev.map((f, i) => (i === formaSelecionadaBib ? { ...f, seg: novo } : f)));
                                 } else setDuracaoPausaBib(novo);
                               };
-                              const b = { background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 };
+                              const b = { background: 'none', border: `1px solid ${T_ESCURO.line}`, borderRadius: 4, color: '#fff', width: 22, height: 22, cursor: 'pointer', fontSize: 14, lineHeight: 1 };
                               return (
                                 <>
-                                  <span style={{ fontSize: 11.5, color: sel ? T.warn : T.mutedDim }}
+                                  <span style={{ fontSize: 11.5, color: sel ? T_ESCURO.warn : T_ESCURO.mutedDim }}
                                     title={sel ? 'Tempo no ecrã do item selecionado' : 'Tempo no ecrã dos itens desenhados agora. Os que já lá estavam mantêm o tempo deles.'}>
                                     {sel ? 'Item selecionado:' : (shapesRascunho.some(f => Number(f.seg)) ? 'Novos itens:' : 'No ecrã:')}
                                   </span>
@@ -44326,7 +44336,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               );
                             })()}
                             {anotacaoIdEmEdicaoBib && (
-                              <Btn variant="ghost" onClick={apagarAnotacaoAtualBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar pausa</Btn>
+                              <Btn escuro variant="ghost" onClick={apagarAnotacaoAtualBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar pausa</Btn>
                             )}
                             <Btn onClick={guardarDesenhoBib} style={{ padding: '4px 10px', fontSize: 11 }}>Concluído</Btn>
                           </div>
@@ -44345,7 +44355,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexWrap: 'wrap',
                             background: 'rgba(0,0,0,0.85)', borderRadius: 8, padding: '6px 8px',
                           }}>
-                            <span style={{ fontSize: 11.5, color: T.mutedDim }}>Forma selecionada — arrasta os pontos para a mover</span>
+                            <span style={{ fontSize: 11.5, color: T_ESCURO.mutedDim }}>Forma selecionada — arrasta os pontos para a mover</span>
                             {shapesRascunho[formaSelecionadaBib].tool === 'circulo' && (() => {
                               const forma = shapesRascunho[formaSelecionadaBib];
                               const atual = Number(forma.zoom) || 1;
@@ -44357,25 +44367,25 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               const op = (z, rotulo) => (
                                 <button key={z} onClick={() => por(z)} style={{
                                   background: atual === z ? T.goldFundo : 'none', color: atual === z ? '#111' : '#fff',
-                                  border: `1px solid ${atual === z ? T.gold : T.line}`, borderRadius: 4,
+                                  border: `1px solid ${atual === z ? T_ESCURO.gold : T_ESCURO.line}`, borderRadius: 4,
                                   padding: '2px 7px', fontSize: 11.5, cursor: 'pointer', ...mono,
                                 }}>{rotulo}</button>
                               );
                               return (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Ao reproduzir, a imagem aproxima-se deste círculo enquanto ele estiver no ecrã">
-                                  <ZoomIn size={13} color={T.mutedDim} />
+                                  <ZoomIn size={13} color={T_ESCURO.mutedDim} />
                                   {op(1, 'Sem')}{op(1.5, '1,5×')}{op(2, '2×')}{op(3, '3×')}
                                   {atual > 1 && (
                                     <button onClick={() => setZoomPreviewBib({ ...forma, zoom: atual })} style={{
-                                      background: 'none', border: `1px solid ${T.line}`, borderRadius: 4, color: T.warn,
+                                      background: 'none', border: `1px solid ${T_ESCURO.line}`, borderRadius: 4, color: T_ESCURO.warn,
                                       padding: '2px 7px', fontSize: 11.5, cursor: 'pointer', ...body,
                                     }}>Ver zoom</button>
                                   )}
                                 </span>
                               );
                             })()}
-                            <Btn variant="ghost" onClick={apagarSelecionadaBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar</Btn>
-                            <Btn variant="ghost" onClick={() => setFormaSelecionadaBib(null)} style={{ padding: '4px 8px', fontSize: 11 }}>Fechar</Btn>
+                            <Btn escuro variant="ghost" onClick={apagarSelecionadaBib} style={{ padding: '4px 8px', fontSize: 11 }}><Trash2 size={11} /> Apagar</Btn>
+                            <Btn escuro variant="ghost" onClick={() => setFormaSelecionadaBib(null)} style={{ padding: '4px 8px', fontSize: 11 }}>Fechar</Btn>
                           </div>
                         )}
                       </>
