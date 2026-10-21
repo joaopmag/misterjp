@@ -1079,12 +1079,69 @@ export function renderShape(sh, i) {
    quando ele sai. Aqui o vídeo é nosso (não é o YouTube), por isso a
    saída também pode ser animada sem problemas. Devolve o estilo para a
    caixa que contém o vídeo e o desenho. */
-export function useZoomCirculo(formasVisiveis, ativo = true) {
+/* ONDE ESTÁ A IMAGEM DO VÍDEO. O leitor ocupa a caixa toda, mas a imagem
+   (16:9, 4:3…) fica centrada com barras pretas dos lados (ou em cima e em
+   baixo). Os desenhos têm de ficar presos à IMAGEM, não à caixa: senão um
+   círculo posto num jogador aparece noutro sítio quando a caixa tem outra
+   forma (outro ecrã, ecrã inteiro, o leitor do clipe). Devolve o retângulo
+   da imagem dentro do elemento <video>, em px, relativo ao mesmo "pai". */
+export function useRetanguloVideo(videoRef) {
+  const [ret, setRet] = useState(null);
+  const elRef = useRef(null);
+  useEffect(() => {
+    let ro = null;
+    const medir = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      const W = v.clientWidth, H = v.clientHeight, vw = v.videoWidth, vh = v.videoHeight;
+      if (!W || !H || !vw || !vh) return;
+      const ar = vw / vh;
+      let w = W, h = W / ar;
+      if (h > H) { h = H; w = H * ar; }
+      const n = { left: v.offsetLeft + (W - w) / 2, top: v.offsetTop + (H - h) / 2, width: w, height: h };
+      setRet(r => (r && Math.abs(r.left - n.left) < 0.5 && Math.abs(r.top - n.top) < 0.5 && Math.abs(r.width - n.width) < 0.5 && Math.abs(r.height - n.height) < 0.5 ? r : n));
+    };
+    const ligar = () => {
+      const v = videoRef.current;
+      if (v === elRef.current) { medir(); return; }
+      if (elRef.current) { elRef.current.removeEventListener('loadedmetadata', medir); elRef.current.removeEventListener('resize', medir); }
+      if (ro) { ro.disconnect(); ro = null; }
+      elRef.current = v;
+      if (v) {
+        v.addEventListener('loadedmetadata', medir);
+        v.addEventListener('resize', medir);
+        if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(medir); ro.observe(v); }
+      }
+      medir();
+    };
+    ligar();
+    // O <video> pode mudar (outro vídeo) e a janela pode mudar de tamanho.
+    const tm = setInterval(ligar, 700);
+    window.addEventListener('resize', medir);
+    return () => {
+      clearInterval(tm); window.removeEventListener('resize', medir);
+      if (ro) ro.disconnect();
+      if (elRef.current) { elRef.current.removeEventListener('loadedmetadata', medir); elRef.current.removeEventListener('resize', medir); }
+      elRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return ret;
+}
+// Estilo da camada de desenho: exatamente por cima da imagem do vídeo.
+export const estiloSobreImagem = (ret) => (ret
+  ? { position: 'absolute', left: ret.left, top: ret.top, width: ret.width, height: ret.height }
+  : { position: 'absolute', inset: 0, width: '100%', height: '100%' });
+
+export function useZoomCirculo(formasVisiveis, ativo = true, ret = null) {
   const origem = useRef('50% 50%');
   const c = ativo ? (formasVisiveis || []).find(f => f && f.tool === 'circulo' && Number(f.zoom) > 1 && f.points && f.points[0]) : null;
   if (c) {
     const p = c.points[0];
-    origem.current = `${Math.max(0, Math.min(100, p.x))}% ${Math.max(0, Math.min(100, (p.y / 56.25) * 100))}%`;
+    const fx = Math.max(0, Math.min(100, p.x)) / 100, fy = Math.max(0, Math.min(56.25, p.y)) / 56.25;
+    origem.current = ret
+      ? `${ret.left + fx * ret.width}px ${ret.top + fy * ret.height}px`
+      : `${fx * 100}% ${fy * 100}%`;
   }
   return {
     transform: c ? `translate3d(0,0,0) scale(${Number(c.zoom)})` : 'translate3d(0,0,0) scale(1)',
@@ -1533,7 +1590,8 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   useFecharComEsc(onClose, !aEditar && !emEcraInteiro);
   const [congeladoClip] = usePausasDesenho(videoRef, clip.shapes || [], !aEditar);
   const formasClipeVisiveis = (clip.shapes || []).filter(sh => formaVisivel(sh, t, !aTocar, congeladoClip));
-  const estiloZoomClipe = useZoomCirculo(formasParaZoom(formasClipeVisiveis, congeladoClip), !aEditar);
+  const retClipe = useRetanguloVideo(videoRef);
+  const estiloZoomClipe = useZoomCirculo(formasParaZoom(formasClipeVisiveis, congeladoClip), !aEditar, retClipe);
   const [estadoMp4, setEstadoMp4] = useState(null); // null | 'a-preparar' | 'erro'
   // Gravação com desenhos: do início ao fim do clipe, uma vez, e entrega.
   const [gravacaoClipe, setGravacaoClipe] = useState(null);
@@ -1621,7 +1679,9 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   const aoTocarNoVideo = (e) => {
     if (modoSeguir !== 'a_escolher' && modoSeguir !== 'a_corrigir') return;
     const rect = caixaVideoRef.current.getBoundingClientRect();
-    escolherJogador((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height);
+    // Relativo à imagem do vídeo (sem as barras pretas), como os desenhos.
+    const r = retClipe || { left: 0, top: 0, width: rect.width, height: rect.height };
+    escolherJogador((e.clientX - rect.left - r.left) / r.width, (e.clientY - rect.top - r.top) / r.height);
   };
 
   return (
@@ -1682,7 +1742,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               onDurationChange={lerDuracao}
               onTimeUpdate={e => setT(e.currentTarget.currentTime)}
               style={{ width: '100%', height: '100%', display: 'block', background: '#000', cursor: 'pointer' }} />
-            <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+            <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ ...estiloSobreImagem(retClipe), pointerEvents: 'none' }}>
               {formasClipeVisiveis.map(renderShape)}
               {temTrajetoria && <MarcadorTrajetoria videoRef={videoRef} pontos={clip.trajetoriaFoco.pontos} />}
             </svg>
@@ -2870,6 +2930,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // dar play mostra as paragens; tocar no vídeo para desenhar larga-as.
   const semParagemNoPlayRef = useRef(false);
   semParagemNoPlayRef.current = modoDesenho;
+  const retEditor = useRetanguloVideo(videoRef);
+  const svgDesenhoRef = useRef(null);
   const [congeladoEditor, largarParagemEditor] = usePausasDesenho(videoRef, shapes, editandoDuracaoIndex == null && !textoPendente, semParagemNoPlayRef);
   const visivelNoEditor = (sh, i) => editandoDuracaoIndex === i || formaVisivel(sh, current, !playing, congeladoEditor);
   const togglePlay = () => { const v = videoRef.current; if (v) { v.paused ? v.play() : v.pause(); } };
@@ -3191,7 +3253,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   /* ---- Telestração ---- */
   const getPoint = (e) => {
-    const rect = canvasWrapRef.current.getBoundingClientRect();
+    // Relativo à IMAGEM do vídeo (a camada de desenho), não à caixa toda.
+    const rect = (svgDesenhoRef.current || canvasWrapRef.current).getBoundingClientRect();
     // x vai de 0 a 100, y vai de 0 a 56.25 — tem de bater certo com o
     // viewBox do SVG ali em baixo (que usa esses números para manter a
     // proporção 16:9 sem esticar os desenhos).
@@ -3626,6 +3689,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const estiloZoomEditor = useZoomCirculo(
     formaZoomPrevia ? [formaZoomPrevia] : formasParaZoom(shapesVisiveis, congeladoEditor),
     !!formaZoomPrevia || !modoDesenho,
+    retEditor,
   );
 
   return (
@@ -3860,7 +3924,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               ) : (
                 <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: TV.muted }}><Loader2 size={20} className="spin" /></div>
               )}
-              <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? CURSOR_BORRACHA : hoverMove ? 'move' : 'crosshair') : 'default' }}>
+              <svg ref={svgDesenhoRef} viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ ...estiloSobreImagem(retEditor), overflow: 'visible', pointerEvents: modoDesenho ? 'auto' : 'none', cursor: modoDesenho ? (tool === 'apagar' ? CURSOR_BORRACHA : hoverMove ? 'move' : 'crosshair') : 'default' }}>
                 {shapesVisiveis.map(renderShape)}
                 {trajetoriaFocoPendente && <MarcadorTrajetoria videoRef={videoRef} pontos={trajetoriaFocoPendente.pontos} />}
                 {modoDesenho && (
