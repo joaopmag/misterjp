@@ -40498,7 +40498,7 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
       {editar && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Input value={editar.nome} onChange={e => setEditar({ ...editar, nome: e.target.value })} placeholder="Nome do vídeo (ex.: As minhas jogadas)" />
-          <div style={{ fontSize: 12, color: T.muted }}>Toca nos clipes pela ordem em que os queres ver.</div>
+          <div style={{ fontSize: 12, color: T.muted }}>Toca nos clipes pela ordem em que os queres ver. Para mudar a ordem, toca para tirar e volta a tocar (passa para o fim).</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
             {clipes.map(c => {
               const pos = editar.ids.indexOf(c.id);
@@ -40518,19 +40518,9 @@ function CompilacoesAtleta({ clipes, chave, api, onVer, onParar, aTocar, onGrava
               );
             })}
           </div>
-          {editar.ids.length > 1 && (
-            <div>
-              <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>Ordem</div>
-              {editar.ids.map((id, i) => (
-                <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: T.cream, padding: '3px 0' }}>
-                  <span style={{ ...mono, color: T.gold, width: 18 }}>{i + 1}</span>
-                  <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(porId.get(id) || {}).title}</span>
-                  <button type="button" title="Subir" disabled={i === 0} onClick={() => mover(i, -1)} style={{ ...btnIcone, opacity: i === 0 ? 0.35 : 1 }}><ChevronUp size={15} /></button>
-                  <button type="button" title="Descer" disabled={i === editar.ids.length - 1} onClick={() => mover(i, 1)} style={{ ...btnIcone, opacity: i === editar.ids.length - 1 ? 0.35 : 1 }}><ChevronDown size={15} /></button>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Sem lista "Ordem" à parte: o número em cada clipe já é a ordem
+              (tocar para tirar e voltar a tocar põe-no no fim). A lista
+              aparecia/desaparecia e fazia a página saltar. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <Btn disabled={!editar.ids.length || aGuardar} onClick={guardar}>{aGuardar ? <Loader2 size={14} className="spin" /> : <Check size={14} />} Guardar vídeo</Btn>
             <Btn variant="ghost" onClick={() => setEditar(null)}>Cancelar</Btn>
