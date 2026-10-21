@@ -6316,6 +6316,56 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
   const souUnico = (membros || []).length <= 1;
   const retrato = retratoDeDados(dados || {});
 
+  /* CÓPIA DOS CLIPES DA SALA DE VÍDEO. Os clipes enviados da Análise de
+     Vídeo para a Sala de Vídeo são MP4 no Storage (videos-clipes): a
+     exportação dos dados só leva o link. Aqui descarregam-se os próprios
+     ficheiros para um .zip, com um índice (titulo, destino, minutos do
+     jogo) — um de cada vez, para não pesar no telemóvel/computador. */
+  const clipesSala = ((dados && dados.videos) || []).filter(v => v && v.origemAnalise && v.kind === 'video' && /^https?:/.test(v.dataUrl || ''));
+  const [zipClipes, setZipClipes] = useState(null); // { feitos, total, erro }
+  const descarregarClipesSala = async () => {
+    if (!clipesSala.length || (zipClipes && zipClipes.aCorrer)) return;
+    const zip = new JSZip();
+    const usados = new Set();
+    const nomeLimpo = (t) => String(t || 'clipe').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'clipe';
+    const fichas = Object.fromEntries(((dados && dados.adversarios) || []).map(a => [a.id, a.nome]));
+    const jogos = Object.fromEntries(((dados && dados.matches) || []).map(m => [m.id, `${m.jornada ? `${m.jornada} · ` : ''}vs ${m.opponent || ''}`]));
+    const indice = [];
+    const falhados = [];
+    setZipClipes({ aCorrer: true, feitos: 0, total: clipesSala.length });
+    for (let i = 0; i < clipesSala.length; i++) {
+      const v = clipesSala[i];
+      const destino = v.adversarioId ? `Adversários › ${fichas[v.adversarioId] || v.equipa || ''}`
+        : v.categoria === 'jogo' ? `Jogos › ${jogos[v.jogoId] || v.jornada || ''}` : `Temas › ${v.pasta || ''}`;
+      const pasta = v.adversarioId ? `adversarios/${nomeLimpo(fichas[v.adversarioId] || v.equipa)}`
+        : v.categoria === 'jogo' ? `jogos/${nomeLimpo(jogos[v.jogoId] || v.jornada)}` : `temas/${nomeLimpo(v.pasta)}`;
+      let nome = `${pasta}/${nomeLimpo(v.title)}.mp4`;
+      for (let k = 2; usados.has(nome); k++) nome = `${pasta}/${nomeLimpo(v.title)}_${k}.mp4`;
+      usados.add(nome);
+      try {
+        const resp = await fetch(v.dataUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        zip.file(nome, await resp.blob(), { compression: 'STORE' });
+        indice.push({ ficheiro: nome, titulo: v.title || '', destino, minutosNoJogo: `${fmtMMSS(v.clipInicio || 0)}–${fmtMMSS(v.clipFim || 0)}`, videoOriginal: v.clipOrigemTitulo || '', link: v.dataUrl });
+      } catch (e) {
+        falhados.push({ titulo: v.title || '', destino, link: v.dataUrl, erro: String((e && e.message) || e) });
+      }
+      setZipClipes({ aCorrer: true, feitos: i + 1, total: clipesSala.length });
+    }
+    zip.file('indice.json', JSON.stringify({ exportadoEm: new Date().toISOString(), equipa: equipa && equipa.nome, clipes: indice, falhados }, null, 2));
+    try {
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `clipes_sala_de_video_${todayStr()}.zip`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      setZipClipes({ aCorrer: false, feitos: indice.length, total: clipesSala.length, falhados: falhados.length });
+    } catch (e) {
+      setZipClipes({ aCorrer: false, erro: 'Não consegui criar o ficheiro .zip. Tenta no computador, que tem mais memória.' });
+    }
+  };
+
   const exportar = () => {
     const nome = exportarDadosDaEquipa({ equipa, ...(dados || {}) });
     offerUndo(`Exportado: ${nome}`, null);
@@ -6849,12 +6899,26 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
 
         <div style={barraAcoes}>
           <Btn variant="ghost" onClick={exportar} style={botaoAcao}><Download size={15} /> Exportar dados desta equipa</Btn>
+          {clipesSala.length > 0 && (
+            <Btn variant="ghost" onClick={descarregarClipesSala} disabled={!!(zipClipes && zipClipes.aCorrer)} style={botaoAcao}>
+              <Download size={15} /> {zipClipes && zipClipes.aCorrer
+                ? `A descarregar clipes… ${zipClipes.feitos}/${zipClipes.total}`
+                : `Descarregar clipes da Sala de Vídeo (${clipesSala.length})`}
+            </Btn>
+          )}
           {souDono && (
             <Btn variant="danger" onClick={apagarEquipa} disabled={!souUnico} style={botaoAcao}>
               <Trash2 size={15} /> Apagar equipa e todos os dados
             </Btn>
           )}
         </div>
+        {zipClipes && !zipClipes.aCorrer && (
+          <div style={{ fontSize: 12, color: zipClipes.erro || zipClipes.falhados ? T.warn : T.good, marginTop: 10 }}>
+            {zipClipes.erro || (zipClipes.falhados
+              ? `Descarregados ${zipClipes.feitos} de ${zipClipes.total} clipes. ${zipClipes.falhados} não foram encontrados no Storage (estão listados no indice.json dentro do .zip).`
+              : `${zipClipes.feitos} clipes descarregados num .zip, com um índice (indice.json). Guarda-o junto da exportação dos dados.`)}
+          </div>
+        )}
         {souDono && !souUnico && (
           <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 10 }}>
             Para apagar a equipa, remove primeiro os outros membros — apagá-la agora destruiria o trabalho deles sem aviso.
