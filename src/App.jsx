@@ -4162,6 +4162,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                 season, players, exercises, ideias, sessions, monitoring, matches,
                 scouting, videos, apresentacoes, convocatorias, diario,
                 clinico, desenvolvimento, standings,
+                adversarios, documentos, tarefas, videosOriginais, clipes,
               }}
             />
           )}
@@ -5938,15 +5939,21 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
 /* Tudo o que a app guarda sobre uma equipa, num ficheiro. Serve para os
    três casos ao mesmo tempo: pedido de portabilidade de um clube, cópia
    de segurança por equipa, e prova do que existia numa data. */
-function exportarDadosDaEquipa({ equipa, season, players, exercises, ideias, sessions, monitoring, matches, scouting, videos, apresentacoes, convocatorias, diario, clinico, desenvolvimento, standings }) {
+function exportarDadosDaEquipa({ equipa, season, players, exercises, ideias, sessions, monitoring, matches, scouting, videos, apresentacoes, convocatorias, diario, clinico, desenvolvimento, standings, adversarios, documentos, tarefas, videosOriginais, clipes }) {
+  /* Versão 2: passou a levar TAMBÉM as fichas de adversários, os
+     documentos, as tarefas/missões e a Análise de Vídeo (os registos dos
+     vídeos originais e dos cortes, com desenhos e etiquetas). Os ficheiros
+     de vídeo em si ficam no Storage; aqui vão os endereços. */
   const dados = {
     formato: 'misterjp-equipa',
-    versao: 1,
+    versao: 2,
     exportadoEm: new Date().toISOString(),
     equipa: { id: equipa.id, nome: equipa.nome, clube: equipa.clube, escalao: equipa.escalao },
     season, players, exercises, ideias, sessions, monitoring, matches,
     scouting, videos, apresentacoes, convocatorias, diario,
     clinico, desenvolvimento, standings,
+    adversarios: adversarios || [], documentos: documentos || [], tarefas: tarefas || [],
+    videosOriginais: videosOriginais || [], clipes: clipes || [],
   };
   const nome = `${(equipa.clube || 'equipa').replace(/[^\w-]+/g, '_')}_${(equipa.escalao || equipa.nome || '').replace(/[^\w-]+/g, '_')}_${todayStr()}.json`;
   const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
