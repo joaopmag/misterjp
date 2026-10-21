@@ -2765,18 +2765,29 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     }
   };
 
+  /* Um texto escrito mas ainda sem "OK" também conta: ao guardar, entra
+     nos desenhos em vez de se perder. */
+  const shapesComTextoPendente = () => {
+    const t = textoPendente;
+    if (t && t.valor && t.valor.trim()) {
+      return [...shapes, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }];
+    }
+    return shapes;
+  };
   /* ---- Guardar clipe: chama a função que corta sem recodificar ---- */
   const guardarClipe = async () => {
     if (!originalAtivo || inPoint == null || outPoint == null || outPoint <= inPoint) return;
     setAGuardarClipe(true); setErro('');
+    const shapesFinais = shapesComTextoPendente();
     try {
       const resp = await fetch('/api/cortar-clipe', {
         method: 'POST',
         headers: await cabecalhosComSessao(),
         body: JSON.stringify({ teamId, storagePath: originalAtivo.storagePath, start: inPoint, end: outPoint }),
       });
-      const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error || 'Falha ao cortar');
+      let json = {};
+      try { json = await resp.json(); } catch (e) { /* resposta sem JSON (ex.: tempo esgotado no servidor) */ }
+      if (!resp.ok) throw new Error(json.error || `o servidor respondeu ${resp.status}${resp.status === 504 ? ' (demorou demasiado)' : ''}`);
 
       const tag = TAGS.find(t => t.id === pendingTag) || null;
       const novoClipe = {
@@ -2786,7 +2797,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
         // Os tempos dos desenhos foram marcados relativamente ao vídeo
         // ORIGINAL (0 = início do jogo todo) — o clipe cortado começa
         // sempre em 0, por isso passam a ser relativos ao início do clipe.
-        shapes: shapes.map(s => ({
+        shapes: shapesFinais.map(s => ({
           ...s,
           criadoEmTempo: s.criadoEmTempo == null ? null : Math.max(0, s.criadoEmTempo - inPoint),
           mostrarAte: s.mostrarAte == null ? null : Math.max(0, s.mostrarAte - inPoint),
@@ -2804,6 +2815,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       };
       setClipes(prev => [novoClipe, ...(prev || [])]);
       limparMarcas();
+      fecharDesenho();
     } catch (e) {
       setErro(`Não consegui guardar o clipe: ${e.message || e}`);
     } finally {
@@ -2903,7 +2915,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     const clip = clipeEmDesenho;
     if (!clip) return;
     const ini = typeof clip.origemInicio === 'number' ? clip.origemInicio : 0;
-    const novos = shapes.map(sh => ({
+    const novos = shapesComTextoPendente().map(sh => ({
       ...sh,
       criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo - ini),
       mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte - ini),
@@ -2911,6 +2923,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setClipes(prev => prev.map(c => (c.id === clip.id ? { ...c, shapes: novos, note, tagId: pendingTag || null } : c)));
     setClipeEmDesenho(null);
     limparMarcas();
+    fecharDesenho();
   };
   const cancelarDesenhosClipe = () => { setClipeEmDesenho(null); limparMarcas(); };
   const originalDoClipe = (clip) => {
@@ -3256,6 +3269,10 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       return;
     }
     if (tool === 'texto') {
+      // Sem isto, o clique/toque no vídeo tirava logo o foco à caixa de
+      // texto acabada de abrir: o que se escrevia perdia-se e o "OK"
+      // não gravava nada.
+      if (e.cancelable) e.preventDefault();
       const rect = canvasWrapRef.current.getBoundingClientRect();
       setTextoPendente({ pt, xPix: e.clientX - rect.left, yPix: e.clientY - rect.top, valor: '' });
       return;
@@ -3764,6 +3781,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   style={{ position: 'absolute', left: textoPendente.xPix, top: textoPendente.yPix, transform: 'translate(-4px,-50%)', display: 'flex', gap: 4, zIndex: 5 }}>
                   <input
                     autoFocus
+                    ref={el => { if (el && document.activeElement !== el) setTimeout(() => { if (document.activeElement !== el) el.focus(); }, 0); }}
                     value={textoPendente.valor}
                     onChange={e => setTextoPendente(t => ({ ...t, valor: e.target.value }))}
                     onKeyDown={e => { if (e.key === 'Enter') confirmarTexto(); if (e.key === 'Escape') setTextoPendente(null); }}
@@ -3881,7 +3899,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             <div style={{ margin: '0 14px 10px', background: TV.surfaceRaise, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, color: TV.cream, fontSize: 12.5 }}>{erroSeguirFoco}</div>
           )}
 
-          {!modoDesenho && (
+          {(
             <>
               <div style={{ padding: '12px 14px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {TAGS_ATIVAS.map(tag => (
