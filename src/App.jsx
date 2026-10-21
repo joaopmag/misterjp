@@ -9574,9 +9574,10 @@ function CadastroDisciplinar({ diario, playerId, card, sectionTitle }) {
   const faltas = doAtleta.filter(n => chaveDoTipo(n) === 'faltas');
   const amarelos = disciplina.filter(n => (n.cartao || 'amarelo') === 'amarelo').length;
   const vermelhos = disciplina.filter(n => n.cartao === 'vermelho').length;
-  const atrasos = faltas.filter(n => n.faltaTipo === 'atraso').length;
-  const faltasInj = faltas.filter(n => n.faltaTipo !== 'atraso' && !n.justificada).length;
-  const faltasJust = faltas.filter(n => n.faltaTipo !== 'atraso' && n.justificada).length;
+  const fa = (n) => faltaDoAtleta(n, playerId);
+  const atrasos = faltas.filter(n => fa(n).faltaTipo === 'atraso').length;
+  const faltasInj = faltas.filter(n => fa(n).faltaTipo !== 'atraso' && !fa(n).justificada).length;
+  const faltasJust = faltas.filter(n => fa(n).faltaTipo !== 'atraso' && fa(n).justificada).length;
   const resumo = [
     amarelos ? `${amarelos} amarelo${amarelos > 1 ? 's' : ''}` : null,
     vermelhos ? `${vermelhos} vermelho${vermelhos > 1 ? 's' : ''}` : null,
@@ -50064,7 +50065,17 @@ function limparOcorrencia(f) {
   if (f.tipo === 'outra') o.tipoNome = (f.tipoNome || '').trim();
   if (f.tipo === 'outra' || (info && info.atletas)) o.atletas = f.atletas || [];
   if (f.tipo === 'disciplina') { o.cartao = f.cartao || 'amarelo'; o.consequencias = f.consequencias || []; }
-  if (f.tipo === 'faltas') { o.faltaTipo = f.faltaTipo || 'falta'; o.justificada = !!f.justificada; }
+  if (f.tipo === 'faltas') {
+    o.faltaTipo = f.faltaTipo || 'falta'; o.justificada = !!f.justificada;
+    const atl = f.atletas || [];
+    if (atl.length >= 2 && f.porAtleta) {
+      o.porAtleta = {};
+      atl.forEach(pid => {
+        const d = faltaDoAtleta(f, pid);
+        o.porAtleta[pid] = { faltaTipo: d.faltaTipo, justificada: d.justificada, motivo: (d.motivo || '').trim() };
+      });
+    }
+  }
   if (f.tipo === 'reunioes') { o.comQuem = f.comQuem || ''; o.participantes = f.participantes || ''; o.decisoes = f.decisoes || ''; }
   if (f.tipo === 'clube' || f.tipo === 'infra') o.categoria = f.categoria || '';
   if (f.estado) {
@@ -50073,6 +50084,19 @@ function limparOcorrencia(f) {
     if (f.estado === 'resolvida') { o.resolvidaEm = f.resolvidaEm || new Date().toISOString(); if (f.resolvidaPor) o.resolvidaPor = f.resolvidaPor; }
   }
   return o;
+}
+
+/* FALTA DE CADA ATLETA. Numa ocorrência de Faltas com vários atletas,
+   cada um pode ter a sua: falta ou atraso, justificada ou não, e o motivo
+   (um doente, outro em exame médico…). Fica em `porAtleta[pid]`; sem
+   isso (registos antigos, ou um atleta só), vale o geral da ocorrência. */
+function faltaDoAtleta(n, pid) {
+  const pa = n && n.porAtleta && n.porAtleta[pid];
+  return {
+    faltaTipo: (pa && pa.faltaTipo) || (n && n.faltaTipo) || 'falta',
+    justificada: pa && typeof pa.justificada === 'boolean' ? pa.justificada : !!(n && n.justificada),
+    motivo: (pa && pa.motivo) || '',
+  };
 }
 
 const EMPTY_OCORRENCIA = () => ({
@@ -50556,17 +50580,57 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                 </div>
               )}
 
-              {f.tipo === 'faltas' && (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                  {[['falta', 'Falta'], ['atraso', 'Atraso']].map(([id, rot]) => (
-                    <ChipEscolha key={id} on={f.faltaTipo === id} cor={T.warn} onClick={() => setF({ ...f, faltaTipo: id })}>{rot}</ChipEscolha>
-                  ))}
-                  <span style={{ width: 1, background: T.line, margin: '0 4px' }} />
-                  {[[false, 'Injustificada'], [true, 'Justificada']].map(([v, rot]) => (
-                    <ChipEscolha key={rot} on={!!f.justificada === v} cor={v ? T.good : T.bad} onClick={() => setF({ ...f, justificada: v })}>{rot}</ChipEscolha>
-                  ))}
-                </div>
-              )}
+              {f.tipo === 'faltas' && (() => {
+                const varios = (f.atletas || []).length >= 2;
+                // Os chips de cima valem para TODOS: mudam também cada atleta.
+                const paraTodos = (patch) => {
+                  const pa = { ...(f.porAtleta || {}) };
+                  (f.atletas || []).forEach(pid => { pa[pid] = { ...faltaDoAtleta(f, pid), ...patch }; });
+                  setF({ ...f, ...patch, porAtleta: varios ? pa : f.porAtleta });
+                };
+                const mudarAtleta = (pid, patch) => {
+                  const pa = { ...(f.porAtleta || {}) };
+                  pa[pid] = { ...faltaDoAtleta(f, pid), ...patch };
+                  setF({ ...f, porAtleta: pa });
+                };
+                const igual = (campo, v) => !varios ? f[campo] === v || (campo === 'justificada' && !!f.justificada === v)
+                  : (f.atletas || []).every(pid => faltaDoAtleta(f, pid)[campo] === v);
+                return (
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {varios && <span style={{ fontSize: 11.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.05em' }}>Todos:</span>}
+                      {[['falta', 'Falta'], ['atraso', 'Atraso']].map(([id, rot]) => (
+                        <ChipEscolha key={id} on={igual('faltaTipo', id)} cor={T.warn} onClick={() => paraTodos({ faltaTipo: id })}>{rot}</ChipEscolha>
+                      ))}
+                      <span style={{ width: 1, alignSelf: 'stretch', background: T.line, margin: '0 4px' }} />
+                      {[[false, 'Injustificada'], [true, 'Justificada']].map(([v, rot]) => (
+                        <ChipEscolha key={rot} on={igual('justificada', v)} cor={v ? T.good : T.bad} onClick={() => paraTodos({ justificada: v })}>{rot}</ChipEscolha>
+                      ))}
+                    </div>
+                    {varios && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, padding: 10, borderRadius: 10, background: T.surface, border: `1px solid ${T.line}` }}>
+                        <div style={{ fontSize: 11.5, color: T.mutedDim }}>Cada atleta pode ter a sua justificação e o seu motivo:</div>
+                        {(f.atletas || []).map(pid => {
+                          const d = faltaDoAtleta(f, pid);
+                          return (
+                            <div key={pid} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <span style={{ minWidth: 90, fontSize: 13, color: T.cream, fontWeight: 600 }}>{nomeAtleta(pid)}</span>
+                              {[['falta', 'Falta'], ['atraso', 'Atraso']].map(([id, rot]) => (
+                                <ChipEscolha key={id} on={d.faltaTipo === id} cor={T.warn} onClick={() => mudarAtleta(pid, { faltaTipo: id })}>{rot}</ChipEscolha>
+                              ))}
+                              {[[false, 'Injustificada'], [true, 'Justificada']].map(([v, rot]) => (
+                                <ChipEscolha key={rot} on={d.justificada === v} cor={v ? T.good : T.bad} onClick={() => mudarAtleta(pid, { justificada: v })}>{rot}</ChipEscolha>
+                              ))}
+                              <input value={d.motivo} onChange={e => mudarAtleta(pid, { motivo: e.target.value })} placeholder="Motivo (ex.: doente)" maxLength={120}
+                                style={{ flex: '1 1 160px', minWidth: 140, background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 10px', color: T.cream, fontSize: 12.5, ...body }} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {f.tipo === 'reunioes' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
@@ -50788,7 +50852,8 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
             const autor = n.autor || (diarioMeta[n.id] && diarioMeta[n.id].email);
             const editor = n.editadoPor && n.editadoPor !== autor ? n.editadoPor : null;
             const detalhes = [];
-            if (chave === 'faltas' && n.tipo && !n.derivada) detalhes.push(`${n.faltaTipo === 'atraso' ? 'Atraso' : 'Falta'} ${n.justificada ? 'justificada' : 'injustificada'}`);
+            const faltaPorAtleta = chave === 'faltas' && !n.derivada && n.porAtleta && (n.atletas || []).length >= 2;
+            if (chave === 'faltas' && n.tipo && !n.derivada && !faltaPorAtleta) detalhes.push(`${n.faltaTipo === 'atraso' ? 'Atraso' : 'Falta'} ${n.justificada ? 'justificada' : 'injustificada'}`);
             if (n.derivada) detalhes.push('Falta marcada nas Presenças · sem motivo registado');
             if (chave === 'disciplina' && (n.consequencias || []).length) detalhes.push(n.consequencias.join(', '));
             if (chave === 'reunioes' && n.comQuem) detalhes.push(`Com: ${n.comQuem}`);
@@ -50859,6 +50924,14 @@ function Diario({ diario, setDiario, diarioMeta = {}, userEmail, players = [], m
                         <span key={pid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', borderRadius: 12, background: T.surfaceRaise, border: `1px solid ${acumula ? T.bad : T.line}`, fontSize: 12, color: T.cream }}>
                           {chave === 'disciplina' && <MiniCartao cor={cor} />}
                           {nomeAtleta(pid)}
+                          {faltaPorAtleta && (() => {
+                            const d = faltaDoAtleta(n, pid);
+                            return (
+                              <span style={{ fontSize: 11, color: d.justificada ? T.good : T.bad }}>
+                                · {d.faltaTipo === 'atraso' ? 'Atraso' : 'Falta'} {d.justificada ? 'justificada' : 'injustificada'}{d.motivo ? <span style={{ color: T.mutedDim }}> · {d.motivo}</span> : null}
+                              </span>
+                            );
+                          })()}
                           {chave === 'disciplina' && k > 0 && (
                             <span style={{ ...mono, fontSize: 10.5, color: acumula ? T.bad : T.mutedDim }}
                               title={`${k}.º ${cor} da época`}>
