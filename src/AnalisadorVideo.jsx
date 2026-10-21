@@ -1176,6 +1176,106 @@ export function shapeVisivelEm(sh, tempo) {
   return true; // sem limite definido = sempre visível
 }
 
+
+/* PARAGENS DOS DESENHOS (como na Sala de Vídeo). Um desenho com `seg`
+   faz o vídeo PARAR no instante em que foi desenhado: os itens desse
+   instante aparecem com a imagem parada, cada um fica os seus segundos
+   no ecrã, e o vídeo continua sozinho quando sai o último. Desenhos
+   antigos (sem `seg`) continuam como eram: aparecem por cima do vídeo
+   a andar, até ao minuto definido. */
+export const SEG_PADRAO_DESENHO = 5;
+const JANELA_PARAGEM = 0.3; // itens a menos de 0,3 s uns dos outros = a mesma paragem
+const SAIDA_ZOOM = 0.9; // o zoom começa a sair antes de o círculo desaparecer
+export const temParagem = (sh) => !!sh && Number(sh.seg) > 0;
+export function formaVisivel(sh, tempo, parado, congelado) {
+  if (!temParagem(sh)) return shapeVisivelEm(sh, tempo);
+  const a = sh.criadoEmTempo ?? 0;
+  if (congelado) return Math.abs(a - congelado.A) < JANELA_PARAGEM && Number(sh.seg) > congelado.dec;
+  return !!parado && Math.abs(tempo - a) < JANELA_PARAGEM;
+}
+// Para o zoom: o círculo deixa de "puxar" a imagem um pouco antes de sair,
+// para o vídeo só voltar a andar com a imagem já no tamanho normal.
+export function formasParaZoom(lista, congelado) {
+  if (!congelado) return lista;
+  return lista.filter(sh => sh.tool !== 'circulo' || !temParagem(sh) || Number(sh.seg) - congelado.dec > SAIDA_ZOOM);
+}
+export function usePausasDesenho(videoRef, formas, ativo = true) {
+  const [congelado, setCongelado] = useState(null); // { A, dec, total } enquanto o vídeo está parado num desenho
+  const formasRef = useRef(formas);
+  formasRef.current = formas;
+  const ativoRef = useRef(ativo);
+  ativoRef.current = ativo;
+  const st = useRef({ prev: null, congel: null, proprio: false, el: null });
+  useEffect(() => {
+    if (ativo) return;
+    // Ao entrar no desenho (ou a editar), uma paragem a meio é cancelada.
+    if (st.current.congel) { st.current.congel = null; setCongelado(null); }
+  }, [ativo]);
+  useEffect(() => {
+    let raf = 0;
+    let ultimoDec = -1;
+    const aoTocar = () => {
+      const s = st.current; const v = s.el;
+      if (!v) return;
+      if (s.proprio) { s.proprio = false; s.prev = v.currentTime; return; }
+      if (s.congel) { s.congel = null; setCongelado(null); s.prev = v.currentTime; return; } // play a meio de uma paragem = seguir já
+      s.prev = v.currentTime - 0.05; // dar play em cima de um desenho mostra a paragem
+    };
+    const aoProcurar = () => {
+      const s = st.current;
+      if (s.congel) { s.congel = null; setCongelado(null); }
+      s.prev = null;
+    };
+    const ligar = (v) => {
+      const s = st.current;
+      if (s.el === v) return;
+      if (s.el) { s.el.removeEventListener('play', aoTocar); s.el.removeEventListener('seeking', aoProcurar); }
+      s.el = v; s.prev = null;
+      if (s.congel) { s.congel = null; setCongelado(null); }
+      if (v) { v.addEventListener('play', aoTocar); v.addEventListener('seeking', aoProcurar); }
+    };
+    const passo = () => {
+      raf = requestAnimationFrame(passo);
+      const v = videoRef.current;
+      ligar(v || null);
+      if (!v) return;
+      const s = st.current;
+      if (s.congel) {
+        const dec = (performance.now() - s.congel.t0) / 1000;
+        if (dec >= s.congel.total) {
+          s.congel = null; setCongelado(null); ultimoDec = -1;
+          s.proprio = true;
+          const p = v.play(); if (p && p.catch) p.catch(() => { s.proprio = false; });
+          return;
+        }
+        const d = Math.floor(dec * 10) / 10;
+        if (d !== ultimoDec) { ultimoDec = d; setCongelado(c => (c ? { ...c, dec } : c)); }
+        return;
+      }
+      if (!ativoRef.current || v.paused || v.seeking) return;
+      const t = v.currentTime;
+      let prev = s.prev;
+      if (prev != null && t < prev) prev = Math.max(-0.01, t - 0.05); // voltou ao início (ex.: repetição do clipe)
+      if (prev == null || t - prev > 1.5) { s.prev = t; return; } // salto grande = não passou "a ver"
+      const lista = (formasRef.current || []).filter(temParagem);
+      let A = null;
+      lista.forEach(sh => { const a = sh.criadoEmTempo ?? 0; if (a > prev && a <= t + 0.001 && (A == null || a < A)) A = a; });
+      s.prev = t;
+      if (A == null) return;
+      const grupo = lista.filter(sh => Math.abs((sh.criadoEmTempo ?? 0) - A) < JANELA_PARAGEM);
+      const total = Math.max(...grupo.map(sh => Number(sh.seg)));
+      v.pause();
+      s.congel = { A, t0: performance.now(), total };
+      ultimoDec = 0;
+      setCongelado({ A, dec: 0, total });
+    };
+    raf = requestAnimationFrame(passo);
+    return () => { cancelAnimationFrame(raf); ligar(null); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return congelado;
+}
+
 /* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
    desaparecerem no tempo certo, tal como foram marcados. ---- */
 /* JANELA INTEIRA DOS LEITORES DE CLIPES — o vídeo ocupa o maior
@@ -1407,7 +1507,9 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();
   // Em ecrã inteiro, o Esc sai do ecrã inteiro (é o browser que o faz), não fecha o leitor.
   useFecharComEsc(onClose, !aEditar && !emEcraInteiro);
-  const estiloZoomClipe = useZoomCirculo((clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)), !aEditar);
+  const congeladoClip = usePausasDesenho(videoRef, clip.shapes || [], !aEditar);
+  const formasClipeVisiveis = (clip.shapes || []).filter(sh => formaVisivel(sh, t, !aTocar, congeladoClip));
+  const estiloZoomClipe = useZoomCirculo(formasParaZoom(formasClipeVisiveis, congeladoClip), !aEditar);
   const [estadoMp4, setEstadoMp4] = useState(null); // null | 'a-preparar' | 'erro'
   // Gravação com desenhos: do início ao fim do clipe, uma vez, e entrega.
   const [gravacaoClipe, setGravacaoClipe] = useState(null);
@@ -1557,7 +1659,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               onTimeUpdate={e => setT(e.currentTarget.currentTime)}
               style={{ width: '100%', height: '100%', display: 'block', background: '#000', cursor: 'pointer' }} />
             <svg viewBox="0 0 100 56.25" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-              {(clip.shapes || []).filter(sh => shapeVisivelEm(sh, t)).map(renderShape)}
+              {formasClipeVisiveis.map(renderShape)}
               {temTrajetoria && <MarcadorTrajetoria videoRef={videoRef} pontos={clip.trajetoriaFoco.pontos} />}
             </svg>
             {(modoSeguir === 'a_escolher' || modoSeguir === 'a_corrigir') && (
@@ -2338,6 +2440,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
      tempo do jogo). Ao guardar, só mudam os desenhos (e o texto e a
      etiqueta): o vídeo do clipe não volta a ser cortado. */
   const [clipeEmDesenho, setClipeEmDesenho] = useState(null);
+  const [zoomPrevia, setZoomPrevia] = useState(null); // id do círculo cujo zoom se está a pré-visualizar
+  const zoomPreviaTimer = useRef(null);
   const seekPendenteRef = useRef(null);
   /* ===== RELVADO — calibração, Medir, Fora de jogo, corredores/terços =====
      Só aqui, na Análise de Vídeo (o trabalho mais ao pormenor). A
@@ -2697,6 +2801,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     };
   }, [signedUrl]);
 
+  // Paragens dos desenhos também no editor, fora do modo de desenho.
+  const congeladoEditor = usePausasDesenho(videoRef, shapes, !modoDesenho);
+  const visivelNoEditor = (sh, i) => editandoDuracaoIndex === i || formaVisivel(sh, current, !playing, congeladoEditor);
   const togglePlay = () => { const v = videoRef.current; if (v) { v.paused ? v.play() : v.pause(); } };
   const seekTo = (t) => { const v = videoRef.current; if (v) { v.currentTime = Math.max(0, Math.min(duration || t, t)); setCurrent(v.currentTime); } };
 
@@ -2770,7 +2877,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const shapesComTextoPendente = () => {
     const t = textoPendente;
     if (t && t.valor && t.valor.trim()) {
-      return [...shapes, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }];
+      return [...shapes, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO }];
     }
     return shapes;
   };
@@ -3080,7 +3187,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (pontosEmCurso.points.length < minimo) return;
     pushHistorico();
     const n = shapes.length;
-    setShapes(s => [...s, { id: uid(), tool: pontosEmCurso.tool, color: corAtual, points: pontosEmCurso.points, criadoEmTempo: current, mostrarAte: null }]);
+    setShapes(s => [...s, { id: uid(), tool: pontosEmCurso.tool, color: corAtual, points: pontosEmCurso.points, criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO }]);
     setPontosEmCurso(null);
     // "Fechar zona" / "Terminar linha": fica logo selecionada, pronta a
     // arrastar (como na Biblioteca).
@@ -3107,9 +3214,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const confirmarDuracaoShape = () => {
     const seg = parseMMSS(duracaoInputTexto);
     if (seg != null && editandoDuracaoIndex != null) {
-      setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: seg } : sh)));
+      setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: seg, seg: null } : sh)));
     }
     setEditandoDuracaoIndex(null);
+  };
+  // Segundos no ecrã com o vídeo parado (null = sem parar, a acompanhar o vídeo).
+  const mudarSegShape = (seg) => {
+    if (editandoDuracaoIndex == null) return;
+    pushHistorico();
+    setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, seg: seg || null, mostrarAte: null } : sh)));
   };
   const marcarSempreVisivelShape = () => {
     if (editandoDuracaoIndex != null) setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: null } : sh)));
@@ -3197,6 +3310,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Zoom do círculo selecionado (1 = sem zoom).
   const mudarZoom = (z) => {
     if (editandoDuracaoIndex == null) return;
+    const alvo = shapes[editandoDuracaoIndex];
+    if (zoomPreviaTimer.current) clearTimeout(zoomPreviaTimer.current);
+    if (alvo && z > 1) {
+      setZoomPrevia(alvo.id);
+      zoomPreviaTimer.current = setTimeout(() => setZoomPrevia(null), 2600);
+    } else setZoomPrevia(null);
     pushHistorico();
     setShapes(s => s.map((sh, i) => {
       if (i !== editandoDuracaoIndex) return sh;
@@ -3209,7 +3328,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setTextoPendente(t => {
       if (t && t.valor.trim()) {
         pushHistorico();
-        setShapes(s => [...s, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null }]);
+        setShapes(s => [...s, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO }]);
       }
       return null;
     });
@@ -3263,7 +3382,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (tool === 'apagar') {
       pushHistorico();
       let melhorI = -1, melhorD = RAIO_TOQUE;
-      shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
+      shapes.forEach((sh, i) => { if (!visivelNoEditor(sh, i)) return; const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
       if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
       apagando.current = true; // continua a apagar enquanto se arrasta o dedo/rato
       return;
@@ -3283,7 +3402,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     // um desenho novo por cima. Funciona com qualquer ferramenta ativa,
     // incluindo as duas ferramentas por pontos.
     let melhorI = -1, melhorD = RAIO_TOQUE;
-    shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
+    shapes.forEach((sh, i) => { if (!visivelNoEditor(sh, i)) return; const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
     if (melhorI >= 0) {
       pushHistorico();
       dragState.current = { index: melhorI, inicio: pt, pontosIniciais: shapes[melhorI].points.map(p => ({ ...p })), moveu: false };
@@ -3295,12 +3414,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       const r = referenciaFJAtual();
       if (!r) return;
       pushHistorico();
-      setShapes(s => [...s, { id: uid(), tool: 'foraDeJogo', color: corAtual, points: [pt], fj: r, criadoEmTempo: current, mostrarAte: null }]);
+      setShapes(s => [...s, { id: uid(), tool: 'foraDeJogo', color: corAtual, points: [pt], fj: r, criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO }]);
       return;
     }
     if (tool === 'medida' && !matrizRelvado) return;
     pushHistorico();
-    drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null, ...chaoParaNova(tool) };
+    drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO, ...chaoParaNova(tool) };
     setShapes(s => [...s, drawState.current]);
   };
   // Arrastar uma das "pegas" de uma forma selecionada (aparecem junto ao
@@ -3331,7 +3450,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (apagando.current) {
       const pt = getPoint(e);
       let melhorI = -1, melhorD = RAIO_TOQUE;
-      shapes.forEach((sh, i) => { const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
+      shapes.forEach((sh, i) => { if (!visivelNoEditor(sh, i)) return; const d = distanciaShape(sh, pt); if (d < melhorD) { melhorD = d; melhorI = i; } });
       if (melhorI >= 0) setShapes(s => s.filter((_, i) => i !== melhorI));
       return;
     }
@@ -3415,9 +3534,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // depois. A única exceção é a forma que está com o popup de duração
   // aberto: essa fica sempre visível, para não desaparecer a meio de a
   // estares a ajustar.
-  const shapesVisiveis = shapes.filter((sh, i) => editandoDuracaoIndex === i || shapeVisivelEm(sh, current));
-  // A ver (fora do desenho), o círculo com zoom aproxima a imagem, como no clipe final.
-  const estiloZoomEditor = useZoomCirculo(shapesVisiveis, !modoDesenho);
+  const shapesVisiveis = shapes.filter((sh, i) => visivelNoEditor(sh, i));
+  // A ver (fora do desenho), o círculo com zoom aproxima a imagem, como no
+  // clipe final. A desenhar, escolher o zoom de um círculo mostra-o logo
+  // uns segundos (pré-visualização).
+  const formaZoomPrevia = zoomPrevia ? shapes.find(sh => sh.id === zoomPrevia) : null;
+  const estiloZoomEditor = useZoomCirculo(
+    formaZoomPrevia ? [formaZoomPrevia] : formasParaZoom(shapesVisiveis, congeladoEditor),
+    !!formaZoomPrevia || !modoDesenho,
+  );
 
   return (
     <div>
@@ -3802,19 +3927,41 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     background: 'rgba(0,0,0,0.88)', border: `1px solid ${COR_DESENHO}`, borderRadius: 8,
                     padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, zIndex: 6, flexWrap: 'wrap', justifyContent: 'center',
                   }}>
-                  <span style={{ fontSize: 12, color: '#fff', ...body }}>Visível até ao minuto:</span>
-                  <Btn variant="ghost" onClick={usarTempoAtualComoLimite} style={{ padding: '5px 8px', fontSize: 12 }} title="Dá play, pausa no momento certo, e usa esse ponto">
-                    {playing ? <Pause size={13} /> : <Play size={13} />} Usar este momento
-                  </Btn>
-                  <input
-                    value={duracaoInputTexto}
-                    onChange={e => setDuracaoInputTexto(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') confirmarDuracaoShape(); }}
-                    placeholder="mm:ss"
-                    style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${TV.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 13, textAlign: 'center', ...mono }}
-                  />
-                  <Btn variant="solid" onClick={confirmarDuracaoShape} style={{ padding: '5px 10px', fontSize: 12 }}>OK</Btn>
-                  <Btn variant="ghost" onClick={marcarSempreVisivelShape} style={{ padding: '5px 10px', fontSize: 12 }}>Sempre visível</Btn>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }} title="Ao reproduzir, o vídeo pára neste momento e o item fica estes segundos no ecrã">
+                    <span style={{ fontSize: 12, color: '#fff', ...body }}>Vídeo parado:</span>
+                    {[1, 2, 3, 5, 8, 10].map(sg => {
+                      const on = Number(shapes[editandoDuracaoIndex]?.seg) === sg;
+                      return (
+                        <button key={sg} type="button" onClick={() => mudarSegShape(sg)} style={{
+                          background: on ? TV.gold : 'none', color: on ? '#111' : '#fff', border: `1px solid ${on ? TV.gold : TV.line}`,
+                          borderRadius: 4, padding: '2px 7px', fontSize: 11.5, cursor: 'pointer', ...mono,
+                        }}>{sg}s</button>
+                      );
+                    })}
+                    <button type="button" onClick={() => mudarSegShape(null)} title="Sem parar o vídeo: o item acompanha o vídeo a andar" style={{
+                      background: !temParagem(shapes[editandoDuracaoIndex]) ? TV.gold : 'none', color: !temParagem(shapes[editandoDuracaoIndex]) ? '#111' : '#fff',
+                      border: `1px solid ${!temParagem(shapes[editandoDuracaoIndex]) ? TV.gold : TV.line}`,
+                      borderRadius: 4, padding: '2px 7px', fontSize: 11.5, cursor: 'pointer', ...body,
+                    }}>Sem parar</button>
+                  </span>
+                  {!temParagem(shapes[editandoDuracaoIndex]) && (
+                    <>
+                      <span style={{ fontSize: 12, color: '#fff', ...body }}>Visível até ao minuto:</span>
+                      <Btn variant="ghost" onClick={usarTempoAtualComoLimite} style={{ padding: '5px 8px', fontSize: 12 }} title="Dá play, pausa no momento certo, e usa esse ponto">
+                        {playing ? <Pause size={13} /> : <Play size={13} />} Usar este momento
+                      </Btn>
+                      <input
+                        value={duracaoInputTexto}
+                        onChange={e => setDuracaoInputTexto(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') confirmarDuracaoShape(); }}
+                        placeholder="mm:ss"
+                        style={{ width: 62, background: '#111', color: '#fff', border: `1px solid ${TV.line}`, borderRadius: 4, padding: '3px 6px', fontSize: 13, textAlign: 'center', ...mono }}
+                      />
+                      <Btn variant="solid" onClick={confirmarDuracaoShape} style={{ padding: '5px 10px', fontSize: 12 }}>OK</Btn>
+                      <Btn variant="ghost" onClick={marcarSempreVisivelShape} style={{ padding: '5px 10px', fontSize: 12 }}>Sempre visível</Btn>
+                    </>
+                  )}
+                  <Btn variant="solid" onClick={() => setEditandoDuracaoIndex(null)} style={{ padding: '5px 10px', fontSize: 12 }}><Check size={13} /> Feito</Btn>
                   {shapes[editandoDuracaoIndex]?.tool === 'circulo' && (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Ao reproduzir, a imagem aproxima-se deste círculo enquanto ele estiver visível">
                       <span style={{ fontSize: 12, color: '#fff', ...body }}>Zoom:</span>
