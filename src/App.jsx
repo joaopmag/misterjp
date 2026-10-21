@@ -43267,46 +43267,46 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const marcado = duracaoMarcada != null && duracaoMarcada >= 1 && !demasiadoLongo;
     const podeGravar = marcado && !!tituloClipe.trim() && !aGravarClipeAtleta;
     const campo = {
-      background: escuro ? '#000' : T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-      padding: '8px 10px', color: T.cream, fontSize: 13, ...body, width: '100%', boxSizing: 'border-box',
+      background: escuro ? '#000' : (escuro ? T_ESCURO : T).bg, border: `1px solid ${(escuro ? T_ESCURO : T).line}`, borderRadius: 8,
+      padding: '8px 10px', color: (escuro ? T_ESCURO : T).cream, fontSize: 13, ...body, width: '100%', boxSizing: 'border-box',
     };
     return (
       <div style={escuro ? {
-        background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+        background: '#111', borderTop: `1px solid ${(escuro ? T_ESCURO : T).line}`, flexShrink: 0,
         padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 8,
       } : {
-        marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+        marginTop: 10, background: (escuro ? T_ESCURO : T).surface, border: `1px solid ${(escuro ? T_ESCURO : T).line}`, borderRadius: 10,
         padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
       }}>
         {!escuro && (edicaoClipeId ? (
-          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+          <div style={{ fontSize: 12.5, color: (escuro ? T_ESCURO : T).mutedDim }}>
             A editar o clipe. Podes marcar de novo o início e o fim (até {MAX_CLIPE_ATLETA_SEG / 60} minutos),
             ou mudar só o título e o texto. As alterações só ficam quando carregares em Guardar alterações.
           </div>
         ) : (
-          <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+          <div style={{ fontSize: 12.5, color: (escuro ? T_ESCURO : T).mutedDim }}>
             Deixa o vídeo a tocar e marca onde o lance começa e acaba (até {MAX_CLIPE_ATLETA_SEG / 60} minutos).
             Depois dá-lhe um título e escreve o que quiseres sobre ele. O clipe fica guardado para ti e para o treinador.
           </div>
         ))}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
-          <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
-          <div style={{ color: T.mutedDim, fontSize: 12 }}>até</div>
-          <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
-          <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
-          {marcado && <div style={{ fontSize: 12, color: T.mutedDim }}>{Math.round(duracaoMarcada)}s</div>}
+          <Btn escuro={escuro} variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
+          <div style={{ fontSize: 13, color: escuro ? '#fff' : (escuro ? T_ESCURO : T).cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
+          <div style={{ color: (escuro ? T_ESCURO : T).mutedDim, fontSize: 12 }}>até</div>
+          <Btn escuro={escuro} variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
+          <div style={{ fontSize: 13, color: escuro ? '#fff' : (escuro ? T_ESCURO : T).cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
+          {marcado && <div style={{ fontSize: 12, color: (escuro ? T_ESCURO : T).mutedDim }}>{Math.round(duracaoMarcada)}s</div>}
           {clipMarcas.inicio != null && !(active && ehClipe(active)) && (
-            <Btn variant="ghost" onClick={() => enviarComandoYoutube('seekTo', [Math.min(clipMarcas.inicio, clipMarcas.fim ?? clipMarcas.inicio), true])}>
+            <Btn escuro={escuro} variant="ghost" onClick={() => enviarComandoYoutube('seekTo', [Math.min(clipMarcas.inicio, clipMarcas.fim ?? clipMarcas.inicio), true])}>
               Ir para o início marcado
             </Btn>
           )}
         </div>
         {duracaoMarcada != null && duracaoMarcada < 1 && (
-          <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto. Marca o fim um pouco mais à frente.</div>
+          <div style={{ fontSize: 12.5, color: (escuro ? T_ESCURO : T).bad }}>O início e o fim estão demasiado perto. Marca o fim um pouco mais à frente.</div>
         )}
         {demasiadoLongo && (
-          <div style={{ fontSize: 12.5, color: T.bad }}>
+          <div style={{ fontSize: 12.5, color: (escuro ? T_ESCURO : T).bad }}>
             O clipe tem {Math.round(duracaoMarcada)}s. O máximo são {MAX_CLIPE_ATLETA_SEG} segundos: marca o início ou o fim outra vez.
           </div>
         )}
@@ -43323,7 +43323,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               placeholder="O que queres dizer sobre este lance? (opcional)"
               style={{ ...campo, resize: 'vertical' }}
             />
-            {erroClipeAtleta && <div style={{ fontSize: 12.5, color: T.bad }}>{erroClipeAtleta}</div>}
+            {erroClipeAtleta && <div style={{ fontSize: 12.5, color: (escuro ? T_ESCURO : T).bad }}>{erroClipeAtleta}</div>}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <Btn onClick={guardarClipe} disabled={!podeGravar}>
                 <Scissors size={14} /> {aGravarClipeAtleta ? 'A gravar…' : (edicaoClipeId ? 'Guardar alterações' : 'Gravar clipe')}
@@ -43339,14 +43339,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // vídeo) e em ecrã inteiro (faixa escura compacta dentro da caixa).
   const renderPainelClipe = (escuro) => criarClipeAtleta ? renderPainelClipeAtleta(escuro) : (
     <div style={escuro ? {
-      background: '#111', borderTop: `1px solid ${T.line}`, flexShrink: 0,
+      background: '#111', borderTop: `1px solid ${(escuro ? T_ESCURO : T).line}`, flexShrink: 0,
       padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 8,
     } : {
-      marginTop: 10, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10,
+      marginTop: 10, background: (escuro ? T_ESCURO : T).surface, border: `1px solid ${(escuro ? T_ESCURO : T).line}`, borderRadius: 10,
       padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
     }}>
       {!escuro && (
-        <div style={{ fontSize: 12.5, color: T.mutedDim }}>
+        <div style={{ fontSize: 12.5, color: (escuro ? T_ESCURO : T).mutedDim }}>
           Deixa o vídeo a tocar e marca onde o corte começa e acaba — depois dá-lhe um nome
           e o clipe fica gravado à parte, {modoCanal
             ? (eqsAtivo.length || catDe(active) === 'adversario' ? 'na ficha do adversário' : 'junto do vídeo de onde saiu')
@@ -43355,18 +43355,18 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       )}
       {eqsAtivo.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: T.mutedDim }}>Corte sobre:</span>
+          <span style={{ fontSize: 12, color: (escuro ? T_ESCURO : T).mutedDim }}>Corte sobre:</span>
           {eqsAtivo.map(e => {
             const on = mesmaEquipa(e, equipaCorteEf);
             return (
               <button key={e} onClick={() => setEquipaCorte(e)} style={{
                 padding: '4px 11px', borderRadius: 20, fontSize: 12, cursor: 'pointer', ...body,
-                background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : T.muted,
-                border: `1px solid ${on ? '#B5393F' : T.line}`,
+                background: on ? '#B5393F' : 'transparent', color: on ? TEXT_ON_ACCENT : (escuro ? T_ESCURO : T).muted,
+                border: `1px solid ${on ? '#B5393F' : (escuro ? T_ESCURO : T).line}`,
               }}>{e}</button>
             );
           })}
-          <span style={{ fontSize: 11.5, color: T.mutedDim }}>
+          <span style={{ fontSize: 11.5, color: (escuro ? T_ESCURO : T).mutedDim }}>
             {fichaDaEquipa(equipaCorteEf, adversarios)
               ? `→ ficha de ${fichaDaEquipa(equipaCorteEf, adversarios).nome}`
               : '→ a ficha é criada ao gravar'}
@@ -43374,11 +43374,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <Btn variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
-        <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
-        <div style={{ color: T.mutedDim, fontSize: 12 }}>até</div>
-        <Btn variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
-        <div style={{ fontSize: 13, color: escuro ? '#fff' : T.cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
+        <Btn escuro={escuro} variant="ghost" onClick={marcarInicio}>Marcar início</Btn>
+        <div style={{ fontSize: 13, color: escuro ? '#fff' : (escuro ? T_ESCURO : T).cream, ...mono }}>{clipMarcas.inicio == null ? '—:—' : fmtMMSS(clipMarcas.inicio)}</div>
+        <div style={{ color: (escuro ? T_ESCURO : T).mutedDim, fontSize: 12 }}>até</div>
+        <Btn escuro={escuro} variant="ghost" onClick={marcarFim} disabled={clipMarcas.inicio == null}>Marcar fim</Btn>
+        <div style={{ fontSize: 13, color: escuro ? '#fff' : (escuro ? T_ESCURO : T).cream, ...mono }}>{clipMarcas.fim == null ? '—:—' : fmtMMSS(clipMarcas.fim)}</div>
         {clipMarcas.inicio != null && clipMarcas.fim != null && Math.abs(clipMarcas.fim - clipMarcas.inicio) >= 1 && (
           <>
             <input
@@ -43386,8 +43386,8 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
               onKeyDown={e => { if (e.key === 'Enter') guardarClipe(); }}
               placeholder="Nome do clipe (ex.: Saída de bola sob pressão)"
               style={{
-                flex: 1, minWidth: isNarrow ? 160 : 200, background: escuro ? '#000' : T.bg, border: `1px solid ${T.line}`, borderRadius: 8,
-                padding: '8px 10px', color: T.cream, fontSize: 13, ...body,
+                flex: 1, minWidth: isNarrow ? 160 : 200, background: escuro ? '#000' : (escuro ? T_ESCURO : T).bg, border: `1px solid ${(escuro ? T_ESCURO : T).line}`, borderRadius: 8,
+                padding: '8px 10px', color: (escuro ? T_ESCURO : T).cream, fontSize: 13, ...body,
               }}
             />
             <Btn onClick={guardarClipe}><Scissors size={14} /> Guardar clipe</Btn>
@@ -43395,7 +43395,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
         )}
       </div>
       {clipMarcas.inicio != null && clipMarcas.fim != null && Math.abs(clipMarcas.fim - clipMarcas.inicio) < 1 && (
-        <div style={{ fontSize: 12.5, color: T.bad }}>O início e o fim estão demasiado perto — marca o fim um pouco mais à frente.</div>
+        <div style={{ fontSize: 12.5, color: (escuro ? T_ESCURO : T).bad }}>O início e o fim estão demasiado perto — marca o fim um pouco mais à frente.</div>
       )}
     </div>
   );

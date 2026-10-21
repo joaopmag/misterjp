@@ -1180,57 +1180,80 @@ export function shapeVisivelEm(sh, tempo) {
 /* PARAGENS DOS DESENHOS (como na Sala de Vídeo). Um desenho com `seg`
    faz o vídeo PARAR no instante em que foi desenhado: os itens desse
    instante aparecem com a imagem parada, cada um fica os seus segundos
-   no ecrã, e o vídeo continua sozinho quando sai o último. Desenhos
-   antigos (sem `seg`) continuam como eram: aparecem por cima do vídeo
-   a andar, até ao minuto definido. */
+   no ecrã, e o vídeo continua sozinho quando sai o último.
+   (Revisto) Todos os itens param o vídeo, também os dos clipes antigos
+   (feitos antes das paragens): esses usam o tempo que tinham no ecrã
+   ("visível até ao minuto"), ou 5 s se eram "sempre visíveis". Exceções:
+   as guias do campo e os itens marcados "Sem parar", que acompanham o
+   vídeo a andar. */
 export const SEG_PADRAO_DESENHO = 5;
 const JANELA_PARAGEM = 0.3; // itens a menos de 0,3 s uns dos outros = a mesma paragem
 const SAIDA_ZOOM = 0.9; // o zoom começa a sair antes de o círculo desaparecer
-export const temParagem = (sh) => !!sh && Number(sh.seg) > 0;
+export const temParagem = (sh) => !!sh && !sh.semParar && sh.tool !== 'guias';
+export function segDe(sh) {
+  if (!sh) return SEG_PADRAO_DESENHO;
+  const n = Number(sh.seg);
+  if (n > 0) return n;
+  const ini = sh.criadoEmTempo ?? 0;
+  let d = null;
+  if (sh.mostrarAte != null) d = sh.mostrarAte - ini;
+  else if (sh.duracao != null) d = Number(sh.duracao);
+  if (!(d > 0)) return SEG_PADRAO_DESENHO;
+  return Math.max(1, Math.min(60, Math.round(d)));
+}
 export function formaVisivel(sh, tempo, parado, congelado) {
   if (!temParagem(sh)) return shapeVisivelEm(sh, tempo);
   const a = sh.criadoEmTempo ?? 0;
-  if (congelado) return Math.abs(a - congelado.A) < JANELA_PARAGEM && Number(sh.seg) > congelado.dec;
+  if (congelado) return Math.abs(a - congelado.A) < JANELA_PARAGEM && segDe(sh) > congelado.dec;
   return !!parado && Math.abs(tempo - a) < JANELA_PARAGEM;
 }
 // Para o zoom: o círculo deixa de "puxar" a imagem um pouco antes de sair,
 // para o vídeo só voltar a andar com a imagem já no tamanho normal.
 export function formasParaZoom(lista, congelado) {
   if (!congelado) return lista;
-  return lista.filter(sh => sh.tool !== 'circulo' || !temParagem(sh) || Number(sh.seg) - congelado.dec > SAIDA_ZOOM);
+  return lista.filter(sh => sh.tool !== 'circulo' || !temParagem(sh) || segDe(sh) - congelado.dec > SAIDA_ZOOM);
 }
-export function usePausasDesenho(videoRef, formas, ativo = true) {
+/* `semParagemNoPlayRef`: a desenhar, dar play parado em cima de uma
+   paragem segue em frente (como na Sala de Vídeo); fora do desenho, dar
+   play em cima de uma paragem mostra-a. Puxar a barra para trás faz as
+   paragens que ficam à frente voltarem TODAS a parar. */
+export function usePausasDesenho(videoRef, formas, ativo = true, semParagemNoPlayRef = null) {
   const [congelado, setCongelado] = useState(null); // { A, dec, total } enquanto o vídeo está parado num desenho
   const formasRef = useRef(formas);
   formasRef.current = formas;
   const ativoRef = useRef(ativo);
   ativoRef.current = ativo;
-  const st = useRef({ prev: null, congel: null, proprio: false, el: null });
-  useEffect(() => {
-    if (ativo) return;
-    // Ao entrar no desenho (ou a editar), uma paragem a meio é cancelada.
-    if (st.current.congel) { st.current.congel = null; setCongelado(null); }
-  }, [ativo]);
+  const st = useRef({ prev: null, congel: null, proprio: false, el: null, ultimaA: null });
+  // Larga a paragem em curso e deixa o vídeo parado onde está (para editar).
+  const cancelar = React.useCallback(() => {
+    const s = st.current;
+    if (s.congel) { s.ultimaA = s.congel.A; s.congel = null; setCongelado(null); }
+  }, []);
+  useEffect(() => { if (!ativo) cancelar(); }, [ativo, cancelar]);
   useEffect(() => {
     let raf = 0;
     let ultimoDec = -1;
     const aoTocar = () => {
       const s = st.current; const v = s.el;
       if (!v) return;
-      if (s.proprio) { s.proprio = false; s.prev = v.currentTime; return; }
-      if (s.congel) { s.congel = null; setCongelado(null); s.prev = v.currentTime; return; } // play a meio de uma paragem = seguir já
-      s.prev = v.currentTime - 0.05; // dar play em cima de um desenho mostra a paragem
+      const t = v.currentTime;
+      if (s.proprio) { s.proprio = false; s.prev = t; return; }
+      if (s.congel) { s.ultimaA = s.congel.A; s.congel = null; setCongelado(null); s.prev = t; return; } // play a meio de uma paragem = seguir já
+      const naUltima = s.ultimaA != null && Math.abs(t - s.ultimaA) < JANELA_PARAGEM;
+      const saltar = naUltima || !!(semParagemNoPlayRef && semParagemNoPlayRef.current);
+      s.prev = saltar ? t + 0.001 : t - 0.05; // fora do desenho, play em cima de um desenho mostra a paragem
     };
     const aoProcurar = () => {
       const s = st.current;
       if (s.congel) { s.congel = null; setCongelado(null); }
+      s.ultimaA = null;
       s.prev = null;
     };
     const ligar = (v) => {
       const s = st.current;
       if (s.el === v) return;
       if (s.el) { s.el.removeEventListener('play', aoTocar); s.el.removeEventListener('seeking', aoProcurar); }
-      s.el = v; s.prev = null;
+      s.el = v; s.prev = null; s.ultimaA = null;
       if (s.congel) { s.congel = null; setCongelado(null); }
       if (v) { v.addEventListener('play', aoTocar); v.addEventListener('seeking', aoProcurar); }
     };
@@ -1243,6 +1266,7 @@ export function usePausasDesenho(videoRef, formas, ativo = true) {
       if (s.congel) {
         const dec = (performance.now() - s.congel.t0) / 1000;
         if (dec >= s.congel.total) {
+          s.ultimaA = s.congel.A;
           s.congel = null; setCongelado(null); ultimoDec = -1;
           s.proprio = true;
           const p = v.play(); if (p && p.catch) p.catch(() => { s.proprio = false; });
@@ -1263,7 +1287,7 @@ export function usePausasDesenho(videoRef, formas, ativo = true) {
       s.prev = t;
       if (A == null) return;
       const grupo = lista.filter(sh => Math.abs((sh.criadoEmTempo ?? 0) - A) < JANELA_PARAGEM);
-      const total = Math.max(...grupo.map(sh => Number(sh.seg)));
+      const total = Math.max(...grupo.map(segDe));
       v.pause();
       s.congel = { A, t0: performance.now(), total };
       ultimoDec = 0;
@@ -1273,7 +1297,7 @@ export function usePausasDesenho(videoRef, formas, ativo = true) {
     return () => { cancelAnimationFrame(raf); ligar(null); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return congelado;
+  return [congelado, cancelar];
 }
 
 /* ---- Leitor do clipe já guardado — com os desenhos a aparecerem/
@@ -1507,7 +1531,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
   const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();
   // Em ecrã inteiro, o Esc sai do ecrã inteiro (é o browser que o faz), não fecha o leitor.
   useFecharComEsc(onClose, !aEditar && !emEcraInteiro);
-  const congeladoClip = usePausasDesenho(videoRef, clip.shapes || [], !aEditar);
+  const [congeladoClip] = usePausasDesenho(videoRef, clip.shapes || [], !aEditar);
   const formasClipeVisiveis = (clip.shapes || []).filter(sh => formaVisivel(sh, t, !aTocar, congeladoClip));
   const estiloZoomClipe = useZoomCirculo(formasParaZoom(formasClipeVisiveis, congeladoClip), !aEditar);
   const [estadoMp4, setEstadoMp4] = useState(null); // null | 'a-preparar' | 'erro'
@@ -2466,6 +2490,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const [futuro, setFuturo] = useState([]); // pilha para o "Avançar" — os estados que se desfizeram com o Retroceder
   const [pontosEmCurso, setPontosEmCurso] = useState(null); // { tool, points } — a construir a "Zona livre" ou "Ligar pontos" por toques
   const [textoPendente, setTextoPendente] = useState(null);
+  const [segNovos, setSegNovos] = useState(SEG_PADRAO_DESENHO); // segundos com o vídeo parado dos itens desenhados a seguir
   const [editandoDuracaoIndex, setEditandoDuracaoIndex] = useState(null);
   const [duracaoInputTexto, setDuracaoInputTexto] = useState('');
   const drawState = useRef(null);
@@ -2841,7 +2866,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   }, [signedUrl]);
 
   // Paragens dos desenhos também no editor, fora do modo de desenho.
-  const congeladoEditor = usePausasDesenho(videoRef, shapes, !modoDesenho);
+  // Também a desenhar (como na Sala de Vídeo): puxar a barra para trás e
+  // dar play mostra as paragens; tocar no vídeo para desenhar larga-as.
+  const semParagemNoPlayRef = useRef(false);
+  semParagemNoPlayRef.current = modoDesenho;
+  const [congeladoEditor, largarParagemEditor] = usePausasDesenho(videoRef, shapes, editandoDuracaoIndex == null && !textoPendente, semParagemNoPlayRef);
   const visivelNoEditor = (sh, i) => editandoDuracaoIndex === i || formaVisivel(sh, current, !playing, congeladoEditor);
   const togglePlay = () => { const v = videoRef.current; if (v) { v.paused ? v.play() : v.pause(); } };
   const seekTo = (t) => { const v = videoRef.current; if (v) { v.currentTime = Math.max(0, Math.min(duration || t, t)); setCurrent(v.currentTime); } };
@@ -2922,7 +2951,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const shapesComTextoPendente = () => {
     const t = textoPendente;
     if (t && t.valor && t.valor.trim()) {
-      return [...shapes, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO }];
+      return [...shapes, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null, seg: segNovos }];
     }
     return shapes;
   };
@@ -3234,7 +3263,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (pontosEmCurso.points.length < minimo) return;
     pushHistorico();
     const n = shapes.length;
-    setShapes(s => [...s, { id: uid(), tool: pontosEmCurso.tool, color: corAtual, points: pontosEmCurso.points, criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO }]);
+    setShapes(s => [...s, { id: uid(), tool: pontosEmCurso.tool, color: corAtual, points: pontosEmCurso.points, criadoEmTempo: current, mostrarAte: null, seg: segNovos }]);
     setPontosEmCurso(null);
     // "Fechar zona" / "Terminar linha": fica logo selecionada, pronta a
     // arrastar (como na Biblioteca).
@@ -3254,6 +3283,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // Abre-se ao clicar (sem arrastar) num desenho já existente, para
   // definir ou ajustar até quando fica visível.
   const abrirPopupDuracao = (index) => {
+    largarParagemEditor();
     setEditandoDuracaoIndex(index);
     const atual = shapes[index]?.mostrarAte;
     setDuracaoInputTexto(fmt(atual != null ? atual : current + 3));
@@ -3261,7 +3291,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const confirmarDuracaoShape = () => {
     const seg = parseMMSS(duracaoInputTexto);
     if (seg != null && editandoDuracaoIndex != null) {
-      setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: seg, seg: null } : sh)));
+      setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: seg, seg: null, semParar: true } : sh)));
     }
     setEditandoDuracaoIndex(null);
   };
@@ -3269,10 +3299,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const mudarSegShape = (seg) => {
     if (editandoDuracaoIndex == null) return;
     pushHistorico();
-    setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, seg: seg || null, mostrarAte: null } : sh)));
+    setShapes(s => s.map((sh, i) => {
+      if (i !== editandoDuracaoIndex) return sh;
+      const { semParar, ...resto } = sh; // eslint-disable-line no-unused-vars
+      return seg ? { ...resto, seg, mostrarAte: null } : { ...resto, seg: null, mostrarAte: null, semParar: true };
+    }));
   };
   const marcarSempreVisivelShape = () => {
-    if (editandoDuracaoIndex != null) setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: null } : sh)));
+    if (editandoDuracaoIndex != null) setShapes(s => s.map((sh, i) => (i === editandoDuracaoIndex ? { ...sh, mostrarAte: null, seg: null, semParar: true } : sh)));
     setEditandoDuracaoIndex(null);
   };
   // Liga/desliga o contorno da Zona — sem contorno, fica só com as linhas
@@ -3375,13 +3409,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setTextoPendente(t => {
       if (t && t.valor.trim()) {
         pushHistorico();
-        setShapes(s => [...s, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO }]);
+        setShapes(s => [...s, { id: uid(), tool: 'texto', color: corAtual, points: [t.pt], texto: t.valor.trim(), criadoEmTempo: current, mostrarAte: null, seg: segNovos }]);
       }
       return null;
     });
   };
 
   const startDraw = (e) => {
+    // Tocar no vídeo durante uma paragem: ela fica parada para editar
+    // (os itens dela continuam à vista e os novos juntam-se a ela).
+    largarParagemEditor();
     if (modoDesenho && tool === 'seguir') {
       const pt = getPoint(e);
       escolherJogadorFoco(pt.x / 100, pt.y / 56.25);
@@ -3461,12 +3498,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       const r = referenciaFJAtual();
       if (!r) return;
       pushHistorico();
-      setShapes(s => [...s, { id: uid(), tool: 'foraDeJogo', color: corAtual, points: [pt], fj: r, criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO }]);
+      setShapes(s => [...s, { id: uid(), tool: 'foraDeJogo', color: corAtual, points: [pt], fj: r, criadoEmTempo: current, mostrarAte: null, seg: segNovos }]);
       return;
     }
     if (tool === 'medida' && !matrizRelvado) return;
     pushHistorico();
-    drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null, seg: SEG_PADRAO_DESENHO, ...chaoParaNova(tool) };
+    drawState.current = { id: uid(), tool, color: corAtual, points: [pt], criadoEmTempo: current, mostrarAte: null, seg: segNovos, ...chaoParaNova(tool) };
     setShapes(s => [...s, drawState.current]);
   };
   // Arrastar uma das "pegas" de uma forma selecionada (aparecem junto ao
@@ -3737,7 +3774,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             transition: 'max-height 0.2s ease, opacity 0.15s ease',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${TV.line}`, background: TV.surfaceRaise }}>
-              <span style={{ fontSize: 12.5, color: TV.muted, ...mono }}>Modo de desenho — vídeo em pausa</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12.5, color: TV.muted, ...mono }}>Modo de desenho</span>
+                {/* Como na Sala de Vídeo: quanto tempo o vídeo fica parado com
+                    os itens que se desenharem a seguir. Para um item já feito,
+                    toca nele. */}
+                <span style={{ fontSize: 12, color: TV.cream, marginLeft: 6, ...body }} title="Ao reproduzir, o vídeo para no momento do item e fica parado estes segundos">Novos itens, vídeo parado:</span>
+                <button type="button" onClick={() => setSegNovos(v => Math.max(1, v - 1))} style={{ background: 'none', border: `1px solid ${TV.line}`, borderRadius: 4, color: TV.cream, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>−</button>
+                <span style={{ fontSize: 13, color: TV.cream, minWidth: 30, textAlign: 'center', ...mono }}>{segNovos}s</span>
+                <button type="button" onClick={() => setSegNovos(v => Math.min(60, v + 1))} style={{ background: 'none', border: `1px solid ${TV.line}`, borderRadius: 4, color: TV.cream, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>+</button>
+              </span>
               <div style={{ display: 'flex', gap: 8 }}>
                 {/* Botões simples: o Btn trava cliques seguidos (e aqui recuam-se vários pontos de rajada). */}
                 {[
@@ -3977,7 +4023,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }} title="Ao reproduzir, o vídeo pára neste momento e o item fica estes segundos no ecrã">
                     <span style={{ fontSize: 12, color: '#fff', ...body }}>Vídeo parado:</span>
                     {[1, 2, 3, 5, 8, 10].map(sg => {
-                      const on = Number(shapes[editandoDuracaoIndex]?.seg) === sg;
+                      const on = temParagem(shapes[editandoDuracaoIndex]) && segDe(shapes[editandoDuracaoIndex]) === sg;
                       return (
                         <button key={sg} type="button" onClick={() => mudarSegShape(sg)} style={{
                           background: on ? TV.gold : 'none', color: on ? '#111' : '#fff', border: `1px solid ${on ? TV.gold : TV.line}`,
