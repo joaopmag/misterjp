@@ -42336,13 +42336,17 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // mexer em alguma coisa (ferramenta, forma, Limpar, tocar no vídeo),
     // a retoma é cancelada e o vídeo fica parado para editar.
     if (ativoEClipe && modoDesenhoBib) {
-      if (anterior == null || !ytATocarRef.current || historicoBib.length > 0 || formaEmCursoBib || retomaDesenhoRef.current || apagarTodasBib) return;
-      const avancoDesenho = liveTime - anterior;
-      if (liveTime < anterior - 0.3) {
-        // recuou (volta do corte): as pausas outra vez à frente podem voltar a congelar
-        (active.anotacoesPausa || []).forEach(a => { if (tempoPausaNoCorte(a) >= liveTime - 0.5) congeladasDesenhoRef.current.delete(a.id); });
+      // Recuou (barra para trás, -2s, volta do corte), mesmo com o vídeo
+      // parado: as pausas outra vez à frente voltam TODAS a congelar. Antes
+      // só se via isto com o vídeo a tocar, e ao puxar a barra com ele
+      // parado as pausas já vistas ficavam de fora até à volta seguinte.
+      // (Não durante uma paragem: o pequeno recuo dela própria não conta.)
+      if (anterior != null && liveTime < anterior - 0.3 && !retomaDesenhoRef.current) {
+        (active.anotacoesPausa || []).forEach(a => { if (tempoPausaNoCorte(a) >= liveTime - 0.5) { congeladasDesenhoRef.current.delete(a.id); pausasJaMostradasRef.current.delete(a.id); } });
         return;
       }
+      if (anterior == null || !ytATocarRef.current || historicoBib.length > 0 || formaEmCursoBib || retomaDesenhoRef.current || apagarTodasBib) return;
+      const avancoDesenho = liveTime - anterior;
       if (avancoDesenho <= 0 || avancoDesenho >= 2) return;
       // Já saiu do instante da pausa que estava aberta (sem alterações):
       // tira-lhe os desenhos do ecrã enquanto o vídeo anda.
@@ -42744,6 +42748,12 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     // Nunca exatamente no fim: aí o ciclo acima recomeçava logo o corte.
     const alvo = Math.min(Math.max(t, clipIni), Math.max(clipIni, clipFimEf - 0.25));
     largarParagemBib();
+    // Ir para trás com a barra: todas as pausas que ficam à frente voltam
+    // a parar já na próxima reprodução (incluindo as acabadas de gravar e
+    // as que já tinham sido vistas), dentro e fora do modo de desenho.
+    (active.anotacoesPausa || []).forEach(a => {
+      if (tempoPausaNoCorte(a) >= alvo - 0.5) { pausasJaMostradasRef.current.delete(a.id); congeladasDesenhoRef.current.delete(a.id); }
+    });
     // A desenhar, sem nada por gravar: os itens da pausa aberta saem se o
     // destino não for o minuto dela (só aparecem no momento certo).
     if (modoDesenhoBib && historicoBib.length === 0 && !formaEmCursoBib && Math.abs(alvo - tempoAnotacaoBib) > JANELA_ABRIR_PAUSA_BIB) {
