@@ -2265,7 +2265,7 @@ function AjudaForaDeJogo({ refFJ, setRefFJ, temCalibracaoBoa }) {
   );
 }
 
-export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala }) {
+export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideosOriginais, clipes = [], setClipes, uploadVideoEstado, iniciarUploadVideo, askConfirm, destinosSala, enviarParaSala, clipesUsadosNaSala }) {
   const videoRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const containerRef = useRef(null);
@@ -2824,6 +2824,14 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setClipeAReproduzir(prev => (prev && prev.id === clip.id ? { ...prev, trajetoriaFoco: trajetoria } : prev));
   };
 
+  // Usado na Sala de Vídeo (Canal ou ficha de adversário)?
+  const clipeUsadoNaSala = (clip) => !!clip && ((clipesUsadosNaSala && clipesUsadosNaSala.has(clip.id)) || (clip.enviadoSala || []).length > 0);
+  // Apaga o vídeo do clipe E a miniatura (o mesmo nome, em .jpg).
+  const apagarFicheirosClipe = async (storagePath) => {
+    const ficheiros = [storagePath];
+    if (/\.mp4$/i.test(storagePath)) ficheiros.push(storagePath.replace(/\.mp4$/i, '.jpg'));
+    try { await supabase.storage.from('videos-clipes').remove(ficheiros); } catch (e) { /* fica órfão, sem mal */ }
+  };
   const removerClipe = (clip, onRemovido) => {
     /* CLIPE DE UM JOGADOR: cada lado apaga só para si. O jogador, no
        Portal, marca `apagadoPeloAtleta` (o treinador continua a vê-lo);
@@ -2840,16 +2848,19 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       else if (window.confirm(`Apagar este clipe? ${msg}`)) executarAtleta();
       return;
     }
+    /* Um clipe já enviado para a Sala de Vídeo continua a ser usado lá (e
+       na ficha do adversário): apaga-se o registo daqui, mas o ficheiro
+       FICA no Storage, senão o vídeo ficava partido na Sala de Vídeo. */
+    const naSala = clipeUsadoNaSala(clip);
     const executar = async () => {
       // Os clipes dos atletas não têm ficheiro (são só marcas no YouTube).
-      if (clip.storagePath) {
-        try { await supabase.storage.from('videos-clipes').remove([clip.storagePath]); } catch (e) { /* apaga o registo à mesma */ }
-      }
+      if (clip.storagePath && !naSala) await apagarFicheirosClipe(clip.storagePath);
       setClipes(prev => prev.filter(c => c.id !== clip.id));
       onRemovido?.();
     };
+    const notaSala = naSala ? 'Este clipe foi enviado para a Sala de Vídeo: sai da Análise de Vídeo, mas continua na Sala de Vídeo (o ficheiro não é apagado). Para o tirar de lá, apaga-o também na Sala de Vídeo.' : undefined;
     if (askConfirm) {
-      askConfirm({ title: 'Apagar clipe?', label: 'Este clipe', confirmLabel: 'Apagar', onConfirm: executar });
+      askConfirm({ title: 'Apagar clipe?', label: 'Este clipe', confirmLabel: 'Apagar', onConfirm: executar, note: notaSala });
     } else if (window.confirm('Apagar este clipe?')) {
       executar();
     }
@@ -2972,9 +2983,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     };
     setClipes(prev => prev.map(c => (c.id === clip.id ? novo : c)));
     setClipeAReproduzir(prev => (prev && prev.id === clip.id ? novo : prev));
-    // O ficheiro antigo só se apaga depois de o novo estar gravado.
-    if (clip.storagePath && clip.storagePath !== json.storagePath) {
-      try { await supabase.storage.from('videos-clipes').remove([clip.storagePath]); } catch (e) { /* fica órfão, sem mal */ }
+    // O ficheiro antigo só se apaga depois de o novo estar gravado — e
+    // não se apaga se o clipe já foi enviado para a Sala de Vídeo (lá
+    // continua a versão que foi enviada).
+    if (clip.storagePath && clip.storagePath !== json.storagePath && !clipeUsadoNaSala(clip)) {
+      await apagarFicheirosClipe(clip.storagePath);
     }
   };
 

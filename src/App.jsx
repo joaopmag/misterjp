@@ -3635,6 +3635,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       .map(a => ({ id: a.id, rotulo: a.nome }));
     return { pastas, jogos, fichas };
   }, [videos, matches, adversarios]);
+  // Clipes da Análise que estão a ser usados na Sala de Vídeo (para não
+  // se apagar o ficheiro deles quando são apagados na Análise).
+  const clipesUsadosNaSala = React.useMemo(() => new Set((videos || [])
+    .map(v => v && v.origemAnalise && v.origemAnalise.clipeId).filter(Boolean)), [videos]);
   const enviarClipeParaSala = ({ clip, titulo, destino, pasta, jogoId, fichaId }) => {
     if (!clip || !clip.publicUrl) throw new Error('Este clipe não tem vídeo guardado.');
     const base = {
@@ -4173,7 +4177,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
              e voltar perdia o vídeo selecionado, a posição de reprodução e
              qualquer desenho a meio de ser feito. */}
           <div style={{ display: tab === 'analise' ? 'block' : 'none' }}>
-            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} />
+            <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} />
           </div>
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} teamId={teamId} />}
           {tab === 'scouting' && <Scouting abaInicial={tabPedida === 'fichaadversario' ? 'adversarios' : ''} scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} />}
