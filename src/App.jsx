@@ -41016,7 +41016,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
      aparece na mesma paragem. Noutro momento do corte, sem nada a ver
      com essa, nasce uma pausa nova nesse instante. As duas disparam na
      mesma reprodução do corte. */
-  const JANELA_MESMA_PAUSA_BIB = 2;
+  /* (Revisto) Era 2 s: num corte curto, itens postos a 1 ou 2 s uns dos
+     outros juntavam-se na mesma paragem (todos no tempo do primeiro) e o
+     de depois nunca aparecia no momento dele. Agora só se juntam itens
+     praticamente no mesmo instante; cada momento tem a sua paragem. */
+  const JANELA_MESMA_PAUSA_BIB = 0.5;
   /* MAS OS DESENHOS SÓ APARECEM NO MOMENTO DELES. Ao entrar no desenho
      ou escolher uma ferramenta, a pausa que já existe só é aberta (e os
      itens dela só aparecem) se o vídeo estiver MESMO nesse instante. A
@@ -41365,6 +41369,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       return;
     }
     if (formaTextoBib) { confirmarTextoBib(); return; } // um texto a meio de ser escrito fecha-se primeiro
+    /* PAUSA NOVA = O MOMENTO DO PRIMEIRO ITEM. O instante de uma pausa em
+       branco era o de quando ela foi aberta (às vezes a meio da
+       reprodução, antes de se parar no sítio certo). Agora fica o
+       instante em que se desenha o primeiro item dela. */
+    if (toolBib && toolBib !== 'apagar' && !anotacaoIdEmEdicaoBib && shapesRascunho.length === 0 && !formaEmCursoBib) {
+      setTempoAnotacaoBib(tempoSeguroNoCorte(tempoAtualNoCorteBib()));
+    }
     if (toolBib === 'apagar') {
       let alvo = -1, melhor = Infinity;
       shapesRascunho.forEach((sh, i) => { const d = distanciaShape(sh, p); if (d < RAIO_TOQUE && d < melhor) { melhor = d; alvo = i; } });
@@ -42345,7 +42356,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       });
       if (!alvo) return;
       const tAlvo = tempoPausaNoCorte(alvo);
-      const grupo = (active.anotacoesPausa || []).filter(a => Math.abs(tempoPausaNoCorte(a) - tAlvo) < 2);
+      const grupo = (active.anotacoesPausa || []).filter(a => Math.abs(tempoPausaNoCorte(a) - tAlvo) < JANELA_MESMA_PAUSA_BIB);
       grupo.forEach(a => congeladasDesenhoRef.current.add(a.id));
       const duracao = Math.max(1, ...grupo.flatMap(a => (a.shapes || []).map(f => segDaForma(f, a))), ...grupo.map(a => ((a.shapes || []).length ? 1 : segDaForma(null, a))));
       const lento = MODO_SEGURAR_BIB === 'lento';
@@ -42428,7 +42439,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     if (!primeira) return;
     // O vídeo já passou do instante da pausa (leitura atrasada)? Volta lá.
     if (liveTime - tempoPausaNoCorte(primeira) > 0.3) enviarComandoYoutube('seekTo', [tempoPausaNoCorte(primeira), true]);
-    const grupo = anotacoes.filter(a => Math.abs(tempoPausaNoCorte(a) - tempoPausaNoCorte(primeira)) < 2);
+    const grupo = anotacoes.filter(a => Math.abs(tempoPausaNoCorte(a) - tempoPausaNoCorte(primeira)) < JANELA_MESMA_PAUSA_BIB);
     grupo.forEach(a => pausasJaMostradasRef.current.add(a.id));
     // Math.max com um valor sempre válido — se por algum motivo uma
     // duração viesse estragada (undefined/NaN), nunca deixar isso
@@ -44247,7 +44258,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                               <button key={t} type="button" onClick={fn} disabled={!on} title={t} aria-label={t} style={{
                                 flex: 1, padding: '8px 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 background: 'transparent', border: `1px solid ${T_ESCURO.line}`, borderRadius: 8,
-                                color: on ? T_ESCURO.cream : T_ESCURO.mutedDim, opacity: on ? 1 : 0.45, cursor: on ? 'pointer' : 'default',
+                                color: on ? T_ESCURO.cream : T_ESCURO.muted, opacity: on ? 1 : 0.6, cursor: on ? 'pointer' : 'default',
                               }}><Ic size={15} /></button>
                             ))}
                           </div>
