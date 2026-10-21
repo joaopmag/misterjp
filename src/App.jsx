@@ -4699,7 +4699,6 @@ function StandingsSummary({ standings, season }) {
           )}
         </tbody>
       </table>
-      <LegendaZonas comp={comp} />
       {all.length > TOP && !showExtra && (
         <div style={{ fontSize: 11, color: T.mutedDim, marginTop: 8 }}>
           Tabela completa em Jogos ({all.length} equipas).
