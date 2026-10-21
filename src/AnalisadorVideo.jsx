@@ -1216,14 +1216,16 @@ function useFecharComEsc(onClose, ativo = true) {
 }
 
 /* ENVIAR UM CLIPE PARA A SALA DE VÍDEO (Canal da Biblioteca).
-   Três destinos, os mesmos do Canal: um TEMA (pasta), um JOGO nosso, ou
-   um ADVERSÁRIO (vai para a ficha da equipa, e vê-se também no Canal ›
+   Dois destinos: um ADVERSÁRIO (por omissão) ou um JOGO nosso. Temas
+   ficou de fora: um corte de jogo não faz sentido numa pasta de temas.
+   Um ADVERSÁRIO (vai para a ficha da equipa, e vê-se também no Canal ›
    Adversários). O clipe não volta a ser carregado: o Canal passa a
    apontar para o mesmo MP4. */
 function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
   const d = destinos || { pastas: [], jogos: [], fichas: [] };
   const [titulo, setTitulo] = useState(() => (clip.note || '').trim() || [tag && tag.label, clip.originalTitulo].filter(Boolean).join(' · ') || 'Clipe');
-  const [destino, setDestino] = useState('tema');
+  // Por omissão, Adversários (é para lá que vai a maior parte dos cortes).
+  const [destino, setDestino] = useState('adversario');
   const [pasta, setPasta] = useState(() => (d.pastas || [])[0] || '');
   const [pastaNova, setPastaNova] = useState('');
   const [jogoId, setJogoId] = useState('');
@@ -1275,9 +1277,8 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
               <input value={titulo} onChange={e => setTitulo(e.target.value)} maxLength={120} style={campo} />
             </label>
             <div style={{ display: 'flex', gap: 6 }}>
-              {opcao('tema', 'Temas')}
-              {opcao('jogo', 'Jogos')}
               {opcao('adversario', 'Adversários')}
+              {opcao('jogo', 'Jogos')}
             </div>
             {destino === 'tema' && (
               <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: T.mutedDim }}>

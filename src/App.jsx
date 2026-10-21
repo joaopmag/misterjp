@@ -39330,8 +39330,13 @@ function ControlosLupa({ lupa, mais, menos, repor }) {
    som e ecrã inteiro. Tocar no vídeo também põe em pausa/retoma.
    `semEcraInteiro`: quando quem o usa já tem o seu botão de ecrã
    inteiro (o visualizador da Biblioteca). */
-function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraInteiro, onTimeUpdate }) {
+function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraInteiro, onTimeUpdate, poster }) {
   const wrapRef = useRef(null);
+  /* Ao trocar de vídeo, o novo fica invisível até ter a primeira imagem
+     pronta: por trás vê-se a miniatura (poster) em vez de um ecrã preto
+     com "00:00 / 00:00". Depois entra num desvanecer curto. */
+  const [imagemPronta, setImagemPronta] = useState(false);
+  useEffect(() => { setImagemPronta(false); }, [src]);
   const videoRef = useRef(null);
   const [aTocar, setATocar] = useState(false);
   const [tempo, setTempo] = useState(0);
@@ -39379,19 +39384,22 @@ function VideoComBarra({ src, preload, autoPlay, style, videoStyle, semEcraIntei
     }}>
       <div ref={areaRef} onWheel={emEcraInteiro ? lupaV.aoRodar : undefined} style={{
         position: 'relative', overflow: 'hidden', ...(emEcraInteiro ? { flex: 1, minHeight: 0 } : {}),
+        ...(poster ? { backgroundImage: `url("${poster}")`, backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', backgroundColor: '#000' } : {}),
       }}>
       <video
         ref={videoRef} src={src} playsInline preload={preload} autoPlay={autoPlay}
+        onLoadedData={() => setImagemPronta(true)} onCanPlay={() => setImagemPronta(true)}
         onClick={alternar}
         onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
         onLoadedMetadata={lerDuracao} onDurationChange={lerDuracao}
         onVolumeChange={e => setMudo(e.currentTarget.muted)}
         onTimeUpdate={e => { const t = e.currentTarget.currentTime; setTempo(t); if (onTimeUpdate) onTimeUpdate(t); }}
         style={{
-          display: 'block', width: '100%', minHeight: 0, objectFit: 'contain', background: '#000', cursor: 'pointer',
+          display: 'block', width: '100%', minHeight: 0, objectFit: 'contain', background: poster ? 'transparent' : '#000', cursor: 'pointer',
           ...videoStyle, ...(emEcraInteiro ? { maxHeight: 'none', height: '100%' } : {}),
           transform: lupaV.transform || 'none', transformOrigin: '0 0',
-          transition: lupaV.aArrastar ? 'none' : 'transform 0.2s ease-out',
+          opacity: poster && !imagemPronta ? 0 : 1,
+          transition: `${lupaV.aArrastar ? '' : 'transform 0.2s ease-out, '}opacity .15s ease-out`,
         }}
       />
       {/* Em ecrã inteiro, uma camada por cima apanha a pinça (o zoom começa
@@ -45695,7 +45703,7 @@ function AttachmentPreview({ item, tall }) {
     return (
       <div ref={boxRef} style={wrapStyle}>
         <div style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', flexDirection: 'column' }}>
-          <VideoComBarra key={item.id} src={item.dataUrl} semEcraInteiro style={{ flex: 1, minHeight: 0 }} />
+          <VideoComBarra key={item.id} src={item.dataUrl} poster={item.thumbUrl || undefined} semEcraInteiro style={{ flex: 1, minHeight: 0 }} />
         </div>
         {FsBar}
       </div>
