@@ -51169,13 +51169,28 @@ const PORTAL_ULTIMO = 'mjp-portal-ultimo';
     const ehPortal = naPastaPortal || q.has('portal') || q.has('checkin') || /portal=|checkin/.test(window.location.hash);
     const ehAppleCedo = /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (/macintosh/i.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
     if (!ehPortal) {
-      // Plataforma do staff: o seu próprio manifesto ("MisterJP", scope /),
+      /* A PLATAFORMA VIVE EM /app/. No telemóvel (Android), uma app com
+         scope "/" engolia o Portal (que está dentro de "/"): instalar uma
+         dava "já instalada" na outra e abria sempre a última usada. Com
+         /app/ e /portal/ separados, cada uma é dona só do seu caminho.
+         Só se muda a plataforma em si (endereço sem "?…"): as páginas
+         públicas de partilha (?clipe=, ?video=, ?junto=…) e os regressos
+         do login ficam como estão. */
+      const naPastaApp = /^\/app(\/|$)/.test(window.location.pathname);
+      if (!naPastaApp && !window.location.search) {
+        window.history.replaceState(null, '', `/app/${window.location.hash}`);
+      }
+      // Plataforma do staff: o seu próprio manifesto ("MisterJP", scope /app/),
       // para se poder instalar à parte do Portal.
       if (!ehAppleCedo && !document.querySelector('link[rel="manifest"]')) {
         const m = document.createElement('link');
         m.setAttribute('rel', 'manifest'); m.setAttribute('href', '/staff.webmanifest');
         document.head.appendChild(m);
       }
+      // O Chrome só oferece "Instalar" com um service worker a controlar a
+      // página. O do Portal está limitado a /portal/, por isso a plataforma
+      // regista o seu (o mesmo sw.js, que só passa os pedidos à rede).
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/app/' }).catch(() => { /* sem service worker: continua tudo a funcionar */ });
       return;
     }
     if (!naPastaPortal) {
