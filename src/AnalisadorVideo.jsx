@@ -3913,21 +3913,29 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     const tg = TAGS.find(t => t.id === c.tagId);
     const n = (c.shapes || []).length;
     return (
-      <button key={c.id} type="button" onClick={() => { setEditarClipeAoAbrir(false); setClipeAReproduzir(c); }} style={{
-        display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: 7, marginBottom: 6, borderRadius: 9, cursor: 'pointer', ...body,
-        background: TV.surfaceRaise, border: '1px solid transparent', color: TV.cream,
-      }}>
-        <span style={{ width: 70, height: 40, borderRadius: 6, flexShrink: 0, position: 'relative', overflow: 'hidden', background: c.thumbUrl ? `#222 center/cover url(${c.thumbUrl})` : '#222' }}>
-          <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: tg ? tg.color : TV.muted }} />
-          {!c.thumbUrl && <Film size={14} color={TV.mutedDim} style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }} />}
-        </span>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(c.note || '').trim() || (tg ? tg.label : 'Sem etiqueta')}</span>
-          <span style={{ display: 'block', fontSize: 11, color: TV.muted, ...mono }}>{fmt(c.origemInicio)}–{fmt(c.origemFim)} · {Math.round(c.duracao || (c.origemFim - c.origemInicio))}s{n ? ` · ${n} desenho(s)` : ''}</span>
-        </span>
-      </button>
+      <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6, borderRadius: 9, background: TV.surfaceRaise }}>
+        <button type="button" onClick={() => { setEditarClipeAoAbrir(false); setClipeAReproduzir(c); }} style={{
+          display: 'flex', alignItems: 'center', gap: 9, flex: 1, minWidth: 0, textAlign: 'left', padding: 7, borderRadius: 9, cursor: 'pointer', ...body,
+          background: 'transparent', border: 'none', color: TV.cream,
+        }}>
+          <span style={{ width: 70, height: 40, borderRadius: 6, flexShrink: 0, position: 'relative', overflow: 'hidden', background: c.thumbUrl ? `#222 center/cover url(${c.thumbUrl})` : '#222' }}>
+            <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: tg ? tg.color : TV.muted }} />
+            {!c.thumbUrl && <Film size={14} color={TV.mutedDim} style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }} />}
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(c.note || '').trim() || (tg ? tg.label : 'Sem etiqueta')}</span>
+            <span style={{ display: 'block', fontSize: 11, color: TV.muted, ...mono }}>{fmt(c.origemInicio)}–{fmt(c.origemFim)} · {Math.round(c.duracao || (c.origemFim - c.origemInicio))}s{n ? ` · ${n} desenho(s)` : ''}</span>
+          </span>
+        </button>
+        {/* Apagar logo daqui, sem abrir o clipe. */}
+        <button type="button" onClick={() => removerClipe(c)} title="Apagar clipe" aria-label="Apagar clipe" style={{
+          flexShrink: 0, width: 32, height: 32, marginRight: 6, display: 'grid', placeItems: 'center', borderRadius: 7, cursor: 'pointer',
+          background: 'transparent', border: `1px solid ${TV.line}`, color: TV.muted,
+        }}><Trash2 size={14} /></button>
+      </div>
     );
   };
+
   const shapesVisiveis = shapes.filter((sh, i) => visivelNoEditor(sh, i));
   // A ver (fora do desenho), o círculo com zoom aproxima a imagem, como no
   // clipe final. A desenhar, escolher o zoom de um círculo mostra-o logo

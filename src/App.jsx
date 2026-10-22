@@ -1887,7 +1887,9 @@ function ConfirmDialog() {
     <div
       onClick={() => setPedido(null)}
       style={{
-        position: 'fixed', inset: 0, background: '#000000bb', zIndex: 100,
+        // Sempre por cima de tudo (antes ficava escondida atrás do leitor de
+        // clipes da Análise, que está a 1000, e só aparecia ao fechá-lo).
+        position: 'fixed', inset: 0, background: '#000000bb', zIndex: 3000,
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
       }}
     >
