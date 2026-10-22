@@ -51549,8 +51549,9 @@ class ErrorBoundary extends React.Component {
    endereço do ficheiro e o texto desse clipe, e mostra-o com a barra
    amarela. Os desenhos feitos no Analisador não aparecem aqui. */
 const ETIQUETAS_CLIPE = {
-  golo: 'Golo', remate: 'Remate', bp: 'Bola Parada', perda: 'Perda',
+  golo: 'Golo', remate: 'Remate', bp: 'Esquemas Táticos', perda: 'Perda',
   recuperacao: 'Recuperação', transicao: 'Transição', individual: 'Ação Individual', erro: 'Erro',
+  posicionamento: 'Posicionamento', cobertura: 'Cobertura', duelo: 'Duelo',
   org_of: 'Organização Ofensiva', org_def: 'Organização Defensiva',
   trans_of: 'Transição Ofensiva', trans_def: 'Transição Defensiva',
 };

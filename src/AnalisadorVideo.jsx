@@ -232,17 +232,33 @@ const TAGS = [
   { id: 'trans_def', label: 'Transição Defensiva', color: TV.crimsonBright },
   { id: 'golo', label: 'Golo', color: TV.good },
   { id: 'remate', label: 'Remate', color: TV.gold },
-  { id: 'bp', label: 'Bola Parada', color: TV.teamB },
+  { id: 'bp', label: 'Esquemas Táticos', color: TV.teamB },
   { id: 'perda', label: 'Perda', color: TV.bad },
   { id: 'recuperacao', label: 'Recuperação', color: TV.teamD },
   { id: 'individual', label: 'Ação Individual', color: TV.teamC },
-  { id: 'erro', label: 'Erro', color: TV.bad },
+  { id: 'posicionamento', label: 'Posicionamento', color: '#5FA8D3' },
+  { id: 'cobertura', label: 'Cobertura', color: '#9BB85A' },
+  { id: 'duelo', label: 'Duelo', color: '#D97BA8' },
+  // Antiga: "Erro" passou a "Posicionamento" (os clipes antigos mantêm-na).
+  { id: 'erro', label: 'Erro', color: TV.bad, antiga: true },
   // Antiga: os clipes já marcados com "Transição" continuam a mostrá-la,
   // mas já não se escolhe (passou a Transição Ofensiva / Defensiva).
   { id: 'transicao', label: 'Transição', color: TV.crimsonBright, antiga: true },
 ];
 // As que se podem escolher (sem as antigas).
 const TAGS_ATIVAS = TAGS.filter(t => !t.antiga);
+/* CODIFICAR — como a "janela de código" das ferramentas profissionais:
+   botões de lance agrupados (momentos do jogo e ações). Um toque cria o
+   clipe com X s antes e Y s depois do instante (ajustável por etiqueta). */
+const GRUPOS_CODIFICAR = [
+  { titulo: 'Momentos do jogo', ids: ['org_of', 'org_def', 'trans_of', 'trans_def', 'bp'] },
+  { titulo: 'Ações', ids: ['golo', 'remate', 'perda', 'recuperacao', 'individual', 'posicionamento', 'cobertura', 'duelo'] },
+];
+const TEMPOS_CODIFICAR_PADRAO = { antes: 10, depois: 5 };
+const CHAVE_TEMPOS_CODIFICAR = 'mjp-codificar-tempos';
+function lerTemposCodificar() {
+  try { const v = JSON.parse(localStorage.getItem(CHAVE_TEMPOS_CODIFICAR) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
+}
 
 // Cores à escolha para os desenhos — útil para distinguir, por exemplo,
 // os movimentos da nossa equipa (branco) dos do adversário (vermelho).
@@ -3048,54 +3064,89 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     return shapes;
   };
   /* ---- Guardar clipe: chama a função que corta sem recodificar ---- */
-  const guardarClipe = async () => {
-    if (!originalAtivo || inPoint == null || outPoint == null || outPoint <= inPoint) return;
-    setAGuardarClipe(true); setErro('');
+  /* Corta e grava um clipe do vídeo aberto, de `ini` a `fim` (segundos do
+     jogo). Usado pelo corte à mão e pela codificação (um toque numa
+     etiqueta). Os desenhos do vídeo que caem dentro entram no clipe. */
+  const [gravacoesCodif, setGravacoesCodif] = useState([]); // [{ id, label, cor }] a cortar agora
+  const [avisoCodif, setAvisoCodif] = useState(null); // { texto, cor } — "Clipe gravado", some sozinho
+  const avisoCodifTimer = useRef(null);
+  const gravarIntervalo = async (ini, fim, tagId, nota) => {
+    if (!originalAtivo || ini == null || fim == null) return false;
+    if (fim - ini < 1) { setErro('O clipe tem de ter pelo menos 1 segundo: marca o fim um pouco mais à frente.'); return false; }
+    const tag = TAGS.find(t => t.id === tagId) || null;
+    const idGrav = uid();
+    setGravacoesCodif(g => [...g, { id: idGrav, label: tag ? tag.label : 'Clipe', cor: tag ? tag.color : TV.gold }]);
+    setErro('');
     const todasAsFormas = shapesComTextoPendente();
     if (todasAsFormas !== shapes) setShapes(todasAsFormas);
-    const shapesFinais = todasAsFormas.filter(sh => dentroDoClipe(sh, inPoint, outPoint));
+    const shapesFinais = todasAsFormas.filter(sh => dentroDoClipe(sh, ini, fim));
     try {
       const resp = await fetch('/api/cortar-clipe', {
         method: 'POST',
         headers: await cabecalhosComSessao(),
-        body: JSON.stringify({ teamId, storagePath: originalAtivo.storagePath, start: inPoint, end: outPoint }),
+        body: JSON.stringify({ teamId, storagePath: originalAtivo.storagePath, start: ini, end: fim }),
       });
       let json = {};
       try { json = await resp.json(); } catch (e) { /* resposta sem JSON (ex.: tempo esgotado no servidor) */ }
       if (!resp.ok) throw new Error(json.error || `o servidor respondeu ${resp.status}${resp.status === 504 ? ' (demorou demasiado)' : ''}`);
-
-      const tag = TAGS.find(t => t.id === pendingTag) || null;
       const novoClipe = {
         id: uid(), tagId: tag ? tag.id : null, storagePath: json.storagePath, publicUrl: json.publicUrl, thumbUrl: json.thumbUrl || null,
-        origemInicio: inPoint, origemFim: outPoint, duracao: outPoint - inPoint,
-        note,
-        // Os tempos dos desenhos foram marcados relativamente ao vídeo
-        // ORIGINAL (0 = início do jogo todo) — o clipe cortado começa
-        // sempre em 0, por isso passam a ser relativos ao início do clipe.
-        shapes: shapesFinais.map(s => ({
-          ...s,
-          criadoEmTempo: s.criadoEmTempo == null ? null : Math.max(0, s.criadoEmTempo - inPoint),
-          mostrarAte: s.mostrarAte == null ? null : Math.max(0, s.mostrarAte - inPoint),
+        origemInicio: ini, origemFim: fim, duracao: fim - ini,
+        note: nota || '',
+        // Os tempos dos desenhos passam a contar a partir do início do clipe.
+        shapes: shapesFinais.map(sh => ({
+          ...sh,
+          criadoEmTempo: sh.criadoEmTempo == null ? null : Math.max(0, sh.criadoEmTempo - ini),
+          mostrarAte: sh.mostrarAte == null ? null : Math.max(0, sh.mostrarAte - ini),
         })),
-        // O mesmo desvio para a trajetória do jogador em foco, se tiver
-        // sido marcada antes de cortar — os pontos fora do intervalo do
-        // clipe (não deviam existir, mas por segurança) ficam de fora.
         trajetoriaFoco: trajetoriaFocoPendente ? {
           pontos: trajetoriaFocoPendente.pontos
-            .filter(p => p.t >= inPoint && p.t <= outPoint)
-            .map(p => ({ ...p, t: Math.max(0, p.t - inPoint) })),
-          duracao: outPoint - inPoint,
+            .filter(pt => pt.t >= ini && pt.t <= fim)
+            .map(pt => ({ ...pt, t: Math.max(0, pt.t - ini) })),
+          duracao: fim - ini,
         } : null,
         originalId: originalAtivo.id, originalTitulo: originalAtivo.titulo, criadoEm: new Date().toISOString(),
       };
       setClipes(prev => [novoClipe, ...(prev || [])]);
-      limparMarcas();
-      fecharDesenho();
+      if (avisoCodifTimer.current) clearTimeout(avisoCodifTimer.current);
+      setAvisoCodif({ texto: `Clipe gravado · ${tag ? tag.label : 'sem etiqueta'} · ${fmt(ini)}–${fmt(fim)}`, cor: tag ? tag.color : TV.good });
+      avisoCodifTimer.current = setTimeout(() => setAvisoCodif(null), 2800);
+      return true;
     } catch (e) {
-      setErro(`Não consegui guardar o clipe: ${e.message || e}`);
+      setErro(`Não consegui gravar o clipe: ${e.message || e}`);
+      return false;
     } finally {
-      setAGuardarClipe(false);
+      setGravacoesCodif(g => g.filter(x => x.id !== idGrav));
     }
+  };
+  // Corte à mão (Início/Fim marcados).
+  const guardarClipe = async (tagId) => {
+    if (inPoint == null || outPoint == null || outPoint <= inPoint) return;
+    setAGuardarClipe(true);
+    const ok = await gravarIntervalo(inPoint, outPoint, typeof tagId === 'string' ? tagId : pendingTag, note);
+    setAGuardarClipe(false);
+    if (ok) limparMarcas();
+  };
+  // Um toque numa etiqueta: com Início e Fim marcados grava esse corte com
+  // a etiqueta; sem marcas, grava à volta deste instante (antes/depois).
+  const [temposCodif, setTemposCodif] = useState(lerTemposCodificar);
+  const temposDe = (id) => ({ ...TEMPOS_CODIFICAR_PADRAO, ...(temposCodif[id] || {}) });
+  const mudarTempoCodif = (id, campo, delta) => {
+    setTemposCodif(prev => {
+      const atual = { ...TEMPOS_CODIFICAR_PADRAO, ...(prev[id] || {}) };
+      const novo = { ...prev, [id]: { ...atual, [campo]: Math.max(campo === 'antes' ? 0 : 1, Math.min(60, atual[campo] + delta)) } };
+      try { localStorage.setItem(CHAVE_TEMPOS_CODIFICAR, JSON.stringify(novo)); } catch (e) { /* sem armazenamento: vale só agora */ }
+      return novo;
+    });
+  };
+  const codificar = (tagId) => {
+    if (inPoint != null && outPoint != null && outPoint > inPoint) { guardarClipe(tagId); return; }
+    const v = videoRef.current;
+    const t = v ? v.currentTime : current;
+    const { antes, depois } = temposDe(tagId);
+    const ini = Math.max(0, t - antes);
+    const fim = Math.min(duration || t + depois, t + depois);
+    gravarIntervalo(ini, fim, tagId, '');
   };
 
   // Muda (ou atribui pela primeira vez) a etiqueta de um clipe já guardado.
@@ -3790,6 +3841,93 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       })}
     </div>
   );
+  /* ===== ESTÚDIO: separadores, barra, linha do tempo ===== */
+  const [aba, setAba] = useState('codificar');
+  // O separador Desenhar É o modo de desenho (abrir/fechar um abre/fecha o outro).
+  const abaAtiva = modoDesenho ? 'desenhar' : (aba === 'desenhar' ? 'codificar' : aba);
+  const irParaAba = (id) => {
+    if (id === 'desenhar') { abrirDesenho(); return; }
+    if (modoDesenho) fecharDesenho();
+    setAba(id);
+  };
+  const [velocidade, setVelocidade] = useState(1);
+  const mudarVelocidade = (v) => { setVelocidade(v); if (videoRef.current) videoRef.current.playbackRate = v; };
+  useEffect(() => { if (videoRef.current) videoRef.current.playbackRate = velocidade; }, [signedUrl, velocidade]);
+  const saltarVideo = (d) => { const v = videoRef.current; if (v) seekTo((v.currentTime || 0) + d); };
+  const irParaTempo = (t) => { const v = videoRef.current; if (v) v.pause(); seekTo(t); };
+  const [verTemposCodif, setVerTemposCodif] = useState(false);
+  const botaoBarra = {
+    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', background: 'transparent',
+    border: `1px solid ${TV.line}`, borderRadius: 8, color: TV.cream, cursor: 'pointer', fontSize: 12, ...body,
+  };
+  const tituloSecao = (t, mt = 0) => <div style={{ fontSize: 10.5, letterSpacing: 0.7, textTransform: 'uppercase', color: TV.mutedDim, margin: `${mt}px 0 8px`, ...body }}>{t}</div>;
+  const clipesDoVideo = originalAtivo ? clipesStaff.filter(c => { const o = originalDoClipe(c); return o && o.id === originalAtivo.id && typeof c.origemInicio === 'number'; }) : [];
+  // Momentos com desenhos (itens a menos de 0,3 s = o mesmo momento).
+  const paragensDoVideo = (() => {
+    const lista = [...shapes].filter(sh => sh && sh.tool !== 'guias').sort((a, b) => (a.criadoEmTempo ?? 0) - (b.criadoEmTempo ?? 0));
+    const grupos = [];
+    lista.forEach(sh => {
+      const t = sh.criadoEmTempo ?? 0;
+      const g = grupos[grupos.length - 1];
+      if (g && t - g.t < 0.3) g.formas.push(sh); else grupos.push({ t, formas: [sh] });
+    });
+    return grupos;
+  })();
+  const marcasMinutos = (() => {
+    const totalMin = (duration || 0) / 60;
+    if (!totalMin) return [];
+    const passo = totalMin > 60 ? 15 : totalMin > 20 ? 10 : totalMin > 6 ? 2 : 1;
+    const out = [];
+    for (let m = 0; m < totalMin - passo * 0.3; m += passo) out.push(m);
+    return out;
+  })();
+  // Corte à mão: Início / Fim, nota e guardar (também a desenhar).
+  const corteAMao = () => (
+    <div style={{ marginTop: 14 }}>
+      {tituloSecao('Corte à mão')}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button type="button" onClick={markIn} style={botaoBarra}><Flag size={13} color={TV.good} /> Início <span style={{ ...mono, color: TV.muted }}>{inPoint == null ? '--:--' : fmt(inPoint)}</span></button>
+        <button type="button" onClick={markOut} style={botaoBarra}><Flag size={13} color={TV.bad} /> Fim <span style={{ ...mono, color: TV.muted }}>{outPoint == null ? '--:--' : fmt(outPoint)}</span></button>
+        {(inPoint != null || outPoint != null) && !clipeEmDesenho && (
+          <button type="button" onClick={limparMarcas} style={botaoBarra}><X size={13} /> Limpar</button>
+        )}
+      </div>
+      {marcadoClipe && !clipeEmDesenho && (
+        <div style={{ background: TV.surfaceRaise, borderRadius: 8, padding: 10, marginTop: 8 }}>
+          <div style={{ fontSize: 11.5, color: TV.muted, marginBottom: 6, ...mono }}>
+            {fmt(inPoint)}–{fmt(outPoint)} · {Math.round(outPoint - inPoint)}s{nDesenhosClipe > 0 ? ` · ${nDesenhosClipe} desenho(s)` : ''}
+          </div>
+          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota (opcional)…" rows={2}
+            style={{ width: '100%', background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 12.5, resize: 'none', boxSizing: 'border-box', ...body }} />
+          <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Btn variant="solid" onClick={() => guardarClipe(null)} disabled={aGuardarClipe} style={{ padding: '6px 10px', fontSize: 12 }}>
+              {aGuardarClipe ? <Loader2 size={13} className="spin" /> : <Check size={13} />} {aGuardarClipe ? 'A gravar…' : 'Guardar sem etiqueta'}
+            </Btn>
+            <span style={{ fontSize: 11, color: TV.mutedDim, ...body }}>ou toca numa etiqueta em Codificar</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+  const linhaClipe = (c) => {
+    const tg = TAGS.find(t => t.id === c.tagId);
+    const n = (c.shapes || []).length;
+    return (
+      <button key={c.id} type="button" onClick={() => { setEditarClipeAoAbrir(false); setClipeAReproduzir(c); }} style={{
+        display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', padding: 7, marginBottom: 6, borderRadius: 9, cursor: 'pointer', ...body,
+        background: TV.surfaceRaise, border: '1px solid transparent', color: TV.cream,
+      }}>
+        <span style={{ width: 70, height: 40, borderRadius: 6, flexShrink: 0, position: 'relative', overflow: 'hidden', background: c.thumbUrl ? `#222 center/cover url(${c.thumbUrl})` : '#222' }}>
+          <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: tg ? tg.color : TV.muted }} />
+          {!c.thumbUrl && <Film size={14} color={TV.mutedDim} style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }} />}
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(c.note || '').trim() || (tg ? tg.label : 'Sem etiqueta')}</span>
+          <span style={{ display: 'block', fontSize: 11, color: TV.muted, ...mono }}>{fmt(c.origemInicio)}–{fmt(c.origemFim)} · {Math.round(c.duracao || (c.origemFim - c.origemInicio))}s{n ? ` · ${n} desenho(s)` : ''}</span>
+        </span>
+      </button>
+    );
+  };
   const shapesVisiveis = shapes.filter((sh, i) => visivelNoEditor(sh, i));
   // A ver (fora do desenho), o círculo com zoom aproxima a imagem, como no
   // clipe final. A desenhar, escolher o zoom de um círculo mostra-o logo
@@ -3934,94 +4072,24 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
       {originalAtivo && (
         <BancadaVideo.Provider value={true}>
+        {/* ESTÚDIO DE ANÁLISE — à esquerda o vídeo (a maior parte do ecrã),
+            com a barra e a linha do tempo do jogo por baixo; à direita um
+            painel com três separadores: Codificar, Desenhar e Clipes. */}
         <div ref={containerRef} style={{
-          background: TV.surface, borderRadius: 12, border: `1px solid ${TV.line}`, overflow: 'hidden',
-          display: 'flex', flexDirection: 'column',
-          // Cabe sempre na janela, sem ser preciso descer a página — antes
-          // o vídeo tirava a altura só da largura do ecrã (16:9 "deitado"),
-          // o que em ecrãs largos o fazia enorme e empurrava os controlos
-          // todos para fora da vista.
-          // No telemóvel (estreito) a altura é a do conteúdo: o vídeo tem
-          // altura própria e os painéis por baixo não o encolhem.
-          height: fullscreen ? '100vh' : (estreitoBancada ? 'auto' : 'calc(100vh - 140px)'),
-          maxHeight: fullscreen ? '100vh' : (estreitoBancada ? 'none' : 'calc(100vh - 140px)'),
+          background: TV.surface, borderRadius: fullscreen ? 0 : 12, border: `1px solid ${TV.line}`, overflow: 'hidden',
+          display: 'flex', flexDirection: estreitoBancada ? 'column' : 'row',
+          height: fullscreen ? '100vh' : (estreitoBancada ? 'auto' : 'calc(100vh - 120px)'),
+          minHeight: estreitoBancada || fullscreen ? undefined : 480,
         }}>
           <style>{'.mjp-sem-scroll::-webkit-scrollbar{display:none}'}</style>
-          <div style={{
-            maxHeight: modoDesenho ? 110 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
-            transition: 'max-height 0.2s ease, opacity 0.15s ease',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '8px 14px', borderBottom: `1px solid ${TV.line}`, background: TV.surfaceRaise }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12.5, color: TV.muted, ...mono }}>Modo de desenho</span>
-                {/* Como na Sala de Vídeo: quanto tempo o vídeo fica parado com
-                    os itens que se desenharem a seguir. Para um item já feito,
-                    toca nele. */}
-                <span style={{ fontSize: 12, color: TV.cream, marginLeft: 6, ...body }} title="Ao reproduzir, o vídeo para no momento do item e fica parado estes segundos">Novos itens, vídeo parado:</span>
-                <button type="button" onClick={() => setSegNovos(v => Math.max(1, v - 1))} style={{ background: 'none', border: `1px solid ${TV.line}`, borderRadius: 4, color: TV.cream, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>−</button>
-                <span style={{ fontSize: 13, color: TV.cream, minWidth: 30, textAlign: 'center', ...mono }}>{segNovos}s</span>
-                <button type="button" onClick={() => setSegNovos(v => Math.min(60, v + 1))} style={{ background: 'none', border: `1px solid ${TV.line}`, borderRadius: 4, color: TV.cream, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>+</button>
-              </span>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {/* Também a desenhar dá para marcar e guardar o clipe. */}
-                {[['Início', markIn, inPoint, TV.good], ['Fim', markOut, outPoint, TV.bad]].map(([r, fn, v, cor]) => (
-                  <button key={r} type="button" onClick={fn} title={`Marcar ${r.toLowerCase()} aqui`} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', background: 'transparent',
-                    border: `1px solid ${TV.line}`, borderRadius: 8, color: TV.cream, cursor: 'pointer', fontSize: 12, ...body,
-                  }}><Flag size={13} color={cor} /> {r} <span style={{ ...mono, color: TV.muted }}>{v == null ? '--:--' : fmt(v)}</span></button>
-                ))}
-                {clipeEmDesenho ? (
-                  <Btn variant="ghost" onClick={guardarDesenhosClipe} style={{ padding: '6px 10px', fontSize: 12 }}><Check size={13} /> Guardar no clipe</Btn>
-                ) : (
-                  <Btn variant="ghost" onClick={guardarClipe} disabled={aGuardarClipe || !(inPoint != null && outPoint != null && outPoint > inPoint)} style={{ padding: '6px 10px', fontSize: 12 }}>
-                    {aGuardarClipe ? <Loader2 size={13} className="spin" /> : <Scissors size={13} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
-                  </Btn>
-                )}
-                <div style={{ width: 1, alignSelf: 'stretch', background: TV.line, margin: '0 2px' }} />
-                {/* Botões simples: o Btn trava cliques seguidos (e aqui recuam-se vários pontos de rajada). */}
-                {[
-                  { on: historico.length > 0 || !!pontosEmCurso, fn: retroceder, Ic: Undo2, t: 'Recuar' },
-                  { on: futuro.length > 0 || pontosDesfeitos.current.length > 0, fn: avancar, Ic: Redo2, t: 'Avançar' },
-                ].map(({ on, fn, Ic, t: rotulo }) => (
-                  <button key={rotulo} type="button" onClick={fn} disabled={!on} title={rotulo} aria-label={rotulo} style={{
-                    padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent',
-                    border: `1px solid ${TV.line}`, borderRadius: 8, color: on ? TV.cream : TV.mutedDim, opacity: on ? 1 : 0.45, cursor: on ? 'pointer' : 'default',
-                  }}><Ic size={16} /></button>
-                ))}
-                <Btn variant="solid" onClick={fecharDesenho} title="Sair do modo de desenho (ou Esc)"><X size={14} /> Sair do desenho</Btn>
-              </div>
-            </div>
-          </div>
 
-          <div style={{ display: 'flex', flex: estreitoBancada && !fullscreen ? 'none' : 1, minHeight: 0, height: estreitoBancada && !fullscreen ? 'min(62vw, 62vh)' : undefined }}>
-            {/* BARRA DE FERRAMENTAS — UMA SÓ COLUNA. Para caber tudo saiu a
-                ferramenta "Linha" (a Seta e o Traço cobrem esse uso) e os
-                botões são um pouco mais compactos. Em ecrã inteiro fica igual:
-                esta barra à esquerda e a das cores/texto/apagar à direita.
-                Se mesmo assim faltar altura (ecrã baixo), a barra desliza. */}
+          {/* ===== ESQUERDA: vídeo + barra + linha do tempo ===== */}
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
             <div style={{
-              maxWidth: modoDesenho ? 112 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
-              transition: 'max-width 0.2s ease, opacity 0.15s ease',
+              position: 'relative', display: 'flex', minHeight: 0,
+              flex: estreitoBancada && !fullscreen ? 'none' : 1,
+              height: estreitoBancada && !fullscreen ? 'min(58vw, 60vh)' : undefined,
             }}>
-              {/* Duas colunas: as ferramentas cabem todas sem barra de
-                  deslocamento (antes, numa coluna só, aparecia o scroll). */}
-              <div className="mjp-sem-scroll" style={{
-                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, padding: 6, alignContent: 'start',
-                borderRight: `1px solid ${TV.line}`, overflowY: 'auto', overflowX: 'hidden', width: 112, height: '100%', boxSizing: 'border-box',
-                scrollbarWidth: 'none',
-              }}>
-                <style>{'.mjp-sem-scroll::-webkit-scrollbar{display:none}'}</style>
-                {FERRAMENTAS.filter(([id]) => id !== 'linha' && id !== 'tubo').map(([id, Icon, titulo]) => ( /* o Tubo é só da Sala de Vídeo */
-                  <ToolBtn compacto key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
-                ))}
-                <ToolBtn compacto icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
-                <div style={{ height: 1, background: TV.line, margin: '2px 0', gridColumn: '1 / -1' }} />
-                <ToolBtn compacto icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />
-                <ToolBtn compacto icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />
-                {calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
-              </div>
-            </div>
-            {!modoDesenho && !estreitoBancada && painelClipe(false)}
             <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto', transition: 'width 0.2s ease', boxSizing: 'border-box', overflow: 'hidden' }}
               onPointerDown={startDraw} onPointerMove={moveDraw} onPointerUp={endDraw} onPointerLeave={endDraw} onPointerCancel={endDraw}>
               {/* Vídeo + desenho juntos numa caixa: é ela que se aproxima no zoom do círculo. */}
@@ -4275,60 +4343,257 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
               )}
             </div>
-            <div style={{
-              maxWidth: modoDesenho ? 90 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
-              transition: 'max-width 0.2s ease, opacity 0.15s ease',
-            }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderLeft: `1px solid ${TV.line}`, justifyContent: 'center', width: 90 }}>
-                <ToolBtn icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
-                <div style={{ height: 1, background: TV.line, margin: '4px 0' }} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', padding: '2px 0' }}>
-                  {PALETA_DESENHO.map(p => (
-                    <button key={p.id} onClick={() => mudarCor(p.cor)} title={p.id}
-                      style={{
-                        width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, flexShrink: 0,
-                        background: p.cor, border: corAtual === p.cor ? `2px solid ${TV.crimsonBright}` : `1px solid ${TV.line}`,
-                      }} />
-                  ))}
-                </div>
-                <div style={{ height: 1, background: TV.line, margin: '4px 0' }} />
-                <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
-                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { largarParagemEditor(); pushHistorico(); setShapes([]); setEditandoDuracaoIndex(null); }} />
+
+              {/* Avisos por cima do vídeo (não apanham toques). */}
+              <div style={{ position: 'absolute', left: 10, top: 10, display: 'flex', gap: 6, flexWrap: 'wrap', pointerEvents: 'none', zIndex: 7, maxWidth: '70%' }}>
+                {congeladoEditor && (
+                  <span style={{ background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.18)', color: '#fff', borderRadius: 999, padding: '4px 10px', fontSize: 11.5, ...body }}>
+                    Vídeo parado · {Math.max(0, Math.ceil(congeladoEditor.total - congeladoEditor.dec))}s
+                  </span>
+                )}
+                {gravacoesCodif.map(g => (
+                  <span key={g.id} style={{ background: 'rgba(0,0,0,0.65)', border: `1px solid ${g.cor}`, color: '#fff', borderRadius: 999, padding: '4px 10px', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 6, ...body }}>
+                    <Loader2 size={11} className="spin" /> A gravar · {g.label}
+                  </span>
+                ))}
+                {avisoCodif && !gravacoesCodif.length && (
+                  <span style={{ background: 'rgba(0,0,0,0.65)', border: `1px solid ${avisoCodif.cor}`, color: '#fff', borderRadius: 999, padding: '4px 10px', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 6, ...body }}>
+                    <Check size={12} color={avisoCodif.cor} /> {avisoCodif.texto}
+                  </span>
+                )}
               </div>
             </div>
-            {!modoDesenho && !estreitoBancada && painelLadoDireito(false)}
+
+            {/* Barra de reprodução */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px 2px', background: TV.surface, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => saltarVideo(-10)} title="Recuar 10 s" style={botaoBarra}><SkipBack size={14} /> 10s</button>
+              <button type="button" onClick={togglePlay} title={playing ? 'Pausa' : 'Reproduzir'} style={{ ...botaoBarra, background: TV.gold, borderColor: TV.gold, color: '#111', padding: '6px 14px' }}>
+                {playing ? <Pause size={15} /> : <Play size={15} />}
+              </button>
+              <button type="button" onClick={() => saltarVideo(10)} title="Avançar 10 s" style={botaoBarra}>10s <SkipForward size={14} /></button>
+              <span style={{ fontSize: 12, color: TV.muted, ...mono, marginLeft: 6 }}>{fmt(current)} <span style={{ color: TV.mutedDim }}>/ {fmt(duration)}</span></span>
+              <span style={{ flex: 1 }} />
+              {[0.5, 1, 2].map(v => (
+                <button key={v} type="button" onClick={() => mudarVelocidade(v)} style={{ ...botaoBarra, ...(velocidade === v ? { borderColor: TV.gold, color: TV.gold } : {}) }}>
+                  {String(v).replace('.', ',')}×
+                </button>
+              ))}
+              <button type="button" onClick={alternarEcraInteiro} title="Ecrã inteiro" style={botaoBarra}>
+                {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+            </div>
+
+            {/* LINHA DO TEMPO do jogo: barra, clipes (na cor da etiqueta) e
+                paragens dos desenhos (losangos). Toca para lá ir. */}
+            <div style={{ padding: '2px 12px 10px', background: TV.surface, userSelect: 'none' }}>
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'relative', height: 14, ...mono, fontSize: 9.5, color: TV.mutedDim }}>
+                  {marcasMinutos.map(m => (
+                    <span key={m} style={{ position: 'absolute', left: `${pct(m * 60)}%`, transform: 'translateX(-1px)' }}>{m}'</span>
+                  ))}
+                </div>
+                <div onPointerDown={startScrub} onPointerMove={dragScrub} onPointerUp={endScrub} onPointerCancel={endScrub}
+                  style={{ height: 22, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
+                  <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: TV.line, borderRadius: 3 }} />
+                  <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: TV.gold, borderRadius: 3 }} />
+                  {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: 2, width: 2, height: 18, background: TV.good }} />}
+                  {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: 2, width: 2, height: 18, background: TV.bad }} />}
+                  <div style={{ position: 'absolute', left: `${pct(current)}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: TV.gold, border: `2px solid ${TV.cream}` }} />
+                </div>
+                {[
+                  ['Clipes', (
+                    <>
+                      {inPoint != null && outPoint != null && outPoint > inPoint && (
+                        <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, width: `${Math.max(0.4, pct(outPoint) - pct(inPoint))}%`, top: 3, bottom: 3, border: `1px dashed ${TV.cream}`, borderRadius: 3 }} />
+                      )}
+                      {clipesDoVideo.map(c => {
+                        const tg = TAGS.find(t => t.id === c.tagId);
+                        return (
+                          <button key={c.id} type="button" title={`${tg ? tg.label : 'Sem etiqueta'} · ${fmt(c.origemInicio)}–${fmt(c.origemFim)}`}
+                            onClick={() => irParaTempo(c.origemInicio)}
+                            style={{ position: 'absolute', left: `${pct(c.origemInicio)}%`, width: `${Math.max(0.5, pct(c.origemFim) - pct(c.origemInicio))}%`, minWidth: 6, top: 3, bottom: 3, borderRadius: 3, border: 'none', padding: 0, cursor: 'pointer', background: tg ? tg.color : TV.muted }} />
+                        );
+                      })}
+                    </>
+                  )],
+                  ['Desenhos', paragensDoVideo.map(g => (
+                    <button key={g.t} type="button" title={`${fmt(g.t)} · ${g.formas.length} ${g.formas.length === 1 ? 'item' : 'itens'}`}
+                      onClick={() => irParaTempo(g.t)}
+                      style={{ position: 'absolute', left: `${pct(g.t)}%`, top: '50%', width: 10, height: 10, transform: 'translate(-50%, -50%) rotate(45deg)', background: Math.abs(current - g.t) < 0.4 ? TV.gold : '#fff', border: 'none', padding: 0, cursor: 'pointer', borderRadius: 1 }} />
+                  ))],
+                ].map(([rotulo, conteudo]) => (
+                  <div key={rotulo} style={{ marginTop: 6 }}>
+                    <div style={{ fontSize: 9.5, color: TV.mutedDim, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2, ...body }}>{rotulo}</div>
+                    <div style={{ position: 'relative', height: 18, background: TV.surfaceRaise, borderRadius: 4 }}>{conteudo}</div>
+                  </div>
+                ))}
+                {/* Linha do instante atual, por cima das faixas. */}
+                <div style={{ position: 'absolute', left: `${pct(current)}%`, top: 24, bottom: 0, width: 2, background: 'rgba(255,255,255,0.75)', pointerEvents: 'none' }} />
+              </div>
+            </div>
           </div>
 
-          <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Btn variant="ghost" onClick={togglePlay} style={{ padding: 8 }}>{playing ? <Pause size={16} /> : <Play size={16} />}</Btn>
-            <span style={{ fontSize: 12, color: TV.muted, ...mono, minWidth: 44 }}>{fmt(current)}</span>
-            <div onPointerDown={startScrub} onPointerMove={dragScrub} onPointerUp={endScrub} onPointerCancel={endScrub}
-              style={{ flex: 1, height: 36, position: 'relative', cursor: 'pointer', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
-              <div style={{ position: 'absolute', left: 0, right: 0, height: 6, background: TV.line, borderRadius: 3 }} />
-              <div style={{ position: 'absolute', left: 0, width: `${pct(current)}%`, height: 6, background: TV.gold, borderRadius: 3 }} />
-              {inPoint != null && <div style={{ position: 'absolute', left: `${pct(inPoint)}%`, top: -4, width: 2, height: 14, background: TV.good }} />}
-              {outPoint != null && <div style={{ position: 'absolute', left: `${pct(outPoint)}%`, top: -4, width: 2, height: 14, background: TV.bad }} />}
-              <div style={{
-                position: 'absolute', left: `${pct(current)}%`, transform: 'translateX(-50%)',
-                width: 16, height: 16, borderRadius: '50%', background: TV.gold,
-                border: `2px solid ${TV.cream}`, boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
-              }} />
+          {/* ===== DIREITA: painel com separadores ===== */}
+          <div style={{
+            width: estreitoBancada ? '100%' : 380, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
+            borderLeft: estreitoBancada ? 'none' : `1px solid ${TV.line}`, borderTop: estreitoBancada ? `1px solid ${TV.line}` : 'none', background: TV.surface,
+          }}>
+            <div role="tablist" style={{ display: 'flex', gap: 4, padding: 10, borderBottom: `1px solid ${TV.line}`, flexShrink: 0 }}>
+              {[['codificar', 'Codificar'], ['desenhar', 'Desenhar'], ['clipes', `Clipes · ${clipesDoVideo.length}`]].map(([id, rotulo]) => {
+                const on = abaAtiva === id;
+                return (
+                  <button key={id} role="tab" aria-selected={on} type="button" onClick={() => irParaAba(id)} style={{
+                    flex: 1, padding: '8px 6px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, ...body,
+                    background: on ? TV.surfaceRaise : 'transparent', color: on ? TV.cream : TV.muted,
+                    boxShadow: on ? `inset 0 -2px 0 ${TV.gold}` : 'none',
+                  }}>{rotulo}</button>
+                );
+              })}
             </div>
-            <span style={{ fontSize: 12, color: TV.mutedDim, ...mono, minWidth: 44 }}>{fmt(duration)}</span>
-            <Btn variant="ghost" onClick={alternarEcraInteiro} style={{ padding: 8 }} title="Ecrã inteiro">
-              {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </Btn>
-          </div>
+            <div className="mjp-sem-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12, scrollbarWidth: 'none' }}>
+              {erro && <div style={{ background: TV.surfaceRaise, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, marginBottom: 10, color: TV.cream, fontSize: 12.5 }}>{erro}</div>}
+              {erroSeguirFoco && <div style={{ background: TV.surfaceRaise, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, marginBottom: 10, color: TV.cream, fontSize: 12.5 }}>{erroSeguirFoco}</div>}
 
-          {/* Ecrã estreito (telemóvel): os dois painéis vão para baixo da
-              barra, compactos. Em ecrãs largos ficam ao lado do vídeo, nas
-              faixas pretas, e o vídeo fica com a altura toda. */}
-          {estreitoBancada && !modoDesenho && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '6px 14px 14px' }}>
-              {painelLadoDireito(true)}
-              {painelClipe(true)}
+              {abaAtiva === 'codificar' && (
+                <>
+                  {tituloSecao('Codificar · um toque cria o clipe')}
+                  {GRUPOS_CODIFICAR.map(g => (
+                    <div key={g.titulo} style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 10, color: TV.mutedDim, letterSpacing: 0.5, textTransform: 'uppercase', margin: '4px 0 6px', ...body }}>{g.titulo}</div>
+                      {/* Todas com a mesma largura, em duas colunas alinhadas. */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
+                        {g.ids.map(id => TAGS.find(t => t.id === id)).filter(Boolean).map(tag => (
+                          <button key={tag.id} type="button" onClick={() => codificar(tag.id)}
+                            title={marcadoClipe ? `Gravar ${fmt(inPoint)}–${fmt(outPoint)} como ${tag.label}` : `Gravar ${temposDe(tag.id).antes}s antes e ${temposDe(tag.id).depois}s depois deste instante`}
+                            style={{
+                              padding: '6px 8px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
+                              border: `1px solid ${tag.color}`, background: 'transparent', color: tag.color,
+                              width: '100%', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                            {tag.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11.5, color: TV.muted, margin: '2px 0 4px', lineHeight: 1.5, ...body }}>
+                    {marcadoClipe
+                      ? <>Com início e fim marcados, a etiqueta grava <b style={{ color: TV.cream }}>{fmt(inPoint)}–{fmt(outPoint)}</b>.</>
+                      : <>Grava <b style={{ color: TV.cream }}>{TEMPOS_CODIFICAR_PADRAO.antes}s antes</b> e <b style={{ color: TV.cream }}>{TEMPOS_CODIFICAR_PADRAO.depois}s depois</b> do instante (ou os tempos de cada etiqueta). </>}
+                    <button type="button" onClick={() => setVerTemposCodif(v => !v)} style={{ background: 'none', border: 'none', color: TV.gold, cursor: 'pointer', padding: 0, fontSize: 11.5, ...body }}>
+                      {verTemposCodif ? 'Fechar tempos' : 'Ajustar tempos'}
+                    </button>
+                  </div>
+                  {verTemposCodif && (
+                    <div style={{ background: TV.surfaceRaise, borderRadius: 8, padding: 8, margin: '4px 0 8px' }}>
+                      {GRUPOS_CODIFICAR.flatMap(g => g.ids).map(id => TAGS.find(t => t.id === id)).filter(Boolean).map(tag => {
+                        const tp = temposDe(tag.id);
+                        const passo = (campo, d) => (
+                          <button type="button" onClick={() => mudarTempoCodif(tag.id, campo, d)} style={{ background: 'none', border: `1px solid ${TV.line}`, borderRadius: 4, color: TV.cream, width: 20, height: 20, cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }}>{d < 0 ? '−' : '+'}</button>
+                        );
+                        return (
+                          <div key={tag.id} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 0', fontSize: 11.5, ...body }}>
+                            <span style={{ flex: 1, minWidth: 0, color: tag.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tag.label}</span>
+                            <span style={{ color: TV.mutedDim }}>antes</span>{passo('antes', -1)}<span style={{ ...mono, color: TV.cream, width: 26, textAlign: 'center' }}>{tp.antes}s</span>{passo('antes', 1)}
+                            <span style={{ color: TV.mutedDim, marginLeft: 4 }}>depois</span>{passo('depois', -1)}<span style={{ ...mono, color: TV.cream, width: 26, textAlign: 'center' }}>{tp.depois}s</span>{passo('depois', 1)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {corteAMao()}
+                  {tituloSecao('Últimos clipes deste vídeo', 14)}
+                  {clipesDoVideo.length === 0
+                    ? <div style={{ fontSize: 12, color: TV.mutedDim, ...body }}>Ainda sem clipes neste vídeo.</div>
+                    : [...clipesDoVideo].sort((a, b) => (new Date(b.criadoEm || 0).getTime() || 0) - (new Date(a.criadoEm || 0).getTime() || 0)).slice(0, 5).map(linhaClipe)}
+                </>
+              )}
+
+              {abaAtiva === 'desenhar' && (
+                <>
+                  {clipeEmDesenho && (
+                    <div style={{ background: TV.surfaceRaise, border: `1px solid ${TV.gold}`, borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, color: TV.cream, marginBottom: 8, ...body }}>A desenhar no clipe {fmt(inPoint)}–{fmt(outPoint)}</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Btn variant="solid" onClick={guardarDesenhosClipe} style={{ padding: '6px 10px', fontSize: 12 }}><Check size={13} /> Guardar no clipe</Btn>
+                        <Btn variant="plain" onClick={cancelarDesenhosClipe} style={{ padding: '6px 10px', fontSize: 12 }}><X size={13} /> Cancelar</Btn>
+                      </div>
+                    </div>
+                  )}
+                  {tituloSecao('Ferramentas')}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 5 }}>
+                    {FERRAMENTAS.filter(([id]) => id !== 'linha' && id !== 'tubo').map(([id, Icon, titulo]) => ( /* o Tubo é só da Sala de Vídeo */
+                      <ToolBtn compacto key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
+                    ))}
+                    <ToolBtn compacto icon={Type} label="Texto" active={tool === 'texto'} onClick={() => setTool('texto')} />
+                    <ToolBtn compacto icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
+                    <ToolBtn compacto icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />
+                    <ToolBtn compacto icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />
+                    {calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
+                    <ToolBtn compacto icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
+                  </div>
+                  {tituloSecao('Cor', 12)}
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {PALETA_DESENHO.map(pc => (
+                      <button key={pc.id} type="button" onClick={() => mudarCor(pc.cor)} title={pc.id} style={{
+                        width: 24, height: 24, borderRadius: '50%', cursor: 'pointer', padding: 0, background: pc.cor,
+                        border: `1px solid ${TV.line}`, outline: corAtual === pc.cor ? `2px solid ${TV.gold}` : 'none', outlineOffset: 2,
+                      }} />
+                    ))}
+                  </div>
+                  {tituloSecao('Vídeo parado nos novos itens', 12)}
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {[1, 2, 3, 5, 8, 10].map(sg => (
+                      <button key={sg} type="button" onClick={() => setSegNovos(sg)} style={{ ...botaoBarra, ...(segNovos === sg ? { background: TV.gold, borderColor: TV.gold, color: '#111' } : {}) }}>{sg}s</button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: TV.mutedDim, marginTop: 5, ...body }}>Para mudar um item já feito, toca nele no vídeo.</div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={retroceder} disabled={!(historico.length > 0 || !!pontosEmCurso)} style={{ ...botaoBarra, opacity: historico.length > 0 || pontosEmCurso ? 1 : 0.5 }}><Undo2 size={14} /> Recuar</button>
+                    <button type="button" onClick={avancar} disabled={!(futuro.length > 0 || pontosDesfeitos.current.length > 0)} style={{ ...botaoBarra, opacity: futuro.length > 0 || pontosDesfeitos.current.length > 0 ? 1 : 0.5 }}><Redo2 size={14} /> Avançar</button>
+                    <span style={{ flex: 1 }} />
+                    <button type="button" onClick={() => { largarParagemEditor(); pushHistorico(); setShapes([]); setEditandoDuracaoIndex(null); }} disabled={!shapes.length} style={{ ...botaoBarra, opacity: shapes.length ? 1 : 0.5 }}><Trash2 size={14} /> Limpar tudo</button>
+                  </div>
+                  {trajetoriaFocoPendente && !processandoFoco && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => { videoRef.current?.pause(); setTool('seguir'); }} style={botaoBarra}><Target size={14} color={TV.crimsonBright} /> Corrigir seguimento aqui</button>
+                      <button type="button" onClick={() => setTrajetoriaFocoPendente(null)} style={botaoBarra}><X size={14} /> Tirar seguimento</button>
+                    </div>
+                  )}
+                  {tituloSecao(`Paragens neste vídeo · ${paragensDoVideo.length}`, 14)}
+                  {paragensDoVideo.length === 0 && <div style={{ fontSize: 12, color: TV.mutedDim, ...body }}>Para o vídeo no momento certo e desenha. Cada momento com desenhos aparece aqui.</div>}
+                  {paragensDoVideo.map(g => {
+                    const aqui = Math.abs(current - g.t) < 0.4;
+                    const nomes = [...new Set(g.formas.map(f => (FERRAMENTAS.find(([id]) => id === f.tool) || [null, null, f.tool === 'texto' ? 'Texto' : f.tool])[2]))].filter(Boolean).join(' + ');
+                    const zoomC = g.formas.find(f => f.tool === 'circulo' && Number(f.zoom) > 1);
+                    return (
+                      <button key={g.t} type="button" onClick={() => irParaTempo(g.t)} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '8px 10px', marginBottom: 6, borderRadius: 8, cursor: 'pointer', ...body,
+                        background: TV.surfaceRaise, border: `1px solid ${aqui ? TV.gold : 'transparent'}`, color: TV.cream,
+                      }}>
+                        <span style={{ ...mono, color: TV.gold, fontSize: 12.5, width: 46 }}>{fmt(g.t)}</span>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{nomes || 'Desenho'}{zoomC ? ` · zoom ${String(zoomC.zoom).replace('.', ',')}×` : ''}</span>
+                          <span style={{ display: 'block', fontSize: 11, color: TV.muted }}>{g.formas.some(temParagem) ? `${Math.max(...g.formas.filter(temParagem).map(segDe))}s parado` : 'sem parar'}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {corteAMao()}
+                </>
+              )}
+
+              {abaAtiva === 'clipes' && (
+                <>
+                  {tituloSecao(`Clipes deste vídeo · ${clipesDoVideo.length}`)}
+                  {clipesDoVideo.length === 0
+                    ? <div style={{ fontSize: 12, color: TV.mutedDim, ...body }}>Ainda sem clipes neste vídeo. Usa o Codificar para os criar com um toque.</div>
+                    : [...clipesDoVideo].sort((a, b) => (a.origemInicio || 0) - (b.origemInicio || 0)).map(linhaClipe)}
+                  <div style={{ fontSize: 11.5, color: TV.mutedDim, marginTop: 8, ...body }}>Todos os cortes, de todos os jogos, estão por baixo, em "Cortes".</div>
+                </>
+              )}
             </div>
-          )}
+          </div>
         </div>
         </BancadaVideo.Provider>
       )}
