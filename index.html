@@ -16,7 +16,7 @@
     <script>
       /* Arranque sem clarões: antes de a app carregar, o fundo já fica na cor
          do tema escolhido, e o manifesto é ligado logo (o Chrome lê dele a cor
-         da janela). No iPhone/iPad não se liga manifesto, como até aqui. */
+         da janela; no modo claro usa-se o manifesto claro). No iPhone/iPad não se liga manifesto, como até aqui. */
       (function () {
         try {
           var portal = /^\/portal(\/|$)/.test(location.pathname) || /[?&](portal|checkin)/.test(location.search) || /portal=|checkin/.test(location.hash);
@@ -27,6 +27,7 @@
             s.textContent = 'html, body, #root { background: ' + c + ' !important; }';
             document.head.appendChild(s);
             document.documentElement.style.background = c;
+            var tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.setAttribute('content', c);
           }
           /* raiz: a app escolhe o manifesto ao arrancar */
         } catch (e) {}

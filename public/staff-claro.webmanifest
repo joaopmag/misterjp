@@ -1,0 +1,32 @@
+{
+  "id": "/?app=misterjp",
+  "name": "MisterJP",
+  "short_name": "MisterJP",
+  "description": "Plataforma da equipa técnica.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#F2F4EF",
+  "theme_color": "#F2F4EF",
+  "lang": "pt-PT",
+  "icons": [
+    {
+      "src": "/icone-staff-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icone-staff-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icone-staff-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
