@@ -85,18 +85,47 @@ export const COR_DESENHO = '#FFFFFF'; // branco — antes era vermelho por omiss
 // os dois pontos mais próximos da trajetória devolvida pelo serviço de
 // seguimento. Antes/depois do intervalo conhecido, fica parado no
 // primeiro/último ponto, em vez de desaparecer.
+/* SEGUIR JOGADOR — rede de segurança do lado da app. Quando o jogador sai
+   do ecrã e volta, o serviço às vezes "agarra" outro (até de outra
+   equipa) e o tubo salta para ele. Um salto destes é impossível a correr:
+   a partir do primeiro, o seguimento pára (melhor não mostrar nada do
+   que mostrar o jogador errado) e corrige-se tocando no jogador certo
+   nesse momento, com a ferramenta Seguir. Também deixa de se ver o tubo
+   antes do início e depois do fim do seguimento, e nos buracos em que o
+   jogador não foi visto. */
+const VEL_MAX_SEGUIR = 0.6; // fração do ecrã por segundo (muito acima de um sprint, mesmo com a câmara a rodar)
+export function limparTrajetoria(pontos) {
+  const ps = (pontos || []).filter(p => p && Number.isFinite(p.t) && Number.isFinite(p.x) && Number.isFinite(p.y)).sort((a, b) => a.t - b.t);
+  const out = [];
+  let cortado = false;
+  for (let i = 0; i < ps.length; i++) {
+    const p = ps[i];
+    // Um toque de correção ("ancora") recomeça o seguimento dali, certo.
+    if (p.ancora) { out.push(p); cortado = false; continue; }
+    if (cortado) continue;
+    if (out.length) {
+      const a = out[out.length - 1];
+      const dt = Math.max(0.04, p.t - a.t);
+      const d = Math.hypot(p.x - a.x, p.y - a.y);
+      if (d > Math.max(0.06, VEL_MAX_SEGUIR * dt)) { cortado = true; continue; } // trocou de jogador
+    }
+    out.push(p);
+  }
+  return out;
+}
+const BURACO_SEGUIR = 0.7; // segundos sem o jogador = não se mostra o tubo nesse intervalo
 function posicaoNaTrajetoria(pontos, tempo) {
   if (!pontos || pontos.length === 0) return null;
-  if (tempo <= pontos[0].t) return pontos[0];
-  if (tempo >= pontos[pontos.length - 1].t) return pontos[pontos.length - 1];
+  if (tempo < pontos[0].t - 0.1 || tempo > pontos[pontos.length - 1].t + 0.3) return null;
   for (let i = 0; i < pontos.length - 1; i++) {
     const a = pontos[i], b = pontos[i + 1];
     if (tempo >= a.t && tempo <= b.t) {
+      if (b.t - a.t > BURACO_SEGUIR) return null;
       const frac = b.t === a.t ? 0 : (tempo - a.t) / (b.t - a.t);
       return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac };
     }
   }
-  return pontos[pontos.length - 1];
+  return tempo < pontos[0].t ? pontos[0] : pontos[pontos.length - 1];
 }
 
 // TEMPORÁRIO — enquanto o Upstash não estiver configurado (ver
@@ -171,7 +200,8 @@ function MarcadorTrajetoria({ videoRef, pontos }) {
     return () => { ativo = false; cancelAnimationFrame(id); };
   }, [videoRef]);
 
-  const pos = posicaoNaTrajetoria(pontos, tempo);
+  const limpos = React.useMemo(() => limparTrajetoria(pontos), [pontos]);
+  const pos = posicaoNaTrajetoria(limpos, tempo);
   if (!pos) return null;
   const px = pos.x * 100, py = pos.y * 56.25;
   const largTopo = 3.4;  // metade da largura do tubo lá em cima do ecrã
@@ -1662,7 +1692,7 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
     setModoSeguir('a_processar');
     try {
       const resultado = await seguirJogadorAssincrono({ video_url: clip.publicUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial });
-      let novosPontos = resultado.pontos || [];
+      let novosPontos = (resultado.pontos || []).map((p, i) => (i === 0 ? { ...p, ancora: true } : p));
       if (tInicial > 0 && clip.trajetoriaFoco?.pontos) {
         // um reancorar a meio — mantém a trajetória antiga até este
         // instante, e substitui-a a partir daqui pela nova
@@ -2505,7 +2535,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     try {
       const resultado = await seguirJogadorAssincrono({ video_url: signedUrl, x_inicial: xFrac, y_inicial: yFrac, t_inicial: tInicial, t_fim: tFim });
       setTrajetoriaFocoPendente(prev => {
-        const novosPontos = resultado.pontos || [];
+        const novosPontos = (resultado.pontos || []).map((p, i) => (i === 0 ? { ...p, ancora: true } : p));
         // se já havia uma trajetória pendente, este toque conta como
         // reancorar a partir daqui — mantém a parte anterior a tInicial
         const anteriores = prev ? prev.pontos.filter(p => p.t < tInicial) : [];
@@ -3873,18 +3903,22 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 esta barra à esquerda e a das cores/texto/apagar à direita.
                 Se mesmo assim faltar altura (ecrã baixo), a barra desliza. */}
             <div style={{
-              maxWidth: modoDesenho ? 90 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
+              maxWidth: modoDesenho ? 112 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
               transition: 'max-width 0.2s ease, opacity 0.15s ease',
             }}>
-              <div style={{
-                display: 'flex', flexDirection: 'column', gap: 5, padding: 8,
-                borderRight: `1px solid ${TV.line}`, overflowY: 'auto', overflowX: 'hidden', width: 90, height: '100%', boxSizing: 'border-box',
+              {/* Duas colunas: as ferramentas cabem todas sem barra de
+                  deslocamento (antes, numa coluna só, aparecia o scroll). */}
+              <div className="mjp-sem-scroll" style={{
+                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, padding: 6, alignContent: 'start',
+                borderRight: `1px solid ${TV.line}`, overflowY: 'auto', overflowX: 'hidden', width: 112, height: '100%', boxSizing: 'border-box',
+                scrollbarWidth: 'none',
               }}>
+                <style>{'.mjp-sem-scroll::-webkit-scrollbar{display:none}'}</style>
                 {FERRAMENTAS.filter(([id]) => id !== 'linha' && id !== 'tubo').map(([id, Icon, titulo]) => ( /* o Tubo é só da Sala de Vídeo */
                   <ToolBtn compacto key={id} icon={Icon} label={titulo} active={tool === id} onClick={() => setTool(id)} />
                 ))}
                 <ToolBtn compacto icon={Target} label="Seguir" active={tool === 'seguir'} onClick={() => setTool('seguir')} />
-                <div style={{ height: 1, background: TV.line, margin: '2px 0', flexShrink: 0 }} />
+                <div style={{ height: 1, background: TV.line, margin: '2px 0', gridColumn: '1 / -1' }} />
                 <ToolBtn compacto icon={LayoutGrid} label={calibracao ? 'Relvado ✓' : 'Relvado'} active={painelRelvado || !!calibrando} onClick={() => setPainelRelvado(v => !v)} />
                 <ToolBtn compacto icon={Flag} label="Fora de jogo" active={tool === 'foraDeJogo'} onClick={() => setTool('foraDeJogo')} />
                 {calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
@@ -4017,7 +4051,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               {modoDesenho && tool === 'seguir' && !processandoFoco && (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', pointerEvents: 'none' }}>
                   <span style={{ marginTop: 12, background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '6px 12px', borderRadius: 8, fontSize: 12.5, ...body }}>
-                    Toca no jogador que queres seguir
+                    {trajetoriaFocoPendente ? 'Toca no jogador certo, neste momento: o seguimento recomeça daqui' : 'Toca no jogador que queres seguir'}
                   </span>
                 </div>
               )}
@@ -4191,6 +4225,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             <Btn variant="ghost" onClick={markIn}><Flag size={14} color={TV.good} /> Marcar início ({fmt(inPoint ?? 0)})</Btn>
             <Btn variant="ghost" onClick={markOut}><Flag size={14} color={TV.bad} /> Marcar fim ({fmt(outPoint ?? 0)})</Btn>
             <Btn variant="ghost" onClick={limparMarcas} disabled={inPoint == null && outPoint == null}><RotateCcw size={14} /> Limpar</Btn>
+            {trajetoriaFocoPendente && !processandoFoco && (
+              <>
+                {/* Corrigir o "Seguir": pára aqui e toca-se no jogador certo;
+                    o seguimento recomeça desse momento. */}
+                <Btn variant="ghost" onClick={() => { videoRef.current?.pause(); if (!modoDesenho) setModoDesenho(true); setTool('seguir'); }}>
+                  <Target size={14} color={TV.crimsonBright} /> Corrigir seguimento aqui
+                </Btn>
+                <Btn variant="ghost" onClick={() => setTrajetoriaFocoPendente(null)}><X size={14} /> Tirar seguimento</Btn>
+              </>
+            )}
             {!modoDesenho && (
               <>
                 <div style={{ width: 1, background: TV.line, margin: '0 4px' }} />
@@ -4205,49 +4249,55 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             <div style={{ margin: '0 14px 10px', background: TV.surfaceRaise, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, color: TV.cream, fontSize: 12.5 }}>{erroSeguirFoco}</div>
           )}
 
-          {(
-            <>
-              <div style={{ padding: '12px 14px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {TAGS_ATIVAS.map(tag => (
-                  <button key={tag.id} onClick={() => setPendingTag(tag.id)}
-                    style={{
-                      padding: '7px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', ...body,
-                      border: `1px solid ${tag.color}`, background: pendingTag === tag.id ? tag.color : 'transparent',
-                      color: pendingTag === tag.id ? TEXT_ON_ACCENT : tag.color,
-                    }}>
-                    {tag.label}
-                  </button>
-                ))}
-              </div>
-
-              {inPoint != null && outPoint != null && outPoint > inPoint && (
-                <div style={{ margin: '0 14px 16px', background: TV.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${TV.line}` }}>
-                  <div style={{ fontSize: 12.5, color: TV.muted, marginBottom: 8, ...mono }}>
-                    {clipeEmDesenho ? 'Desenhos do clipe' : 'Novo clipe'} · {fmt(inPoint)} – {fmt(outPoint)} ({Math.round(outPoint - inPoint)}s) {(() => { const n = clipeEmDesenho ? shapes.length : shapes.filter(sh => dentroDoClipe(sh, inPoint, outPoint)).length; return n > 0 ? `· ${n} desenho(s)` : ''; })()}
+          {/* CAIXA DO CLIPE — sempre no mesmo sítio e com a mesma altura
+              (antes só aparecia depois de marcar o fim e a página saltava
+              toda). As etiquetas vivem aqui dentro, numa linha só que
+              desliza para o lado, em vez de ocuparem duas linhas debaixo
+              do leitor. */}
+          {(() => {
+            const marcado = inPoint != null && outPoint != null && outPoint > inPoint;
+            const nDes = marcado ? (clipeEmDesenho ? shapes.length : shapes.filter(sh => dentroDoClipe(sh, inPoint, outPoint)).length) : 0;
+            return (
+              <div style={{ margin: '12px 14px 16px', background: TV.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${TV.line}` }}>
+                <div style={{ fontSize: 12.5, color: marcado ? TV.muted : TV.mutedDim, marginBottom: 8, ...mono, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {marcado
+                    ? `${clipeEmDesenho ? 'Desenhos do clipe' : 'Novo clipe'} · ${fmt(inPoint)} – ${fmt(outPoint)} (${Math.round(outPoint - inPoint)}s)${nDes > 0 ? ` · ${nDes} desenho(s)` : ''}`
+                    : 'Novo clipe · marca o início e o fim'}
+                </div>
+                <div className="mjp-sem-scroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, marginBottom: 8, scrollbarWidth: 'none' }}>
+                  {TAGS_ATIVAS.map(tag => (
+                    <button key={tag.id} onClick={() => setPendingTag(t => (t === tag.id ? null : tag.id))}
+                      style={{
+                        flexShrink: 0, padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
+                        border: `1px solid ${tag.color}`, background: pendingTag === tag.id ? tag.color : 'transparent',
+                        color: pendingTag === tag.id ? TEXT_ON_ACCENT : tag.color,
+                      }}>
+                      {tag.label}
+                    </button>
+                  ))}
+                </div>
+                <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…" rows={2}
+                  style={{ width: '100%', height: 54, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 13, resize: 'none', boxSizing: 'border-box', ...body }} />
+                {erro && (
+                  <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, marginTop: 8, color: TV.cream, fontSize: 12.5 }}>{erro}</div>
+                )}
+                {clipeEmDesenho ? (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <Btn variant="solid" onClick={guardarDesenhosClipe}><Check size={14} /> Guardar no clipe</Btn>
+                    <Btn variant="plain" onClick={cancelarDesenhosClipe}><X size={14} /> Cancelar</Btn>
+                    <span style={{ fontSize: 11.5, color: TV.mutedDim }}>Guarda os desenhos, o texto e a etiqueta. Os tempos do clipe não mudam aqui.</span>
                   </div>
-                  <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…"
-                    style={{ width: '100%', minHeight: 54, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 13, resize: 'vertical', ...body }} />
-                  {erro && (
-                    <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, marginTop: 8, color: TV.cream, fontSize: 12.5 }}>{erro}</div>
-                  )}
-                  {clipeEmDesenho ? (
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <Btn variant="solid" onClick={guardarDesenhosClipe}><Check size={14} /> Guardar no clipe</Btn>
-                      <Btn variant="plain" onClick={cancelarDesenhosClipe}><X size={14} /> Cancelar</Btn>
-                      <span style={{ fontSize: 11.5, color: TV.mutedDim }}>Guarda os desenhos, o texto e a etiqueta. Os tempos do clipe não mudam aqui.</span>
-                    </div>
-                  ) : (
+                ) : (
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe}>
+                    <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe || !marcado}>
                       {aGuardarClipe ? <Loader2 size={14} className="spin" /> : <Check size={14} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
                     </Btn>
-                    <Btn variant="plain" onClick={limparMarcas} disabled={aGuardarClipe}><X size={14} /> Descartar</Btn>
+                    <Btn variant="plain" onClick={limparMarcas} disabled={aGuardarClipe || (inPoint == null && outPoint == null)}><X size={14} /> Descartar</Btn>
                   </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
+                )}
+              </div>
+            );
+          })()}
         </div>
         </BancadaVideo.Provider>
       )}
