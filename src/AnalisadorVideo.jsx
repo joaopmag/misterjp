@@ -3711,6 +3711,85 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   // depois. A única exceção é a forma que está com o popup de duração
   // aberto: essa fica sempre visível, para não desaparecer a meio de a
   // estares a ajustar.
+  /* LARGURA DA BANCADA — em ecrãs largos, os controlos do clipe e as
+     etiquetas ficam nas faixas pretas ao lado do vídeo (que fica com a
+     altura toda); abaixo de ~900 px vão para baixo da barra. */
+  const [estreitoBancada, setEstreitoBancada] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => setEstreitoBancada(el.clientWidth < 900));
+    ro.observe(el);
+    setEstreitoBancada(el.clientWidth < 900);
+    return () => ro.disconnect();
+  }, [originalAtivoId, signedUrl]);
+  const marcadoClipe = inPoint != null && outPoint != null && outPoint > inPoint;
+  const nDesenhosClipe = marcadoClipe ? (clipeEmDesenho ? shapes.length : shapes.filter(sh => dentroDoClipe(sh, inPoint, outPoint)).length) : 0;
+  const tituloPainel = (t) => <div style={{ fontSize: 10.5, letterSpacing: 0.6, textTransform: 'uppercase', color: TV.mutedDim, ...body }}>{t}</div>;
+  const btnPainel = { width: '100%', justifyContent: 'flex-start', padding: '7px 10px', fontSize: 12.5 };
+  // Painel do CLIPE: marcar, nota e guardar.
+  const painelClipe = (baixo) => (
+    <div className="mjp-sem-scroll" style={baixo
+      ? { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'flex-start' }
+      : { width: 200, flexShrink: 0, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, borderRight: `1px solid ${TV.line}`, overflowY: 'auto', scrollbarWidth: 'none', boxSizing: 'border-box' }}>
+      {!baixo && tituloPainel(clipeEmDesenho ? 'Desenhos do clipe' : 'Novo clipe')}
+      <Btn variant="ghost" onClick={markIn} style={baixo ? {} : btnPainel}><Flag size={14} color={TV.good} /> Início <span style={{ ...mono, marginLeft: 'auto', color: TV.muted }}>{inPoint == null ? '--:--' : fmt(inPoint)}</span></Btn>
+      <Btn variant="ghost" onClick={markOut} style={baixo ? {} : btnPainel}><Flag size={14} color={TV.bad} /> Fim <span style={{ ...mono, marginLeft: 'auto', color: TV.muted }}>{outPoint == null ? '--:--' : fmt(outPoint)}</span></Btn>
+      <div style={{ fontSize: 11.5, color: TV.mutedDim, ...mono }}>
+        {marcadoClipe ? `${Math.round(outPoint - inPoint)}s${nDesenhosClipe > 0 ? ` · ${nDesenhosClipe} desenho(s)` : ''}` : 'Marca o início e o fim'}
+      </div>
+      <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…" rows={baixo ? 2 : 4}
+        style={{ width: baixo ? '100%' : '100%', flexBasis: baixo ? '100%' : undefined, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 12.5, resize: 'none', boxSizing: 'border-box', ...body }} />
+      {erro && <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 8, color: TV.cream, fontSize: 12 }}>{erro}</div>}
+      {erroSeguirFoco && <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 8, color: TV.cream, fontSize: 12 }}>{erroSeguirFoco}</div>}
+      {clipeEmDesenho ? (
+        <>
+          <Btn variant="solid" onClick={guardarDesenhosClipe} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}><Check size={14} /> Guardar no clipe</Btn>
+          <Btn variant="plain" onClick={cancelarDesenhosClipe} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}><X size={14} /> Cancelar</Btn>
+        </>
+      ) : (
+        <>
+          <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe || !marcadoClipe} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}>
+            {aGuardarClipe ? <Loader2 size={14} className="spin" /> : <Check size={14} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
+          </Btn>
+          <Btn variant="plain" onClick={limparMarcas} disabled={aGuardarClipe || (inPoint == null && outPoint == null)} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}><X size={14} /> Limpar marcas</Btn>
+        </>
+      )}
+    </div>
+  );
+  // Painel da DIREITA: desenhar, seguimento e etiquetas (uma por linha, todas à vista).
+  const painelLadoDireito = (baixo) => (
+    <div className="mjp-sem-scroll" style={baixo
+      ? { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }
+      : { width: 190, flexShrink: 0, padding: 10, display: 'flex', flexDirection: 'column', gap: 6, borderLeft: `1px solid ${TV.line}`, overflowY: 'auto', scrollbarWidth: 'none', boxSizing: 'border-box' }}>
+      <Btn variant="ghost" onClick={abrirDesenho} style={baixo ? {} : { ...btnPainel, justifyContent: 'center' }}>
+        <Pencil size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}
+        {trajetoriaFocoPendente && <Target size={13} color={TV.crimsonBright} style={{ marginLeft: 2 }} />}
+      </Btn>
+      {trajetoriaFocoPendente && !processandoFoco && (
+        <>
+          <Btn variant="ghost" onClick={() => { videoRef.current?.pause(); setModoDesenho(true); setTool('seguir'); }} style={baixo ? {} : btnPainel}>
+            <Target size={14} color={TV.crimsonBright} /> Corrigir seguimento
+          </Btn>
+          <Btn variant="plain" onClick={() => setTrajetoriaFocoPendente(null)} style={baixo ? {} : btnPainel}><X size={14} /> Tirar seguimento</Btn>
+        </>
+      )}
+      {!baixo && <div style={{ height: 4 }} />}
+      {tituloPainel('Etiqueta')}
+      {TAGS_ATIVAS.map(tag => {
+        const on = pendingTag === tag.id;
+        return (
+          <button key={tag.id} type="button" onClick={() => setPendingTag(t => (t === tag.id ? null : tag.id))}
+            style={{
+              width: baixo ? 'auto' : '100%', textAlign: 'left', padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
+              border: `1px solid ${tag.color}`, background: on ? tag.color : 'transparent', color: on ? TEXT_ON_ACCENT : tag.color, flexShrink: 0,
+            }}>
+            {tag.label}
+          </button>
+        );
+      })}
+    </div>
+  );
   const shapesVisiveis = shapes.filter((sh, i) => visivelNoEditor(sh, i));
   // A ver (fora do desenho), o círculo com zoom aproxima a imagem, como no
   // clipe final. A desenhar, escolher o zoom de um círculo mostra-o logo
@@ -3862,14 +3941,17 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           // o vídeo tirava a altura só da largura do ecrã (16:9 "deitado"),
           // o que em ecrãs largos o fazia enorme e empurrava os controlos
           // todos para fora da vista.
-          height: fullscreen ? '100vh' : 'calc(100vh - 140px)',
-          maxHeight: fullscreen ? '100vh' : 'calc(100vh - 140px)',
+          // No telemóvel (estreito) a altura é a do conteúdo: o vídeo tem
+          // altura própria e os painéis por baixo não o encolhem.
+          height: fullscreen ? '100vh' : (estreitoBancada ? 'auto' : 'calc(100vh - 140px)'),
+          maxHeight: fullscreen ? '100vh' : (estreitoBancada ? 'none' : 'calc(100vh - 140px)'),
         }}>
+          <style>{'.mjp-sem-scroll::-webkit-scrollbar{display:none}'}</style>
           <div style={{
-            maxHeight: modoDesenho ? 60 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
+            maxHeight: modoDesenho ? 110 : 0, opacity: modoDesenho ? 1 : 0, overflow: 'hidden', flexShrink: 0,
             transition: 'max-height 0.2s ease, opacity 0.15s ease',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 14px', borderBottom: `1px solid ${TV.line}`, background: TV.surfaceRaise }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '8px 14px', borderBottom: `1px solid ${TV.line}`, background: TV.surfaceRaise }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12.5, color: TV.muted, ...mono }}>Modo de desenho</span>
                 {/* Como na Sala de Vídeo: quanto tempo o vídeo fica parado com
@@ -3880,7 +3962,22 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <span style={{ fontSize: 13, color: TV.cream, minWidth: 30, textAlign: 'center', ...mono }}>{segNovos}s</span>
                 <button type="button" onClick={() => setSegNovos(v => Math.min(60, v + 1))} style={{ background: 'none', border: `1px solid ${TV.line}`, borderRadius: 4, color: TV.cream, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>+</button>
               </span>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {/* Também a desenhar dá para marcar e guardar o clipe. */}
+                {[['Início', markIn, inPoint, TV.good], ['Fim', markOut, outPoint, TV.bad]].map(([r, fn, v, cor]) => (
+                  <button key={r} type="button" onClick={fn} title={`Marcar ${r.toLowerCase()} aqui`} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', background: 'transparent',
+                    border: `1px solid ${TV.line}`, borderRadius: 8, color: TV.cream, cursor: 'pointer', fontSize: 12, ...body,
+                  }}><Flag size={13} color={cor} /> {r} <span style={{ ...mono, color: TV.muted }}>{v == null ? '--:--' : fmt(v)}</span></button>
+                ))}
+                {clipeEmDesenho ? (
+                  <Btn variant="ghost" onClick={guardarDesenhosClipe} style={{ padding: '6px 10px', fontSize: 12 }}><Check size={13} /> Guardar no clipe</Btn>
+                ) : (
+                  <Btn variant="ghost" onClick={guardarClipe} disabled={aGuardarClipe || !(inPoint != null && outPoint != null && outPoint > inPoint)} style={{ padding: '6px 10px', fontSize: 12 }}>
+                    {aGuardarClipe ? <Loader2 size={13} className="spin" /> : <Scissors size={13} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
+                  </Btn>
+                )}
+                <div style={{ width: 1, alignSelf: 'stretch', background: TV.line, margin: '0 2px' }} />
                 {/* Botões simples: o Btn trava cliques seguidos (e aqui recuam-se vários pontos de rajada). */}
                 {[
                   { on: historico.length > 0 || !!pontosEmCurso, fn: retroceder, Ic: Undo2, t: 'Recuar' },
@@ -3896,7 +3993,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             </div>
           </div>
 
-          <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+          <div style={{ display: 'flex', flex: estreitoBancada && !fullscreen ? 'none' : 1, minHeight: 0, height: estreitoBancada && !fullscreen ? 'min(62vw, 62vh)' : undefined }}>
             {/* BARRA DE FERRAMENTAS — UMA SÓ COLUNA. Para caber tudo saiu a
                 ferramenta "Linha" (a Seta e o Traço cobrem esse uso) e os
                 botões são um pouco mais compactos. Em ecrã inteiro fica igual:
@@ -3924,6 +4021,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 {calibracao && <ToolBtn compacto icon={Ruler} label="Medir" active={tool === 'medida'} onClick={() => setTool('medida')} />}
               </div>
             </div>
+            {!modoDesenho && !estreitoBancada && painelClipe(false)}
             <div ref={canvasWrapRef} style={{ position: 'relative', background: '#000', flex: 1, minHeight: 0, width: '100%', touchAction: modoDesenho ? 'none' : 'auto', transition: 'width 0.2s ease', boxSizing: 'border-box', overflow: 'hidden' }}
               onPointerDown={startDraw} onPointerMove={moveDraw} onPointerUp={endDraw} onPointerLeave={endDraw} onPointerCancel={endDraw}>
               {/* Vídeo + desenho juntos numa caixa: é ela que se aproxima no zoom do círculo. */}
@@ -4198,6 +4296,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { largarParagemEditor(); pushHistorico(); setShapes([]); setEditandoDuracaoIndex(null); }} />
               </div>
             </div>
+            {!modoDesenho && !estreitoBancada && painelLadoDireito(false)}
           </div>
 
           <div style={{ padding: '10px 14px 4px', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -4221,83 +4320,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             </Btn>
           </div>
 
-          <div style={{ padding: '8px 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 8, borderBottom: `1px solid ${TV.line}` }}>
-            <Btn variant="ghost" onClick={markIn}><Flag size={14} color={TV.good} /> Marcar início ({fmt(inPoint ?? 0)})</Btn>
-            <Btn variant="ghost" onClick={markOut}><Flag size={14} color={TV.bad} /> Marcar fim ({fmt(outPoint ?? 0)})</Btn>
-            <Btn variant="ghost" onClick={limparMarcas} disabled={inPoint == null && outPoint == null}><RotateCcw size={14} /> Limpar</Btn>
-            {trajetoriaFocoPendente && !processandoFoco && (
-              <>
-                {/* Corrigir o "Seguir": pára aqui e toca-se no jogador certo;
-                    o seguimento recomeça desse momento. */}
-                <Btn variant="ghost" onClick={() => { videoRef.current?.pause(); if (!modoDesenho) setModoDesenho(true); setTool('seguir'); }}>
-                  <Target size={14} color={TV.crimsonBright} /> Corrigir seguimento aqui
-                </Btn>
-                <Btn variant="ghost" onClick={() => setTrajetoriaFocoPendente(null)}><X size={14} /> Tirar seguimento</Btn>
-              </>
-            )}
-            {!modoDesenho && (
-              <>
-                <div style={{ width: 1, background: TV.line, margin: '0 4px' }} />
-                <Btn variant="ghost" onClick={abrirDesenho}>
-                  <Scissors size={14} /> Desenhar {shapes.length > 0 && `(${shapes.length})`}
-                  {trajetoriaFocoPendente && <Target size={13} color={TV.crimsonBright} style={{ marginLeft: 2 }} />}
-                </Btn>
-              </>
-            )}
-          </div>
-          {erroSeguirFoco && (
-            <div style={{ margin: '0 14px 10px', background: TV.surfaceRaise, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, color: TV.cream, fontSize: 12.5 }}>{erroSeguirFoco}</div>
+          {/* Ecrã estreito (telemóvel): os dois painéis vão para baixo da
+              barra, compactos. Em ecrãs largos ficam ao lado do vídeo, nas
+              faixas pretas, e o vídeo fica com a altura toda. */}
+          {estreitoBancada && !modoDesenho && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '6px 14px 14px' }}>
+              {painelLadoDireito(true)}
+              {painelClipe(true)}
+            </div>
           )}
-
-          {/* CAIXA DO CLIPE — sempre no mesmo sítio e com a mesma altura
-              (antes só aparecia depois de marcar o fim e a página saltava
-              toda). As etiquetas vivem aqui dentro, numa linha só que
-              desliza para o lado, em vez de ocuparem duas linhas debaixo
-              do leitor. */}
-          {(() => {
-            const marcado = inPoint != null && outPoint != null && outPoint > inPoint;
-            const nDes = marcado ? (clipeEmDesenho ? shapes.length : shapes.filter(sh => dentroDoClipe(sh, inPoint, outPoint)).length) : 0;
-            return (
-              <div style={{ margin: '12px 14px 16px', background: TV.surfaceRaise, borderRadius: 10, padding: 12, border: `1px solid ${TV.line}` }}>
-                <div style={{ fontSize: 12.5, color: marcado ? TV.muted : TV.mutedDim, marginBottom: 8, ...mono, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {marcado
-                    ? `${clipeEmDesenho ? 'Desenhos do clipe' : 'Novo clipe'} · ${fmt(inPoint)} – ${fmt(outPoint)} (${Math.round(outPoint - inPoint)}s)${nDes > 0 ? ` · ${nDes} desenho(s)` : ''}`
-                    : 'Novo clipe · marca o início e o fim'}
-                </div>
-                <div className="mjp-sem-scroll" style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, marginBottom: 8, scrollbarWidth: 'none' }}>
-                  {TAGS_ATIVAS.map(tag => (
-                    <button key={tag.id} onClick={() => setPendingTag(t => (t === tag.id ? null : tag.id))}
-                      style={{
-                        flexShrink: 0, padding: '5px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
-                        border: `1px solid ${tag.color}`, background: pendingTag === tag.id ? tag.color : 'transparent',
-                        color: pendingTag === tag.id ? TEXT_ON_ACCENT : tag.color,
-                      }}>
-                      {tag.label}
-                    </button>
-                  ))}
-                </div>
-                <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Nota…" rows={2}
-                  style={{ width: '100%', height: 54, background: TV.surface, border: `1px solid ${TV.line}`, borderRadius: 7, color: TV.cream, padding: 8, fontSize: 13, resize: 'none', boxSizing: 'border-box', ...body }} />
-                {erro && (
-                  <div style={{ background: TV.surface, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, marginTop: 8, color: TV.cream, fontSize: 12.5 }}>{erro}</div>
-                )}
-                {clipeEmDesenho ? (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <Btn variant="solid" onClick={guardarDesenhosClipe}><Check size={14} /> Guardar no clipe</Btn>
-                    <Btn variant="plain" onClick={cancelarDesenhosClipe}><X size={14} /> Cancelar</Btn>
-                    <span style={{ fontSize: 11.5, color: TV.mutedDim }}>Guarda os desenhos, o texto e a etiqueta. Os tempos do clipe não mudam aqui.</span>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <Btn variant="solid" onClick={guardarClipe} disabled={aGuardarClipe || !marcado}>
-                      {aGuardarClipe ? <Loader2 size={14} className="spin" /> : <Check size={14} />} {aGuardarClipe ? 'A cortar…' : 'Guardar clipe'}
-                    </Btn>
-                    <Btn variant="plain" onClick={limparMarcas} disabled={aGuardarClipe || (inPoint == null && outPoint == null)}><X size={14} /> Descartar</Btn>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
         </div>
         </BancadaVideo.Provider>
       )}
