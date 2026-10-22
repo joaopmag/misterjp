@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from './supabaseClient';
 import {
   Play, Pause, Scissors, Circle, ArrowUpRight, Minus, Eraser, Trash2,
@@ -1569,7 +1570,14 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
   );
 }
 
-function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala, onDesenhar }) {
+function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala, onDesenhar, embutido, onEcraInteiro, ecraInteiroExterno }) {
+  // Ecrã estreito (telemóvel): o painel vai para baixo do vídeo.
+  const [estreitoPlayer, setEstreitoPlayer] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
+  useEffect(() => {
+    const f = () => setEstreitoPlayer(window.innerWidth < 900);
+    window.addEventListener('resize', f);
+    return () => window.removeEventListener('resize', f);
+  }, []);
   const [t, setT] = useState(0);
   // EDITAR — texto e tempos (em mm:ss, relativos ao vídeo original).
   const [aEditar, setAEditar] = useState(false);
@@ -1730,53 +1738,30 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
     escolherJogador((e.clientX - rect.left - r.left) / r.width, (e.clientY - rect.top - r.top) / r.height);
   };
 
+  /* O CLIPE ABRE NO ESTÚDIO: o vídeo à esquerda (a maior parte do ecrã)
+     e, à direita, o painel do clipe (ações, texto, seguir e etiqueta) —
+     o mesmo conceito do editor. Aberto a partir do Estúdio, fica DENTRO
+     dele (também em ecrã inteiro); sozinho, ocupa a janela toda. */
+  const botaoAcao = (Icone, rotulo, fn, opc = {}) => (
+    <button type="button" onClick={opc.disabled ? undefined : fn} title={opc.title || rotulo} disabled={opc.disabled} style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '7px 4px', minHeight: 50,
+      borderRadius: 8, cursor: opc.disabled ? 'default' : 'pointer', opacity: opc.disabled ? 0.5 : 1, ...body,
+      background: opc.ativo ? TV.surfaceRaise : 'transparent', border: `1px solid ${opc.perigo ? `${TV.bad}88` : TV.line}`, color: opc.perigo ? TV.bad : TV.cream,
+    }}>
+      {Icone}
+      <span style={{ fontSize: 10.5, lineHeight: 1.1, textAlign: 'center' }}>{rotulo}</span>
+    </button>
+  );
+  const emEcraInteiroAgora = embutido ? !!ecraInteiroExterno : emEcraInteiro;
   return (
-    <div style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', paddingTop: 'calc(10px + env(safe-area-inset-top, 0px))', borderBottom: `1px solid ${T.line}`, background: T.surface, flexShrink: 0 }}>
-          <span style={{ fontSize: 12.5, color: T.muted, ...body, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {tag?.label || 'Sem etiqueta'} · {Math.round(clip.duracao)}s{clip.originalTitulo ? ` · ${clip.originalTitulo}` : ''}
-          </span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <Btn variant="ghost" onClick={onShare} style={{ padding: '6px 10px' }} title="Partilhar o link do clipe">
-              {copied ? <Check size={14} color={T.good} /> : <Share2 size={14} />}
-            </Btn>
-            {/* MP4 em qualidade total (sem desenhos). */}
-            <Btn variant="ghost" disabled={estadoMp4 === 'a-preparar'} onClick={async () => {
-              setEstadoMp4('a-preparar');
-              try { await descarregarClipeMp4(clip); setEstadoMp4(null); } catch (e) { setEstadoMp4('erro'); setTimeout(() => setEstadoMp4(null), 2500); }
-            }} style={{ padding: '6px 10px' }} title="Descarregar / partilhar o MP4 (qualidade total, sem desenhos)">
-              {estadoMp4 === 'a-preparar' ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
-              <span style={{ fontSize: 11.5 }}>{estadoMp4 === 'erro' ? 'Falhou' : 'MP4'}</span>
-            </Btn>
-            {/* Vídeo COM os desenhos e o zoom: grava o leitor a reproduzir. */}
-            {(clip.shapes || []).length > 0 && podeGravarSeparador() && (
-              <Btn variant="ghost" active={!!gravacaoClipe} onClick={gravacaoClipe ? pararGravacaoClipe : gravarClipeComDesenhos}
-                style={{ padding: '6px 10px' }} title="Gravar um vídeo com os desenhos (grava este ecrã enquanto o clipe toca)">
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: gravacaoClipe ? T.bad : '#fff', display: 'inline-block' }} />
-                <span style={{ fontSize: 11.5 }}>{gravacaoClipe ? 'A gravar… parar' : 'Vídeo c/ desenhos'}</span>
-              </Btn>
-            )}
-            {onDesenhar && (
-              <Btn variant="ghost" onClick={onDesenhar} style={{ padding: '6px 10px' }} title="Desenhar neste clipe (setas, zonas, texto…)">
-                <ArrowUpRight size={14} /> <span style={{ fontSize: 11.5 }}>Desenhar{(clip.shapes || []).length ? ` (${clip.shapes.length})` : ''}</span>
-              </Btn>
-            )}
-            {onEnviarSala && (
-              <Btn variant="ghost" onClick={onEnviarSala} style={{ padding: '6px 10px' }} title="Enviar para a Sala de Vídeo (Canal: temas, jogos ou adversários)">
-                {(clip.enviadoSala || []).length ? <Check size={14} color={T.good} /> : <Film size={14} />}
-                <span style={{ fontSize: 11.5 }}>Sala de Vídeo</span>
-              </Btn>
-            )}
-            <Btn variant="ghost" onClick={aEditar ? () => setAEditar(false) : abrirEdicao} active={aEditar} style={{ padding: '6px 10px' }} title="Editar texto e tempos">
-              <Pencil size={14} />
-            </Btn>
-            <Btn variant="ghost" onClick={onRemove} style={{ padding: '6px 10px' }} title="Apagar clipe"><Trash2 size={14} color={T.bad} /></Btn>
-            <Btn variant="plain" onClick={onClose}><X size={16} /></Btn>
-          </div>
-        </div>
-        <div ref={fsRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
-        <div ref={areaRef} style={{ flex: 1, minHeight: '25vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+    <BancadaVideo.Provider value>
+    <div style={{
+      ...(embutido ? { position: 'absolute', inset: 0, zIndex: 30 } : { position: 'fixed', inset: 0, zIndex: 1000 }),
+      background: TV.surface, display: 'flex', flexDirection: estreitoPlayer ? 'column' : 'row',
+    }}>
+      {/* ===== ESQUERDA: vídeo + barra ===== */}
+      <div ref={fsRef} style={{ flex: estreitoPlayer ? 'none' : 1, height: estreitoPlayer ? 'min(62vw, 58vh)' : undefined, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#000' }}>
+        <div ref={areaRef} style={{ flex: 1, minHeight: 0, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <div ref={caixaVideoRef} style={{ position: 'relative', width: caixa.w || '100%', height: caixa.h || 'auto', ...estiloZoomClipe }}>
             <video ref={videoRef} src={clip.publicUrl} autoPlay playsInline onClick={alternar}
               onPlay={() => setATocar(true)} onPause={() => setATocar(false)}
@@ -1808,106 +1793,132 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
             )}
           </div>
         </div>
-        {/* A mesma barra amarela de todos os vídeos da app. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: TV.surface, flexShrink: 0 }}>
           <button onClick={alternar} title={aTocar ? 'Pausa' : 'Reproduzir'}
-            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
-            {aTocar ? <Pause size={16} /> : <Play size={16} />}
+            style={{ background: TV.gold, border: 'none', color: '#111', cursor: 'pointer', padding: '6px 12px', borderRadius: 8, display: 'flex' }}>
+            {aTocar ? <Pause size={15} /> : <Play size={15} />}
           </button>
           <button onClick={() => irPara(0)} title="Voltar ao início"
-            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
-            <RotateCcw size={15} />
+            style={{ background: 'none', border: `1px solid ${TV.line}`, color: TV.cream, cursor: 'pointer', padding: '6px 8px', borderRadius: 8, display: 'flex' }}>
+            <RotateCcw size={14} />
           </button>
           <input type="range" min={0} max={duracaoVideo || 0} step={0.1} value={Math.min(t, duracaoVideo || 0)}
             onChange={e => irPara(Number(e.target.value))} disabled={!duracaoVideo}
             aria-label="Posição no clipe"
-            style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }} />
-          <span style={{ fontSize: 12, color: '#fff', ...mono, flexShrink: 0 }}>{mmss(t)} / {mmss(duracaoVideo)}</span>
-          <button onClick={() => alternarEcraInteiro(videoRef.current)} title={emEcraInteiro ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'}
-            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex', flexShrink: 0 }}>
-            {emEcraInteiro ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            style={{ flex: 1, minWidth: 0, accentColor: TV.gold, cursor: 'pointer' }} />
+          <span style={{ fontSize: 12, color: TV.muted, ...mono, flexShrink: 0 }}>{mmss(t)} / {mmss(duracaoVideo)}</span>
+          <button onClick={() => (onEcraInteiro ? onEcraInteiro() : alternarEcraInteiro(videoRef.current))} title={emEcraInteiroAgora ? 'Sair do ecrã inteiro' : 'Ecrã inteiro'}
+            style={{ background: 'none', border: `1px solid ${TV.line}`, color: TV.cream, cursor: 'pointer', padding: '6px 8px', borderRadius: 8, display: 'flex', flexShrink: 0 }}>
+            {emEcraInteiroAgora ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
         </div>
+      </div>
+
+      {/* ===== DIREITA: painel do clipe ===== */}
+      <div style={{
+        width: estreitoPlayer ? '100%' : 310, flex: estreitoPlayer ? 1 : 'none', minHeight: 0, display: 'flex', flexDirection: 'column',
+        borderLeft: estreitoPlayer ? 'none' : `1px solid ${TV.line}`, borderTop: estreitoPlayer ? `1px solid ${TV.line}` : 'none', background: TV.surface,
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxSizing: 'border-box',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 10px 8px', paddingTop: estreitoPlayer ? 10 : 'calc(10px + env(safe-area-inset-top, 0px))', borderBottom: `1px solid ${TV.line}`, flexShrink: 0 }}>
+          <button type="button" onClick={onClose} title={embutido ? 'Voltar ao editor' : 'Fechar'} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', border: `1px solid ${TV.line}`, borderRadius: 8,
+            color: TV.cream, cursor: 'pointer', padding: '6px 9px', fontSize: 12, ...body, flexShrink: 0,
+          }}>{embutido ? <><ArrowLeft size={13} /> Editor</> : <X size={14} />}</button>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: tag ? corTextoEtiqueta(tag.color) : TV.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>
+              {tag?.label || 'Sem etiqueta'} · {Math.round(clip.duracao)}s
+            </span>
+            {clip.originalTitulo && <span style={{ display: 'block', fontSize: 10.5, color: TV.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>{clip.originalTitulo}{typeof clip.origemInicio === 'number' ? ` · ${fmt(clip.origemInicio)}–${fmt(clip.origemFim)}` : ''}</span>}
+          </span>
         </div>
-        {/* Texto, edição e etiquetas — por baixo do vídeo, numa zona de
-            ALTURA FIXA: abrir e fechar a edição não mexe no tamanho do
-            vídeo. O que não couber ganha rolagem dentro da zona. */}
-        <div style={{ flexShrink: 0, height: 'calc(158px + env(safe-area-inset-bottom, 0px))', overflowY: 'auto', background: T.surface, paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxSizing: 'border-box' }}>
-        {aEditar ? (
-          <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, ...body }}>
-            <textarea value={notaEd} onChange={e => setNotaEd(e.target.value)} rows={2} maxLength={2000}
-              placeholder="Texto do clipe (ex.: Abrir espaços)"
-              style={{ background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, padding: '7px 10px', color: T.cream, fontSize: 13, resize: 'vertical', ...body }} />
-            {/* Tempos, vídeo original e botões numa só linha (parte-se em
-                ecrãs estreitos) — a edição tem de caber sem tapar o vídeo. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <Btn variant="ghost" onClick={marcarInicioEd} style={{ padding: '6px 10px', fontSize: 12.5 }}>
-                <Flag size={13} color={T.good} /> Início ({fmt(inicioEd)})
-              </Btn>
-              <span style={{ fontSize: 12, color: T.mutedDim }}>até</span>
-              <Btn variant="ghost" onClick={marcarFimEd} style={{ padding: '6px 10px', fontSize: 12.5 }}>
-                <Flag size={13} color={T.bad} /> Fim ({fmt(fimEd)})
-              </Btn>
-              <span style={{ fontSize: 12, color: T.mutedDim }}>em</span>
+        <div className="mjp-sem-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 10, scrollbarWidth: 'none' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
+            {botaoAcao(copied ? <Check size={15} color={TV.good} /> : <Share2 size={15} />, copied ? 'Copiado' : 'Partilhar', onShare, { title: 'Partilhar o link do clipe' })}
+            {botaoAcao(estadoMp4 === 'a-preparar' ? <Loader2 size={15} className="spin" /> : <Download size={15} />, estadoMp4 === 'erro' ? 'Falhou' : 'MP4', async () => {
+              setEstadoMp4('a-preparar');
+              try { await descarregarClipeMp4(clip); setEstadoMp4(null); } catch (e) { setEstadoMp4('erro'); setTimeout(() => setEstadoMp4(null), 2500); }
+            }, { disabled: estadoMp4 === 'a-preparar', title: 'Descarregar / partilhar o MP4 (qualidade total, sem desenhos)' })}
+            {(clip.shapes || []).length > 0 && podeGravarSeparador() && botaoAcao(
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: gravacaoClipe ? TV.bad : '#fff', display: 'inline-block', margin: 2 }} />,
+              gravacaoClipe ? 'Parar' : 'Vídeo c/ desenhos', gravacaoClipe ? pararGravacaoClipe : gravarClipeComDesenhos,
+              { ativo: !!gravacaoClipe, title: 'Gravar um vídeo com os desenhos (grava este ecrã enquanto o clipe toca)' })}
+            {onDesenhar && botaoAcao(<ArrowUpRight size={15} />, `Desenhar${(clip.shapes || []).length ? ` (${clip.shapes.length})` : ''}`, onDesenhar)}
+            {onEnviarSala && botaoAcao((clip.enviadoSala || []).length ? <Check size={15} color={TV.good} /> : <Film size={15} />, 'Sala de Vídeo', onEnviarSala, { title: 'Enviar para a Sala de Vídeo' })}
+            {botaoAcao(<Pencil size={15} />, aEditar ? 'Fechar edição' : 'Editar', aEditar ? () => setAEditar(false) : abrirEdicao, { ativo: aEditar, title: 'Editar texto e tempos' })}
+            {botaoAcao(<Trash2 size={15} />, 'Apagar', onRemove, { perigo: true })}
+          </div>
+
+          {aEditar ? (
+            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8, ...body }}>
+              <textarea value={notaEd} onChange={e => setNotaEd(e.target.value)} rows={3} maxLength={2000}
+                placeholder="Texto do clipe (ex.: Abrir espaços)"
+                style={{ background: TV.surfaceRaise, border: `1px solid ${TV.line}`, borderRadius: 8, padding: '7px 10px', color: TV.cream, fontSize: 12.5, resize: 'vertical', ...body }} />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Btn variant="ghost" onClick={marcarInicioEd} style={{ flex: 1, padding: '6px 8px', fontSize: 12 }}><Flag size={13} color={TV.good} /> Início {fmt(inicioEd)}</Btn>
+                <Btn variant="ghost" onClick={marcarFimEd} style={{ flex: 1, padding: '6px 8px', fontSize: 12 }}><Flag size={13} color={TV.bad} /> Fim {fmt(fimEd)}</Btn>
+              </div>
               <select value={originalEd || ''} onChange={e => setOriginalEd(e.target.value || null)} aria-label="Vídeo original"
-                style={{ maxWidth: 240, minWidth: 0, background: T.bg, border: `1px solid ${originalEd ? T.line : T.warn}`, borderRadius: 8, padding: '6px 8px', color: T.cream, fontSize: 12.5, ...body }}>
+                style={{ width: '100%', background: TV.surfaceRaise, border: `1px solid ${originalEd ? TV.line : TV.warn}`, borderRadius: 8, padding: '6px 8px', color: TV.cream, fontSize: 12, ...body }}>
                 <option value="">Escolhe o vídeo original…</option>
                 {(originais || []).map(v => <option key={v.id} value={v.id}>{v.titulo || '(sem nome)'}</option>)}
               </select>
-              <span style={{ flex: 1 }} />
-              <Btn variant="ghost" onClick={() => setAEditar(false)} disabled={aGuardar}>Cancelar</Btn>
-              <Btn variant="solid" onClick={guardarEdicao} disabled={aGuardar}>
-                {aGuardar ? <><Loader2 size={14} className="spin" /> A guardar…</> : <><Check size={14} /> Guardar alterações</>}
-              </Btn>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Btn variant="ghost" onClick={() => setAEditar(false)} disabled={aGuardar} style={{ flex: 1, justifyContent: 'center', padding: '6px 8px', fontSize: 12 }}>Cancelar</Btn>
+                <Btn variant="solid" onClick={guardarEdicao} disabled={aGuardar} style={{ flex: 1, justifyContent: 'center', padding: '6px 8px', fontSize: 12 }}>
+                  {aGuardar ? <><Loader2 size={13} className="spin" /> A guardar…</> : <><Check size={13} /> Guardar</>}
+                </Btn>
+              </div>
+              {erroEd
+                ? <div style={{ fontSize: 12, color: TV.bad }}>{erroEd}</div>
+                : (
+                  <div style={{ fontSize: 11, color: TV.mutedDim, lineHeight: 1.4 }}>
+                    {originalEd
+                      ? 'Mudar os tempos volta a cortar o vídeo original (uns segundos); os desenhos acompanham.'
+                      : 'Não encontrei o vídeo original deste clipe. Escolhe-o na lista para mudar os tempos; sem isso, só muda o texto.'}
+                  </div>
+                )}
             </div>
-            {erroEd
-              ? <div style={{ fontSize: 12.5, color: T.bad }}>{erroEd}</div>
-              : (
-                <div style={{ fontSize: 11.5, color: T.mutedDim }}>
-                  {originalEd
-                    ? 'Mudar os tempos volta a cortar o vídeo original (uns segundos); os desenhos acompanham.'
-                    : 'Não encontrei o vídeo original deste clipe. Escolhe-o na lista para mudar os tempos; sem isso, só muda o texto.'}
-                </div>
+          ) : (
+            clip.note && <div style={{ marginTop: 12, fontSize: 12.5, color: TV.cream, lineHeight: 1.45, ...body }}>{clip.note}</div>
+          )}
+
+          {!aEditar && (
+            <>
+              <div style={{ fontSize: 10.5, letterSpacing: 0.7, textTransform: 'uppercase', color: TV.mutedDim, margin: '14px 0 8px', ...body }}>Seguir jogador</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <Btn variant={temTrajetoria ? 'ghost' : 'solid'} onClick={comecarEscolha} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12 }}>
+                  <Target size={13} /> {temTrajetoria ? 'Seguir outra vez' : 'Seguir jogador'}
+                </Btn>
+                {temTrajetoria && (
+                  <Btn variant="ghost" onClick={comecarCorrecao} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12 }}>
+                    <Crosshair size={13} /> Corrigir aqui
+                  </Btn>
+                )}
+              </div>
+              {erroSeguir && (
+                <div style={{ marginTop: 8, background: TV.surfaceRaise, border: `1px solid ${TV.bad}`, borderRadius: 7, padding: 9, color: TV.cream, fontSize: 12 }}>{erroSeguir}</div>
               )}
-          </div>
-        ) : (
-          clip.note && <div style={{ padding: '12px 12px 0', fontSize: 13, color: T.cream }}>{clip.note}</div>
-        )}
-        {/* Seguir jogador automaticamente — escondido durante a edição,
-           pela mesma razão das etiquetas a seguir. */}
-        {!aEditar && (
-          <div style={{ padding: '10px 12px 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Btn variant={temTrajetoria ? 'ghost' : 'solid'} onClick={comecarEscolha} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12.5 }}>
-              <Target size={13} /> {temTrajetoria ? 'Seguir outra vez' : 'Seguir jogador'}
-            </Btn>
-            {temTrajetoria && (
-              <Btn variant="ghost" onClick={comecarCorrecao} disabled={modoSeguir === 'a_processar'} style={{ padding: '6px 10px', fontSize: 12.5 }}>
-                <Crosshair size={13} /> Corrigir aqui
-              </Btn>
-            )}
-          </div>
-        )}
-        {erroSeguir && !aEditar && (
-          <div style={{ margin: '8px 12px 0', background: T.surfaceRaise, border: `1px solid ${T.bad}`, borderRadius: 7, padding: 9, color: T.cream, fontSize: 12.5 }}>{erroSeguir}</div>
-        )}
-        {/* Etiqueta — pode-se atribuir ou mudar aqui, mesmo depois de o
-           clipe já estar guardado sem nenhuma. Escondida durante a edição,
-           para a edição caber na mesma altura. */}
-        {!aEditar && <div style={{ padding: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {TAGS_ATIVAS.map(tg => (
-            <button key={tg.id} onClick={() => onChangeTag(tg.id)}
-              style={{
-                padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', ...body,
-                border: `1px solid ${tg.color}`, background: clip.tagId === tg.id ? tg.color : 'transparent',
-                color: clip.tagId === tg.id ? TEXT_ON_ACCENT : corTextoEtiqueta(tg.color),
-              }}>
-              {tg.label}
-            </button>
-          ))}
-        </div>}
+              <div style={{ fontSize: 10.5, letterSpacing: 0.7, textTransform: 'uppercase', color: TV.mutedDim, margin: '14px 0 8px', ...body }}>Etiqueta</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 5 }}>
+                {TAGS_ATIVAS.map(tg => (
+                  <button key={tg.id} onClick={() => onChangeTag(tg.id)}
+                    style={{
+                      padding: '5px 3px', borderRadius: 999, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', ...body,
+                      width: '100%', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      border: `1px solid ${tg.color}`, background: clip.tagId === tg.id ? tg.color : 'transparent',
+                      color: clip.tagId === tg.id ? TEXT_ON_ACCENT : tg.color,
+                    }}>
+                    {tg.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
+    </BancadaVideo.Provider>
   );
 }
 
@@ -2915,6 +2926,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     document.addEventListener('fullscreenchange', aoMudar);
     return () => document.removeEventListener('fullscreenchange', aoMudar);
   }, []);
+  // Janelas que abrem fora do Estúdio (confirmar, enviar para a Sala) não
+  // se veem em ecrã inteiro: sai-se dele primeiro.
+  const sairDoEcraInteiro = () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
   const alternarEcraInteiro = () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else containerRef.current?.requestFullscreen?.().catch(() => {});
@@ -3171,6 +3185,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     try { await supabase.storage.from('videos-clipes').remove(ficheiros); } catch (e) { /* fica órfão, sem mal */ }
   };
   const removerClipe = (clip, onRemovido) => {
+    sairDoEcraInteiro();
     /* CLIPE DE UM JOGADOR: cada lado apaga só para si. O jogador, no
        Portal, marca `apagadoPeloAtleta` (o treinador continua a vê-lo);
        o treinador, aqui, marca `apagadoPeloTreinador` (o jogador continua a
@@ -3850,6 +3865,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (modoDesenho) fecharDesenho();
     setAba(id);
   };
+  // O clipe abre DENTRO do Estúdio (também em ecrã inteiro), quando há um vídeo aberto.
+  const estudioEl = originalAtivo && containerRef.current ? containerRef.current : null;
+  useEffect(() => {
+    if (!clipeAReproduzir) return;
+    videoRef.current?.pause();
+    if (containerRef.current && !document.fullscreenElement) {
+      const r = containerRef.current.getBoundingClientRect();
+      if (r.top < 0 || r.top > window.innerHeight * 0.5) containerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [clipeAReproduzir && clipeAReproduzir.id]);
   const [velocidade, setVelocidade] = useState(1);
   const mudarVelocidade = (v) => { setVelocidade(v); if (videoRef.current) videoRef.current.playbackRate = v; };
   useEffect(() => { if (videoRef.current) videoRef.current.playbackRate = velocidade; }, [signedUrl, velocidade]);
@@ -4084,6 +4109,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
             com a barra e a linha do tempo do jogo por baixo; à direita um
             painel com três separadores: Codificar, Desenhar e Clipes. */}
         <div ref={containerRef} style={{
+          position: 'relative',
           background: TV.surface, borderRadius: fullscreen ? 0 : 12, border: `1px solid ${TV.line}`, overflow: 'hidden',
           display: 'flex', flexDirection: estreitoBancada ? 'column' : 'row',
           height: fullscreen ? '100vh' : (estreitoBancada ? 'auto' : 'calc(100vh - 120px)'),
@@ -4443,7 +4469,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
           {/* ===== DIREITA: painel com separadores ===== */}
           <div style={{
-            width: estreitoBancada ? '100%' : 380, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
+            width: estreitoBancada ? '100%' : 310, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
             borderLeft: estreitoBancada ? 'none' : `1px solid ${TV.line}`, borderTop: estreitoBancada ? `1px solid ${TV.line}` : 'none', background: TV.surface,
           }}>
             <div role="tablist" style={{ display: 'flex', gap: 4, padding: 10, borderBottom: `1px solid ${TV.line}`, flexShrink: 0 }}>
@@ -4469,12 +4495,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     <div key={g.titulo} style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 10, color: TV.mutedDim, letterSpacing: 0.5, textTransform: 'uppercase', margin: '4px 0 6px', ...body }}>{g.titulo}</div>
                       {/* Todas com a mesma largura, em duas colunas alinhadas. */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 5 }}>
                         {g.ids.map(id => TAGS.find(t => t.id === id)).filter(Boolean).map(tag => (
                           <button key={tag.id} type="button" onClick={() => codificar(tag.id)}
                             title={marcadoClipe ? `Gravar ${fmt(inPoint)}–${fmt(outPoint)} como ${tag.label}` : `Gravar ${temposDe(tag.id).antes}s antes e ${temposDe(tag.id).depois}s depois deste instante`}
                             style={{
-                              padding: '6px 8px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
+                              padding: '5px 3px', borderRadius: 999, fontSize: 10.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', ...body,
                               border: `1px solid ${tag.color}`, background: 'transparent', color: tag.color,
                               width: '100%', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis',
                             }}>
@@ -4888,6 +4914,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       )}
 
       {clipeAReproduzir && (
+        (() => { const el = (
         <ClipPlayerModal
           clip={clipeAReproduzir}
           tag={TAGS.find(t => t.id === clipeAReproduzir.tagId)}
@@ -4901,9 +4928,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
           onRemove={() => removerClipe(clipeAReproduzir, () => setClipeAReproduzir(null))}
           onChangeTag={novoTagId => mudarTagClipe(clipeAReproduzir, novoTagId)}
           onChangeTrajetoria={trajetoria => mudarTrajetoriaClipe(clipeAReproduzir, trajetoria)}
-          onEnviarSala={enviarParaSala ? () => setClipeParaSala(clipeAReproduzir) : undefined}
+          onEnviarSala={enviarParaSala ? () => { sairDoEcraInteiro(); setClipeParaSala(clipeAReproduzir); } : undefined}
           onDesenhar={() => desenharNoClipe(clipeAReproduzir)}
+          embutido={!!estudioEl}
+          onEcraInteiro={estudioEl ? alternarEcraInteiro : undefined}
+          ecraInteiroExterno={fullscreen}
         />
+        ); return estudioEl ? createPortal(el, estudioEl) : el; })()
       )}
       {clipeParaSala && enviarParaSala && (
         <EnviarSalaModal
