@@ -3688,7 +3688,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const formaZoomPrevia = zoomPrevia ? shapes.find(sh => sh.id === zoomPrevia) : null;
   const estiloZoomEditor = useZoomCirculo(
     formaZoomPrevia ? [formaZoomPrevia] : formasParaZoom(shapesVisiveis, congeladoEditor),
-    !!formaZoomPrevia || !modoDesenho,
+    // Também a desenhar quando o vídeo para sozinho num item (a ver como
+    // ficou): o zoom tem de aparecer igual ao da reprodução final.
+    !!formaZoomPrevia || !modoDesenho || !!congeladoEditor,
     retEditor,
   );
 
@@ -4159,7 +4161,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                 </div>
                 <div style={{ height: 1, background: TV.line, margin: '4px 0' }} />
                 <ToolBtn icon={Eraser} label="Apagar" active={tool === 'apagar'} onClick={() => setTool('apagar')} />
-                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { pushHistorico(); setShapes(s => (clipeEmDesenho ? [] : s.filter((sh, i) => !visivelNoEditor(sh, i)))); }} />
+                <ToolBtn icon={Trash2} label="Limpar tudo" active={false} onClick={() => { largarParagemEditor(); pushHistorico(); setShapes([]); setEditandoDuracaoIndex(null); }} />
               </div>
             </div>
           </div>
