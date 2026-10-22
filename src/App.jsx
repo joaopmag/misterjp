@@ -99,7 +99,15 @@ const T_ESCURO = { ...T };
    Fase 2 (plataforma) feita com os tokens no fim de `T`. Fase 3: Portal.
    No Portal, o placard, a TV do balneário e a porta ficam escuros de
    propósito. */
-const TEMA_CHAVE = 'mjp-tema';
+/* O Portal e a plataforma são duas apps: cada uma guarda o seu tema
+   (mudar para claro na plataforma não muda o Portal, e vice-versa). */
+const TEMA_CHAVE = (() => {
+  try {
+    const l = window.location;
+    const noPortal = /^\/portal(\/|$)/.test(l.pathname) || /[?&](portal|checkin)=?/.test(l.search) || /portal=|checkin/.test(l.hash);
+    return noPortal ? 'mjp-tema-portal' : 'mjp-tema';
+  } catch (e) { return 'mjp-tema'; }
+})();
 const PALETA_CLARA = {
   bg: '#F2F4EF',
   surface: '#FFFFFF',
