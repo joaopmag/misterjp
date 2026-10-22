@@ -8,11 +8,31 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Época" />
-    <!-- Sem manifesto fixo aqui: a app escolhe o certo ao arrancar (Portal em /portal/, plataforma em /). -->
+    <!-- O manifesto desta app é ligado pelo script abaixo, logo no arranque. -->
     <!-- Ícone da plataforma (diferente do Portal do Atleta). -->
     <link rel="icon" type="image/png" href="/icone-staff-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-staff.png" />
     <title>SC Salgueiros U19</title>
+    <script>
+      /* Arranque sem clarões: antes de a app carregar, o fundo já fica na cor
+         do tema escolhido, e o manifesto é ligado logo (o Chrome lê dele a cor
+         da janela). No iPhone/iPad não se liga manifesto, como até aqui. */
+      (function () {
+        try {
+          var portal = /^\/portal(\/|$)/.test(location.pathname) || /[?&](portal|checkin)/.test(location.search) || /portal=|checkin/.test(location.hash);
+          var v = localStorage.getItem(portal ? 'mjp-tema-portal' : 'mjp-tema');
+          var claro = v === 'claro' || (v === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
+          if (claro) {
+            var c = '#F2F4EF', s = document.createElement('style');
+            s.textContent = 'html, body, #root { background: ' + c + ' !important; }';
+            document.head.appendChild(s);
+            document.documentElement.style.background = c;
+          }
+          var apple = /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (/macintosh/i.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
+          if (!apple) { var m = document.createElement('link'); m.rel = 'manifest'; m.href = '/staff.webmanifest'; document.head.appendChild(m); }
+        } catch (e) {}
+      })();
+    </script>
     <style>
       html, body { margin: 0; padding: 0; width: 100%; overflow-x: hidden; background: #182619; }
       #root { min-height: 100vh; background: #182619; }
