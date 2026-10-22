@@ -51146,13 +51146,6 @@ const PORTAL_ULTIMO = 'mjp-portal-ultimo';
 (function prepararPortalInstalavel() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   try {
-    /* DUAS APPS NO MESMO ENDEREÇO. O Portal do Atleta vive em /portal/ e a
-       plataforma do staff em /. Cada uma tem o seu manifesto, com o seu
-       "scope": assim o Chrome trata-as como duas apps diferentes, e o
-       "Abrir na app" da plataforma deixa de abrir a janela do Portal.
-       Links antigos (/?portal=…, já partilhados e impressos) continuam a
-       funcionar: passam para /portal/?portal=… sem recarregar. */
-    const naPastaPortal = /^\/portal(\/|$)/.test(window.location.pathname);
     let q = new URLSearchParams(window.location.search);
     if (q.get('origem') === 'portal-icone' && !q.has('portal')) {
       const ultimo = localStorage.getItem(PORTAL_ULTIMO);
@@ -51162,25 +51155,12 @@ const PORTAL_ULTIMO = 'mjp-portal-ultimo';
          antes de a app desenhar o primeiro ecrã, por isso ela já arranca
          diretamente no Portal. */
       if (ultimo) {
-        window.history.replaceState(null, '', `/portal/?portal=${encodeURIComponent(ultimo)}`);
+        window.history.replaceState(null, '', `/?portal=${encodeURIComponent(ultimo)}`);
         q = new URLSearchParams(window.location.search);
       }
     }
-    const ehPortal = naPastaPortal || q.has('portal') || q.has('checkin') || /portal=|checkin/.test(window.location.hash);
-    const ehAppleCedo = /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (/macintosh/i.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
-    if (!ehPortal) {
-      // Plataforma do staff: o seu próprio manifesto ("MisterJP", scope /),
-      // para se poder instalar à parte do Portal.
-      if (!ehAppleCedo && !document.querySelector('link[rel="manifest"]')) {
-        const m = document.createElement('link');
-        m.setAttribute('rel', 'manifest'); m.setAttribute('href', '/staff.webmanifest');
-        document.head.appendChild(m);
-      }
-      return;
-    }
-    if (!naPastaPortal) {
-      window.history.replaceState(null, '', `/portal/${window.location.search}${window.location.hash}`);
-    }
+    const ehPortal = q.has('portal') || q.has('checkin') || /portal=|checkin/.test(window.location.hash);
+    if (!ehPortal) return;
     // Fundo verde desde o primeiro instante: sem clarão branco no arranque e
     // sem faixa branca à direita (o espaço reservado à barra de scroll fica
     // da mesma cor do resto, enquanto os ecrãs ainda carregam).
@@ -51193,7 +51173,7 @@ const PORTAL_ULTIMO = 'mjp-portal-ultimo';
       document.head.appendChild(el);
     };
     const ehApple = /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (/macintosh/i.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
-    if (!ehApple && !document.querySelector('link[rel="manifest"]')) junta('link', { rel: 'manifest', href: '/portal.webmanifest' });
+    if (!ehApple && !document.querySelector('link[rel="manifest"]')) junta('link', { rel: 'manifest', href: '/manifest.webmanifest' });
     junta('link', { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' });
     junta('meta', { name: 'apple-mobile-web-app-capable', content: 'yes' });
     junta('meta', { name: 'mobile-web-app-capable', content: 'yes' });
@@ -51205,7 +51185,7 @@ const PORTAL_ULTIMO = 'mjp-portal-ultimo';
       window.__mjpInstalar = e;
       window.dispatchEvent(new Event('mjp-instalavel'));
     });
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/portal/' }).catch(() => { /* sem service worker: continua tudo a funcionar */ });
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => { /* sem service worker: continua tudo a funcionar */ });
   } catch (e) { /* nada disto é essencial */ }
 })();
 
