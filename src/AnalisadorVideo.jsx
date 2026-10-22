@@ -1570,6 +1570,13 @@ function EnviarSalaModal({ clip, tag, destinos, onEnviar, onClose }) {
   );
 }
 
+/* O Estúdio está fora da vista? Só aí se rola a página até ele (abrir um
+   clipe ou desenhar com o Estúdio à vista NÃO mexe a página). */
+function estudioForaDaVista(el) {
+  const r = el.getBoundingClientRect();
+  return r.bottom < 80 || r.top > window.innerHeight - 80;
+}
+
 function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChangeTag, onSaveEdit, originais, originalSugeridoId, onChangeTrajetoria, editarAoAbrir, onEnviarSala, onDesenhar, embutido, onEcraInteiro, ecraInteiroExterno }) {
   // Ecrã estreito (telemóvel): o painel vai para baixo do vídeo.
   const [estreitoPlayer, setEstreitoPlayer] = useState(() => typeof window !== 'undefined' && window.innerWidth < 900);
@@ -3250,7 +3257,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       setOriginalAtivoId(orig.id);
     }
     setModoDesenho(true);
-    setTimeout(() => { if (containerRef.current) containerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
+    // A página só se mexe se o Estúdio estiver fora da vista (ex.: veio de um corte lá em baixo).
+    setTimeout(() => { if (containerRef.current && estudioForaDaVista(containerRef.current)) containerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
   };
   const guardarDesenhosClipe = () => {
     const clip = clipeEmDesenho;
@@ -3871,8 +3879,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     if (!clipeAReproduzir) return;
     videoRef.current?.pause();
     if (containerRef.current && !document.fullscreenElement) {
-      const r = containerRef.current.getBoundingClientRect();
-      if (r.top < 0 || r.top > window.innerHeight * 0.5) containerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (estudioForaDaVista(containerRef.current)) containerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [clipeAReproduzir && clipeAReproduzir.id]);
   const [velocidade, setVelocidade] = useState(1);
@@ -4469,7 +4476,8 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
           {/* ===== DIREITA: painel com separadores ===== */}
           <div style={{
-            width: estreitoBancada ? '100%' : 310, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
+            // No telemóvel o painel tem altura fixa: trocar de separador não muda a altura da página.
+            width: estreitoBancada ? '100%' : 310, flexShrink: 0, minHeight: 0, height: estreitoBancada ? 560 : undefined, display: 'flex', flexDirection: 'column',
             borderLeft: estreitoBancada ? 'none' : `1px solid ${TV.line}`, borderTop: estreitoBancada ? `1px solid ${TV.line}` : 'none', background: TV.surface,
           }}>
             <div role="tablist" style={{ display: 'flex', gap: 4, padding: 10, borderBottom: `1px solid ${TV.line}`, flexShrink: 0 }}>
