@@ -195,6 +195,14 @@ async function bioLer(o) {
     authenticatorAttachment: cred.authenticatorAttachment || undefined,
   };
 }
+// O motivo de uma falha, curto, para se perceber o que aconteceu.
+function motivoBio(e) {
+  if (!e) return '';
+  if (e.name === 'NotSupportedError') return 'este navegador não suporta';
+  if (e.name === 'SecurityError') return 'endereço não autorizado';
+  if (e.name === 'InvalidStateError') return 'já ativo neste aparelho';
+  return String(e.message || e.name || '').slice(0, 90);
+}
 // Leitura cancelada pela pessoa (ou fechada): não é erro, não se avisa.
 const foiCancelado = (e) => !!e && (e.name === 'NotAllowedError' || e.name === 'AbortError');
 
@@ -209,7 +217,21 @@ export async function staffBioAtivar(nome, preparado) {
   const uid = session && session.user && session.user.id;
   if (!uid) throw new Error('sem sessão');
   const p = preparado && Date.now() - preparado.t < 90000 ? preparado : await staffPrepararAtivacao(nome);
-  const resp = await bioCriar(p.opcoes);
+  let resp;
+  try {
+    resp = await bioCriar(p.opcoes);
+  } catch (e) {
+    /* "JÁ EXISTE UMA CHAVE DESTA CONTA NESTE APARELHO" (InvalidStateError).
+       Acontece quando a chave criada noutro aparelho chega a este por
+       sincronização (ex.: o Chrome guarda-a no Gestor de Palavras-passe da
+       Google e ela aparece no telemóvel). Não é um erro: este aparelho já
+       consegue entrar com ela. Marca-se como ativo. */
+    if (e && e.name === 'InvalidStateError') {
+      try { localStorage.setItem(CHAVE_BIO, JSON.stringify({ uid, credencial: 'sincronizada' })); localStorage.removeItem(chaveRecusaBio(uid)); } catch (x) { /* nada */ }
+      return true;
+    }
+    throw e;
+  }
   const v = await staffFn({ acao: 'registo-verificar', desafio: p.desafio, resposta: resp, descricao: descricaoAparelho() });
   try { localStorage.setItem(CHAVE_BIO, JSON.stringify({ uid, credencial: v.credencial })); localStorage.removeItem(chaveRecusaBio(uid)); } catch (e) { /* nada */ }
   return true;
@@ -218,7 +240,7 @@ export async function staffBioAtivar(nome, preparado) {
 export async function staffBioDesativar() {
   let v = null;
   try { v = JSON.parse(localStorage.getItem(CHAVE_BIO) || 'null'); } catch (e) { v = null; }
-  if (v && v.credencial) { try { await staffFn({ acao: 'aparelho-remover', credencial: v.credencial }); } catch (e) { /* fica só a limpeza local */ } }
+  if (v && v.credencial && v.credencial !== 'sincronizada') { try { await staffFn({ acao: 'aparelho-remover', credencial: v.credencial }); } catch (e) { /* fica só a limpeza local */ } }
   esquecerBio();
 }
 // O responsável da equipa muda a palavra-passe de um membro.
@@ -669,7 +691,7 @@ const ICONE_BIO = BIO_TXT.nome === 'Face ID' ? ICONE_FACE : ICONE_DEDO;
 /* ---------------- o verso da credencial ---------------- */
 const rotulo = { fontSize: 9.5, letterSpacing: '.1em', color: '#9AA8A0', textTransform: 'uppercase' };
 const campo = { height: 40, width: '100%', boxSizing: 'border-box', padding: '0 10px', background: '#121815', border: '1.5px solid #FF4B5A', borderRadius: 8, color: '#FFC23D', fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 500 };
-const titulo = { fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, letterSpacing: '.06em', color: '#F3ECDA', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+const titulo = { fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, letterSpacing: '.06em', lineHeight: 1.35, color: '#F3ECDA', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0 };
 const escondido = { position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: 0, top: 0 };
 
 /* ===================================================================
@@ -1096,7 +1118,7 @@ function PortaQueAbre({ entrada, onFim }) {
       prepAtivar.current = null;
       try { prepAtivar.current = await staffPrepararAtivacao(porta && porta.nome); } catch (e2) { /* volta a pedir no toque */ }
       setPergunta('perguntar');
-      if (!foiCancelado(e)) setErroAtivar('Não foi possível ativar. Tenta outra vez.');
+      if (!foiCancelado(e)) setErroAtivar(`Não foi possível ativar (${motivoBio(e) || 'erro desconhecido'}).`);
     }
   };
   const agoraNao = () => {
@@ -1213,9 +1235,10 @@ function PortaQueAbre({ entrada, onFim }) {
         {(pergunta === 'perguntar' || pergunta === 'a-ativar') ? (
           <div style={{ position: 'absolute', inset: 0, padding: '24px 12px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, pointerEvents: 'auto' }}>
             <div style={{ ...titulo, width: '100%' }}>ENTRADA RÁPIDA</div>
-            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#C9A227" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginTop: 6 }}>{ICONE_BIO}</svg>
-            <div style={{ fontSize: 12, color: '#C9D2C5', lineHeight: 1.4, textAlign: 'center' }}>Da próxima vez, entra só com {BIO_TXT.comArtigo}.</div>
-            {erroAtivar && <div role="status" style={{ fontSize: 11, color: '#FF8A80', textAlign: 'center' }}>{erroAtivar}</div>}
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#C9A227" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginTop: 6, flexShrink: 0 }}>{ICONE_BIO}</svg>
+            {erroAtivar
+              ? <div role="status" style={{ fontSize: 11, color: '#FF8A80', lineHeight: 1.35, textAlign: 'center', overflow: 'hidden' }}>{erroAtivar}</div>
+              : <div style={{ fontSize: 12, color: '#C9D2C5', lineHeight: 1.4, textAlign: 'center' }}>Da próxima vez, entra só com {BIO_TXT.comArtigo}.</div>}
             <button type="button" onClick={ativar} disabled={pergunta === 'a-ativar'} style={{
               marginTop: 'auto', width: '100%', height: 40, flexShrink: 0, border: 'none', borderRadius: 8, background: cor, color: '#fff',
               fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 600, letterSpacing: '.14em', cursor: 'pointer', opacity: pergunta === 'a-ativar' ? 0.75 : 1,
