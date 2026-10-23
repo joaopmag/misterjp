@@ -430,6 +430,12 @@ function FolhasQuadro({ W, H, cor, logo, onze, saltar, aberto }) {
 
 const URL_FONTES = 'https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap';
 const CSS = `
+  /* A app tem \`* { box-sizing: border-box; }\`. Quando carrega por trás da
+     porta, essa regra passava a valer para a porta e encolhia o aro de luz
+     do teto (parecia subir). A porta fixa as suas próprias medidas: assim
+     fica igual antes e depois de a app carregar. (Os elementos que já dizem
+     o seu box-sizing no próprio estilo mantêm-no.) */
+  .mjp-ps *, .mjp-ps-folhas, .mjp-ps-folhas * { box-sizing: content-box; }
   @keyframes mjp-ps-balanca { 0% { transform: translateY(-40px) rotate(-10deg); opacity: 0; } 60% { transform: translateY(3px) rotate(3deg); opacity: 1; } 82% { transform: rotate(-1.2deg); } 100% { transform: none; opacity: 1; } }
   @keyframes mjp-ps-brilho { 0% { left: -70%; } 100% { left: 150%; } }
   @keyframes mjp-ps-salta { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-8px) scale(1.2); } }
@@ -1285,7 +1291,9 @@ function PortaQueAbre({ entrada, onFim }) {
       const alvo = Array.from(document.querySelectorAll('[data-mjp-logo-equipa]')).find(el => {
         const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
       });
-      if (logo && alvo && voo && typeof voo.animate === 'function') {
+      // (O emblema já não voa para a barra da app: esse movimento para cima,
+      // no fim da entrada, parecia a app a subir.)
+      if (false && logo && alvo && voo && typeof voo.animate === 'function') {
         const a = alvo.getBoundingClientRect(), r = voo.getBoundingClientRect();
         const s = a.height / Math.max(1, r.height);
         const dx = (a.left + a.width / 2) - (r.left + r.width / 2), dy = (a.top + a.height / 2) - (r.top + r.height / 2);
