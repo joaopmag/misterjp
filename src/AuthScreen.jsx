@@ -133,7 +133,13 @@ export function staffBioEstado(uid) {
   } catch (e) { return null; }
 }
 function esquecerBio() { try { localStorage.removeItem(CHAVE_BIO); } catch (e) { /* nada */ } }
-function recusouBio(uid) { try { return !!localStorage.getItem(chaveRecusaBio(uid)); } catch (e) { return false; } }
+// "Agora não" vale 30 dias; depois a porta volta a perguntar.
+function recusouBio(uid) {
+  try {
+    const t = Number(localStorage.getItem(chaveRecusaBio(uid)) || 0);
+    return !!t && Date.now() - t < 30 * 24 * 3600 * 1000;
+  } catch (e) { return false; }
+}
 function marcarRecusaBio(uid) { try { localStorage.setItem(chaveRecusaBio(uid), String(Date.now())); } catch (e) { /* nada */ } }
 function descricaoAparelho() {
   try {
@@ -1122,7 +1128,8 @@ function PortaQueAbre({ entrada, onFim }) {
     }
   };
   const agoraNao = () => {
-    if (uidRef.current) marcarRecusaBio(uidRef.current);
+    // Depois de uma falha, "Agora não" é só "segue": não conta como recusa.
+    if (uidRef.current && !erroAtivar) marcarRecusaBio(uidRef.current);
     setPergunta(null);
   };
 
