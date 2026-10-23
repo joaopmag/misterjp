@@ -231,6 +231,23 @@ const GRUPOS_POSICAO_PRINT = [
 // Ordenação-padrão do plantel: por posição (ordem tática de POSITIONS) e,
 // dentro da mesma posição, por número de camisola. Mantida tal como estava
 // mesmo depois de o crachá passar a mostrar a posição em vez do número.
+/* PELO NÚMERO DA CAMISOLA (1, 2, 3…), para as folhas impressas e
+   partilhadas: titulares, suplentes e convocados. Quem não tem número vai
+   no fim, por nome. SÓ ORDENA O QUE SE ESCREVE NA FOLHA — não mexe na
+   ordem guardada dos convocados, nas estatísticas nem no que o Portal
+   mostra. */
+function numeroDaCamisola(p) {
+  const n = parseInt(String((p && p.number) ?? '').trim(), 10);
+  return Number.isFinite(n) ? n : Infinity;
+}
+function ordenarPorCamisola(lista) {
+  return [...(lista || [])].sort((a, b) => {
+    const d = numeroDaCamisola(a) - numeroDaCamisola(b);
+    if (d) return d;
+    return String((a && a.name) || '').localeCompare(String((b && b.name) || ''), 'pt');
+  });
+}
+
 function sortByPosition(players) {
   return [...(players || [])].sort((a, b) => {
     const posA = POSITIONS.indexOf(a.position), posB = POSITIONS.indexOf(b.position);
@@ -21713,8 +21730,13 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
                       {sessaoJogo && (
                         <>
                           <button onClick={e => { e.stopPropagation(); setSimuladorDia(sessaoJogo.date); }} title="Distribuir equipas para este jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Shuffle size={14} /></button>
-                          <button onClick={e => { e.stopPropagation(); doShare(sessaoJogo); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
-                          <button onClick={e => { e.stopPropagation(); doPrint(sessaoJogo); }} title="Imprimir ficha" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
+                          {/* Imprimir e partilhar dão a FICHA DO JOGO — a mesma de
+                              Jogos e de abrir o jogo aqui ("Imprimir"). Antes davam a
+                              folha da sessão do dia, com outro cabeçalho. O onze
+                              escolhido no Simulador já passa para o jogo, por isso
+                              aparece na mesma. */}
+                          <button onClick={e => { e.stopPropagation(); doShareMatch(s); }} title="Partilhar ficha do jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Share2 size={14} /></button>
+                          <button onClick={e => { e.stopPropagation(); doPrintMatch(s); }} title="Imprimir ficha do jogo" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Printer size={14} /></button>
                         </>
                       )}
                       {/* Jogos gravados antes de `ensureMatchSession` passar
@@ -22884,11 +22906,14 @@ function equipaDoAmigavel({ session, jogo, players }) {
   if (doSimulador) {
     const formacao = dados.formacao || '4-3-3';
     const lugares = dados.onze.map(l => ({ lugar: l.lugar, ponto: l.ponto || null, nome: l.jogador || null }));
+    // Pelo número da camisola de quem tem esse nome (o Simulador só guarda nomes).
+    const numeroDoNome = (n) => numeroDaCamisola((players || []).find(p => p.name === n));
+    const porNumero = (a, b) => (numeroDoNome(a) - numeroDoNome(b)) || String(a).localeCompare(String(b), 'pt');
     return {
       formacao,
       lugares,
-      titulares: lugares.filter(l => l.nome).map(l => ({ nome: l.nome, x: null })),
-      suplentes: (dados.suplentes || []).map(n => ({ nome: n, x: null })),
+      titulares: lugares.filter(l => l.nome).map(l => l.nome).sort(porNumero).map(n => ({ nome: n, x: null })),
+      suplentes: [...(dados.suplentes || [])].sort(porNumero).map(n => ({ nome: n, x: null })),
     };
   }
 
@@ -22896,13 +22921,13 @@ function equipaDoAmigavel({ session, jogo, players }) {
     const formacao = jogo.formacao || '4-3-3';
     const eventos = eventosDoJogo(jogo, players || []);
     const d = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, jogo.alinhamento);
-    /* Pela ORDEM DO CAMPO (GR, DD, DC, DC, DE, MC…), a mesma do desenho e
-       da ficha do jogo. Antes seguia a posição de cada um no Plantel, e a
-       lista saía numa ordem que não batia com o campo desenhado por cima. */
-    const ordemCampo = d.colocados.filter(Boolean);
-    eventos.titulares.forEach(x => { if (!ordemCampo.some(p => p.id === x.player.id)) ordemCampo.push(x.player); });
-    const porPosicao = ordemCampo
+    /* Titulares e suplentes PELO NÚMERO DA CAMISOLA (o campo desenhado por
+       cima já mostra o lugar de cada um). */
+    const porPosicao = ordenarPorCamisola(eventos.titulares.map(x => x.player))
       .map(p => eventos.titulares.find(x => x.player.id === p.id))
+      .filter(Boolean);
+    const suplentesPorNumero = ordenarPorCamisola(eventos.suplentes.filter(Boolean).map(x => x.player))
+      .map(p => eventos.suplentes.find(x => x && x.player.id === p.id))
       .filter(Boolean);
     return {
       formacao,
@@ -22911,7 +22936,7 @@ function equipaDoAmigavel({ session, jogo, players }) {
         nome: d.colocados[i] ? shortPlayerName(d.colocados[i], players) : null,
       })),
       titulares: porPosicao.map(x => ({ nome: comNumero(x.player), x })),
-      suplentes: eventos.suplentes.filter(Boolean).map(x => ({ nome: comNumero(x.player), x })),
+      suplentes: suplentesPorNumero.map(x => ({ nome: comNumero(x.player), x })),
     };
   }
 
@@ -46734,11 +46759,10 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
             );
 
             // Folha para afixar: só os nomes, sem revelar o onze.
-            // Ordenados por posição (GR, depois defesas, médios,
-            // avançados) — sem isto, saía pela ordem em que foram
-            // adicionados à convocatória, sem critério nenhum à vista.
+            // Ordenados pelo NÚMERO DA CAMISOLA (antes, por posição — e a
+            // lista parecia não ter ordem nenhuma a quem a lia).
             if (printConvocatoria.__tipo !== 'ficha') {
-              const idsOrdenados = sortByPosition(
+              const idsOrdenados = ordenarPorCamisola(
                 ids.map(pid => players.find(pl => pl.id === pid)).filter(Boolean),
               ).map(p => p.id);
               return (
@@ -46795,11 +46819,15 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
               || (printConvocatoria.jogoId ? (matches || []).find(m => m.id === printConvocatoria.jogoId) : null)
               || (matches || []).find(m => m.date === printConvocatoria.data && !isFriendlyMatch(m));
             const onzeDoJogo = jogoLigado ? titularesPorLugar(jogoLigado, players).map(p => p.id) : [];
-            const onze = onzeDoJogo.length ? onzeDoJogo : ids.slice(0, 11);
+            const onzeIds = onzeDoJogo.length ? onzeDoJogo : ids.slice(0, 11);
             // Sem limite — antes parava nos 20 primeiros (onze + 9 do
             // banco), e com convocatórias maiores (ex.: pré-época, com
             // 35) os últimos ficavam de fora da ficha sem aviso nenhum.
-            const banco = onzeDoJogo.length ? ids.filter(id => !onzeDoJogo.includes(id)) : ids.slice(11);
+            const bancoIds = onzeDoJogo.length ? ids.filter(id => !onzeDoJogo.includes(id)) : ids.slice(11);
+            // Na folha, onze e suplentes saem PELO NÚMERO DA CAMISOLA.
+            const pelaCamisola = (lista) => ordenarPorCamisola(lista.map(pid => players.find(pl => pl.id === pid)).filter(Boolean)).map(p => p.id);
+            const onze = pelaCamisola(onzeIds);
+            const banco = pelaCamisola(bancoIds);
             return (
               <>
                 {/* UMA COLUNA, e não uma grelha que se espalha pela folha.
