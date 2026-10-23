@@ -224,8 +224,8 @@ function FolhasQuadro({ W, H, cor, logo, onze, saltar, aberto }) {
   );
 }
 
+const URL_FONTES = 'https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap';
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
   /* A app reserva sempre o espaço da barra de scroll (html { scrollbar-gutter:
      stable }). A porta reserva o mesmo: assim a cena não salta de lado
      quando passa do ecrã de entrada para a porta que abre por cima da app. */
@@ -244,6 +244,26 @@ const CSS = `
   .mjp-ps button:focus-visible { outline: 2px solid #FFC23D; outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { .mjp-ps *, .mjp-ps-folhas * { animation: none !important; transition-duration: 1ms !important; } }
 `;
+
+/* AS FONTES E AS ANIMAÇÕES FICAM NO <head>, POSTAS UMA VEZ E NUNCA TIRADAS.
+   Antes iam num <style> dentro da porta: quando a porta saía de cena, o
+   browser largava as fontes e voltava a carregá-las — a app perdia a letra
+   Oswald durante um instante e o ecrã "piscava". As fontes são as mesmas
+   que a app já usa (o mesmo endereço), por isso não se carrega nada a mais. */
+function garantirEstilos() {
+  try {
+    if (!document.getElementById('mjp-ps-fontes')) {
+      const l = document.createElement('link');
+      l.id = 'mjp-ps-fontes'; l.rel = 'stylesheet'; l.href = URL_FONTES;
+      document.head.appendChild(l);
+    }
+    if (!document.getElementById('mjp-ps-css')) {
+      const st = document.createElement('style');
+      st.id = 'mjp-ps-css'; st.textContent = CSS;
+      document.head.appendChild(st);
+    }
+  } catch (e) { /* sem <head>: fica com as fontes do sistema */ }
+}
 
 /* Medidas do quadro: cabe no ecrã sem deslizar, no telemóvel e no
    computador (o resto do ecrã ocupa cerca de 450 px de altura). */
@@ -270,6 +290,7 @@ const CW = 172, CH = 248;
    =================================================================== */
 function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada }) {
   const { W, H } = useMedidas();
+  useState(garantirEstilos);
   const cor = (porta && porta.cor) || '#B5393F';
   const escura = mistura(cor, '0d120f', 0.4);
   const logo = (porta && porta.logo) || '';
@@ -326,7 +347,6 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
       fontFamily: "'Inter', system-ui, sans-serif", color: '#F3ECDA', display: 'flex', flexDirection: 'column', alignItems: 'center',
       paddingTop: 'calc(18px + env(safe-area-inset-top, 0px))', paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box',
     }}>
-      <style>{CSS}</style>
       {/* luz de teto */}
       <div aria-hidden="true" style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, transform: 'translateX(-50%)', borderRadius: '50%', border: '3px solid rgba(255,230,160,.75)', boxShadow: '0 0 24px 6px rgba(255,230,160,.22)' }} />
 
@@ -612,10 +632,10 @@ export default function AuthScreen({ modo }) {
   const ligacao = { minHeight: 40, padding: '2px 6px', background: 'transparent', border: 'none', color: '#C9A227', fontFamily: "'Inter', sans-serif", fontSize: 13.5, textDecoration: 'underline', cursor: 'pointer' };
   /* Por baixo da credencial, uma só ligação. Na fase seguinte (impressão
      digital) passa a ser "Usar a impressão digital"; enquanto não existe,
-     é a palavra-passe. Com a credencial virada, volta a pô-la de frente. */
+     é a palavra-passe. Com a credencial virada, "Ver a credencial" volta a pô-la de frente. */
   const entrarPasse = () => { mudarVerso(conhecido ? 'passe' : 'novo'); depois(() => { try { passeRef.current && passeRef.current.focus(); } catch (er) { /* nada */ } }, 750); };
   const voltar = verso
-    ? <button type="button" style={ligacao} onClick={() => { setErro(''); setInfo(''); setPassword(''); setViraAnim(true); setVerso(null); depois(() => setViraAnim(false), 700); }}>Virar a credencial</button>
+    ? <button type="button" style={ligacao} onClick={() => { setErro(''); setInfo(''); setPassword(''); setViraAnim(true); setVerso(null); depois(() => setViraAnim(false), 700); }}>Ver a credencial</button>
     : <button type="button" style={ligacao} onClick={entrarPasse}>Entrar com a palavra-passe</button>;
   const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: '#182619', border: '1px solid #3A4F3D', color: '#ECEFEA', fontSize: 14.5, cursor: 'pointer', fontFamily: "'Inter', sans-serif" };
 
@@ -665,7 +685,7 @@ export default function AuthScreen({ modo }) {
    erro aqui só faz a porta desaparecer (ver ProtecaoPorta). */
 function PortaQueAbre({ entrada, onFim }) {
   const [porta] = useState(() => lerPortaStaff());
-  const [saltar, setSaltar] = useState(0);
+  const [saltar, setSaltar] = useState(false);
   const [aberto, setAberto] = useState(false);
   const [rect, setRect] = useState(null);
   const cenaRef = useRef(null);
@@ -688,14 +708,12 @@ function PortaQueAbre({ entrada, onFim }) {
     const timers = [];
     const acabar = () => { if (!cancelado) fimRef.current(); };
     const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // Enquanto a app carrega os dados, os onze vão saltando em onda (o
-    // aquecimento). A porta só abre com a app pronta por trás.
-    const onda = setInterval(() => !cancelado && setSaltar(n => n + 1), 1500);
-    timers.push(setTimeout(() => !cancelado && setSaltar(1), 60));
+    // Os onze saltam uma vez, com o acesso autorizado. A porta só abre com
+    // a app pronta por trás.
+    timers.push(setTimeout(() => !cancelado && setSaltar(true), 60));
 
     const abrir = () => {
       if (cancelado) return;
-      clearInterval(onda);
       if (reduzir) { acabar(); return; }
       setAberto(true);
       const cena = cenaRef.current;
@@ -765,7 +783,7 @@ function PortaQueAbre({ entrada, onFim }) {
     raf = requestAnimationFrame(esperar);
     // Rede de segurança: aconteça o que acontecer, a porta sai de cena.
     timers.push(setTimeout(acabar, 13000));
-    return () => { cancelado = true; clearInterval(onda); cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
+    return () => { cancelado = true; cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tamEmb = Math.round(H * 0.165);
@@ -780,7 +798,7 @@ function PortaQueAbre({ entrada, onFim }) {
       {/* As folhas, por cima do buraco (fora do recorte da cena). */}
       {rect && (
         <div className="mjp-ps-folhas" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3 }}>
-          <FolhasQuadro key={`onda${saltar}`} W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar > 0 && !aberto} aberto={aberto} />
+          <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={aberto} />
         </div>
       )}
       {rect && logo && (
