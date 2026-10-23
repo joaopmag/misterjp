@@ -773,7 +773,7 @@ function genPlayerCode(usedSet) {
    STORAGE HELPERS
 ---------------------------------------------------------------- */
 import { supabase } from './supabaseClient';
-import AuthScreen, { PortaStaffAbrir, tirarEntradaStaff, guardarPortaStaff, PEDIU_NOVA_PASSE } from './AuthScreen.jsx';
+import AuthScreen, { PortaStaffAbrir, tirarEntradaStaff, guardarPortaStaff, PEDIU_NOVA_PASSE, staffBioDisponivel, staffBioEstado, staffBioAtivar, staffBioDesativar, staffReporPalavraPasse, FUNCOES_STAFF, BIO_TXT } from './AuthScreen.jsx';
 
 // A Época é um registo único (não uma lista) — vive numa linha fixa
 // (id='default') na tabela season_config.
@@ -3544,20 +3544,31 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
       const ultimo = (matches || [])
         .filter(m => m && m.formacao && m.date && m.date <= hoje)
         .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
+      // Os números das camisolas do último onze, pela ordem dos lugares da
+      // formação (a mesma que a porta usa para pôr os ímanes).
+      let numeros = '';
+      if (ultimo && Array.isArray(ultimo.starters) && ultimo.starters.length) {
+        const titulares = ultimo.starters.map(id => (players || []).find(p => p.id === id)).filter(Boolean);
+        const { colocados } = distribuirOnzeNoCampo(titulares, ultimo.formacao, ultimo.alinhamento);
+        numeros = colocados.map(p => (p && p.number != null && String(p.number).trim() !== '' ? String(p.number).trim() : '')).join(',');
+      }
       const ep = String((season && season.name) || '');
       const mEp = ep.match(/^(\d{4})\/(\d{2})(\d{2})$/);
       guardarPortaStaff({
         email: userEmail,
+        uid: euId || '',
         nome: String(eu.nome || '').trim(),
+        funcao: String(eu.funcao || '').trim(),
         souDono: eu.papel === 'owner',
         clube: String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim(),
         epoca: mEp ? `${mEp[1]}/${mEp[3]}` : ep,
         cor: (equipaAtiva && equipaAtiva.cor) || '#B5393F',
         logo: (equipaAtiva && equipaAtiva.logo) || '',
         formacao: ultimo ? ultimo.formacao : '',
+        numeros,
       });
     } catch (e) { /* a porta fica com o que já tinha */ }
-  }, [membros, euId, userEmail, equipaAtiva, matches, season]);
+  }, [membros, euId, userEmail, equipaAtiva, matches, season, players]);
 
   CTX_TAREFAS_EXTRA.adversarios = adversarios || [];
   CTX_TAREFAS_EXTRA.adversariosMeta = adversariosMeta || {};
@@ -5520,6 +5531,7 @@ async function selecionarMembros(teamId) {
      não tiver uma das colunas novas (código 42703), cai para a seguinte,
      e a app continua a funcionar só sem essa informação. */
   const tentativas = [
+    'user_id, papel, nome, telefone, genero, funcao, created_at',
     'user_id, papel, nome, telefone, genero, created_at',
     'user_id, papel, nome, telefone, created_at',
     'user_id, papel, nome, created_at',
@@ -5528,7 +5540,7 @@ async function selecionarMembros(teamId) {
   for (const colunas of tentativas) {
     ultimo = await supabase.from('team_members').select(colunas).eq('team_id', teamId).order('created_at');
     if (!ultimo.error) return ultimo;
-    if (ultimo.error.code !== '42703' && !/telefone|genero/.test(ultimo.error.message || '')) return ultimo;
+    if (ultimo.error.code !== '42703' && !/telefone|genero|funcao/.test(ultimo.error.message || '')) return ultimo;
   }
   return ultimo;
 }
@@ -5537,6 +5549,16 @@ async function selecionarMembros(teamId) {
    escreve em nome dele concordarem ("Obrigado!" / "Obrigada!"). Sem
    género definido, usa-se "Obrigado/a!". */
 const GENEROS = [['m', 'Masculino'], ['f', 'Feminino']];
+/* FUNÇÃO DE CADA MEMBRO NA EQUIPA (Treinador principal, adjunto…). Aparece
+   na credencial da porta de entrada. Grava-se como o género: cada um a
+   sua, e o responsável a de todos. Coluna nova `funcao` (fase 2 da
+   entrada); sem ela, devolve o erro e nada mais muda. */
+async function gravarFuncaoMembro(teamId, userId, funcao) {
+  const { error } = await supabase.from('team_members')
+    .update({ funcao: funcao || null })
+    .eq('team_id', teamId).eq('user_id', userId);
+  return error ? (/funcao/.test(error.message || '') ? 'Falta a coluna "funcao" no Supabase (corre o SQL da fase 2).' : error.message) : '';
+}
 async function gravarGeneroMembro(teamId, userId, genero) {
   const { error } = await supabase.from('team_members')
     .update({ genero: genero || null })
@@ -6271,8 +6293,63 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
       const msgG = await gravarGeneroMembro(equipa.id, telOutro.userId, telOutro.genero);
       if (msgG) { setErro(msgG); return; }
     }
+    if (telOutro.funcao !== undefined && (telOutro.funcao || '') !== (telOutro.funcaoAntes || '')) {
+      const msgF = await gravarFuncaoMembro(equipa.id, telOutro.userId, telOutro.funcao);
+      if (msgF) { setErro(msgF); return; }
+    }
     setTelOutro(null);
     carregar();
+  };
+
+  /* A MINHA FUNÇÃO NA EQUIPA (aparece na credencial da porta de entrada).
+     Grava logo ao escolher, como uma preferência. */
+  const [minhaFuncao, setMinhaFuncao] = useState('');
+  const [funcaoGuardada, setFuncaoGuardada] = useState(false);
+  useEffect(() => { if (eu) setMinhaFuncao(eu.funcao || ''); }, [eu && eu.funcao]); // eslint-disable-line react-hooks/exhaustive-deps
+  const escolherMinhaFuncao = async (valor) => {
+    setMinhaFuncao(valor); setFuncaoGuardada(false); setErro('');
+    const msg = await gravarFuncaoMembro(equipa.id, euId, valor);
+    if (msg) { setErro(msg); return; }
+    setFuncaoGuardada(true);
+    carregar();
+  };
+
+  /* ENTRADA RÁPIDA NESTE APARELHO (Face ID / impressão digital). A porta
+     pergunta depois de entrar; aqui pode-se ativar mais tarde ou
+     desativar. Fica ligada a este aparelho e a esta conta. */
+  const [bioPossivel, setBioPossivel] = useState(false);
+  const [bioAqui, setBioAqui] = useState(() => !!staffBioEstado(euId));
+  const [bioMsg, setBioMsg] = useState('');
+  const [bioOcupado, setBioOcupado] = useState(false);
+  useEffect(() => { let vivo = true; staffBioDisponivel().then(d => { if (vivo) setBioPossivel(d); }); return () => { vivo = false; }; }, []);
+  useEffect(() => { setBioAqui(!!staffBioEstado(euId)); }, [euId]);
+  const ativarBioAqui = async () => {
+    setBioMsg(''); setBioOcupado(true);
+    try { await staffBioAtivar(eu && eu.nome); setBioAqui(true); setBioMsg('Ativado. Da próxima vez, entra no emblema da porta.'); }
+    catch (e) { if (!(e && (e.name === 'NotAllowedError' || e.name === 'AbortError'))) setBioMsg((e && e.message) || 'Não foi possível ativar.'); }
+    setBioOcupado(false);
+  };
+  const desativarBioAqui = async () => {
+    setBioMsg(''); setBioOcupado(true);
+    await staffBioDesativar();
+    setBioAqui(false); setBioOcupado(false); setBioMsg('Desativado neste aparelho.');
+  };
+
+  /* O RESPONSÁVEL ESCOLHE UMA PALAVRA-PASSE NOVA PARA UM MEMBRO. As contas
+     da equipa técnica usam emails sem caixa de correio, por isso o link de
+     recuperação por email não chega a ninguém: é aqui que se repõe. A
+     Edge Function staff-acesso só deixa o responsável desta equipa fazê-lo. */
+  const [passeOutro, setPasseOutro] = useState(null); // { userId, valor, aGravar, msg }
+  const gravarPasseOutro = async () => {
+    if (!passeOutro) return;
+    if (String(passeOutro.valor || '').length < 6) { setPasseOutro({ ...passeOutro, msg: 'Usa 6 ou mais caracteres.' }); return; }
+    setPasseOutro({ ...passeOutro, aGravar: true, msg: '' });
+    try {
+      await staffReporPalavraPasse(equipa.id, passeOutro.userId, passeOutro.valor);
+      setPasseOutro({ ...passeOutro, aGravar: false, feito: true, msg: 'Mudada. Diz-lhe a nova palavra-passe.' });
+    } catch (e) {
+      setPasseOutro({ ...passeOutro, aGravar: false, msg: (e && e.message) || 'Não foi possível mudar.' });
+    }
   };
 
   /* Só se veem os ids dos outros, não os emails: a tabela `auth.users`
@@ -6657,6 +6734,34 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
           <Btn variant="ghost" onClick={guardarTelefone} style={botaoAcao}>Guardar contacto</Btn>
         </div>
 
+        <Field label="A tua função na equipa" bloco solto>
+          <Select value={minhaFuncao} onChange={e => escolherMinhaFuncao(e.target.value)}>
+            <option value="">Sem função definida</option>
+            {FUNCOES_STAFF.map(f => <option key={f} value={f}>{f}</option>)}
+          </Select>
+        </Field>
+        <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 8, lineHeight: 1.6 }}>
+          Aparece na tua credencial, na porta de entrada da app.
+          {funcaoGuardada && <span style={{ color: T.good }}> Guardado.</span>}
+        </div>
+        <div style={{ height: 14 }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 14px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 8, marginBottom: 18 }}>
+          <Fingerprint size={18} color={bioAqui ? T.good : T.muted} />
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <div style={{ color: T.cream, fontSize: 13.5 }}>Entrada rápida neste aparelho</div>
+            <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2, lineHeight: 1.5 }}>
+              {!bioPossivel ? 'Este aparelho não tem Face ID nem impressão digital disponíveis.'
+                : bioAqui ? `Ativa: entras com ${BIO_TXT.comArtigo}, no emblema da porta.`
+                  : `Entra com ${BIO_TXT.comArtigo}, sem escrever a palavra-passe.`}
+              {bioMsg && <span style={{ color: T.muted }}> {bioMsg}</span>}
+            </div>
+          </div>
+          {bioPossivel && (bioAqui
+            ? <Btn variant="ghost" onClick={desativarBioAqui} disabled={bioOcupado}>Desativar</Btn>
+            : <Btn onClick={ativarBioAqui} disabled={bioOcupado}>{bioOcupado ? 'A ativar…' : 'Ativar'}</Btn>)}
+        </div>
+
         {membros === null ? (
           <div style={{ fontSize: 12.5, color: T.mutedDim }}>A carregar…</div>
         ) : (
@@ -6672,6 +6777,7 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                   </div>
                   <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 2 }}>
                     {m.papel === 'owner' ? 'Administrador' : 'Membro'}
+                    {m.funcao ? ` · ${m.funcao}` : ''}
                     {m.created_at ? ` · desde ${fmtDate(String(m.created_at).slice(0, 10))}` : ''}
                   </div>
                   {telOutro && telOutro.userId === m.user_id ? (
@@ -6691,6 +6797,12 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                           {GENEROS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                         </Select>
                       </div>
+                      <div style={{ flex: '0 1 190px' }}>
+                        <Select value={telOutro.funcao || ''} onChange={e => setTelOutro({ ...telOutro, funcao: e.target.value })} aria-label="Função na equipa">
+                          <option value="">Sem função</option>
+                          {FUNCOES_STAFF.map(f => <option key={f} value={f}>{f}</option>)}
+                        </Select>
+                      </div>
                       <Btn onClick={guardarTelefoneOutro}>Guardar</Btn>
                       <Btn variant="ghost" onClick={() => setTelOutro(null)}>Cancelar</Btn>
                     </div>
@@ -6701,8 +6813,8 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                       {m.genero && <span style={{ fontSize: 11.5 }}>· {m.genero === 'f' ? 'Feminino' : 'Masculino'}</span>}
                       {souDono && m.user_id !== euId && (
                         <button
-                          onClick={() => setTelOutro({ userId: m.user_id, valor: m.telefone || '', genero: m.genero || '', generoAntes: m.genero || '' })}
-                          title="Alterar telemóvel e tratamento nas mensagens"
+                          onClick={() => setTelOutro({ userId: m.user_id, valor: m.telefone || '', genero: m.genero || '', generoAntes: m.genero || '', funcao: m.funcao || '', funcaoAntes: m.funcao || '' })}
+                          title="Alterar telemóvel, tratamento nas mensagens e função"
                           style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}
                         ><Pencil size={12} /></button>
                       )}
@@ -6711,8 +6823,27 @@ function GestaoEquipa({ equipa, session, onEquipasMudaram, dados, setPlayers, on
                 </div>
                 {souDono && m.user_id !== euId && (
                   <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginLeft: 'auto', flexShrink: 0 }}>
+                    <button onClick={() => setPasseOutro(passeOutro && passeOutro.userId === m.user_id ? null : { userId: m.user_id, valor: '', msg: '' })} title="Escolher uma palavra-passe nova" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Lock size={14} /></button>
                     <button onClick={() => passarPosse(m)} title="Passar a administração da equipa" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Star size={14} /></button>
                     <button onClick={() => remover(m)} title="Remover da equipa" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0, display: 'flex' }}><Trash2 size={14} /></button>
+                  </div>
+                )}
+                {souDono && m.user_id !== euId && passeOutro && passeOutro.userId === m.user_id && (
+                  <div style={{ flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                    <div style={{ fontSize: 12, color: T.mutedDim, lineHeight: 1.5 }}>
+                      Palavra-passe nova para {rotulo(m)}. Escolhe uma provisória e diz-lha; depois pode trocá-la.
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+                        <Input type="text" autoComplete="off" autoFocus value={passeOutro.valor}
+                          onChange={e => setPasseOutro({ ...passeOutro, valor: e.target.value, msg: '', feito: false })}
+                          onKeyDown={e => { if (e.key === 'Enter') gravarPasseOutro(); if (e.key === 'Escape') setPasseOutro(null); }}
+                          placeholder="6 ou mais caracteres" />
+                      </div>
+                      <Btn onClick={gravarPasseOutro} disabled={passeOutro.aGravar}>{passeOutro.aGravar ? 'A mudar…' : 'Mudar'}</Btn>
+                      <Btn variant="ghost" onClick={() => setPasseOutro(null)}>Fechar</Btn>
+                    </div>
+                    {passeOutro.msg && <div style={{ fontSize: 12, color: passeOutro.feito ? T.good : T.bad }}>{passeOutro.msg}</div>}
                   </div>
                 )}
               </div>

@@ -78,6 +78,160 @@ function enderecoLimpo() {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
+/* ===================================================================
+   FACE ID / IMPRESSÃO DIGITAL DA EQUIPA TÉCNICA (fase 2)
+   ===================================================================
+   O mesmo caminho que o Portal já usa (WebAuthn), mas com uma Edge Function
+   própria, "staff-acesso" (a "portal-biometria" não é tocada):
+   - ATIVAR: depois de entrar com a palavra-passe, a porta pergunta se quer
+     entrar da próxima vez com o Face ID / a impressão digital. O aparelho
+     cria um par de chaves; o servidor guarda só a pública.
+   - ENTRAR: o emblema (Face ID) ou as costas da credencial (impressão
+     digital) pedem a leitura; o servidor confirma a assinatura e devolve um
+     token, que a app troca por uma sessão normal do Supabase (verifyOtp).
+     Não passa por email nenhum.
+   Neste aparelho guarda-se só QUE conta o ativou e o id da chave
+   (`mjp-staff-bio`). A cara e o dedo nunca saem do telemóvel. */
+const CHAVE_BIO = 'mjp-staff-bio';
+const chaveRecusaBio = (uid) => `mjp-staff-bio-recusa:${uid}`;
+
+function b64uParaBuf(s) {
+  const b = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b + '==='.slice((b.length + 3) % 4));
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u.buffer;
+}
+function bufParaB64u(buf) {
+  const u = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+// O nome do gesto, como o aparelho lhe chama.
+function bioTextos() {
+  try {
+    const ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return { nome: 'Face ID', comArtigo: 'o Face ID' };
+    if (/Macintosh/.test(ua)) return { nome: 'Touch ID', comArtigo: 'o Touch ID' };
+    if (/Windows/.test(ua)) return { nome: 'desbloqueio do computador', comArtigo: 'o desbloqueio do computador' };
+  } catch (e) { /* segue para o habitual */ }
+  return { nome: 'impressão digital', comArtigo: 'a impressão digital' };
+}
+export const BIO_TXT = bioTextos();
+export async function staffBioDisponivel() {
+  try {
+    return !!(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable
+      && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+  } catch (e) { return false; }
+}
+// Este aparelho tem a entrada rápida ativa para esta conta?
+export function staffBioEstado(uid) {
+  try {
+    const v = JSON.parse(localStorage.getItem(CHAVE_BIO) || 'null');
+    return v && uid && v.uid === uid && v.credencial ? v : null;
+  } catch (e) { return null; }
+}
+function esquecerBio() { try { localStorage.removeItem(CHAVE_BIO); } catch (e) { /* nada */ } }
+function recusouBio(uid) { try { return !!localStorage.getItem(chaveRecusaBio(uid)); } catch (e) { return false; } }
+function marcarRecusaBio(uid) { try { localStorage.setItem(chaveRecusaBio(uid), String(Date.now())); } catch (e) { /* nada */ } }
+function descricaoAparelho() {
+  try {
+    const ua = navigator.userAgent || '';
+    const a = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : 'Aparelho';
+    return a;
+  } catch (e) { return 'Aparelho'; }
+}
+// Erros da Edge Function com o motivo à vista (401 = verificação JWT
+// ligada; 404 = função não publicada).
+async function staffFn(corpo) {
+  const { data, error } = await supabase.functions.invoke('staff-acesso', { body: corpo });
+  if (error) {
+    const estado = error.context && error.context.status;
+    let motivo = estado === 401 ? 'erro 401' : estado === 404 ? 'erro 404 · função staff-acesso não encontrada' : estado ? `erro ${estado}` : 'sem ligação ao servidor';
+    let semAparelho = false;
+    try {
+      const c = error.context && typeof error.context.json === 'function' ? await error.context.json() : null;
+      if (c && c.erro) motivo = c.erro;
+      if (c && c.semAparelho) semAparelho = true;
+    } catch (e) { /* sem corpo */ }
+    const e = new Error(motivo); e.semAparelho = semAparelho; throw e;
+  }
+  return typeof data === 'string' ? JSON.parse(data) : (data || {});
+}
+async function bioCriar(o) {
+  const cred = await navigator.credentials.create({ publicKey: {
+    ...o,
+    challenge: b64uParaBuf(o.challenge),
+    user: { ...o.user, id: b64uParaBuf(o.user.id) },
+    excludeCredentials: (o.excludeCredentials || []).map(c => ({ ...c, id: b64uParaBuf(c.id) })),
+  } });
+  return {
+    id: cred.id, rawId: bufParaB64u(cred.rawId), type: cred.type,
+    response: {
+      clientDataJSON: bufParaB64u(cred.response.clientDataJSON),
+      attestationObject: bufParaB64u(cred.response.attestationObject),
+      transports: cred.response.getTransports ? cred.response.getTransports() : [],
+    },
+    clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    authenticatorAttachment: cred.authenticatorAttachment || undefined,
+  };
+}
+async function bioLer(o) {
+  const cred = await navigator.credentials.get({ publicKey: {
+    ...o,
+    challenge: b64uParaBuf(o.challenge),
+    allowCredentials: (o.allowCredentials || []).map(c => ({ ...c, id: b64uParaBuf(c.id) })),
+  } });
+  return {
+    id: cred.id, rawId: bufParaB64u(cred.rawId), type: cred.type,
+    response: {
+      clientDataJSON: bufParaB64u(cred.response.clientDataJSON),
+      authenticatorData: bufParaB64u(cred.response.authenticatorData),
+      signature: bufParaB64u(cred.response.signature),
+      userHandle: cred.response.userHandle ? bufParaB64u(cred.response.userHandle) : undefined,
+    },
+    clientExtensionResults: cred.getClientExtensionResults ? cred.getClientExtensionResults() : {},
+    authenticatorAttachment: cred.authenticatorAttachment || undefined,
+  };
+}
+// Leitura cancelada pela pessoa (ou fechada): não é erro, não se avisa.
+const foiCancelado = (e) => !!e && (e.name === 'NotAllowedError' || e.name === 'AbortError');
+
+/* Ativar neste aparelho (precisa de sessão). `preparado` = opções pedidas
+   antes do toque, para o Safari não perder o gesto à espera da rede. */
+export async function staffPrepararAtivacao(nome) {
+  const r = await staffFn({ acao: 'registo-opcoes', nome: nome || '' });
+  return { ...r, t: Date.now() };
+}
+export async function staffBioAtivar(nome, preparado) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const uid = session && session.user && session.user.id;
+  if (!uid) throw new Error('sem sessão');
+  const p = preparado && Date.now() - preparado.t < 90000 ? preparado : await staffPrepararAtivacao(nome);
+  const resp = await bioCriar(p.opcoes);
+  const v = await staffFn({ acao: 'registo-verificar', desafio: p.desafio, resposta: resp, descricao: descricaoAparelho() });
+  try { localStorage.setItem(CHAVE_BIO, JSON.stringify({ uid, credencial: v.credencial })); localStorage.removeItem(chaveRecusaBio(uid)); } catch (e) { /* nada */ }
+  return true;
+}
+// Desativar neste aparelho (apaga a chave no servidor e aqui).
+export async function staffBioDesativar() {
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(CHAVE_BIO) || 'null'); } catch (e) { v = null; }
+  if (v && v.credencial) { try { await staffFn({ acao: 'aparelho-remover', credencial: v.credencial }); } catch (e) { /* fica só a limpeza local */ } }
+  esquecerBio();
+}
+// O responsável da equipa muda a palavra-passe de um membro.
+export async function staffReporPalavraPasse(team, alvo, palavra) {
+  return staffFn({ acao: 'repor-palavra-passe', team, alvo, palavra });
+}
+// As funções que se escolhem em "Gerir equipa" e aparecem na credencial.
+export const FUNCOES_STAFF = [
+  'Treinador principal', 'Treinador adjunto', 'Treinador de guarda-redes', 'Preparador físico',
+  'Analista', 'Fisioterapeuta', 'Médico', 'Nutricionista', 'Psicólogo', 'Diretor desportivo',
+  'Coordenador', 'Delegado', 'Team manager', 'Roupeiro',
+];
+
 /* ---------------- cores e pequenas ajudas ---------------- */
 function mistura(hex, alvo, q) {
   const h = String(hex || '#B5393F').replace('#', '');
@@ -106,28 +260,40 @@ function epocaAtual() {
 }
 
 /* ---------------- o onze no quadro ----------------
-   Posições em % do quadro: a equipa ataca para a direita, por isso o
-   lado direito da equipa fica em baixo (defesas, da direita para a
-   esquerda: 2, 3, 4, 5). Todas deixam o círculo central livre, para o
-   emblema se ver. A formação vem do último jogo; sem ela, não há ímanes.
-   Os números são os habituais de cada lugar. */
-const D4 = [[9, 50, 1], [23, 21, 5], [21, 40, 4], [21, 60, 3], [23, 79, 2]];
-const D3 = [[9, 50, 1], [22, 28, 4], [20, 50, 5], [22, 72, 3]];
+   Posições em % do quadro: a equipa ataca para a direita, por isso o lado
+   DIREITO da equipa fica em BAIXO (defesas, da direita para a esquerda:
+   2, 3, 4, 5; o extremo direito, 7, em baixo; o esquerdo, 11, em cima).
+   Todas deixam o círculo central livre, para o emblema se ver.
+
+   Cada lista segue A MESMA ORDEM DE LUGARES de FORMACOES no App.jsx
+   (GR, DD, DC, DC, DE, …): assim o número de cada íman é o da camisola de
+   quem jogou nesse lugar no último jogo (a app guarda-os em
+   `porta.numeros`, pela mesma ordem). Sem números guardados, usam-se os
+   habituais de cada lugar (o 3.º valor). Sem formação, não há ímanes. */
 const TATICAS = {
-  '4-2-3-1': D4.concat([[42.5, 36.5, 6], [42.5, 63.5, 8], [66, 20, 7], [61.5, 50, 10], [66, 80, 11], [84, 50, 9]]),
-  '4-3-3': D4.concat([[36, 50, 6], [45, 27, 8], [45, 73, 10], [76, 20, 7], [83, 50, 9], [76, 80, 11]]),
-  '4-4-2': D4.concat([[40, 15, 7], [36, 40, 6], [36, 60, 8], [40, 85, 11], [72, 40, 9], [72, 60, 10]]),
-  '3-5-2': D3.concat([[44, 88, 2], [34, 50, 6], [42, 31, 8], [42, 69, 10], [44, 12, 7], [73, 40, 9], [73, 60, 11]]),
-  '3-4-3': [[9, 50, 1], [22, 28, 4], [20, 50, 5], [22, 72, 6], [42, 87, 2], [37, 40, 8], [37, 60, 10], [42, 13, 3], [74, 20, 7], [83, 50, 9], [74, 80, 11]],
+  '4-3-3':   [[9, 50, 1], [23, 79, 2], [21, 60, 3], [21, 40, 4], [23, 21, 5], [36, 50, 6], [45, 73, 8], [45, 27, 10], [76, 80, 7], [83, 50, 9], [76, 20, 11]],
+  '4-4-2':   [[9, 50, 1], [23, 79, 2], [21, 60, 3], [21, 40, 4], [23, 21, 5], [40, 85, 7], [36, 60, 8], [36, 40, 6], [40, 15, 11], [72, 60, 9], [72, 40, 10]],
+  '4-2-3-1': [[9, 50, 1], [23, 79, 2], [21, 60, 3], [21, 40, 4], [23, 21, 5], [42.5, 63.5, 8], [42.5, 36.5, 6], [66, 80, 7], [61.5, 50, 10], [66, 20, 11], [84, 50, 9]],
+  '3-4-3':   [[9, 50, 1], [22, 72, 3], [20, 50, 4], [22, 28, 5], [42, 87, 2], [37, 60, 8], [37, 40, 10], [42, 13, 6], [74, 80, 7], [83, 50, 9], [74, 20, 11]],
+  '3-5-2':   [[9, 50, 1], [22, 72, 3], [20, 50, 4], [22, 28, 5], [44, 88, 2], [42, 69, 8], [34, 50, 6], [42, 31, 10], [44, 12, 11], [73, 60, 9], [73, 40, 7]],
   // jogo de 9
-  '3-2-3': [[9, 50, 1], [22, 22, 5], [20, 50, 4], [22, 78, 2], [38, 37, 6], [38, 63, 8], [68, 20, 7], [80, 50, 9], [68, 80, 11]],
-  '3-3-2': [[9, 50, 1], [22, 22, 5], [20, 50, 4], [22, 78, 2], [40, 22, 6], [36, 50, 8], [40, 78, 10], [72, 38, 9], [72, 62, 11]],
-  '2-3-3': [[9, 50, 1], [22, 33, 4], [22, 67, 2], [40, 22, 6], [36, 50, 8], [40, 78, 10], [68, 20, 7], [80, 50, 9], [68, 80, 11]],
+  '3-2-3':   [[9, 50, 1], [22, 78, 2], [20, 50, 4], [22, 22, 5], [38, 63, 8], [38, 37, 6], [68, 80, 7], [80, 50, 9], [68, 20, 11]],
+  '3-3-2':   [[9, 50, 1], [22, 78, 2], [20, 50, 4], [22, 22, 5], [40, 78, 8], [36, 50, 6], [40, 22, 10], [72, 62, 9], [72, 38, 11]],
+  '2-3-3':   [[9, 50, 1], [22, 67, 2], [22, 33, 4], [40, 78, 8], [36, 50, 6], [40, 22, 10], [68, 80, 7], [80, 50, 9], [68, 20, 11]],
   // jogo de 7
-  '3-2-1': [[9, 50, 1], [24, 22, 5], [22, 50, 4], [24, 78, 2], [40, 35, 6], [40, 65, 8], [76, 50, 9]],
-  '2-3-1': [[9, 50, 1], [24, 33, 4], [24, 67, 2], [40, 20, 6], [36, 50, 8], [40, 80, 10], [76, 50, 9]],
-  '2-2-2': [[9, 50, 1], [24, 33, 4], [24, 67, 2], [40, 35, 6], [40, 65, 8], [72, 38, 9], [72, 62, 11]],
+  '3-2-1':   [[9, 50, 1], [24, 78, 2], [22, 50, 4], [24, 22, 5], [40, 65, 8], [40, 35, 6], [76, 50, 9]],
+  '2-3-1':   [[9, 50, 1], [24, 67, 2], [24, 33, 4], [40, 80, 8], [36, 50, 6], [40, 20, 10], [76, 50, 9]],
+  '2-2-2':   [[9, 50, 1], [24, 67, 2], [24, 33, 4], [40, 65, 8], [40, 35, 6], [72, 62, 9], [72, 38, 11]],
 };
+// O onze a mostrar: posições da formação + números das camisolas. Um
+// lugar que ficou vazio no último jogo mostra o íman sem número.
+function onzeDaPorta(porta) {
+  const base = porta && TATICAS[porta.formacao];
+  if (!base) return null;
+  const temNumeros = !!(porta.numeros && String(porta.numeros).replace(/,/g, '').trim());
+  const nums = temNumeros ? String(porta.numeros).split(',') : [];
+  return base.map((p, i) => [p[0], p[1], temNumeros ? String(nums[i] || '').trim() : String(p[2])]);
+}
 
 /* ---------------- desenhos ---------------- */
 function Escudo({ logo, cor, tam, branco }) {
@@ -235,6 +401,12 @@ const CSS = `
   .mjp-ps-pisca { animation: mjp-ps-pisca .45s ease-in-out infinite; }
   .mjp-ps-cred { animation: mjp-ps-balanca 1.2s cubic-bezier(.2,.8,.2,1) both; transform-origin: 50% -60px; }
   .mjp-ps-treme { animation: mjp-ps-treme .45s; }
+  @keyframes mjp-ps-respira { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+  @keyframes mjp-ps-varre { 0% { top: 10%; } 50% { top: 86%; } 100% { top: 10%; } }
+  @keyframes mjp-ps-pulso { 0%,100% { box-shadow: 0 0 0 0 rgba(201,162,39,.55); } 50% { box-shadow: 0 0 0 12px rgba(201,162,39,0); } }
+  .mjp-ps-respira { animation: mjp-ps-respira 2.2s ease-in-out infinite; }
+  .mjp-ps-varre { animation: mjp-ps-varre 1s ease-in-out infinite; }
+  .mjp-ps-pulso { animation: mjp-ps-pulso 2s ease-in-out infinite; }
   .mjp-ps-campo::placeholder { color: #5d6b62; }
   .mjp-ps-campo:focus { outline: 2px solid #FFC23D; outline-offset: 1px; }
   .mjp-ps button:focus-visible { outline: 2px solid #FFC23D; outline-offset: 2px; }
@@ -345,13 +517,13 @@ function useMedidas() {
    A CENA (o ecrã da porta). Usada pelo ecrã de entrada e, já com sessão,
    pela porta que abre por cima da app.
    =================================================================== */
-function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada }) {
+function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada, faceId = 'desligado' }) {
   const { W, H, k } = useMedidas();
   useState(garantirEstilos);
   const cor = (porta && porta.cor) || '#B5393F';
   const escura = mistura(cor, '0d120f', 0.4);
   const logo = (porta && porta.logo) || '';
-  const onze = (porta && TATICAS[porta.formacao]) || null;
+  const onze = onzeDaPorta(porta);
   const sinal = estado === 'autorizado' ? '#4CAF6A' : estado === 'verificar' ? '#FFC23D' : '#FF5A4E';
   const letreiro = estado === 'autorizado' ? 'ACESSO AUTORIZADO' : estado === 'verificar' ? 'A VERIFICAR' : 'ACESSO RESERVADO';
   const verde = estado === 'autorizado';
@@ -384,7 +556,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
       <div style={{ position: 'absolute', right: 12, top: 98, width: 30, height: 22, borderRadius: 5, background: 'linear-gradient(135deg,#F1D27A,#B8902E)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.25)' }} />
       <div style={{ position: 'absolute', left: 12, right: 10, top: 172 }}>
         <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 19, fontWeight: 600, lineHeight: 1.02, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome || 'Por ativar'}</div>
-        <div style={{ fontSize: 11, color: '#C9D2C5', marginTop: 3 }}>{nome ? (porta.souDono ? 'Responsável da equipa' : 'Equipa técnica') : 'Entra uma vez para a ativar'}</div>
+        <div style={{ fontSize: 11, color: '#C9D2C5', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome ? (porta.funcao || (porta.souDono ? 'Responsável da equipa' : 'Equipa técnica')) : 'Entra uma vez para a ativar'}</div>
       </div>
       <div style={{ position: 'absolute', left: 12, bottom: 9, fontSize: 10, letterSpacing: '.12em', color: '#9AA89F' }}>ÉPOCA {(porta && porta.epoca) || epocaAtual()}</div>
       <div style={{ position: 'absolute', top: '-20%', bottom: '-20%', width: '40%', background: 'linear-gradient(100deg, transparent, rgba(255,255,255,.28), transparent)', transform: 'skewX(-18deg)', animation: 'mjp-ps-brilho 3s ease-in-out 1.3s infinite' }} />
@@ -427,9 +599,25 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
         {onEmblema && (
           <button type="button" onClick={onEmblema} aria-label="Entrar" style={{
             position: 'absolute', left: 7 + W / 2 - H * 0.14, top: 7 + H / 2 - H * 0.14, width: H * 0.28, height: H * 0.28,
-            borderRadius: '50%', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+            borderRadius: '50%', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, zIndex: 3,
           }} />
         )}
+        {/* Os quatro cantos do Face ID à volta do círculo central: dizem o
+            que é, sem legenda. Só aparecem com a entrada rápida ativa. */}
+        {faceId !== 'desligado' && (() => {
+          const t = Math.round(H * 0.4), c = Math.round(t * 0.22);
+          const corC = faceId === 'ok' ? '#8EE6A0' : '#C9A227';
+          const canto = (o) => ({ position: 'absolute', width: c, height: c, borderColor: corC, borderStyle: 'solid', borderWidth: 0, transition: 'border-color .3s', ...o });
+          return (
+            <div aria-hidden="true" className={faceId === 'pronto' ? 'mjp-ps-respira' : undefined} style={{ position: 'absolute', left: 7 + W / 2 - t / 2, top: 7 + H / 2 - t / 2, width: t, height: t, pointerEvents: 'none', zIndex: 2 }}>
+              <div style={canto({ left: 0, top: 0, borderLeftWidth: 3, borderTopWidth: 3, borderTopLeftRadius: 8 })} />
+              <div style={canto({ right: 0, top: 0, borderRightWidth: 3, borderTopWidth: 3, borderTopRightRadius: 8 })} />
+              <div style={canto({ left: 0, bottom: 0, borderLeftWidth: 3, borderBottomWidth: 3, borderBottomLeftRadius: 8 })} />
+              <div style={canto({ right: 0, bottom: 0, borderRightWidth: 3, borderBottomWidth: 3, borderBottomRightRadius: 8 })} />
+              {faceId === 'a-ler' && <div className="mjp-ps-varre" style={{ position: 'absolute', left: '8%', right: '8%', height: 2, background: '#FFC23D', boxShadow: '0 0 8px #FFC23D' }} />}
+            </div>
+          );
+        })()}
         <div aria-hidden="true" style={{ position: 'absolute', left: '15%', right: '15%', bottom: -9, height: 9, borderRadius: '0 0 5px 5px', background: '#2A332D' }} />
       </div>
 
@@ -458,6 +646,23 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
     </div>
   );
 }
+
+const ICONE_FACE = (
+  <>
+    <path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" /><path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+    <path d="M7 21H5a2 2 0 0 1-2-2v-2" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><path d="M9 9h.01" /><path d="M15 9h.01" />
+  </>
+);
+const ICONE_DEDO = (
+  <>
+    <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" /><path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+    <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" /><path d="M2 12a10 10 0 0 1 18-6" /><path d="M2 16h.01" />
+    <path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+    <path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+  </>
+);
+// Nas costas da credencial: o símbolo do sensor que este aparelho tem.
+const ICONE_BIO = BIO_TXT.nome === 'Face ID' ? ICONE_FACE : ICONE_DEDO;
 
 /* ---------------- o verso da credencial ---------------- */
 const rotulo = { fontSize: 9.5, letterSpacing: '.1em', color: '#9AA8A0', textTransform: 'uppercase' };
@@ -489,6 +694,31 @@ export default function AuthScreen({ modo }) {
   const timers = useRef([]);
   const depois = (fn, ms) => { timers.current.push(setTimeout(fn, ms)); };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  /* ENTRADA RÁPIDA (Face ID / impressão digital). Só existe se este
+     aparelho a ativou para esta conta. O desafio pede-se ANTES do toque e
+     renova-se a cada 50 s: no iPhone e no Safari, a leitura tem de nascer
+     do toque, sem esperar pela rede. */
+  const uid = porta && porta.uid;
+  const [bioAtivo, setBioAtivo] = useState(() => !!(conhecido && uid && staffBioEstado(uid)));
+  const [lendo, setLendo] = useState(null); // 'face' | 'digital' | null
+  const prep = useRef(null);
+  const preparar = async () => {
+    if (!uid) return null;
+    try {
+      const r = await staffFn({ acao: 'entrada-opcoes', uid });
+      if (r && r.semAparelho) { esquecerBio(); setBioAtivo(false); prep.current = null; return { semAparelho: true }; }
+      prep.current = { ...r, t: Date.now() };
+      return prep.current;
+    } catch (e) { prep.current = null; return null; }
+  };
+  useEffect(() => {
+    if (!bioAtivo) return undefined;
+    preparar();
+    const iv = setInterval(preparar, 50000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bioAtivo]);
 
   // A credencial chega a balançar e fica de frente. Só se vira quando a
   // pessoa escolhe por onde entrar: o emblema, a ligação por baixo da
@@ -539,6 +769,37 @@ export default function AuthScreen({ modo }) {
       setEstado('autorizado');
     } catch (err) {
       ENTRADA_STAFF = null;
+      falhou(traduzir(err));
+    }
+  };
+
+  const entrarBio = async (via) => {
+    if (estado !== 'fechado' || !uid) return;
+    setErro(''); setInfo(''); setEstado('verificar'); setLendo(via);
+    const desativado = () => {
+      esquecerBio(); setBioAtivo(false); setLendo(null);
+      mudarVerso('passe');
+      falhou(`${BIO_TXT.nome[0].toUpperCase()}${BIO_TXT.nome.slice(1)} deixou de estar ativo neste aparelho. Entra com a palavra-passe.`);
+    };
+    try {
+      let p = prep.current;
+      if (!p || Date.now() - p.t > 55000) p = await preparar();
+      if (p && p.semAparelho) { desativado(); return; }
+      if (!p) throw new Error('Failed to fetch');
+      prep.current = null;
+      const resposta = await bioLer(p.opcoes);
+      const v = await staffFn({ acao: 'entrada-verificar', uid, desafio: p.desafio, resposta });
+      // Marca-se ANTES de abrir a sessão, como na palavra-passe.
+      ENTRADA_STAFF = { t: Date.now(), verso, via: 'bio' };
+      let r = await supabase.auth.verifyOtp({ token_hash: v.token_hash, type: v.tipo || 'magiclink' });
+      if (r.error) r = await supabase.auth.verifyOtp({ token_hash: v.token_hash, type: 'email' });
+      if (r.error) throw r.error;
+      setEstado('autorizado');
+    } catch (err) {
+      ENTRADA_STAFF = null; setLendo(null);
+      preparar();
+      if (foiCancelado(err)) { setEstado('fechado'); return; }
+      if (err && err.semAparelho) { desativado(); return; }
       falhou(traduzir(err));
     }
   };
@@ -601,7 +862,9 @@ export default function AuthScreen({ modo }) {
     mudarVerso('novo');
   };
   const tocarEmblema = () => {
-    // Fase seguinte: Face ID. Por agora, leva à palavra-passe.
+    // Com a entrada rápida ativa, o emblema é o Face ID (o "pontapé de
+    // saída"). Sem ela, leva à palavra-passe.
+    if (bioAtivo) { entrarBio('face'); return; }
     const alvo = conhecido ? 'passe' : 'novo';
     if (verso !== alvo) mudarVerso(alvo);
     depois(() => { try { passeRef.current && passeRef.current.focus(); } catch (er) { /* nada */ } }, verso === alvo ? 0 : 750);
@@ -621,8 +884,23 @@ export default function AuthScreen({ modo }) {
 
   let conteudoVerso;
   const v = verso || versoInicial;
-  if (v === 'passe' && conhecido) {
-    const quem = porta.souDono ? 'MISTER' : (String(porta.nome || '').split(/\s+/)[0] || 'MISTER').toUpperCase();
+  const quem = conhecido ? (porta.souDono ? 'MISTER' : (String(porta.nome || '').split(/\s+/)[0] || 'MISTER').toUpperCase()) : 'MISTER';
+  const linhaEmail = conhecido ? <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#9AA8A0', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailEscondido(porta.email)}</div> : null;
+  if (v === 'digital' && conhecido) {
+    const corBio = estado === 'autorizado' ? '#8EE6A0' : '#C9A227';
+    conteudoVerso = (
+      <div style={{ ...formulario, alignItems: 'center', padding: '24px 11px 14px' }}>
+        <div style={{ ...titulo, width: '100%' }}>{saudacao()}, {quem}</div>
+        {linhaEmail}
+        <button type="button" onClick={() => entrarBio('digital')} aria-label={`Entrar com ${BIO_TXT.comArtigo}`}
+          className={estado === 'fechado' ? 'mjp-ps-pulso' : undefined}
+          style={{ marginTop: 'auto', marginBottom: erro ? 4 : 'auto', width: 96, height: 96, borderRadius: 22, background: '#0D120F', border: `2px solid ${corBio}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, transition: 'border-color .3s' }}>
+          <svg width="58" height="58" viewBox="0 0 24 24" fill="none" stroke={corBio} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={estado === 'verificar' && lendo === 'digital' ? 'mjp-ps-pisca' : undefined}>{ICONE_BIO}</svg>
+        </button>
+        {aviso}
+      </div>
+    );
+  } else if (v === 'passe' && conhecido) {
     conteudoVerso = (
       <form onSubmit={entrar} style={formulario}>
         <div style={titulo}>{saudacao()}, {quem}</div>
@@ -648,9 +926,21 @@ export default function AuthScreen({ modo }) {
       </form>
     );
   } else if (v === 'recuperar') {
+    /* As contas da equipa técnica usam emails sem caixa de correio: o
+       caminho normal é o responsável da equipa escolher uma nova, em Gerir
+       equipa. O link por email fica para quem tem mesmo correio. */
+    conteudoVerso = (
+      <div style={formulario}>
+        <div style={titulo}>PERDI A PALAVRA-PASSE</div>
+        <div style={{ fontSize: 12, color: '#C9D2C5', lineHeight: 1.45, textAlign: 'center', marginTop: 8 }}>Pede uma nova ao responsável da equipa. Ele escolhe-a em <b style={{ color: '#F3ECDA', fontWeight: 600 }}>Gerir equipa</b> e diz-ta.</div>
+        <div style={{ marginTop: 'auto', fontSize: 10.5, color: '#9AA8A0', textAlign: 'center', lineHeight: 1.4 }}>O teu email recebe correio?</div>
+        <button type="button" onClick={() => mudarVerso('recuperar-email')} style={{ marginTop: 5, height: 40, flexShrink: 0, borderRadius: 8, background: 'transparent', border: '1.5px solid #C9A227', color: '#E2C04A', fontFamily: "'Oswald', sans-serif", fontSize: 13, fontWeight: 500, letterSpacing: '.12em', cursor: 'pointer' }}>ENVIAR LINK</button>
+      </div>
+    );
+  } else if (v === 'recuperar-email') {
     conteudoVerso = (
       <form onSubmit={pedirNovaPasse} style={formulario}>
-        <div style={titulo}>PERDI A PALAVRA-PASSE</div>
+        <div style={titulo}>LINK POR EMAIL</div>
         <div style={{ fontSize: 11, color: '#9AA8A0', lineHeight: 1.4, textAlign: 'center' }}>Enviamos um link para escolheres uma nova.</div>
         <label htmlFor="mjp-ps-em" style={{ ...rotulo, marginTop: 4 }}>Email</label>
         <input id="mjp-ps-em" className="mjp-ps-campo" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} style={campo} />
@@ -689,9 +979,12 @@ export default function AuthScreen({ modo }) {
      digital) passa a ser "Usar a impressão digital"; enquanto não existe,
      é a palavra-passe. Com a credencial virada, "Ver a credencial" volta a pô-la de frente. */
   const entrarPasse = () => { mudarVerso(conhecido ? 'passe' : 'novo'); depois(() => { try { passeRef.current && passeRef.current.focus(); } catch (er) { /* nada */ } }, 750); };
+  const deFrente = () => { setErro(''); setInfo(''); setPassword(''); setViraAnim(true); setVerso(null); depois(() => setViraAnim(false), 700); };
   const voltar = verso
-    ? <button type="button" style={ligacao} onClick={() => { setErro(''); setInfo(''); setPassword(''); setViraAnim(true); setVerso(null); depois(() => setViraAnim(false), 700); }}>Ver a credencial</button>
-    : <button type="button" style={ligacao} onClick={entrarPasse}>Entrar com a palavra-passe</button>;
+    ? <button type="button" style={ligacao} onClick={deFrente}>{bioAtivo && BIO_TXT.nome === 'Face ID' ? 'Usar o Face ID' : 'Ver a credencial'}</button>
+    : bioAtivo
+      ? <button type="button" style={ligacao} onClick={() => mudarVerso('digital')}>Usar {BIO_TXT.comArtigo}</button>
+      : <button type="button" style={ligacao} onClick={entrarPasse}>Entrar com a palavra-passe</button>;
   const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: '#182619', border: '1px solid #3A4F3D', color: '#ECEFEA', fontSize: 14.5, cursor: 'pointer', fontFamily: "'Inter', sans-serif" };
 
   const rodape = novaPasse ? null : (
@@ -708,6 +1001,7 @@ export default function AuthScreen({ modo }) {
       <CenaPorta
         porta={porta} estado={estado} verso={verso} viraAnim={viraAnim} tremer={tremer}
         onEmblema={novaPasse ? null : tocarEmblema} rodape={rodape}
+        faceId={!bioAtivo || novaPasse ? 'desligado' : estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'face') ? 'a-ler' : 'pronto'}
       >
         {conteudoVerso}
       </CenaPorta>
@@ -749,13 +1043,64 @@ function PortaQueAbre({ entrada, onFim }) {
   const { W, H } = useMedidas();
   const cor = (porta && porta.cor) || '#B5393F';
   const logo = (porta && porta.logo) || '';
-  const onze = (porta && TATICAS[porta.formacao]) || null;
+  const onze = onzeDaPorta(porta);
   const fimRef = useRef(onFim);
   fimRef.current = onFim;
   // Enquanto a porta está em cena, a app por baixo não mostra barra de
   // scroll nem a faixa da direita (o ecrã de "a carregar" é um pouco mais
   // alto do que a janela).
   const reporFaixa = useSemFaixa();
+
+  /* ATIVAR A ENTRADA RÁPIDA. Depois de entrar com a palavra-passe, se o
+     aparelho tiver Face ID / impressão digital e ainda não estiver ativo
+     para esta conta (nem a pessoa tiver dito "Agora não"), as costas da
+     credencial perguntam se quer ativar. A porta espera pela resposta. */
+  const veioPorBio = !!(entrada && entrada.via === 'bio');
+  const [pergunta, setPergunta] = useState(veioPorBio ? null : 'ver'); // 'ver' | 'perguntar' | 'a-ativar' | 'feito' | null
+  const perguntaRef = useRef(pergunta);
+  perguntaRef.current = pergunta;
+  const [erroAtivar, setErroAtivar] = useState('');
+  const [bioOk, setBioOk] = useState(veioPorBio);
+  const uidRef = useRef(null);
+  const prepAtivar = useRef(null);
+  useEffect(() => {
+    if (veioPorBio) return undefined;
+    let vivo = true;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session && session.user && session.user.id;
+        uidRef.current = uid;
+        if (uid && staffBioEstado(uid)) { if (vivo) { setBioOk(true); setPergunta(null); } return; }
+        const disp = await staffBioDisponivel();
+        if (!vivo) return;
+        if (!uid || !disp || recusouBio(uid)) { setPergunta(null); return; }
+        setPergunta('perguntar');
+        try { prepAtivar.current = await staffPrepararAtivacao(porta && porta.nome); } catch (e) { prepAtivar.current = null; }
+      } catch (e) { if (vivo) setPergunta(null); }
+    })();
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const ativar = async () => {
+    if (perguntaRef.current !== 'perguntar') return;
+    setErroAtivar(''); setPergunta('a-ativar');
+    try {
+      await staffBioAtivar(porta && porta.nome, prepAtivar.current);
+      prepAtivar.current = null;
+      setBioOk(true); setPergunta('feito');
+      setTimeout(() => setPergunta(null), 900);
+    } catch (e) {
+      prepAtivar.current = null;
+      try { prepAtivar.current = await staffPrepararAtivacao(porta && porta.nome); } catch (e2) { /* volta a pedir no toque */ }
+      setPergunta('perguntar');
+      if (!foiCancelado(e)) setErroAtivar('Não foi possível ativar. Tenta outra vez.');
+    }
+  };
+  const agoraNao = () => {
+    if (uidRef.current) marcarRecusaBio(uidRef.current);
+    setPergunta(null);
+  };
 
   useLayoutEffect(() => {
     const el = buracoRef.current;
@@ -834,30 +1179,52 @@ function PortaQueAbre({ entrada, onFim }) {
        seguidos fluidos, para a abertura não apanhar a app ainda a
        desenhar-se. Nunca abre antes de 0,8 s; se a app demorar mais de
        10 s, abre na mesma (a app trata do resto, como sempre). */
-    const ini = performance.now();
-    let ult = 0, bons = 0, raf = 0, prontaEm = 0;
+    let ini = performance.now();
+    let ult = 0, bons = 0, raf = 0, prontaEm = 0, perguntouAte = 0;
+    const aPerguntar = () => ['ver', 'perguntar', 'a-ativar', 'feito'].includes(perguntaRef.current);
     const esperar = (t) => {
       if (cancelado) return;
       if (!prontaEm && document.querySelector('[data-mjp-app]')) prontaEm = t;
       bons = ult && (t - ult) < 34 ? bons + 1 : 0;
       ult = t;
+      // Enquanto a credencial está a perguntar, a porta não abre (e os
+      // prazos só começam a contar depois da resposta).
+      if (aPerguntar()) { perguntouAte = t; raf = requestAnimationFrame(esperar); return; }
+      if (perguntouAte) { ini = Math.max(ini, perguntouAte - 800); perguntouAte = 0; }
       const pronta = prontaEm && t - prontaEm > 250 && bons >= 4 && t - ini > 800;
       if (pronta || t - ini > 10000) abrir(); else raf = requestAnimationFrame(esperar);
     };
     raf = requestAnimationFrame(esperar);
-    // Rede de segurança: aconteça o que acontecer, a porta sai de cena.
-    timers.push(setTimeout(acabar, 13000));
+    // Rede de segurança: aconteça o que acontecer, a porta sai de cena
+    // (menos enquanto a pessoa está a responder à pergunta).
+    const seguranca = () => { if (aPerguntar()) timers.push(setTimeout(seguranca, 3000)); else acabar(); };
+    timers.push(setTimeout(seguranca, 13000));
     return () => { cancelado = true; cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tamEmb = Math.round(H * 0.165);
   return (
     <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'none' }}>
-      <CenaPorta porta={porta} estado="autorizado" verso={(entrada && entrada.verso) || 'passe'} viraAnim={false}
-        folhasFora semChegada cenaRef={cenaRef} buracoRef={buracoRef} rodape={<div style={{ marginTop: 'auto', height: 84, flexShrink: 0 }} />}>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#8EE6A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-        </div>
+      <CenaPorta porta={porta} estado="autorizado" verso={entrada ? (entrada.verso || null) : 'passe'} viraAnim={false}
+        folhasFora semChegada cenaRef={cenaRef} buracoRef={buracoRef} rodape={<div style={{ marginTop: 'auto', height: 84, flexShrink: 0 }} />}
+        faceId={bioOk ? 'ok' : 'desligado'}>
+        {(pergunta === 'perguntar' || pergunta === 'a-ativar') ? (
+          <div style={{ position: 'absolute', inset: 0, padding: '24px 12px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, pointerEvents: 'auto' }}>
+            <div style={{ ...titulo, width: '100%' }}>ENTRADA RÁPIDA</div>
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#C9A227" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginTop: 6 }}>{ICONE_BIO}</svg>
+            <div style={{ fontSize: 12, color: '#C9D2C5', lineHeight: 1.4, textAlign: 'center' }}>Da próxima vez, entra só com {BIO_TXT.comArtigo}.</div>
+            {erroAtivar && <div role="status" style={{ fontSize: 11, color: '#FF8A80', textAlign: 'center' }}>{erroAtivar}</div>}
+            <button type="button" onClick={ativar} disabled={pergunta === 'a-ativar'} style={{
+              marginTop: 'auto', width: '100%', height: 40, flexShrink: 0, border: 'none', borderRadius: 8, background: cor, color: '#fff',
+              fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 600, letterSpacing: '.14em', cursor: 'pointer', opacity: pergunta === 'a-ativar' ? 0.75 : 1,
+            }}>{pergunta === 'a-ativar' ? '…' : 'ATIVAR'}</button>
+            <button type="button" onClick={agoraNao} disabled={pergunta === 'a-ativar'} style={{ minHeight: 30, background: 'transparent', border: 'none', color: '#9AA8A0', fontSize: 12.5, textDecoration: 'underline', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Agora não</button>
+          </div>
+        ) : (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#8EE6A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+          </div>
+        )}
       </CenaPorta>
       {/* As folhas, por cima do buraco (fora do recorte da cena). */}
       {rect && (
