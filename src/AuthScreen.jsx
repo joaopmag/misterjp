@@ -226,10 +226,6 @@ function FolhasQuadro({ W, H, cor, logo, onze, saltar, aberto }) {
 
 const URL_FONTES = 'https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap';
 const CSS = `
-  /* A app reserva sempre o espaço da barra de scroll (html { scrollbar-gutter:
-     stable }). A porta reserva o mesmo: assim a cena não salta de lado
-     quando passa do ecrã de entrada para a porta que abre por cima da app. */
-  html { scrollbar-gutter: stable; }
   @keyframes mjp-ps-balanca { 0% { transform: translateY(-40px) rotate(-10deg); opacity: 0; } 60% { transform: translateY(3px) rotate(3deg); opacity: 1; } 82% { transform: rotate(-1.2deg); } 100% { transform: none; opacity: 1; } }
   @keyframes mjp-ps-brilho { 0% { left: -70%; } 100% { left: 150%; } }
   @keyframes mjp-ps-salta { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-8px) scale(1.2); } }
@@ -265,22 +261,28 @@ function garantirEstilos() {
   } catch (e) { /* sem <head>: fica com as fontes do sistema */ }
 }
 
-/* SEM BARRA DE SCROLL ENQUANTO A PORTA ESTÁ EM CENA.
-   A página não desliza (overflow hidden) e o espaço que a app reserva para
-   a barra de scroll à direita fica com a cor escura da cena, em vez da faixa
-   verde da app. Ao sair, repõe exatamente o que lá estava. */
-function useSemScroll() {
-  const reporCor = useRef(() => {});
+/* SEM BARRA DE SCROLL NEM FAIXA À DIREITA ENQUANTO A PORTA ESTÁ EM CENA.
+   A app reserva sempre, à direita, o espaço da barra de scroll
+   (html { scrollbar-gutter: stable }) e o browser mostra esse espaço como
+   uma faixa. Enquanto a porta está em cena, tira-se essa reserva e a página
+   não desliza — é o mesmo que o Portal faz na sua porta (PE_SEM_GUTTER).
+   Na porta que abre por cima da app, a reserva volta no instante em que o
+   campo começa a abrir (`repor`), com a cena presa à largura que tinha,
+   para nada saltar de lado. Ao sair, fica tudo como estava. */
+function useSemFaixa() {
+  const repor = useRef(() => {});
   useLayoutEffect(() => {
-    const h = document.documentElement.style, b = document.body.style;
-    const antes = { ho: h.overflow, bo: b.overflow, hb: h.background, bb: b.background };
-    h.overflow = 'hidden'; b.overflow = 'hidden';
-    h.background = '#0B0F0D'; b.background = '#0B0F0D';
-    // A cor volta à da app logo que a porta abre (a app já está à vista).
-    reporCor.current = () => { h.background = antes.hb; b.background = antes.bb; };
-    return () => { h.overflow = antes.ho; b.overflow = antes.bo; h.background = antes.hb; b.background = antes.bb; };
+    let st = null;
+    try {
+      st = document.createElement('style');
+      st.setAttribute('data-mjp-ps-sem-faixa', '');
+      st.textContent = 'html, body { overflow: hidden !important; } html { scrollbar-gutter: auto !important; }';
+      document.head.appendChild(st);
+    } catch (e) { st = null; }
+    repor.current = () => { if (st && st.parentNode) st.parentNode.removeChild(st); st = null; };
+    return () => repor.current();
   }, []);
-  return reporCor;
+  return repor;
 }
 
 /* Medidas do quadro: cabe no ecrã sem deslizar, no telemóvel e no
@@ -459,7 +461,7 @@ export default function AuthScreen({ modo }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // O ecrã é fixo: a página não desliza por trás e não há barra de scroll.
-  useSemScroll();
+  useSemFaixa();
 
   const mudarVerso = (v) => {
     setErro(''); setInfo(''); setPassword(''); setPassword2('');
@@ -712,8 +714,9 @@ function PortaQueAbre({ entrada, onFim }) {
   const fimRef = useRef(onFim);
   fimRef.current = onFim;
   // Enquanto a porta está em cena, a app por baixo não mostra barra de
-  // scroll (o ecrã de "a carregar" é um pouco mais alto do que a janela).
-  const reporCor = useSemScroll();
+  // scroll nem a faixa da direita (o ecrã de "a carregar" é um pouco mais
+  // alto do que a janela).
+  const reporFaixa = useSemFaixa();
 
   useLayoutEffect(() => {
     const el = buracoRef.current;
@@ -733,11 +736,15 @@ function PortaQueAbre({ entrada, onFim }) {
       if (cancelado) return;
       if (reduzir) { acabar(); return; }
       setAberto(true);
-      try { reporCor.current(); } catch (e) { /* nada */ }
       const cena = cenaRef.current;
       const b = buracoRef.current ? buracoRef.current.getBoundingClientRect() : null;
       const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
-      if (!cena || !b) { acabar(); return; }
+      if (!cena || !b) { reporFaixa.current(); acabar(); return; }
+      // A cena fica presa à largura de agora; só depois a app recupera a
+      // sua reserva à direita (por trás da porta, que ainda está fechada).
+      cena.style.right = 'auto';
+      cena.style.width = `${vw}px`;
+      try { reporFaixa.current(); } catch (e) { /* nada */ }
       /* A ABERTURA, por ordem:
          - as folhas deslizam (0,8 s) e, pela abertura do meio-campo, vê-se
            já a app verdadeira;
