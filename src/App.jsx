@@ -4166,7 +4166,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             ecrã. O limite de largura do conteúdo passou para o <div> de
             dentro; antes estava no próprio <main> e sobrava uma faixa
             escura à direita, fora da zona com scroll. */}
-        <main ref={mainRef} className="mjp-scroll-fino" style={{
+        <main ref={mainRef} data-mjp-app="" className="mjp-scroll-fino" style={{
           flex: 1, minWidth: 0,
           ...(isMobile ? {} : { overflowY: 'auto', height: '100vh' }),
         }}>
@@ -5781,7 +5781,7 @@ function EscolherEquipa({ onPronto, onSair, temEquipas, equipas }) {
   };
 
   return (
-    <div style={{
+    <div data-mjp-app="" style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: T.bg, padding: 20, ...body,
     }}>

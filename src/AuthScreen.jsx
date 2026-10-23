@@ -147,7 +147,11 @@ function Campo({ id }) {
   return (
     <svg viewBox="0 0 348 254" width="100%" height="100%" preserveAspectRatio="none" aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'block' }}>
       <defs>
-        <linearGradient id={`${id}f`} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#357A4C" /><stop offset="1" stopColor="#1F4D2F" /></linearGradient>
+        <linearGradient id={`${id}f`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3A8352" /><stop offset="1" stopColor="#21502F" /></linearGradient>
+        {/* A luz vem do círculo no teto: mais clara em cima, ao centro, e a
+            escurecer para baixo e para os lados. */}
+        <radialGradient id={`${id}l`} cx="50%" cy="-12%" r="95%"><stop offset="0" stopColor="#FFF4D6" stopOpacity=".2" /><stop offset=".55" stopColor="#FFF4D6" stopOpacity=".05" /><stop offset="1" stopColor="#FFF4D6" stopOpacity="0" /></radialGradient>
+        <linearGradient id={`${id}s`} x1="0" y1="0" x2="0" y2="1"><stop offset=".45" stopColor="#000" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity=".28" /></linearGradient>
       </defs>
       <rect width="348" height="254" fill={`url(#${id}f)`} />
       <g opacity=".06" fill="#fff">{[20, 76, 132, 188, 244, 300].map(x => <rect key={x} x={x} y="0" width="28" height="254" />)}</g>
@@ -167,7 +171,8 @@ function Campo({ id }) {
         {[120, 124, 128, 132].map(y => <line key={`b${y}`} x1="328" y1={y} x2="335" y2={y} />)}
       </g>
       <g fill="#fff" fillOpacity=".9"><circle cx="174" cy="127" r="1.8" /><circle cx="52" cy="127" r="1.6" /><circle cx="296" cy="127" r="1.6" /></g>
-      <polygon points="0,0 150,0 50,254 0,254" fill="#fff" opacity=".045" />
+      <rect width="348" height="254" fill={`url(#${id}l)`} />
+      <rect width="348" height="254" fill={`url(#${id}s)`} />
     </svg>
   );
 }
@@ -179,8 +184,10 @@ function QuadroInteiro({ W, H, id, cor, logo, onze, saltar }) {
   return (
     <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }}>
       <Campo id={id} />
-      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }}>
-        <Escudo logo={logo} cor={cor} tam={Math.round(H * 0.13)} branco />
+      {/* O emblema do clube, com as cores verdadeiras (não gravado como no
+          vidro do Portal), dentro do círculo central. */}
+      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.45))' }}>
+        <Escudo logo={logo} cor={cor} tam={Math.round(H * 0.165)} />
       </div>
       {(onze || []).map((p, i) => (
         <div key={i} className={saltar ? 'mjp-ps-salta' : undefined} style={{
@@ -218,6 +225,11 @@ function FolhasQuadro({ W, H, cor, logo, onze, saltar, aberto }) {
 }
 
 const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+  /* A app reserva sempre o espaço da barra de scroll (html { scrollbar-gutter:
+     stable }). A porta reserva o mesmo: assim a cena não salta de lado
+     quando passa do ecrã de entrada para a porta que abre por cima da app. */
+  html { scrollbar-gutter: stable; }
   @keyframes mjp-ps-balanca { 0% { transform: translateY(-40px) rotate(-10deg); opacity: 0; } 60% { transform: translateY(3px) rotate(3deg); opacity: 1; } 82% { transform: rotate(-1.2deg); } 100% { transform: none; opacity: 1; } }
   @keyframes mjp-ps-brilho { 0% { left: -70%; } 100% { left: 150%; } }
   @keyframes mjp-ps-salta { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-8px) scale(1.2); } }
@@ -256,7 +268,7 @@ const CW = 172, CH = 248;
    A CENA (o ecrã da porta). Usada pelo ecrã de entrada e, já com sessão,
    pela porta que abre por cima da app.
    =================================================================== */
-function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape }) {
+function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada }) {
   const { W, H } = useMedidas();
   const cor = (porta && porta.cor) || '#B5393F';
   const escura = mistura(cor, '0d120f', 0.4);
@@ -328,8 +340,9 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
       </div>
 
       {/* o quadro (aro metálico, o buraco das folhas e a calha) */}
-      <div style={{ position: 'relative', flexShrink: 0, marginTop: 14, width: W + 14, height: H + 14 }}>
-        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 9, background: 'linear-gradient(90deg,#3A423D,#5E6862 50%,#3A423D)', boxShadow: '0 14px 30px rgba(0,0,0,.55)' }} />
+      <div style={{ position: 'relative', zIndex: 3, flexShrink: 0, marginTop: 14, width: W + 14, height: H + 14 }}>
+        {/* aro: a luz de cima apanha a aresta de cima; a sombra cai para baixo */}
+        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 9, background: 'linear-gradient(90deg,#3A423D,#5E6862 50%,#3A423D)', boxShadow: 'inset 0 1.5px 0 rgba(255,240,200,.35), 0 18px 32px rgba(0,0,0,.6)' }} />
         <div ref={buracoRef} style={{ position: 'absolute', left: 7, top: 7, width: W, height: H, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
           {!folhasFora && <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={false} />}
         </div>
@@ -343,16 +356,16 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
         <div aria-hidden="true" style={{ position: 'absolute', left: '15%', right: '15%', bottom: -9, height: 9, borderRadius: '0 0 5px 5px', background: '#2A332D' }} />
       </div>
 
-      {/* fita, nas cores do clube, e a credencial */}
-      <div aria-hidden="true" style={{ position: 'relative', flexShrink: 0, width: CW, height: 36, marginTop: 9 }}>
-        <svg width="220" height="40" viewBox="0 0 220 40" style={{ position: 'absolute', left: '50%', top: -2, transform: 'translateX(-50%)', overflow: 'visible' }}>
-          <path d="M60 0 L104 34" stroke={cor} strokeWidth="9" strokeLinecap="round" />
-          <path d="M160 0 L116 34" stroke={escura} strokeWidth="9" strokeLinecap="round" />
+      {/* fita, nas cores do clube: vem de trás do quadro até à mola */}
+      <div aria-hidden="true" style={{ position: 'relative', zIndex: 1, flexShrink: 0, width: CW, height: 36, marginTop: 9 }}>
+        <svg width="220" height="110" viewBox="0 -70 220 110" style={{ position: 'absolute', left: '50%', top: -72, transform: 'translateX(-50%)', overflow: 'visible' }}>
+          <path d="M40 -70 L104 34" stroke={cor} strokeWidth="9" strokeLinecap="round" />
+          <path d="M180 -70 L116 34" stroke={escura} strokeWidth="9" strokeLinecap="round" />
           <rect x="98" y="29" width="24" height="12" rx="3" fill="#C9CFC6" />
         </svg>
       </div>
       <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW, height: CH, marginTop: 2, transform: estado === 'verificar' ? 'translateY(-10px)' : 'none', transition: 'transform .4s cubic-bezier(.3,1.4,.5,1)' }}>
-        <div className="mjp-ps-cred" style={{ width: CW, height: CH, perspective: 900 }}>
+        <div className={semChegada ? undefined : 'mjp-ps-cred'} style={{ width: CW, height: CH, perspective: 900 }}>
           {plano ? <div style={{ position: 'relative', width: CW, height: CH }}>{costas}</div> : (
             <div style={{ position: 'relative', width: CW, height: CH, transformStyle: 'preserve-3d', transform: virada ? 'rotateY(180deg)' : 'none', transition: 'transform .65s cubic-bezier(.4,.1,.2,1)' }}>
               {frente}
@@ -370,7 +383,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
 /* ---------------- o verso da credencial ---------------- */
 const rotulo = { fontSize: 9.5, letterSpacing: '.1em', color: '#9AA8A0', textTransform: 'uppercase' };
 const campo = { height: 40, width: '100%', boxSizing: 'border-box', padding: '0 10px', background: '#121815', border: '1.5px solid #FF4B5A', borderRadius: 8, color: '#FFC23D', fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 500 };
-const titulo = { fontFamily: "'Oswald', sans-serif", fontSize: 13.5, fontWeight: 500, letterSpacing: '.1em', color: '#F3ECDA', textAlign: 'center', marginTop: 2 };
+const titulo = { fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 500, letterSpacing: '.06em', color: '#F3ECDA', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 const escondido = { position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: 0, top: 0 };
 
 /* ===================================================================
@@ -398,11 +411,13 @@ export default function AuthScreen({ modo }) {
   const depois = (fn, ms) => { timers.current.push(setTimeout(fn, ms)); };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  // A credencial chega a balançar, mostra a frente e vira-se para o lado
-  // onde se entra.
+  // A credencial chega a balançar e fica de frente. Só se vira quando a
+  // pessoa escolhe por onde entrar: o emblema, a ligação por baixo da
+  // credencial ou o Mais opções. (No link da nova palavra-passe já vem
+  // virada, porque não há outra coisa a fazer.)
   useEffect(() => {
-    depois(() => setVerso(v => v || versoInicial), 1250);
-    depois(() => setViraAnim(false), 1250 + 700);
+    if (novaPasse) { depois(() => setVerso('nova'), 1250); depois(() => setViraAnim(false), 1250 + 700); }
+    else depois(() => setViraAnim(false), 1250);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // O ecrã é fixo: a página não desliza por trás.
@@ -595,9 +610,13 @@ export default function AuthScreen({ modo }) {
   }
 
   const ligacao = { minHeight: 40, padding: '2px 6px', background: 'transparent', border: 'none', color: '#C9A227', fontFamily: "'Inter', sans-serif", fontSize: 13.5, textDecoration: 'underline', cursor: 'pointer' };
-  const voltar = (v === 'criar' || v === 'recuperar') ? (
-    <button type="button" style={ligacao} onClick={() => mudarVerso(conhecido ? 'passe' : 'novo')}>Voltar a entrar</button>
-  ) : null;
+  /* Por baixo da credencial, uma só ligação. Na fase seguinte (impressão
+     digital) passa a ser "Usar a impressão digital"; enquanto não existe,
+     é a palavra-passe. Com a credencial virada, volta a pô-la de frente. */
+  const entrarPasse = () => { mudarVerso(conhecido ? 'passe' : 'novo'); depois(() => { try { passeRef.current && passeRef.current.focus(); } catch (er) { /* nada */ } }, 750); };
+  const voltar = verso
+    ? <button type="button" style={ligacao} onClick={() => { setErro(''); setInfo(''); setPassword(''); setViraAnim(true); setVerso(null); depois(() => setViraAnim(false), 700); }}>Virar a credencial</button>
+    : <button type="button" style={ligacao} onClick={entrarPasse}>Entrar com a palavra-passe</button>;
   const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: '#182619', border: '1px solid #3A4F3D', color: '#ECEFEA', fontSize: 14.5, cursor: 'pointer', fontFamily: "'Inter', sans-serif" };
 
   const rodape = novaPasse ? null : (
@@ -620,7 +639,7 @@ export default function AuthScreen({ modo }) {
       {opcoes && (
         <div onClick={() => setOpcoes(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px', boxSizing: 'border-box' }}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: '#202F22', border: '1px solid #3A4F3D', borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' }}>
-            <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso(conhecido ? 'passe' : 'novo'); depois(() => { try { passeRef.current && passeRef.current.focus(); } catch (er) { /* nada */ } }, 750); }}>Entrar com a palavra-passe</button>
+            <button type="button" style={opcao} onClick={() => { setOpcoes(false); entrarPasse(); }}>Entrar com a palavra-passe</button>
             <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('recuperar'); }}>Perdi a palavra-passe</button>
             {conhecido && <button type="button" style={opcao} onClick={outraConta}>Entrar com outra conta</button>}
             <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('criar'); }}>Criar conta</button>
@@ -646,7 +665,7 @@ export default function AuthScreen({ modo }) {
    erro aqui só faz a porta desaparecer (ver ProtecaoPorta). */
 function PortaQueAbre({ entrada, onFim }) {
   const [porta] = useState(() => lerPortaStaff());
-  const [saltar, setSaltar] = useState(false);
+  const [saltar, setSaltar] = useState(0);
   const [aberto, setAberto] = useState(false);
   const [rect, setRect] = useState(null);
   const cenaRef = useRef(null);
@@ -669,27 +688,37 @@ function PortaQueAbre({ entrada, onFim }) {
     const timers = [];
     const acabar = () => { if (!cancelado) fimRef.current(); };
     const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduzir) { timers.push(setTimeout(acabar, 300)); return () => { cancelado = true; timers.forEach(clearTimeout); }; }
-    timers.push(setTimeout(() => !cancelado && setSaltar(true), 60));
+    // Enquanto a app carrega os dados, os onze vão saltando em onda (o
+    // aquecimento). A porta só abre com a app pronta por trás.
+    const onda = setInterval(() => !cancelado && setSaltar(n => n + 1), 1500);
+    timers.push(setTimeout(() => !cancelado && setSaltar(1), 60));
 
     const abrir = () => {
       if (cancelado) return;
+      clearInterval(onda);
+      if (reduzir) { acabar(); return; }
       setAberto(true);
       const cena = cenaRef.current;
       const b = buracoRef.current ? buracoRef.current.getBoundingClientRect() : null;
-      const vw = window.innerWidth, vh = window.innerHeight;
+      const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
       if (!cena || !b) { acabar(); return; }
-      // O resto da cena apaga-se e o buraco da porta cresce até ao ecrã.
-      cena.style.transition = 'opacity .55s cubic-bezier(.4,0,.2,1) .15s';
+      /* A ABERTURA, por ordem:
+         - as folhas deslizam (0,8 s) e, pela abertura do meio-campo, vê-se
+           já a app verdadeira;
+         - ao mesmo tempo o buraco da porta vai crescendo até ao ecrã todo
+           (1,1 s), sempre a mostrar mais app;
+         - o resto da cena (letreiro, aro, credencial) só se apaga depois de
+           a abertura ir a meio, para não se perder a porta de vista. */
+      cena.style.transition = 'opacity .6s cubic-bezier(.4,0,.2,1) .4s';
       cena.style.opacity = '0';
       let comBuraco = false;
       try { comBuraco = !!(window.CSS && CSS.supports && CSS.supports('clip-path', "path(evenodd, 'M0 0H1V1H0Z')")); } catch (e) { comBuraco = false; }
       if (comBuraco) {
-        const t0 = performance.now(), dur = 900;
+        const t0 = performance.now() + 120, dur = 1100;
         const curva = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
         const passo = (t) => {
           if (cancelado) return;
-          const p = Math.min(1, (t - t0) / dur), q = curva(p);
+          const p = Math.max(0, Math.min(1, (t - t0) / dur)), q = curva(p);
           const x = b.left * (1 - q), y = b.top * (1 - q), w = b.width + (vw - b.width) * q, h = b.height + (vh - b.height) * q;
           cena.style.clipPath = `path(evenodd, 'M0 0H${vw}V${vh}H0Z M${x} ${y}h${w}v${h}h${-w}Z')`;
           if (p < 1) requestAnimationFrame(passo);
@@ -712,32 +741,38 @@ function PortaQueAbre({ entrada, onFim }) {
           { transform: 'translate(0px, 0px) scale(1)', opacity: 1 },
           { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 1, offset: 0.9 },
           { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0 },
-        ], { duration: 1000, delay: 120, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'forwards' });
+        ], { duration: 1100, delay: 150, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'forwards' });
       }
-      timers.push(setTimeout(acabar, 1250));
+      timers.push(setTimeout(acabar, 1400));
     };
 
-    // Só abre com o browser livre (a app está a montar por baixo): espera
-    // 4 frames seguidos fluidos, nunca antes de 0,7 s e no máximo 2,2 s.
+    /* SÓ ABRE COM A APP PRONTA POR TRÁS. A app marca-se com
+       `data-mjp-app` quando já tem os dados e mostra o ecrã verdadeiro (o
+       ecrã de "a carregar" não tem a marca). Depois espera 4 frames
+       seguidos fluidos, para a abertura não apanhar a app ainda a
+       desenhar-se. Nunca abre antes de 0,8 s; se a app demorar mais de
+       10 s, abre na mesma (a app trata do resto, como sempre). */
     const ini = performance.now();
-    let ult = 0, bons = 0, raf = 0;
+    let ult = 0, bons = 0, raf = 0, prontaEm = 0;
     const esperar = (t) => {
       if (cancelado) return;
+      if (!prontaEm && document.querySelector('[data-mjp-app]')) prontaEm = t;
       bons = ult && (t - ult) < 34 ? bons + 1 : 0;
       ult = t;
-      if ((bons >= 4 && t - ini > 700) || t - ini > 2200) abrir(); else raf = requestAnimationFrame(esperar);
+      const pronta = prontaEm && t - prontaEm > 250 && bons >= 4 && t - ini > 800;
+      if (pronta || t - ini > 10000) abrir(); else raf = requestAnimationFrame(esperar);
     };
     raf = requestAnimationFrame(esperar);
     // Rede de segurança: aconteça o que acontecer, a porta sai de cena.
-    timers.push(setTimeout(acabar, 5000));
-    return () => { cancelado = true; cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
+    timers.push(setTimeout(acabar, 13000));
+    return () => { cancelado = true; clearInterval(onda); cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tamEmb = Math.round(H * 0.13);
+  const tamEmb = Math.round(H * 0.165);
   return (
     <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'none' }}>
       <CenaPorta porta={porta} estado="autorizado" verso={(entrada && entrada.verso) || 'passe'} viraAnim={false}
-        folhasFora cenaRef={cenaRef} buracoRef={buracoRef}>
+        folhasFora semChegada cenaRef={cenaRef} buracoRef={buracoRef} rodape={<div style={{ marginTop: 'auto', height: 84, flexShrink: 0 }} />}>
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#8EE6A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
         </div>
@@ -745,7 +780,7 @@ function PortaQueAbre({ entrada, onFim }) {
       {/* As folhas, por cima do buraco (fora do recorte da cena). */}
       {rect && (
         <div className="mjp-ps-folhas" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3 }}>
-          <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={aberto} />
+          <FolhasQuadro key={`onda${saltar}`} W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar > 0 && !aberto} aberto={aberto} />
         </div>
       )}
       {rect && logo && (
