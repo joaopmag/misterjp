@@ -437,7 +437,7 @@ const CSS = `
   .mjp-ps-respira { animation: mjp-ps-respira 2.2s ease-in-out infinite; }
   .mjp-ps-varre { animation: mjp-ps-varre 1s ease-in-out infinite; }
   .mjp-ps-pulso { animation: mjp-ps-pulso 2s ease-in-out infinite; }
-  @keyframes mjp-ps-onda { 0% { transform: scale(.55); opacity: .75; } 80% { opacity: 0; } 100% { transform: scale(1.5); opacity: 0; } }
+  @keyframes mjp-ps-onda { 0% { transform: scale(.55); opacity: .95; } 80% { opacity: 0; } 100% { transform: scale(1.65); opacity: 0; } }
   .mjp-ps-onda { animation: mjp-ps-onda 2.2s cubic-bezier(.2,.6,.3,1) infinite; }
   .mjp-ps-campo::placeholder { color: #5d6b62; }
   .mjp-ps-campo:focus { outline: 2px solid #FFC23D; outline-offset: 1px; }
@@ -609,7 +609,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
         <div style={{ fontSize: 12, color: '#C9D2C5', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome ? (porta.funcao || (porta.souDono ? 'Responsável da equipa' : 'Equipa técnica')) : 'Entra uma vez para a ativar'}</div>
       </div>
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 11, textAlign: 'center', fontSize: 10.5, letterSpacing: '.12em', color: '#9AA89F' }}>ÉPOCA {(porta && porta.epoca) || epocaAtual()}</div>
-      <div style={{ position: 'absolute', top: '-20%', bottom: '-20%', width: '40%', pointerEvents: 'none', background: 'linear-gradient(100deg, transparent, rgba(255,255,255,.22), transparent)', transform: 'skewX(-18deg)', animation: 'mjp-ps-brilho 3s ease-in-out 1.3s infinite' }} />
+      <div style={{ position: 'absolute', top: '-20%', bottom: '-20%', width: '40%', pointerEvents: 'none', background: 'linear-gradient(100deg, transparent, rgba(255,255,255,.22), transparent)', transform: 'skewX(-18deg)', animation: 'mjp-ps-brilho 1.6s ease-in-out 1.1s 1 both' }} />
     </div>
   );
   const costas = (
@@ -668,7 +668,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
           return (
             <div aria-hidden="true" className={faceId === 'pronto' ? 'mjp-ps-respira' : undefined} data-face={faceId} style={{ position: 'absolute', left: 7 + W / 2 - t / 2, top: 7 + H / 2 - t / 2, width: t, height: t, pointerEvents: 'none', zIndex: 2 }}>
               {/* Uma onda de luz sai do círculo central: "toca aqui". */}
-              {faceId === 'pronto' && <div className="mjp-ps-onda" style={{ position: 'absolute', inset: '8%', borderRadius: '50%', border: '2px solid rgba(255,214,120,.9)', boxShadow: '0 0 12px rgba(255,214,120,.5)' }} />}
+              {faceId === 'pronto' && <div className="mjp-ps-onda" style={{ position: 'absolute', inset: '8%', borderRadius: '50%', border: '2.5px solid rgba(255,214,120,.95)', boxShadow: '0 0 16px rgba(255,214,120,.65), inset 0 0 10px rgba(255,214,120,.35)' }} />}
               <div style={canto({ left: 0, top: 0, borderLeftWidth: 3, borderTopWidth: 3, borderTopLeftRadius: 8 })} />
               <div style={canto({ right: 0, top: 0, borderRightWidth: 3, borderTopWidth: 3, borderTopRightRadius: 8 })} />
               <div style={canto({ left: 0, bottom: 0, borderLeftWidth: 3, borderBottomWidth: 3, borderBottomLeftRadius: 8 })} />
@@ -690,8 +690,11 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
       <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW * k, height: CH * k, marginTop: 2, transform: estado === 'verificar' ? 'translateY(-10px)' : 'none', transition: 'transform .4s cubic-bezier(.3,1.4,.5,1)' }}>
        <div style={{ width: CW, height: CH, transform: k !== 1 ? `scale(${k})` : 'none', transformOrigin: '0 0' }}>
         <div className={semChegada ? undefined : 'mjp-ps-cred'} style={{ width: CW, height: CH, perspective: 900 }}>
-          {plano ? <div style={{ position: 'relative', width: CW, height: CH }}>{costas}</div> : (
-            <div style={{ position: 'relative', width: CW, height: CH, transformStyle: 'preserve-3d', transform: virada ? 'rotateY(180deg)' : 'none', transition: 'transform .65s cubic-bezier(.4,.1,.2,1)' }}>
+          {/* Chaves diferentes: o cartão 3D é sempre um elemento NOVO. Se o
+              React reaproveitasse o elemento das costas planas, o navegador
+              via-o sem rotação e a volta para a frente não rodava. */}
+          {plano ? <div key="plano" style={{ position: 'relative', width: CW, height: CH }}>{costas}</div> : (
+            <div key="3d" data-mjp-cartao3d="" style={{ position: 'relative', width: CW, height: CH, transformStyle: 'preserve-3d', transform: virada ? 'rotateY(180deg)' : 'none', transition: 'transform .65s cubic-bezier(.4,.1,.2,1)' }}>
               {frente}
               {costas}
             </div>
@@ -1050,14 +1053,25 @@ export default function AuthScreen({ modo }) {
      viradas, ficam planas (por causa dos campos de texto); primeiro volta
      a montar-se o cartão em 3D, ainda virado, e só no frame seguinte se
      manda rodar para a frente — senão saltava sem rodar. */
+  const [aVirarFrente, setAVirarFrente] = useState(false);
   const deFrente = () => {
     setErro(''); setInfo(''); setPassword('');
     setViraAnim(true);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      setVerso(null);
-      depois(() => setViraAnim(false), 700);
-    }));
+    setAVirarFrente(true);
   };
+  // Montado o cartão 3D ainda virado, obriga-se o navegador a registar
+  // esse estado (lendo o estilo) e só então se manda rodar para a frente.
+  useLayoutEffect(() => {
+    if (!aVirarFrente) return;
+    try { const el = document.querySelector('[data-mjp-cartao3d]'); if (el) void getComputedStyle(el).transform; } catch (e) { /* nada */ }
+    const r = requestAnimationFrame(() => {
+      setVerso(null);
+      setAVirarFrente(false);
+      depois(() => setViraAnim(false), 700);
+    });
+    return () => cancelAnimationFrame(r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aVirarFrente]);
   const voltar = verso
     ? <button type="button" style={ligacao} onClick={deFrente}>{bioAtivo && BIO_TXT.nome === 'Face ID' ? 'Usar o Face ID' : 'Ver a credencial'}</button>
     : bioAtivo
@@ -1078,14 +1092,14 @@ export default function AuthScreen({ modo }) {
       <CenaPorta
         porta={porta} estado={estado} verso={verso} viraAnim={viraAnim} tremer={tremer}
         onEmblema={novaPasse ? null : tocarEmblema} rodape={rodape}
-        /* UM SÓ SINAL A PULSAR, o do sensor que este aparelho tem: no
-           iPhone pulsa o emblema (Face ID); no Android e no computador
-           pulsa a impressão digital do cartão. Os dois funcionam sempre —
-           pedem ambos ao aparelho que confirme quem é. */
-        faceId={!bioAtivo || novaPasse ? 'desligado' : estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'face') ? 'a-ler' : (BIO_TXT.nome === 'Face ID' ? 'pronto' : 'quieto')}
+        /* O DESTAQUE É DO EMBLEMA (Face ID, o "pontapé de saída"): com a
+           entrada rápida ativa, só ele pulsa; o sensor do cartão fica
+           quieto (funciona na mesma). Sem entrada rápida, pulsa a chave do
+           cartão, que é então o único caminho. */
+        faceId={!bioAtivo || novaPasse ? 'desligado' : estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'face') ? 'a-ler' : 'pronto'}
         sensor={novaPasse ? null : {
           modo: estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'digital') ? 'a-ler' : bioAtivo ? 'bio' : 'passe',
-          pulsar: estado === 'fechado' && (!bioAtivo || BIO_TXT.nome !== 'Face ID'),
+          pulsar: estado === 'fechado' && !bioAtivo,
           onClick: estado === 'fechado' ? (bioAtivo ? () => entrarBio('digital') : entrarPasse) : null,
         }}
         onVirar={novaPasse ? null : deFrente}
