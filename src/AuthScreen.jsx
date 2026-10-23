@@ -477,14 +477,16 @@ function garantirEstilos() {
   } catch (e) { /* sem <head>: fica com as fontes do sistema */ }
 }
 
-/* SEM BARRA DE SCROLL NEM FAIXA À DIREITA ENQUANTO A PORTA ESTÁ EM CENA.
+/* SEM BARRA DE SCROLL E SEM FAIXA À VISTA ENQUANTO A PORTA ESTÁ EM CENA.
    A app reserva sempre, à direita, o espaço da barra de scroll
-   (html { scrollbar-gutter: stable }) e o browser mostra esse espaço como
-   uma faixa. Enquanto a porta está em cena, tira-se essa reserva e a página
-   não desliza — é o mesmo que o Portal faz na sua porta (PE_SEM_GUTTER).
-   Na porta que abre por cima da app, a reserva volta no instante em que o
-   campo começa a abrir (`repor`), com a cena presa à largura que tinha,
-   para nada saltar de lado. Ao sair, fica tudo como estava. */
+   (html { scrollbar-gutter: stable }). A porta reserva EXATAMENTE O MESMO
+   espaço — no ecrã de entrada e na porta que abre por cima da app —, por
+   isso a largura nunca muda: nada salta para o lado, nem a cena nem a app
+   quando a porta sai. Essa faixa é pintada da cor escura da cena, e assim
+   não se vê. (A app pinta o fundo com `!important`; aqui usa-se `:root`,
+   mais forte, para a faixa ficar escura.) A página também não desliza.
+   Na porta que abre, a faixa volta à cor da app quando a cena já está
+   quase transparente — só muda a cor, nunca a largura. */
 function useSemFaixa() {
   const repor = useRef(() => {});
   useLayoutEffect(() => {
@@ -492,7 +494,7 @@ function useSemFaixa() {
     try {
       st = document.createElement('style');
       st.setAttribute('data-mjp-ps-sem-faixa', '');
-      st.textContent = 'html, body { overflow: hidden !important; } html { scrollbar-gutter: auto !important; }';
+      st.textContent = 'html:root, html:root body { overflow: hidden !important; background: #0B0F0D !important; } html:root { scrollbar-gutter: stable !important; }';
       document.head.appendChild(st);
     } catch (e) { st = null; }
     repor.current = () => { if (st && st.parentNode) st.parentNode.removeChild(st); st = null; };
@@ -1253,11 +1255,10 @@ function PortaQueAbre({ entrada, onFim }) {
       const b = buracoRef.current ? buracoRef.current.getBoundingClientRect() : null;
       const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
       if (!cena || !b) { reporFaixa.current(); acabar(); return; }
-      // A cena fica presa à largura de agora; só depois a app recupera a
-      // sua reserva à direita (por trás da porta, que ainda está fechada).
-      cena.style.right = 'auto';
-      cena.style.width = `${vw}px`;
-      try { reporFaixa.current(); } catch (e) { /* nada */ }
+      // A reserva da barra de scroll da app só volta NO FIM, com a cena já
+      // transparente (ao desmontar). Devolvida no início da abertura, em
+      // alguns computadores o navegador redesenhava a cena nesse instante
+      // e o aro de luz do teto mudava — parecia subir.
       /* A ABERTURA.
          - O aro de luz e o letreiro apagam-se logo (0,25 s), parados.
          - As folhas deslizam (0,7 s) e, pela abertura do meio-campo, vê-se
@@ -1275,6 +1276,7 @@ function PortaQueAbre({ entrada, onFim }) {
       // desvanecidos à parte, o brilho de baixo do aro sumia primeiro e
       // parecia que a luz subia.)
       cena.style.transition = 'opacity .65s cubic-bezier(.4,0,.2,1) .3s';
+      timers.push(setTimeout(() => { try { reporFaixa.current(); } catch (e) { /* nada */ } }, 750));
       requestAnimationFrame(() => { if (!cancelado) cena.style.opacity = '0'; });
 
       // O emblema voa para a barra da app, se a equipa tiver emblema e a
@@ -1315,8 +1317,12 @@ function PortaQueAbre({ entrada, onFim }) {
       // prazos só começam a contar depois da resposta).
       if (aPerguntar()) { perguntouAte = t; raf = requestAnimationFrame(esperar); return; }
       if (perguntouAte) { ini = Math.max(ini, perguntouAte - 800); perguntouAte = 0; }
-      const pronta = prontaEm && t - prontaEm > 250 && bons >= 4 && t - ini > 800;
-      if (pronta || t - ini > 10000) abrir(); else raf = requestAnimationFrame(esperar);
+      /* Abre pouco depois de a app estar pronta: com 3 frames fluidos
+         seguidos, ou ao fim de 0,6 s mesmo que o computador ainda esteja
+         ocupado (antes esperava sempre 4 frames fluidos e, num computador
+         com a app a trabalhar por trás, chegava a demorar 7 s). */
+      const pronta = prontaEm && t - ini > 800 && ((bons >= 3 && t - prontaEm > 200) || t - prontaEm > 600);
+      if (pronta || t - ini > 6000) abrir(); else raf = requestAnimationFrame(esperar);
     };
     raf = requestAnimationFrame(esperar);
     // Rede de segurança: aconteça o que acontecer, a porta sai de cena
