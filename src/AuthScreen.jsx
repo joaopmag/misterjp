@@ -252,7 +252,9 @@ function emailEscondido(email) {
 function iniciais(nome) {
   const p = String(nome || '').trim().split(/\s+/).filter(Boolean);
   if (!p.length) return '?';
-  return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+  // Um nome curto, de uma só palavra (ex.: "JP"), já são as iniciais.
+  if (p.length === 1) return (p[0].length <= 3 ? p[0] : p[0][0]).toUpperCase();
+  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
 }
 function epocaAtual() {
   const h = new Date(); const y = h.getMonth() >= 6 ? h.getFullYear() : h.getFullYear() - 1;
