@@ -437,6 +437,8 @@ const CSS = `
   .mjp-ps-respira { animation: mjp-ps-respira 2.2s ease-in-out infinite; }
   .mjp-ps-varre { animation: mjp-ps-varre 1s ease-in-out infinite; }
   .mjp-ps-pulso { animation: mjp-ps-pulso 2s ease-in-out infinite; }
+  @keyframes mjp-ps-onda { 0% { transform: scale(.55); opacity: .75; } 80% { opacity: 0; } 100% { transform: scale(1.5); opacity: 0; } }
+  .mjp-ps-onda { animation: mjp-ps-onda 2.2s cubic-bezier(.2,.6,.3,1) infinite; }
   .mjp-ps-campo::placeholder { color: #5d6b62; }
   .mjp-ps-campo:focus { outline: 2px solid #FFC23D; outline-offset: 1px; }
   .mjp-ps button:focus-visible { outline: 2px solid #FFC23D; outline-offset: 2px; }
@@ -494,12 +496,12 @@ function useSemFaixa() {
    baixo) e o quadro fica com o que sobra, até 520 px de largura. Num ecrã
    baixo, primeiro encolhe o quadro; se ainda não chegar, encolhe também a
    credencial (k < 1), nunca abaixo de 70 %. */
-const CW = 172, CH = 248;
+const CW = 214, CH = 268; // cartão de treinador: mais largo, maior no ecrã
 const ALTURA_FIXA =
   18 + 6 + 48 +   // margem de cima e letreiro
   14 + 14 +       // espaço e aro do quadro
   9 + 36 + 2 +    // fita
-  4 + 40 + 44 +   // ligação e "Mais opções"
+  4 + 44 +        // "Mais opções"
   10 + 8;         // margem de baixo e folga
 let MARGENS_TELEMOVEL = null;
 function margensTelemovel() {
@@ -528,6 +530,10 @@ function medir() {
     H = Math.max(130, Math.min(hLargura, livre * 0.46));
     k = Math.max(0.7, Math.min(1, (livre - H) / CH));
   }
+  else {
+    // Ecrã alto: o espaço que sobra vai para o cartão, que cresce até 18 %.
+    k = Math.max(1, Math.min(1.18, (livre - H) / CH));
+  }
   H = Math.round(H);
   return { W: Math.round(H * 348 / 254), H, k };
 }
@@ -547,7 +553,7 @@ function useMedidas() {
    A CENA (o ecrã da porta). Usada pelo ecrã de entrada e, já com sessão,
    pela porta que abre por cima da app.
    =================================================================== */
-function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada, faceId = 'desligado' }) {
+function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada, faceId = 'desligado', sensor = null, onVirar = null }) {
   const { W, H, k } = useMedidas();
   useState(garantirEstilos);
   const cor = (porta && porta.cor) || '#B5393F';
@@ -570,26 +576,43 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
     boxShadow: `0 16px 30px rgba(0,0,0,.6), 0 0 0 2px ${aro}`, transition: 'box-shadow .3s',
     WebkitBackfaceVisibility: 'hidden', backfaceVisibility: 'hidden',
   };
+  /* O SENSOR NO CARTÃO. Onde estava o chip dourado está agora um sensor —
+     como nos cartões com impressão digital. Mostra o símbolo do aparelho
+     (impressão digital, Face ID…) e pulsa: tocar-lhe entra logo. Sem a
+     entrada rápida ativa, mostra uma chave e vira o cartão para a
+     palavra-passe. É o gesto principal do ecrã, à vista, sem legenda. */
+  const sensorModo = sensor ? sensor.modo : null; // 'bio' | 'passe' | 'a-ler' | 'ok'
+  const corSensor = sensorModo === 'ok' ? '#8EE6A0' : '#C9A227';
+  const iconeSensor = sensorModo === 'passe' ? ICONE_CHAVE : ICONE_BIO;
   const frente = (
     <div style={{ ...face, background: 'linear-gradient(160deg,#1E2A22 0%,#2C3A30 55%,#141B16 100%)', color: '#F3ECDA' }}>
       <div style={{ position: 'absolute', left: '50%', top: 8, width: 30, height: 7, marginLeft: -15, borderRadius: 4, background: '#0B0F0D' }} />
-      <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 8px, transparent 8px 16px)' }} />
-      <div style={{ position: 'absolute', right: -36, top: 44, opacity: 0.1 }}>
-        <svg width="160" height="176" viewBox="0 0 40 44" aria-hidden="true"><path d="M2 2 H38 V22 Q38 36 20 42 Q2 36 2 22 Z" fill="#fff" /></svg>
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 8px, transparent 8px 16px)' }} />
+      <div style={{ position: 'absolute', right: -40, top: 60, opacity: 0.08, pointerEvents: 'none' }}>
+        <svg width="180" height="198" viewBox="0 0 40 44" aria-hidden="true"><path d="M2 2 H38 V22 Q38 36 20 42 Q2 36 2 22 Z" fill="#fff" /></svg>
       </div>
-      <div style={{ position: 'absolute', left: 12, right: 10, top: 25, display: 'flex', alignItems: 'center', gap: 7 }}>
-        <Escudo logo={logo} cor={cor} tam={22} />
-        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: '.05em', lineHeight: 1.05, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clube}</div>
+      <div style={{ position: 'absolute', left: 14, right: 12, top: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Escudo logo={logo} cor={cor} tam={24} />
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, fontWeight: 600, letterSpacing: '.05em', lineHeight: 1.05, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clube}</div>
       </div>
-      <div style={{ position: 'absolute', left: 0, right: 0, top: 58, height: 23, background: 'linear-gradient(90deg,#B8902E,#F1D27A 50%,#B8902E)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Oswald', sans-serif", fontSize: 11.5, fontWeight: 600, letterSpacing: '.22em', color: '#1A1408' }}>EQUIPA TÉCNICA</div>
-      <div style={{ position: 'absolute', left: 12, top: 94, width: 56, height: 68, borderRadius: 7, background: '#1A2A1F', border: '2px solid #F3ECDA', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Oswald', sans-serif", fontSize: 24, fontWeight: 600, color: '#FFD86A' }}>{nome ? iniciais(nome) : '?'}</div>
-      <div style={{ position: 'absolute', right: 12, top: 98, width: 30, height: 22, borderRadius: 5, background: 'linear-gradient(135deg,#F1D27A,#B8902E)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.25)' }} />
-      <div style={{ position: 'absolute', left: 12, right: 10, top: 172 }}>
-        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 19, fontWeight: 600, lineHeight: 1.02, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome || 'Por ativar'}</div>
-        <div style={{ fontSize: 11, color: '#C9D2C5', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome ? (porta.funcao || (porta.souDono ? 'Responsável da equipa' : 'Equipa técnica')) : 'Entra uma vez para a ativar'}</div>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 60, height: 25, background: 'linear-gradient(90deg,#B8902E,#F1D27A 50%,#B8902E)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Oswald', sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: '.24em', color: '#1A1408' }}>EQUIPA TÉCNICA</div>
+      <div style={{ position: 'absolute', left: 14, top: 98, width: 64, height: 78, borderRadius: 8, background: '#1A2A1F', border: '2px solid #F3ECDA', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Oswald', sans-serif", fontSize: 28, fontWeight: 600, color: '#FFD86A' }}>{nome ? iniciais(nome) : '?'}</div>
+      {sensor ? (
+        <button type="button" onClick={sensor.onClick || undefined} disabled={!sensor.onClick}
+          aria-label={sensorModo === 'passe' ? 'Entrar com a palavra-passe' : `Entrar com ${BIO_TXT.comArtigo}`}
+          className={sensorModo === 'bio' || sensorModo === 'passe' ? 'mjp-ps-pulso' : undefined}
+          style={{ position: 'absolute', right: 14, top: 104, width: 66, height: 66, borderRadius: 16, zIndex: 2, padding: 0, background: '#0D120F', border: `2px solid ${corSensor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: sensor.onClick ? 'pointer' : 'default', transition: 'border-color .3s' }}>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke={corSensor} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={sensorModo === 'a-ler' ? 'mjp-ps-pisca' : undefined}>{iconeSensor}</svg>
+        </button>
+      ) : (
+        <div style={{ position: 'absolute', right: 14, top: 108, width: 34, height: 26, borderRadius: 5, background: 'linear-gradient(135deg,#F1D27A,#B8902E)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.25)' }} />
+      )}
+      <div style={{ position: 'absolute', left: 14, right: 14, top: 188 }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 21, fontWeight: 600, lineHeight: 1.02, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome || 'Por ativar'}</div>
+        <div style={{ fontSize: 12, color: '#C9D2C5', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome ? (porta.funcao || (porta.souDono ? 'Responsável da equipa' : 'Equipa técnica')) : 'Entra uma vez para a ativar'}</div>
       </div>
-      <div style={{ position: 'absolute', left: 12, bottom: 9, fontSize: 10, letterSpacing: '.12em', color: '#9AA89F' }}>ÉPOCA {(porta && porta.epoca) || epocaAtual()}</div>
-      <div style={{ position: 'absolute', top: '-20%', bottom: '-20%', width: '40%', background: 'linear-gradient(100deg, transparent, rgba(255,255,255,.28), transparent)', transform: 'skewX(-18deg)', animation: 'mjp-ps-brilho 3s ease-in-out 1.3s infinite' }} />
+      <div style={{ position: 'absolute', left: 14, bottom: 11, fontSize: 10.5, letterSpacing: '.12em', color: '#9AA89F' }}>ÉPOCA {(porta && porta.epoca) || epocaAtual()}</div>
+      <div style={{ position: 'absolute', top: '-20%', bottom: '-20%', width: '40%', pointerEvents: 'none', background: 'linear-gradient(100deg, transparent, rgba(255,255,255,.22), transparent)', transform: 'skewX(-18deg)', animation: 'mjp-ps-brilho 3s ease-in-out 1.3s infinite' }} />
     </div>
   );
   const costas = (
@@ -597,6 +620,12 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
       <div style={{ position: 'absolute', left: '50%', top: 8, width: 30, height: 7, marginLeft: -15, borderRadius: 4, background: '#0B0F0D' }} />
       <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 3, background: 'linear-gradient(90deg,#B8902E,#F1D27A 50%,#B8902E)' }} />
       {children}
+      {onVirar && (
+        <button type="button" onClick={onVirar} aria-label="Ver a frente da credencial" title="Virar a credencial"
+          style={{ position: 'absolute', right: 8, top: 8, width: 30, height: 30, borderRadius: 15, zIndex: 3, padding: 0, background: 'rgba(13,18,15,.85)', border: '1px solid #3A4440', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C9A227" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONE_VIRAR}</svg>
+        </button>
+      )}
     </div>
   );
 
@@ -641,6 +670,8 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
           const canto = (o) => ({ position: 'absolute', width: c, height: c, borderColor: corC, borderStyle: 'solid', borderWidth: 0, transition: 'border-color .3s', ...o });
           return (
             <div aria-hidden="true" className={faceId === 'pronto' ? 'mjp-ps-respira' : undefined} style={{ position: 'absolute', left: 7 + W / 2 - t / 2, top: 7 + H / 2 - t / 2, width: t, height: t, pointerEvents: 'none', zIndex: 2 }}>
+              {/* Uma onda de luz sai do círculo central: "toca aqui". */}
+              {faceId === 'pronto' && <div className="mjp-ps-onda" style={{ position: 'absolute', inset: '8%', borderRadius: '50%', border: '2px solid rgba(255,214,120,.9)', boxShadow: '0 0 12px rgba(255,214,120,.5)' }} />}
               <div style={canto({ left: 0, top: 0, borderLeftWidth: 3, borderTopWidth: 3, borderTopLeftRadius: 8 })} />
               <div style={canto({ right: 0, top: 0, borderRightWidth: 3, borderTopWidth: 3, borderTopRightRadius: 8 })} />
               <div style={canto({ left: 0, bottom: 0, borderLeftWidth: 3, borderBottomWidth: 3, borderBottomLeftRadius: 8 })} />
@@ -661,7 +692,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
         </svg>
       </div>
       <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW * k, height: CH * k, marginTop: 2, transform: estado === 'verificar' ? 'translateY(-10px)' : 'none', transition: 'transform .4s cubic-bezier(.3,1.4,.5,1)' }}>
-       <div style={{ width: CW, height: CH, transform: k < 1 ? `scale(${k})` : 'none', transformOrigin: '0 0' }}>
+       <div style={{ width: CW, height: CH, transform: k !== 1 ? `scale(${k})` : 'none', transformOrigin: '0 0' }}>
         <div className={semChegada ? undefined : 'mjp-ps-cred'} style={{ width: CW, height: CH, perspective: 900 }}>
           {plano ? <div style={{ position: 'relative', width: CW, height: CH }}>{costas}</div> : (
             <div style={{ position: 'relative', width: CW, height: CH, transformStyle: 'preserve-3d', transform: virada ? 'rotateY(180deg)' : 'none', transition: 'transform .65s cubic-bezier(.4,.1,.2,1)' }}>
@@ -691,6 +722,15 @@ const ICONE_DEDO = (
     <path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
     <path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
   </>
+);
+const ICONE_CHAVE = (
+  <>
+    <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" />
+    <circle cx="16.5" cy="7.5" r="1.2" />
+  </>
+);
+const ICONE_VIRAR = (
+  <><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></>
 );
 // Nas costas da credencial: o símbolo do sensor que este aparelho tem.
 const ICONE_BIO = BIO_TXT.nome === 'Face ID' ? ICONE_FACE : ICONE_DEDO;
@@ -1020,7 +1060,6 @@ export default function AuthScreen({ modo }) {
 
   const rodape = novaPasse ? null : (
     <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 'auto', paddingTop: 4, flexShrink: 0 }}>
-      {voltar}
       <button type="button" onClick={() => setOpcoes(true)} style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: '#8A9A8C', fontSize: 14, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
         <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
       </button>
@@ -1033,6 +1072,11 @@ export default function AuthScreen({ modo }) {
         porta={porta} estado={estado} verso={verso} viraAnim={viraAnim} tremer={tremer}
         onEmblema={novaPasse ? null : tocarEmblema} rodape={rodape}
         faceId={!bioAtivo || novaPasse ? 'desligado' : estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'face') ? 'a-ler' : 'pronto'}
+        sensor={novaPasse ? null : {
+          modo: estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'digital') ? 'a-ler' : bioAtivo ? 'bio' : 'passe',
+          onClick: estado === 'fechado' ? (bioAtivo ? () => entrarBio('digital') : entrarPasse) : null,
+        }}
+        onVirar={novaPasse ? null : deFrente}
       >
         {conteudoVerso}
       </CenaPorta>
@@ -1240,7 +1284,8 @@ function PortaQueAbre({ entrada, onFim }) {
     <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'none' }}>
       <CenaPorta porta={porta} estado="autorizado" verso={entrada ? (entrada.verso || null) : 'passe'} viraAnim={false}
         folhasFora semChegada cenaRef={cenaRef} buracoRef={buracoRef} rodape={<div style={{ marginTop: 'auto', height: 84, flexShrink: 0 }} />}
-        faceId={bioOk && !aberto ? 'ok' : 'desligado'}>
+        faceId={bioOk && !aberto ? 'ok' : 'desligado'}
+        sensor={{ modo: 'ok', onClick: null }}>
         {(pergunta === 'perguntar' || pergunta === 'a-ativar') ? (
           <div style={{ position: 'absolute', inset: 0, padding: '24px 12px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, pointerEvents: 'auto' }}>
             <div style={{ ...titulo, width: '100%' }}>ENTRADA RÁPIDA</div>
