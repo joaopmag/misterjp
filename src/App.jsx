@@ -19509,7 +19509,7 @@ function PranchetaOnze({ periodo, formacao, onTrocar, onTrocarDireto }) {
 
 /* `diaInicial` chega preenchido quando o Simulador é aberto do cartão de
    um dia no Planeamento, que passou a ser a única forma de lá chegar. */
-function Simulador({ players, exercises, sessions, setSessions, matches, clinico, diaInicial }) {
+function Simulador({ players, exercises, sessions, setSessions, matches, setMatches, clinico, diaInicial }) {
   const isNarrow = useIsMobile(760);
   const [modo, setModo] = useState('treino'); // 'treino' | 'amigavel'
   const [presentIds, setPresentIds] = useState([]);
@@ -19839,6 +19839,30 @@ function Simulador({ players, exercises, sessions, setSessions, matches, clinico
       jogo: modo === 'amigavel' ? serializarResultado(jogo) : null,
     };
     setSessions(prev => prev.map(x => (x.id === alvo.id ? { ...x, equipasSimulador: registo, simuladorConfig: configSimulador } : x)));
+    /* O ONZE ESCOLHIDO AQUI É O ONZE DO JOGO. Num dia com um jogo
+       verdadeiro (oficial ou amigável), o onze do primeiro período passa
+       também para a ficha do jogo — titulares, formação e o lugar de cada
+       um. Daí segue para os Jogos e para a Convocatória impressa, como se
+       tivesse sido escolhido lá. Antes ficava só no Planeamento. */
+    if (modo === 'amigavel' && primeiroPeriodo && setMatches) {
+      const real = jogoRealDaSessao(alvo, matches);
+      const lugaresF = FORMACOES[jogo.formacao];
+      if (real && lugaresF) {
+        const ehDoPlantel = (id) => (players || []).some(p => p.id === id);
+        const livres = primeiroPeriodo.onze.filter(l => l.jogador && ehDoPlantel(l.jogador.id));
+        const alinhamento = lugaresF.map(lugar => {
+          const k = livres.findIndex(l => l.lugar === lugar);
+          if (k < 0) return null;
+          const [l] = livres.splice(k, 1);
+          return l.jogador.id;
+        });
+        livres.forEach(l => { const i = alinhamento.indexOf(null); if (i >= 0) alinhamento[i] = l.jogador.id; });
+        const starters = alinhamento.filter(Boolean);
+        if (starters.length) {
+          setMatches(prev => prev.map(m => (m.id === real.id ? { ...m, starters, formacao: jogo.formacao, alinhamento } : m)));
+        }
+      }
+    }
     setGuardado(true);
     setTimeout(() => setGuardado(false), 2500);
   };
@@ -21307,7 +21331,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       ? `<p class="desc"><strong>À experiência:</strong> ${escapeHtmlText(convidadosSessao.join(', '))}</p>`
       : '';
     const extraHtml = `${jogoHtml}${equipasHtml}${presencasHtml}${convidadosHtml}`;
-    const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(s) ? 'Amigável' : (s.focus || 'Sessão de treino'));
+    const sessionTitle = s.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(s) ? tituloDiaDeJogo(jogoDaSessao(s)) : (s.focus || 'Sessão de treino'));
     const html = buildShareableHtmlDoc({ title: sessionTitle, metaLines: meta, blocks: exBlocks, extraHtml });
     shareOrDownloadHtml(`${(s.focus || 'sessao').replace(/[^\w-]+/g, '_')}_${s.date}.html`, html, sessionTitle);
   };
@@ -21811,6 +21835,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
               sessions={sessions}
               setSessions={setSessions}
               matches={matches}
+              setMatches={setMatches}
               clinico={clinico}
               diaInicial={simuladorDia}
             />
@@ -22063,7 +22088,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
       {printSession && createPortal(
         <div className="print-sheet">
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>
-            {printSession.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(printSession) ? 'Amigável' : (printSession.focus || 'Sessão de treino'))}
+            {printSession.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(printSession) ? tituloDiaDeJogo(jogoDaSessao(printSession)) : (printSession.focus || 'Sessão de treino'))}
           </h2>
           <p style={{ margin: '0 0 18px', fontSize: 13 }}>
             {[fmtDate(printSession.date), printSession.phase, tempoJogoText(printSession), intensityText(printSession), printSession.opponent && `vs ${printSession.opponent}`].filter(Boolean).join(' · ')}
@@ -22147,7 +22172,7 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
           <h2 style={{ margin: '0 0 4px', fontSize: 24 }}>{fmtDate(printDayDate)}</h2>
           {sessions.filter(s => s.date === printDayDate).map(s => (
             <div key={s.id} style={{ marginBottom: 24 }}>
-              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(s) ? 'Amigável' : (s.focus || 'Sessão de treino'))}</h3>
+              <h3 style={{ fontSize: 17, margin: '0 0 4px' }}>{s.phase === 'Descanso' ? 'Folga' : (ehDiaDeJogo(s) ? tituloDiaDeJogo(jogoDaSessao(s)) : (s.focus || 'Sessão de treino'))}</h3>
               <p style={{ margin: '0 0 12px', fontSize: 13 }}>
                 {[s.phase, tempoJogoText(s), intensityText(s), s.opponent && `vs ${s.opponent}`].filter(Boolean).join(' · ')}
               </p>
@@ -22871,7 +22896,12 @@ function equipaDoAmigavel({ session, jogo, players }) {
     const formacao = jogo.formacao || '4-3-3';
     const eventos = eventosDoJogo(jogo, players || []);
     const d = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, jogo.alinhamento);
-    const porPosicao = sortByPosition(eventos.titulares.map(x => x.player))
+    /* Pela ORDEM DO CAMPO (GR, DD, DC, DC, DE, MC…), a mesma do desenho e
+       da ficha do jogo. Antes seguia a posição de cada um no Plantel, e a
+       lista saía numa ordem que não batia com o campo desenhado por cima. */
+    const ordemCampo = d.colocados.filter(Boolean);
+    eventos.titulares.forEach(x => { if (!ordemCampo.some(p => p.id === x.player.id)) ordemCampo.push(x.player); });
+    const porPosicao = ordemCampo
       .map(p => eventos.titulares.find(x => x.player.id === p.id))
       .filter(Boolean);
     return {
@@ -27021,6 +27051,29 @@ function proximoEstadoPresenca(atual) {
 
 function isFriendlyMatch(match) {
   return competitionLabel(match && match.competition) === FRIENDLY;
+}
+
+/* O TÍTULO DE UM DIA DE JOGO no Planeamento (ficha impressa e partilhada).
+   Antes era sempre "Amigável", mesmo num jogo oficial de campeonato. Agora
+   diz o que o jogo é: "Amigável", ou a competição e a jornada. */
+function tituloDiaDeJogo(jogo) {
+  if (!jogo || isFriendlyMatch(jogo)) return FRIENDLY;
+  const comp = competitionLabel(jogo.competition);
+  return [comp, jogo.jornada].filter(Boolean).join(' · ') || 'Jogo';
+}
+
+/* OS TITULARES DE UM JOGO, PELA ORDEM DO CAMPO (GR, DD, DC, DC, DE, MC…),
+   tal como estão na ficha do jogo — com o alinhamento escolhido à mão,
+   quando existe. É a ordem que as folhas impressas usam para o onze. */
+function titularesPorLugar(jogo, players) {
+  const ids = (jogo && jogo.starters) || [];
+  const titulares = ids.map(id => (players || []).find(p => p.id === id)).filter(Boolean);
+  if (!titulares.length) return [];
+  const { colocados } = distribuirOnzeNoCampo(titulares, jogo.formacao || '4-3-3', jogo.alinhamento);
+  const ordem = colocados.filter(Boolean);
+  // Quem não coube num lugar da formação (raro) vai no fim, para não se perder.
+  titulares.forEach(p => { if (!ordem.some(x => x.id === p.id)) ordem.push(p); });
+  return ordem;
 }
 
 /* Todo o jogo é, para efeitos de planeamento, uma sessão de trabalho: fica
@@ -46730,12 +46783,23 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
               );
             }
 
-            // Ficha técnica: onze, banco e braçadeiras.
-            const onze = ids.slice(0, 11);
+            /* Ficha técnica: onze, banco e braçadeiras.
+
+               O ONZE É O DO JOGO. Quando o jogo desta convocatória já tem
+               titulares escolhidos (na ficha do jogo ou no Planeamento), o
+               onze impresso são esses, pela ordem do campo; o banco são os
+               restantes convocados. Antes eram sempre os onze primeiros da
+               lista de convocados, e mudar o onze no jogo não mudava nada
+               aqui. Sem titulares no jogo, mantém-se a regra antiga. */
+            const jogoLigado = (matches || []).find(m => m.sourceConvocatoriaId === printConvocatoria.id)
+              || (printConvocatoria.jogoId ? (matches || []).find(m => m.id === printConvocatoria.jogoId) : null)
+              || (matches || []).find(m => m.date === printConvocatoria.data && !isFriendlyMatch(m));
+            const onzeDoJogo = jogoLigado ? titularesPorLugar(jogoLigado, players).map(p => p.id) : [];
+            const onze = onzeDoJogo.length ? onzeDoJogo : ids.slice(0, 11);
             // Sem limite — antes parava nos 20 primeiros (onze + 9 do
             // banco), e com convocatórias maiores (ex.: pré-época, com
             // 35) os últimos ficavam de fora da ficha sem aviso nenhum.
-            const banco = ids.slice(11);
+            const banco = onzeDoJogo.length ? ids.filter(id => !onzeDoJogo.includes(id)) : ids.slice(11);
             return (
               <>
                 {/* UMA COLUNA, e não uma grelha que se espalha pela folha.

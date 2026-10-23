@@ -603,14 +603,15 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
   return (
     <div ref={cenaRef} className="mjp-ps" style={{
       position: 'fixed', inset: 0, overflow: 'hidden', background: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)',
+      ...(folhasFora ? { willChange: 'opacity' } : null),
       fontFamily: "'Inter', system-ui, sans-serif", color: '#F3ECDA', display: 'flex', flexDirection: 'column', alignItems: 'center',
       paddingTop: 'calc(18px + env(safe-area-inset-top, 0px))', paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box',
     }}>
       {/* luz de teto */}
-      <div aria-hidden="true" style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, transform: 'translateX(-50%)', borderRadius: '50%', border: '3px solid rgba(255,230,160,.75)', boxShadow: '0 0 24px 6px rgba(255,230,160,.22)' }} />
+      <div data-mjp-topo="" aria-hidden="true" style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, transform: 'translateX(-50%)', borderRadius: '50%', border: '3px solid rgba(255,230,160,.75)', boxShadow: '0 0 24px 6px rgba(255,230,160,.22)' }} />
 
       {/* letreiro (a mesma linguagem do Portal) */}
-      <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 10, background: '#0D120F', border: '1px solid #3A4440', borderRadius: 8, padding: '6px 16px', boxShadow: '0 0 16px rgba(255,194,61,.15)', flexShrink: 0, marginTop: 6 }}>
+      <div data-mjp-topo="" style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 10, background: '#0D120F', border: '1px solid #3A4440', borderRadius: 8, padding: '6px 16px', boxShadow: '0 0 16px rgba(255,194,61,.15)', flexShrink: 0, marginTop: 6 }}>
         <span className={estado === 'verificar' ? 'mjp-ps-pisca' : undefined} style={{ width: 9, height: 9, borderRadius: '50%', background: sinal, boxShadow: `0 0 8px ${sinal}`, transition: 'background .3s' }} />
         <div style={{ lineHeight: 1.1 }}>
           <div style={{ fontSize: 11, letterSpacing: '.18em', color: verde ? '#8EE6A0' : '#8A9A8C', transition: 'color .3s' }}>{letreiro}</div>
@@ -961,7 +962,7 @@ export default function AuthScreen({ modo }) {
        equipa. O link por email fica para quem tem mesmo correio. */
     conteudoVerso = (
       <div style={formulario}>
-        <div style={titulo}>PERDI A PALAVRA-PASSE</div>
+        <div style={titulo}>NOVA PALAVRA-PASSE</div>
         <div style={{ fontSize: 12, color: '#C9D2C5', lineHeight: 1.45, textAlign: 'center', marginTop: 8 }}>Pede uma nova ao responsável da equipa. Ele escolhe-a em <b style={{ color: '#F3ECDA', fontWeight: 600 }}>Gerir equipa</b> e diz-ta.</div>
         <div style={{ marginTop: 'auto', fontSize: 10.5, color: '#9AA8A0', textAlign: 'center', lineHeight: 1.4 }}>O teu email recebe correio?</div>
         <button type="button" onClick={() => mudarVerso('recuperar-email')} style={{ marginTop: 5, height: 40, flexShrink: 0, borderRadius: 8, background: 'transparent', border: '1.5px solid #C9A227', color: '#E2C04A', fontFamily: "'Oswald', sans-serif", fontSize: 13, fontWeight: 500, letterSpacing: '.12em', cursor: 'pointer' }}>ENVIAR LINK</button>
@@ -1039,7 +1040,7 @@ export default function AuthScreen({ modo }) {
         <div onClick={() => setOpcoes(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px', boxSizing: 'border-box' }}>
           <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: '#202F22', border: '1px solid #3A4F3D', borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' }}>
             <button type="button" style={opcao} onClick={() => { setOpcoes(false); entrarPasse(); }}>Entrar com a palavra-passe</button>
-            <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('recuperar'); }}>Perdi a palavra-passe</button>
+            <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('recuperar'); }}>Esqueci-me da palavra-passe</button>
             {conhecido && <button type="button" style={opcao} onClick={outraConta}>Entrar com outra conta</button>}
             <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('criar'); }}>Criar conta</button>
             <button type="button" style={{ ...opcao, textAlign: 'center', background: 'transparent', border: 'none', color: '#8FA091' }} onClick={() => setOpcoes(false)}>Fechar</button>
@@ -1070,6 +1071,7 @@ function PortaQueAbre({ entrada, onFim }) {
   const cenaRef = useRef(null);
   const buracoRef = useRef(null);
   const vooRef = useRef(null);
+  const folhasRef = useRef(null);
   const { W, H } = useMedidas();
   const cor = (porta && porta.cor) || '#B5393F';
   const logo = (porta && porta.logo) || '';
@@ -1135,7 +1137,11 @@ function PortaQueAbre({ entrada, onFim }) {
 
   useLayoutEffect(() => {
     const el = buracoRef.current;
-    if (el) { const r = el.getBoundingClientRect(); setRect({ left: r.left, top: r.top, width: r.width, height: r.height }); }
+    if (el) {
+      const r = el.getBoundingClientRect();
+      setRect({ left: r.left, top: r.top, width: r.width, height: r.height });
+      furarCena(cenaRef.current, r, document.documentElement.clientWidth || window.innerWidth, window.innerHeight);
+    }
   }, []);
 
   useEffect(() => {
@@ -1160,29 +1166,25 @@ function PortaQueAbre({ entrada, onFim }) {
       cena.style.right = 'auto';
       cena.style.width = `${vw}px`;
       try { reporFaixa.current(); } catch (e) { /* nada */ }
-      /* A ABERTURA, por ordem:
-         - as folhas deslizam (0,8 s) e, pela abertura do meio-campo, vê-se
-           já a app verdadeira;
-         - ao mesmo tempo o buraco da porta vai crescendo até ao ecrã todo
-           (1,1 s), sempre a mostrar mais app;
-         - o resto da cena (letreiro, aro, credencial) só se apaga depois de
-           a abertura ir a meio, para não se perder a porta de vista. */
-      cena.style.transition = 'opacity .6s cubic-bezier(.4,0,.2,1) .4s';
-      cena.style.opacity = '0';
-      let comBuraco = false;
-      try { comBuraco = !!(window.CSS && CSS.supports && CSS.supports('clip-path', "path(evenodd, 'M0 0H1V1H0Z')")); } catch (e) { comBuraco = false; }
-      if (comBuraco) {
-        const t0 = performance.now() + 120, dur = 1100;
-        const curva = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
-        const passo = (t) => {
-          if (cancelado) return;
-          const p = Math.max(0, Math.min(1, (t - t0) / dur)), q = curva(p);
-          const x = b.left * (1 - q), y = b.top * (1 - q), w = b.width + (vw - b.width) * q, h = b.height + (vh - b.height) * q;
-          cena.style.clipPath = `path(evenodd, 'M0 0H${vw}V${vh}H0Z M${x} ${y}h${w}v${h}h${-w}Z')`;
-          if (p < 1) requestAnimationFrame(passo);
-        };
-        requestAnimationFrame(passo);
-      }
+      /* A ABERTURA.
+         - O aro de luz e o letreiro apagam-se logo (0,25 s), parados.
+         - As folhas deslizam (0,7 s) e, pela abertura do meio-campo, vê-se
+           desde o primeiro instante a app verdadeira: a cena tem um buraco
+           FIXO do tamanho do campo (máscara posta quando a porta aparece).
+         - A cena à volta (aro do quadro, credencial, fundo) desvanece e a
+           app fica inteira.
+         Só se anima `transform` (folhas) e `opacity` (cena): a placa
+         gráfica faz isso sem redesenhar nada, por isso é fluido em qualquer
+         ecrã. Medido num Chromium: nenhum frame acima de 50 ms, do
+         telemóvel ao monitor de 1920 px. (Um buraco a crescer frame a frame,
+         ou um zoom da cena, obrigavam a redesenhar a cena e davam saltos.) */
+      furarCena(cena, b, vw, vh); // já posta à chegada; repete-se só se faltar
+      Array.from(cena.querySelectorAll('[data-mjp-topo]')).forEach(el => {
+        el.style.transition = 'opacity .25s ease-out';
+        el.style.opacity = '0';
+      });
+      cena.style.transition = 'opacity .65s cubic-bezier(.4,0,.2,1) .3s';
+      requestAnimationFrame(() => { if (!cancelado) cena.style.opacity = '0'; });
 
       // O emblema voa para a barra da app, se a equipa tiver emblema e a
       // barra o mostrar.
@@ -1238,7 +1240,7 @@ function PortaQueAbre({ entrada, onFim }) {
     <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'none' }}>
       <CenaPorta porta={porta} estado="autorizado" verso={entrada ? (entrada.verso || null) : 'passe'} viraAnim={false}
         folhasFora semChegada cenaRef={cenaRef} buracoRef={buracoRef} rodape={<div style={{ marginTop: 'auto', height: 84, flexShrink: 0 }} />}
-        faceId={bioOk ? 'ok' : 'desligado'}>
+        faceId={bioOk && !aberto ? 'ok' : 'desligado'}>
         {(pergunta === 'perguntar' || pergunta === 'a-ativar') ? (
           <div style={{ position: 'absolute', inset: 0, padding: '24px 12px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, pointerEvents: 'auto' }}>
             <div style={{ ...titulo, width: '100%' }}>ENTRADA RÁPIDA</div>
@@ -1260,7 +1262,7 @@ function PortaQueAbre({ entrada, onFim }) {
       </CenaPorta>
       {/* As folhas, por cima do buraco (fora do recorte da cena). */}
       {rect && (
-        <div className="mjp-ps-folhas" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3 }}>
+        <div ref={folhasRef} className="mjp-ps-folhas" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3 }}>
           <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={aberto} />
         </div>
       )}
@@ -1274,6 +1276,22 @@ function PortaQueAbre({ entrada, onFim }) {
       )}
     </div>
   );
+}
+
+/* O buraco da cena: quatro faixas à volta do campo (máscara). Fica posto
+   desde que a porta aparece — as folhas tapam-no enquanto está fechada —
+   para que, ao abrir, a placa gráfica só tenha de mover e apagar. */
+function furarCena(cena, b, vw, vh) {
+  if (!cena || !b || cena.dataset.furada === '1') return;
+  const camadas = 'linear-gradient(#000,#000),linear-gradient(#000,#000),linear-gradient(#000,#000),linear-gradient(#000,#000)';
+  const px = (n) => `${Math.max(0, Math.round(n))}px`;
+  const tam = [`${px(vw)} ${px(b.top)}`, `${px(vw)} ${px(vh - b.top - b.height)}`, `${px(b.left)} ${px(b.height)}`, `${px(vw - b.left - b.width)} ${px(b.height)}`].join(',');
+  const pos = [`0px 0px`, `0px ${px(b.top + b.height)}`, `0px ${px(b.top)}`, `${px(b.left + b.width)} ${px(b.top)}`].join(',');
+  Object.assign(cena.style, {
+    webkitMaskImage: camadas, maskImage: camadas, webkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+    webkitMaskSize: tam, maskSize: tam, webkitMaskPosition: pos, maskPosition: pos,
+  });
+  cena.dataset.furada = '1';
 }
 
 // Qualquer erro na porta faz só a porta desaparecer — nunca a app.
