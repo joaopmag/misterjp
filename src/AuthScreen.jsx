@@ -285,12 +285,49 @@ function useSemFaixa() {
   return repor;
 }
 
-/* Medidas do quadro: cabe no ecrã sem deslizar, no telemóvel e no
-   computador (o resto do ecrã ocupa cerca de 450 px de altura). */
+/* MEDIDAS: TUDO CABE NO ECRÃ, SEM DESLIZAR, ATÉ AO "MAIS OPÇÕES".
+   A cena é uma coluna fixa: letreiro, quadro, fita, credencial e, em
+   baixo, a ligação e o "⋯ Mais opções". Conta-se o espaço que cada parte
+   ocupa de verdade (incluindo as margens do telemóvel, em cima e em
+   baixo) e o quadro fica com o que sobra, até 520 px de largura. Num ecrã
+   baixo, primeiro encolhe o quadro; se ainda não chegar, encolhe também a
+   credencial (k < 1), nunca abaixo de 70 %. */
+const CW = 172, CH = 248;
+const ALTURA_FIXA =
+  18 + 6 + 48 +   // margem de cima e letreiro
+  14 + 14 +       // espaço e aro do quadro
+  9 + 36 + 2 +    // fita
+  4 + 40 + 44 +   // ligação e "Mais opções"
+  10 + 8;         // margem de baixo e folga
+let MARGENS_TELEMOVEL = null;
+function margensTelemovel() {
+  if (MARGENS_TELEMOVEL) return MARGENS_TELEMOVEL;
+  let cima = 0, baixo = 0;
+  try {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)';
+    document.body.appendChild(d);
+    const cs = getComputedStyle(d);
+    cima = parseFloat(cs.paddingTop) || 0; baixo = parseFloat(cs.paddingBottom) || 0;
+    d.remove();
+  } catch (e) { /* sem margens */ }
+  MARGENS_TELEMOVEL = { cima, baixo };
+  return MARGENS_TELEMOVEL;
+}
 function medir() {
-  const vw = window.innerWidth, vh = window.innerHeight;
-  const W = Math.round(Math.max(250, Math.min(vw * 0.9, 520, (vh - 450) * (348 / 254))));
-  return { W, H: Math.round(W * 254 / 348) };
+  const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
+  const m = margensTelemovel();
+  const livre = vh - ALTURA_FIXA - m.cima - m.baixo;           // para o quadro + credencial
+  const hLargura = Math.min(vw * 0.9, 520) * 254 / 348;          // o maior que a largura deixa
+  let H = Math.min(hLargura, livre - CH);
+  let k = 1;
+  if (H < 165) {
+    // Ecrã baixo: o quadro fica com cerca de metade e a credencial encolhe.
+    H = Math.max(130, Math.min(hLargura, livre * 0.46));
+    k = Math.max(0.7, Math.min(1, (livre - H) / CH));
+  }
+  H = Math.round(H);
+  return { W: Math.round(H * 348 / 254), H, k };
 }
 function useMedidas() {
   const [m, setM] = useState(medir);
@@ -302,14 +339,14 @@ function useMedidas() {
   return m;
 }
 
-const CW = 172, CH = 248;
+
 
 /* ===================================================================
    A CENA (o ecrã da porta). Usada pelo ecrã de entrada e, já com sessão,
    pela porta que abre por cima da app.
    =================================================================== */
 function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada }) {
-  const { W, H } = useMedidas();
+  const { W, H, k } = useMedidas();
   useState(garantirEstilos);
   const cor = (porta && porta.cor) || '#B5393F';
   const escura = mistura(cor, '0d120f', 0.4);
@@ -404,7 +441,8 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
           <rect x="98" y="29" width="24" height="12" rx="3" fill="#C9CFC6" />
         </svg>
       </div>
-      <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW, height: CH, marginTop: 2, transform: estado === 'verificar' ? 'translateY(-10px)' : 'none', transition: 'transform .4s cubic-bezier(.3,1.4,.5,1)' }}>
+      <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW * k, height: CH * k, marginTop: 2, transform: estado === 'verificar' ? 'translateY(-10px)' : 'none', transition: 'transform .4s cubic-bezier(.3,1.4,.5,1)' }}>
+       <div style={{ width: CW, height: CH, transform: k < 1 ? `scale(${k})` : 'none', transformOrigin: '0 0' }}>
         <div className={semChegada ? undefined : 'mjp-ps-cred'} style={{ width: CW, height: CH, perspective: 900 }}>
           {plano ? <div style={{ position: 'relative', width: CW, height: CH }}>{costas}</div> : (
             <div style={{ position: 'relative', width: CW, height: CH, transformStyle: 'preserve-3d', transform: virada ? 'rotateY(180deg)' : 'none', transition: 'transform .65s cubic-bezier(.4,.1,.2,1)' }}>
@@ -413,6 +451,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
             </div>
           )}
         </div>
+       </div>
       </div>
 
       {rodape}
