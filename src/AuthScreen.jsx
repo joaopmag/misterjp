@@ -93,11 +93,11 @@ function enderecoLimpo() {
    Neste aparelho guarda-se só QUE conta o ativou e o id da chave
    (`mjp-staff-bio`). A cara e o dedo nunca saem do telemóvel. */
 const CHAVE_BIO = 'mjp-staff-bio';
-// Pista do emblema: mostra-se nas 3 primeiras visitas deste aparelho com a
+// Pista do emblema: mostra-se nas 5 primeiras visitas deste aparelho com a
 // entrada rápida ativa, e acaba de vez na primeira entrada pelo emblema.
-const PISTA_EMBLEMA = 'mjp-staff-pista-emblema';
+const PISTA_EMBLEMA = 'mjp-staff-pista-emblema-2';
 function pistaEmblemaAtiva() {
-  try { const v = localStorage.getItem(PISTA_EMBLEMA); return v !== 'feita' && Number(v || 0) < 3; } catch (e) { return false; }
+  try { const v = localStorage.getItem(PISTA_EMBLEMA); return v !== 'feita' && Number(v || 0) < 5; } catch (e) { return false; }
 }
 function contarPistaEmblema() { try { const v = localStorage.getItem(PISTA_EMBLEMA); if (v !== 'feita') localStorage.setItem(PISTA_EMBLEMA, String(Number(v || 0) + 1)); } catch (e) { /* nada */ } }
 function acabarPistaEmblema() { try { localStorage.setItem(PISTA_EMBLEMA, 'feita'); } catch (e) { /* nada */ } }
@@ -504,6 +504,19 @@ function useSemFaixa() {
       document.head.appendChild(st);
     } catch (e) { st = null; }
     repor.current = () => { if (st && st.parentNode) st.parentNode.removeChild(st); st = null; };
+    /* Igualar à app: lê a reserva da barra de scroll que a app tem SEM a
+       porta (desliga a regra da porta por um instante, sem pintar) e passa
+       a usar a mesma. Assim, quando a porta sai, nada muda de largura. */
+    repor.igualarApp = () => {
+      if (!st) return;
+      try {
+        st.disabled = true;
+        const g = getComputedStyle(document.documentElement).scrollbarGutter || '';
+        st.disabled = false;
+        const natural = /stable/.test(g) ? 'stable' : 'auto';
+        st.textContent = `html:root, html:root body { overflow: hidden !important; background: #0B0F0D !important; } html:root { scrollbar-gutter: ${natural} !important; }`;
+      } catch (e) { try { st.disabled = false; } catch (e2) { /* nada */ } }
+    };
     return () => repor.current();
   }, []);
   return repor;
@@ -1261,6 +1274,17 @@ function PortaQueAbre({ entrada, onFim }) {
       const b = buracoRef.current ? buracoRef.current.getBoundingClientRect() : null;
       const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
       if (!cena || !b) { reporFaixa.current(); acabar(); return; }
+      /* A cena fica presa à largura que tem agora e a reserva da barra de
+         scroll passa a ser a MESMA da app. Se isso mudar a largura útil,
+         muda já — por trás das folhas ainda fechadas — e a cena, presa,
+         não se mexe. No fim, ao sair, já não há nada para mudar (antes, a
+         cena deslocava-se uns píxeis para o lado a meio do desvanecer). */
+      try {
+        const largura = cena.getBoundingClientRect().width;
+        cena.style.right = 'auto';
+        cena.style.width = `${largura}px`;
+        reporFaixa.igualarApp && reporFaixa.igualarApp();
+      } catch (e) { /* nada */ }
       // A reserva da barra de scroll da app só volta NO FIM, com a cena já
       // transparente (ao desmontar). Devolvida no início da abertura, em
       // alguns computadores o navegador redesenhava a cena nesse instante
@@ -1291,9 +1315,7 @@ function PortaQueAbre({ entrada, onFim }) {
       const alvo = Array.from(document.querySelectorAll('[data-mjp-logo-equipa]')).find(el => {
         const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
       });
-      // (O emblema já não voa para a barra da app: esse movimento para cima,
-      // no fim da entrada, parecia a app a subir.)
-      if (false && logo && alvo && voo && typeof voo.animate === 'function') {
+      if (logo && alvo && voo && typeof voo.animate === 'function') {
         const a = alvo.getBoundingClientRect(), r = voo.getBoundingClientRect();
         const s = a.height / Math.max(1, r.height);
         const dx = (a.left + a.width / 2) - (r.left + r.width / 2), dy = (a.top + a.height / 2) - (r.top + r.height / 2);
