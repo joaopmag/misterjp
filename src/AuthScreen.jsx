@@ -93,6 +93,14 @@ function enderecoLimpo() {
    Neste aparelho guarda-se só QUE conta o ativou e o id da chave
    (`mjp-staff-bio`). A cara e o dedo nunca saem do telemóvel. */
 const CHAVE_BIO = 'mjp-staff-bio';
+// Pista do emblema: mostra-se nas 3 primeiras visitas deste aparelho com a
+// entrada rápida ativa, e acaba de vez na primeira entrada pelo emblema.
+const PISTA_EMBLEMA = 'mjp-staff-pista-emblema';
+function pistaEmblemaAtiva() {
+  try { const v = localStorage.getItem(PISTA_EMBLEMA); return v !== 'feita' && Number(v || 0) < 3; } catch (e) { return false; }
+}
+function contarPistaEmblema() { try { const v = localStorage.getItem(PISTA_EMBLEMA); if (v !== 'feita') localStorage.setItem(PISTA_EMBLEMA, String(Number(v || 0) + 1)); } catch (e) { /* nada */ } }
+function acabarPistaEmblema() { try { localStorage.setItem(PISTA_EMBLEMA, 'feita'); } catch (e) { /* nada */ } }
 const chaveRecusaBio = (uid) => `mjp-staff-bio-recusa:${uid}`;
 
 function b64uParaBuf(s) {
@@ -437,6 +445,10 @@ const CSS = `
   .mjp-ps-respira { animation: mjp-ps-respira 2.2s ease-in-out infinite; }
   .mjp-ps-varre { animation: mjp-ps-varre 1s ease-in-out infinite; }
   .mjp-ps-pulso { animation: mjp-ps-pulso 2s ease-in-out infinite; }
+  @keyframes mjp-ps-dedo { 0% { opacity: 0; transform: translate(26px, 30px); } 15% { opacity: 1; transform: translate(10px, 12px); }
+    25% { transform: translate(0, 0) scale(.9); } 32% { transform: translate(0, 0) scale(1); } 42% { transform: translate(0, 0) scale(.9); } 50% { transform: translate(0, 0) scale(1); }
+    80% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(10px, 14px); } }
+  .mjp-ps-dedo { animation: mjp-ps-dedo 2.6s ease-in-out .8s 2 both; }
   @keyframes mjp-ps-onda { 0% { transform: scale(.55); opacity: .95; } 80% { opacity: 0; } 100% { transform: scale(1.65); opacity: 0; } }
   .mjp-ps-onda { animation: mjp-ps-onda 2.2s cubic-bezier(.2,.6,.3,1) infinite; }
   .mjp-ps-campo::placeholder { color: #5d6b62; }
@@ -553,7 +565,7 @@ function useMedidas() {
    A CENA (o ecrã da porta). Usada pelo ecrã de entrada e, já com sessão,
    pela porta que abre por cima da app.
    =================================================================== */
-function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada, faceId = 'desligado', sensor = null, onVirar = null }) {
+function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada, faceId = 'desligado', sensor = null, onVirar = null, pista = false }) {
   const { W, H, k } = useMedidas();
   useState(garantirEstilos);
   const cor = (porta && porta.cor) || '#B5393F';
@@ -673,6 +685,13 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
               <div style={canto({ right: 0, top: 0, borderRightWidth: 3, borderTopWidth: 3, borderTopRightRadius: 8 })} />
               <div style={canto({ left: 0, bottom: 0, borderLeftWidth: 3, borderBottomWidth: 3, borderBottomLeftRadius: 8 })} />
               <div style={canto({ right: 0, bottom: 0, borderRightWidth: 3, borderBottomWidth: 3, borderBottomRightRadius: 8 })} />
+              {/* PISTA NAS PRIMEIRAS VEZES: um dedo toca duas vezes no
+                  emblema e desaparece (ver `PISTA_EMBLEMA`). */}
+              {pista && faceId === 'pronto' && (
+                <svg className="mjp-ps-dedo" width="34" height="40" viewBox="0 0 24 28" aria-hidden="true" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -4, marginTop: 2, filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.6))' }}>
+                  <path d="M9 2.5a2 2 0 0 1 4 0V12l1.2-.6a2 2 0 0 1 2.6.9l.3.6 1.4-.4a2 2 0 0 1 2.4 1.5l.1.6.9-.1a2 2 0 0 1 2.1 2v4.3c0 3.9-3.2 7-7.1 7H14c-2.3 0-4.4-1.1-5.7-3L3.6 18.3a2 2 0 0 1 .4-2.8 2 2 0 0 1 2.6.2L9 18V2.5z" fill="#FBF3F0" stroke="#0D120F" strokeWidth="1.1" strokeLinejoin="round" />
+                </svg>
+              )}
               {faceId === 'a-ler' && <div className="mjp-ps-varre" style={{ position: 'absolute', left: '8%', right: '8%', height: 2, background: '#FFC23D', boxShadow: '0 0 8px #FFC23D' }} />}
             </div>
           );
@@ -687,7 +706,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
           <rect x="98" y="29" width="24" height="12" rx="3" fill="#C9CFC6" />
         </svg>
       </div>
-      <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW * k, height: CH * k, marginTop: 2, transform: estado === 'verificar' ? 'translateY(-10px)' : 'none', transition: 'transform .4s cubic-bezier(.3,1.4,.5,1)' }}>
+      <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW * k, height: CH * k, marginTop: 2 }}>
        <div style={{ width: CW, height: CH, transform: k !== 1 ? `scale(${k})` : 'none', transformOrigin: '0 0' }}>
         <div className={semChegada ? undefined : 'mjp-ps-cred'} style={{ width: CW, height: CH, perspective: 900 }}>
           {/* Chaves diferentes: o cartão 3D é sempre um elemento NOVO. Se o
@@ -771,6 +790,7 @@ export default function AuthScreen({ modo }) {
      do toque, sem esperar pela rede. */
   const uid = porta && porta.uid;
   const [bioAtivo, setBioAtivo] = useState(() => !!(conhecido && uid && staffBioEstado(uid)));
+  const [pista] = useState(() => { const ativa = !!(conhecido && uid && staffBioEstado(uid)) && pistaEmblemaAtiva(); if (ativa) contarPistaEmblema(); return ativa; });
   const [lendo, setLendo] = useState(null); // 'face' | 'digital' | null
   const prep = useRef(null);
   const preparar = async () => {
@@ -861,6 +881,7 @@ export default function AuthScreen({ modo }) {
       const v = await staffFn({ acao: 'entrada-verificar', uid, desafio: p.desafio, resposta });
       // Marca-se ANTES de abrir a sessão, como na palavra-passe.
       ENTRADA_STAFF = { t: Date.now(), verso, via: 'bio' };
+      if (via === 'face') acabarPistaEmblema();
       let r = await supabase.auth.verifyOtp({ token_hash: v.token_hash, type: v.tipo || 'magiclink' });
       if (r.error) r = await supabase.auth.verifyOtp({ token_hash: v.token_hash, type: 'email' });
       if (r.error) throw r.error;
@@ -1103,6 +1124,7 @@ export default function AuthScreen({ modo }) {
           onClick: estado === 'fechado' ? (bioAtivo ? () => entrarBio('digital') : entrarPasse) : null,
         }}
         onVirar={novaPasse ? null : deFrente}
+        pista={pista && estado === 'fechado'}
       >
         {conteudoVerso}
       </CenaPorta>
@@ -1249,10 +1271,9 @@ function PortaQueAbre({ entrada, onFim }) {
          telemóvel ao monitor de 1920 px. (Um buraco a crescer frame a frame,
          ou um zoom da cena, obrigavam a redesenhar a cena e davam saltos.) */
       furarCena(cena, b, vw, vh); // já posta à chegada; repete-se só se faltar
-      Array.from(cena.querySelectorAll('[data-mjp-topo]')).forEach(el => {
-        el.style.transition = 'opacity .25s ease-out';
-        el.style.opacity = '0';
-      });
+      // (O aro de luz e o letreiro apagam-se JUNTO com o resto da cena:
+      // desvanecidos à parte, o brilho de baixo do aro sumia primeiro e
+      // parecia que a luz subia.)
       cena.style.transition = 'opacity .65s cubic-bezier(.4,0,.2,1) .3s';
       requestAnimationFrame(() => { if (!cancelado) cena.style.opacity = '0'; });
 
