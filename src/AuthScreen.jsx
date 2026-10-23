@@ -265,6 +265,24 @@ function garantirEstilos() {
   } catch (e) { /* sem <head>: fica com as fontes do sistema */ }
 }
 
+/* SEM BARRA DE SCROLL ENQUANTO A PORTA ESTÁ EM CENA.
+   A página não desliza (overflow hidden) e o espaço que a app reserva para
+   a barra de scroll à direita fica com a cor escura da cena, em vez da faixa
+   verde da app. Ao sair, repõe exatamente o que lá estava. */
+function useSemScroll() {
+  const reporCor = useRef(() => {});
+  useLayoutEffect(() => {
+    const h = document.documentElement.style, b = document.body.style;
+    const antes = { ho: h.overflow, bo: b.overflow, hb: h.background, bb: b.background };
+    h.overflow = 'hidden'; b.overflow = 'hidden';
+    h.background = '#0B0F0D'; b.background = '#0B0F0D';
+    // A cor volta à da app logo que a porta abre (a app já está à vista).
+    reporCor.current = () => { h.background = antes.hb; b.background = antes.bb; };
+    return () => { h.overflow = antes.ho; b.overflow = antes.bo; h.background = antes.hb; b.background = antes.bb; };
+  }, []);
+  return reporCor;
+}
+
 /* Medidas do quadro: cabe no ecrã sem deslizar, no telemóvel e no
    computador (o resto do ecrã ocupa cerca de 450 px de altura). */
 function medir() {
@@ -440,12 +458,8 @@ export default function AuthScreen({ modo }) {
     else depois(() => setViraAnim(false), 1250);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // O ecrã é fixo: a página não desliza por trás.
-  useEffect(() => {
-    const h = document.documentElement.style.overflow, b = document.body.style.overflow;
-    document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden';
-    return () => { document.documentElement.style.overflow = h; document.body.style.overflow = b; };
-  }, []);
+  // O ecrã é fixo: a página não desliza por trás e não há barra de scroll.
+  useSemScroll();
 
   const mudarVerso = (v) => {
     setErro(''); setInfo(''); setPassword(''); setPassword2('');
@@ -697,6 +711,9 @@ function PortaQueAbre({ entrada, onFim }) {
   const onze = (porta && TATICAS[porta.formacao]) || null;
   const fimRef = useRef(onFim);
   fimRef.current = onFim;
+  // Enquanto a porta está em cena, a app por baixo não mostra barra de
+  // scroll (o ecrã de "a carregar" é um pouco mais alto do que a janela).
+  const reporCor = useSemScroll();
 
   useLayoutEffect(() => {
     const el = buracoRef.current;
@@ -716,6 +733,7 @@ function PortaQueAbre({ entrada, onFim }) {
       if (cancelado) return;
       if (reduzir) { acabar(); return; }
       setAberto(true);
+      try { reporCor.current(); } catch (e) { /* nada */ }
       const cena = cenaRef.current;
       const b = buracoRef.current ? buracoRef.current.getBoundingClientRect() : null;
       const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
