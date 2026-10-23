@@ -1,106 +1,772 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { supabase } from './supabaseClient';
 
-const T_BG = '#182619';
-const T_SURFACE = '#202F22';
-const T_LINE = '#3A4F3D';
-const T_CREAM = '#ECEFEA';
-const T_MUTED = '#8FA091';
-const T_GOLD = '#C9A227';
-const T_BAD = '#C25A5A';
+/* ===================================================================
+   ENTRADA DA EQUIPA TÉCNICA — A PORTA É O QUADRO TÁTICO
+   ===================================================================
+   O mesmo centro de treinos do Portal do Atleta, mas outra porta: a da
+   equipa técnica. A porta é o quadro magnético do gabinete, com o campo,
+   o emblema do clube no círculo central e o onze da equipa em ímanes.
+   Por baixo, pendurada na calha, a credencial da equipa técnica.
 
-export default function AuthScreen() {
-  const [mode, setMode] = useState('login'); // 'login' | 'signup'
-  const [email, setEmail] = useState('');
+   - O verso da credencial é onde se entra (palavra-passe; numa fase
+     seguinte, também a impressão digital). O emblema ao centro será o
+     Face ID — o "pontapé de saída". Enquanto a entrada biométrica não
+     existir para a equipa técnica (precisa de uma função própria no
+     servidor), tocar no emblema leva à palavra-passe.
+   - Com o acesso autorizado, o campo abre-se pela linha do meio-campo e,
+     atrás dele, está a app verdadeira (ou o ecrã das missões, se houver).
+     Essa abertura acontece JÁ COM A SESSÃO INICIADA, por cima da app: ver
+     `PortaStaffAbrir`, montada pelo AppRoot.
+
+   O QUE NÃO MUDOU: as chamadas ao Supabase para entrar e criar conta são
+   as mesmas de antes (`signInWithPassword` e `signUp`). Só se acrescentou
+   o pedido de nova palavra-passe (`resetPasswordForEmail` / `updateUser`).
+
+   O QUE SE GUARDA NESTE APARELHO (chave `mjp-porta-staff`): o que a porta
+   precisa de mostrar ANTES de haver sessão — email, nome, se é o
+   responsável, clube, época, cor, emblema e a formação do último jogo. É
+   escrito pela app depois de entrar (`guardarPortaStaff`). Sem isto, a
+   porta mostra-se sem nome, com o escudo genérico e sem ímanes. "Entrar
+   com outra conta" apaga-o. */
+
+const CHAVE_PORTA = 'mjp-porta-staff';
+
+export function lerPortaStaff() {
+  try {
+    const v = JSON.parse(localStorage.getItem(CHAVE_PORTA) || 'null');
+    return v && typeof v === 'object' ? v : null;
+  } catch (e) { return null; }
+}
+/* Chamado pela app (já com sessão). Só escreve quando alguma coisa mudou,
+   e a falta de espaço nunca parte nada: sem emblema, a porta mostra o
+   escudo genérico. */
+export function guardarPortaStaff(dados) {
+  if (!dados || !dados.email) return;
+  const antes = lerPortaStaff() || {};
+  const novo = { ...dados };
+  if (novo.logo && String(novo.logo).length > 300000) novo.logo = '';
+  const igual = Object.keys(novo).every(k => antes[k] === novo[k]) && Object.keys(antes).length === Object.keys(novo).length;
+  if (igual) return;
+  try { localStorage.setItem(CHAVE_PORTA, JSON.stringify(novo)); } catch (e) {
+    try { localStorage.setItem(CHAVE_PORTA, JSON.stringify({ ...novo, logo: '' })); } catch (e2) { /* sem espaço: fica sem porta personalizada */ }
+  }
+}
+function apagarPortaStaff() {
+  try { localStorage.removeItem(CHAVE_PORTA); } catch (e) { /* nada */ }
+}
+
+/* A passagem do ecrã de entrada para a app. O AuthScreen marca-a no
+   instante em que pede a sessão; o AppRoot tira-a quando o Supabase avisa
+   que a sessão começou, e monta a porta por cima da app para a abrir.
+   Uma entrada que não vem deste ecrã (sessão guardada, link de email) não
+   tem porta. */
+let ENTRADA_STAFF = null;
+export function tirarEntradaStaff() {
+  const e = ENTRADA_STAFF;
+  ENTRADA_STAFF = null;
+  if (!e || Date.now() - e.t > 15000) return null;
+  return e;
+}
+
+/* O link de "nova palavra-passe" volta à app com ?mjp=nova-passe. Lê-se
+   ao carregar o ficheiro, antes de o Supabase limpar o endereço. */
+export const PEDIU_NOVA_PASSE = (() => {
+  try { return new URLSearchParams(window.location.search).get('mjp') === 'nova-passe' || /type=recovery/.test(window.location.hash); } catch (e) { return false; }
+})();
+function enderecoLimpo() {
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+/* ---------------- cores e pequenas ajudas ---------------- */
+function mistura(hex, alvo, q) {
+  const h = String(hex || '#B5393F').replace('#', '');
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return alvo === 'ffffff' ? '#F2D4D6' : '#5A1D20';
+  const a = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+  const b = [0, 2, 4].map(i => parseInt(alvo.slice(i, i + 2), 16));
+  return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * q).toString(16).padStart(2, '0')).join('');
+}
+function saudacao() {
+  const h = new Date().getHours();
+  return h < 6 ? 'BOA NOITE' : h < 13 ? 'BOM DIA' : h < 20 ? 'BOA TARDE' : 'BOA NOITE';
+}
+function emailEscondido(email) {
+  const [u, d] = String(email || '').split('@');
+  if (!d) return email || '';
+  return `${u.slice(0, 2)}•••@${d}`;
+}
+function iniciais(nome) {
+  const p = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  if (!p.length) return '?';
+  return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+}
+function epocaAtual() {
+  const h = new Date(); const y = h.getMonth() >= 6 ? h.getFullYear() : h.getFullYear() - 1;
+  return `${y}/${String((y + 1) % 100).padStart(2, '0')}`;
+}
+
+/* ---------------- o onze no quadro ----------------
+   Posições em % do quadro: a equipa ataca para a direita, por isso o
+   lado direito da equipa fica em baixo (defesas, da direita para a
+   esquerda: 2, 3, 4, 5). Todas deixam o círculo central livre, para o
+   emblema se ver. A formação vem do último jogo; sem ela, não há ímanes.
+   Os números são os habituais de cada lugar. */
+const D4 = [[9, 50, 1], [23, 21, 5], [21, 40, 4], [21, 60, 3], [23, 79, 2]];
+const D3 = [[9, 50, 1], [22, 28, 4], [20, 50, 5], [22, 72, 3]];
+const TATICAS = {
+  '4-2-3-1': D4.concat([[42.5, 36.5, 6], [42.5, 63.5, 8], [66, 20, 7], [61.5, 50, 10], [66, 80, 11], [84, 50, 9]]),
+  '4-3-3': D4.concat([[36, 50, 6], [45, 27, 8], [45, 73, 10], [76, 20, 7], [83, 50, 9], [76, 80, 11]]),
+  '4-4-2': D4.concat([[40, 15, 7], [36, 40, 6], [36, 60, 8], [40, 85, 11], [72, 40, 9], [72, 60, 10]]),
+  '3-5-2': D3.concat([[44, 88, 2], [34, 50, 6], [42, 31, 8], [42, 69, 10], [44, 12, 7], [73, 40, 9], [73, 60, 11]]),
+  '3-4-3': [[9, 50, 1], [22, 28, 4], [20, 50, 5], [22, 72, 6], [42, 87, 2], [37, 40, 8], [37, 60, 10], [42, 13, 3], [74, 20, 7], [83, 50, 9], [74, 80, 11]],
+  // jogo de 9
+  '3-2-3': [[9, 50, 1], [22, 22, 5], [20, 50, 4], [22, 78, 2], [38, 37, 6], [38, 63, 8], [68, 20, 7], [80, 50, 9], [68, 80, 11]],
+  '3-3-2': [[9, 50, 1], [22, 22, 5], [20, 50, 4], [22, 78, 2], [40, 22, 6], [36, 50, 8], [40, 78, 10], [72, 38, 9], [72, 62, 11]],
+  '2-3-3': [[9, 50, 1], [22, 33, 4], [22, 67, 2], [40, 22, 6], [36, 50, 8], [40, 78, 10], [68, 20, 7], [80, 50, 9], [68, 80, 11]],
+  // jogo de 7
+  '3-2-1': [[9, 50, 1], [24, 22, 5], [22, 50, 4], [24, 78, 2], [40, 35, 6], [40, 65, 8], [76, 50, 9]],
+  '2-3-1': [[9, 50, 1], [24, 33, 4], [24, 67, 2], [40, 20, 6], [36, 50, 8], [40, 80, 10], [76, 50, 9]],
+  '2-2-2': [[9, 50, 1], [24, 33, 4], [24, 67, 2], [40, 35, 6], [40, 65, 8], [72, 38, 9], [72, 62, 11]],
+};
+
+/* ---------------- desenhos ---------------- */
+function Escudo({ logo, cor, tam, branco }) {
+  if (logo) {
+    return <img src={logo} alt="" style={{ height: tam, width: 'auto', maxWidth: tam * 1.3, objectFit: 'contain', display: 'block', filter: branco ? 'grayscale(1) brightness(2.4)' : 'none', opacity: branco ? 0.8 : 1 }} />;
+  }
+  return (
+    <svg viewBox="0 0 40 44" height={tam} width={tam * 40 / 44} aria-hidden="true" style={{ display: 'block' }}>
+      <path d="M2 2 H38 V22 Q38 36 20 42 Q2 36 2 22 Z" fill={branco ? 'rgba(255,255,255,.28)' : '#fff'} stroke={branco ? 'rgba(255,255,255,.95)' : cor} strokeWidth={branco ? 1.6 : 3} />
+      <path d="M8 8 H32 V22 Q32 32 20 36 Q8 32 8 22 Z" fill={cor} fillOpacity={branco ? 0.9 : 1} />
+    </svg>
+  );
+}
+
+// O campo inteiro, num quadro de 348 × 254.
+function Campo({ id }) {
+  return (
+    <svg viewBox="0 0 348 254" width="100%" height="100%" preserveAspectRatio="none" aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'block' }}>
+      <defs>
+        <linearGradient id={`${id}f`} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#357A4C" /><stop offset="1" stopColor="#1F4D2F" /></linearGradient>
+      </defs>
+      <rect width="348" height="254" fill={`url(#${id}f)`} />
+      <g opacity=".06" fill="#fff">{[20, 76, 132, 188, 244, 300].map(x => <rect key={x} x={x} y="0" width="28" height="254" />)}</g>
+      <g fill="none" stroke="#fff" strokeOpacity=".88" strokeWidth="1.5">
+        <rect x="20" y="22" width="308" height="210" />
+        <line x1="174" y1="22" x2="174" y2="232" />
+        <circle cx="174" cy="127" r="27" />
+        <rect x="20" y="68" width="48" height="118" /><rect x="20" y="100" width="16" height="54" />
+        <rect x="280" y="68" width="48" height="118" /><rect x="312" y="100" width="16" height="54" />
+        <path d="M68 105.3 A27 27 0 0 1 68 148.7" /><path d="M280 105.3 A27 27 0 0 0 280 148.7" />
+        <path d="M20 26 A4 4 0 0 0 24 22" /><path d="M324 22 A4 4 0 0 0 328 26" />
+        <path d="M24 232 A4 4 0 0 0 20 228" /><path d="M328 228 A4 4 0 0 0 324 232" />
+        <rect x="13" y="116.5" width="7" height="21" strokeWidth="1.3" /><rect x="328" y="116.5" width="7" height="21" strokeWidth="1.3" />
+      </g>
+      <g stroke="#fff" strokeOpacity=".35" strokeWidth=".5">
+        {[120, 124, 128, 132].map(y => <line key={`a${y}`} x1="13" y1={y} x2="20" y2={y} />)}
+        {[120, 124, 128, 132].map(y => <line key={`b${y}`} x1="328" y1={y} x2="335" y2={y} />)}
+      </g>
+      <g fill="#fff" fillOpacity=".9"><circle cx="174" cy="127" r="1.8" /><circle cx="52" cy="127" r="1.6" /><circle cx="296" cy="127" r="1.6" /></g>
+      <polygon points="0,0 150,0 50,254 0,254" fill="#fff" opacity=".045" />
+    </svg>
+  );
+}
+
+// O quadro inteiro (campo + emblema + ímanes), na largura W.
+function QuadroInteiro({ W, H, id, cor, logo, onze, saltar }) {
+  const m = Math.max(16, Math.round(W * 0.06));
+  const fundo = `radial-gradient(circle at 35% 30%, ${mistura(cor, 'ffffff', 0.25)}, ${mistura(cor, '0d120f', 0.4)})`;
+  return (
+    <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }}>
+      <Campo id={id} />
+      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)' }}>
+        <Escudo logo={logo} cor={cor} tam={Math.round(H * 0.13)} branco />
+      </div>
+      {(onze || []).map((p, i) => (
+        <div key={i} className={saltar ? 'mjp-ps-salta' : undefined} style={{
+          position: 'absolute', left: `${p[0]}%`, top: `${p[1]}%`, width: m, height: m, marginLeft: -m / 2, marginTop: -m / 2,
+          borderRadius: '50%', background: fundo, border: '2px solid #F7F3EA', boxShadow: '0 3px 4px rgba(0,0,0,.45)', boxSizing: 'border-box',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+          fontFamily: "'Oswald', sans-serif", fontWeight: 600, fontSize: Math.round(m * 0.46), lineHeight: 1,
+          animationDelay: `${i * 40}ms`,
+        }}>{p[2]}</div>
+      ))}
+    </div>
+  );
+}
+
+/* As duas folhas do quadro. Cada uma leva a sua metade do campo, do
+   emblema e dos ímanes; abrem pela linha do meio-campo. */
+function FolhasQuadro({ W, H, cor, logo, onze, saltar, aberto }) {
+  const folha = {
+    position: 'absolute', top: 0, bottom: 0, width: '50%', overflow: 'hidden', willChange: 'transform',
+    transition: 'transform .7s cubic-bezier(.65,0,.35,1)',
+  };
+  return (
+    <>
+      <div style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>
+        <QuadroInteiro W={W} H={H} id="mjpqe" cor={cor} logo={logo} onze={onze} saltar={saltar} />
+      </div>
+      <div style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>
+        <div style={{ position: 'absolute', left: -W / 2, top: 0 }}>
+          <QuadroInteiro W={W} H={H} id="mjpqd" cor={cor} logo={logo} onze={onze} saltar={saltar} />
+        </div>
+      </div>
+      <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.95)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />
+    </>
+  );
+}
+
+const CSS = `
+  @keyframes mjp-ps-balanca { 0% { transform: translateY(-40px) rotate(-10deg); opacity: 0; } 60% { transform: translateY(3px) rotate(3deg); opacity: 1; } 82% { transform: rotate(-1.2deg); } 100% { transform: none; opacity: 1; } }
+  @keyframes mjp-ps-brilho { 0% { left: -70%; } 100% { left: 150%; } }
+  @keyframes mjp-ps-salta { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-8px) scale(1.2); } }
+  @keyframes mjp-ps-pisca { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  @keyframes mjp-ps-treme { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+  .mjp-ps-salta { animation: mjp-ps-salta .42s ease-in-out both; }
+  .mjp-ps-pisca { animation: mjp-ps-pisca .45s ease-in-out infinite; }
+  .mjp-ps-cred { animation: mjp-ps-balanca 1.2s cubic-bezier(.2,.8,.2,1) both; transform-origin: 50% -60px; }
+  .mjp-ps-treme { animation: mjp-ps-treme .45s; }
+  .mjp-ps-campo::placeholder { color: #5d6b62; }
+  .mjp-ps-campo:focus { outline: 2px solid #FFC23D; outline-offset: 1px; }
+  .mjp-ps button:focus-visible { outline: 2px solid #FFC23D; outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .mjp-ps *, .mjp-ps-folhas * { animation: none !important; transition-duration: 1ms !important; } }
+`;
+
+/* Medidas do quadro: cabe no ecrã sem deslizar, no telemóvel e no
+   computador (o resto do ecrã ocupa cerca de 450 px de altura). */
+function medir() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const W = Math.round(Math.max(250, Math.min(vw * 0.9, 520, (vh - 450) * (348 / 254))));
+  return { W, H: Math.round(W * 254 / 348) };
+}
+function useMedidas() {
+  const [m, setM] = useState(medir);
+  useEffect(() => {
+    const f = () => setM(medir());
+    window.addEventListener('resize', f);
+    return () => window.removeEventListener('resize', f);
+  }, []);
+  return m;
+}
+
+const CW = 172, CH = 248;
+
+/* ===================================================================
+   A CENA (o ecrã da porta). Usada pelo ecrã de entrada e, já com sessão,
+   pela porta que abre por cima da app.
+   =================================================================== */
+function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape }) {
+  const { W, H } = useMedidas();
+  const cor = (porta && porta.cor) || '#B5393F';
+  const escura = mistura(cor, '0d120f', 0.4);
+  const logo = (porta && porta.logo) || '';
+  const onze = (porta && TATICAS[porta.formacao]) || null;
+  const sinal = estado === 'autorizado' ? '#4CAF6A' : estado === 'verificar' ? '#FFC23D' : '#FF5A4E';
+  const letreiro = estado === 'autorizado' ? 'ACESSO AUTORIZADO' : estado === 'verificar' ? 'A VERIFICAR' : 'ACESSO RESERVADO';
+  const verde = estado === 'autorizado';
+  const nome = (porta && porta.nome) || '';
+  const clube = (porta && porta.clube) || 'Mister JP';
+  const aro = verde ? 'rgba(76,175,106,.95)' : estado === 'verificar' ? 'rgba(255,194,61,.85)' : 'transparent';
+
+  // A credencial vira-se em 3D; depois de virada, fica plana (os campos de
+  // texto dentro de transformações 3D falham em alguns telemóveis).
+  const virada = !!verso;
+  const plano = virada && !viraAnim;
+  const face = {
+    position: 'absolute', inset: 0, borderRadius: 12, overflow: 'hidden', boxSizing: 'border-box',
+    boxShadow: `0 16px 30px rgba(0,0,0,.6), 0 0 0 2px ${aro}`, transition: 'box-shadow .3s',
+    WebkitBackfaceVisibility: 'hidden', backfaceVisibility: 'hidden',
+  };
+  const frente = (
+    <div style={{ ...face, background: 'linear-gradient(160deg,#1E2A22 0%,#2C3A30 55%,#141B16 100%)', color: '#F3ECDA' }}>
+      <div style={{ position: 'absolute', left: '50%', top: 8, width: 30, height: 7, marginLeft: -15, borderRadius: 4, background: '#0B0F0D' }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 8px, transparent 8px 16px)' }} />
+      <div style={{ position: 'absolute', right: -36, top: 44, opacity: 0.1 }}>
+        <svg width="160" height="176" viewBox="0 0 40 44" aria-hidden="true"><path d="M2 2 H38 V22 Q38 36 20 42 Q2 36 2 22 Z" fill="#fff" /></svg>
+      </div>
+      <div style={{ position: 'absolute', left: 12, right: 10, top: 25, display: 'flex', alignItems: 'center', gap: 7 }}>
+        <Escudo logo={logo} cor={cor} tam={22} />
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: '.05em', lineHeight: 1.05, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clube}</div>
+      </div>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 58, height: 23, background: 'linear-gradient(90deg,#B8902E,#F1D27A 50%,#B8902E)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Oswald', sans-serif", fontSize: 11.5, fontWeight: 600, letterSpacing: '.22em', color: '#1A1408' }}>EQUIPA TÉCNICA</div>
+      <div style={{ position: 'absolute', left: 12, top: 94, width: 56, height: 68, borderRadius: 7, background: '#1A2A1F', border: '2px solid #F3ECDA', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Oswald', sans-serif", fontSize: 24, fontWeight: 600, color: '#FFD86A' }}>{nome ? iniciais(nome) : '?'}</div>
+      <div style={{ position: 'absolute', right: 12, top: 98, width: 30, height: 22, borderRadius: 5, background: 'linear-gradient(135deg,#F1D27A,#B8902E)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.25)' }} />
+      <div style={{ position: 'absolute', left: 12, right: 10, top: 172 }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 19, fontWeight: 600, lineHeight: 1.02, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome || 'Por ativar'}</div>
+        <div style={{ fontSize: 11, color: '#C9D2C5', marginTop: 3 }}>{nome ? (porta.souDono ? 'Responsável da equipa' : 'Equipa técnica') : 'Entra uma vez para a ativar'}</div>
+      </div>
+      <div style={{ position: 'absolute', left: 12, bottom: 9, fontSize: 10, letterSpacing: '.12em', color: '#9AA89F' }}>ÉPOCA {(porta && porta.epoca) || epocaAtual()}</div>
+      <div style={{ position: 'absolute', top: '-20%', bottom: '-20%', width: '40%', background: 'linear-gradient(100deg, transparent, rgba(255,255,255,.28), transparent)', transform: 'skewX(-18deg)', animation: 'mjp-ps-brilho 3s ease-in-out 1.3s infinite' }} />
+    </div>
+  );
+  const costas = (
+    <div style={{ ...face, background: 'linear-gradient(160deg,#141B16 0%,#1E2A22 60%,#101611 100%)', color: '#F3ECDA', transform: plano ? 'none' : 'rotateY(180deg)' }}>
+      <div style={{ position: 'absolute', left: '50%', top: 8, width: 30, height: 7, marginLeft: -15, borderRadius: 4, background: '#0B0F0D' }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 3, background: 'linear-gradient(90deg,#B8902E,#F1D27A 50%,#B8902E)' }} />
+      {children}
+    </div>
+  );
+
+  return (
+    <div ref={cenaRef} className="mjp-ps" style={{
+      position: 'fixed', inset: 0, overflow: 'hidden', background: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)',
+      fontFamily: "'Inter', system-ui, sans-serif", color: '#F3ECDA', display: 'flex', flexDirection: 'column', alignItems: 'center',
+      paddingTop: 'calc(18px + env(safe-area-inset-top, 0px))', paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box',
+    }}>
+      <style>{CSS}</style>
+      {/* luz de teto */}
+      <div aria-hidden="true" style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, transform: 'translateX(-50%)', borderRadius: '50%', border: '3px solid rgba(255,230,160,.75)', boxShadow: '0 0 24px 6px rgba(255,230,160,.22)' }} />
+
+      {/* letreiro (a mesma linguagem do Portal) */}
+      <div style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 10, background: '#0D120F', border: '1px solid #3A4440', borderRadius: 8, padding: '6px 16px', boxShadow: '0 0 16px rgba(255,194,61,.15)', flexShrink: 0, marginTop: 6 }}>
+        <span className={estado === 'verificar' ? 'mjp-ps-pisca' : undefined} style={{ width: 9, height: 9, borderRadius: '50%', background: sinal, boxShadow: `0 0 8px ${sinal}`, transition: 'background .3s' }} />
+        <div style={{ lineHeight: 1.1 }}>
+          <div style={{ fontSize: 11, letterSpacing: '.18em', color: verde ? '#8EE6A0' : '#8A9A8C', transition: 'color .3s' }}>{letreiro}</div>
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 17, fontWeight: 600, letterSpacing: '.3em', color: verde ? '#8EE6A0' : '#FFC23D', transition: 'color .3s' }}>STAFF</div>
+        </div>
+      </div>
+
+      {/* o quadro (aro metálico, o buraco das folhas e a calha) */}
+      <div style={{ position: 'relative', flexShrink: 0, marginTop: 14, width: W + 14, height: H + 14 }}>
+        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 9, background: 'linear-gradient(90deg,#3A423D,#5E6862 50%,#3A423D)', boxShadow: '0 14px 30px rgba(0,0,0,.55)' }} />
+        <div ref={buracoRef} style={{ position: 'absolute', left: 7, top: 7, width: W, height: H, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
+          {!folhasFora && <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={false} />}
+        </div>
+        {/* O emblema é o "pontapé de saída" (Face ID, numa fase seguinte). */}
+        {onEmblema && (
+          <button type="button" onClick={onEmblema} aria-label="Entrar" style={{
+            position: 'absolute', left: 7 + W / 2 - H * 0.14, top: 7 + H / 2 - H * 0.14, width: H * 0.28, height: H * 0.28,
+            borderRadius: '50%', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+          }} />
+        )}
+        <div aria-hidden="true" style={{ position: 'absolute', left: '15%', right: '15%', bottom: -9, height: 9, borderRadius: '0 0 5px 5px', background: '#2A332D' }} />
+      </div>
+
+      {/* fita, nas cores do clube, e a credencial */}
+      <div aria-hidden="true" style={{ position: 'relative', flexShrink: 0, width: CW, height: 36, marginTop: 9 }}>
+        <svg width="220" height="40" viewBox="0 0 220 40" style={{ position: 'absolute', left: '50%', top: -2, transform: 'translateX(-50%)', overflow: 'visible' }}>
+          <path d="M60 0 L104 34" stroke={cor} strokeWidth="9" strokeLinecap="round" />
+          <path d="M160 0 L116 34" stroke={escura} strokeWidth="9" strokeLinecap="round" />
+          <rect x="98" y="29" width="24" height="12" rx="3" fill="#C9CFC6" />
+        </svg>
+      </div>
+      <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW, height: CH, marginTop: 2, transform: estado === 'verificar' ? 'translateY(-10px)' : 'none', transition: 'transform .4s cubic-bezier(.3,1.4,.5,1)' }}>
+        <div className="mjp-ps-cred" style={{ width: CW, height: CH, perspective: 900 }}>
+          {plano ? <div style={{ position: 'relative', width: CW, height: CH }}>{costas}</div> : (
+            <div style={{ position: 'relative', width: CW, height: CH, transformStyle: 'preserve-3d', transform: virada ? 'rotateY(180deg)' : 'none', transition: 'transform .65s cubic-bezier(.4,.1,.2,1)' }}>
+              {frente}
+              {costas}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {rodape}
+    </div>
+  );
+}
+
+/* ---------------- o verso da credencial ---------------- */
+const rotulo = { fontSize: 9.5, letterSpacing: '.1em', color: '#9AA8A0', textTransform: 'uppercase' };
+const campo = { height: 40, width: '100%', boxSizing: 'border-box', padding: '0 10px', background: '#121815', border: '1.5px solid #FF4B5A', borderRadius: 8, color: '#FFC23D', fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 500 };
+const titulo = { fontFamily: "'Oswald', sans-serif", fontSize: 13.5, fontWeight: 500, letterSpacing: '.1em', color: '#F3ECDA', textAlign: 'center', marginTop: 2 };
+const escondido = { position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none', left: 0, top: 0 };
+
+/* ===================================================================
+   O ECRÃ DE ENTRADA
+   =================================================================== */
+export default function AuthScreen({ modo }) {
+  const [porta, setPorta] = useState(() => lerPortaStaff());
+  const conhecido = !!(porta && porta.email);
+  const novaPasse = modo === 'nova-passe';
+  const versoInicial = novaPasse ? 'nova' : conhecido ? 'passe' : 'novo';
+  // null (frente) | 'passe' (conta deste aparelho) | 'novo' (email +
+  // palavra-passe) | 'criar' | 'recuperar' | 'nova' (depois do link).
+  const [verso, setVerso] = useState(null);
+  const [viraAnim, setViraAnim] = useState(true);
+  const [email, setEmail] = useState(() => (porta && porta.email) || '');
   const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [password2, setPassword2] = useState('');
+  const [estado, setEstado] = useState('fechado'); // fechado | verificar | autorizado
+  const [erro, setErro] = useState('');
   const [info, setInfo] = useState('');
+  const [tremer, setTremer] = useState(false);
+  const [opcoes, setOpcoes] = useState(false);
+  const passeRef = useRef(null);
+  const timers = useRef([]);
+  const depois = (fn, ms) => { timers.current.push(setTimeout(fn, ms)); };
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setError(''); setInfo(''); setBusy(true);
+  // A credencial chega a balançar, mostra a frente e vira-se para o lado
+  // onde se entra.
+  useEffect(() => {
+    depois(() => setVerso(v => v || versoInicial), 1250);
+    depois(() => setViraAnim(false), 1250 + 700);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // O ecrã é fixo: a página não desliza por trás.
+  useEffect(() => {
+    const h = document.documentElement.style.overflow, b = document.body.style.overflow;
+    document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden';
+    return () => { document.documentElement.style.overflow = h; document.body.style.overflow = b; };
+  }, []);
+
+  const mudarVerso = (v) => {
+    setErro(''); setInfo(''); setPassword(''); setPassword2('');
+    if (v === verso) return;
+    setViraAnim(true);
+    setVerso(v);
+    depois(() => setViraAnim(false), 700);
+  };
+  const falhou = (msg) => {
+    setEstado('fechado'); setErro(msg); setTremer(true);
+    depois(() => setTremer(false), 500);
+  };
+  const traduzir = (err) => {
+    const m = (err && err.message) || '';
+    if (m === 'Invalid login credentials') return 'Email ou palavra-passe incorretos.';
+    if (/Email not confirmed/i.test(m)) return 'Falta confirmar o email: abre a mensagem que recebeste.';
+    if (/rate limit|too many/i.test(m)) return 'Demasiadas tentativas. Espera um pouco e tenta outra vez.';
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Sem ligação. Verifica a internet e tenta outra vez.';
+    return m || 'Não foi possível entrar.';
+  };
+
+  const entrar = async (e) => {
+    if (e) e.preventDefault();
+    if (estado !== 'fechado') return;
+    setErro(''); setInfo('');
+    const em = (conhecido && verso === 'passe' ? porta.email : email).trim();
+    if (!em) { falhou('Escreve o teu email.'); return; }
+    if (!password) { falhou('Escreve a palavra-passe.'); return; }
+    setEstado('verificar');
+    // Marca-se ANTES: o aviso de sessão iniciada do Supabase chega durante
+    // a chamada, e é nesse instante que o AppRoot monta a porta.
+    ENTRADA_STAFF = { t: Date.now(), verso: verso || versoInicial };
     try {
-      if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setInfo('Conta criada. Confirma o teu email e depois inicia sessão — a seguir escolhes a tua equipa.');
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email: em, password });
+      if (error) throw error;
+      setEstado('autorizado');
     } catch (err) {
-      setError(err.message === 'Invalid login credentials'
-        ? 'Email ou palavra-passe incorretos.'
-        : err.message);
-    } finally {
-      setBusy(false);
+      ENTRADA_STAFF = null;
+      falhou(traduzir(err));
     }
   };
 
-  const inputStyle = {
-    width: '100%', padding: '11px 12px', borderRadius: 8, border: `1px solid ${T_LINE}`,
-    background: T_BG, color: T_CREAM, fontSize: 16, boxSizing: 'border-box',
+  const criar = async (e) => {
+    if (e) e.preventDefault();
+    if (estado !== 'fechado') return;
+    setErro(''); setInfo('');
+    if (!email.trim() || password.length < 6) { falhou('Escreve o email e uma palavra-passe com 6 ou mais caracteres.'); return; }
+    setEstado('verificar');
+    try {
+      const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+      if (error) throw error;
+      setEstado('fechado');
+      setInfo('Conta criada. Confirma o email e depois entra.');
+    } catch (err) {
+      falhou(traduzir(err));
+    }
   };
 
-  return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: T_BG, padding: 20, fontFamily: "'Inter', system-ui, sans-serif",
-    }}>
-      <form onSubmit={submit} style={{
-        width: '100%', maxWidth: 360, background: T_SURFACE, border: `1px solid ${T_LINE}`,
-        borderRadius: 14, padding: 28,
-      }}>
-        {/* O NOME DO CLUBE SAIU DAQUI.
+  const pedirNovaPasse = async (e) => {
+    if (e) e.preventDefault();
+    if (estado !== 'fechado') return;
+    setErro(''); setInfo('');
+    const em = email.trim();
+    if (!em) { falhou('Escreve o email da tua conta.'); return; }
+    setEstado('verificar');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(em, { redirectTo: `${enderecoLimpo()}?mjp=nova-passe` });
+      if (error) throw error;
+      setEstado('fechado');
+      setInfo('Link enviado. Abre o email neste aparelho.');
+    } catch (err) {
+      falhou(traduzir(err));
+    }
+  };
 
-            Este ecrã deixou de ser a porta de uma equipa e passou a ser a
-            porta da plataforma: quem chega aqui ainda não tem equipa
-            nenhuma, e pode estar a criar a sua. Dizer-lhe "SC Salgueiros
-            U19" antes de saber quem é seria errado — e é o clube dela que
-            aparece depois, no cabeçalho, vindo da equipa que escolher. */}
-        <div style={{ fontSize: 12, letterSpacing: '.08em', color: T_GOLD, textTransform: 'uppercase', marginBottom: 4 }}>
-          Mister JP
-        </div>
-        <h1 style={{ fontSize: 21, color: '#FFFFFF', margin: '0 0 20px' }}>
-          {mode === 'login' ? 'Iniciar sessão' : 'Criar conta'}
-        </h1>
+  const gravarNovaPasse = async (e) => {
+    if (e) e.preventDefault();
+    if (estado !== 'fechado') return;
+    setErro(''); setInfo('');
+    if (password.length < 6) { falhou('Usa 6 ou mais caracteres.'); return; }
+    if (password !== password2) { falhou('As duas não são iguais.'); return; }
+    setEstado('verificar');
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setEstado('autorizado');
+      depois(() => window.location.replace(enderecoLimpo()), 700);
+    } catch (err) {
+      falhou(traduzir(err));
+    }
+  };
 
-        <label style={{ display: 'block', fontSize: 12.5, color: T_MUTED, marginBottom: 6 }}>Email</label>
-        <input
-          type="email" required autoComplete="email" value={email}
-          onChange={e => setEmail(e.target.value)} style={{ ...inputStyle, marginBottom: 14 }}
-        />
+  const outraConta = () => {
+    apagarPortaStaff();
+    setPorta(null);
+    setEmail('');
+    setOpcoes(false);
+    mudarVerso('novo');
+  };
+  const tocarEmblema = () => {
+    // Fase seguinte: Face ID. Por agora, leva à palavra-passe.
+    const alvo = conhecido ? 'passe' : 'novo';
+    if (verso !== alvo) mudarVerso(alvo);
+    depois(() => { try { passeRef.current && passeRef.current.focus(); } catch (er) { /* nada */ } }, verso === alvo ? 0 : 750);
+  };
 
-        <label style={{ display: 'block', fontSize: 12.5, color: T_MUTED, marginBottom: 6 }}>Palavra-passe</label>
-        <input
-          type="password" required minLength={6}
-          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, marginBottom: 18 }}
-        />
+  const ocupado = estado !== 'fechado';
+  const aviso = (erro || info) ? (
+    <div role="status" style={{ fontSize: 11, lineHeight: 1.3, color: erro ? '#FF8A80' : '#8EE6A0', textAlign: 'center' }}>{erro || info}</div>
+  ) : null;
+  const botao = (texto) => (
+    <button type="submit" disabled={ocupado} style={{
+      marginTop: 'auto', height: 42, flexShrink: 0, border: 'none', borderRadius: 8, background: (porta && porta.cor) || '#B5393F', color: '#fff',
+      fontFamily: "'Oswald', sans-serif", fontSize: 14, fontWeight: 600, letterSpacing: '.14em', cursor: ocupado ? 'default' : 'pointer', opacity: ocupado ? 0.75 : 1,
+    }}>{estado === 'verificar' ? '…' : texto}</button>
+  );
+  const formulario = { position: 'absolute', inset: 0, margin: 0, padding: '22px 11px 11px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 5 };
 
-        {error && <div style={{ color: T_BAD, fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
-        {info && <div style={{ color: T_GOLD, fontSize: 12.5, marginBottom: 14 }}>{info}</div>}
-
-        <button type="submit" disabled={busy} style={{
-          width: '100%', padding: '11px 12px', borderRadius: 8, border: 'none',
-          background: '#B5393F', color: '#FFFFFF', fontWeight: 600, fontSize: 14.5,
-          cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1,
-        }}>
-          {busy ? 'A processar…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setMode(m => m === 'login' ? 'signup' : 'login'); setError(''); setInfo(''); }}
-          style={{
-            width: '100%', marginTop: 12, padding: '8px', background: 'transparent', border: 'none',
-            color: T_MUTED, fontSize: 12.5, cursor: 'pointer', textDecoration: 'underline',
-          }}
-        >
-          {mode === 'login' ? 'Ainda não tens conta? Cria uma' : 'Já tens conta? Inicia sessão'}
-        </button>
+  let conteudoVerso;
+  const v = verso || versoInicial;
+  if (v === 'passe' && conhecido) {
+    const quem = porta.souDono ? 'MISTER' : (String(porta.nome || '').split(/\s+/)[0] || 'MISTER').toUpperCase();
+    conteudoVerso = (
+      <form onSubmit={entrar} style={formulario}>
+        <div style={titulo}>{saudacao()}, {quem}</div>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: '#9AA8A0', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emailEscondido(porta.email)}</div>
+        {/* o email vai no formulário (invisível) para o gestor de palavras-passe o reconhecer */}
+        <input type="email" name="email" autoComplete="username" value={porta.email} readOnly tabIndex={-1} aria-hidden="true" style={escondido} />
+        <label htmlFor="mjp-ps-pp" style={{ ...rotulo, marginTop: 8 }}>Palavra-passe</label>
+        <input id="mjp-ps-pp" ref={passeRef} className="mjp-ps-campo" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} style={campo} />
+        {aviso}
+        {botao('ENTRAR')}
       </form>
+    );
+  } else if (v === 'criar') {
+    conteudoVerso = (
+      <form onSubmit={criar} style={formulario}>
+        <div style={titulo}>CRIAR CONTA</div>
+        <label htmlFor="mjp-ps-em" style={rotulo}>Email</label>
+        <input id="mjp-ps-em" className="mjp-ps-campo" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} style={campo} />
+        <label htmlFor="mjp-ps-pp" style={rotulo}>Palavra-passe</label>
+        <input id="mjp-ps-pp" ref={passeRef} className="mjp-ps-campo" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} style={campo} />
+        {aviso}
+        {botao('CRIAR CONTA')}
+      </form>
+    );
+  } else if (v === 'recuperar') {
+    conteudoVerso = (
+      <form onSubmit={pedirNovaPasse} style={formulario}>
+        <div style={titulo}>PERDI A PALAVRA-PASSE</div>
+        <div style={{ fontSize: 11, color: '#9AA8A0', lineHeight: 1.4, textAlign: 'center' }}>Enviamos um link para escolheres uma nova.</div>
+        <label htmlFor="mjp-ps-em" style={{ ...rotulo, marginTop: 4 }}>Email</label>
+        <input id="mjp-ps-em" className="mjp-ps-campo" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} style={campo} />
+        {aviso}
+        {botao('ENVIAR LINK')}
+      </form>
+    );
+  } else if (v === 'nova') {
+    conteudoVerso = (
+      <form onSubmit={gravarNovaPasse} style={formulario}>
+        <div style={titulo}>NOVA PALAVRA-PASSE</div>
+        <label htmlFor="mjp-ps-pp" style={{ ...rotulo, marginTop: 4 }}>Palavra-passe nova</label>
+        <input id="mjp-ps-pp" ref={passeRef} className="mjp-ps-campo" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} style={campo} />
+        <label htmlFor="mjp-ps-pp2" style={rotulo}>Repete</label>
+        <input id="mjp-ps-pp2" className="mjp-ps-campo" type="password" autoComplete="new-password" value={password2} onChange={e => setPassword2(e.target.value)} style={campo} />
+        {aviso}
+        {botao('GRAVAR')}
+      </form>
+    );
+  } else {
+    conteudoVerso = (
+      <form onSubmit={entrar} style={formulario}>
+        <div style={titulo}>ENTRAR NO GABINETE</div>
+        <label htmlFor="mjp-ps-em" style={rotulo}>Email</label>
+        <input id="mjp-ps-em" className="mjp-ps-campo" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} style={campo} />
+        <label htmlFor="mjp-ps-pp" style={rotulo}>Palavra-passe</label>
+        <input id="mjp-ps-pp" ref={passeRef} className="mjp-ps-campo" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} style={campo} />
+        {aviso}
+        {botao('ENTRAR')}
+      </form>
+    );
+  }
+
+  const ligacao = { minHeight: 40, padding: '2px 6px', background: 'transparent', border: 'none', color: '#C9A227', fontFamily: "'Inter', sans-serif", fontSize: 13.5, textDecoration: 'underline', cursor: 'pointer' };
+  const voltar = (v === 'criar' || v === 'recuperar') ? (
+    <button type="button" style={ligacao} onClick={() => mudarVerso(conhecido ? 'passe' : 'novo')}>Voltar a entrar</button>
+  ) : null;
+  const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: '#182619', border: '1px solid #3A4F3D', color: '#ECEFEA', fontSize: 14.5, cursor: 'pointer', fontFamily: "'Inter', sans-serif" };
+
+  const rodape = novaPasse ? null : (
+    <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 'auto', paddingTop: 4, flexShrink: 0 }}>
+      {voltar}
+      <button type="button" onClick={() => setOpcoes(true)} style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: '#8A9A8C', fontSize: 14, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+        <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
+      </button>
     </div>
   );
+
+  return (
+    <>
+      <CenaPorta
+        porta={porta} estado={estado} verso={verso} viraAnim={viraAnim} tremer={tremer}
+        onEmblema={novaPasse ? null : tocarEmblema} rodape={rodape}
+      >
+        {conteudoVerso}
+      </CenaPorta>
+      {opcoes && (
+        <div onClick={() => setOpcoes(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px', boxSizing: 'border-box' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: '#202F22', border: '1px solid #3A4F3D', borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' }}>
+            <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso(conhecido ? 'passe' : 'novo'); depois(() => { try { passeRef.current && passeRef.current.focus(); } catch (er) { /* nada */ } }, 750); }}>Entrar com a palavra-passe</button>
+            <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('recuperar'); }}>Perdi a palavra-passe</button>
+            {conhecido && <button type="button" style={opcao} onClick={outraConta}>Entrar com outra conta</button>}
+            <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('criar'); }}>Criar conta</button>
+            <button type="button" style={{ ...opcao, textAlign: 'center', background: 'transparent', border: 'none', color: '#8FA091' }} onClick={() => setOpcoes(false)}>Fechar</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ===================================================================
+   A PORTA QUE ABRE (já com sessão)
+   ===================================================================
+   Montada pelo AppRoot POR CIMA da app, logo depois de a sessão ser
+   aceite. Mostra a mesma cena, com o acesso autorizado: os onze saltam,
+   espera que a app (ou o ecrã das missões) esteja desenhada por baixo, e
+   então o campo abre pela linha do meio-campo. A cena apaga-se e o buraco
+   da porta cresce até ao ecrã inteiro, deixando ver a app.
+   Se a equipa tiver emblema e a barra da app o mostrar, o emblema solta-se
+   do círculo central e voa até lá. No fim desmonta-se sozinha.
+   NADA NA APP DEPENDE DISTO: a app já está montada por baixo, e qualquer
+   erro aqui só faz a porta desaparecer (ver ProtecaoPorta). */
+function PortaQueAbre({ entrada, onFim }) {
+  const [porta] = useState(() => lerPortaStaff());
+  const [saltar, setSaltar] = useState(false);
+  const [aberto, setAberto] = useState(false);
+  const [rect, setRect] = useState(null);
+  const cenaRef = useRef(null);
+  const buracoRef = useRef(null);
+  const vooRef = useRef(null);
+  const { W, H } = useMedidas();
+  const cor = (porta && porta.cor) || '#B5393F';
+  const logo = (porta && porta.logo) || '';
+  const onze = (porta && TATICAS[porta.formacao]) || null;
+  const fimRef = useRef(onFim);
+  fimRef.current = onFim;
+
+  useLayoutEffect(() => {
+    const el = buracoRef.current;
+    if (el) { const r = el.getBoundingClientRect(); setRect({ left: r.left, top: r.top, width: r.width, height: r.height }); }
+  }, []);
+
+  useEffect(() => {
+    let cancelado = false;
+    const timers = [];
+    const acabar = () => { if (!cancelado) fimRef.current(); };
+    const reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduzir) { timers.push(setTimeout(acabar, 300)); return () => { cancelado = true; timers.forEach(clearTimeout); }; }
+    timers.push(setTimeout(() => !cancelado && setSaltar(true), 60));
+
+    const abrir = () => {
+      if (cancelado) return;
+      setAberto(true);
+      const cena = cenaRef.current;
+      const b = buracoRef.current ? buracoRef.current.getBoundingClientRect() : null;
+      const vw = window.innerWidth, vh = window.innerHeight;
+      if (!cena || !b) { acabar(); return; }
+      // O resto da cena apaga-se e o buraco da porta cresce até ao ecrã.
+      cena.style.transition = 'opacity .55s cubic-bezier(.4,0,.2,1) .15s';
+      cena.style.opacity = '0';
+      let comBuraco = false;
+      try { comBuraco = !!(window.CSS && CSS.supports && CSS.supports('clip-path', "path(evenodd, 'M0 0H1V1H0Z')")); } catch (e) { comBuraco = false; }
+      if (comBuraco) {
+        const t0 = performance.now(), dur = 900;
+        const curva = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+        const passo = (t) => {
+          if (cancelado) return;
+          const p = Math.min(1, (t - t0) / dur), q = curva(p);
+          const x = b.left * (1 - q), y = b.top * (1 - q), w = b.width + (vw - b.width) * q, h = b.height + (vh - b.height) * q;
+          cena.style.clipPath = `path(evenodd, 'M0 0H${vw}V${vh}H0Z M${x} ${y}h${w}v${h}h${-w}Z')`;
+          if (p < 1) requestAnimationFrame(passo);
+        };
+        requestAnimationFrame(passo);
+      }
+
+      // O emblema voa para a barra da app, se a equipa tiver emblema e a
+      // barra o mostrar.
+      const voo = vooRef.current;
+      const alvo = Array.from(document.querySelectorAll('[data-mjp-logo-equipa]')).find(el => {
+        const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
+      });
+      if (logo && alvo && voo && typeof voo.animate === 'function') {
+        const a = alvo.getBoundingClientRect(), r = voo.getBoundingClientRect();
+        const s = a.height / Math.max(1, r.height);
+        const dx = (a.left + a.width / 2) - (r.left + r.width / 2), dy = (a.top + a.height / 2) - (r.top + r.height / 2);
+        voo.style.opacity = '1';
+        voo.animate([
+          { transform: 'translate(0px, 0px) scale(1)', opacity: 1 },
+          { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 1, offset: 0.9 },
+          { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0 },
+        ], { duration: 1000, delay: 120, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'forwards' });
+      }
+      timers.push(setTimeout(acabar, 1250));
+    };
+
+    // Só abre com o browser livre (a app está a montar por baixo): espera
+    // 4 frames seguidos fluidos, nunca antes de 0,7 s e no máximo 2,2 s.
+    const ini = performance.now();
+    let ult = 0, bons = 0, raf = 0;
+    const esperar = (t) => {
+      if (cancelado) return;
+      bons = ult && (t - ult) < 34 ? bons + 1 : 0;
+      ult = t;
+      if ((bons >= 4 && t - ini > 700) || t - ini > 2200) abrir(); else raf = requestAnimationFrame(esperar);
+    };
+    raf = requestAnimationFrame(esperar);
+    // Rede de segurança: aconteça o que acontecer, a porta sai de cena.
+    timers.push(setTimeout(acabar, 5000));
+    return () => { cancelado = true; cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tamEmb = Math.round(H * 0.13);
+  return (
+    <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'none' }}>
+      <CenaPorta porta={porta} estado="autorizado" verso={(entrada && entrada.verso) || 'passe'} viraAnim={false}
+        folhasFora cenaRef={cenaRef} buracoRef={buracoRef}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#8EE6A0" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+        </div>
+      </CenaPorta>
+      {/* As folhas, por cima do buraco (fora do recorte da cena). */}
+      {rect && (
+        <div className="mjp-ps-folhas" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3 }}>
+          <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={aberto} />
+        </div>
+      )}
+      {rect && logo && (
+        <div ref={vooRef} style={{
+          position: 'fixed', left: rect.left + rect.width / 2 - tamEmb * 0.65, top: rect.top + rect.height / 2 - tamEmb / 2,
+          width: tamEmb * 1.3, height: tamEmb, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transformOrigin: '50% 50%',
+        }}>
+          <Escudo logo={logo} cor={cor} tam={tamEmb} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Qualquer erro na porta faz só a porta desaparecer — nunca a app.
+class ProtecaoPorta extends React.Component {
+  constructor(props) { super(props); this.state = { erro: false }; }
+  static getDerivedStateFromError() { return { erro: true }; }
+  componentDidCatch(e) { try { console.error('Porta da equipa técnica:', e); } catch (x) { /* nada */ } try { this.props.onFim && this.props.onFim(); } catch (x) { /* nada */ } }
+  render() { return this.state.erro ? null : this.props.children; }
+}
+export function PortaStaffAbrir({ entrada, onFim }) {
+  return <ProtecaoPorta onFim={onFim}><PortaQueAbre entrada={entrada} onFim={onFim} /></ProtecaoPorta>;
 }

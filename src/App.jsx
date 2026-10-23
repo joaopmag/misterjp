@@ -773,7 +773,7 @@ function genPlayerCode(usedSet) {
    STORAGE HELPERS
 ---------------------------------------------------------------- */
 import { supabase } from './supabaseClient';
-import AuthScreen from './AuthScreen.jsx';
+import AuthScreen, { PortaStaffAbrir, tirarEntradaStaff, guardarPortaStaff, PEDIU_NOVA_PASSE } from './AuthScreen.jsx';
 
 // A Época é um registo único (não uma lista) — vive numa linha fixa
 // (id='default') na tabela season_config.
@@ -3533,6 +3533,32 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const euId = session && session.user && session.user.id;
   const { membros, recarregar: recarregarMembros } = useMembros(teamId);
 
+  /* O QUE A PORTA DA EQUIPA TÉCNICA MOSTRA ANTES DE HAVER SESSÃO (nome,
+     clube, cor, emblema, formação do último jogo), guardado neste
+     aparelho. Só lê dados; não grava nada no Supabase. */
+  useEffect(() => {
+    if (!membros || !userEmail) return;
+    try {
+      const eu = membros.find(m => m.user_id === euId) || {};
+      const hoje = todayStr();
+      const ultimo = (matches || [])
+        .filter(m => m && m.formacao && m.date && m.date <= hoje)
+        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
+      const ep = String((season && season.name) || '');
+      const mEp = ep.match(/^(\d{4})\/(\d{2})(\d{2})$/);
+      guardarPortaStaff({
+        email: userEmail,
+        nome: String(eu.nome || '').trim(),
+        souDono: eu.papel === 'owner',
+        clube: String((equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || '').trim(),
+        epoca: mEp ? `${mEp[1]}/${mEp[3]}` : ep,
+        cor: (equipaAtiva && equipaAtiva.cor) || '#B5393F',
+        logo: (equipaAtiva && equipaAtiva.logo) || '',
+        formacao: ultimo ? ultimo.formacao : '',
+      });
+    } catch (e) { /* a porta fica com o que já tinha */ }
+  }, [membros, euId, userEmail, equipaAtiva, matches, season]);
+
   CTX_TAREFAS_EXTRA.adversarios = adversarios || [];
   CTX_TAREFAS_EXTRA.adversariosMeta = adversariosMeta || {};
   const NAV = [
@@ -3972,7 +3998,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               <LayoutGrid size={18} />
             </button>
             {equipaAtiva && equipaAtiva.logo ? (
-              <img src={equipaAtiva.logo} alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />
+              <img data-mjp-logo-equipa="" src={equipaAtiva.logo} alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />
             ) : null}
             <span style={{ ...display, color: T.textoForte, fontSize: 15, fontWeight: 600 }}>SC Salgueiros U19</span>
           </div>
@@ -4017,7 +4043,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
                     mostra emblema nenhum — melhor do que mostrar o de
                     outro clube. */}
                 {equipaAtiva && equipaAtiva.logo ? (
-                  <img src={equipaAtiva.logo} alt="" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
+                  <img data-mjp-logo-equipa="" src={equipaAtiva.logo} alt="" style={{ width: 26, height: 26, objectFit: 'contain', flexShrink: 0 }} />
                 ) : null}
                 <span style={{ ...display, color: T.textoForte, fontSize: 17, fontWeight: 600, letterSpacing: '.02em', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {(equipaAtiva && (equipaAtiva.clube || equipaAtiva.nome)) || 'Mister JP'}
@@ -51992,12 +52018,20 @@ function useAtualizacaoAutomatica() {
 
 export default function AppRoot() {
   const [session, setSession] = useState(undefined); // undefined = a verificar
+  /* A PORTA DA EQUIPA TÉCNICA (ver AuthScreen.jsx). Quando a sessão começa
+     a partir do ecrã de entrada, a porta (o quadro tático) abre por cima
+     da app já montada. `novaPasse`: chegou-se pelo link de "Perdi a
+     palavra-passe" e falta escolher a nova. */
+  const [entradaStaff, setEntradaStaff] = useState(null);
+  const [novaPasse, setNovaPasse] = useState(PEDIU_NOVA_PASSE);
   useEcraLigadoEmVideo();
   useAtualizacaoAutomatica();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (_event === 'SIGNED_IN') { const e = tirarEntradaStaff(); if (e) setEntradaStaff(e); }
+      if (_event === 'PASSWORD_RECOVERY') setNovaPasse(true);
       setSession(newSession);
     });
     return () => sub.subscription.unsubscribe();
@@ -52034,7 +52068,13 @@ export default function AppRoot() {
     );
   }
   if (!session) return <AuthScreen />;
-  return <ErrorBoundary><PortaoEquipa session={session} /></ErrorBoundary>;
+  if (novaPasse) return <ErrorBoundary><AuthScreen modo="nova-passe" /></ErrorBoundary>;
+  return (
+    <ErrorBoundary>
+      <PortaoEquipa session={session} />
+      {entradaStaff && <PortaStaffAbrir entrada={entradaStaff} onFim={() => setEntradaStaff(null)} />}
+    </ErrorBoundary>
+  );
 }
 
 /* O PORTÃO ENTRE TER SESSÃO E TER CONTEXTO.
