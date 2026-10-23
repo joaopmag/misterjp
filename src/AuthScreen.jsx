@@ -596,22 +596,19 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
         <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 13, fontWeight: 600, letterSpacing: '.05em', lineHeight: 1.05, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clube}</div>
       </div>
       <div style={{ position: 'absolute', left: 0, right: 0, top: 60, height: 25, background: 'linear-gradient(90deg,#B8902E,#F1D27A 50%,#B8902E)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Oswald', sans-serif", fontSize: 12, fontWeight: 600, letterSpacing: '.24em', color: '#1A1408' }}>EQUIPA TÉCNICA</div>
-      <div style={{ position: 'absolute', left: 14, top: 98, width: 64, height: 78, borderRadius: 8, background: '#1A2A1F', border: '2px solid #F3ECDA', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Oswald', sans-serif", fontSize: 28, fontWeight: 600, color: '#FFD86A' }}>{nome ? iniciais(nome) : '?'}</div>
       {sensor ? (
         <button type="button" onClick={sensor.onClick || undefined} disabled={!sensor.onClick}
           aria-label={sensorModo === 'passe' ? 'Entrar com a palavra-passe' : `Entrar com ${BIO_TXT.comArtigo}`}
-          className={sensorModo === 'bio' || sensorModo === 'passe' ? 'mjp-ps-pulso' : undefined}
-          style={{ position: 'absolute', right: 14, top: 104, width: 66, height: 66, borderRadius: 16, zIndex: 2, padding: 0, background: '#0D120F', border: `2px solid ${corSensor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: sensor.onClick ? 'pointer' : 'default', transition: 'border-color .3s' }}>
-          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke={corSensor} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={sensorModo === 'a-ler' ? 'mjp-ps-pisca' : undefined}>{iconeSensor}</svg>
+          className={sensor.pulsar ? 'mjp-ps-pulso' : undefined}
+          style={{ position: 'absolute', left: '50%', top: 100, width: 76, height: 76, marginLeft: -38, borderRadius: 18, zIndex: 2, padding: 0, background: '#0D120F', border: `2px solid ${corSensor}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: sensor.onClick ? 'pointer' : 'default', transition: 'border-color .3s' }}>
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke={corSensor} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={sensorModo === 'a-ler' ? 'mjp-ps-pisca' : undefined}>{iconeSensor}</svg>
         </button>
-      ) : (
-        <div style={{ position: 'absolute', right: 14, top: 108, width: 34, height: 26, borderRadius: 5, background: 'linear-gradient(135deg,#F1D27A,#B8902E)', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,.25)' }} />
-      )}
-      <div style={{ position: 'absolute', left: 14, right: 14, top: 188 }}>
-        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 21, fontWeight: 600, lineHeight: 1.02, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome || 'Por ativar'}</div>
+      ) : null}
+      <div style={{ position: 'absolute', left: 14, right: 14, top: 190, textAlign: 'center' }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: 21, fontWeight: 600, lineHeight: 1.05, textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome || 'Por ativar'}</div>
         <div style={{ fontSize: 12, color: '#C9D2C5', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nome ? (porta.funcao || (porta.souDono ? 'Responsável da equipa' : 'Equipa técnica')) : 'Entra uma vez para a ativar'}</div>
       </div>
-      <div style={{ position: 'absolute', left: 14, bottom: 11, fontSize: 10.5, letterSpacing: '.12em', color: '#9AA89F' }}>ÉPOCA {(porta && porta.epoca) || epocaAtual()}</div>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 11, textAlign: 'center', fontSize: 10.5, letterSpacing: '.12em', color: '#9AA89F' }}>ÉPOCA {(porta && porta.epoca) || epocaAtual()}</div>
       <div style={{ position: 'absolute', top: '-20%', bottom: '-20%', width: '40%', pointerEvents: 'none', background: 'linear-gradient(100deg, transparent, rgba(255,255,255,.22), transparent)', transform: 'skewX(-18deg)', animation: 'mjp-ps-brilho 3s ease-in-out 1.3s infinite' }} />
     </div>
   );
@@ -669,7 +666,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
           const corC = faceId === 'ok' ? '#8EE6A0' : '#C9A227';
           const canto = (o) => ({ position: 'absolute', width: c, height: c, borderColor: corC, borderStyle: 'solid', borderWidth: 0, transition: 'border-color .3s', ...o });
           return (
-            <div aria-hidden="true" className={faceId === 'pronto' ? 'mjp-ps-respira' : undefined} style={{ position: 'absolute', left: 7 + W / 2 - t / 2, top: 7 + H / 2 - t / 2, width: t, height: t, pointerEvents: 'none', zIndex: 2 }}>
+            <div aria-hidden="true" className={faceId === 'pronto' ? 'mjp-ps-respira' : undefined} data-face={faceId} style={{ position: 'absolute', left: 7 + W / 2 - t / 2, top: 7 + H / 2 - t / 2, width: t, height: t, pointerEvents: 'none', zIndex: 2 }}>
               {/* Uma onda de luz sai do círculo central: "toca aqui". */}
               {faceId === 'pronto' && <div className="mjp-ps-onda" style={{ position: 'absolute', inset: '8%', borderRadius: '50%', border: '2px solid rgba(255,214,120,.9)', boxShadow: '0 0 12px rgba(255,214,120,.5)' }} />}
               <div style={canto({ left: 0, top: 0, borderLeftWidth: 3, borderTopWidth: 3, borderTopLeftRadius: 8 })} />
@@ -680,7 +677,6 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
             </div>
           );
         })()}
-        <div aria-hidden="true" style={{ position: 'absolute', left: '15%', right: '15%', bottom: -9, height: 9, borderRadius: '0 0 5px 5px', background: '#2A332D' }} />
       </div>
 
       {/* fita, nas cores do clube: vem de trás do quadro até à mola */}
@@ -1050,7 +1046,18 @@ export default function AuthScreen({ modo }) {
      digital) passa a ser "Usar a impressão digital"; enquanto não existe,
      é a palavra-passe. Com a credencial virada, "Ver a credencial" volta a pô-la de frente. */
   const entrarPasse = () => { mudarVerso(conhecido ? 'passe' : 'novo'); depois(() => { try { passeRef.current && passeRef.current.focus(); } catch (er) { /* nada */ } }, 750); };
-  const deFrente = () => { setErro(''); setInfo(''); setPassword(''); setViraAnim(true); setVerso(null); depois(() => setViraAnim(false), 700); };
+  /* Virar de volta COM A MESMA ANIMAÇÃO da ida. As costas, depois de
+     viradas, ficam planas (por causa dos campos de texto); primeiro volta
+     a montar-se o cartão em 3D, ainda virado, e só no frame seguinte se
+     manda rodar para a frente — senão saltava sem rodar. */
+  const deFrente = () => {
+    setErro(''); setInfo(''); setPassword('');
+    setViraAnim(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      setVerso(null);
+      depois(() => setViraAnim(false), 700);
+    }));
+  };
   const voltar = verso
     ? <button type="button" style={ligacao} onClick={deFrente}>{bioAtivo && BIO_TXT.nome === 'Face ID' ? 'Usar o Face ID' : 'Ver a credencial'}</button>
     : bioAtivo
@@ -1071,9 +1078,14 @@ export default function AuthScreen({ modo }) {
       <CenaPorta
         porta={porta} estado={estado} verso={verso} viraAnim={viraAnim} tremer={tremer}
         onEmblema={novaPasse ? null : tocarEmblema} rodape={rodape}
-        faceId={!bioAtivo || novaPasse ? 'desligado' : estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'face') ? 'a-ler' : 'pronto'}
+        /* UM SÓ SINAL A PULSAR, o do sensor que este aparelho tem: no
+           iPhone pulsa o emblema (Face ID); no Android e no computador
+           pulsa a impressão digital do cartão. Os dois funcionam sempre —
+           pedem ambos ao aparelho que confirme quem é. */
+        faceId={!bioAtivo || novaPasse ? 'desligado' : estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'face') ? 'a-ler' : (BIO_TXT.nome === 'Face ID' ? 'pronto' : 'quieto')}
         sensor={novaPasse ? null : {
           modo: estado === 'autorizado' ? 'ok' : (estado === 'verificar' && lendo === 'digital') ? 'a-ler' : bioAtivo ? 'bio' : 'passe',
+          pulsar: estado === 'fechado' && (!bioAtivo || BIO_TXT.nome !== 'Face ID'),
           onClick: estado === 'fechado' ? (bioAtivo ? () => entrarBio('digital') : entrarPasse) : null,
         }}
         onVirar={novaPasse ? null : deFrente}
