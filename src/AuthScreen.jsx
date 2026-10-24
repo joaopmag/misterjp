@@ -1407,6 +1407,7 @@ function PortaQueAbre({ entrada, onFim }) {
        desenhar-se. Nunca abre antes de 0,8 s; se a app demorar mais de
        10 s, abre na mesma (a app trata do resto, como sempre). */
     let ini = performance.now();
+    const computador = (() => { try { return window.matchMedia('(pointer: fine)').matches && window.innerWidth >= 900; } catch (e) { return false; } })();
     let ult = 0, bons = 0, raf = 0, prontaEm = 0, perguntouAte = 0;
     const aPerguntar = () => ['ver', 'perguntar', 'a-ativar', 'feito'].includes(perguntaRef.current);
     const esperar = (t) => {
@@ -1422,14 +1423,21 @@ function PortaQueAbre({ entrada, onFim }) {
          seguidos, ou ao fim de 0,6 s mesmo que o computador ainda esteja
          ocupado (antes esperava sempre 4 frames fluidos e, num computador
          com a app a trabalhar por trás, chegava a demorar 7 s). */
-      /* ESPERA PELA APP CALMA, MAS NÃO DEMAIS. Abre com 4 frames fluidos
-         seguidos depois de a app estar pronta, ou ao fim de 1 s mesmo que
-         o aparelho ainda esteja ocupado. (Com 6 frames e até 2 s, no
-         telemóvel a porta ficava mais de 4 s fechada depois do "acesso
-         autorizado": a app continua a trabalhar uns segundos e quase nunca
-         dava 6 frames seguidos.) Um engasgo durante a abertura já não faz
-         saltar nada — o relógio com travão abranda a porta nesse instante. */
-      const pronta = prontaEm && t - ini > 800 && ((bons >= 4 && t - prontaEm > 250) || t - prontaEm > 1000);
+      /* ESPERA PELA APP CALMA — À MEDIDA DO APARELHO.
+         - Telemóvel: 4 frames fluidos seguidos, ou 1 s no máximo depois de a
+           app estar pronta. A app continua a trabalhar uns segundos e quase
+           nunca dá mais frames seguidos; com uma regra mais exigente, a porta
+           ficava mais de 4 s fechada.
+         - Computador: 6 frames fluidos seguidos, ou 2 s no máximo. A app de
+           desktop desenha muito mais (gráficos, várias colunas) logo a
+           seguir a estar pronta; abrindo ao fim de 1 s, o primeiro meio
+           segundo da abertura corria a ~15 frames por segundo. Com esta
+           espera, o computador já acalmou quando a porta abre.
+         Em qualquer caso, um engasgo durante a abertura não faz saltar
+         nada: o relógio com travão abranda a porta nesse instante. */
+      const pronta = prontaEm && t - ini > 800 && (computador
+        ? ((bons >= 6 && t - prontaEm > 300) || t - prontaEm > 2000)
+        : ((bons >= 4 && t - prontaEm > 250) || t - prontaEm > 1000));
       if (pronta || t - ini > 6000) abrir(); else raf = requestAnimationFrame(esperar);
     };
     raf = requestAnimationFrame(esperar);
