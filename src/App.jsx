@@ -34867,7 +34867,9 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
       } : {
         position: 'relative', zIndex: 2, flex: 1, minHeight: 120, maxHeight: 'min(48dvh, 520px)', aspectRatio: '5 / 6', width: 'auto', maxWidth: '100%', borderRadius: 8, padding: 7, boxSizing: 'border-box', display: 'flex',
       }}>
-        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', boxShadow: '0 10px 24px rgba(0,0,0,.45)', ...apagar }} />
+        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 8, ...(largura && TEMA_ATUAL === 'claro'
+          ? { background: 'linear-gradient(90deg,#AEB7B1,#E2E7E3 50%,#AEB7B1)', boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,.8), 0 14px 26px rgba(30,40,30,.28)' }
+          : { background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', boxShadow: '0 10px 24px rgba(0,0,0,.45)' }), ...apagar }} />
         <div ref={caixaRef} style={{ position: 'relative', flex: 1, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
           {/* Desfocado com o MESMO filtro das folhas da porta que abre no
               Portal (PortaVidroSo): a imagem fica idêntica na passagem. */}
@@ -35429,18 +35431,20 @@ function PeCamisola({ jogador, cor, logo, virada, sensor, pin, rotulo, corRotulo
    camisola (nunca abaixo de 62 %). Em ecrãs altos a camisola cresce até
    15 %, para o teclado ficar mais confortável. */
 function usePortaMedidas() {
-  /* A MESMA REGRA DO QUADRO DA EQUIPA TÉCNICA (AuthScreen): a porta tem o
-     tamanho que o quadro teria no mesmo ecrã (até 520 px de largura) e a
-     camisola fica com o espaço que sobra (encolhe até 62 %, cresce até
-     15 %). Assim as duas entradas têm as mesmas proporções. */
+  /* Medidas da porta e da camisola: tudo cabe no ecrã, sem deslizar, até
+     ao "Mais opções", numa coluna de até 420 px. Primeiro encolhe a porta;
+     se ainda não chegar, encolhe a camisola (nunca abaixo de 62 %). Em
+     ecrãs altos a camisola cresce até 15 %. A porta da equipa técnica
+     (AuthScreen) usa EXATAMENTE a mesma regra para o quadro. */
   const medir = () => {
-    const vw = window.innerWidth, vh = window.innerHeight;
-    const larguraMax = Math.min(vw * 0.9, 520);
+    const vw = Math.min(window.innerWidth, 420), vh = window.innerHeight;
+    const livre = vh - 215;
+    const larguraMax = vw - 32 - 14;
     const hLargura = larguraMax * 254 / 348;
-    let H = Math.min(hLargura, vh - 213 - 268);
-    if (H < 165) H = Math.max(130, Math.min(hLargura, (vh - 213) * 0.46));
+    let H = Math.min(hLargura, livre - 330), k = 1;
+    if (H < 150) { H = Math.max(120, Math.min(hLargura, livre * 0.42)); k = Math.max(0.62, Math.min(1, (livre - H) / 330)); }
+    else k = Math.max(1, Math.min(1.15, (livre - H) / 330));
     H = Math.round(H);
-    const k = Math.max(0.62, Math.min(1.15, (vh - 215 - H) / 330));
     return { W: Math.round(H * 348 / 254), H, k };
   };
   const [m, setM] = useState(medir);
@@ -36249,8 +36253,12 @@ function PortalEntrada({ entrar, equipa, teamId }) {
         <>
         {/* fundo escuro e aro de luz no teto (dentro da cópia do ecrã que
             fica por baixo da porta a abrir: desvanece com o resto) */}
-        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)' }}>
-          <div style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, boxSizing: 'content-box', transform: 'translateX(-50%)', borderRadius: '50%', border: '3px solid rgba(255,230,160,.75)', boxShadow: '0 0 24px 6px rgba(255,230,160,.22)' }} />
+        {/* No modo claro muda o ambiente (fundo e luz); a porta, o letreiro
+            e a camisola mantêm os materiais — como na equipa técnica. */}
+        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: TEMA_ATUAL === 'claro' ? 'radial-gradient(ellipse at 50% 18%, #FFFFFF 0%, #E3E9E1 75%)' : 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)' }}>
+          <div style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, boxSizing: 'content-box', transform: 'translateX(-50%)', borderRadius: '50%',
+            border: TEMA_ATUAL === 'claro' ? '3px solid rgba(176,138,30,.7)' : '3px solid rgba(255,230,160,.75)',
+            boxShadow: TEMA_ATUAL === 'claro' ? '0 0 24px 6px rgba(255,205,110,.35)' : '0 0 24px 6px rgba(255,230,160,.22)' }} />
         </div>
         <div style={{ ...coluna, position: 'relative', gap: 0, maxWidth: Math.max(420, m.W + 14) }}>
           {semMemoria && (

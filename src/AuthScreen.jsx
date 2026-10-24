@@ -268,6 +268,38 @@ export const FUNCOES_STAFF = [
   'Coordenador', 'Delegado', 'Team manager', 'Roupeiro',
 ];
 
+/* MODO CLARO. A escolha é a mesma da app (\`mjp-tema\` neste aparelho:
+   'claro', 'escuro' ou 'auto'); mudar recarrega a página, como na app.
+   No claro muda o ambiente (fundo, luz, aro do quadro, painéis e textos);
+   os objetos — o letreiro, o quadro, a credencial — mantêm os materiais. */
+const TEMA_CLARO = (() => {
+  try {
+    const v = localStorage.getItem('mjp-tema');
+    if (v === 'claro') return true;
+    if (v === 'auto') return window.matchMedia('(prefers-color-scheme: light)').matches;
+  } catch (e) { /* segue escuro */ }
+  return false;
+})();
+function trocarTemaEntrada() {
+  try { localStorage.setItem('mjp-tema', TEMA_CLARO ? 'escuro' : 'claro'); } catch (e) { /* sem memória */ }
+  window.location.reload();
+}
+const P = TEMA_CLARO ? {
+  fundo: 'radial-gradient(ellipse at 50% 18%, #FFFFFF 0%, #E3E9E1 75%)', faixa: '#E3E9E1',
+  aro: '3px solid rgba(176,138,30,.7)', aroBrilho: '0 0 24px 6px rgba(255,205,110,.35)',
+  moldura: 'linear-gradient(90deg,#AEB7B1,#E2E7E3 50%,#AEB7B1)', molduraSombra: 'inset 0 1.5px 0 rgba(255,255,255,.8), 0 18px 30px rgba(30,40,30,.28)',
+  sombraCartao: '0 16px 28px rgba(30,40,30,.32)',
+  maisOpcoes: '#5F7062', veu: 'rgba(20,30,20,.35)', painel: '#FFFFFF', painelLinha: '#C9D3C6',
+  opcao: '#F2F4EF', opcaoTexto: '#1B2A1D', fechar: '#5F7062',
+} : {
+  fundo: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)', faixa: '#0B0F0D',
+  aro: '3px solid rgba(255,230,160,.75)', aroBrilho: '0 0 24px 6px rgba(255,230,160,.22)',
+  moldura: 'linear-gradient(90deg,#3A423D,#5E6862 50%,#3A423D)', molduraSombra: 'inset 0 1.5px 0 rgba(255,240,200,.35), 0 18px 32px rgba(0,0,0,.6)',
+  sombraCartao: '0 16px 30px rgba(0,0,0,.6)',
+  maisOpcoes: '#8A9A8C', veu: 'rgba(0,0,0,.55)', painel: '#202F22', painelLinha: '#3A4F3D',
+  opcao: '#182619', opcaoTexto: '#ECEFEA', fechar: '#8FA091',
+};
+
 /* ---------------- cores e pequenas ajudas ---------------- */
 function mistura(hex, alvo, q) {
   const h = String(hex || '#B5393F').replace('#', '');
@@ -500,7 +532,7 @@ function useSemFaixa() {
     try {
       st = document.createElement('style');
       st.setAttribute('data-mjp-ps-sem-faixa', '');
-      st.textContent = 'html:root, html:root body { overflow: hidden !important; background: #0B0F0D !important; } html:root { scrollbar-gutter: stable !important; }';
+      st.textContent = `html:root, html:root body { overflow: hidden !important; background: ${P.faixa} !important; } html:root { scrollbar-gutter: stable !important; }`;
       document.head.appendChild(st);
     } catch (e) { st = null; }
     repor.current = () => { if (st && st.parentNode) st.parentNode.removeChild(st); st = null; };
@@ -514,7 +546,7 @@ function useSemFaixa() {
         const g = getComputedStyle(document.documentElement).scrollbarGutter || '';
         st.disabled = false;
         const natural = /stable/.test(g) ? 'stable' : 'auto';
-        st.textContent = `html:root, html:root body { overflow: hidden !important; background: #0B0F0D !important; } html:root { scrollbar-gutter: ${natural} !important; }`;
+        st.textContent = `html:root, html:root body { overflow: hidden !important; background: ${P.faixa} !important; } html:root { scrollbar-gutter: ${natural} !important; }`;
       } catch (e) { try { st.disabled = false; } catch (e2) { /* nada */ } }
     };
     return () => repor.current();
@@ -552,22 +584,18 @@ function margensTelemovel() {
   return MARGENS_TELEMOVEL;
 }
 function medir() {
-  const vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
-  const m = margensTelemovel();
-  const livre = vh - ALTURA_FIXA - m.cima - m.baixo;           // para o quadro + credencial
-  const hLargura = Math.min(vw * 0.9, 520) * 254 / 348;          // o maior que a largura deixa
-  let H = Math.min(hLargura, livre - CH);
-  let k = 1;
-  if (H < 165) {
-    // Ecrã baixo: o quadro fica com cerca de metade e a credencial encolhe.
-    H = Math.max(130, Math.min(hLargura, livre * 0.46));
-    k = Math.max(0.7, Math.min(1, (livre - H) / CH));
-  }
-  else {
-    // Ecrã alto: o espaço que sobra vai para o cartão, que cresce até 18 %.
-    k = Math.max(1, Math.min(1.18, (livre - H) / CH));
-  }
+  /* O QUADRO TEM AS MESMAS MEDIDAS DA PORTA DO PORTAL (usePortaMedidas no
+     App.jsx): coluna de até 420 px e a mesma regra para a altura. O cartão
+     fica com o espaço que sobra (de 70 % a 118 %). */
+  const vw = Math.min(document.documentElement.clientWidth || window.innerWidth, 420), vh = window.innerHeight;
+  const livrePortal = vh - 215;
+  const hLargura = (vw - 32 - 14) * 254 / 348;
+  let H = Math.min(hLargura, livrePortal - 330);
+  if (H < 150) H = Math.max(120, Math.min(hLargura, livrePortal * 0.42));
   H = Math.round(H);
+  const m = margensTelemovel();
+  const livre = vh - ALTURA_FIXA - m.cima - m.baixo;
+  const k = Math.max(0.7, Math.min(1.18, (livre - H) / CH));
   return { W: Math.round(H * 348 / 254), H, k };
 }
 function useMedidas() {
@@ -606,7 +634,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
   const plano = virada && !viraAnim;
   const face = {
     position: 'absolute', inset: 0, borderRadius: 12, overflow: 'hidden', boxSizing: 'border-box',
-    boxShadow: `0 16px 30px rgba(0,0,0,.6), 0 0 0 2px ${aro}`, transition: 'box-shadow .3s',
+    boxShadow: `${P.sombraCartao}, 0 0 0 2px ${aro}`, transition: 'box-shadow .3s',
     WebkitBackfaceVisibility: 'hidden', backfaceVisibility: 'hidden',
   };
   /* O SENSOR NO CARTÃO. Onde estava o chip dourado está agora um sensor —
@@ -661,13 +689,13 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
 
   return (
     <div ref={cenaRef} className="mjp-ps" style={{
-      position: 'fixed', inset: 0, overflow: 'hidden', background: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)',
+      position: 'fixed', inset: 0, overflow: 'hidden', background: P.fundo,
       ...(folhasFora ? { willChange: 'opacity' } : null),
       fontFamily: "'Inter', system-ui, sans-serif", color: '#F3ECDA', display: 'flex', flexDirection: 'column', alignItems: 'center',
       paddingTop: 'calc(18px + env(safe-area-inset-top, 0px))', paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box',
     }}>
       {/* luz de teto */}
-      <div data-mjp-topo="" aria-hidden="true" style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, transform: 'translateX(-50%)', borderRadius: '50%', border: '3px solid rgba(255,230,160,.75)', boxShadow: '0 0 24px 6px rgba(255,230,160,.22)' }} />
+      <div data-mjp-topo="" aria-hidden="true" style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, transform: 'translateX(-50%)', borderRadius: '50%', border: P.aro, boxShadow: P.aroBrilho }} />
 
       {/* letreiro (a mesma linguagem do Portal) */}
       <div data-mjp-topo="" style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 10, background: '#0D120F', border: '1px solid #3A4440', borderRadius: 8, padding: '6px 16px', boxShadow: '0 0 16px rgba(255,194,61,.15)', flexShrink: 0, marginTop: 6 }}>
@@ -681,7 +709,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
       {/* o quadro (aro metálico, o buraco das folhas e a calha) */}
       <div style={{ position: 'relative', zIndex: 3, flexShrink: 0, marginTop: 14, width: W + 14, height: H + 14 }}>
         {/* aro: a luz de cima apanha a aresta de cima; a sombra cai para baixo */}
-        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 9, background: 'linear-gradient(90deg,#3A423D,#5E6862 50%,#3A423D)', boxShadow: 'inset 0 1.5px 0 rgba(255,240,200,.35), 0 18px 32px rgba(0,0,0,.6)' }} />
+        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 9, background: P.moldura, boxShadow: P.molduraSombra }} />
         <div ref={buracoRef} style={{ position: 'absolute', left: 7, top: 7, width: W, height: H, overflow: 'hidden', borderRadius: 3, background: '#121614' }}>
           {!folhasFora && <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={false} />}
         </div>
@@ -1119,11 +1147,11 @@ export default function AuthScreen({ modo }) {
     : bioAtivo
       ? <button type="button" style={ligacao} onClick={() => mudarVerso('digital')}>Usar {BIO_TXT.comArtigo}</button>
       : <button type="button" style={ligacao} onClick={entrarPasse}>Entrar com a palavra-passe</button>;
-  const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: '#182619', border: '1px solid #3A4F3D', color: '#ECEFEA', fontSize: 14.5, cursor: 'pointer', fontFamily: "'Inter', sans-serif" };
+  const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: P.opcao, border: `1px solid ${P.painelLinha}`, color: P.opcaoTexto, fontSize: 14.5, cursor: 'pointer', fontFamily: "'Inter', sans-serif" };
 
   const rodape = novaPasse ? null : (
     <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 'auto', paddingTop: 4, flexShrink: 0 }}>
-      <button type="button" onClick={() => setOpcoes(true)} style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: '#8A9A8C', fontSize: 14, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+      <button type="button" onClick={() => setOpcoes(true)} style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: P.maisOpcoes, fontSize: 14, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
         <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
       </button>
     </div>
@@ -1150,13 +1178,21 @@ export default function AuthScreen({ modo }) {
         {conteudoVerso}
       </CenaPorta>
       {opcoes && (
-        <div onClick={() => setOpcoes(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px', boxSizing: 'border-box' }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: '#202F22', border: '1px solid #3A4F3D', borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' }}>
+        <div onClick={() => setOpcoes(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: P.veu, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px', boxSizing: 'border-box' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: P.painel, border: `1px solid ${P.painelLinha}`, borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' }}>
             <button type="button" style={opcao} onClick={() => { setOpcoes(false); entrarPasse(); }}>Entrar com a palavra-passe</button>
             <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('recuperar'); }}>Esqueci-me da palavra-passe</button>
             {conhecido && <button type="button" style={opcao} onClick={outraConta}>Entrar com outra conta</button>}
             <button type="button" style={opcao} onClick={() => { setOpcoes(false); mudarVerso('criar'); }}>Criar conta</button>
-            <button type="button" style={{ ...opcao, textAlign: 'center', background: 'transparent', border: 'none', color: '#8FA091' }} onClick={() => setOpcoes(false)}>Fechar</button>
+            <button type="button" style={{ ...opcao, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={trocarTemaEntrada}>
+              {TEMA_CLARO ? 'Modo escuro' : 'Modo claro'}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={P.maisOpcoes} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {TEMA_CLARO
+                  ? <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                  : <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></>}
+              </svg>
+            </button>
+            <button type="button" style={{ ...opcao, textAlign: 'center', background: 'transparent', border: 'none', color: P.fechar }} onClick={() => setOpcoes(false)}>Fechar</button>
           </div>
         </div>
       )}
