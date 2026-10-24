@@ -34805,8 +34805,9 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
   }, []);
   const H = Math.round(Math.max(215, Math.min(420, (300 * tam.h) / Math.max(1, tam.w))));
   // A porta é agora deitada (como o quadro da equipa técnica): o emblema
-  // ocupa 62 % da altura do vidro. O mesmo tamanho passa para a abertura.
-  const tamEmblema = Math.round(tam.h * (largura ? 0.62 : 0.78));
+  // ocupa 50 % da altura do vidro (o Face ID, à volta, 60 %). O mesmo
+  // tamanho passa para a abertura.
+  const tamEmblema = Math.round(tam.h * (largura ? 0.5 : 0.78));
   const nome = String((jogador && jogador.nome) || '').trim();
   const primeiro = nome ? nome.split(/\s+/)[0] : '';
   const numero = jogador && jogador.numero != null && String(jogador.numero).trim() !== '' ? String(jogador.numero).trim() : '';
@@ -34883,7 +34884,7 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
             um dedo que toca. Saem quando o acesso é autorizado — não vão na
             cópia do ecrã que fica por baixo da porta a abrir. */}
         {largura && !aberta && onEmblema && (() => {
-          const t = Math.round(altura * 0.7), c = Math.round(t * 0.22);
+          const t = Math.round(altura * 0.6), c = Math.round(t * 0.22);
           const corC = faceId === 'ok' ? '#8EE6A0' : '#C9A227';
           const canto = (o) => ({ position: 'absolute', width: c, height: c, borderColor: corC, borderStyle: 'solid', borderWidth: 0, boxSizing: 'border-box', ...o });
           return (
@@ -35441,10 +35442,13 @@ function usePortaMedidas() {
     const livre = vh - 215;
     const larguraMax = vw - 32 - 14;
     const hLargura = larguraMax * 254 / 348;
-    let H = Math.min(hLargura, livre - 330), k = 1;
-    if (H < 150) { H = Math.max(120, Math.min(hLargura, livre * 0.42)); k = Math.max(0.62, Math.min(1, (livre - H) / 330)); }
-    else k = Math.max(1, Math.min(1.15, (livre - H) / 330));
+    let H = Math.min(hLargura, livre - 330);
+    if (H < 150) H = Math.max(120, Math.min(hLargura, livre * 0.42));
     H = Math.round(H);
+    /* A camisola acompanha a porta NA MESMA PROPORÇÃO (tamanho base com a
+       porta de 251 px de altura, a de um telemóvel normal) — e nunca
+       maior do que o espaço que sobra. */
+    const k = Math.max(0.55, Math.min(H / 251, (livre - H) / 330));
     return { W: Math.round(H * 348 / 254), H, k };
   };
   const [m, setM] = useState(medir);

@@ -585,8 +585,7 @@ function margensTelemovel() {
 }
 function medir() {
   /* O QUADRO TEM AS MESMAS MEDIDAS DA PORTA DO PORTAL (usePortaMedidas no
-     App.jsx): coluna de até 420 px e a mesma regra para a altura. O cartão
-     fica com o espaço que sobra (de 70 % a 118 %). */
+     App.jsx): coluna de até 420 px e a mesma regra para a altura. */
   const vw = Math.min(document.documentElement.clientWidth || window.innerWidth, 420), vh = window.innerHeight;
   const livrePortal = vh - 215;
   const hLargura = (vw - 32 - 14) * 254 / 348;
@@ -595,7 +594,10 @@ function medir() {
   H = Math.round(H);
   const m = margensTelemovel();
   const livre = vh - ALTURA_FIXA - m.cima - m.baixo;
-  const k = Math.max(0.7, Math.min(1.18, (livre - H) / CH));
+  /* O cartão acompanha o quadro NA MESMA PROPORÇÃO (tamanho base com o
+     quadro de 251 px de altura, o de um telemóvel normal) — e nunca maior
+     do que o espaço que sobra. */
+  const k = Math.max(0.55, Math.min(H / 251, (livre - H) / CH));
   return { W: Math.round(H * 348 / 254), H, k };
 }
 function useMedidas() {
