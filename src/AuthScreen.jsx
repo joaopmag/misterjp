@@ -285,14 +285,14 @@ function trocarTemaEntrada() {
   window.location.reload();
 }
 const P = TEMA_CLARO ? {
-  fundo: 'radial-gradient(ellipse at 50% 18%, #FFFFFF 0%, #E3E9E1 75%)', faixa: '#E3E9E1',
+  fundo: 'radial-gradient(ellipse at 50% 18%, #FFFFFF 0%, #E3E9E1 75%)', faixa: '#E3E9E1', barras: '#E8EDE6',
   aro: '3px solid rgba(176,138,30,.7)', aroBrilho: '0 0 24px 6px rgba(255,205,110,.35)',
   moldura: 'linear-gradient(90deg,#AEB7B1,#E2E7E3 50%,#AEB7B1)', molduraSombra: 'inset 0 1.5px 0 rgba(255,255,255,.8), 0 18px 30px rgba(30,40,30,.28)',
   sombraCartao: '0 16px 28px rgba(30,40,30,.32)',
   maisOpcoes: '#5F7062', veu: 'rgba(20,30,20,.35)', painel: '#FFFFFF', painelLinha: '#C9D3C6',
   opcao: '#F2F4EF', opcaoTexto: '#1B2A1D', fechar: '#5F7062',
 } : {
-  fundo: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)', faixa: '#0B0F0D',
+  fundo: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)', faixa: '#0B0F0D', barras: '#0E1310',
   aro: '3px solid rgba(255,230,160,.75)', aroBrilho: '0 0 24px 6px rgba(255,230,160,.22)',
   moldura: 'linear-gradient(90deg,#3A423D,#5E6862 50%,#3A423D)', molduraSombra: 'inset 0 1.5px 0 rgba(255,240,200,.35), 0 18px 32px rgba(0,0,0,.6)',
   sombraCartao: '0 16px 30px rgba(0,0,0,.6)',
@@ -535,7 +535,17 @@ function useSemFaixa() {
       st.textContent = `html:root, html:root body { overflow: hidden !important; background: ${P.faixa} !important; } html:root { scrollbar-gutter: stable !important; }`;
       document.head.appendChild(st);
     } catch (e) { st = null; }
-    repor.current = () => { if (st && st.parentNode) st.parentNode.removeChild(st); st = null; };
+    /* AS BARRAS DO SISTEMA (estado em cima, navegação em baixo, no Chrome
+       do Android) usam a \`theme-color\` da app, que é verde: ficava uma
+       faixa verde em cima e em baixo da cena. Enquanto a porta está em
+       cena, ficam com a cor da cena; no fim volta a cor da app. */
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const metaAntes = meta ? meta.getAttribute('content') : null;
+    if (meta) meta.setAttribute('content', P.barras);
+    repor.current = () => {
+      if (st && st.parentNode) st.parentNode.removeChild(st); st = null;
+      if (meta && metaAntes != null) meta.setAttribute('content', metaAntes);
+    };
     /* Igualar à app: lê a reserva da barra de scroll que a app tem SEM a
        porta (desliga a regra da porta por um instante, sem pintar) e passa
        a usar a mesma. Assim, quando a porta sai, nada muda de largura. */
@@ -699,6 +709,12 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
       {/* luz de teto */}
       <div data-mjp-topo="" aria-hidden="true" style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, transform: 'translateX(-50%)', borderRadius: '50%', border: P.aro, boxShadow: P.aroBrilho }} />
 
+      {/* ESPAÇO DISTRIBUÍDO: o espaço que sobra não fica todo entre o
+          cartão e o "Mais opções". Um pouco vai para cima do letreiro e o
+          resto divide-se ao meio, antes e depois do "Mais opções". (A porta
+          que abre usa a mesma cena, com um rodapé da mesma altura: o quadro
+          fica exatamente no mesmo sítio.) */}
+      <div aria-hidden="true" style={{ flex: '0.3 1 0', minHeight: 0 }} />
       {/* letreiro (a mesma linguagem do Portal) */}
       <div data-mjp-topo="" style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 10, background: '#0D120F', border: '1px solid #3A4440', borderRadius: 8, padding: '6px 16px', boxShadow: '0 0 16px rgba(255,194,61,.15)', flexShrink: 0, marginTop: 6 }}>
         <span className={estado === 'verificar' ? 'mjp-ps-pisca' : undefined} style={{ width: 9, height: 9, borderRadius: '50%', background: sinal, boxShadow: `0 0 8px ${sinal}`, transition: 'background .3s' }} />
@@ -773,7 +789,9 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
        </div>
       </div>
 
+      <div aria-hidden="true" style={{ flex: '1 1 0', minHeight: 0 }} />
       {rodape}
+      <div aria-hidden="true" style={{ flex: '1 1 0', minHeight: 0 }} />
     </div>
   );
 }
@@ -1152,7 +1170,7 @@ export default function AuthScreen({ modo }) {
   const opcao = { width: '100%', textAlign: 'left', padding: '13px 14px', borderRadius: 12, background: P.opcao, border: `1px solid ${P.painelLinha}`, color: P.opcaoTexto, fontSize: 14.5, cursor: 'pointer', fontFamily: "'Inter', sans-serif" };
 
   const rodape = novaPasse ? null : (
-    <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 'auto', paddingTop: 4, flexShrink: 0 }}>
+    <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', height: 48, paddingTop: 4, boxSizing: 'border-box', flexShrink: 0 }}>
       <button type="button" onClick={() => setOpcoes(true)} style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: P.maisOpcoes, fontSize: 14, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
         <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
       </button>
@@ -1404,7 +1422,7 @@ function PortaQueAbre({ entrada, onFim }) {
   return (
     <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'none' }}>
       <CenaPorta porta={porta} estado="autorizado" verso={entrada ? (entrada.verso || null) : 'passe'} viraAnim={false}
-        folhasFora semChegada cenaRef={cenaRef} buracoRef={buracoRef} rodape={<div style={{ marginTop: 'auto', height: 84, flexShrink: 0 }} />}
+        folhasFora semChegada cenaRef={cenaRef} buracoRef={buracoRef} rodape={<div style={{ height: 48, flexShrink: 0 }} />}
         faceId={bioOk && !aberto ? 'ok' : 'desligado'}
         sensor={{ modo: 'ok', onClick: null }}>
         {(pergunta === 'perguntar' || pergunta === 'a-ativar') ? (

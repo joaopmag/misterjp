@@ -35750,6 +35750,23 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     try { const v = localStorage.getItem(chavePista); if (v === 'feita' || Number(v || 0) >= 5) return false; localStorage.setItem(chavePista, String(Number(v || 0) + 1)); return true; } catch (e) { return false; }
   });
   const acabarPistaPortal = () => { try { localStorage.setItem(chavePista, 'feita'); } catch (e) { /* nada */ } };
+  /* AS BARRAS DO SISTEMA (Chrome no Android) e o fundo da página na cor da
+     cena enquanto se está na porta — sem isto ficava uma faixa verde (a cor
+     da app) em cima e em baixo. Ao sair da porta, volta tudo à cor da app. */
+  useEffect(() => {
+    if (ecra !== 'porta') return undefined;
+    const claro = TEMA_ATUAL === 'claro';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    const antes = meta ? meta.getAttribute('content') : null;
+    if (meta) meta.setAttribute('content', claro ? '#E8EDE6' : '#0E1310');
+    const st = document.createElement('style');
+    st.textContent = `html:root, html:root body { background: ${claro ? '#E3E9E1' : '#0B0F0D'} !important; }`;
+    document.head.appendChild(st);
+    return () => {
+      if (meta && antes != null) meta.setAttribute('content', antes);
+      if (st.parentNode) st.parentNode.removeChild(st);
+    };
+  }, [ecra]);
   useEffect(() => {
     if (!naPortaComBio) { bioPronto.current = null; return undefined; }
     prepararBio();
