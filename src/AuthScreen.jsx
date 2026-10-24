@@ -605,7 +605,9 @@ function medir() {
   const hLargura = (vw - 32 - 14) * 254 / 348;
   const H = Math.round(Math.max(120, Math.min(hLargura, (vh - fixo) / (1 + 330 / 251))));
   const kp = Math.max(0.55, Math.min(1.15, H / 251));
-  const k = kp * 330 / CH;               // o cartão ocupa a altura da camisola
+  /* O cartão fica um pouco mais pequeno do que a camisola do Portal (88 %):
+     a porta é que manda no ecrã. O espaço que sobra vai para baixo. */
+  const k = kp * 330 / CH * 0.88;
   const gapMais = 34;                    // "Mais opções" logo abaixo, como no Portal
   return { W: Math.round(H * 348 / 254), H, k, S, gapMais };
 }
@@ -1464,12 +1466,23 @@ function PortaQueAbre({ entrada, onFim }) {
 /* O buraco da cena: quatro faixas à volta do campo (máscara). Fica posto
    desde que a porta aparece — as folhas tapam-no enquanto está fechada —
    para que, ao abrir, a placa gráfica só tenha de mover e apagar. */
+/* O BURACO É UM POUCO MAIS PEQUENO DO QUE AS FOLHAS (3 px para dentro, a
+   medida do canto arredondado, e arredondado sempre PARA DENTRO). Com o
+   buraco do tamanho exato, os cantos redondos das folhas e o meio píxel
+   das bordas deixavam ver a app por trás: apareciam letras nos cantos do
+   campo antes de a porta abrir. Assim as folhas tapam sempre o buraco
+   todo; ao abrir, fica à volta um aro escuro de 3 px que desvanece com a
+   cena. */
+const FOLGA_BURACO = 3;
 function furarCena(cena, b, vw, vh) {
   if (!cena || !b || cena.dataset.furada === '1') return;
   const camadas = 'linear-gradient(#000,#000),linear-gradient(#000,#000),linear-gradient(#000,#000),linear-gradient(#000,#000)';
-  const px = (n) => `${Math.max(0, Math.round(n))}px`;
-  const tam = [`${px(vw)} ${px(b.top)}`, `${px(vw)} ${px(vh - b.top - b.height)}`, `${px(b.left)} ${px(b.height)}`, `${px(vw - b.left - b.width)} ${px(b.height)}`].join(',');
-  const pos = [`0px 0px`, `0px ${px(b.top + b.height)}`, `0px ${px(b.top)}`, `${px(b.left + b.width)} ${px(b.top)}`].join(',');
+  const px = (n) => `${Math.max(0, n)}px`;
+  const esq = Math.ceil(b.left + FOLGA_BURACO), cima = Math.ceil(b.top + FOLGA_BURACO);
+  const dir = Math.floor(b.left + b.width - FOLGA_BURACO), baixo = Math.floor(b.top + b.height - FOLGA_BURACO);
+  const alt = Math.max(0, baixo - cima);
+  const tam = [`${px(vw)} ${px(cima)}`, `${px(vw)} ${px(Math.ceil(vh) - baixo)}`, `${px(esq)} ${px(alt)}`, `${px(Math.ceil(vw) - dir)} ${px(alt)}`].join(',');
+  const pos = [`0px 0px`, `0px ${px(baixo)}`, `0px ${px(cima)}`, `${px(dir)} ${px(cima)}`].join(',');
   Object.assign(cena.style, {
     webkitMaskImage: camadas, maskImage: camadas, webkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
     webkitMaskSize: tam, maskSize: tam, webkitMaskPosition: pos, maskPosition: pos,

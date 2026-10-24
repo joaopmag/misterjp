@@ -34612,7 +34612,12 @@ function PortaVidroSo({ rect, aberto, logo, cor, caixa, fundo, tamEmblema, recol
     </>
   );
   return (
-    <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.raio, zIndex: 9999, pointerEvents: 'none' }}>
+    /* Dentro do ecrã que cresce (`caixa`), o vidro tem os cantos RETOS: a
+       janela por onde se vê o ecrã novo também é reta, e com os cantos
+       arredondados o ecrã de trás espreitava pelos quatro cantos (viam-se
+       letras) antes de a porta abrir. A janela corta tudo o que passa da
+       borda, por isso, de fora, a porta continua igual. */
+    <div aria-hidden="true" style={{ position: c.fixo ? 'fixed' : 'absolute', left: c.left, top: c.top, width: c.width, height: c.height, overflow: 'hidden', borderRadius: c.fixo ? c.raio : 0, zIndex: 9999, pointerEvents: 'none' }}>
       {/* Depois de abertas (já fora do buraco da porta), as folhas saem de cena. */}
       {!recolhido && <div data-folha="E" style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none', opacity: aberto ? 0 : 1 }}>{metade('E')}</div>}
       {!recolhido && <div data-folha="D" style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none', opacity: aberto ? 0 : 1 }}>{metade('D')}</div>}
