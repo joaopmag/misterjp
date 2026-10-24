@@ -597,7 +597,8 @@ function medir() {
   /* O QUADRO TEM AS MESMAS MEDIDAS DA PORTA DO PORTAL (usePortaMedidas no
      App.jsx): coluna de até 420 px e a mesma regra para a altura. */
   const vw = Math.min(document.documentElement.clientWidth || window.innerWidth, 420), vh = window.innerHeight;
-  const livrePortal = vh - 215;
+  const S = Math.max(0, Math.min(28, Math.round((vh - 640) * 0.12)));
+  const livrePortal = vh - 251 - S;
   const hLargura = (vw - 32 - 14) * 254 / 348;
   let H = Math.min(hLargura, livrePortal - 330);
   if (H < 150) H = Math.max(120, Math.min(hLargura, livrePortal * 0.42));
@@ -608,7 +609,13 @@ function medir() {
      quadro de 251 px de altura, o de um telemóvel normal) — e nunca maior
      do que o espaço que sobra. */
   const k = Math.max(0.55, Math.min(H / 251, (livre - H) / CH));
-  return { W: Math.round(H * 348 / 254), H, k };
+  /* A MESMA GRELHA DO PORTAL: o espaço no topo (S) e o sítio do "Mais
+     opções" são os do Portal, onde a camisola (330 px na escala dela) ocupa
+     o lugar do cartão. Assim, ao trocar de app, o letreiro, o quadro e o
+     "Mais opções" estão no mesmo sítio. */
+  const kp = Math.max(0.55, Math.min(H / 251, (livrePortal - H) / 330));
+  const gapMais = Math.max(16, Math.round(330 * kp + 38 - 4 - CH * k));
+  return { W: Math.round(H * 348 / 254), H, k, S, gapMais };
 }
 function useMedidas() {
   const [m, setM] = useState(medir);
@@ -627,7 +634,7 @@ function useMedidas() {
    pela porta que abre por cima da app.
    =================================================================== */
 function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFora, cenaRef, buracoRef, onEmblema, tremer, rodape, semChegada, faceId = 'desligado', sensor = null, onVirar = null, pista = false }) {
-  const { W, H, k } = useMedidas();
+  const { W, H, k, S, gapMais } = useMedidas();
   useState(garantirEstilos);
   const cor = (porta && porta.cor) || '#B5393F';
   const escura = mistura(cor, '0d120f', 0.4);
@@ -714,7 +721,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
           resto divide-se ao meio, antes e depois do "Mais opções". (A porta
           que abre usa a mesma cena, com um rodapé da mesma altura: o quadro
           fica exatamente no mesmo sítio.) */}
-      <div aria-hidden="true" style={{ flex: '0.3 1 0', minHeight: 0 }} />
+      <div aria-hidden="true" style={{ height: S, flexShrink: 0 }} />
       {/* letreiro (a mesma linguagem do Portal) */}
       <div data-mjp-topo="" style={{ position: 'relative', zIndex: 2, display: 'flex', alignItems: 'center', gap: 10, background: '#0D120F', border: '1px solid #3A4440', borderRadius: 8, padding: '6px 16px', boxShadow: '0 0 16px rgba(255,194,61,.15)', flexShrink: 0, marginTop: 6 }}>
         <span className={estado === 'verificar' ? 'mjp-ps-pisca' : undefined} style={{ width: 9, height: 9, borderRadius: '50%', background: sinal, boxShadow: `0 0 8px ${sinal}`, transition: 'background .3s' }} />
@@ -789,7 +796,7 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
        </div>
       </div>
 
-      <div aria-hidden="true" style={{ flex: '1 1 0', minHeight: 0 }} />
+      <div aria-hidden="true" style={{ height: gapMais, flexShrink: 0 }} />
       {rodape}
       <div aria-hidden="true" style={{ flex: '1 1 0', minHeight: 0 }} />
     </div>

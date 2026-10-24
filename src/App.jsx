@@ -34805,9 +34805,9 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
   }, []);
   const H = Math.round(Math.max(215, Math.min(420, (300 * tam.h) / Math.max(1, tam.w))));
   // A porta é agora deitada (como o quadro da equipa técnica): o emblema
-  // ocupa 50 % da altura do vidro (o Face ID, à volta, 60 %). O mesmo
+  // ocupa 42 % da altura do vidro (o Face ID, à volta, 52 %). O mesmo
   // tamanho passa para a abertura.
-  const tamEmblema = Math.round(tam.h * (largura ? 0.5 : 0.78));
+  const tamEmblema = Math.round(tam.h * (largura ? 0.42 : 0.78));
   const nome = String((jogador && jogador.nome) || '').trim();
   const primeiro = nome ? nome.split(/\s+/)[0] : '';
   const numero = jogador && jogador.numero != null && String(jogador.numero).trim() !== '' ? String(jogador.numero).trim() : '';
@@ -34854,11 +34854,11 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
   // (o sinal verde e o letreiro mudam no instante em que o acesso é autorizado)
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', ...(largura ? { flex: 'none' } : { flex: 1, minHeight: 0 }) }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0d120f', border: '1px solid #3a4440', borderRadius: 8, padding: '5px 12px', boxShadow: '0 0 14px rgba(255,194,61,.15)', marginBottom: 8, flexShrink: 0, ...apagar }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0d120f', border: '1px solid #3a4440', borderRadius: 8, padding: largura ? '6px 16px' : '5px 12px', boxShadow: '0 0 14px rgba(255,194,61,.15)', marginBottom: largura ? 14 : 8, flexShrink: 0, boxSizing: 'border-box', ...apagar }}>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: corSinal, boxShadow: `0 0 8px ${corSinal}`, transition: 'all .3s' }} />
         <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
           <div style={{ fontSize: 11, letterSpacing: '.18em', color: aberta ? '#8EE6A0' : '#8A9A8C', transition: 'color .3s', ...body }}>{aberta ? 'ACESSO AUTORIZADO' : 'ACESSO RESERVADO'}</div>
-          <div style={{ ...display, fontSize: 17, fontWeight: 600, letterSpacing: '.24em', color: aberta ? '#8EE6A0' : '#FFC23D', transition: 'color .3s' }}>PLANTEL</div>
+          <div style={{ ...display, fontSize: 17, fontWeight: 600, letterSpacing: largura ? '.3em' : '.24em', color: aberta ? '#8EE6A0' : '#FFC23D', transition: 'color .3s' }}>PLANTEL</div>
         </div>
       </div>
       {/* Proporção de porta (5:6): com menos altura fica mais estreita, em
@@ -34884,7 +34884,7 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
             um dedo que toca. Saem quando o acesso é autorizado — não vão na
             cópia do ecrã que fica por baixo da porta a abrir. */}
         {largura && !aberta && onEmblema && (() => {
-          const t = Math.round(altura * 0.6), c = Math.round(t * 0.22);
+          const t = Math.round(altura * 0.52), c = Math.round(t * 0.22);
           const corC = faceId === 'ok' ? '#8EE6A0' : '#C9A227';
           const canto = (o) => ({ position: 'absolute', width: c, height: c, borderColor: corC, borderStyle: 'solid', borderWidth: 0, boxSizing: 'border-box', ...o });
           return (
@@ -35356,7 +35356,7 @@ function PeDesenhoCamisola({ cor, lado, id }) {
 // O gancho de ferro preto, preso por baixo da porta; o cabide entra pela gola.
 function PeGancho() {
   return (
-    <svg width="40" height="34" viewBox="0 0 40 34" aria-hidden="true" style={{ display: 'block', flexShrink: 0, margin: '-1px auto -8px' }}>
+    <svg width="40" height="34" viewBox="0 0 40 34" aria-hidden="true" style={{ display: 'block', flexShrink: 0, margin: '-1px auto 14px' }}>
       <rect x="7" y="0" width="26" height="8" rx="2" fill="#141615" />
       <rect x="8" y="1" width="24" height="1.5" rx=".75" fill="#4A4F4C" />
       <path d="M20 8 L20 15" stroke="#141615" strokeWidth="4.5" strokeLinecap="round" />
@@ -35439,7 +35439,9 @@ function usePortaMedidas() {
      (AuthScreen) usa EXATAMENTE a mesma regra para o quadro. */
   const medir = () => {
     const vw = Math.min(window.innerWidth, 420), vh = window.innerHeight;
-    const livre = vh - 215;
+    // Espaço no topo: o mesmo da porta da equipa técnica (mesma grelha).
+    const S = Math.max(0, Math.min(28, Math.round((vh - 640) * 0.12)));
+    const livre = vh - 251 - S;
     const larguraMax = vw - 32 - 14;
     const hLargura = larguraMax * 254 / 348;
     let H = Math.min(hLargura, livre - 330);
@@ -35449,7 +35451,7 @@ function usePortaMedidas() {
        porta de 251 px de altura, a de um telemóvel normal) — e nunca
        maior do que o espaço que sobra. */
     const k = Math.max(0.55, Math.min(H / 251, (livre - H) / 330));
-    return { W: Math.round(H * 348 / 254), H, k };
+    return { W: Math.round(H * 348 / 254), H, k, S };
   };
   const [m, setM] = useState(medir);
   useEffect(() => {
@@ -36287,7 +36289,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               Este navegador não está a guardar o teu cartão (janela privada ou memória bloqueada). Podes entrar agora com o PIN, mas da próxima vez abre o Portal num navegador normal — ou instala a app no dispositivo (Mais opções).
             </div>
           )}
-          <div style={{ marginTop: 6 }} />
+          <div style={{ height: 8 + m.S, flexShrink: 0 }} />
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube}
             largura={m.W} altura={m.H} faceId={faceId} pista={pistaEmblema && verBio && !ocupado}
             onEmblema={bioAtiva ? () => { if (!verBio) { limpar(); setPin(''); setModoPin(false); } acabarPistaPortal(); entrarComBio(); } : irParaPin} />
@@ -36314,7 +36316,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           </div>
           {/* Uma só ligação discreta; as opções abrem num painel por baixo,
               para não roubarem altura à porta e ao teclado. */}
-          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6, minHeight: 44, flexShrink: 0, fontSize: 14 }}>
             <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: 1 }}>⋯</span> Mais opções
           </button>
           {maisOpcoes && (() => {
