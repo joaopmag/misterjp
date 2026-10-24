@@ -52477,6 +52477,43 @@ function useAtualizacaoAutomatica() {
   }, []);
 }
 
+/* LIMITE DE TEMPO DA EQUIPA TÉCNICA.
+   A sessão do Supabase fica guardada no navegador e renova-se sozinha: sem
+   isto, a app ficava aberta para sempre nesse aparelho — num computador
+   partilhado do clube, com os dados de saúde do plantel inteiro à vista.
+   Agora, se a app não for aberta neste aparelho durante 7 dias, a sessão
+   termina e, da próxima vez, aparece a porta (com o Face ID / a impressão
+   digital, se estiver ativa, entra-se num toque).
+   · Conta como atividade abrir a app e tê-la à vista (marca de 5 em 5 min).
+   · Só sai NESTE aparelho (scope 'local'): os outros aparelhos da mesma
+     pessoa continuam como estão.
+   · A porta guardada (nome, emblema, formação) e a entrada rápida não se
+     apagam — é só voltar a entrar.
+   · Na primeira vez com esta versão não há marca guardada: conta-se a
+     partir de agora (ninguém é posto fora de repente).
+   O Portal do Atleta não é afetado: continua a pedir o PIN em cada visita. */
+const STAFF_LIMITE_DIAS = 7;
+const STAFF_ATIVIDADE = 'mjp-staff-ultima-atividade';
+function marcarAtividadeStaff() {
+  try { localStorage.setItem(STAFF_ATIVIDADE, String(Date.now())); } catch (e) { /* sem memória: não há limite neste aparelho */ }
+}
+function staffInativoDemais() {
+  try {
+    const t = Number(localStorage.getItem(STAFF_ATIVIDADE) || 0);
+    return !!t && Date.now() - t > STAFF_LIMITE_DIAS * 24 * 3600 * 1000;
+  } catch (e) { return false; }
+}
+async function sairPorInatividade() {
+  try { localStorage.removeItem(STAFF_ATIVIDADE); } catch (e) { /* nada */ }
+  try {
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) throw error;
+  } catch (e) {
+    // Versão antiga do supabase-js sem `scope`, ou sem rede: apaga a sessão guardada à mão.
+    try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token$/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e2) { /* nada */ }
+  }
+}
+
 export default function AppRoot() {
   const [session, setSession] = useState(undefined); // undefined = a verificar
   /* A PORTA DA EQUIPA TÉCNICA (ver AuthScreen.jsx). Quando a sessão começa
@@ -52489,14 +52526,34 @@ export default function AppRoot() {
   useAtualizacaoAutomatica();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    supabase.auth.getSession().then(async ({ data }) => {
+      // Sessão parada há demasiado tempo neste aparelho: sai antes de mostrar a app.
+      if (data.session && staffInativoDemais()) { await sairPorInatividade(); setSession(null); return; }
+      if (data.session) marcarAtividadeStaff();
+      setSession(data.session);
+    });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      if (_event === 'SIGNED_IN') { const e = tirarEntradaStaff(); if (e) setEntradaStaff(e); }
+      if (_event === 'SIGNED_IN') { marcarAtividadeStaff(); const e = tirarEntradaStaff(); if (e) setEntradaStaff(e); }
       if (_event === 'PASSWORD_RECOVERY') setNovaPasse(true);
       setSession(newSession);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  /* Enquanto a app está aberta e à vista, conta como atividade (de 5 em 5
+     minutos e sempre que se volta à app). Se a app ficou esquecida num
+     separador e se volta a ela depois do limite, sai nesse momento. */
+  useEffect(() => {
+    if (!session) return undefined;
+    const aoVoltar = async () => {
+      if (document.visibilityState !== 'visible') return;
+      if (staffInativoDemais()) { await sairPorInatividade(); setSession(null); return; }
+      marcarAtividadeStaff();
+    };
+    document.addEventListener('visibilitychange', aoVoltar);
+    const intervalo = setInterval(() => { if (document.visibilityState === 'visible') marcarAtividadeStaff(); }, 5 * 60 * 1000);
+    return () => { document.removeEventListener('visibilitychange', aoVoltar); clearInterval(intervalo); };
+  }, [session]);
 
   // O link do questionário (?checkin=1, dos links antigos, ou
   // ?portal=<id-da-equipa>, dos novos) é para os atletas, que não têm
