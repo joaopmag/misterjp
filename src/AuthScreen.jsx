@@ -1422,12 +1422,14 @@ function PortaQueAbre({ entrada, onFim }) {
          seguidos, ou ao fim de 0,6 s mesmo que o computador ainda esteja
          ocupado (antes esperava sempre 4 frames fluidos e, num computador
          com a app a trabalhar por trás, chegava a demorar 7 s). */
-      /* ESPERA PELA APP CALMA. No desktop, a app ainda trabalhava (gráficos,
-         várias colunas) quando a porta abria ao fim de 0,6 s, e a abertura
-         engasgava. Agora abre com 6 frames fluidos seguidos (0,1 s sem
-         nenhum atraso) depois de a app estar pronta, ou, se o computador
-         nunca acalmar, ao fim de 2 s. */
-      const pronta = prontaEm && t - ini > 800 && ((bons >= 6 && t - prontaEm > 300) || t - prontaEm > 2000);
+      /* ESPERA PELA APP CALMA, MAS NÃO DEMAIS. Abre com 4 frames fluidos
+         seguidos depois de a app estar pronta, ou ao fim de 1 s mesmo que
+         o aparelho ainda esteja ocupado. (Com 6 frames e até 2 s, no
+         telemóvel a porta ficava mais de 4 s fechada depois do "acesso
+         autorizado": a app continua a trabalhar uns segundos e quase nunca
+         dava 6 frames seguidos.) Um engasgo durante a abertura já não faz
+         saltar nada — o relógio com travão abranda a porta nesse instante. */
+      const pronta = prontaEm && t - ini > 800 && ((bons >= 4 && t - prontaEm > 250) || t - prontaEm > 1000);
       if (pronta || t - ini > 6000) abrir(); else raf = requestAnimationFrame(esperar);
     };
     raf = requestAnimationFrame(esperar);
