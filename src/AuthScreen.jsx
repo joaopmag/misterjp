@@ -767,14 +767,14 @@ function CenaPorta({ porta, estado, verso, viraAnim, saltar, children, folhasFor
       </div>
 
       {/* fita, nas cores do clube: vem de trás do quadro até à mola */}
-      <div aria-hidden="true" style={{ position: 'relative', zIndex: 1, flexShrink: 0, width: CW, height: 36, marginTop: 9 }}>
+      <div aria-hidden="true" data-mjp-sai-cedo="" style={{ position: 'relative', zIndex: 1, flexShrink: 0, width: CW, height: 36, marginTop: 9, ...(folhasFora ? { willChange: 'opacity' } : null) }}>
         <svg width="220" height="110" viewBox="0 -70 220 110" style={{ position: 'absolute', left: '50%', top: -72, transform: 'translateX(-50%)', overflow: 'visible' }}>
           <path d="M40 -70 L104 34" stroke={cor} strokeWidth="9" strokeLinecap="round" />
           <path d="M180 -70 L116 34" stroke={escura} strokeWidth="9" strokeLinecap="round" />
           <rect x="98" y="29" width="24" height="12" rx="3" fill="#C9CFC6" />
         </svg>
       </div>
-      <div className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW * k, height: CH * k, marginTop: 2 }}>
+      <div data-mjp-sai-cedo="" className={tremer ? 'mjp-ps-treme' : undefined} style={{ position: 'relative', flexShrink: 0, width: CW * k, height: CH * k, marginTop: 2, ...(folhasFora ? { willChange: 'opacity' } : null) }}>
        <div style={{ width: CW, height: CH, transform: k !== 1 ? `scale(${k})` : 'none', transformOrigin: '0 0' }}>
         <div className={semChegada ? undefined : 'mjp-ps-cred'} style={{ width: CW, height: CH, perspective: 900 }}>
           {/* Chaves diferentes: o cartão 3D é sempre um elemento NOVO. Se o
@@ -1363,7 +1363,19 @@ function PortaQueAbre({ entrada, onFim }) {
       // parecia que a luz subia.)
       cena.style.transition = 'opacity .65s cubic-bezier(.4,0,.2,1) .3s';
       timers.push(setTimeout(() => { try { reporFaixa.current(); } catch (e) { /* nada */ } }, 750));
-      requestAnimationFrame(() => { if (!cancelado) cena.style.opacity = '0'; });
+      /* A CREDENCIAL E A FITA SAEM PRIMEIRO (0,3 s, logo ao abrir). Com o
+         resto da cena (0,65 s, a começar aos 0,3 s), a credencial ficava
+         meio segundo por cima do texto da app que já aparecia por baixo
+         ("Próximas sessões") e parecia confuso. O quadro e o aro continuam
+         a sair como antes. (Já estão em camada própria desde o início, por
+         isso isto não custa frames.) */
+      const cedo = Array.from(cena.querySelectorAll('[data-mjp-sai-cedo]'));
+      cedo.forEach(el => { el.style.transition = 'opacity .3s cubic-bezier(.4,0,.2,1)'; });
+      requestAnimationFrame(() => {
+        if (cancelado) return;
+        cena.style.opacity = '0';
+        cedo.forEach(el => { el.style.opacity = '0'; });
+      });
 
       // (O emblema já não voa para a barra da app: as folhas abrem
       // com o emblema cortado ao meio, como o resto do campo.)
