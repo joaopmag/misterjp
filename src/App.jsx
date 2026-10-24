@@ -34293,6 +34293,11 @@ const PE_CSS = `
   @keyframes pe-respira { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
   @keyframes pe-onda { 0% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -60; } }
   @keyframes pe-pulso { 0%,100% { box-shadow: 0 0 0 0 rgba(201,162,39,.55); } 50% { box-shadow: 0 0 0 12px rgba(201,162,39,0); } }
+  @keyframes pe-anel { 0% { transform: scale(.55); opacity: .95; } 80% { opacity: 0; } 100% { transform: scale(1.65); opacity: 0; } }
+  @keyframes pe-varre { 0% { top: 10%; } 50% { top: 86%; } 100% { top: 10%; } }
+  @keyframes pe-dedo { 0% { opacity: 0; transform: translate(26px, 30px); } 15% { opacity: 1; transform: translate(10px, 12px); }
+    25% { transform: translate(0, 0) scale(.9); } 32% { transform: translate(0, 0) scale(1); } 42% { transform: translate(0, 0) scale(.9); } 50% { transform: translate(0, 0) scale(1); }
+    80% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(10px, 14px); } }
 `;
 /* ONDE O CARTÃO FICA GUARDADO NESTE TELEMÓVEL/COMPUTADOR.
    O Portal e a plataforma do staff partilham o mesmo endereço e, por
@@ -34785,7 +34790,7 @@ function TransicaoEntrada({ focoInteiro, children }) {
 /* Porta automática de vidro fosco com o emblema do clube a toda a altura,
    cada metade do emblema numa folha. Atrás, o balneário da página inicial
    (com o cacifo do jogador) e a TV a dar as boas-vindas. */
-function PePorta({ aberta, jogador, cor, logo, clube }) {
+function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 'desligado', onEmblema, pista }) {
   const caixaRef = useRef(null);
   const portaRef = useRef(null);
 
@@ -34799,6 +34804,9 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
     const ro = new ResizeObserver(medir); ro.observe(el); return () => ro.disconnect();
   }, []);
   const H = Math.round(Math.max(215, Math.min(420, (300 * tam.h) / Math.max(1, tam.w))));
+  // A porta é agora deitada (como o quadro da equipa técnica): o emblema
+  // ocupa 62 % da altura do vidro. O mesmo tamanho passa para a abertura.
+  const tamEmblema = Math.round(tam.h * (largura ? 0.62 : 0.78));
   const nome = String((jogador && jogador.nome) || '').trim();
   const primeiro = nome ? nome.split(/\s+/)[0] : '';
   const numero = jogador && jogador.numero != null && String(jogador.numero).trim() !== '' ? String(jogador.numero).trim() : '';
@@ -34821,7 +34829,7 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
     const r = el.getBoundingClientRect();
     ENTRADA = {
       rect: { left: r.left, top: r.top, width: r.width, height: r.height }, fundo: { svg, H },
-      tam: Math.round(tam.h * 0.78), logo: logo || '', cor, t: Date.now(),
+      tam: tamEmblema, logo: logo || '', cor, t: Date.now(),
     };
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -34838,13 +34846,13 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
   // O emblema ocupa a porta toda; cada folha mostra a sua metade.
   const emblemaNoVidro = (lado) => (
     <div style={{ position: 'absolute', top: 0, bottom: 0, left: lado === 'E' ? 0 : '-100%', width: '200%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: logo ? 0.6 : 1 }}>
-      <PeEmblema logo={logo} cor={cor} tam={Math.round(tam.h * 0.78)} branco />
+      <PeEmblema logo={logo} cor={cor} tam={tamEmblema} branco />
     </div>
   );
   const corSinal = aberta ? '#4CAF6A' : '#FF5A4E';
   // (o sinal verde e o letreiro mudam no instante em que o acesso é autorizado)
   return (
-    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: 0 }}>
+    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', ...(largura ? { flex: 'none' } : { flex: 1, minHeight: 0 }) }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#0d120f', border: '1px solid #3a4440', borderRadius: 8, padding: '5px 12px', boxShadow: '0 0 14px rgba(255,194,61,.15)', marginBottom: 8, flexShrink: 0, ...apagar }}>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: corSinal, boxShadow: `0 0 8px ${corSinal}`, transition: 'all .3s' }} />
         <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
@@ -34854,7 +34862,9 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
       </div>
       {/* Proporção de porta (5:6): com menos altura fica mais estreita, em
           vez de achatada (iPad deitado, telemóveis baixos). */}
-      <div ref={portaRef} style={{
+      <div ref={portaRef} style={largura ? {
+        position: 'relative', zIndex: 2, flex: 'none', width: largura + 14, height: altura + 14, borderRadius: 8, padding: 7, boxSizing: 'border-box', display: 'flex',
+      } : {
         position: 'relative', zIndex: 2, flex: 1, minHeight: 120, maxHeight: 'min(48dvh, 520px)', aspectRatio: '5 / 6', width: 'auto', maxWidth: '100%', borderRadius: 8, padding: 7, boxSizing: 'border-box', display: 'flex',
       }}>
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: 8, background: 'linear-gradient(90deg,#3a423d,#59635d 50%,#3a423d)', boxShadow: '0 10px 24px rgba(0,0,0,.45)', ...apagar }} />
@@ -34866,8 +34876,39 @@ function PePorta({ aberta, jogador, cor, logo, clube }) {
           <div style={{ ...vidro, right: 0 }}>{emblemaNoVidro('D')}</div>
           <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.9)' }} />
         </div>
+        {/* O EMBLEMA É O FACE ID (o "pontapé de saída", como na equipa
+            técnica): os quatro cantos, a onda de luz e, nas primeiras vezes,
+            um dedo que toca. Saem quando o acesso é autorizado — não vão na
+            cópia do ecrã que fica por baixo da porta a abrir. */}
+        {largura && !aberta && onEmblema && (() => {
+          const t = Math.round(altura * 0.78), c = Math.round(t * 0.22);
+          const corC = faceId === 'ok' ? '#8EE6A0' : '#C9A227';
+          const canto = (o) => ({ position: 'absolute', width: c, height: c, borderColor: corC, borderStyle: 'solid', borderWidth: 0, boxSizing: 'border-box', ...o });
+          return (
+            <>
+              {faceId !== 'desligado' && (
+                <div aria-hidden="true" style={{ position: 'absolute', left: 7 + largura / 2 - t / 2, top: 7 + altura / 2 - t / 2, width: t, height: t, pointerEvents: 'none', zIndex: 3,
+                  animation: faceId === 'pronto' ? 'pe-respira 2.2s ease-in-out infinite' : 'none' }}>
+                  {faceId === 'pronto' && <div style={{ position: 'absolute', inset: '8%', borderRadius: '50%', boxSizing: 'border-box', border: '2.5px solid rgba(255,214,120,.95)', boxShadow: '0 0 16px rgba(255,214,120,.65), inset 0 0 10px rgba(255,214,120,.35)', animation: 'pe-anel 2.2s cubic-bezier(.2,.6,.3,1) infinite' }} />}
+                  <div style={canto({ left: 0, top: 0, borderLeftWidth: 3, borderTopWidth: 3, borderTopLeftRadius: 8 })} />
+                  <div style={canto({ right: 0, top: 0, borderRightWidth: 3, borderTopWidth: 3, borderTopRightRadius: 8 })} />
+                  <div style={canto({ left: 0, bottom: 0, borderLeftWidth: 3, borderBottomWidth: 3, borderBottomLeftRadius: 8 })} />
+                  <div style={canto({ right: 0, bottom: 0, borderRightWidth: 3, borderBottomWidth: 3, borderBottomRightRadius: 8 })} />
+                  {pista && faceId === 'pronto' && (
+                    <svg width="34" height="40" viewBox="0 0 24 28" aria-hidden="true" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -4, marginTop: 2, filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.6))', animation: 'pe-dedo 2.6s ease-in-out .8s 2 both' }}>
+                      <path d="M9 2.5a2 2 0 0 1 4 0V12l1.2-.6a2 2 0 0 1 2.6.9l.3.6 1.4-.4a2 2 0 0 1 2.4 1.5l.1.6.9-.1a2 2 0 0 1 2.1 2v4.3c0 3.9-3.2 7-7.1 7H14c-2.3 0-4.4-1.1-5.7-3L3.6 18.3a2 2 0 0 1 .4-2.8 2 2 0 0 1 2.6.2L9 18V2.5z" fill="#FBF3F0" stroke="#0D120F" strokeWidth="1.1" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  {faceId === 'a-ler' && <div style={{ position: 'absolute', left: '8%', right: '8%', height: 2, background: '#FFC23D', boxShadow: '0 0 8px #FFC23D', animation: 'pe-varre 1s ease-in-out infinite' }} />}
+                </div>
+              )}
+              <button type="button" onClick={onEmblema} aria-label={faceId === 'desligado' ? 'Entrar com o PIN' : `Entrar com ${PE_BIO_TXT.comArtigo}`}
+                style={{ position: 'absolute', left: 7 + largura / 2 - altura * 0.2, top: 7 + altura / 2 - altura * 0.2, width: altura * 0.4, height: altura * 0.4, borderRadius: '50%', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', zIndex: 4 }} />
+            </>
+          );
+        })()}
       </div>
-      <div style={{ width: 'min(60%, 220px)', height: 8, borderRadius: '0 0 4px 4px', background: '#2a332d', flexShrink: 0, ...apagar }} />
+      {!largura && <div style={{ width: 'min(60%, 220px)', height: 8, borderRadius: '0 0 4px 4px', background: '#2a332d', flexShrink: 0, ...apagar }} />}
     </div>
   );
 }
@@ -35239,6 +35280,175 @@ const PE_BIO_TXT = peBioTextos();
 // cancelar, não volta a aparecer sozinho (fica o botão para tocar).
 let peBioAutoFeito = false;
 
+/* ===================================================================
+   A CAMISOLA DO ATLETA, PENDURADA POR BAIXO DA PORTA (porta do Portal)
+   ===================================================================
+   É a mesma lógica da credencial da equipa técnica: de costas, a
+   identidade (nome em cima, número ao meio) e a impressão digital no
+   fundo; virada, o emblema ao peito e o PIN com o teclado (a tecla vazia
+   leva a impressão digital e vira a camisola outra vez). Nas cores do
+   clube (coresCamisola). Só visual: o PIN e a impressão digital continuam
+   a passar pelas mesmas funções de sempre (tecla, entrarComBio).
+   Desenhada a 300 × 330 e ajustada ao ecrã com `escala`. */
+const PE_FORMA_CAMISOLA = 'M120 32 Q150 42 180 32 L226 52 Q244 60 250 82 L262 156 Q262 162 256 163 L232 168 '
+  + 'Q226 168 225 162 L218 118 L220 314 Q150 326 80 314 L82 118 L75 162 Q74 168 68 168 '
+  + 'L44 163 Q38 162 38 156 L50 82 Q56 60 74 52 Z';
+const PE_ICONE_DEDO = (
+  <>
+    <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" /><path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+    <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" /><path d="M2 12a10 10 0 0 1 18-6" /><path d="M2 16h.01" />
+    <path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+    <path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+  </>
+);
+const PE_ICONE_TECLADO = (
+  <>
+    <rect x="3" y="3" width="5" height="5" rx="1" /><rect x="9.5" y="3" width="5" height="5" rx="1" /><rect x="16" y="3" width="5" height="5" rx="1" />
+    <rect x="3" y="9.5" width="5" height="5" rx="1" /><rect x="9.5" y="9.5" width="5" height="5" rx="1" /><rect x="16" y="9.5" width="5" height="5" rx="1" />
+    <rect x="9.5" y="16" width="5" height="5" rx="1" />
+  </>
+);
+const PE_ICONE_VIRAR = (<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></>);
+
+function PeDesenhoCamisola({ cor, lado, id }) {
+  const vivo = cor.mangas || '#FFFFFF';
+  const frente = lado === 'frente';
+  return (
+    <svg width="300" height="330" viewBox="0 0 300 330" aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'block', filter: 'drop-shadow(0 16px 20px rgba(0,0,0,.55))' }}>
+      <defs>
+        <clipPath id={`${id}f`}><path d={PE_FORMA_CAMISOLA} /></clipPath>
+        <linearGradient id={`${id}v`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#000" stopOpacity=".32" /><stop offset=".26" stopColor="#000" stopOpacity="0" />
+          <stop offset=".5" stopColor="#fff" stopOpacity=".07" /><stop offset=".74" stopColor="#000" stopOpacity="0" />
+          <stop offset="1" stopColor="#000" stopOpacity=".34" />
+        </linearGradient>
+        <linearGradient id={`${id}l`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" stopOpacity=".1" /><stop offset=".3" stopColor="#fff" stopOpacity="0" /><stop offset="1" stopColor="#000" stopOpacity=".24" /></linearGradient>
+        <pattern id={`${id}m`} width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".55" fill="#000" fillOpacity=".13" /></pattern>
+      </defs>
+      <g clipPath={`url(#${id}f)`}>
+        <rect width="300" height="330" fill={cor.base} />
+        <path d="M74 52 Q56 60 50 82 L38 156 Q38 162 44 163 L68 168 Q74 168 75 162 L84 112 Z" fill={cor.escuro} opacity=".5" />
+        <path d="M226 52 Q244 60 250 82 L262 156 Q262 162 256 163 L232 168 Q226 168 225 162 L216 112 Z" fill={cor.escuro} opacity=".5" />
+        <path d="M74 52 Q86 84 84 118" fill="none" stroke="#000" strokeOpacity=".28" strokeWidth="1.5" />
+        <path d="M226 52 Q214 84 216 118" fill="none" stroke="#000" strokeOpacity=".28" strokeWidth="1.5" />
+        {!frente && <path d="M86 124 L88 314" fill="none" stroke={vivo} strokeWidth="2" opacity=".85" />}
+        {!frente && <path d="M214 124 L212 314" fill="none" stroke={vivo} strokeWidth="2" opacity=".85" />}
+        <rect width="300" height="330" fill={`url(#${id}m)`} />
+        <rect width="300" height="330" fill={`url(#${id}v)`} />
+        <rect width="300" height="330" fill={`url(#${id}l)`} />
+        <path d="M112 48 Q118 130 112 300" fill="none" stroke="#000" strokeOpacity=".1" strokeWidth="7" />
+        <path d="M190 48 Q182 140 190 300" fill="none" stroke="#000" strokeOpacity=".09" strokeWidth="6" />
+      </g>
+      <path d="M41 150 Q56 156 72 156" fill="none" stroke={vivo} strokeWidth="6" strokeLinecap="round" />
+      <path d="M259 150 Q244 156 228 156" fill="none" stroke={vivo} strokeWidth="6" strokeLinecap="round" />
+      <path d="M80 314 Q150 326 220 314" fill="none" stroke={cor.contorno} strokeWidth="3" opacity=".7" />
+      {frente
+        ? <path d="M122 32 Q150 56 178 32 Q150 24 122 32 Z" fill={cor.contorno} />
+        : <path d="M122 32 Q150 18 178 32 Q150 30 122 32 Z" fill={cor.contorno} />}
+      <path d={frente ? 'M120 32 Q150 58 180 32' : 'M120 32 Q150 44 180 32'} fill="none" stroke={vivo} strokeWidth="7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// O gancho de ferro preto, preso por baixo da porta; o cabide entra pela gola.
+function PeGancho() {
+  return (
+    <svg width="40" height="34" viewBox="0 0 40 34" aria-hidden="true" style={{ display: 'block', flexShrink: 0, margin: '-1px auto -8px' }}>
+      <rect x="7" y="0" width="26" height="8" rx="2" fill="#141615" />
+      <rect x="8" y="1" width="24" height="1.5" rx=".75" fill="#4A4F4C" />
+      <path d="M20 8 L20 15" stroke="#141615" strokeWidth="4.5" strokeLinecap="round" />
+      <path d="M20 20 q-9 0 -9 -6 q0 -6 8 -6" fill="none" stroke="#141615" strokeWidth="3.5" strokeLinecap="round" />
+      <path d="M20 20 L20 34" stroke="#141615" strokeWidth="3.5" />
+      <path d="M19 22 L19 33" stroke="#4A4F4C" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function PeCamisola({ jogador, cor, logo, virada, sensor, pin, rotulo, corRotulo, aberta, teclado }) {
+  const nome = String((jogador && jogador.nome) || '').trim();
+  const primeiro = (nome ? nome.split(/\s+/)[0] : 'Atleta').toUpperCase();
+  const numero = jogador && jogador.numero != null && String(jogador.numero).trim() !== '' ? String(jogador.numero).trim() : '';
+  const corNum = cor.texto || '#FFFFFF';
+  const face = { position: 'absolute', inset: 0, WebkitBackfaceVisibility: 'hidden', backfaceVisibility: 'hidden' };
+  const corSensor = aberta ? '#8EE6A0' : '#C9A227';
+  const tecla = (k, i) => {
+    const base = {
+      height: 34, borderRadius: 8, background: 'rgba(13,18,15,.9)', border: '1px solid #2a2f33', color: '#FFC23D', padding: 0, boxSizing: 'border-box',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', ...mono, fontSize: 16, fontWeight: 500,
+      cursor: teclado.desativado ? 'default' : 'pointer', opacity: teclado.desativado ? 0.55 : 1,
+    };
+    if (!k) {
+      const ex = teclado.extra;
+      return (
+        <button key={i} type="button" disabled={!virada || teclado.desativado} onClick={ex.onClick} aria-label={ex.rotulo} title={ex.rotulo} style={base}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A227" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ex.icone}</svg>
+        </button>
+      );
+    }
+    return <button key={i} type="button" disabled={!virada || teclado.desativado} onClick={() => teclado.onTecla(k)} aria-label={k === '⌫' ? 'Apagar' : k} style={base}>{k}</button>;
+  };
+  return (
+    <div style={{ position: 'relative', width: 300, height: 330, perspective: 1000 }}>
+      <div style={{ position: 'absolute', inset: 0, transformStyle: 'preserve-3d', transform: virada ? 'rotateY(180deg)' : 'none', transition: 'transform .65s cubic-bezier(.4,.1,.2,1)' }}>
+        {/* COSTAS: nome, número e o sensor no fundo */}
+        <div style={face} aria-hidden={virada}>
+          <PeDesenhoCamisola cor={cor} lado="costas" id="pe-cam-c" />
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 56, textAlign: 'center', ...display, fontWeight: 600, fontSize: 24, letterSpacing: '.16em', color: corNum, textShadow: '0 1px 0 rgba(0,0,0,.25)', overflow: 'hidden', whiteSpace: 'nowrap', padding: '0 70px', boxSizing: 'border-box', textOverflow: 'ellipsis' }}>{primeiro}</div>
+          {numero && <div style={{ position: 'absolute', left: 0, right: 0, top: 88, textAlign: 'center', ...display, fontWeight: 700, fontSize: 104, lineHeight: 1, color: corNum, WebkitTextStroke: `2px ${cor.contorno}`, paintOrder: 'stroke fill', textShadow: '0 3px 0 rgba(0,0,0,.18)' }}>{numero}</div>}
+          <button type="button" onClick={sensor.onClick || undefined} disabled={virada || !sensor.onClick} aria-label={sensor.rotulo}
+            style={{ position: 'absolute', left: 118, top: 222, width: 64, height: 64, borderRadius: 14, padding: 0, boxSizing: 'border-box', background: '#0D120F', border: `2px solid ${corSensor}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: sensor.onClick ? 'pointer' : 'default',
+              animation: sensor.pulsar ? 'pe-pulso 2s ease-in-out infinite' : 'none', transition: 'border-color .3s' }}>
+            <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke={corSensor} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+              style={{ animation: sensor.aLer ? 'pe-respira .5s ease-in-out infinite' : 'none' }}>{sensor.icone}</svg>
+          </button>
+        </div>
+        {/* FRENTE: emblema ao peito e o PIN */}
+        <div style={{ ...face, transform: 'rotateY(180deg)' }} aria-hidden={!virada}>
+          <PeDesenhoCamisola cor={cor} lado="frente" id="pe-cam-f" />
+          <div style={{ position: 'absolute', left: 178, top: 64 }}><PeEmblema logo={logo} cor={cor} tam={30} /></div>
+          <div style={{ position: 'absolute', left: 84, width: 132, top: 104, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <div style={{ fontSize: 9.5, letterSpacing: '.14em', color: corRotulo || corNum, ...body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', fontWeight: 600 }}>{rotulo}</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} style={{ width: 17, height: 21, borderRadius: 4, boxSizing: 'border-box', background: 'rgba(13,18,15,.85)', border: `1.5px solid ${aberta ? '#8EE6A0' : (i < pin.length ? '#FFC23D' : '#3a4440')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: aberta ? '#8EE6A0' : '#FFC23D' }}>{(aberta || i < pin.length) ? '●' : ''}</div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, width: '100%', marginTop: 2 }}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'].map(tecla)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Medidas da porta e da camisola: tudo cabe no ecrã, sem deslizar, até ao
+   "Mais opções". Primeiro encolhe a porta; se ainda não chegar, encolhe a
+   camisola (nunca abaixo de 62 %). Em ecrãs altos a camisola cresce até
+   15 %, para o teclado ficar mais confortável. */
+function usePortaMedidas() {
+  const medir = () => {
+    const vw = Math.min(window.innerWidth, 420), vh = window.innerHeight;
+    const livre = vh - 215;
+    const larguraMax = vw - 32 - 14;
+    const hLargura = larguraMax * 254 / 348;
+    let H = Math.min(hLargura, livre - 330), k = 1;
+    if (H < 150) { H = Math.max(120, Math.min(hLargura, livre * 0.42)); k = Math.max(0.62, Math.min(1, (livre - H) / 330)); }
+    else k = Math.max(1, Math.min(1.15, (livre - H) / 330));
+    H = Math.round(H);
+    return { W: Math.round(H * 348 / 254), H, k };
+  };
+  const [m, setM] = useState(medir);
+  useEffect(() => {
+    const f = () => setM(medir());
+    window.addEventListener('resize', f);
+    return () => window.removeEventListener('resize', f);
+  }, []);
+  return m;
+}
+
 function PortalEntrada({ entrar, equipa, teamId }) {
   const cor = coresCamisola(T.corEquipa);
   const logo = (equipa && equipa.logo) || '';
@@ -35517,6 +35727,17 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     return peBioFn({ acao: 'entrada-opcoes', token: cartao.token, team: teamId });
   };
   const naPortaComBio = ecra === 'porta' && bioAtiva && !modoPin && !aberta;
+  // A camisola: medidas no ecrã; sem impressão digital ativa, a camisola
+  // vira-se para o PIN com um toque (pinVirado).
+  const medidasPorta = usePortaMedidas();
+  const [pinVirado, setPinVirado] = useState(false);
+  // Pista do emblema (o dedo que toca): 5 primeiras visitas deste aparelho
+  // com a impressão digital ativa; acaba na primeira entrada pelo emblema.
+  const chavePista = `pe-pista-emblema:${teamId}`;
+  const [pistaEmblema] = useState(() => {
+    try { const v = localStorage.getItem(chavePista); if (v === 'feita' || Number(v || 0) >= 5) return false; localStorage.setItem(chavePista, String(Number(v || 0) + 1)); return true; } catch (e) { return false; }
+  });
+  const acabarPistaPortal = () => { try { localStorage.setItem(chavePista, 'feita'); } catch (e) { /* nada */ } };
   useEffect(() => {
     if (!naPortaComBio) { bioPronto.current = null; return undefined; }
     prepararBio();
@@ -36006,84 +36227,58 @@ function PortalEntrada({ entrar, equipa, teamId }) {
         </div>
       )}
 
-      {ecra === 'porta' && cartao && (
-        <div style={coluna}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'stretch', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '7px 10px', flexShrink: 0 }}>
-            <div style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', background: '#1A2A1F', border: `2px solid ${T.gold}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              {cartao.jogador && cartao.jogador.foto
-                ? <img src={cartao.jogador.foto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : <span style={{ ...display, fontSize: 15, fontWeight: 600, color: '#FFD86A' }}>{peIniciais(cartao.jogador && cartao.jogador.nome)}</span>}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ ...display, fontSize: 16, fontWeight: 600, color: T.cream, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(cartao.jogador && cartao.jogador.nome) || 'Atleta'}</div>
-              <div style={{ fontSize: 11.5, color: T.mutedDim }}>Cartão de atleta válido</div>
-            </div>
-            <span style={{ marginLeft: 'auto', width: 14, height: 14, borderRadius: '50%', flexShrink: 0, background: aberta ? '#4CAF6A' : '#B3261E', boxShadow: `0 0 10px ${aberta ? '#4CAF6A' : '#B3261E'}`, transition: 'all .3s' }} />
-          </div>
+      {ecra === 'porta' && cartao && (() => {
+        /* A PORTA DO PLANTEL, COMO A DA EQUIPA TÉCNICA: fundo escuro com o aro
+           de luz, a porta de vidro deitada com o Face ID no emblema e, por
+           baixo, a camisola do atleta pendurada (de costas: nome, número e
+           impressão digital; virada: o PIN). Só muda o visual: o PIN e a
+           impressão digital passam pelas mesmas funções (tecla, entrarComBio)
+           e a abertura da porta para o Portal é a de sempre. */
+        const m = medidasPorta;
+        const verBio = bioAtiva && !modoPin;
+        const virada = modoPin || (!bioAtiva && pinVirado);
+        const faceId = !bioAtiva ? 'desligado' : aberta ? 'ok' : (ocupado && verBio) ? 'a-ler' : verBio ? 'pronto' : 'quieto';
+        const irParaPin = () => { limpar(); setPin(''); if (bioAtiva) setModoPin(true); else setPinVirado(true); };
+        const voltarCostas = () => { limpar(); setPin(''); if (bioAtiva) { setModoPin(false); entrarComBio(); } else setPinVirado(false); };
+        const rotulo = aviso && aviso.length <= 26 ? aviso : 'PIN PESSOAL';
+        return (
+        <>
+        {/* fundo escuro e aro de luz no teto (dentro da cópia do ecrã que
+            fica por baixo da porta a abrir: desvanece com o resto) */}
+        <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)' }}>
+          <div style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, boxSizing: 'content-box', transform: 'translateX(-50%)', borderRadius: '50%', border: '3px solid rgba(255,230,160,.75)', boxShadow: '0 0 24px 6px rgba(255,230,160,.22)' }} />
+        </div>
+        <div style={{ ...coluna, position: 'relative', gap: 0 }}>
           {semMemoria && (
-            <div style={{ alignSelf: 'stretch', fontSize: 12.5, lineHeight: 1.45, color: T.cream, background: T.fundoErro, border: `1px solid ${T.bad}`, borderRadius: 10, padding: '8px 12px', flexShrink: 0 }}>
+            <div style={{ alignSelf: 'stretch', fontSize: 12.5, lineHeight: 1.45, color: T.cream, background: T.fundoErro, border: `1px solid ${T.bad}`, borderRadius: 10, padding: '8px 12px', flexShrink: 0, marginBottom: 8 }}>
               Este navegador não está a guardar o teu cartão (janela privada ou memória bloqueada). Podes entrar agora com o PIN, mas da próxima vez abre o Portal num navegador normal — ou instala a app no dispositivo (Mais opções).
             </div>
           )}
-          <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube} />
-          {/* PIN E IMPRESSÃO DIGITAL NO MESMO ESPAÇO. Os dois blocos ficam
-              sobrepostos na mesma célula da grelha e só um se vê; a célula
-              tem sempre a altura do maior (o do teclado). Assim, trocar entre
-              "Entrar com o PIN" e a impressão digital não muda o tamanho da
-              porta nem faz o ecrã saltar. O símbolo fica logo por baixo da
-              porta, no topo desse espaço. */}
-          {(() => {
-            const verBio = bioAtiva && !modoPin;
-            const camada = (visivel) => ({
-              gridArea: '1 / 1', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
-              visibility: visivel ? 'visible' : 'hidden', pointerEvents: visivel ? 'auto' : 'none',
-            });
-            return (
-              <div style={{ display: 'grid', width: '100%', flexShrink: 0 }}>
-                {bioAtiva && (
-                  <div aria-hidden={!verBio} style={{ ...camada(verBio), justifyContent: 'center', gap: 8 }}>
-                    {/* O aviso (ex.: ACESSO AUTORIZADO, a verde) fica por baixo
-                        sem ocupar lugar: a caixa e o "Entrar com o PIN" não mexem. */}
-                    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                    <button type="button" onClick={() => entrarComBio()} disabled={!verBio || ocupado || aberta} aria-label={`Entrar com ${PE_BIO_TXT.comArtigo}`} style={{
-                      width: 92, height: 92, borderRadius: 22, background: '#0d120f', border: `2px solid ${aberta ? '#8EE6A0' : T.gold}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                      animation: !verBio || ocupado || aberta ? 'none' : 'pe-pulso 2s ease-in-out infinite',
-                    }}>
-                      <Fingerprint size={56} color={aberta ? '#8EE6A0' : T.gold} strokeWidth={1.6} />
-                    </button>
-                    {/* Sem frase por baixo: o símbolo já diz o que fazer. Só
-                        aparece texto quando há um aviso (erro, cartão inválido…). */}
-                    <button type="button" disabled={!verBio} onClick={() => { limpar(); setPin(''); setModoPin(true); }} style={{ ...ligacao, padding: 2 }}>Entrar com o PIN</button>
-                    {verBio && aviso && (
-                      <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', width: 'min(92vw, 380px)', marginTop: 6, fontSize: 13.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.35 }}>{aviso}</div>
-                    )}
-                    </div>
-                  </div>
-                )}
-                <div aria-hidden={verBio} style={{ ...camada(!verBio), gap: 10 }}>
-                  <div style={{ width: 'min(100%, 300px)', flexShrink: 0 }}>
-                    <PePainel rotulo={(!verBio && aviso) || 'PIN PESSOAL'} corRotulo={!verBio && aviso ? corAviso : undefined} tremer={tremer}>
-                      <PeCaixas valor={pin} ocultar cor={aberta ? '#8EE6A0' : undefined} />
-                    </PePainel>
-                  </div>
-                  <div style={{ width: '100%', flexShrink: 0 }}>
-                    <PeTeclado
-                      onTecla={tecla} desativado={verBio || ocupado || aberta}
-                      /* Com a impressão digital ativa, a tecla vazia passa a
-                         ser o símbolo: um toque volta ao ecrã do símbolo
-                         grande e abre logo o leitor. */
-                      extra={bioAtiva ? {
-                        Icon: Fingerprint, rotulo: `Entrar com ${PE_BIO_TXT.comArtigo}`,
-                        desativado: verBio || ocupado || aberta,
-                        onClick: () => { limpar(); setPin(''); setModoPin(false); entrarComBio(); },
-                      } : null}
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          <div style={{ marginTop: 6 }} />
+          <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube}
+            largura={m.W} altura={m.H} faceId={faceId} pista={pistaEmblema && verBio && !ocupado}
+            onEmblema={bioAtiva ? () => { if (!verBio) { limpar(); setPin(''); setModoPin(false); } acabarPistaPortal(); entrarComBio(); } : irParaPin} />
+          <PeGancho />
+          <div style={{ position: 'relative', width: 300 * m.k, height: 330 * m.k, flexShrink: 0, animation: tremer ? 'pe-treme .45s' : 'none' }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, width: 300, height: 330, transform: `scale(${m.k})`, transformOrigin: '0 0' }}>
+              <PeCamisola jogador={cartao.jogador} cor={cor} logo={logo} virada={virada} pin={pin} aberta={aberta}
+                rotulo={rotulo} corRotulo={aviso && aviso.length <= 26 ? corAviso : undefined}
+                sensor={bioAtiva
+                  ? { icone: PE_ICONE_DEDO, rotulo: `Entrar com ${PE_BIO_TXT.comArtigo}`, pulsar: false, aLer: ocupado && verBio, onClick: (ocupado || aberta) ? null : () => entrarComBio() }
+                  : { icone: PE_ICONE_TECLADO, rotulo: 'Entrar com o PIN', pulsar: !aberta, onClick: aberta ? null : irParaPin }}
+                teclado={{
+                  onTecla: tecla, desativado: !virada || ocupado || aberta,
+                  extra: bioAtiva
+                    ? { icone: PE_ICONE_DEDO, rotulo: `Entrar com ${PE_BIO_TXT.comArtigo}`, onClick: voltarCostas }
+                    : { icone: PE_ICONE_VIRAR, rotulo: 'Ver as costas da camisola', onClick: voltarCostas },
+                }} />
+            </div>
+          </div>
+          {/* Avisos longos por baixo da camisola, num espaço fixo (não
+              empurram nada). Os curtos vão no letreiro do PIN. */}
+          <div style={{ fontSize: 12.5, color: corAviso || T.bad, textAlign: 'center', lineHeight: 1.35, height: '2.7em', flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 4, width: 'min(92vw, 380px)' }}>
+            {aviso && (aviso.length > 26 || !virada) ? aviso : ''}
+          </div>
           {/* Uma só ligação discreta; as opções abrem num painel por baixo,
               para não roubarem altura à porta e ao teclado. */}
           <button type="button" onClick={() => setMaisOpcoes(true)} style={{ ...ligacao, textDecoration: 'none', color: T.mutedDim, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -36110,7 +36305,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
             );
           })()}
         </div>
-      )}
+        </>
+        );
+      })()}
     </div>
   );
 }
