@@ -1240,7 +1240,6 @@ function PortaQueAbre({ entrada, onFim }) {
   const [rect, setRect] = useState(null);
   const cenaRef = useRef(null);
   const buracoRef = useRef(null);
-  const vooRef = useRef(null);
   const folhasRef = useRef(null);
   const { W, H } = useMedidas();
   const cor = (porta && porta.cor) || '#B5393F';
@@ -1366,23 +1365,8 @@ function PortaQueAbre({ entrada, onFim }) {
       timers.push(setTimeout(() => { try { reporFaixa.current(); } catch (e) { /* nada */ } }, 750));
       requestAnimationFrame(() => { if (!cancelado) cena.style.opacity = '0'; });
 
-      // O emblema voa para a barra da app, se a equipa tiver emblema e a
-      // barra o mostrar.
-      const voo = vooRef.current;
-      const alvo = Array.from(document.querySelectorAll('[data-mjp-logo-equipa]')).find(el => {
-        const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < vh && r.right > 0 && r.left < vw;
-      });
-      if (logo && alvo && voo && typeof voo.animate === 'function') {
-        const a = alvo.getBoundingClientRect(), r = voo.getBoundingClientRect();
-        const s = a.height / Math.max(1, r.height);
-        const dx = (a.left + a.width / 2) - (r.left + r.width / 2), dy = (a.top + a.height / 2) - (r.top + r.height / 2);
-        voo.style.opacity = '1';
-        voo.animate([
-          { transform: 'translate(0px, 0px) scale(1)', opacity: 1 },
-          { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 1, offset: 0.9 },
-          { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0 },
-        ], { duration: 1100, delay: 150, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'forwards' });
-      }
+      // (O emblema já não voa para a barra da app: as folhas abrem
+      // com o emblema cortado ao meio, como o resto do campo.)
       timers.push(setTimeout(acabar, 1400));
     };
 
@@ -1419,7 +1403,6 @@ function PortaQueAbre({ entrada, onFim }) {
     return () => { cancelado = true; cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tamEmb = Math.round(H * 0.165);
   return (
     <div aria-hidden="true" style={{ position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'none' }}>
       <CenaPorta porta={porta} estado="autorizado" verso={entrada ? (entrada.verso || null) : 'passe'} viraAnim={false}
@@ -1449,14 +1432,6 @@ function PortaQueAbre({ entrada, onFim }) {
       {rect && (
         <div ref={folhasRef} className="mjp-ps-folhas" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3 }}>
           <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={aberto} />
-        </div>
-      )}
-      {rect && logo && (
-        <div ref={vooRef} style={{
-          position: 'fixed', left: rect.left + rect.width / 2 - tamEmb * 0.65, top: rect.top + rect.height / 2 - tamEmb / 2,
-          width: tamEmb * 1.3, height: tamEmb, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transformOrigin: '50% 50%',
-        }}>
-          <Escudo logo={logo} cor={cor} tam={tamEmb} />
         </div>
       )}
     </div>
