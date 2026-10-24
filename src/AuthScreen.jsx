@@ -1480,9 +1480,17 @@ function furarCena(cena, b, vw, vh) {
   const px = (n) => `${Math.max(0, n)}px`;
   const esq = Math.ceil(b.left + FOLGA_BURACO), cima = Math.ceil(b.top + FOLGA_BURACO);
   const dir = Math.floor(b.left + b.width - FOLGA_BURACO), baixo = Math.floor(b.top + b.height - FOLGA_BURACO);
-  const alt = Math.max(0, baixo - cima);
-  const tam = [`${px(vw)} ${px(cima)}`, `${px(vw)} ${px(Math.ceil(vh) - baixo)}`, `${px(esq)} ${px(alt)}`, `${px(Math.ceil(vw) - dir)} ${px(alt)}`].join(',');
-  const pos = [`0px 0px`, `0px ${px(baixo)}`, `0px ${px(cima)}`, `${px(dir)} ${px(cima)}`].join(',');
+  /* AS QUATRO FAIXAS SOBREPÕEM-SE (não se encostam). No telemóvel, um píxel
+     CSS não é um número inteiro de píxeis do ecrã (ex.: 2,625): onde duas
+     faixas só se encostavam, ficava uma risca de 1 px sem máscara, da borda
+     do ecrã até ao canto do campo, e via-se a app por ela (as "letras" a
+     tracejado ao lado do quadro). Agora as faixas da esquerda e da direita
+     vão de cima a baixo e as de cima e de baixo têm a largura toda; tudo
+     passa um pouco para fora do ecrã. A única fronteira que sobra é a do
+     próprio buraco, e essa fica debaixo das folhas. */
+  const W0 = Math.ceil(vw) + 4, H0 = Math.ceil(vh) + 4;
+  const tam = [`${px(W0)} ${px(cima + 2)}`, `${px(W0)} ${px(H0 - baixo)}`, `${px(esq + 2)} ${px(H0)}`, `${px(W0 - dir)} ${px(H0)}`].join(',');
+  const pos = [`-2px -2px`, `-2px ${px(baixo)}`, `-2px -2px`, `${px(dir)} -2px`].join(',');
   Object.assign(cena.style, {
     webkitMaskImage: camadas, maskImage: camadas, webkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
     webkitMaskSize: tam, maskSize: tam, webkitMaskPosition: pos, maskPosition: pos,
