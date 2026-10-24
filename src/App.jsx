@@ -35441,16 +35441,14 @@ function usePortaMedidas() {
     const vw = Math.min(window.innerWidth, 420), vh = window.innerHeight;
     // Espaço no topo: o mesmo da porta da equipa técnica (mesma grelha).
     const S = Math.max(0, Math.min(28, Math.round((vh - 640) * 0.12)));
-    const livre = vh - 251 - S;
-    const larguraMax = vw - 32 - 14;
-    const hLargura = larguraMax * 254 / 348;
-    let H = Math.min(hLargura, livre - 330);
-    if (H < 150) H = Math.max(120, Math.min(hLargura, livre * 0.42));
-    H = Math.round(H);
-    /* A camisola acompanha a porta NA MESMA PROPORÇÃO (tamanho base com a
-       porta de 251 px de altura, a de um telemóvel normal) — e nunca
-       maior do que o espaço que sobra. */
-    const k = Math.max(0.55, Math.min(H / 251, (livre - H) / 330));
+    /* A porta e a camisola ocupam TODO o espaço disponível, juntas: a
+       camisola tem sempre 330/251 da altura da porta. (Antes reservava-se
+       espaço para uma camisola de tamanho normal e depois ela encolhia —
+       e esse espaço ficava vazio.) */
+    const fixo = 251 + S;
+    const hLargura = (vw - 32 - 14) * 254 / 348;
+    const H = Math.round(Math.max(120, Math.min(hLargura, (vh - fixo) / (1 + 330 / 251))));
+    const k = Math.max(0.55, Math.min(1.15, H / 251));
     return { W: Math.round(H * 348 / 254), H, k, S };
   };
   const [m, setM] = useState(medir);

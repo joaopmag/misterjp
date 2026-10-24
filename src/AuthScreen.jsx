@@ -594,27 +594,19 @@ function margensTelemovel() {
   return MARGENS_TELEMOVEL;
 }
 function medir() {
-  /* O QUADRO TEM AS MESMAS MEDIDAS DA PORTA DO PORTAL (usePortaMedidas no
-     App.jsx): coluna de até 420 px e a mesma regra para a altura. */
+  /* A MESMA GRELHA DA PORTA DO PORTAL (usePortaMedidas no App.jsx): coluna
+     de até 420 px, o mesmo espaço no topo (S) e a mesma altura do quadro.
+     O cartão tem a MESMA PROPORÇÃO da camisola em relação ao quadro
+     (330/251 da altura): o letreiro, o quadro, o cartão e o "Mais opções"
+     ficam no mesmo sítio nas duas entradas, sem espaço vazio. */
   const vw = Math.min(document.documentElement.clientWidth || window.innerWidth, 420), vh = window.innerHeight;
   const S = Math.max(0, Math.min(28, Math.round((vh - 640) * 0.12)));
-  const livrePortal = vh - 251 - S;
+  const fixo = 251 + S;
   const hLargura = (vw - 32 - 14) * 254 / 348;
-  let H = Math.min(hLargura, livrePortal - 330);
-  if (H < 150) H = Math.max(120, Math.min(hLargura, livrePortal * 0.42));
-  H = Math.round(H);
-  const m = margensTelemovel();
-  const livre = vh - ALTURA_FIXA - m.cima - m.baixo;
-  /* O cartão acompanha o quadro NA MESMA PROPORÇÃO (tamanho base com o
-     quadro de 251 px de altura, o de um telemóvel normal) — e nunca maior
-     do que o espaço que sobra. */
-  const k = Math.max(0.55, Math.min(H / 251, (livre - H) / CH));
-  /* A MESMA GRELHA DO PORTAL: o espaço no topo (S) e o sítio do "Mais
-     opções" são os do Portal, onde a camisola (330 px na escala dela) ocupa
-     o lugar do cartão. Assim, ao trocar de app, o letreiro, o quadro e o
-     "Mais opções" estão no mesmo sítio. */
-  const kp = Math.max(0.55, Math.min(H / 251, (livrePortal - H) / 330));
-  const gapMais = Math.max(16, Math.round(330 * kp + 38 - 4 - CH * k));
+  const H = Math.round(Math.max(120, Math.min(hLargura, (vh - fixo) / (1 + 330 / 251))));
+  const kp = Math.max(0.55, Math.min(1.15, H / 251));
+  const k = kp * 330 / CH;               // o cartão ocupa a altura da camisola
+  const gapMais = 34;                    // "Mais opções" logo abaixo, como no Portal
   return { W: Math.round(H * 348 / 254), H, k, S, gapMais };
 }
 function useMedidas() {
