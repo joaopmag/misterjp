@@ -34881,7 +34881,7 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
             um dedo que toca. Saem quando o acesso é autorizado — não vão na
             cópia do ecrã que fica por baixo da porta a abrir. */}
         {largura && !aberta && onEmblema && (() => {
-          const t = Math.round(altura * 0.78), c = Math.round(t * 0.22);
+          const t = Math.round(altura * 0.7), c = Math.round(t * 0.22);
           const corC = faceId === 'ok' ? '#8EE6A0' : '#C9A227';
           const canto = (o) => ({ position: 'absolute', width: c, height: c, borderColor: corC, borderStyle: 'solid', borderWidth: 0, boxSizing: 'border-box', ...o });
           return (
@@ -34889,7 +34889,7 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
               {faceId !== 'desligado' && (
                 <div aria-hidden="true" style={{ position: 'absolute', left: 7 + largura / 2 - t / 2, top: 7 + altura / 2 - t / 2, width: t, height: t, pointerEvents: 'none', zIndex: 3,
                   animation: faceId === 'pronto' ? 'pe-respira 2.2s ease-in-out infinite' : 'none' }}>
-                  {faceId === 'pronto' && <div style={{ position: 'absolute', inset: '8%', borderRadius: '50%', boxSizing: 'border-box', border: '2.5px solid rgba(255,214,120,.95)', boxShadow: '0 0 16px rgba(255,214,120,.65), inset 0 0 10px rgba(255,214,120,.35)', animation: 'pe-anel 2.2s cubic-bezier(.2,.6,.3,1) infinite' }} />}
+                  {faceId === 'pronto' && <div style={{ position: 'absolute', inset: '4%', borderRadius: '50%', boxSizing: 'border-box', border: '2.5px solid rgba(255,214,120,.95)', boxShadow: '0 0 16px rgba(255,214,120,.65), inset 0 0 10px rgba(255,214,120,.35)', animation: 'pe-anel 2.2s cubic-bezier(.2,.6,.3,1) infinite' }} />}
                   <div style={canto({ left: 0, top: 0, borderLeftWidth: 3, borderTopWidth: 3, borderTopLeftRadius: 8 })} />
                   <div style={canto({ right: 0, top: 0, borderRightWidth: 3, borderTopWidth: 3, borderTopRightRadius: 8 })} />
                   <div style={canto({ left: 0, bottom: 0, borderLeftWidth: 3, borderBottomWidth: 3, borderBottomLeftRadius: 8 })} />
@@ -35429,15 +35429,18 @@ function PeCamisola({ jogador, cor, logo, virada, sensor, pin, rotulo, corRotulo
    camisola (nunca abaixo de 62 %). Em ecrãs altos a camisola cresce até
    15 %, para o teclado ficar mais confortável. */
 function usePortaMedidas() {
+  /* A MESMA REGRA DO QUADRO DA EQUIPA TÉCNICA (AuthScreen): a porta tem o
+     tamanho que o quadro teria no mesmo ecrã (até 520 px de largura) e a
+     camisola fica com o espaço que sobra (encolhe até 62 %, cresce até
+     15 %). Assim as duas entradas têm as mesmas proporções. */
   const medir = () => {
-    const vw = Math.min(window.innerWidth, 420), vh = window.innerHeight;
-    const livre = vh - 215;
-    const larguraMax = vw - 32 - 14;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const larguraMax = Math.min(vw * 0.9, 520);
     const hLargura = larguraMax * 254 / 348;
-    let H = Math.min(hLargura, livre - 330), k = 1;
-    if (H < 150) { H = Math.max(120, Math.min(hLargura, livre * 0.42)); k = Math.max(0.62, Math.min(1, (livre - H) / 330)); }
-    else k = Math.max(1, Math.min(1.15, (livre - H) / 330));
+    let H = Math.min(hLargura, vh - 213 - 268);
+    if (H < 165) H = Math.max(130, Math.min(hLargura, (vh - 213) * 0.46));
     H = Math.round(H);
+    const k = Math.max(0.62, Math.min(1.15, (vh - 215 - H) / 330));
     return { W: Math.round(H * 348 / 254), H, k };
   };
   const [m, setM] = useState(medir);
@@ -35735,6 +35738,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
   // com a impressão digital ativa; acaba na primeira entrada pelo emblema.
   const chavePista = `pe-pista-emblema:${teamId}`;
   const [pistaEmblema] = useState(() => {
+    if (!(cartao && cartao.bio)) return false;
     try { const v = localStorage.getItem(chavePista); if (v === 'feita' || Number(v || 0) >= 5) return false; localStorage.setItem(chavePista, String(Number(v || 0) + 1)); return true; } catch (e) { return false; }
   });
   const acabarPistaPortal = () => { try { localStorage.setItem(chavePista, 'feita'); } catch (e) { /* nada */ } };
@@ -36248,7 +36252,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
         <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 50% 18%, #26342B 0%, #0B0F0D 75%)' }}>
           <div style={{ position: 'absolute', left: '50%', top: -8, width: 'min(80vw, 420px)', height: 22, boxSizing: 'content-box', transform: 'translateX(-50%)', borderRadius: '50%', border: '3px solid rgba(255,230,160,.75)', boxShadow: '0 0 24px 6px rgba(255,230,160,.22)' }} />
         </div>
-        <div style={{ ...coluna, position: 'relative', gap: 0 }}>
+        <div style={{ ...coluna, position: 'relative', gap: 0, maxWidth: Math.max(420, m.W + 14) }}>
           {semMemoria && (
             <div style={{ alignSelf: 'stretch', fontSize: 12.5, lineHeight: 1.45, color: T.cream, background: T.fundoErro, border: `1px solid ${T.bad}`, borderRadius: 10, padding: '8px 12px', flexShrink: 0, marginBottom: 8 }}>
               Este navegador não está a guardar o teu cartão (janela privada ou memória bloqueada). Podes entrar agora com o PIN, mas da próxima vez abre o Portal num navegador normal — ou instala a app no dispositivo (Mais opções).
@@ -36290,6 +36294,9 @@ function PortalEntrada({ entrar, equipa, teamId }) {
               <div onClick={() => setMaisOpcoes(false)} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-bottom, 0px)) 12px' }}>
                 <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: T.surface, border: `1px solid ${T.line}`, borderRadius: 16, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <PeInstalar estilo={opcao} aoAbrir={() => setMaisOpcoes(false)} />
+                  {bioAtiva && (
+                    <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setModoPin(true); }}>Entrar com o PIN</button>
+                  )}
                   {bioSuportada && !cartao.bio && (
                     <button type="button" style={opcao} onClick={() => { setMaisOpcoes(false); limpar(); setPin(''); setEcra('bio-pin'); }}>Entrar com {PE_BIO_TXT.comArtigo}</button>
                   )}
