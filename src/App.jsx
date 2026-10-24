@@ -35358,17 +35358,32 @@ function PeDesenhoCamisola({ cor, lado, id }) {
   );
 }
 
-// O gancho de ferro preto, preso por baixo da porta; o cabide entra pela gola.
-function PeGancho() {
+/* O GANCHO E O TUBO. O gancho de ferro preto continua preso por baixo da
+   porta; da ponta dele (com uma pequena abraçadeira) desce um tubo fino de
+   borracha preta transparente até à gola, para a camisola não parecer
+   solta no ar. O espaço ocupado é o mesmo de antes (nada mexe no ecrã): o
+   tubo passa para dentro da caixa da camisola e acaba escondido atrás da
+   gola. `k` é a escala da camisola. */
+function PeGancho({ k = 1 }) {
+  const fim = 34 + 14 + Math.round(26 * k); // altura do gancho + margem de baixo + até à gola
   return (
-    <svg width="40" height="34" viewBox="0 0 40 34" aria-hidden="true" style={{ display: 'block', flexShrink: 0, margin: '-1px auto 14px' }}>
-      <rect x="7" y="0" width="26" height="8" rx="2" fill="#141615" />
-      <rect x="8" y="1" width="24" height="1.5" rx=".75" fill="#4A4F4C" />
-      <path d="M20 8 L20 15" stroke="#141615" strokeWidth="4.5" strokeLinecap="round" />
-      <path d="M20 20 q-9 0 -9 -6 q0 -6 8 -6" fill="none" stroke="#141615" strokeWidth="3.5" strokeLinecap="round" />
-      <path d="M20 20 L20 34" stroke="#141615" strokeWidth="3.5" />
-      <path d="M19 22 L19 33" stroke="#4A4F4C" strokeWidth="1" />
-    </svg>
+    <div aria-hidden="true" style={{ position: 'relative', width: 40, height: 34, flexShrink: 0, margin: '-1px auto 14px', pointerEvents: 'none' }}>
+      <svg width="40" height={fim} viewBox={`0 0 40 ${fim}`} style={{ position: 'absolute', left: 0, top: 0, display: 'block', overflow: 'visible' }}>
+        {/* o tubo: preto a 50 %, com um reflexo leve de um lado */}
+        <rect x="19" y="28" width="2" height={fim - 28} rx="1" fill="#000" fillOpacity=".5" />
+        <path d={`M19.6 31 L19.6 ${fim - 2}`} stroke="#fff" strokeOpacity=".22" strokeWidth=".4" strokeLinecap="round" />
+        {/* a abraçadeira na ponta do gancho */}
+        <rect x="18" y="27" width="4" height="3" rx="1" fill="#1d201f" />
+        <rect x="18.3" y="27.5" width="3.4" height=".7" fill="#4A4F4C" />
+        {/* o gancho */}
+        <rect x="7" y="0" width="26" height="8" rx="2" fill="#141615" />
+        <rect x="8" y="1" width="24" height="1.5" rx=".75" fill="#4A4F4C" />
+        <path d="M20 8 L20 15" stroke="#141615" strokeWidth="4.5" strokeLinecap="round" />
+        <path d="M20 20 q-9 0 -9 -6 q0 -6 8 -6" fill="none" stroke="#141615" strokeWidth="3.5" strokeLinecap="round" />
+        <path d="M20 20 L20 28" stroke="#141615" strokeWidth="3.5" />
+        <path d="M19 22 L19 27" stroke="#4A4F4C" strokeWidth="1" />
+      </svg>
+    </div>
   );
 }
 
@@ -36296,7 +36311,7 @@ function PortalEntrada({ entrar, equipa, teamId }) {
           <PePorta aberta={aberta} jogador={cartao.jogador} cor={cor} logo={logo} clube={clube}
             largura={m.W} altura={m.H} faceId={faceId} pista={pistaEmblema && verBio && !ocupado}
             onEmblema={bioAtiva ? () => { if (!verBio) { limpar(); setPin(''); setModoPin(false); } acabarPistaPortal(); entrarComBio(); } : irParaPin} />
-          <PeGancho />
+          <PeGancho k={m.k} />
           <div style={{ position: 'relative', width: 300 * m.k, height: 330 * m.k, flexShrink: 0, animation: tremer ? 'pe-treme .45s' : 'none' }}>
             <div style={{ position: 'absolute', left: 0, top: 0, width: 300, height: 330, transform: `scale(${m.k})`, transformOrigin: '0 0' }}>
               <PeCamisola jogador={cartao.jogador} cor={cor} logo={logo} virada={virada} pin={pin} aberta={aberta}
