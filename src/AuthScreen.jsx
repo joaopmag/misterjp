@@ -447,15 +447,15 @@ function FolhasQuadro({ W, H, cor, logo, onze, saltar, aberto }) {
   };
   return (
     <>
-      <div style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>
+      <div data-folha="E" style={{ ...folha, left: 0, transform: aberto ? 'translateX(-101%)' : 'none' }}>
         <QuadroInteiro W={W} H={H} id="mjpqe" cor={cor} logo={logo} onze={onze} saltar={saltar} />
       </div>
-      <div style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>
+      <div data-folha="D" style={{ ...folha, right: 0, transform: aberto ? 'translateX(101%)' : 'none' }}>
         <div style={{ position: 'absolute', left: -W / 2, top: 0 }}>
           <QuadroInteiro W={W} H={H} id="mjpqd" cor={cor} logo={logo} onze={onze} saltar={saltar} />
         </div>
       </div>
-      <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.95)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />
+      <div data-junta="" style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,.95)', opacity: aberto ? 0 : 1, transition: 'opacity .12s' }} />
     </>
   );
 }
@@ -1358,28 +1358,46 @@ function PortaQueAbre({ entrada, onFim }) {
          telemóvel ao monitor de 1920 px. (Um buraco a crescer frame a frame,
          ou um zoom da cena, obrigavam a redesenhar a cena e davam saltos.) */
       furarCena(cena, b, vw, vh); // já posta à chegada; repete-se só se faltar
-      // (O aro de luz e o letreiro apagam-se JUNTO com o resto da cena:
-      // desvanecidos à parte, o brilho de baixo do aro sumia primeiro e
-      // parecia que a luz subia.)
-      cena.style.transition = 'opacity .65s cubic-bezier(.4,0,.2,1) .3s';
-      timers.push(setTimeout(() => { try { reporFaixa.current(); } catch (e) { /* nada */ } }, 750));
-      /* A CREDENCIAL E A FITA SAEM PRIMEIRO (0,3 s, logo ao abrir). Com o
-         resto da cena (0,65 s, a começar aos 0,3 s), a credencial ficava
-         meio segundo por cima do texto da app que já aparecia por baixo
-         ("Próximas sessões") e parecia confuso. O quadro e o aro continuam
-         a sair como antes. (Já estão em camada própria desde o início, por
-         isso isto não custa frames.) */
+      /* RELÓGIO COM TRAVÃO (o mesmo da porta do Portal). A abertura é
+         desenhada frame a frame com um relógio próprio, que nunca avança
+         mais de 34 ms por frame. Antes eram transições CSS: se o browser
+         engasgava a meio (no desktop, a app por trás ainda a desenhar
+         gráficos), a animação continuava "às escuras" e, no frame seguinte,
+         as folhas e a cena já tinham desaparecido — um salto. Agora, se o
+         browser se atrasar, a porta abranda nesse instante e retoma, sem
+         saltar nada; com frames normais, as durações são as de sempre.
+           0 ms    as folhas abrem (0,7 s); a junta apaga-se (0,12 s);
+                   a credencial e a fita saem (0,3 s), para não ficarem por
+                   cima do texto da app;
+           300 ms  o resto da cena (aro, letreiro, quadro, fundo) desvanece
+                   (0,65 s), tudo junto: desvanecidos à parte, o brilho do
+                   aro de luz sumia primeiro e parecia que a luz subia;
+           750 ms  a app volta a ter a sua barra de scroll;
+           1400 ms fim. */
+      const raiz = folhasRef.current;
+      const folhas = raiz ? Array.from(raiz.querySelectorAll('[data-folha]')) : [];
+      const junta = raiz ? raiz.querySelector('[data-junta]') : null;
       const cedo = Array.from(cena.querySelectorAll('[data-mjp-sai-cedo]'));
-      cedo.forEach(el => { el.style.transition = 'opacity .3s cubic-bezier(.4,0,.2,1)'; });
-      requestAnimationFrame(() => {
+      [cena, junta, ...folhas, ...cedo].forEach(el => { if (el) el.style.transition = 'none'; });
+      const lim = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+      const curva = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+      const suave = (p) => 1 - Math.pow(1 - p, 3) * (1 - p * 0.4);
+      let v = 0, antes = 0, faixaReposta = false;
+      const quadro = (t) => {
         if (cancelado) return;
-        cena.style.opacity = '0';
-        cedo.forEach(el => { el.style.opacity = '0'; });
-      });
-
-      // (O emblema já não voa para a barra da app: as folhas abrem
-      // com o emblema cortado ao meio, como o resto do campo.)
-      timers.push(setTimeout(acabar, 1400));
+        if (antes) v += Math.min(t - antes, 34);
+        antes = t;
+        const pf = curva(lim(v / 700));
+        folhas.forEach(el => { el.style.transform = `translateX(${el.dataset.folha === 'E' ? -101 * pf : 101 * pf}%)`; });
+        if (junta) junta.style.opacity = String(1 - lim(v / 120));
+        const oc = String(1 - suave(lim(v / 300)));
+        cedo.forEach(el => { el.style.opacity = oc; });
+        cena.style.opacity = String(1 - suave(lim((v - 300) / 650)));
+        if (!faixaReposta && v >= 750) { faixaReposta = true; try { reporFaixa.current(); } catch (e) { /* nada */ } }
+        if (v >= 1400) { acabar(); return; }
+        requestAnimationFrame(quadro);
+      };
+      requestAnimationFrame(quadro);
     };
 
     /* SÓ ABRE COM A APP PRONTA POR TRÁS. A app marca-se com
@@ -1404,7 +1422,12 @@ function PortaQueAbre({ entrada, onFim }) {
          seguidos, ou ao fim de 0,6 s mesmo que o computador ainda esteja
          ocupado (antes esperava sempre 4 frames fluidos e, num computador
          com a app a trabalhar por trás, chegava a demorar 7 s). */
-      const pronta = prontaEm && t - ini > 800 && ((bons >= 3 && t - prontaEm > 200) || t - prontaEm > 600);
+      /* ESPERA PELA APP CALMA. No desktop, a app ainda trabalhava (gráficos,
+         várias colunas) quando a porta abria ao fim de 0,6 s, e a abertura
+         engasgava. Agora abre com 6 frames fluidos seguidos (0,1 s sem
+         nenhum atraso) depois de a app estar pronta, ou, se o computador
+         nunca acalmar, ao fim de 2 s. */
+      const pronta = prontaEm && t - ini > 800 && ((bons >= 6 && t - prontaEm > 300) || t - prontaEm > 2000);
       if (pronta || t - ini > 6000) abrir(); else raf = requestAnimationFrame(esperar);
     };
     raf = requestAnimationFrame(esperar);
@@ -1443,7 +1466,7 @@ function PortaQueAbre({ entrada, onFim }) {
       {/* As folhas, por cima do buraco (fora do recorte da cena). */}
       {rect && (
         <div ref={folhasRef} className="mjp-ps-folhas" style={{ position: 'fixed', left: rect.left, top: rect.top, width: rect.width, height: rect.height, overflow: 'hidden', borderRadius: 3 }}>
-          <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={aberto} />
+          <FolhasQuadro W={W} H={H} cor={cor} logo={logo} onze={onze} saltar={saltar} aberto={false} />
         </div>
       )}
     </div>
