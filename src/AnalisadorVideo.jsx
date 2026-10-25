@@ -73,13 +73,11 @@ function IconeTubo({ size = 16, color = 'currentColor', strokeWidth = 2, ...rest
       desenhado com o dobro do tamanho e encolhido a metade (scale): o
       YouTube "vê" um leitor grande e manda HD; no ecrã fica igual.
       Os toques/cliques e as camadas por cima não mudam (ficam na caixa).
-   2) Em todos os leitores com enablejsapi pede-se ainda HD ao próprio
-      leitor (setPlaybackQualityRange / setPlaybackQuality) — é um pedido:
-      se a ligação não aguentar, o YouTube baixa sozinho.
+   (Pedir HD ao leitor por comando — setPlaybackQualityRange — foi testado
+   e RETIRADO: depois de cada salto deixava a imagem pior, não melhor.)
    Os vídeos COMPLETOS (com a barra nativa do YouTube) não são encolhidos,
    para os botões do YouTube não ficarem pequenos. */
 export const YT_NITIDEZ = 2;
-export const YT_QUALIDADE_PARAM = 'vq=hd1080';
 export function estiloIframeYoutubeNitido(extra) {
   return {
     position: 'absolute', top: 0, left: 0, border: 0,
@@ -88,14 +86,6 @@ export function estiloIframeYoutubeNitido(extra) {
     ...(extra || {}),
   };
 }
-export function pedirQualidadeYoutube(win) {
-  if (!win) return;
-  try {
-    win.postMessage(JSON.stringify({ event: 'command', func: 'setPlaybackQualityRange', args: ['hd720', 'highres'] }), '*');
-    win.postMessage(JSON.stringify({ event: 'command', func: 'setPlaybackQuality', args: ['hd1080'] }), '*');
-  } catch (e) { /* nada */ }
-}
-
 export const FERRAMENTAS = [
   ['seta', ArrowUpRight, 'Seta'],
   ['linha', Minus, 'Linha'],
@@ -2210,7 +2200,6 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
       try { data = typeof data === 'string' ? JSON.parse(data) : data; } catch (e) { return; }
       if (!data) return;
       if (data.event === 'onStateChange' && typeof data.info === 'number') setATocar(data.info === 1 || data.info === 3);
-      if (data.event === 'onStateChange' && data.info === 1) pedirQualidadeYoutube(win);
       if (data.event === 'infoDelivery' && data.info) {
         if (typeof data.info.playerState === 'number') setATocar(data.info.playerState === 1 || data.info.playerState === 3);
         const t = data.info.currentTime;
@@ -2232,10 +2221,9 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
   const aoCarregar = () => {
     const win = iframeRef.current && iframeRef.current.contentWindow;
     if (win) win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
-    pedirQualidadeYoutube(win);
   };
 
-  const src = `https://www.youtube.com/embed/${clipeDoLeitor.youtubeId}?start=${Math.floor(Math.max(0, Number(clipeDoLeitor.clipInicio) || 0))}&autoplay=1&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0&${YT_QUALIDADE_PARAM}`;
+  const src = `https://www.youtube.com/embed/${clipeDoLeitor.youtubeId}?start=${Math.floor(Math.max(0, Number(clipeDoLeitor.clipInicio) || 0))}&autoplay=1&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`;
   const duracao = fim - inicio;
   const [areaRef, caixa] = useCaixaNaArea(16 / 9);
   const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();

@@ -14,7 +14,7 @@ import AnalisadorVideo, {
   validarCalibracao, cantosDasLinhas, LINHAS_CALIBRACAO, ordenarCantosAuto, referenciaForaDeJogo,
   pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
-  YT_QUALIDADE_PARAM, estiloIframeYoutubeNitido, pedirQualidadeYoutube,
+  estiloIframeYoutubeNitido,
 } from './AnalisadorVideo';
 import {
   ZoomIn, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -39864,7 +39864,7 @@ function socialExternalUrl(social) {
 // nenhuma lógica extra no lado do leitor.
 function youtubeEmbedSrc(item, extra) {
   if (!item || !item.youtubeId) return '';
-  const bits = ['rel=0', 'playsinline=1', YT_QUALIDADE_PARAM];
+  const bits = ['rel=0', 'playsinline=1'];
   if (typeof item.clipInicio === 'number') {
     bits.push(`start=${Math.max(0, Math.floor(item.clipInicio))}`);
     // Num CLIPE, a barra nativa do YouTube mostrava (e deixava percorrer)
@@ -40685,7 +40685,6 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
         if (typeof data.info.playerState === 'number') r.estado[k] = data.info.playerState;
       }
       if (data.event === 'onStateChange' && typeof data.info === 'number') r.estado[k] = data.info;
-      if (data.event === 'onStateChange' && data.info === 1) pedirQualidadeYoutube(event.source);
       if (k !== r.vis) return; // os outros só esperam
       if (typeof r.estado[k] === 'number') setATocar(r.estado[k] === 1 || r.estado[k] === 3);
       if (!(data.event === 'infoDelivery' && data.info && typeof data.info.currentTime === 'number')) return;
@@ -40718,7 +40717,6 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
     const win = el && el.contentWindow;
     if (!win) return;
     win.postMessage(JSON.stringify({ event: 'listening', id: k + 1, channel: 'widget' }), '*');
-    pedirQualidadeYoutube(win);
     setTimeout(() => {
       ref.current.pronto[k] = true;
       // Ao carregar em "Ver", o vídeo começa logo a tocar.
@@ -40785,7 +40783,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
           {segs.map((s, k) => (
             <iframe
               key={k} ref={el => { iframesRef.current[k] = el; }} onLoad={() => aoCarregar(k)} title={`${titulo || 'O meu vídeo'} ${k + 1}`}
-              src={`https://www.youtube.com/embed/${s.youtubeId}?start=${Math.floor(k === 0 ? s.inicio : parqueDe(k))}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0&iv_load_policy=3&${YT_QUALIDADE_PARAM}${k === 0 ? '' : '&mute=1'}`}
+              src={`https://www.youtube.com/embed/${s.youtubeId}?start=${Math.floor(k === 0 ? s.inicio : parqueDe(k))}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0&iv_load_policy=3${k === 0 ? '' : '&mute=1'}`}
               allow="autoplay; encrypted-media; picture-in-picture"
               style={estiloIframeYoutubeNitido({ opacity: vis === k ? 1 : 0.01, pointerEvents: 'none', zIndex: vis === k ? 1 : 0 })}
             />
@@ -42265,8 +42263,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
       }
       if (data && data.event === 'onStateChange' && typeof data.info === 'number') {
         setYtATocar(data.info === 1 || data.info === 3);
-        // A qualidade só "pega" com o vídeo já a tocar — volta-se a pedir HD.
-        if (data.info === 1 && janelaRelevante) pedirQualidadeYoutube(janelaRelevante);
       }
       if (data && data.event === 'infoDelivery' && data.info) {
         if (typeof data.info.playerState === 'number') {
@@ -42389,7 +42385,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
     const win = ref.current && ref.current.contentWindow;
     if (!win) return;
     win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
-    pedirQualidadeYoutube(win);
   };
 
   const save = (data) => {
@@ -52270,7 +52265,6 @@ function PaginaCorte() {
           else setTempo(Math.min(fim, Math.max(inicio, t)));
         }
       }
-      if (data.event === 'onStateChange' && data.info === 1) pedirQualidadeYoutube(win);
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -52280,7 +52274,6 @@ function PaginaCorte() {
   const aoCarregar = () => {
     const win = iframeRef.current && iframeRef.current.contentWindow;
     if (win) win.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
-    pedirQualidadeYoutube(win);
   };
 
   const btn = { background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 4, display: 'flex', flexShrink: 0 };
@@ -52300,7 +52293,7 @@ function PaginaCorte() {
               <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9' }}>
                 <iframe
                   ref={iframeRef} onLoad={aoCarregar} title={titulo || 'Corte'}
-                  src={`https://www.youtube.com/embed/${youtubeId}?start=${Math.floor(inicio)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0&${YT_QUALIDADE_PARAM}`}
+                  src={`https://www.youtube.com/embed/${youtubeId}?start=${Math.floor(inicio)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`}
                   allow="autoplay; encrypted-media; picture-in-picture"
                   style={estiloIframeYoutubeNitido()}
                 />
