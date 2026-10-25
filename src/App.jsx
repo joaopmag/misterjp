@@ -39857,20 +39857,6 @@ function socialExternalUrl(social) {
 // CLIPE (ver `clipInicio`/`clipFim`, criados em "Criar clipe" na Biblioteca),
 // para o próprio YouTube cortar a reprodução nesses pontos, sem precisar de
 // nenhuma lógica extra no lado do leitor.
-// Mesmo endereço do leitor, mas a começar no segundo `t` (e a tocar, se
-// estava a tocar) — usado ao recarregar o leitor ao entrar em ecrã
-// inteiro (ver "NITIDEZ EM ECRÃ INTEIRO" na Sala de Vídeo).
-function srcRecarregadoFs(src, recarga) {
-  if (!recarga || !src) return src;
-  try {
-    const u = new URL(src);
-    u.searchParams.set('start', String(recarga.t));
-    if (recarga.tocar) u.searchParams.set('autoplay', '1');
-    else u.searchParams.delete('autoplay');
-    return u.toString();
-  } catch (e) { return src; }
-}
-
 function youtubeEmbedSrc(item, extra) {
   if (!item || !item.youtubeId) return '';
   const bits = ['rel=0', 'playsinline=1'];
@@ -43516,32 +43502,6 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
   // mesmo leitor e salta-se para o início do corte. Calculado durante o
   // render (e guardado numa ref) para o iframe nunca receber, nem por um
   // instante, o endereço do corte anterior.
-  /* NITIDEZ EM ECRÃ INTEIRO. O YouTube fixa o teto da qualidade pelo
-     tamanho do leitor no momento em que ele CARREGA. Na Sala de Vídeo o
-     leitor carrega na caixa pequena da coluna (~260 px) e, ao passar a
-     ecrã inteiro (o mesmo iframe, de propósito, para não recomeçar), o
-     YouTube não voltava a subir: ficava em ~144p em ecrã inteiro, quando
-     no youtube.com o mesmo jogo fica nítido.
-     Agora, ao ENTRAR em ecrã inteiro, o leitor é recarregado já em grande,
-     no MESMO segundo em que estava (e a tocar, se estava a tocar). Custa
-     ~1 s de ecrã preto à entrada; à saída não se recarrega (num leitor
-     mais pequeno a qualidade alta não faz mal). */
-  const [recargaFsBib, setRecargaFsBib] = useState(null); // { n, chave, t, tocar }
-  const ytFullAntesRecargaRef = useRef(false);
-  useEffect(() => {
-    const antes = ytFullAntesRecargaRef.current;
-    ytFullAntesRecargaRef.current = ytFull;
-    if (!ytFull || antes) return;
-    const lb = leitorBibRef.current;
-    if (!lb || !inlineIframeRef.current) return;
-    setRecargaFsBib(prev => ({
-      n: (prev ? prev.n : 0) + 1,
-      chave: lb.chave,
-      t: Math.max(0, Math.floor(currentTimeRef.current || 0)),
-      tocar: !!ytATocarRef.current,
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytFull]);
   const leitorBibRef = useRef(null);
   const leitorBib = (() => {
     if (!active || !active.youtubeId) return null;
@@ -44475,14 +44435,11 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           nunca ser remontado. */}
                       <div style={{
                         position: 'absolute', inset: 0,
+                        // Mais fluido: camada própria na placa gráfica
+                        // (will-change + translate3d), entrada longa e suave a
+                        // desacelerar, saída suave nos dois extremos.
                         // Com a LUPA (ecrã inteiro) manda a lupa; senão, o zoom dos círculos.
-                        // NITIDEZ: SEM zoom nem lupa, a caixa fica SEM transform
-                        // e sem camada própria (will-change). Um leitor do
-                        // YouTube dentro de uma camada transformada é tratado
-                        // como "não visível" e o YouTube baixa-o para a
-                        // qualidade mínima (~144p) — no youtube.com o mesmo
-                        // jogo fica nítido. A camada só existe durante o zoom.
-                        transform: zoomVisivelBib ? `translate3d(0,0,0) scale(${zoomVisivelBib})` : (lupaBib.transform || 'none'),
+                        transform: zoomVisivelBib ? `translate3d(0,0,0) scale(${zoomVisivelBib})` : (lupaBib.transform || 'translate3d(0,0,0) scale(1)'),
                         transformOrigin: !zoomVisivelBib && lupaBib.transform ? '0 0' : zoomOrigemBib.current,
                         // Entrada suave; saída suave (ou imediata num corte brusco).
                         transition: zoomVisivelBib
@@ -44490,7 +44447,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           : lupaBib.transform
                             ? (lupaBib.aArrastar ? 'none' : 'transform 0.2s ease-out')
                             : (saidaSuaveZoomRef.current ? 'transform 0.75s cubic-bezier(0.65, 0, 0.35, 1)' : 'none'),
-                        willChange: (zoomVisivelBib || lupaBib.transform || saidaSuaveZoomRef.current) ? 'transform' : 'auto',
+                        willChange: 'transform',
                       }}>
                       {isBlocked ? (
                         <div style={{
@@ -44516,17 +44473,13 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           // MESMO jogo o leitor não é recarregado (salta-se
                           // dentro dele) — acabou o ecrã preto de ~4s a cada
                           // troca de corte.
-                          key={leitorBib
-                            ? leitorBib.chave + (recargaFsBib && recargaFsBib.chave === leitorBib.chave ? `-fs${recargaFsBib.n}` : '')
-                            : active.id}
+                          key={leitorBib ? leitorBib.chave : active.id}
                           ref={inlineIframeRef}
                           onLoad={handleIframeLoad(inlineIframeRef)}
                           // fs=0: sem o ecrã inteiro nativo do YouTube — o
                           // nosso (botão abaixo) mantém o Criar clipe e a
                           // barra do clipe à mão.
-                          src={leitorBib
-                            ? srcRecarregadoFs(leitorBib.src, recargaFsBib && recargaFsBib.chave === leitorBib.chave ? recargaFsBib : null)
-                            : youtubeEmbedSrc(active, 'enablejsapi=1&fs=0')}
+                          src={leitorBib ? leitorBib.src : youtubeEmbedSrc(active, 'enablejsapi=1&fs=0')}
                           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           referrerPolicy="strict-origin-when-cross-origin"
