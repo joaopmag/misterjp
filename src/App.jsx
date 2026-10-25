@@ -14,7 +14,6 @@ import AnalisadorVideo, {
   validarCalibracao, cantosDasLinhas, LINHAS_CALIBRACAO, ordenarCantosAuto, referenciaForaDeJogo,
   pegaZonaNoChao, desrodarNaZonaNoChao, pegaRodarZonaNoChao, anguloRodarZonaNoChao,
   podeGravarSeparador, prepararGravacaoSeparador, entregarVideo,
-  estiloIframeYoutubeNitido,
 } from './AnalisadorVideo';
 import {
   ZoomIn, Ruler, Flag, Users, CalendarDays, Dumbbell, Activity, LayoutGrid, Plus, X, Trash2,
@@ -39794,11 +39793,7 @@ function MediaFeedItem({ item, onOpen }) {
           <iframe
             src={fonte}
             title={item.title || 'media'}
-            // Clipe do YouTube (sem barra nativa): desenhado em grande e
-            // encolhido, para o YouTube mandar HD (ver YT_NITIDEZ).
-            style={item.youtubeId && typeof item.clipInicio === 'number'
-              ? estiloIframeYoutubeNitido()
-              : { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
             allowFullScreen
             playsInline
@@ -40785,7 +40780,7 @@ function LeitorJunto({ segmentos, titulo, onFechar, isNarrow }) {
               key={k} ref={el => { iframesRef.current[k] = el; }} onLoad={() => aoCarregar(k)} title={`${titulo || 'O meu vídeo'} ${k + 1}`}
               src={`https://www.youtube.com/embed/${s.youtubeId}?start=${Math.floor(k === 0 ? s.inicio : parqueDe(k))}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0&iv_load_policy=3${k === 0 ? '' : '&mute=1'}`}
               allow="autoplay; encrypted-media; picture-in-picture"
-              style={estiloIframeYoutubeNitido({ opacity: vis === k ? 1 : 0.01, pointerEvents: 'none', zIndex: vis === k ? 1 : 0 })}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, opacity: vis === k ? 1 : 0.01, pointerEvents: 'none', zIndex: vis === k ? 1 : 0 }}
             />
           ))}
           </div>
@@ -44440,11 +44435,14 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           nunca ser remontado. */}
                       <div style={{
                         position: 'absolute', inset: 0,
-                        // Mais fluido: camada própria na placa gráfica
-                        // (will-change + translate3d), entrada longa e suave a
-                        // desacelerar, saída suave nos dois extremos.
                         // Com a LUPA (ecrã inteiro) manda a lupa; senão, o zoom dos círculos.
-                        transform: zoomVisivelBib ? `translate3d(0,0,0) scale(${zoomVisivelBib})` : (lupaBib.transform || 'translate3d(0,0,0) scale(1)'),
+                        // NITIDEZ: SEM zoom nem lupa, a caixa fica SEM transform
+                        // e sem camada própria (will-change). Um leitor do
+                        // YouTube dentro de uma camada transformada é tratado
+                        // como "não visível" e o YouTube baixa-o para a
+                        // qualidade mínima (~144p) — no youtube.com o mesmo
+                        // jogo fica nítido. A camada só existe durante o zoom.
+                        transform: zoomVisivelBib ? `translate3d(0,0,0) scale(${zoomVisivelBib})` : (lupaBib.transform || 'none'),
                         transformOrigin: !zoomVisivelBib && lupaBib.transform ? '0 0' : zoomOrigemBib.current,
                         // Entrada suave; saída suave (ou imediata num corte brusco).
                         transition: zoomVisivelBib
@@ -44452,7 +44450,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           : lupaBib.transform
                             ? (lupaBib.aArrastar ? 'none' : 'transform 0.2s ease-out')
                             : (saidaSuaveZoomRef.current ? 'transform 0.75s cubic-bezier(0.65, 0, 0.35, 1)' : 'none'),
-                        willChange: 'transform',
+                        willChange: (zoomVisivelBib || lupaBib.transform || saidaSuaveZoomRef.current) ? 'transform' : 'auto',
                       }}>
                       {isBlocked ? (
                         <div style={{
@@ -44485,13 +44483,7 @@ const MediaLibrary = React.forwardRef(function MediaLibrary({ items, setItems, a
                           // nosso (botão abaixo) mantém o Criar clipe e a
                           // barra do clipe à mão.
                           src={leitorBib ? leitorBib.src : youtubeEmbedSrc(active, 'enablejsapi=1&fs=0')}
-                          // Clipes (sem barra nativa): leitor em grande e
-                          // encolhido → o YouTube manda HD (ver YT_NITIDEZ).
-                          // Vídeos completos ficam como estavam (botões do
-                          // YouTube no tamanho normal).
-                          style={(leitorBib ? leitorBib.eClipe : ativoEClipe)
-                            ? estiloIframeYoutubeNitido()
-                            : { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                           referrerPolicy="strict-origin-when-cross-origin"
                           title={active.title}
@@ -52295,7 +52287,7 @@ function PaginaCorte() {
                   ref={iframeRef} onLoad={aoCarregar} title={titulo || 'Corte'}
                   src={`https://www.youtube.com/embed/${youtubeId}?start=${Math.floor(inicio)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0`}
                   allow="autoplay; encrypted-media; picture-in-picture"
-                  style={estiloIframeYoutubeNitido()}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
                 />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderTop: `1px solid ${T.line}` }}>
