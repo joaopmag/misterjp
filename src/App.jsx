@@ -29764,8 +29764,19 @@ function GpsQuadroSessao({ sessao, todas, onEscolher, players, matches, onApagar
             dentro), seja um jogo com 16 jogadores ou um treino com 32.
             Assim, ao trocar de sessão no seletor, a página não muda de
             tamanho e nada salta de sítio. */}
-        <div style={{ overflow: 'auto', height: 'min(62vh, 640px)', margin: '0 -18px', padding: '0 18px', overflowAnchor: 'none' }}>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 760 }}>
+        {/* COLUNAS FIXAS: largura de cada coluna decidida de antemão
+            (table-layout fixed) e espaço da barra de deslocamento sempre
+            reservado (scrollbar-gutter). Antes, as colunas ajustavam-se
+            aos números de cada sessão, e a barra só aparecia nas sessões
+            com mais jogadores — as duas coisas faziam a tabela andar
+            para os lados ao trocar de dia. */}
+        <div style={{ overflow: 'auto', height: 'min(62vh, 640px)', margin: '0 -18px', padding: '0 18px', overflowAnchor: 'none', scrollbarGutter: 'stable' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 900, tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: 170 }} />
+              <col style={{ width: 56 }} />
+              {GPS_COLUNAS.map(c => <col key={c.k} />)}
+            </colgroup>
             <thead>
               <tr>
                 <th style={{ ...th, textAlign: 'left', position: 'sticky', left: 0, top: 0, zIndex: 3, background: T.surface }} onClick={() => clicarColuna('nome')}>Jogador</th>
@@ -29780,7 +29791,7 @@ function GpsQuadroSessao({ sessao, todas, onEscolher, players, matches, onApagar
             <tbody>
               {ordenadas.map(l => (
                 <tr key={l.playerId}>
-                  <td style={{ ...td, ...body, textAlign: 'left', position: 'sticky', left: 0, zIndex: 1, background: T.surface }}>{l.p ? shortFullName(l.p.name) : l.origem}</td>
+                  <td style={{ ...td, ...body, textAlign: 'left', position: 'sticky', left: 0, zIndex: 1, background: T.surface, overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.p ? shortFullName(l.p.name) : l.origem}</td>
                   <td style={{ ...td, ...body, textAlign: 'left', color: T.mutedDim }}>{l.p?.position || '—'}</td>
                   {GPS_COLUNAS.map(c => <td key={c.k} style={td}>{gpsFmt(l[c.k], c.casas)}</td>)}
                 </tr>
