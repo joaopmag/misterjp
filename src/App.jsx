@@ -29565,9 +29565,12 @@ function GpsPainel({ players, sessions, matches, monitoring, clinico, teamId }) 
   const [selId, setSelId] = useState(null);
 
   const config = gps.find(x => x.kind === 'config') || null;
-  const sessoesGps = React.useMemo(() => gps.filter(x => x.kind === 'sessao' && x.date)
-    .sort((a, b) => b.date.localeCompare(a.date) || String(b.importadoEm || '').localeCompare(String(a.importadoEm || ''))), [gps]);
-  const temDemo = sessoesGps.some(s => s.demo);
+  // Demonstração só até ONTEM: sessões Demo com data de hoje ou futura
+  // (geradas por versões anteriores) não aparecem nem entram nas contas.
+  const hojeGps = todayStr();
+  const sessoesGps = React.useMemo(() => gps.filter(x => x.kind === 'sessao' && x.date && !(x.demo && x.date >= hojeGps))
+    .sort((a, b) => b.date.localeCompare(a.date) || String(b.importadoEm || '').localeCompare(String(a.importadoEm || ''))), [gps, hojeGps]);
+  const temDemo = gps.some(x => x.kind === 'sessao' && x.demo);
   const selecionada = sessoesGps.find(s => s.id === selId) || sessoesGps[0] || null;
 
   const guardarConfig = (alterar) => {
@@ -29594,7 +29597,7 @@ function GpsPainel({ players, sessions, matches, monitoring, clinico, teamId }) 
   const apagarDemo = () => {
     askConfirm({
       title: 'Apagar dados de demonstração?',
-      label: `${sessoesGps.filter(s => s.demo).length} sessões marcadas como Demo`,
+      label: `${gps.filter(x => x.kind === 'sessao' && x.demo).length} sessões marcadas como Demo`,
       note: 'Os dados importados de ficheiros não são tocados.',
       confirmLabel: 'Apagar demonstração',
       destructive: true,

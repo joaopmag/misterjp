@@ -65,27 +65,6 @@ function IconeTubo({ size = 16, color = 'currentColor', strokeWidth = 2, ...rest
   );
 }
 
-/* NITIDEZ DOS VÍDEOS DO YOUTUBE.
-   O YouTube escolhe a qualidade pelo TAMANHO do leitor: numa caixa de
-   ~800 px fica-se pelos 360p/480p, mesmo com boa internet — e com a lupa
-   ou o zoom dos círculos essa imagem pequena ainda é ampliada.
-   1) Nos leitores SEM controlos nativos (clipes/cortes), o iframe é
-      desenhado com o dobro do tamanho e encolhido a metade (scale): o
-      YouTube "vê" um leitor grande e manda HD; no ecrã fica igual.
-      Os toques/cliques e as camadas por cima não mudam (ficam na caixa).
-   (Pedir HD ao leitor por comando — setPlaybackQualityRange — foi testado
-   e RETIRADO: depois de cada salto deixava a imagem pior, não melhor.)
-   Os vídeos COMPLETOS (com a barra nativa do YouTube) não são encolhidos,
-   para os botões do YouTube não ficarem pequenos. */
-export const YT_NITIDEZ = 2;
-export function estiloIframeYoutubeNitido(extra) {
-  return {
-    position: 'absolute', top: 0, left: 0, border: 0,
-    width: `${YT_NITIDEZ * 100}%`, height: `${YT_NITIDEZ * 100}%`,
-    transform: `scale(${1 / YT_NITIDEZ})`, transformOrigin: '0 0',
-    ...(extra || {}),
-  };
-}
 export const FERRAMENTAS = [
   ['seta', ArrowUpRight, 'Seta'],
   ['linha', Minus, 'Linha'],
@@ -303,6 +282,63 @@ function parseMMSS(str) {
   const m = /^(\d{1,3}):([0-5]?\d)$/.exec((str || '').trim());
   if (!m) return null;
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+/* TEMPO ESCRITO À MÃO (Início/Fim dos clipes). Aceita "6:21", "06:21",
+   "1:02:03" e também "6.21", "6,21" ou "6 21" (o teclado numérico do
+   telemóvel não tem ":"). Um número sozinho conta como minutos ("6" →
+   06:00). Devolve segundos, ou null se não for um tempo válido. */
+function lerTempoEscrito(texto) {
+  const s = String(texto == null ? '' : texto).trim().replace(/[.,\s]+/g, ':').replace(/:+/g, ':').replace(/^:|:$/g, '');
+  if (!s || !/^\d+(:\d{1,2}){0,2}$/.test(s)) return null;
+  const p = s.split(':').map(Number);
+  if (p.length === 1) return p[0] * 60;
+  if (p.slice(1).some(n => n > 59)) return null;
+  return p.length === 2 ? p[0] * 60 + p[1] : p[0] * 3600 + p[1] * 60 + p[2];
+}
+
+/* Caixinha de tempo editável (mm:ss). Só aplica ao sair da caixa ou com
+   Enter; Esc desfaz. Um valor inválido fica a vermelho e não muda nada. */
+function CampoTempo({ valor, onEscolher, max, rotulo, cor }) {
+  const textoDe = (v) => (v == null ? '' : fmt(v));
+  const [texto, setTexto] = useState(textoDe(valor));
+  const [erro, setErro] = useState(false);
+  const focadoRef = useRef(false);
+  useEffect(() => {
+    if (!focadoRef.current) { setTexto(textoDe(valor)); setErro(false); }
+  }, [valor]); // eslint-disable-line react-hooks/exhaustive-deps
+  const aplicar = () => {
+    if (!texto.trim()) { setTexto(textoDe(valor)); setErro(false); return; }
+    const t = lerTempoEscrito(texto);
+    if (t == null || (Number.isFinite(max) && max > 0 && t > max)) { setErro(true); return; }
+    setErro(false);
+    setTexto(fmt(t));
+    onEscolher(t);
+  };
+  return (
+    <input
+      value={texto}
+      inputMode="decimal"
+      placeholder="mm:ss"
+      aria-label={rotulo}
+      title={`${rotulo} — escreve o tempo (ex.: 6:21)`}
+      onFocus={e => { focadoRef.current = true; e.currentTarget.select(); }}
+      onChange={e => { setTexto(e.target.value); setErro(false); }}
+      onBlur={() => { focadoRef.current = false; aplicar(); }}
+      onKeyDown={e => {
+        // As teclas ficam na caixa: não disparam atalhos do leitor nem o Esc que fecha.
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+        if (e.key === 'Escape') { e.preventDefault(); setTexto(textoDe(valor)); setErro(false); focadoRef.current = false; e.currentTarget.blur(); }
+      }}
+      style={{
+        width: 66, flexShrink: 0, boxSizing: 'border-box', textAlign: 'center',
+        background: TV.surface, color: erro ? TV.bad : TV.cream,
+        border: `1px solid ${erro ? TV.bad : (cor || TV.line)}`, borderRadius: 7,
+        padding: '6px 4px', fontSize: 12.5, ...mono,
+      }}
+    />
+  );
 }
 
 function Btn({ children, onClick, variant = 'ghost', active, disabled, style, title }) {
@@ -1637,6 +1673,18 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
     setFimEd(novo);
     if (inicioEd >= novo) setInicioEd(Math.max(0, novo - 1));
   };
+  // Tempos ESCRITOS à mão (mm:ss do vídeo original) — mesmas regras das
+  // bandeiras. Se o tempo cair dentro deste clipe, o leitor salta para lá.
+  const escreverInicioEd = (novo) => {
+    setInicioEd(novo);
+    if (fimEd <= novo) setFimEd(novo + 1);
+    const rel = novo - (clip.origemInicio || 0);
+    if (rel >= 0 && (!duracaoVideo || rel <= duracaoVideo)) irPara(rel);
+  };
+  const escreverFimEd = (novo) => {
+    setFimEd(novo);
+    if (inicioEd >= novo) setInicioEd(Math.max(0, novo - 1));
+  };
   // Aberto pelo lápis do cartão: entra logo no modo de edição.
   useEffect(() => {
     if (editarAoAbrir) abrirEdicao();
@@ -1882,9 +1930,18 @@ function ClipPlayerModal({ clip, tag, onClose, onShare, onRemove, copied, onChan
               <textarea value={notaEd} onChange={e => setNotaEd(e.target.value)} rows={3} maxLength={2000}
                 placeholder="Texto do clipe (ex.: Abrir espaços)"
                 style={{ background: TV.surfaceRaise, border: `1px solid ${TV.line}`, borderRadius: 8, padding: '7px 10px', color: TV.cream, fontSize: 12.5, resize: 'vertical', ...body }} />
-              <div style={{ display: 'flex', gap: 6 }}>
-                <Btn variant="ghost" onClick={marcarInicioEd} style={{ flex: 1, padding: '6px 8px', fontSize: 12 }}><Flag size={13} color={TV.good} /> Início {fmt(inicioEd)}</Btn>
-                <Btn variant="ghost" onClick={marcarFimEd} style={{ flex: 1, padding: '6px 8px', fontSize: 12 }}><Flag size={13} color={TV.bad} /> Fim {fmt(fimEd)}</Btn>
+              {/* Início/Fim: a bandeira marca no ponto atual do clipe; a
+                  caixa ao lado deixa escrever o tempo à mão (mm:ss do
+                  vídeo original). */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 130px', display: 'flex', gap: 4, minWidth: 0 }}>
+                  <Btn variant="ghost" onClick={marcarInicioEd} title="Marcar o início no ponto atual do clipe" style={{ flex: 1, minWidth: 0, padding: '6px 8px', fontSize: 12 }}><Flag size={13} color={TV.good} /> Início</Btn>
+                  <CampoTempo rotulo="Início do clipe" valor={inicioEd} onEscolher={escreverInicioEd} />
+                </div>
+                <div style={{ flex: '1 1 130px', display: 'flex', gap: 4, minWidth: 0 }}>
+                  <Btn variant="ghost" onClick={marcarFimEd} title="Marcar o fim no ponto atual do clipe" style={{ flex: 1, minWidth: 0, padding: '6px 8px', fontSize: 12 }}><Flag size={13} color={TV.bad} /> Fim</Btn>
+                  <CampoTempo rotulo="Fim do clipe" valor={fimEd} onEscolher={escreverFimEd} />
+                </div>
               </div>
               <select value={originalEd || ''} onChange={e => setOriginalEd(e.target.value || null)} aria-label="Vídeo original"
                 style={{ width: '100%', background: TV.surfaceRaise, border: `1px solid ${originalEd ? TV.line : TV.warn}`, borderRadius: 8, padding: '6px 8px', color: TV.cream, fontSize: 12, ...body }}>
@@ -2258,7 +2315,7 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
               ref={iframeRef} onLoad={aoCarregar}
               src={src} title={clip.titulo || 'Clipe'}
               allow="autoplay; encrypted-media; picture-in-picture"
-              style={estiloIframeYoutubeNitido()}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
             />
           </div>
         </div>
@@ -3050,6 +3107,11 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
 
   const markIn = () => { setInPoint(current); if (outPoint != null && outPoint < current) setOutPoint(null); };
   const markOut = () => { setOutPoint(current); if (inPoint == null) setInPoint(Math.max(0, current - 8)); };
+  // Tempos ESCRITOS à mão (mm:ss). Início: o vídeo salta para lá, para se
+  // ver onde começa. Fim antes do início: o início recua 8 s (como a
+  // bandeira faz quando ainda não há início).
+  const escreverIn = (t) => { setInPoint(t); if (outPoint != null && outPoint <= t) setOutPoint(null); seekTo(t); };
+  const escreverOut = (t) => { setOutPoint(t); if (inPoint == null || inPoint >= t) setInPoint(Math.max(0, t - 8)); };
   /* Os desenhos ficam guardados NO VÍDEO (jogo completo), mesmo sem criar
      clipe: limpar as marcas de início/fim já não os apaga. Só ao sair de
      "desenhar num clipe" é que se repõem os desenhos do vídeo. */
@@ -3939,8 +4001,16 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     <div style={{ marginTop: 14 }}>
       {tituloSecao('Corte à mão')}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <button type="button" onClick={markIn} style={botaoBarra}><Flag size={13} color={TV.good} /> Início <span style={{ ...mono, color: TV.muted }}>{inPoint == null ? '--:--' : fmt(inPoint)}</span></button>
-        <button type="button" onClick={markOut} style={botaoBarra}><Flag size={13} color={TV.bad} /> Fim <span style={{ ...mono, color: TV.muted }}>{outPoint == null ? '--:--' : fmt(outPoint)}</span></button>
+        {/* A bandeira marca no instante atual do vídeo; a caixa ao lado
+            deixa escrever o tempo à mão (mm:ss). */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button type="button" onClick={markIn} title="Marcar o início no instante atual" style={botaoBarra}><Flag size={13} color={TV.good} /> Início</button>
+          <CampoTempo rotulo="Início do corte" valor={inPoint} max={duration} onEscolher={escreverIn} />
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button type="button" onClick={markOut} title="Marcar o fim no instante atual" style={botaoBarra}><Flag size={13} color={TV.bad} /> Fim</button>
+          <CampoTempo rotulo="Fim do corte" valor={outPoint} max={duration} onEscolher={escreverOut} />
+        </div>
         {(inPoint != null || outPoint != null) && !clipeEmDesenho && (
           <button type="button" onClick={limparMarcas} style={botaoBarra}><X size={13} /> Limpar</button>
         )}
