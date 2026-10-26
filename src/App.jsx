@@ -29405,6 +29405,8 @@ const GPS_PERFIL_JOGO = {
   ED: { dist: 9800, hsr: 850, sprint: 255, acc: 60, dec: 61, vmax: 31.6 },
   PL: { dist: 9300, hsr: 690, sprint: 225, acc: 54, dec: 59, vmax: 31.2 },
 };
+// Velocidade máxima típica de cada dia, em fração do máximo do jogador.
+const GPS_VMAX_DIA = { 'MD+1': 0.62, 'MD+2': 0.72, 'MD-5': 0.78, 'MD-4': 0.78, 'MD-3': 0.86, 'MD-2': 0.80, 'MD-1': 0.86, outro: 0.78 };
 const GPS_FATOR_DIA = {
   'MD+1': { dist: 0.35, hsr: 0.08, sprint: 0.04, acc: 0.30, min: 55 },
   'MD+2': { dist: 0.50, hsr: 0.25, sprint: 0.15, acc: 0.55, min: 70 },
@@ -29428,7 +29430,8 @@ function gpsAleatorio(semente) {
   };
 }
 function gpsGerarDemo({ players, sessions, matches, clinico }) {
-  const hoje = todayStr();
+  // Até ONTEM: o treino de hoje pode ainda nem ter acontecido.
+  const hoje = addDays(todayStr(), -1);
   const desde = addDays(hoje, -34);
   const plantel = players.filter(p => p && p.id && p.name);
   const dias = new Map(); // data -> { tipo, sessionId, matchId, titulo }
@@ -29493,14 +29496,14 @@ function gpsGerarDemo({ players, sessions, matches, clinico }) {
         playerId: p.id, origem: p.name, colete: String(p.number ?? ''),
         minutos: Math.round(minutos),
         dist: Math.round(dist),
-        vmax: Math.round(topo * (info.tipo === 'jogo' ? 0.9 + rnd() * 0.1 : (md === 'MD+1' ? 0.6 : 0.8) + rnd() * 0.15) * 10) / 10,
+        vmax: Math.round(topo * (info.tipo === 'jogo' ? 0.9 + rnd() * 0.1 : (GPS_VMAX_DIA[md] || 0.8) + rnd() * 0.08) * 10) / 10,
         hsr: Math.round(v(perfil.hsr, fd.hsr)),
         sprint: Math.round(v(perfil.sprint, fd.sprint)),
         acc: Math.round(v(perfil.acc, fd.acc)),
         dec: Math.round(v(perfil.dec, fd.acc)),
         fcMed: Math.round(info.tipo === 'jogo' ? 160 + rnd() * 12 : 132 + f.dist * 30 + rnd() * 10),
         fcMax: Math.round(184 + rnd() * 14),
-        load: Math.round(dist / 100 * (0.95 + rnd() * 0.2)),
+        load: Math.round(dist / 10 * (0.95 + rnd() * 0.2)),
       });
     });
     if (!registos.length) return;
