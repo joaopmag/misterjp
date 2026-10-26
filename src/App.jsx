@@ -29713,10 +29713,10 @@ function GpsQuadroSessao({ sessao, todas, onEscolher, players, matches, onApagar
   });
   const clicarColuna = (k) => setOrdem(o => (o.k === k ? { k, desc: !o.desc } : { k, desc: k !== 'nome' && k !== 'pos' }));
   const th = { textAlign: 'right', padding: '9px 10px', fontSize: 10.5, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none', ...body };
-  const td = { padding: '8px 10px', fontSize: 13, color: T.cream, textAlign: 'right', whiteSpace: 'nowrap', ...mono };
+  const td = { padding: '8px 10px', fontSize: 13, color: T.cream, textAlign: 'right', whiteSpace: 'nowrap', borderBottom: `1px solid ${T.line}`, ...mono };
 
   return (
-    <div>
+    <div style={{ overflowAnchor: 'none' }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <div style={{ flex: '1 1 260px', minWidth: 0 }}>
           <Select value={sessao.id} onChange={e => onEscolher(e.target.value)}>
@@ -29760,14 +29760,18 @@ function GpsQuadroSessao({ sessao, todas, onEscolher, players, matches, onApagar
       <div style={{ fontSize: 11.5, color: T.mutedDim, margin: '0 2px 16px', ...body }}>Valores médios dos jogadores desta sessão.</div>
 
       <Panel title="Por jogador">
-        <div style={{ overflowX: 'auto', margin: '0 -18px', padding: '0 18px' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 760 }}>
+        {/* ALTURA FIXA: a tabela tem sempre a mesma altura (desliza por
+            dentro), seja um jogo com 16 jogadores ou um treino com 32.
+            Assim, ao trocar de sessão no seletor, a página não muda de
+            tamanho e nada salta de sítio. */}
+        <div style={{ overflow: 'auto', height: 'min(62vh, 640px)', margin: '0 -18px', padding: '0 18px', overflowAnchor: 'none' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', minWidth: 760 }}>
             <thead>
               <tr>
-                <th style={{ ...th, textAlign: 'left', position: 'sticky', left: 0, background: T.surface }} onClick={() => clicarColuna('nome')}>Jogador</th>
-                <th style={{ ...th, textAlign: 'left' }} onClick={() => clicarColuna('pos')}>Pos</th>
+                <th style={{ ...th, textAlign: 'left', position: 'sticky', left: 0, top: 0, zIndex: 3, background: T.surface }} onClick={() => clicarColuna('nome')}>Jogador</th>
+                <th style={{ ...th, textAlign: 'left', position: 'sticky', top: 0, zIndex: 2, background: T.surface }} onClick={() => clicarColuna('pos')}>Pos</th>
                 {GPS_COLUNAS.map(c => (
-                  <th key={c.k} style={{ ...th, color: ordem.k === c.k ? T.cream : T.muted }} onClick={() => clicarColuna(c.k)}>
+                  <th key={c.k} style={{ ...th, position: 'sticky', top: 0, zIndex: 2, background: T.surface, color: ordem.k === c.k ? T.cream : T.muted }} onClick={() => clicarColuna(c.k)}>
                     {c.label}{ordem.k === c.k ? (ordem.desc ? ' ↓' : ' ↑') : ''}
                   </th>
                 ))}
@@ -29775,8 +29779,8 @@ function GpsQuadroSessao({ sessao, todas, onEscolher, players, matches, onApagar
             </thead>
             <tbody>
               {ordenadas.map(l => (
-                <tr key={l.playerId} style={{ borderBottom: `1px solid ${T.line}` }}>
-                  <td style={{ ...td, ...body, textAlign: 'left', position: 'sticky', left: 0, background: T.surface }}>{l.p ? shortFullName(l.p.name) : l.origem}</td>
+                <tr key={l.playerId}>
+                  <td style={{ ...td, ...body, textAlign: 'left', position: 'sticky', left: 0, zIndex: 1, background: T.surface }}>{l.p ? shortFullName(l.p.name) : l.origem}</td>
                   <td style={{ ...td, ...body, textAlign: 'left', color: T.mutedDim }}>{l.p?.position || '—'}</td>
                   {GPS_COLUNAS.map(c => <td key={c.k} style={td}>{gpsFmt(l[c.k], c.casas)}</td>)}
                 </tr>
