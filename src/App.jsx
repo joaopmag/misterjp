@@ -4385,8 +4385,14 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
 
   const daysTo = (d) => Math.max(0, Math.ceil((new Date(d) - today) / 86400000));
 
+  /* Em ecrã largo, os 3 painéis de baixo ficam um pouco mais altos (mais
+     proporcionais aos de cima). Para a página continuar a caber sem
+     deslizar, o espaço vazio por baixo do último painel encolhe na mesma
+     medida (margem negativa só aqui, na Visão Geral). */
+  const ALTURA_EXTRA_BAIXO = 36;
+  const estiloPainelBaixo = isWide ? { minHeight: 300 } : undefined;
   return (
-    <div>
+    <div style={isWide ? { marginBottom: -ALTURA_EXTRA_BAIXO } : undefined}>
       {/* CABEÇALHO NUM SÓ CARTÃO: o título e o subtítulo da página entram
           no cartão vermelho (à esquerda), e a época passa para a direita,
           junto aos números. Poupa a faixa do título por cima do cartão,
@@ -4493,13 +4499,16 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           )}
         </Panel>
 
+        <div style={estiloPainelBaixo}>
         <Panel title="Classificação">
           <div onClick={() => setStandingsOpen(true)} title="Ver classificação completa" style={{ cursor: 'pointer' }}>
             {/* Visão Geral compacta: os 3 primeiros e a nossa equipa. */}
             <StandingsSummary standings={standings} season={season} topo={3} />
           </div>
         </Panel>
+        </div>
 
+        <div style={estiloPainelBaixo}>
         <Panel title="Estatuto de Plantel">
           {players.length === 0 ? (
             <EmptyState text="Adiciona jogadores no separador Plantel." />
@@ -4509,7 +4518,9 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             </div>
           )}
         </Panel>
+        </div>
 
+        <div style={estiloPainelBaixo}>
         <Panel title="Última atividade" action={(
           <button type="button" onClick={() => setRelatoOpen(true)} style={{
             display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', cursor: 'pointer', ...body,
@@ -4521,6 +4532,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             <LastActivity lastEdits={lastEdits} max={3} />
           </div>
         </Panel>
+        </div>
       </div>
 
       {sessionModal && (
