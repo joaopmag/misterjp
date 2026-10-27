@@ -1350,7 +1350,23 @@ export function shapeVisivelEm(sh, tempo) {
 export const SEG_PADRAO_DESENHO = 5;
 const JANELA_PARAGEM = 0.3; // itens a menos de 0,3 s uns dos outros = a mesma paragem
 const SAIDA_ZOOM = 0.9; // o zoom começa a sair antes de o círculo desaparecer
-export const temParagem = (sh) => !!sh && !sh.semParar && sh.tool !== 'guias';
+/* DESENHO ACIDENTAL — um toque no vídeo com uma ferramenta de arrastar
+   (seta, círculo, zona…) sem arrastar criava um desenho só com um ponto:
+   não se vê (sem 2.º ponto nada é desenhado), mas contava como desenho
+   e fazia o vídeo PARAR nesse instante. Com um círculo com zoom visível
+   por perto, a paragem fantasma mostrava o zoom outra vez — parecia que
+   o zoom tinha sido posto duas vezes. Estes desenhos já não são criados
+   (ver endDraw) e os que ficaram guardados deixam de fazer parar. */
+const FERRAMENTAS_DE_ARRASTAR = new Set(['seta', 'linha', 'circulo', 'retangulo', 'cone', 'tubo', 'livre']);
+export function formaAcidental(sh) {
+  if (!sh || !FERRAMENTAS_DE_ARRASTAR.has(sh.tool)) return false;
+  const ps = (sh.points || []).filter(pt => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y));
+  if (ps.length < 2) return true;
+  if (sh.tool === 'tubo') return false; // o tubo tem largura mínima: mesmo pequeno, vê-se
+  const xs = ps.map(pt => pt.x); const ys = ps.map(pt => pt.y);
+  return Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) < 0.5;
+}
+export const temParagem = (sh) => !!sh && !sh.semParar && sh.tool !== 'guias' && !formaAcidental(sh);
 export function segDe(sh) {
   if (!sh) return SEG_PADRAO_DESENHO;
   const n = Number(sh.seg);
@@ -2917,7 +2933,9 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   const originalAtivo = videosOriginais.find(v => v.id === originalAtivoId) || null;
   const desenhosDoOriginalAtivo = () => {
     const o = videosOriginais.find(v => v.id === originalAtivoId);
-    return (o && Array.isArray(o.desenhos)) ? o.desenhos : [];
+    // Sem os desenhos acidentais (toques sem arrastar) que tenham ficado
+    // guardados — são invisíveis e só faziam o vídeo parar.
+    return (o && Array.isArray(o.desenhos)) ? o.desenhos.filter(sh => !formaAcidental(sh)) : [];
   };
   // Ao abrir um vídeo, vêm os desenhos que lá ficaram (a não ser que se
   // esteja a desenhar num clipe, que traz os seus).
@@ -3327,7 +3345,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
     setInPoint(ini); setOutPoint(fim);
     setPendingTag(clip.tagId || null);
     setNote(clip.note || '');
-    setShapes((clip.shapes || []).map(sh => ({
+    setShapes((clip.shapes || []).filter(sh => !formaAcidental(sh)).map(sh => ({
       ...sh,
       criadoEmTempo: sh.criadoEmTempo == null ? null : sh.criadoEmTempo + ini,
       mostrarAte: sh.mostrarAte == null ? null : sh.mostrarAte + ini,
@@ -3859,7 +3877,15 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
       if (!moveu) abrirPopupDuracao(index); // foi um toque simples, sem arrastar — abre o tempo desse desenho (e mostra as pegas, se a forma tiver)
       return;
     }
-    drawState.current = null; // a forma já está no array e atualizada — nada mais a fazer
+    // A forma já está no array e atualizada. Se foi só um toque (ou um
+    // arrasto minúsculo), não fica um desenho invisível: sai, e o
+    // "Retroceder" volta ao que estava antes do toque.
+    const nova = drawState.current;
+    drawState.current = null;
+    if (nova && formaAcidental(nova)) {
+      setShapes(s => s.filter(sh => sh.id !== nova.id));
+      setHistorico(h => h.slice(0, -1));
+    }
   };
 
   const pct = (t) => (duration ? (t / duration) * 100 : 0);
