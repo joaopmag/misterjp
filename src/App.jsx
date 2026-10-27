@@ -4390,6 +4390,16 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
      deslizar, o espaço vazio por baixo do último painel encolhe na mesma
      medida (margem negativa só aqui, na Visão Geral). */
   const ALTURA_EXTRA_BAIXO = 36;
+  /* Cor do cabeçalho = cor da equipa. Com uma cor clara (amarelo, branco…)
+     o título branco deixava de se ler: aí o título passa a escuro. */
+  const corCabecalho = /^#[0-9a-f]{6}$/i.test(String(T.corEquipa || '')) ? T.corEquipa : T.crimson;
+  const textoCabecalho = (() => {
+    const h = corCabecalho.replace('#', '');
+    const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255)
+      .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return lum > 0.45 ? '#14301F' : T.epocaNome;
+  })();
   const estiloPainelBaixo = isWide ? { minHeight: 300 } : undefined;
   return (
     <div style={isWide ? { marginBottom: -ALTURA_EXTRA_BAIXO } : undefined}>
@@ -4398,13 +4408,15 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           junto aos números. Poupa a faixa do título por cima do cartão,
           para o painel caber no ecrã sem deslizar. */}
       <div style={{
-        background: `linear-gradient(135deg, ${T.crimson} 0%, ${T.surfaceRaise} 75%)`,
+        // Começa na COR DA EQUIPA (a de "Gerir equipa", T.corEquipa) e
+        // desvanece para o verde da app, como antes fazia o vermelho fixo.
+        background: `linear-gradient(135deg, ${corCabecalho} 0%, ${T.surfaceRaise} 75%)`,
         border: `1px solid ${T.line}`, borderRadius: 12, padding: '18px 24px', marginBottom: 20,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20,
       }}>
         <div style={{ minWidth: 0 }}>
-          <h1 style={{ ...display, color: T.epocaNome, fontSize: 26, fontWeight: 600, margin: 0, lineHeight: 1.1 }}>Visão Geral</h1>
-          <p style={{ color: T.epocaNome, opacity: 0.75, fontSize: 13.5, margin: '4px 0 0' }}>O estado da época, num único lugar.</p>
+          <h1 style={{ ...display, color: textoCabecalho, fontSize: 26, fontWeight: 600, margin: 0, lineHeight: 1.1 }}>Visão Geral</h1>
+          <p style={{ color: textoCabecalho, opacity: 0.75, fontSize: 13.5, margin: '4px 0 0' }}>O estado da época, num único lugar.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <div style={{ textAlign: 'right' }}>
