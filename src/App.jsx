@@ -4495,7 +4495,8 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
 
         <Panel title="Classificação">
           <div onClick={() => setStandingsOpen(true)} title="Ver classificação completa" style={{ cursor: 'pointer' }}>
-            <StandingsSummary standings={standings} season={season} />
+            {/* Visão Geral compacta: os 3 primeiros e a nossa equipa. */}
+            <StandingsSummary standings={standings} season={season} topo={3} />
           </div>
         </Panel>
 
@@ -4504,7 +4505,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
             <EmptyState text="Adiciona jogadores no separador Plantel." />
           ) : (
             <div onClick={() => setStatusOpen(true)} title="Ver jogador a jogador" style={{ cursor: 'pointer' }}>
-              <PlantelStatusSummary players={players} />
+              <PlantelStatusSummary players={players} compacto />
             </div>
           )}
         </Panel>
@@ -4516,7 +4517,8 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
           }}>Relato completo <ArrowRight size={12} /></button>
         )}>
           <div onClick={() => setRelatoOpen(true)} title="Ver toda a atividade" style={{ cursor: 'pointer' }}>
-            <LastActivity lastEdits={lastEdits} />
+            {/* Só as 3 mais recentes — o resto está no Relato completo. */}
+            <LastActivity lastEdits={lastEdits} max={3} />
           </div>
         </Panel>
       </div>
@@ -4736,7 +4738,7 @@ function PlantelStatusModal({ players, onClose, onEditPlayer }) {
    nenhuma introdução de dados, é só leitura. Destaca a nossa equipa e,
    se ela não estiver entre os primeiros lugares mostrados, acrescenta-a
    no fim para estar sempre visível. */
-function StandingsSummary({ standings, season }) {
+function StandingsSummary({ standings, season, topo = 6 }) {
   const comp = activeCompetitionOf(standings);
   const all = competitionTable(comp);
   if (all.length === 0) {
@@ -4750,7 +4752,7 @@ function StandingsSummary({ standings, season }) {
     return a === b || b.includes(a) || a.includes(b.split('·')[0].trim());
   };
 
-  const TOP = 6;
+  const TOP = topo;
   const top = all.slice(0, TOP);
   const ourIdx = all.findIndex(isUs);
   const showExtra = ourIdx >= TOP;
@@ -4822,10 +4824,11 @@ function timeAgo(iso) {
 
 // Mostra quem foi a última pessoa da equipa técnica a editar cada bloco
 // de dados (plantel, jogos, sessões, ...) e há quanto tempo.
-function LastActivity({ lastEdits }) {
-  const rows = Object.entries(lastEdits)
+function LastActivity({ lastEdits, max }) {
+  const todas = Object.entries(lastEdits)
     .filter(([, v]) => v && v.email)
     .sort((a, b) => new Date(b[1].at) - new Date(a[1].at));
+  const rows = max ? todas.slice(0, max) : todas;
   if (rows.length === 0) return <EmptyState text="Ainda sem alterações registadas." />;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -9117,7 +9120,7 @@ function SelectAllBar({ onSelectAll, onClear }) {
   );
 }
 
-function PlantelStatusSummary({ players }) {
+function PlantelStatusSummary({ players, compacto = false }) {
   const total = players.length;
   const ordered = [...STATUS_OPTIONS].reverse(); // Jogador de Elite primeiro
   const counts = ordered.map(status => ({
@@ -9127,7 +9130,7 @@ function PlantelStatusSummary({ players }) {
   const semEstatuto = players.filter(p => !p.statusMain).length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: compacto ? 7 : 10 }}>
       {counts.map(({ status, count }) => (
         <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_SUMMARY_COLORS[status], flexShrink: 0 }} />
