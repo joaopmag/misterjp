@@ -4387,27 +4387,36 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
 
   return (
     <div>
-      <SectionHeader title="Visão Geral" subtitle="O estado da época, num único lugar." />
-
-      {/* Matchday-style header card */}
+      {/* CABEÇALHO NUM SÓ CARTÃO: o título e o subtítulo da página entram
+          no cartão vermelho (à esquerda), e a época passa para a direita,
+          junto aos números. Poupa a faixa do título por cima do cartão,
+          para o painel caber no ecrã sem deslizar. */}
       <div style={{
         background: `linear-gradient(135deg, ${T.crimson} 0%, ${T.surfaceRaise} 75%)`,
-        border: `1px solid ${T.line}`, borderRadius: 12, padding: 24, marginBottom: 24,
+        border: `1px solid ${T.line}`, borderRadius: 12, padding: '18px 24px', marginBottom: 20,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 20,
       }}>
-        <div>
-          <div style={{ fontSize: 11, color: T.epocaRotulo, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>Época</div>
-          <input
-            value={season.name}
-            onChange={e => setSeason({ ...season, name: e.target.value })}
-            style={{ background: 'transparent', border: 'none', ...display, color: T.epocaNome, fontSize: 30, fontWeight: 600, outline: 'none', width: 200 }}
-          />
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ ...display, color: T.epocaNome, fontSize: 26, fontWeight: 600, margin: 0, lineHeight: 1.1 }}>Visão Geral</h1>
+          <p style={{ color: T.epocaNome, opacity: 0.75, fontSize: 13.5, margin: '4px 0 0' }}>O estado da época, num único lugar.</p>
         </div>
-        <div style={{ display: 'flex', gap: 28 }}>
-          <Stat value={players.length} label="Jogadores" />
-          <Stat value={sessions.length} label="Sessões" />
-          <Stat value={matches.length} label="Jogos" />
-          <Stat value={upcoming.length ? daysTo(upcoming[0].date) : '–'} label="Dias p/ próx. sessão" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 28, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 11, color: T.epocaRotulo, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 2 }}>Época</div>
+            <input
+              value={season.name}
+              onChange={e => setSeason({ ...season, name: e.target.value })}
+              aria-label="Nome da época"
+              style={{ background: 'transparent', border: 'none', ...display, color: T.epocaNome, fontSize: 26, fontWeight: 600, outline: 'none', width: 150, textAlign: 'right', padding: 0, lineHeight: 1 }}
+            />
+          </div>
+          <div style={{ width: 1, alignSelf: 'stretch', background: T.line }} />
+          <div style={{ display: 'flex', gap: 28 }}>
+            <Stat value={players.length} label="Jogadores" />
+            <Stat value={sessions.length} label="Sessões" />
+            <Stat value={matches.length} label="Jogos" />
+            <Stat value={upcoming.length ? daysTo(upcoming[0].date) : '–'} label="Dias p/ próx. sessão" />
+          </div>
         </div>
       </div>
 
