@@ -3095,6 +3095,10 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [monitoring, setMonitoring, monitoringReady, monitoringMeta, autorizarApagarMonitoring] = useCollectionSync('monitoring', notifyEdit, teamId);
   const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit, teamId);
   const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit, teamId);
+  // NECESSIDADES (Scouting): ligadas logo ao abrir a app, e não só ao
+  // entrar no Scouting — assim a contagem e o 🎯 nos cartões já estão
+  // prontos quando se abre o separador (sem aparecerem com atraso).
+  const [necApiRaiz, setNecApiRaiz] = useState({ estado: 'a-verificar', itens: [], set: null, pronto: false, autorizar: null });
   const [adversarios, setAdversarios, adversariosReady, adversariosMeta] = useCollectionSync('adversarios', notifyEdit, teamId);
   const [videos, setVideos, videosReady, videosMeta] = useCollectionSync('videos', notifyEdit, teamId);
   const [documentos, setDocumentos, documentosReady, documentosMeta] = useCollectionSync('documentos', notifyEdit, teamId);
@@ -4246,7 +4250,8 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             <AnalisadorVideo teamId={teamId} videosOriginais={videosOriginais} setVideosOriginais={setVideosOriginais} clipes={clipes} setClipes={setClipes} uploadVideoEstado={uploadVideoEstado} iniciarUploadVideo={iniciarUploadVideo} askConfirm={askConfirm} destinosSala={destinosSala} enviarParaSala={enviarClipeParaSala} clipesUsadosNaSala={clipesUsadosNaSala} />
           </div>
           {tab === 'monitorizacao' && <Monitorizacao players={players} setPlayers={setPlayers} monitoring={monitoring} setMonitoring={setMonitoring} sessions={sessions} matches={matches} teamId={teamId} clinico={clinico} />}
-          {tab === 'scouting' && <Scouting abaInicial={tabPedida === 'fichaadversario' ? 'adversarios' : ''} scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} players={players} clinico={clinico} teamId={teamId} />}
+          <NecessidadesLigacao key={teamId || 'sem-equipa'} teamId={teamId} onApi={setNecApiRaiz} />
+          {tab === 'scouting' && <Scouting abaInicial={tabPedida === 'fichaadversario' ? 'adversarios' : ''} scouting={scouting} setScouting={setScouting} adversarios={adversarios} setAdversarios={setAdversarios} videos={videos} setVideos={setVideos} players={players} clinico={clinico} teamId={teamId} necApi={necApiRaiz} />}
           {/* BIBLIOTECA — as duas medialibraries debaixo de um separador só.
 
              Continuam ambas SEMPRE MONTADAS (escondidas com CSS, não
@@ -39462,15 +39467,27 @@ function NecessidadesEquipa({ api, scouting, players, clinico, vista, setVista, 
             <span style={{ ...display, fontSize: 15, fontWeight: 600, color: T.cream, textTransform: 'uppercase', letterSpacing: '.03em' }}>Sugestões do plantel</span>
             <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>Posições com menos de 2 disponíveis ou sem titular. A decisão é da equipa técnica.</span>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {sugestoes.map(sg => (
+          {/* Grelha de mosaicos iguais (em vez de pílulas de larguras
+              diferentes): primeiro as posições por tratar, depois as que
+              já têm necessidade ativa. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 8 }}>
+            {[...sugestoes].sort((a, b) => (a.jaAberta ? 1 : 0) - (b.jaAberta ? 1 : 0)).map(sg => (
               <button key={sg.pos} type="button" disabled={sg.jaAberta}
                 onClick={() => { if (!sg.jaAberta) setVista({ tipo: 'form', inicial: { posicao: sg.pos, motivo: `Plantel: ${sg.motivos.join('; ')}.` } }); }}
-                title={sg.jaAberta ? 'Já há uma necessidade ativa para esta posição' : 'Lançar necessidade para esta posição'}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 999, padding: '6px 12px', color: T.cream, cursor: sg.jaAberta ? 'default' : 'pointer', opacity: sg.jaAberta ? 0.6 : 1, fontSize: 12.5, ...body }}>
-                <b style={{ ...mono }}>{sg.pos}</b>
-                <span style={{ color: T.mutedDim }}>{sg.jaAberta ? 'necessidade ativa' : sg.motivos.join(' · ')}</span>
-                {sg.jaAberta ? <Check size={13} color={T.good} /> : <Plus size={13} color={T.gold} />}
+                title={sg.jaAberta ? 'Já há uma necessidade ativa para esta posição' : `Lançar necessidade — ${sg.motivos.join(' · ')}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', minWidth: 0,
+                  background: T.surfaceRaise, border: `1px solid ${sg.jaAberta ? T.line : T.gold}`, borderRadius: 10,
+                  padding: '8px 12px', color: T.cream, cursor: sg.jaAberta ? 'default' : 'pointer', opacity: sg.jaAberta ? 0.6 : 1, ...body,
+                }}>
+                <span style={{ ...display, fontSize: 18, fontWeight: 600, width: 40, flexShrink: 0 }}>{sg.pos}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 12.5, color: T.cream, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{NEC_NOME_POSICAO[sg.pos]}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {sg.jaAberta ? 'Necessidade ativa' : sg.motivos.map(m => (m.startsWith('sem titular') ? 'sem titular' : m)).join(' · ')}
+                  </span>
+                </span>
+                {sg.jaAberta ? <Check size={15} color={T.good} style={{ flexShrink: 0 }} /> : <Plus size={15} color={T.gold} style={{ flexShrink: 0 }} />}
               </button>
             ))}
           </div>
@@ -39730,101 +39747,121 @@ function NecessidadeForm({ inicial, onBack, onGuardar }) {
     posicao: 'DC', aceites: [], prioridade: 'media', estado: 'aberta', pe: '', anoDe: '', anoAte: '',
     potencialMin: 0, mediaMin: '', caracteristicas: '', motivo: '', prazo: '', ...inicial,
   });
+  const isWide = !useIsMobile(980);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const aceites = Array.isArray(f.aceites) ? f.aceites : [];
   const ano = (v) => String(v || '').replace(/\D/g, '').slice(0, 4);
   const completos = String(f.anoDe).length === 4 && String(f.anoAte).length === 4;
   const anoInvalido = completos && Number(f.anoDe) > Number(f.anoAte);
   const anoIncompleto = (String(f.anoDe).length > 0 && String(f.anoDe).length < 4) || (String(f.anoAte).length > 0 && String(f.anoAte).length < 4);
+  const podeGuardar = !!f.posicao && !anoInvalido && !anoIncompleto;
+  const guardar = () => { if (podeGuardar) onGuardar({ ...f, aceites }); };
+  const bloco = { background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16, minWidth: 0 };
+  const tituloBloco = (txt) => <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 12, ...body }}>{txt}</div>;
+  const grelha = (min) => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap: 10 });
   return (
+    /* COMPACTO para caber no ecrã do computador sem deslizar: as duas
+       metades (Necessidade | Perfil) lado a lado, botões no topo, motivo
+       com 2 linhas. Os anos são caixas de 4 algarismos e o aviso de anos
+       trocados tem lugar reservado — escrever não faz a página mexer. */
     <div style={{ overflowAnchor: 'none' }}>
-      <button onClick={onBack} style={{
-        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
-      }}>
-        <ChevronLeft size={15} /> {f.id ? 'Necessidade' : 'Necessidades'}
-      </button>
-
-      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 6 }}>{f.id ? 'Editar necessidade' : 'Lançar necessidade'}</div>
-      <div style={{ color: T.mutedDim, fontSize: 13, marginBottom: 20, ...body }}>Só a posição e a prioridade são obrigatórias. Cada campo do perfil preenchido conta como um critério.</div>
-
-      <SubHeading>Necessidade</SubHeading>
-      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
-        <Field label="Posição *">
-          <Select value={f.posicao} onChange={e => setF(x => ({ ...x, posicao: e.target.value, aceites: (x.aceites || []).filter(a => a !== e.target.value) }))}>
-            {POSITIONS.map(p => <option key={p} value={p}>{p} · {NEC_NOME_POSICAO[p]}</option>)}
-          </Select>
-        </Field>
-        <Field label="Prioridade *">
-          <Select value={f.prioridade} onChange={e => set('prioridade', e.target.value)}>
-            {NEC_PRIORIDADES.map(p => <option key={p.id} value={p.id}>{p.label.replace('Prioridade ', '')}</option>)}
-          </Select>
-        </Field>
-        <Field label="Prazo">
-          <Input value={f.prazo} onChange={e => set('prazo', e.target.value)} placeholder="Janela de janeiro" />
-        </Field>
-      </div>
-      <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8, ...body }}>Também aceita (opcional)</div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 22 }}>
-        {POSITIONS.map(p => (p === f.posicao ? null : (
-          <ChipBtn key={p} active={aceites.includes(p)} onClick={() => set('aceites', aceites.includes(p) ? aceites.filter(a => a !== p) : [...aceites, p])}>{p}</ChipBtn>
-        )))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <button onClick={onBack} style={{
+          display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+          borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13,
+        }}>
+          <ChevronLeft size={15} /> {f.id ? 'Necessidade' : 'Necessidades'}
+        </button>
+        <div style={{ ...display, fontSize: 20, color: T.cream }}>{f.id ? 'Editar necessidade' : 'Lançar necessidade'}</div>
+        <div style={{ flex: 1 }} />
+        <Btn variant="ghost" onClick={onBack}>Cancelar</Btn>
+        <Btn onClick={guardar} disabled={!podeGuardar}><Check size={15} /> {f.id ? 'Guardar alterações' : 'Lançar necessidade'}</Btn>
       </div>
 
-      <SubHeading>Perfil pretendido (critérios)</SubHeading>
-      <div style={{ ...FIELD_GRID }}>
-        <Field label="Pé dominante">
-          <Select value={f.pe} onChange={e => set('pe', e.target.value)}>
-            <option value="">Indiferente</option>
-            <option value="Direito">Direito</option>
-            <option value="Esquerdo">Esquerdo</option>
-          </Select>
-        </Field>
-        <Field label="Nascidos a partir de">
-          <Input inputMode="numeric" maxLength={4} value={f.anoDe} onChange={e => set('anoDe', ano(e.target.value))} placeholder="2007" />
-        </Field>
-        <Field label="Nascidos até">
-          <Input inputMode="numeric" maxLength={4} value={f.anoAte} onChange={e => set('anoAte', ano(e.target.value))} placeholder="2009" />
-        </Field>
-        <Field label="Potencial mínimo">
-          <Select value={String(f.potencialMin || 0)} onChange={e => set('potencialMin', Number(e.target.value))}>
-            <option value="0">Indiferente</option>
-            {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}★ ou mais</option>)}
-          </Select>
-        </Field>
-        <Field label="Média mínima (1–5)">
-          <Select value={String(f.mediaMin || '')} onChange={e => set('mediaMin', e.target.value ? Number(e.target.value) : '')}>
-            <option value="">Indiferente</option>
-            {[2, 2.5, 3, 3.5, 4, 4.5].map(v => <option key={v} value={v}>{String(v).replace('.', ',')} ou mais</option>)}
-          </Select>
-        </Field>
-      </div>
-      {/* Lugar reservado para o aviso (sempre a mesma altura). */}
-      <div style={{ height: 22, marginTop: 4, fontSize: 12.5, color: T.bad, ...body }}>
-        {anoInvalido ? 'O ano "a partir de" é maior do que o ano "até".' : ''}
-      </div>
-      <div style={{ ...FIELD_GRID, marginBottom: 6 }}>
-        <div style={FIELD_FULL}>
-          <Field label="Características desejadas">
-            <Input value={f.caracteristicas} onChange={e => set('caracteristicas', e.target.value)} placeholder="ofensivo, cruzamento" />
-          </Field>
-          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4, ...body }}>Separadas por vírgulas. Procuram-se nas Características e Observações da ficha de cada jogador.</div>
+      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)', gap: 14, marginBottom: 14 }}>
+        <div style={bloco}>
+          {tituloBloco('Necessidade · posição e prioridade são obrigatórias')}
+          <div style={grelha(150)}>
+            <Field label="Posição *">
+              <Select value={f.posicao} onChange={e => setF(x => ({ ...x, posicao: e.target.value, aceites: (x.aceites || []).filter(a => a !== e.target.value) }))}>
+                {POSITIONS.map(p => <option key={p} value={p}>{p} · {NEC_NOME_POSICAO[p]}</option>)}
+              </Select>
+            </Field>
+            <Field label="Prioridade *">
+              <Select value={f.prioridade} onChange={e => set('prioridade', e.target.value)}>
+                {NEC_PRIORIDADES.map(p => <option key={p.id} value={p.id}>{p.label.replace('Prioridade ', '')}</option>)}
+              </Select>
+            </Field>
+            <Field label="Prazo">
+              <Input value={f.prazo} onChange={e => set('prazo', e.target.value)} placeholder="Janela de janeiro" />
+            </Field>
+          </div>
+          <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', margin: '14px 0 8px', ...body }}>Também aceita (opcional)</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {POSITIONS.map(p => {
+              if (p === f.posicao) return null;
+              const on = aceites.includes(p);
+              return (
+                <button key={p} type="button" onClick={() => set('aceites', on ? aceites.filter(a => a !== p) : [...aceites, p])}
+                  style={{ padding: '5px 10px', borderRadius: 7, fontSize: 12.5, cursor: 'pointer', ...mono,
+                    background: on ? T.surfaceRaise : 'transparent', color: on ? T.gold : T.muted, border: `1px solid ${on ? T.gold : T.line}` }}>
+                  {p}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={bloco}>
+          {tituloBloco('Perfil pretendido · cada campo preenchido é um critério')}
+          <div style={grelha(120)}>
+            <Field label="Pé dominante">
+              <Select value={f.pe} onChange={e => set('pe', e.target.value)}>
+                <option value="">Indiferente</option>
+                <option value="Direito">Direito</option>
+                <option value="Esquerdo">Esquerdo</option>
+              </Select>
+            </Field>
+            <Field label="Nascidos de">
+              <Input inputMode="numeric" maxLength={4} value={f.anoDe} onChange={e => set('anoDe', ano(e.target.value))} placeholder="2007" />
+            </Field>
+            <Field label="Nascidos até">
+              <Input inputMode="numeric" maxLength={4} value={f.anoAte} onChange={e => set('anoAte', ano(e.target.value))} placeholder="2009" />
+            </Field>
+            <Field label="Potencial mínimo">
+              <Select value={String(f.potencialMin || 0)} onChange={e => set('potencialMin', Number(e.target.value))}>
+                <option value="0">Indiferente</option>
+                {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}★ ou mais</option>)}
+              </Select>
+            </Field>
+            <Field label="Média mínima">
+              <Select value={String(f.mediaMin || '')} onChange={e => set('mediaMin', e.target.value ? Number(e.target.value) : '')}>
+                <option value="">Indiferente</option>
+                {[2, 2.5, 3, 3.5, 4, 4.5].map(v => <option key={v} value={v}>{String(v).replace('.', ',')} ou mais</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <Field label="Características desejadas (separadas por vírgulas)">
+              <Input value={f.caracteristicas} onChange={e => set('caracteristicas', e.target.value)} placeholder="ofensivo, cruzamento" />
+            </Field>
+          </div>
+          {/* Lugar reservado (sempre a mesma altura): aviso dos anos ou a ajuda. */}
+          <div style={{ height: 18, marginTop: 6, fontSize: 11.5, color: anoInvalido ? T.bad : T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>
+            {anoInvalido ? 'O ano "de" é maior do que o ano "até".' : 'Procuradas nas Características e Observações da ficha de cada jogador.'}
+          </div>
         </div>
       </div>
 
-      <div style={{ height: 16 }} />
-      <SubHeading>Motivo / contexto</SubHeading>
-      <TextArea value={f.motivo} onChange={e => set('motivo', e.target.value)} placeholder="Só 1 lateral esquerdo disponível até fevereiro." />
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
-        <Btn variant="ghost" onClick={onBack}>Cancelar</Btn>
-        <Btn onClick={() => onGuardar({ ...f, aceites })} disabled={!f.posicao || anoInvalido || anoIncompleto}><Check size={15} /> {f.id ? 'Guardar alterações' : 'Lançar necessidade'}</Btn>
+      <div style={bloco}>
+        {tituloBloco('Motivo / contexto')}
+        <TextArea rows={2} value={f.motivo} onChange={e => set('motivo', e.target.value)} placeholder="Só 1 lateral esquerdo disponível até fevereiro." style={{ minHeight: 0 }} />
       </div>
     </div>
   );
 }
 
-function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversarios, videos, setVideos, players = [], clinico = [], teamId }) {
+function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversarios, videos, setVideos, players = [], clinico = [], teamId, necApi = { estado: 'a-verificar', itens: [], set: null, pronto: false, autorizar: null } }) {
   const botaoCartao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 5, display: 'flex', borderRadius: 6 };
   const umaLinhaEstilo = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
   const [subTab, setSubTab] = useState(abaInicial === 'adversarios' ? 'adversarios' : 'jogadores');
@@ -39837,7 +39874,6 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
   const fecharFicha = useDetailBack(!!viewing, () => setViewing(null));
   // NECESSIDADES (módulo novo, isolado): ligação à tabela própria; o
   // resto do Scouting só lê daqui (contagem e etiqueta nos cartões).
-  const [necApi, setNecApi] = useState({ estado: 'a-verificar', itens: [], set: null, pronto: false, autorizar: null });
   const [necVista, setNecVista] = useState(null); // null (lista) | { tipo: 'form', inicial } | { tipo: 'detalhe', id }
   const necCarregado = necApi.estado === 'ok' && necApi.pronto;
   const necAtivas = necApi.estado === 'ok' ? (necApi.itens || []).filter(necEstaAtiva) : [];
@@ -39930,7 +39966,6 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
           <Btn onClick={() => setNecVista({ tipo: 'form', inicial: {} })} disabled={!necCarregado}><Plus size={15} /> Lançar necessidade</Btn>
         )}
       </div>
-      <NecessidadesLigacao teamId={teamId} onApi={setNecApi} />
 
       {viewing ? (
         <ScoutSheetPage
