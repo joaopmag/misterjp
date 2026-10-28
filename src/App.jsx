@@ -39325,12 +39325,15 @@ function necCandidatos(n, scouting) {
     || ((b.media || 0) - (a.media || 0)) || ((Number(b.x.potential) || 0) - (Number(a.x.potential) || 0)));
 }
 
-/* Plantel atual numa posição, com estatuto e estado clínico de hoje. */
+/* Plantel atual numa posição, com estatuto e estado clínico de hoje.
+   Inclui quem a tem como POSIÇÃO SECUNDÁRIA (marcado `secundaria`),
+   depois dos de posição principal. */
 function necPlantelNaPosicao(pos, players, clinico) {
   const hoje = todayStr();
-  return (players || []).filter(p => p && p.position === pos).map(p => ({
-    p, estado: estadoClinicoEm(p.id, hoje, clinico),
-  })).sort((a, b) => STATUS_OPTIONS.indexOf(b.p.statusMain) - STATUS_OPTIONS.indexOf(a.p.statusMain));
+  return (players || []).filter(p => p && (p.position === pos || p.secondaryPosition === pos)).map(p => ({
+    p, secundaria: p.position !== pos, estado: estadoClinicoEm(p.id, hoje, clinico),
+  })).sort((a, b) => ((a.secundaria ? 1 : 0) - (b.secundaria ? 1 : 0))
+    || (STATUS_OPTIONS.indexOf(b.p.statusMain) - STATUS_OPTIONS.indexOf(a.p.statusMain)));
 }
 
 /* Posições frágeis: menos de 2 disponíveis, ou nenhum Elite/Potencial
@@ -39340,7 +39343,9 @@ function necSugestoes(players, clinico, necessidades) {
   // Uma posição que já tem necessidade ativa continua na lista (marcada),
   // para o painel não mudar de tamanho quando se lança uma.
   return POSITIONS.map(pos => {
-    const lista = necPlantelNaPosicao(pos, players, clinico);
+    // Só a posição PRINCIPAL conta para a fragilidade (quem a tem como
+    // secundária é recurso, não solução).
+    const lista = necPlantelNaPosicao(pos, players, clinico).filter(l => !l.secundaria);
     const disponiveis = lista.filter(l => !(l.estado && l.estado.id === 'indisponivel'));
     const titulares = disponiveis.filter(l => l.p.statusMain === 'Jogador de Elite' || l.p.statusMain === 'Potencial Titular');
     const motivos = [];
@@ -39390,15 +39395,17 @@ function necQueEncaixam(x, necessidades) {
   return (necessidades || []).filter(necEstaAtiva).filter(n => necAvaliar(x, n) && !(n.descartados || []).includes(x.id));
 }
 
-/* ---------- Separador ---------- */
-function NecessidadesEquipa({ api, scouting, players, clinico, onVerJogador, onNova, novaPedida, onNovaTratada }) {
+/* ---------- Separador ----------
+   Três ecrãs, como os outros separadores do Scouting:
+     · LISTA — sugestões do plantel + cartões todos iguais (uma grelha);
+     · NECESSIDADE — página inteira com plantel, LISTA CURTA (os
+       fixados), candidatos e descartados;
+     · LANÇAR / EDITAR — página inteira (não janela), com espaço
+       reservado para avisos, para nada mexer enquanto se escreve.
+   O ecrã aberto (`vista`) vive no Scouting, para o botão "Lançar
+   necessidade" do cabeçalho só aparecer na lista. */
+function NecessidadesEquipa({ api, scouting, players, clinico, vista, setVista, onVerJogador }) {
   const [filtro, setFiltro] = useState('ativas'); // ativas | fechadas | todas
-  const [form, setForm] = useState(null); // null | { ...necessidade } (nova ou a editar)
-
-  useEffect(() => {
-    if (novaPedida) { setForm({ posicao: novaPedida.posicao || 'DC', prioridade: 'media', estado: 'aberta', motivo: novaPedida.motivo || '' }); onNovaTratada(); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [novaPedida]);
 
   if (api.estado === 'a-verificar' || (api.estado === 'ok' && !api.pronto)) {
     return <div style={{ color: T.mutedDim, fontSize: 13, padding: '20px 4px', ...body }}>A carregar as necessidades…</div>;
@@ -39412,12 +39419,34 @@ function NecessidadesEquipa({ api, scouting, players, clinico, onVerJogador, onN
 
   const lista = api.itens || [];
   const guardar = (n) => {
-    if (n.id) api.set(prev => prev.map(x => (x.id === n.id ? n : x)));
-    else api.set(prev => [...prev, { ...n, id: `nec_${uid()}${uid()}`, criadaEm: new Date().toISOString(), fixados: [], descartados: [] }]);
-    setForm(null);
+    if (n.id) {
+      api.set(prev => prev.map(x => (x.id === n.id ? n : x)));
+      setVista({ tipo: 'detalhe', id: n.id });
+    } else {
+      const id = `nec_${uid()}${uid()}`;
+      api.set(prev => [...prev, { ...n, id, criadaEm: new Date().toISOString(), fixados: [], descartados: [] }]);
+      setVista({ tipo: 'detalhe', id });
+    }
   };
   const alterar = (id, mudar) => api.set(prev => prev.map(x => (x.id === id ? mudar({ ...x }) : x)));
-  const apagar = (n) => removeWithUndo(lista, api.set, n.id, `Necessidade ${n.posicao}`);
+  const apagar = (n) => { removeWithUndo(lista, api.set, n.id, `Necessidade ${n.posicao}`); setVista(null); };
+
+  if (vista && vista.tipo === 'form') {
+    return <NecessidadeForm inicial={vista.inicial || {}}
+      onBack={() => setVista(vista.inicial && vista.inicial.id ? { tipo: 'detalhe', id: vista.inicial.id } : null)}
+      onGuardar={guardar} />;
+  }
+  if (vista && vista.tipo === 'detalhe') {
+    const n = lista.find(x => x.id === vista.id);
+    if (n) {
+      return <NecessidadeDetalhe n={n} scouting={scouting} players={players} clinico={clinico}
+        onBack={() => setVista(null)}
+        onVerJogador={onVerJogador}
+        onEditar={() => setVista({ tipo: 'form', inicial: { ...n } })}
+        onApagar={() => apagar(n)}
+        onAlterar={(mudar) => alterar(n.id, mudar)} />;
+    }
+  }
 
   const visiveis = lista.filter(n => (filtro === 'todas' ? true : filtro === 'ativas' ? necEstaAtiva(n) : !necEstaAtiva(n)))
     .sort((a, b) => NEC_PRIORIDADES.findIndex(p => p.id === a.prioridade) - NEC_PRIORIDADES.findIndex(p => p.id === b.prioridade)
@@ -39428,25 +39457,25 @@ function NecessidadesEquipa({ api, scouting, players, clinico, onVerJogador, onN
   return (
     <div style={{ overflowAnchor: 'none' }}>
       {sugestoes.length > 0 && (
-        <Panel title="Sugestões do plantel">
-          <div style={{ fontSize: 12.5, color: T.mutedDim, marginBottom: 10, ...body }}>
-            Posições com menos de 2 jogadores disponíveis ou sem titular (Elite / Potencial titular). É só uma sugestão — a decisão é da equipa técnica.
+        <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: '14px 16px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+            <span style={{ ...display, fontSize: 15, fontWeight: 600, color: T.cream, textTransform: 'uppercase', letterSpacing: '.03em' }}>Sugestões do plantel</span>
+            <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>Posições com menos de 2 disponíveis ou sem titular. A decisão é da equipa técnica.</span>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {sugestoes.map(s => (
-              <button key={s.pos} type="button" disabled={s.jaAberta}
-                onClick={() => { if (!s.jaAberta) onNova({ posicao: s.pos, motivo: `Plantel: ${s.motivos.join('; ')}.` }); }}
-                title={s.jaAberta ? 'Já há uma necessidade ativa para esta posição' : 'Lançar necessidade para esta posição'}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 999, padding: '6px 12px', color: T.cream, cursor: s.jaAberta ? 'default' : 'pointer', opacity: s.jaAberta ? 0.6 : 1, fontSize: 12.5, ...body }}>
-                <b style={{ ...mono }}>{s.pos}</b>
-                <span style={{ color: T.mutedDim }}>{s.jaAberta ? 'necessidade ativa' : s.motivos.join(' · ')}</span>
-                {s.jaAberta ? <Check size={13} color={T.good} /> : <Plus size={13} color={T.gold} />}
+            {sugestoes.map(sg => (
+              <button key={sg.pos} type="button" disabled={sg.jaAberta}
+                onClick={() => { if (!sg.jaAberta) setVista({ tipo: 'form', inicial: { posicao: sg.pos, motivo: `Plantel: ${sg.motivos.join('; ')}.` } }); }}
+                title={sg.jaAberta ? 'Já há uma necessidade ativa para esta posição' : 'Lançar necessidade para esta posição'}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 999, padding: '6px 12px', color: T.cream, cursor: sg.jaAberta ? 'default' : 'pointer', opacity: sg.jaAberta ? 0.6 : 1, fontSize: 12.5, ...body }}>
+                <b style={{ ...mono }}>{sg.pos}</b>
+                <span style={{ color: T.mutedDim }}>{sg.jaAberta ? 'necessidade ativa' : sg.motivos.join(' · ')}</span>
+                {sg.jaAberta ? <Check size={13} color={T.good} /> : <Plus size={13} color={T.gold} />}
               </button>
             ))}
           </div>
-        </Panel>
+        </div>
       )}
-      {sugestoes.length > 0 && <div style={{ height: 16 }} />}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         <ChipBtn active={filtro === 'ativas'} onClick={() => setFiltro('ativas')}>Ativas {nAtivas}</ChipBtn>
@@ -39458,83 +39487,169 @@ function NecessidadesEquipa({ api, scouting, players, clinico, onVerJogador, onN
         <EmptyState text={filtro === 'ativas'
           ? 'Sem necessidades ativas. Lança uma necessidade quando a equipa técnica identificar uma lacuna numa posição — a app cruza-a logo com os jogadores do Scouting.'
           : 'Nada para mostrar neste filtro.'}
-          action={filtro === 'ativas' ? <Btn onClick={() => onNova({})}><Plus size={15} /> Lançar necessidade</Btn> : null} />
+          action={filtro === 'ativas' ? <Btn onClick={() => setVista({ tipo: 'form', inicial: {} })}><Plus size={15} /> Lançar necessidade</Btn> : null} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {visiveis.map(n => (
-            <NecessidadeCartao key={n.id} n={n} scouting={scouting} players={players} clinico={clinico}
-              onVerJogador={onVerJogador}
-              onEditar={() => setForm({ ...n })}
-              onApagar={() => apagar(n)}
-              onAlterar={(mudar) => alterar(n.id, mudar)} />
+            <NecessidadeResumo key={n.id} n={n} scouting={scouting} players={players} clinico={clinico}
+              onAbrir={() => setVista({ tipo: 'detalhe', id: n.id })}
+              onEditar={() => setVista({ tipo: 'form', inicial: { ...n } })}
+              onApagar={() => apagar(n)} />
           ))}
         </div>
       )}
-
-      {form && <NecessidadeForm inicial={form} onClose={() => setForm(null)} onGuardar={guardar} />}
     </div>
   );
 }
 
 function NecPilula({ texto, cor }) {
   return (
-    <span style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, border: `1px solid ${cor}`, color: cor, whiteSpace: 'nowrap', ...body }}>{texto}</span>
+    <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, border: `1px solid ${cor}`, color: cor, whiteSpace: 'nowrap', ...body }}>{texto}</span>
   );
 }
 
-function NecessidadeCartao({ n, scouting, players, clinico, onVerJogador, onEditar, onApagar, onAlterar }) {
+/* CARTÃO DA NECESSIDADE — todos iguais, como os do Scouting: cada bloco
+   tem sempre o mesmo lugar e a mesma altura, preenchido ou não. */
+function NecessidadeResumo({ n, scouting, players, clinico, onAbrir, onEditar, onApagar }) {
+  const pr = necPrioridade(n.prioridade);
+  const es = necEstado(n.estado);
+  const todos = necCandidatos(n, scouting).filter(c => !(n.descartados || []).includes(c.x.id));
+  const fixados = todos.filter(c => (n.fixados || []).includes(c.x.id));
+  const cumpremTudo = todos.filter(c => c.total > 0 && c.cumpre === c.total).length;
+  const plantel = necPlantelNaPosicao(n.posicao, players, clinico);
+  const principais = plantel.filter(l => !l.secundaria);
+  const disp = principais.filter(l => !(l.estado && l.estado.id === 'indisponivel')).length;
+  const secund = plantel.length - principais.length;
+  const umaLinha = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
+  const botaoCartao = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 5, display: 'flex', borderRadius: 6 };
+  const contador = (rotulo, valor, cor) => (
+    <div style={{ background: T.surfaceRaise, borderRadius: 8, padding: '7px 10px 8px', minWidth: 0 }}>
+      <div style={{ color: T.mutedDim, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.4, ...umaLinha, ...body }}>{rotulo}</div>
+      <div style={{ color: valor ? cor : T.mutedDim, fontWeight: 700, fontSize: 16, ...mono }}>{valor}</div>
+    </div>
+  );
+  return (
+    <div onClick={onAbrir} title="Abrir necessidade" style={{
+      cursor: 'pointer', minWidth: 0, background: T.surface, border: `1px solid ${T.line}`, borderTop: `3px solid ${pr.cor()}`,
+      borderRadius: 12, padding: '14px 12px 16px 16px', display: 'flex', flexDirection: 'column',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <div style={{ flex: 1, color: T.cream, ...display, fontWeight: 600, fontSize: 18, lineHeight: '22px', ...umaLinha }}>
+          {n.posicao} · {NEC_NOME_POSICAO[n.posicao] || n.posicao}
+        </div>
+        <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', flexShrink: 0, cursor: 'default' }}>
+          <button type="button" onClick={onEditar} title="Editar necessidade" style={botaoCartao}><Pencil size={13} /></button>
+          <button type="button" onClick={onApagar} title="Apagar necessidade" style={botaoCartao}><Trash2 size={13} /></button>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', height: 22, overflow: 'hidden' }}>
+        <NecPilula texto={pr.label} cor={pr.cor()} />
+        <NecPilula texto={es.label} cor={es.cor()} />
+        {n.prazo && <span style={{ fontSize: 11.5, color: T.mutedDim, ...umaLinha, ...body }}>{n.prazo}</span>}
+      </div>
+      <div title={n.motivo || undefined} style={{ color: T.muted, fontSize: 12, lineHeight: '17px', height: 34, marginTop: 8, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', ...body }}>
+        {n.motivo || <span style={{ color: T.mutedDim }}>Sem motivo escrito.</span>}
+      </div>
+      <div style={{ color: T.mutedDim, fontSize: 11.5, lineHeight: '17px', height: 17, marginTop: 6, ...umaLinha, ...body }}>
+        Plantel: {principais.length} na posição ({disp} disponíve{disp === 1 ? 'l' : 'is'}){secund ? ` · +${secund} de posição secundária` : ''}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginTop: 12 }}>
+        {contador('Lista curta', fixados.length, T.gold)}
+        {contador('Candidatos', todos.length, T.cream)}
+        {contador('Cumprem tudo', cumpremTudo, T.good)}
+      </div>
+    </div>
+  );
+}
+
+/* PÁGINA DA NECESSIDADE */
+function NecessidadeDetalhe({ n, scouting, players, clinico, onBack, onVerJogador, onEditar, onApagar, onAlterar }) {
   const [verDescartados, setVerDescartados] = useState(false);
+  const isWide = !useIsMobile(900);
   const pr = necPrioridade(n.prioridade);
   const es = necEstado(n.estado);
   const criterios = necCriterios(n);
-  const fixados = n.fixados || [];
+  const fixadosIds = n.fixados || [];
   const descartados = n.descartados || [];
   const todos = necCandidatos(n, scouting);
-  const candidatos = todos.filter(c => (verDescartados ? descartados.includes(c.x.id) : !descartados.includes(c.x.id)))
-    .sort((a, b) => (fixados.includes(b.x.id) ? 1 : 0) - (fixados.includes(a.x.id) ? 1 : 0));
-  const nDescartados = todos.filter(c => descartados.includes(c.x.id)).length;
+  const listaCurta = todos.filter(c => fixadosIds.includes(c.x.id) && !descartados.includes(c.x.id));
+  const candidatos = todos.filter(c => !fixadosIds.includes(c.x.id) && !descartados.includes(c.x.id));
+  const descartadosLista = todos.filter(c => descartados.includes(c.x.id));
   const plantel = necPlantelNaPosicao(n.posicao, players, clinico);
   const escolhido = n.escolhidoId ? (scouting || []).find(x => x.id === n.escolhidoId) : null;
 
-  const alternarFixado = (id) => onAlterar(x => ({ ...x, fixados: fixados.includes(id) ? fixados.filter(i => i !== id) : [...fixados, id] }));
-  const alternarDescartado = (id) => onAlterar(x => ({
-    ...x,
-    descartados: descartados.includes(id) ? descartados.filter(i => i !== id) : [...descartados, id],
-    fixados: fixados.filter(i => i !== id),
-  }));
-  const botaoIcone = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 5, display: 'flex', borderRadius: 6 };
+  const fixar = (id) => onAlterar(x => ({ ...x, fixados: [...(x.fixados || []).filter(i => i !== id), id] }));
+  const desafixar = (id) => onAlterar(x => ({ ...x, fixados: (x.fixados || []).filter(i => i !== id) }));
+  const descartar = (id) => onAlterar(x => ({ ...x, descartados: [...(x.descartados || []).filter(i => i !== id), id], fixados: (x.fixados || []).filter(i => i !== id) }));
+  const recuperar = (id) => onAlterar(x => ({ ...x, descartados: (x.descartados || []).filter(i => i !== id) }));
+
+  const botaoIcone = { background: 'none', border: `1px solid ${T.line}`, color: T.mutedDim, cursor: 'pointer', padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 5, borderRadius: 6, fontSize: 12, ...body };
   const umaLinha = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 };
+  const titulo = (txt) => <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8, ...body }}>{txt}</div>;
+  // Caixa de altura fixa (a lista desliza por dentro): fixar, descartar
+  // ou recuperar não muda o tamanho da página.
+  const caixa = (altura) => ({ height: altura, overflowY: 'auto', overflowAnchor: 'none', scrollbarGutter: 'stable', border: `1px solid ${T.line}`, borderRadius: 10, background: T.surface });
+
+  const linhaCandidato = (c, acoes) => {
+    const tudo = c.cumpre === c.total;
+    const corCumpre = c.total === 0 ? T.mutedDim : tudo ? T.good : c.cumpre === 0 ? T.bad : T.warn;
+    const info = [c.x.club, `${c.x.position || ''}${c.x.secondaryPosition ? `/${c.x.secondaryPosition}` : ''}`, c.x.birthYear, c.media != null ? `média ${c.media}` : null].filter(Boolean).join(' · ');
+    return (
+      <div key={c.x.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderBottom: `1px solid ${T.line}`, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onVerJogador(c.x)} title="Ver ficha completa">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ color: T.cream, fontSize: 14, fontWeight: 600, ...umaLinha }}>{c.x.name}</span>
+            {!c.principal && <span style={{ fontSize: 10.5, color: T.mutedDim, flexShrink: 0, ...body }}>posição secundária</span>}
+          </div>
+          <div style={{ fontSize: 12, color: T.mutedDim, ...umaLinha, ...body }}>{info || '—'}</div>
+          <div style={{ fontSize: 12, color: corCumpre, ...umaLinha, ...body }}>
+            {c.total === 0 ? 'Sem critérios definidos' : `Cumpre ${c.cumpre} de ${c.total}`}
+            {c.falhas.length > 0 && <span style={{ color: T.mutedDim }}> · falta: {c.falhas.map(f => f.label).join(', ')}</span>}
+          </div>
+        </div>
+        {acoes}
+      </div>
+    );
+  };
 
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ ...display, fontSize: 20, fontWeight: 600, color: T.cream }}>{n.posicao} · {NEC_NOME_POSICAO[n.posicao] || n.posicao}</div>
-        <NecPilula texto={pr.label} cor={pr.cor()} />
-        <NecPilula texto={`${es.label}${n.prazo ? ` · ${n.prazo}` : ''}`} cor={es.cor()} />
-        <div style={{ flex: 1 }} />
-        <div style={{ width: 150 }}>
-          <Select value={n.estado || 'aberta'} onChange={e => onAlterar(x => ({ ...x, estado: e.target.value }))} aria-label="Estado da necessidade">
-            {NEC_ESTADOS.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
-          </Select>
+    <div style={{ overflowAnchor: 'none' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> Necessidades
+      </button>
+
+      <div style={{ background: T.surface, border: `1px solid ${T.line}`, borderTop: `3px solid ${pr.cor()}`, borderRadius: 12, padding: 18, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ ...display, fontSize: 22, fontWeight: 600, color: T.cream }}>{n.posicao} · {NEC_NOME_POSICAO[n.posicao] || n.posicao}</div>
+          <NecPilula texto={pr.label} cor={pr.cor()} />
+          {n.prazo && <span style={{ fontSize: 12.5, color: T.mutedDim, ...body }}>{n.prazo}</span>}
+          <div style={{ flex: 1 }} />
+          <div style={{ width: 150 }}>
+            <Select value={n.estado || 'aberta'} onChange={e => onAlterar(x => ({ ...x, estado: e.target.value }))} aria-label="Estado da necessidade"
+              style={{ borderColor: es.cor() }}>
+              {NEC_ESTADOS.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
+            </Select>
+          </div>
+          <Btn variant="ghost" onClick={onEditar}><Pencil size={14} /> Editar</Btn>
+          <Btn variant="ghost" onClick={onApagar} title="Apagar necessidade"><Trash2 size={14} /></Btn>
         </div>
-        <button type="button" onClick={onEditar} title="Editar necessidade" style={botaoIcone}><Pencil size={14} /></button>
-        <button type="button" onClick={onApagar} title="Apagar necessidade" style={botaoIcone}><Trash2 size={14} /></button>
-      </div>
-      {n.motivo && <div style={{ color: T.muted, fontSize: 13, marginTop: 6, lineHeight: 1.5, ...body }}>{n.motivo}</div>}
-      {(n.aceites || []).length > 0 && <div style={{ color: T.mutedDim, fontSize: 12, marginTop: 4, ...body }}>Também aceita: {(n.aceites || []).join(', ')}</div>}
-
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '12px 0 14px' }}>
-        {criterios.length === 0
-          ? <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>Sem critérios de perfil — contam todos os jogadores da posição.</span>
-          : criterios.map(c => (
-            <span key={c.id} style={{ fontSize: 12, padding: '3px 9px', borderRadius: 7, border: `1px solid ${T.line}`, color: T.cream, background: T.surfaceRaise, ...body }}>{c.label}</span>
-          ))}
-      </div>
-
-      {n.estado === 'resolvida' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-          <span style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', ...body }}>Jogador escolhido</span>
-          <div style={{ width: 240, maxWidth: '100%' }}>
+        <div style={{ color: T.muted, fontSize: 13.5, marginTop: 8, lineHeight: 1.5, ...body }}>{n.motivo || <span style={{ color: T.mutedDim }}>Sem motivo escrito.</span>}</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
+          {criterios.length === 0
+            ? <span style={{ fontSize: 12, color: T.mutedDim, ...body }}>Sem critérios de perfil — contam todos os jogadores da posição.</span>
+            : criterios.map(c => (
+              <span key={c.id} style={{ fontSize: 12, padding: '3px 9px', borderRadius: 7, border: `1px solid ${T.line}`, color: T.cream, background: T.surfaceRaise, ...body }}>{c.label}</span>
+            ))}
+          {(n.aceites || []).length > 0 && <span style={{ fontSize: 12, color: T.mutedDim, alignSelf: 'center', ...body }}>Também aceita: {(n.aceites || []).join(', ')}</span>}
+        </div>
+        {/* A linha do jogador escolhido tem sempre lugar reservado: mudar
+            o estado para "Resolvida" não empurra a página. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 12, minHeight: 40, visibility: n.estado === 'resolvida' ? 'visible' : 'hidden' }}>
+          <span style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', ...body }}>Jogador escolhido</span>
+          <div style={{ width: 260, maxWidth: '100%' }}>
             <Select value={n.escolhidoId || ''} onChange={e => onAlterar(x => ({ ...x, escolhidoId: e.target.value || null }))}>
               <option value="">— nenhum / fora do scouting —</option>
               {todos.map(c => <option key={c.x.id} value={c.x.id}>{c.x.name}{c.x.club ? ` (${c.x.club})` : ''}</option>)}
@@ -39542,154 +39657,170 @@ function NecessidadeCartao({ n, scouting, players, clinico, onVerJogador, onEdit
           </div>
           {escolhido && <Btn variant="ghost" onClick={() => onVerJogador(escolhido)}>Ver ficha</Btn>}
         </div>
-      )}
-
-      <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6, ...body }}>No plantel nesta posição</div>
-      <div style={{ fontSize: 13, color: T.cream, lineHeight: 1.7, marginBottom: 14, ...body }}>
-        {plantel.length === 0 ? <span style={{ color: T.bad }}>Nenhum jogador do plantel nesta posição.</span> : plantel.map((l, i) => (
-          <span key={l.p.id}>
-            {i > 0 && <span style={{ color: T.mutedDim }}> · </span>}
-            {shortFullName(l.p.name)}
-            <span style={{ color: l.estado && l.estado.id === 'indisponivel' ? T.bad : T.mutedDim }}> ({l.estado && l.estado.id === 'indisponivel' ? 'Indisponível' : (l.p.statusMain || 'sem estatuto')})</span>
-          </span>
-        ))}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', ...body }}>
-          {verDescartados ? `Descartados (${nDescartados})` : `Candidatos do scouting (${todos.length - nDescartados})`}
-        </span>
-        <div style={{ flex: 1 }} />
-        {(nDescartados > 0 || verDescartados) && (
-          <button type="button" onClick={() => setVerDescartados(v => !v)}
-            style={{ background: 'none', border: 'none', color: T.gold, cursor: 'pointer', fontSize: 12, ...body }}>
-            {verDescartados ? 'Voltar aos candidatos' : `Ver descartados (${nDescartados})`}
-          </button>
-        )}
-      </div>
-      {/* ALTURA FIXA (como no GPS): a lista desliza por dentro, por isso
-          fixar, descartar ou ver descartados não muda o tamanho da página. */}
-      <div style={{ height: 232, overflowY: 'auto', overflowAnchor: 'none', scrollbarGutter: 'stable', border: `1px solid ${T.line}`, borderRadius: 10 }}>
-        {candidatos.length === 0 ? (
-          <div style={{ color: T.mutedDim, fontSize: 13, padding: 16, lineHeight: 1.5, ...body }}>
-            {verDescartados ? 'Sem jogadores descartados.' : `Ainda não há jogadores no Scouting para ${n.posicao}. Quando acrescentares um, aparece aqui sozinho.`}
+      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr)', gap: 16, marginBottom: 16 }}>
+        <div>
+          {titulo(`No plantel nesta posição (${plantel.length})`)}
+          <div style={caixa(220)}>
+            {plantel.length === 0 ? (
+              <div style={{ color: T.bad, fontSize: 13, padding: 14, ...body }}>Nenhum jogador do plantel faz esta posição.</div>
+            ) : plantel.map(l => {
+              const indisp = l.estado && l.estado.id === 'indisponivel';
+              return (
+                <div key={l.p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderBottom: `1px solid ${T.line}` }}>
+                  <span style={{ color: T.cream, fontSize: 13.5, fontWeight: 600, flex: 1, ...umaLinha, ...body }}>{shortFullName(l.p.name)}</span>
+                  {l.secundaria && <span style={{ fontSize: 10.5, color: T.mutedDim, flexShrink: 0, ...body }}>posição secundária ({l.p.position})</span>}
+                  <span style={{ fontSize: 12, color: indisp ? T.bad : (l.estado ? l.estado.cor : T.mutedDim), flexShrink: 0, ...body }}>
+                    {indisp ? 'Indisponível' : (l.p.statusMain || 'sem estatuto')}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ) : candidatos.map(c => {
-          const fixado = fixados.includes(c.x.id);
-          const tudo = c.cumpre === c.total;
-          const corCumpre = c.total === 0 ? T.mutedDim : tudo ? T.good : c.cumpre === 0 ? T.bad : T.warn;
-          const info = [c.x.club, `${c.x.position || ''}${c.x.secondaryPosition ? `/${c.x.secondaryPosition}` : ''}`, c.x.birthYear].filter(Boolean).join(' · ');
-          return (
-            <div key={c.x.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: `1px solid ${T.line}`, minWidth: 0 }}>
-              <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => onVerJogador(c.x)} title="Ver ficha completa">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                  {fixado && <Pin size={12} color={T.gold} style={{ flexShrink: 0 }} />}
-                  <span style={{ color: T.cream, fontSize: 14, fontWeight: 600, ...umaLinha }}>{c.x.name}</span>
-                  {!c.principal && <span style={{ fontSize: 10.5, color: T.mutedDim, flexShrink: 0, ...body }}>posição secundária</span>}
-                </div>
-                <div style={{ fontSize: 12, color: T.mutedDim, ...umaLinha, ...body }}>{info || '—'}</div>
-                <div style={{ fontSize: 12, color: corCumpre, ...umaLinha, ...body }}>
-                  {c.total === 0 ? 'Sem critérios definidos' : `Cumpre ${c.cumpre} de ${c.total}`}
-                  {c.falhas.length > 0 && <span style={{ color: T.mutedDim }}> · falta: {c.falhas.map(f => f.label).join(', ')}</span>}
-                </div>
+        </div>
+        <div>
+          {titulo(`Lista curta (${listaCurta.length})`)}
+          <div style={caixa(220)}>
+            {listaCurta.length === 0 ? (
+              <div style={{ color: T.mutedDim, fontSize: 13, padding: 14, lineHeight: 1.5, ...body }}>
+                Os jogadores que fixares nos candidatos aparecem aqui — são os que a equipa técnica quer acompanhar de perto para esta necessidade.
               </div>
-              {!verDescartados && (
-                <button type="button" onClick={() => alternarFixado(c.x.id)} title={fixado ? 'Tirar da lista curta' : 'Fixar na lista curta'}
-                  style={{ ...botaoIcone, color: fixado ? T.gold : T.mutedDim, border: `1px solid ${fixado ? T.gold : T.line}`, padding: '5px 8px', gap: 5, alignItems: 'center', fontSize: 12, ...body }}>
-                  <Pin size={13} /> {fixado ? 'Fixado' : 'Fixar'}
-                </button>
-              )}
-              <button type="button" onClick={() => alternarDescartado(c.x.id)} title={verDescartados ? 'Voltar a pôr nos candidatos' : 'Descartar desta necessidade (a ficha no Scouting fica intacta)'}
-                style={{ ...botaoIcone, border: `1px solid ${T.line}`, padding: '5px 8px' }}>
-                {verDescartados ? <RefreshCw size={13} /> : <X size={13} />}
+            ) : listaCurta.map(c => linhaCandidato(c, (
+              <button type="button" onClick={() => desafixar(c.x.id)} title="Tirar da lista curta (volta aos candidatos)" style={{ ...botaoIcone, color: T.gold, borderColor: T.gold }}>
+                <Pin size={13} /> Tirar
               </button>
-            </div>
-          );
-        })}
+            )))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <ChipBtn active={!verDescartados} onClick={() => setVerDescartados(false)}>Candidatos {candidatos.length}</ChipBtn>
+        <ChipBtn active={verDescartados} onClick={() => setVerDescartados(true)}>Descartados {descartadosLista.length}</ChipBtn>
+      </div>
+      <div style={caixa(300)}>
+        {(verDescartados ? descartadosLista : candidatos).length === 0 ? (
+          <div style={{ color: T.mutedDim, fontSize: 13, padding: 14, lineHeight: 1.5, ...body }}>
+            {verDescartados
+              ? 'Sem jogadores descartados.'
+              : todos.length
+                ? 'Todos os candidatos estão na lista curta ou descartados.'
+                : `Ainda não há jogadores no Scouting para ${n.posicao}. Quando acrescentares um, aparece aqui sozinho.`}
+          </div>
+        ) : (verDescartados ? descartadosLista : candidatos).map(c => linhaCandidato(c, verDescartados ? (
+          <button type="button" onClick={() => recuperar(c.x.id)} title="Voltar a pôr nos candidatos" style={botaoIcone}><RefreshCw size={13} /> Recuperar</button>
+        ) : (
+          <>
+            <button type="button" onClick={() => fixar(c.x.id)} title="Passar para a lista curta" style={botaoIcone}><Pin size={13} /> Fixar</button>
+            <button type="button" onClick={() => descartar(c.x.id)} title="Descartar desta necessidade (a ficha no Scouting fica intacta)" style={botaoIcone}><X size={13} /></button>
+          </>
+        )))}
       </div>
     </div>
   );
 }
 
-function NecessidadeForm({ inicial, onClose, onGuardar }) {
+/* LANÇAR / EDITAR — página inteira, como "Adicionar jogador". Os anos
+   são caixas de texto (4 algarismos) e o aviso de anos trocados tem
+   lugar reservado e só aparece com os dois anos completos — escrever
+   não faz a página mexer. */
+function NecessidadeForm({ inicial, onBack, onGuardar }) {
   const [f, setF] = useState({
     posicao: 'DC', aceites: [], prioridade: 'media', estado: 'aberta', pe: '', anoDe: '', anoAte: '',
     potencialMin: 0, mediaMin: '', caracteristicas: '', motivo: '', prazo: '', ...inicial,
   });
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const aceites = Array.isArray(f.aceites) ? f.aceites : [];
-  const anoInvalido = f.anoDe && f.anoAte && Number(f.anoDe) > Number(f.anoAte);
+  const ano = (v) => String(v || '').replace(/\D/g, '').slice(0, 4);
+  const completos = String(f.anoDe).length === 4 && String(f.anoAte).length === 4;
+  const anoInvalido = completos && Number(f.anoDe) > Number(f.anoAte);
+  const anoIncompleto = (String(f.anoDe).length > 0 && String(f.anoDe).length < 4) || (String(f.anoAte).length > 0 && String(f.anoAte).length < 4);
   return (
-    <Modal title={f.id ? 'Editar necessidade' : 'Lançar necessidade'} subtitle="Só a posição e a prioridade são obrigatórias. Cada campo do perfil preenchido conta como um critério." onClose={onClose} wide>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-        <Field label="Posição *" solto>
+    <div style={{ overflowAnchor: 'none' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+      }}>
+        <ChevronLeft size={15} /> {f.id ? 'Necessidade' : 'Necessidades'}
+      </button>
+
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 6 }}>{f.id ? 'Editar necessidade' : 'Lançar necessidade'}</div>
+      <div style={{ color: T.mutedDim, fontSize: 13, marginBottom: 20, ...body }}>Só a posição e a prioridade são obrigatórias. Cada campo do perfil preenchido conta como um critério.</div>
+
+      <SubHeading>Necessidade</SubHeading>
+      <div style={{ ...FIELD_GRID, marginBottom: 14 }}>
+        <Field label="Posição *">
           <Select value={f.posicao} onChange={e => setF(x => ({ ...x, posicao: e.target.value, aceites: (x.aceites || []).filter(a => a !== e.target.value) }))}>
             {POSITIONS.map(p => <option key={p} value={p}>{p} · {NEC_NOME_POSICAO[p]}</option>)}
           </Select>
         </Field>
-        <Field label="Prioridade *" solto>
+        <Field label="Prioridade *">
           <Select value={f.prioridade} onChange={e => set('prioridade', e.target.value)}>
             {NEC_PRIORIDADES.map(p => <option key={p.id} value={p.id}>{p.label.replace('Prioridade ', '')}</option>)}
           </Select>
         </Field>
-        <Field label="Prazo" solto>
+        <Field label="Prazo">
           <Input value={f.prazo} onChange={e => set('prazo', e.target.value)} placeholder="Janela de janeiro" />
         </Field>
       </div>
-
-      <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', margin: '16px 0 8px', ...body }}>Também aceita (opcional)</div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {POSITIONS.filter(p => p !== f.posicao).map(p => (
+      <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8, ...body }}>Também aceita (opcional)</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 22 }}>
+        {POSITIONS.map(p => (p === f.posicao ? null : (
           <ChipBtn key={p} active={aceites.includes(p)} onClick={() => set('aceites', aceites.includes(p) ? aceites.filter(a => a !== p) : [...aceites, p])}>{p}</ChipBtn>
-        ))}
+        )))}
       </div>
 
-      <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', margin: '18px 0 8px', ...body }}>Perfil pretendido (critérios)</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
-        <Field label="Pé dominante" solto>
+      <SubHeading>Perfil pretendido (critérios)</SubHeading>
+      <div style={{ ...FIELD_GRID }}>
+        <Field label="Pé dominante">
           <Select value={f.pe} onChange={e => set('pe', e.target.value)}>
             <option value="">Indiferente</option>
             <option value="Direito">Direito</option>
             <option value="Esquerdo">Esquerdo</option>
           </Select>
         </Field>
-        <Field label="Nascidos a partir de" solto>
-          <Input type="number" inputMode="numeric" value={f.anoDe} onChange={e => set('anoDe', e.target.value)} placeholder="2007" />
+        <Field label="Nascidos a partir de">
+          <Input inputMode="numeric" maxLength={4} value={f.anoDe} onChange={e => set('anoDe', ano(e.target.value))} placeholder="2007" />
         </Field>
-        <Field label="Nascidos até" solto>
-          <Input type="number" inputMode="numeric" value={f.anoAte} onChange={e => set('anoAte', e.target.value)} placeholder="2009" />
+        <Field label="Nascidos até">
+          <Input inputMode="numeric" maxLength={4} value={f.anoAte} onChange={e => set('anoAte', ano(e.target.value))} placeholder="2009" />
         </Field>
-        <Field label="Potencial mínimo" solto>
+        <Field label="Potencial mínimo">
           <Select value={String(f.potencialMin || 0)} onChange={e => set('potencialMin', Number(e.target.value))}>
             <option value="0">Indiferente</option>
             {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}★ ou mais</option>)}
           </Select>
         </Field>
-        <Field label="Média mínima (1–5)" solto>
+        <Field label="Média mínima (1–5)">
           <Select value={String(f.mediaMin || '')} onChange={e => set('mediaMin', e.target.value ? Number(e.target.value) : '')}>
             <option value="">Indiferente</option>
             {[2, 2.5, 3, 3.5, 4, 4.5].map(v => <option key={v} value={v}>{String(v).replace('.', ',')} ou mais</option>)}
           </Select>
         </Field>
       </div>
-      {anoInvalido && <div style={{ color: T.bad, fontSize: 12.5, marginTop: 6, ...body }}>O ano "a partir de" é maior do que o ano "até".</div>}
-      <div style={{ marginTop: 12 }}>
-        <Field label="Características desejadas" solto>
-          <Input value={f.caracteristicas} onChange={e => set('caracteristicas', e.target.value)} placeholder="ofensivo, cruzamento" />
-        </Field>
-        <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4, ...body }}>Separadas por vírgulas. Procuram-se nas Características e Observações da ficha de cada jogador.</div>
+      {/* Lugar reservado para o aviso (sempre a mesma altura). */}
+      <div style={{ height: 22, marginTop: 4, fontSize: 12.5, color: T.bad, ...body }}>
+        {anoInvalido ? 'O ano "a partir de" é maior do que o ano "até".' : ''}
       </div>
-      <div style={{ marginTop: 12 }}>
-        <Field label="Motivo / contexto" solto>
-          <TextArea value={f.motivo} onChange={e => set('motivo', e.target.value)} placeholder="Só 1 lateral esquerdo disponível até fevereiro." />
-        </Field>
+      <div style={{ ...FIELD_GRID, marginBottom: 6 }}>
+        <div style={FIELD_FULL}>
+          <Field label="Características desejadas">
+            <Input value={f.caracteristicas} onChange={e => set('caracteristicas', e.target.value)} placeholder="ofensivo, cruzamento" />
+          </Field>
+          <div style={{ fontSize: 11.5, color: T.mutedDim, marginTop: 4, ...body }}>Separadas por vírgulas. Procuram-se nas Características e Observações da ficha de cada jogador.</div>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn onClick={() => onGuardar({ ...f, aceites })} disabled={!f.posicao || anoInvalido}><Check size={15} /> {f.id ? 'Guardar alterações' : 'Lançar necessidade'}</Btn>
+      <div style={{ height: 16 }} />
+      <SubHeading>Motivo / contexto</SubHeading>
+      <TextArea value={f.motivo} onChange={e => set('motivo', e.target.value)} placeholder="Só 1 lateral esquerdo disponível até fevereiro." />
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20, flexWrap: 'wrap' }}>
+        <Btn variant="ghost" onClick={onBack}>Cancelar</Btn>
+        <Btn onClick={() => onGuardar({ ...f, aceites })} disabled={!f.posicao || anoInvalido || anoIncompleto}><Check size={15} /> {f.id ? 'Guardar alterações' : 'Lançar necessidade'}</Btn>
       </div>
-    </Modal>
+    </div>
   );
 }
 
@@ -39707,7 +39838,8 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
   // NECESSIDADES (módulo novo, isolado): ligação à tabela própria; o
   // resto do Scouting só lê daqui (contagem e etiqueta nos cartões).
   const [necApi, setNecApi] = useState({ estado: 'a-verificar', itens: [], set: null, pronto: false, autorizar: null });
-  const [novaNec, setNovaNec] = useState(null);
+  const [necVista, setNecVista] = useState(null); // null (lista) | { tipo: 'form', inicial } | { tipo: 'detalhe', id }
+  const necCarregado = necApi.estado === 'ok' && necApi.pronto;
   const necAtivas = necApi.estado === 'ok' ? (necApi.itens || []).filter(necEstaAtiva) : [];
 
   const save = (data) => {
@@ -39766,11 +39898,14 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
             setViewing(null);
             setModal(null);
             setEditandoAdversario(null);
+            setNecVista(null);
           }}
           tabs={[
             { id: 'jogadores', label: 'Jogadores', icon: Users, count: scouting.length },
             { id: 'adversarios', label: 'Adversários', icon: Shield, count: adversarios.length },
-            { id: 'necessidades', label: 'Necessidades', icon: Target, count: necApi.estado === 'ok' ? necAtivas.length : undefined },
+            // A contagem tem sempre lugar ("–" enquanto carrega), para o
+            // separador não mudar de largura quando o número chega.
+            { id: 'necessidades', label: 'Necessidades', icon: Target, count: necCarregado ? necAtivas.length : '–' },
           ]}
           semMargem
         />
@@ -39791,8 +39926,8 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
         {!viewing && !modal && subTab === 'adversarios' && !editandoAdversario && (
           <Btn onClick={() => setEditandoAdversario('new')}><Plus size={15} /> Adicionar adversário</Btn>
         )}
-        {!viewing && !modal && subTab === 'necessidades' && necApi.estado === 'ok' && necApi.pronto && (
-          <Btn onClick={() => setNovaNec({})}><Plus size={15} /> Lançar necessidade</Btn>
+        {!viewing && !modal && subTab === 'necessidades' && !necVista && necApi.estado !== 'sem-tabela' && necApi.estado !== 'erro' && (
+          <Btn onClick={() => setNecVista({ tipo: 'form', inicial: {} })} disabled={!necCarregado}><Plus size={15} /> Lançar necessidade</Btn>
         )}
       </div>
       <NecessidadesLigacao teamId={teamId} onApi={setNecApi} />
@@ -39820,9 +39955,8 @@ function Scouting({ abaInicial, scouting, setScouting, adversarios, setAdversari
         />
       ) : subTab === 'necessidades' ? (
         <NecessidadesEquipa api={necApi} scouting={scouting} players={players} clinico={clinico}
-          onVerJogador={(x) => setViewing(x)}
-          onNova={(pre) => setNovaNec(pre || {})}
-          novaPedida={novaNec} onNovaTratada={() => setNovaNec(null)} />
+          vista={necVista} setVista={setNecVista}
+          onVerJogador={(x) => setViewing(x)} />
       ) : (
       <>
       {positionsUsed.length > 0 && (
