@@ -39453,8 +39453,12 @@ function NecessidadesEquipa({ api, scouting, players, clinico, vista, setVista, 
     }
   }
 
+  // Organizadas por POSIÇÃO (GR, DC, DE, DD, MD, MC, MOC, EE, ED, PL);
+  // na mesma posição, a mais prioritária primeiro.
+  const ordemPos = (n) => { const i = POSITIONS.indexOf(n.posicao); return i === -1 ? POSITIONS.length : i; };
   const visiveis = lista.filter(n => (filtro === 'todas' ? true : filtro === 'ativas' ? necEstaAtiva(n) : !necEstaAtiva(n)))
-    .sort((a, b) => NEC_PRIORIDADES.findIndex(p => p.id === a.prioridade) - NEC_PRIORIDADES.findIndex(p => p.id === b.prioridade)
+    .sort((a, b) => ordemPos(a) - ordemPos(b)
+      || NEC_PRIORIDADES.findIndex(p => p.id === a.prioridade) - NEC_PRIORIDADES.findIndex(p => p.id === b.prioridade)
       || String(b.criadaEm || '').localeCompare(String(a.criadaEm || '')));
   const sugestoes = necSugestoes(players, clinico, lista);
   const nAtivas = lista.filter(necEstaAtiva).length;

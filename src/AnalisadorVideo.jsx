@@ -2229,8 +2229,13 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
   const saltoRef = useRef(0); // evita pedir vários saltos seguidos enquanto o primeiro não chega
   const [copiado, setCopiado] = useState(false);
   const emSequencia = !!posicao;
-  const onFimClipeRef = useRef(onFimClipe);
-  onFimClipeRef.current = onFimClipe;
+  /* FIM DO CLIPE NA SEQUÊNCIA: o vídeo PARA no fim (a barra chega ao
+     fim) e aparece "Repetir / Seguinte" — avança-se à mão. Antes passava
+     sozinho ao seguinte (ainda com a barra a meio do último segundo) e
+     não dava para puxar para trás para rever com o jogador. */
+  const [terminado, setTerminado] = useState(false);
+  const terminadoRef = useRef(false);
+  const marcarTerminado = (v) => { terminadoRef.current = v; setTerminado(v); };
 
   // O leitor só é recarregado quando o clipe seguinte é de OUTRO vídeo.
   // No mesmo jogo, salta-se dentro do leitor já aberto — a passagem de
@@ -2239,6 +2244,7 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
   useEffect(() => {
     saltoRef.current = Date.now();
     setTempo(inicio);
+    marcarTerminado(false);
     if (clip.youtubeId === clipeDoLeitor.youtubeId) {
       if (clip.id !== clipeDoLeitor.id) {
         const win = iframeRef.current && iframeRef.current.contentWindow;
@@ -2262,7 +2268,20 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
     const win = iframeRef.current && iframeRef.current.contentWindow;
     if (win) win.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*');
   };
-  const irPara = (seg) => { saltoRef.current = Date.now(); comando('seekTo', [seg, true]); setTempo(seg); };
+  const irPara = (seg) => {
+    saltoRef.current = Date.now();
+    // Puxar para trás depois do fim volta a deixar ver (sai do "terminado").
+    if (terminadoRef.current && seg < fim - 0.3) marcarTerminado(false);
+    comando('seekTo', [seg, true]); setTempo(seg);
+  };
+  // Reproduzir / pausa (botão da barra, tecla Espaço). No fim do clipe,
+  // "reproduzir" recomeça do início.
+  const alternarReproducao = () => {
+    if (terminadoRef.current) { marcarTerminado(false); irPara(inicio); comando('playVideo'); return; }
+    comando(aTocarRef.current ? 'pauseVideo' : 'playVideo');
+  };
+  const aTocarRef = useRef(false);
+  aTocarRef.current = aTocar;
 
   useEffect(() => {
     const onMessage = (event) => {
@@ -2278,9 +2297,12 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
         const t = data.info.currentTime;
         if (typeof t === 'number') {
           const aSaltar = Date.now() - saltoRef.current < 800;
-          if (!aSaltar && t >= fim - 0.15 && emSequencia && onFimClipeRef.current) {
-            saltoRef.current = Date.now(); // não pedir a passagem duas vezes
-            onFimClipeRef.current();
+          if (emSequencia && terminadoRef.current) {
+            // Já parado no fim: não mexe (o utilizador decide).
+          } else if (!aSaltar && t >= fim - 0.25 && emSequencia) {
+            comando('pauseVideo');
+            setTempo(fim); // a barra chega mesmo ao fim
+            marcarTerminado(true);
           } else if (!aSaltar && (t >= fim - 0.15 || t < inicio - 0.5)) irPara(inicio);
           else setTempo(Math.min(fim, Math.max(inicio, t)));
         }
@@ -2301,6 +2323,27 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
   const [areaRef, caixa] = useCaixaNaArea(16 / 9);
   const [fsRef, emEcraInteiro, alternarEcraInteiro] = useEcraInteiro();
   useFecharComEsc(onClose, !emEcraInteiro);
+
+  /* TECLA ESPAÇO = reproduzir / pausa, venha o clique de onde vier (do
+     botão da barra, da barra de tempo…). Só não atua a escrever num
+     campo de texto. Se o último clique foi DENTRO do vídeo, o teclado
+     fica com o YouTube e a app não o recebe — aí, clicar no vídeo é que
+     pausa (como já acontecia). */
+  const alternarRef = useRef(alternarReproducao);
+  alternarRef.current = alternarReproducao;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== ' ' && e.code !== 'Space') return;
+      const el = e.target;
+      const tag = el && el.tagName;
+      if (tag === 'TEXTAREA' || tag === 'SELECT' || (el && el.isContentEditable)
+        || (tag === 'INPUT' && !['range', 'button', 'checkbox'].includes(String(el.type).toLowerCase()))) return;
+      e.preventDefault(); // não "carrega" de novo no botão focado nem desliza a página
+      alternarRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: T.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
@@ -2333,15 +2376,31 @@ function ClipAtletaModal({ clip, onClose, onRemove, posicao, onAnterior, onSegui
               allow="autoplay; encrypted-media; picture-in-picture"
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
             />
+            {/* FIM DO CLIPE (sequência): parado, à espera de decisão.
+                Fica por cima do vídeo só nesse momento. */}
+            {emSequencia && terminado && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', padding: 12 }}>
+                  <Btn variant="ghost" onClick={() => { marcarTerminado(false); irPara(inicio); comando('playVideo'); }} style={{ background: 'rgba(0,0,0,0.6)' }}>
+                    <RotateCcw size={15} /> Repetir
+                  </Btn>
+                  {posicao.indice < posicao.total - 1 ? (
+                    <Btn onClick={onSeguinte}><SkipForward size={15} /> Clipe seguinte</Btn>
+                  ) : (
+                    <Btn variant="ghost" onClick={onClose} style={{ background: 'rgba(0,0,0,0.6)' }}><Check size={15} /> Último clipe — fechar</Btn>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
         {/* BARRA DO CLIPE — só o intervalo do corte. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#111', borderBottom: `1px solid ${T.line}`, flexShrink: 0 }}>
-          <button onClick={() => comando(aTocar ? 'pauseVideo' : 'playVideo')} title={aTocar ? 'Pausa' : 'Reproduzir'}
+          <button onClick={(e) => { e.currentTarget.blur(); alternarReproducao(); }} title={terminado ? 'Ver outra vez' : aTocar ? 'Pausa (Espaço)' : 'Reproduzir (Espaço)'}
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
             {aTocar ? <Pause size={16} /> : <Play size={16} />}
           </button>
-          <button onClick={() => irPara(inicio)} title="Voltar ao início do clipe"
+          <button onClick={(e) => { e.currentTarget.blur(); irPara(inicio); }} title="Voltar ao início do clipe"
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: 2, display: 'flex' }}>
             <RotateCcw size={15} />
           </button>
