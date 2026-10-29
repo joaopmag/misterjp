@@ -10840,6 +10840,15 @@ function LinhaCartoes({ itens, renderItem, vazio }) {
   const daPagina = itens.slice(pag * porLinha, pag * porLinha + porLinha);
   const irPara = (p) => setPagina(Math.max(0, Math.min(total - 1, p)));
   const toqueX = useRef(null);
+  const barraRef = useRef(null);
+  const arrastarRef = useRef(false);
+  const paginaDoX = (clientX) => {
+    const el = barraRef.current;
+    if (!el) return pag;
+    const r = el.getBoundingClientRect();
+    const f = Math.min(0.9999, Math.max(0, (clientX - r.left) / r.width));
+    return Math.floor(f * total);
+  };
   const seta = (dir) => {
     const off = dir < 0 ? pag === 0 : pag >= total - 1;
     const Ic = dir < 0 ? ChevronLeft : ChevronRight;
@@ -10869,8 +10878,19 @@ function LinhaCartoes({ itens, renderItem, vazio }) {
           : daPagina.map(renderItem)}
       </div>
       {total > 1 && (
-        <div style={{ height: 6, borderRadius: 3, background: T.bg, marginTop: 12, overflow: 'hidden' }}>
-          <div style={{ width: `${((pag + 1) / total) * 100}%`, height: '100%', background: T.gold, borderRadius: 3, transition: 'width .2s' }} />
+        /* BARRA ARRASTÁVEL: carregar ou arrastar para um lado e para o
+           outro escolhe a página (zona de toque mais alta do que a
+           barra, para se acertar à primeira). */
+        <div ref={barraRef}
+          onPointerDown={e => { arrastarRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* nada */ } irPara(paginaDoX(e.clientX)); }}
+          onPointerMove={e => { if (arrastarRef.current) irPara(paginaDoX(e.clientX)); }}
+          onPointerUp={() => { arrastarRef.current = false; }}
+          onPointerCancel={() => { arrastarRef.current = false; }}
+          title="Arrasta para ver os outros"
+          style={{ padding: '7px 0', marginTop: 5, cursor: 'pointer', touchAction: 'none' }}>
+          <div style={{ height: 6, borderRadius: 3, background: T.bg, overflow: 'hidden' }}>
+            <div style={{ width: `${((pag + 1) / total) * 100}%`, height: '100%', background: T.gold, borderRadius: 3, transition: arrastarRef.current ? 'none' : 'width .2s' }} />
+          </div>
         </div>
       )}
     </div>
@@ -10947,9 +10967,6 @@ function PortalAtletaIdeias({ ideias, todasIdeias, setIdeias, matches, labelOf, 
   const grupos = planoGrupos(ideias);
   const [momento, setMomento] = useState(grupos[0] ? grupos[0].fase : null);
   const atual = grupos.find(g => g.fase === momento) || grupos[0] || null;
-  const nIdeia = ideias.filter(x => x.visivelAtletas).length;
-  const prox = planoProximoJogo(matches);
-  const nPlano = prox ? (todasIdeias || []).filter(x => ideiaNoPlano(x, prox.id)).length : 0;
   // `prev =>`: nunca escrever por cima de um eco do Realtime mais recente.
   const alternar = (id) => setIdeias(prev => prev.map(x => (x.id === id ? { ...x, visivelAtletas: !x.visivelAtletas } : x)));
   const alternarMomento = (lista) => {
@@ -10959,16 +10976,23 @@ function PortalAtletaIdeias({ ideias, todasIdeias, setIdeias, matches, labelOf, 
   };
   return (
     <div style={{ overflowAnchor: 'none' }}>
-      <button onClick={onBack} style={{
-        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 16,
-      }}>
-        <ChevronLeft size={15} /> Ideia de Jogo
-      </button>
+      {/* UM SÓ "VOLTAR", que muda conforme onde se está: dentro de um
+          plano volta aos Planos de Jogo; no resto, volta à Ideia de Jogo. */}
+      {(() => {
+        const dentroDePlano = aba === 'plano' && planos && planos.aberto;
+        return (
+          <button onClick={() => (dentroDePlano ? planos.setAberto(null) : onBack())} style={{
+            display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+            borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 16,
+          }}>
+            <ChevronLeft size={15} /> {dentroDePlano ? 'Planos de Jogo' : 'Ideia de Jogo'}
+          </button>
+        );
+      })()}
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 12 }}>Portal do Atleta</div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-        <ToggleBtn active={aba === 'ideia'} onClick={() => { setAba('ideia'); if (planos) planos.setAberto(null); }}>Ideia de Jogo · {nIdeia}</ToggleBtn>
-        <ToggleBtn active={aba === 'plano'} onClick={() => setAba('plano')}>Plano de Jogo{prox ? ` · ${nPlano}` : ''}</ToggleBtn>
+        <ToggleBtn active={aba === 'ideia'} onClick={() => { setAba('ideia'); if (planos) planos.setAberto(null); }}>Ideia de Jogo</ToggleBtn>
+        <ToggleBtn active={aba === 'plano'} onClick={() => setAba('plano')}>Plano de Jogo</ToggleBtn>
       </div>
 
       {aba === 'plano' ? (
@@ -10979,7 +11003,7 @@ function PortalAtletaIdeias({ ideias, todasIdeias, setIdeias, matches, labelOf, 
       ) : (
         <>
           <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
-            Escolhe, momento a momento, que ideias gerais os jogadores veem. Carrega no ▶ para ver a animação no cartão, ou no desenho para o ver em grande.
+            Escolhe, momento a momento, que ideias gerais os jogadores veem.
           </div>
           {!atual ? (
             <EmptyState text="Ainda não há ideias gerais." />
@@ -11050,7 +11074,7 @@ function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, 
   return (
     <div style={{ overflowAnchor: 'none' }}>
       <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, lineHeight: 1.5, ...body }}>
-        Um plano por jogo. O Portal do Atleta mostra só o plano do <b style={{ color: T.gold }}>próximo jogo</b> e, quando o jogo passa, ele sai sozinho do Portal — fica aqui, no arquivo.
+        Um plano por jogo. O Portal do Atleta mostra só o plano do próximo jogo e, depois do jogo, passa para o arquivo.
       </div>
       {proximos.length === 0 && passados.length === 0 ? (
         <EmptyState text="Ainda não há jogos marcados. Os planos de jogo aparecem aqui quando houver jogos em Jogos." />
@@ -11095,12 +11119,6 @@ function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onV
 
   return (
     <div style={{ overflowAnchor: 'none' }}>
-      <button onClick={onBack} style={{
-        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 16,
-      }}>
-        <ChevronLeft size={15} /> Planos de Jogo
-      </button>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
         <div style={{ ...display, fontSize: 22, color: T.cream }}>Plano de jogo · {planoNomeJogo(jogo)}</div>
         {noPortal
