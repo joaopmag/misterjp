@@ -10549,26 +10549,36 @@ function passosDaIdeia(diagram) {
    metade da jogada numa folha e metade noutra não se lê. */
 function IdeiaNoDossier({ ideia, numero }) {
   const passos = passosDaIdeia(ideia.diagram);
-  const emTira = passos.length > 1;
+  const n = passos.length;
+  /* IMPRESSÃO ARRUMADA:
+     · 1 imagem → largura toda; 2–4 → duas por linha; 5 ou mais → três
+       por linha (uma jogada de 12 imagens cabe numa folha, com imagens
+       ainda legíveis);
+     · flex com quebra de linha em vez de grelha — a grelha não se parte
+       bem entre folhas em vários browsers (imagens cortadas ou
+       sobrepostas); com flex, cada imagem passa inteira para a folha
+       seguinte;
+     · a ideia inteira só é "inquebrável" quando cabe numa folha (até 12
+       imagens); acima disso parte-se entre imagens, nunca a meio de uma;
+     · o título fica sempre agarrado às primeiras imagens. */
+  const colunas = n <= 1 ? 1 : n <= 4 ? 2 : 3;
+  const cabeNumaFolha = n <= 12;
+  const largura = colunas === 1 ? '100%' : colunas === 2 ? 'calc(50% - 5px)' : 'calc(33.333% - 7px)';
 
   return (
-    <div style={{ marginBottom: 26, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
-      <h3 style={{ fontSize: 15, margin: '0 0 4px' }}>
-        {numero}. {(ideia.name && ideia.name.trim()) || ideia.phase || 'Ideia de jogo'}
-      </h3>
-      {ideia.description ? (
-        <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: '0 0 10px' }}>{ideia.description}</p>
-      ) : null}
+    <div style={{ marginBottom: 22, ...(cabeNumaFolha ? { breakInside: 'avoid', pageBreakInside: 'avoid' } : {}) }}>
+      <div style={{ breakAfter: 'avoid', pageBreakAfter: 'avoid', breakInside: 'avoid' }}>
+        <h3 style={{ fontSize: 15, margin: '0 0 4px' }}>
+          {numero}. {(ideia.name && ideia.name.trim()) || ideia.phase || 'Ideia de jogo'}
+        </h3>
+        {ideia.description ? (
+          <p style={{ fontSize: 12, lineHeight: 1.55, margin: '0 0 8px' }}>{ideia.description}</p>
+        ) : null}
+      </div>
 
-      <div style={{
-        display: 'grid', gap: 10,
-        // Em tira, duas por linha: quatro passos cabem numa página e cada
-        // imagem continua grande o suficiente para se distinguirem os
-        // jogadores. Uma imagem só ocupa a largura toda.
-        gridTemplateColumns: emTira ? '1fr 1fr' : '1fr',
-      }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
         {passos.map((p, i) => (
-          <div key={i} style={{ breakInside: 'avoid' }}>
+          <div key={i} style={{ width: largura, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
             <svg
               viewBox={viewBoxDaVista(ideia.diagram && ideia.diagram.vista)}
               style={{
@@ -10583,7 +10593,7 @@ function IdeiaNoDossier({ ideia, numero }) {
               </VistaCampo>
             </svg>
             {p.rotulo ? (
-              <div style={{ fontSize: 10.5, color: '#777', marginTop: 3 }}>
+              <div style={{ fontSize: 10, color: '#777', marginTop: 2 }}>
                 {p.rotulo === 'fim' ? 'Resultado' : `Momento ${p.rotulo}`}
               </div>
             ) : null}
@@ -11291,7 +11301,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
         )} />
 
       {dossier ? (
-        <DossierIdeias ideias={gerais} labelOf={labelOf} onBack={fecharDossier} onImprimir={imprimirDossier} />
+        <DossierIdeias ideias={gerais} labelOf={labelOf} onBack={fecharDossier} onImprimir={imprimirDossier} onVer={setViewing} />
       ) : portalAtleta ? (
         <PortalAtletaIdeias ideias={gerais} todasIdeias={ideias} setIdeias={setIdeias} matches={matches} labelOf={labelOf}
           onBack={() => { setPlanoAberto(null); fecharPortalAtleta(); }} onVer={setViewing}
@@ -11448,8 +11458,11 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
                   inteiro, não misturado com a primeira jogada. */}
               <div style={{ breakBefore: 'page', pageBreakBefore: 'always' }} />
 
-              {numerados.map(g => (
-                <div key={g.fase} style={{ marginBottom: 8 }}>
+              {numerados.map((g, gi) => (
+                /* Cada momento começa em folha nova (o 1.º já vem depois da
+                   quebra do índice): nenhum título de momento fica perdido
+                   no fundo de uma folha. */
+                <div key={g.fase} style={{ marginBottom: 8, ...(gi > 0 ? { breakBefore: 'page', pageBreakBefore: 'always' } : {}) }}>
                   <h3 style={{
                     fontSize: 17, margin: '0 0 12px', paddingBottom: 5,
                     borderBottom: '2px solid #111', breakAfter: 'avoid', pageBreakAfter: 'avoid',
@@ -11503,14 +11516,14 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
    "‹ Ideia de Jogo" para voltar, o mesmo título e a mesma lista por fase.
    No telemóvel, o nome de cada ideia aparece inteiro (sem reticências), e o
    botão "Imprimir dossier" fica preso ao fundo do ecrã. */
-function DossierIdeias({ ideias, labelOf, onBack, onImprimir }) {
+function DossierIdeias({ ideias, labelOf, onBack, onImprimir, onVer }) {
   const estreito = useIsMobile(560);
   const [escolhidas, setEscolhidas] = useState(() => new Set(ideias.map(i => i.id)));
-  const porFase = PHASES
-    .map(fase => ({ fase, lista: ideias.filter(i => i.phase === fase) }))
-    .filter(g => g.lista.length);
-  const semFase = ideias.filter(i => !PHASES.includes(i.phase));
-  if (semFase.length) porFase.push({ fase: 'Sem fase', lista: semFase });
+  // Mesma organização do Portal: separadores por momento e uma linha de
+  // cartões com o desenho (e ▶), cada um com o visto "No dossier".
+  const grupos = planoGrupos(ideias);
+  const [momento, setMomento] = useState(grupos[0] ? grupos[0].fase : null);
+  const atual = grupos.find(g => g.fase === momento) || grupos[0] || null;
   const alternar = (id) => setEscolhidas(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const alternarFase = (lista) => setEscolhidas(prev => {
     const n = new Set(prev);
@@ -11521,67 +11534,51 @@ function DossierIdeias({ ideias, labelOf, onBack, onImprimir }) {
   const total = escolhidas.size;
 
   return (
-    <div>
+    <div style={{ overflowAnchor: 'none' }}>
       <button onClick={onBack} style={{
         display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 16,
       }}>
         <ChevronLeft size={15} /> Ideia de Jogo
       </button>
 
       <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Dossier</div>
-      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 6 }}>
-        O modelo de jogo num documento só. Escolhe as ideias que entram e imprime.
+      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 6, ...body }}>
+        O modelo de jogo num documento só. Escolhe, momento a momento, as ideias que entram e imprime.
       </div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18, fontSize: 12 }}>
-        <span style={{ color: T.good }}>● {total} de {ideias.length} no dossier</span>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14, fontSize: 12 }}>
+        <span style={{ color: T.good, ...body }}>● {total} de {ideias.length} no dossier</span>
         <span style={{ display: 'flex', gap: 8, marginLeft: estreito ? 0 : 'auto' }}>
           <Btn variant="ghost" onClick={() => setEscolhidas(new Set(ideias.map(i => i.id)))} style={{ padding: '6px 12px', fontSize: 12.5 }}>Todas</Btn>
           <Btn variant="ghost" onClick={() => setEscolhidas(new Set())} style={{ padding: '6px 12px', fontSize: 12.5 }}>Nenhuma</Btn>
+          <Btn onClick={() => onImprimir(ideias.filter(i => escolhidas.has(i.id)))} disabled={!total} style={{ padding: '6px 12px', fontSize: 12.5 }}>
+            <Printer size={14} /> Imprimir dossier ({total})
+          </Btn>
         </span>
       </div>
 
-      {porFase.map(({ fase, lista }) => (
-        <div key={fase} style={{ marginBottom: 20 }}>
-          <button type="button" onClick={() => alternarFase(lista)} title="Marcar ou desmarcar este momento todo" style={{
-            display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', textAlign: 'left',
-            background: 'none', border: 'none', padding: 0, marginBottom: 8, cursor: 'pointer',
-          }}>
-            <span style={{ ...display, fontSize: 14, fontWeight: 600, color: T.cream }}>{fase}</span>
-            <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{lista.filter(i => escolhidas.has(i.id)).length}/{lista.length}</span>
-            <span style={{ flex: 1, height: 1, background: T.line }} />
-          </button>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {lista.map(i => {
-              const on = escolhidas.has(i.id);
-              const passos = ((i.diagram && i.diagram.sequence) || []).length;
-              return (
-                <button key={i.id} type="button" onClick={() => alternar(i.id)} style={{
-                  display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', width: '100%',
-                  padding: '10px 14px', borderRadius: 10, cursor: 'pointer', ...body,
-                  background: on ? `${T.good}12` : T.surface, border: `1px solid ${on ? T.good : T.line}`,
-                }}>
-                  <span style={{
-                    width: 16, height: 16, borderRadius: 4, flexShrink: 0, display: 'grid', placeItems: 'center',
-                    background: on ? T.good : 'transparent', border: `1.5px solid ${on ? T.good : T.line}`,
-                  }}>{on && <Check size={11} style={{ color: '#0d140e' }} />}</span>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: T.cream, lineHeight: 1.35 }}>{labelOf(i)}</span>
-                  {passos > 0 && <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{passos + 1} img</span>}
-                </button>
-              );
-            })}
+      {!atual ? (
+        <EmptyState text="Ainda não há ideias gerais." />
+      ) : (
+        <>
+          <PlanoMomentos grupos={grupos} momento={atual.fase} onMomento={setMomento} contaMarcadas={(l) => l.filter(i => escolhidas.has(i.id)).length} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <Btn variant="ghost" onClick={() => alternarFase(atual.lista)}>
+              {atual.lista.every(i => escolhidas.has(i.id)) ? 'Tirar este momento todo do dossier' : 'Pôr este momento todo no dossier'}
+            </Btn>
           </div>
-        </div>
-      ))}
-
-      <div style={{
-        display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, marginTop: 6, borderTop: `1px solid ${T.line}`, background: T.bg,
-        position: 'sticky', bottom: 0, zIndex: 5, paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
-      }}>
-        <Btn onClick={() => onImprimir(ideias.filter(i => escolhidas.has(i.id)))} disabled={!total} style={estreito ? { flex: 1, justifyContent: 'center' } : undefined}>
-          <Printer size={15} /> Imprimir dossier ({total})
-        </Btn>
-      </div>
+          <LinhaCartoes key={atual.fase} itens={atual.lista} renderItem={x => {
+            const on = escolhidas.has(x.id);
+            const passos = ((x.diagram && x.diagram.sequence) || []).length;
+            return (
+              <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={on} corMarca={T.good}
+                textoMarca={on ? 'No dossier' : 'Pôr no dossier'} onMarcar={() => alternar(x.id)}
+                onVer={() => (onVer ? onVer(x) : alternar(x.id))}
+                extra={passos > 0 ? <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>{passos + 1} img</span> : null} />
+            );
+          }} />
+        </>
+      )}
     </div>
   );
 }
