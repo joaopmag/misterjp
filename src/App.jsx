@@ -10787,8 +10787,11 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
     setATocar(true);
   };
   const mostrarFotograma = frames && (aTocar || idx > 0);
+  // Coluna flex: o desenho parado e os fotogramas ocupam EXATAMENTE a
+  // mesma altura (sem a folga de linha que um <svg> solto deixa por
+  // baixo) — carregar no ▶ não faz o cartão mexer.
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
       {mostrarFotograma && frames[idx] ? (
         <svg viewBox={viewBoxDaVista(diagram && diagram.vista)} preserveAspectRatio="xMidYMid meet"
           style={{ width: '100%', height, background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
@@ -10835,25 +10838,33 @@ function LinhaCartoes({ itens, renderItem, vazio }) {
   const GAP = 10;
   const MIN = isMobile ? 150 : 190;
   const porLinha = largura ? Math.max(2, Math.min(6, Math.floor((largura + GAP) / (MIN + GAP)))) : (isMobile ? 2 : 5);
+  // Cartão a cartão (como no "Anexar exercício existente"): `pagina` é o
+  // índice do 1.º cartão visível; as setas andam uma linha e a barra é um
+  // polegar do tamanho do que se vê, arrastado suavemente.
   const total = Math.max(1, Math.ceil(itens.length / porLinha));
-  const pag = Math.min(pagina, total - 1);
-  const daPagina = itens.slice(pag * porLinha, pag * porLinha + porLinha);
-  const irPara = (p) => setPagina(Math.max(0, Math.min(total - 1, p)));
+  const maxInicio = Math.max(0, itens.length - porLinha);
+  const pag = Math.min(pagina, maxInicio);
+  const daPagina = itens.slice(pag, pag + porLinha);
+  const irParaInicio = (i) => setPagina(Math.max(0, Math.min(maxInicio, Math.round(i))));
+  const irPara = (passo) => irParaInicio(pag + passo * porLinha);
   const toqueX = useRef(null);
   const barraRef = useRef(null);
   const arrastarRef = useRef(false);
-  const paginaDoX = (clientX) => {
+  const agarreRef = useRef(0);
+  const [arrastar, setArrastar] = useState(false);
+  const fracPolegar = itens.length ? Math.min(1, porLinha / itens.length) : 1;
+  const fracInicio = itens.length ? pag / itens.length : 0;
+  const fracDoX = (clientX) => {
     const el = barraRef.current;
-    if (!el) return pag;
+    if (!el) return 0;
     const r = el.getBoundingClientRect();
-    const f = Math.min(0.9999, Math.max(0, (clientX - r.left) / r.width));
-    return Math.floor(f * total);
+    return (clientX - r.left) / r.width;
   };
   const seta = (dir) => {
-    const off = dir < 0 ? pag === 0 : pag >= total - 1;
+    const off = dir < 0 ? pag === 0 : pag >= maxInicio;
     const Ic = dir < 0 ? ChevronLeft : ChevronRight;
     return (
-      <button type="button" disabled={off} onClick={() => irPara(pag + dir)} title={dir < 0 ? 'Anteriores' : 'Seguintes'} style={{
+      <button type="button" disabled={off} onClick={() => irPara(dir)} title={dir < 0 ? 'Anteriores' : 'Seguintes'} style={{
         width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         border: `1px solid ${T.line}`, background: off ? 'transparent' : T.surfaceRaise, color: off ? T.mutedDim : T.cream,
         cursor: off ? 'default' : 'pointer', opacity: off ? 0.4 : 1,
@@ -10867,13 +10878,13 @@ function LinhaCartoes({ itens, renderItem, vazio }) {
         {/* Largura FIXA: "1–5 de 14" e "11–14 de 14" ocupam o mesmo
             espaço, por isso as setas não andam ao carregar nelas. */}
         <span style={{ ...mono, fontSize: 12, color: T.muted, width: 108, flexShrink: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>
-          {itens.length ? `${pag * porLinha + 1}–${Math.min(itens.length, pag * porLinha + porLinha)} de ${itens.length}` : '0'}
+          {itens.length ? `${pag + 1}–${Math.min(itens.length, pag + porLinha)} de ${itens.length}` : '0'}
         </span>
         {seta(1)}
       </div>
       <div ref={gridRef}
         onTouchStart={e => { toqueX.current = e.touches[0].clientX; }}
-        onTouchEnd={e => { if (toqueX.current == null) return; const dx = e.changedTouches[0].clientX - toqueX.current; toqueX.current = null; if (Math.abs(dx) > 40) irPara(pag + (dx < 0 ? 1 : -1)); }}
+        onTouchEnd={e => { if (toqueX.current == null) return; const dx = e.changedTouches[0].clientX - toqueX.current; toqueX.current = null; if (Math.abs(dx) > 40) irPara(dx < 0 ? 1 : -1); }}
         style={{ display: 'grid', gridTemplateColumns: `repeat(${porLinha}, minmax(0, 1fr))`, gap: GAP, minHeight: 200 }}>
         {itens.length === 0
           ? <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 13, textAlign: 'center', padding: 20, ...body }}>{vazio}</div>
@@ -10884,14 +10895,25 @@ function LinhaCartoes({ itens, renderItem, vazio }) {
            outro escolhe a página (zona de toque mais alta do que a
            barra, para se acertar à primeira). */
         <div ref={barraRef}
-          onPointerDown={e => { arrastarRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* nada */ } irPara(paginaDoX(e.clientX)); }}
-          onPointerMove={e => { if (arrastarRef.current) irPara(paginaDoX(e.clientX)); }}
-          onPointerUp={() => { arrastarRef.current = false; }}
-          onPointerCancel={() => { arrastarRef.current = false; }}
+          onPointerDown={e => {
+            e.preventDefault();
+            arrastarRef.current = true; setArrastar(true);
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* nada */ }
+            const f = fracDoX(e.clientX);
+            agarreRef.current = (f >= fracInicio && f <= fracInicio + fracPolegar) ? f - fracInicio : fracPolegar / 2;
+            irParaInicio((f - agarreRef.current) * itens.length);
+          }}
+          onPointerMove={e => { if (arrastarRef.current) irParaInicio((fracDoX(e.clientX) - agarreRef.current) * itens.length); }}
+          onPointerUp={() => { arrastarRef.current = false; setArrastar(false); }}
+          onPointerCancel={() => { arrastarRef.current = false; setArrastar(false); }}
           title="Arrasta para ver os outros"
-          style={{ padding: '7px 0', marginTop: 5, cursor: 'pointer', touchAction: 'none' }}>
-          <div style={{ height: 6, borderRadius: 3, background: T.bg, overflow: 'hidden' }}>
-            <div style={{ width: `${((pag + 1) / total) * 100}%`, height: '100%', background: T.gold, borderRadius: 3, transition: arrastarRef.current ? 'none' : 'width .2s' }} />
+          style={{ padding: '7px 0', marginTop: 5, cursor: arrastar ? 'grabbing' : 'pointer', touchAction: 'none', userSelect: 'none' }}>
+          <div style={{ position: 'relative', height: 6, borderRadius: 3, background: T.bg }}>
+            <div style={{
+              position: 'absolute', top: arrastar ? -2 : 0, bottom: arrastar ? -2 : 0, borderRadius: 3, background: T.gold,
+              left: `${fracInicio * 100}%`, width: `${Math.max(4, fracPolegar * 100)}%`,
+              transition: arrastar ? 'none' : 'left .15s', cursor: arrastar ? 'grabbing' : 'grab',
+            }} />
           </div>
         </div>
       )}
@@ -11697,19 +11719,27 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
     ? ordenados.filter(x => semAcentos([nomeDe(x), x.description, ...(detalhesDe ? detalhesDe(x) : [])].filter(Boolean).join(' ')).includes(q))
     : ordenados;
 
+  /* DESLIZAR CARTÃO A CARTÃO (não aos saltos de linha inteira): o
+     `pagina` guarda o índice do PRIMEIRO cartão visível. As setas andam
+     uma linha; a barra dourada é um "polegar" do tamanho do que se vê e
+     arrasta-se suavemente, cartão a cartão. */
   const totalPaginas = Math.max(1, Math.ceil(visiveis.length / porLinha));
-  const pag = Math.min(pagina, totalPaginas - 1);
-  const daPagina = visiveis.slice(pag * porLinha, pag * porLinha + porLinha);
-  const irPara = (p) => setPagina(Math.max(0, Math.min(totalPaginas - 1, p)));
+  const maxInicio = Math.max(0, visiveis.length - porLinha);
+  const pag = Math.min(pagina, maxInicio); // índice do 1.º cartão visível
+  const daPagina = visiveis.slice(pag, pag + porLinha);
+  const irParaInicio = (i) => setPagina(Math.max(0, Math.min(maxInicio, Math.round(i))));
+  const irPara = (passo) => irParaInicio(pag + passo * porLinha); // passo: -1 / +1 linha
   const barraRef = useRef(null);
   const arrastarRef = useRef(false);
+  const agarreRef = useRef(0);
   const [arrastar, setArrastar] = useState(false);
-  const paginaDoX = (clientX) => {
+  const fracPolegar = visiveis.length ? Math.min(1, porLinha / visiveis.length) : 1;
+  const fracInicio = visiveis.length ? pag / visiveis.length : 0;
+  const fracDoX = (clientX) => {
     const el = barraRef.current;
-    if (!el) return pag;
+    if (!el) return 0;
     const r = el.getBoundingClientRect();
-    const f = Math.min(0.9999, Math.max(0, (clientX - r.left) / r.width));
-    return Math.floor(f * totalPaginas);
+    return (clientX - r.left) / r.width;
   };
 
   // Deslizar no telemóvel.
@@ -11719,7 +11749,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
     if (toqueX.current == null) return;
     const dx = e.changedTouches[0].clientX - toqueX.current;
     toqueX.current = null;
-    if (Math.abs(dx) > 40) irPara(pag + (dx < 0 ? 1 : -1));
+    if (Math.abs(dx) > 40) irPara(dx < 0 ? 1 : -1);
   };
 
   const atual = escolhido && itens.find(x => x.id === escolhido);
@@ -11767,10 +11797,10 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   }
 
   const seta = (dir) => {
-    const off = dir < 0 ? pag === 0 : pag >= totalPaginas - 1;
+    const off = dir < 0 ? pag === 0 : pag >= maxInicio;
     const Ic = dir < 0 ? ChevronLeft : ChevronRight;
     return (
-      <button type="button" disabled={off} onClick={() => irPara(pag + dir)} title={dir < 0 ? 'Anteriores' : 'Seguintes'} style={{
+      <button type="button" disabled={off} onClick={() => irPara(dir)} title={dir < 0 ? 'Anteriores' : 'Seguintes'} style={{
         width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         border: `1px solid ${T.line}`, background: off ? 'transparent' : T.surfaceRaise, color: off ? T.mutedDim : T.cream,
         cursor: off ? 'default' : 'pointer', opacity: off ? 0.4 : 1,
@@ -11815,7 +11845,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {seta(-1)}
           <span style={{ ...mono, fontSize: 12, color: T.muted, width: 108, flexShrink: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>
-            {visiveis.length ? `${pag * porLinha + 1}–${Math.min(visiveis.length, pag * porLinha + porLinha)}` : '0'} de {visiveis.length}
+            {visiveis.length ? `${pag + 1}–${Math.min(visiveis.length, pag + porLinha)}` : '0'} de {visiveis.length}
           </span>
           {seta(1)}
         </div>
@@ -11886,9 +11916,13 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
             e.preventDefault();
             arrastarRef.current = true; setArrastar(true);
             try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* sem captura, segue */ }
-            irPara(paginaDoX(e.clientX));
+            // Agarrar no polegar mantém o ponto agarrado; tocar fora dele
+            // centra o polegar onde se tocou.
+            const f = fracDoX(e.clientX);
+            agarreRef.current = (f >= fracInicio && f <= fracInicio + fracPolegar) ? f - fracInicio : fracPolegar / 2;
+            irParaInicio((f - agarreRef.current) * visiveis.length);
           }}
-          onPointerMove={(e) => { if (arrastarRef.current) irPara(paginaDoX(e.clientX)); }}
+          onPointerMove={(e) => { if (arrastarRef.current) irParaInicio((fracDoX(e.clientX) - agarreRef.current) * visiveis.length); }}
           onPointerUp={() => { arrastarRef.current = false; setArrastar(false); }}
           onPointerCancel={() => { arrastarRef.current = false; setArrastar(false); }}
           title={totalPaginas > 1 ? 'Arrasta ou toca para andar na lista' : undefined}
@@ -11901,7 +11935,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
             <div style={{
               position: 'absolute', top: arrastar ? -2 : 0, bottom: arrastar ? -2 : 0, borderRadius: 3,
               background: T.gold, opacity: totalPaginas > 1 ? 1 : 0.25,
-              left: `${(pag / totalPaginas) * 100}%`, width: `${Math.max(4, 100 / totalPaginas)}%`,
+              left: `${fracInicio * 100}%`, width: `${Math.max(4, fracPolegar * 100)}%`,
               transition: arrastar ? 'none' : 'left .15s', cursor: totalPaginas > 1 ? (arrastar ? 'grabbing' : 'grab') : 'default',
             }} />
           </div>
