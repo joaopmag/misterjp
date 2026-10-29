@@ -10752,6 +10752,131 @@ function useSincronizarPlanoPortal(ideias, setIdeias, matches, pronto) {
   }, [pronto, ideias, matches, dia]);
 }
 
+/* MINIATURA COM ANIMAÇÃO — o mesmo desenho do DiagramThumb, com um botão
+   ▶ por cima quando a ideia/exercício tem movimentos gravados. Carregar
+   reproduz a coreografia ali mesmo, no cartão pequeno (os mesmos
+   fotogramas da apresentação e da partilha), sem abrir nada. Os
+   fotogramas só se calculam ao carregar no ▶. */
+function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
+  const temAnimacao = !!(diagram && Array.isArray(diagram.sequence) && diagram.sequence.length);
+  const [frames, setFrames] = useState(null);
+  const [idx, setIdx] = useState(0);
+  const [aTocar, setATocar] = useState(false);
+  const timerRef = useRef(null);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+  useEffect(() => {
+    if (!aTocar || !frames) return undefined;
+    const f = frames[idx];
+    if (!f) { setATocar(false); return undefined; }
+    timerRef.current = setTimeout(() => {
+      if (idx + 1 < frames.length) setIdx(idx + 1);
+      else setATocar(false);
+    }, Math.max(30, f.holdMs || 55));
+    return () => clearTimeout(timerRef.current);
+  }, [aTocar, idx, frames]);
+  const tocar = (e) => {
+    e.stopPropagation();
+    if (aTocar) { setATocar(false); return; }
+    let fr = frames;
+    if (!fr) {
+      try { fr = computeDiagramAnimationFrames(diagram || {}, getSpaceZones(diagram, space), phase).frames; } catch (err) { fr = null; }
+      setFrames(fr);
+    }
+    if (!fr || !fr.length) return;
+    setIdx(0);
+    setATocar(true);
+  };
+  const mostrarFotograma = frames && (aTocar || idx > 0);
+  return (
+    <div style={{ position: 'relative' }}>
+      {mostrarFotograma && frames[idx] ? (
+        <svg viewBox={viewBoxDaVista(diagram && diagram.vista)} preserveAspectRatio="xMidYMid meet"
+          style={{ width: '100%', height, background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
+          dangerouslySetInnerHTML={{ __html: frames[idx].svg }} />
+      ) : (
+        <DiagramThumb diagram={diagram} space={space} phase={phase} height={height} />
+      )}
+      {temAnimacao && (
+        // <span> e não <button>: este ▶ também vive dentro de cartões que
+        // já são botões (copiar existente) — um botão dentro de outro não
+        // é válido e alguns browsers perdem o clique.
+        <span role="button" tabIndex={0} onClick={tocar}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tocar(e); } }}
+          title={aTocar ? 'Parar' : 'Reproduzir a animação aqui'}
+          style={{
+            position: 'absolute', right: 6, bottom: 14, width: 28, height: 28, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+          }}>
+          {aTocar ? <Pause size={13} /> : <Play size={13} />}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* UMA LINHA DE CARTÕES (como no "Anexar exercício existente"): cabem
+   tantos quantos a largura permite; o resto está nas setas, no gesto de
+   deslizar ou na barra. A altura é sempre a de uma linha — trocar de
+   momento ou de página não mexe a página. */
+function LinhaCartoes({ itens, renderItem, vazio }) {
+  const isMobile = useIsMobile(700);
+  const [pagina, setPagina] = useState(0);
+  const [largura, setLargura] = useState(0);
+  const roRef = useRef(null);
+  const gridRef = useCallback((el) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => { setLargura(entries[0].contentRect.width); });
+    ro.observe(el);
+    roRef.current = ro;
+  }, []);
+  useEffect(() => () => { if (roRef.current) roRef.current.disconnect(); }, []);
+  const GAP = 10;
+  const MIN = isMobile ? 150 : 190;
+  const porLinha = largura ? Math.max(2, Math.min(6, Math.floor((largura + GAP) / (MIN + GAP)))) : (isMobile ? 2 : 5);
+  const total = Math.max(1, Math.ceil(itens.length / porLinha));
+  const pag = Math.min(pagina, total - 1);
+  const daPagina = itens.slice(pag * porLinha, pag * porLinha + porLinha);
+  const irPara = (p) => setPagina(Math.max(0, Math.min(total - 1, p)));
+  const toqueX = useRef(null);
+  const seta = (dir) => {
+    const off = dir < 0 ? pag === 0 : pag >= total - 1;
+    const Ic = dir < 0 ? ChevronLeft : ChevronRight;
+    return (
+      <button type="button" disabled={off} onClick={() => irPara(pag + dir)} title={dir < 0 ? 'Anteriores' : 'Seguintes'} style={{
+        width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        border: `1px solid ${T.line}`, background: off ? 'transparent' : T.surfaceRaise, color: off ? T.mutedDim : T.cream,
+        cursor: off ? 'default' : 'pointer', opacity: off ? 0.4 : 1,
+      }}><Ic size={16} /></button>
+    );
+  };
+  return (
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, background: T.surface, padding: 10, overflowAnchor: 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', marginBottom: 10 }}>
+        {seta(-1)}
+        <span style={{ ...mono, fontSize: 12, color: T.muted, minWidth: 74, textAlign: 'center' }}>
+          {itens.length ? `${pag * porLinha + 1}–${Math.min(itens.length, pag * porLinha + porLinha)} de ${itens.length}` : '0'}
+        </span>
+        {seta(1)}
+      </div>
+      <div ref={gridRef}
+        onTouchStart={e => { toqueX.current = e.touches[0].clientX; }}
+        onTouchEnd={e => { if (toqueX.current == null) return; const dx = e.changedTouches[0].clientX - toqueX.current; toqueX.current = null; if (Math.abs(dx) > 40) irPara(pag + (dx < 0 ? 1 : -1)); }}
+        style={{ display: 'grid', gridTemplateColumns: `repeat(${porLinha}, minmax(0, 1fr))`, gap: GAP, minHeight: 200 }}>
+        {itens.length === 0
+          ? <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 13, textAlign: 'center', padding: 20, ...body }}>{vazio}</div>
+          : daPagina.map(renderItem)}
+      </div>
+      {total > 1 && (
+        <div style={{ height: 6, borderRadius: 3, background: T.bg, marginTop: 12, overflow: 'hidden' }}>
+          <div style={{ width: `${((pag + 1) / total) * 100}%`, height: '100%', background: T.gold, borderRadius: 3, transition: 'width .2s' }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Cartão de ideia (miniatura do esquema), usado no Portal e nos Planos. */
 function IdeiaCartaoMini({ x, nome, marcado, corMarca, textoMarca, onMarcar, onVer, extra }) {
   const temEsquema = !!(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length));
@@ -10762,8 +10887,8 @@ function IdeiaCartaoMini({ x, nome, marcado, corMarca, textoMarca, onMarcar, onV
     }}>
       <div onClick={onVer} title="Ver a ideia (com a animação)" style={{ cursor: 'pointer' }}>
         {temEsquema
-          ? <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={110} />
-          : <div style={{ height: 110, borderRadius: 6, background: '#1e3a24', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T_ESCURO.mutedDim, fontSize: 11 }}>Sem esquema</div>}
+          ? <DiagramThumbAnimado diagram={x.diagram} space={x.space} phase={x.phase} height={110} />
+          : <div style={{ height: 110, marginBottom: 8, borderRadius: 6, background: '#1e3a24', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T_ESCURO.mutedDim, fontSize: 11 }}>Sem esquema</div>}
         <div style={{ color: T.cream, fontSize: 13, fontWeight: 500, lineHeight: '17px', height: 34, marginTop: 6, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', ...body }}>{nome}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, minHeight: 28 }}>
@@ -10811,17 +10936,20 @@ const planoGrupos = (lista) => {
   if (sem.length) g.push({ fase: 'Sem fase', lista: sem });
   return g;
 };
-// Grelha dentro de uma caixa de ALTURA FIXA: trocar de momento (com mais
-// ou menos ideias) não muda o tamanho da página.
-const PLANO_CAIXA = { height: 'min(58vh, 560px)', overflowY: 'auto', overflowAnchor: 'none', scrollbarGutter: 'stable', border: `1px solid ${T.line}`, borderRadius: 12, padding: 10 };
-const PLANO_GRELHA = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 };
 
-/* ---------- Portal → Ideia de Jogo (só ideias gerais) ---------- */
-function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack, onVer }) {
+/* ---------- Portal do Atleta: Ideia de Jogo | Plano de Jogo ----------
+   Os dois destinos do Portal, cada um no seu separador:
+     · Ideia de Jogo — as ideias GERAIS, escolhidas momento a momento;
+     · Plano de Jogo — um plano por jogo (o do próximo jogo é o que os
+       jogadores veem; quando o jogo passa, sai sozinho). */
+function PortalAtletaIdeias({ ideias, todasIdeias, setIdeias, matches, labelOf, onBack, onVer, planos }) {
+  const [aba, setAba] = useState(planos && planos.aberto ? 'plano' : 'ideia');
   const grupos = planoGrupos(ideias);
   const [momento, setMomento] = useState(grupos[0] ? grupos[0].fase : null);
   const atual = grupos.find(g => g.fase === momento) || grupos[0] || null;
   const nIdeia = ideias.filter(x => x.visivelAtletas).length;
+  const prox = planoProximoJogo(matches);
+  const nPlano = prox ? (todasIdeias || []).filter(x => ideiaNoPlano(x, prox.id)).length : 0;
   // `prev =>`: nunca escrever por cima de um eco do Realtime mais recente.
   const alternar = (id) => setIdeias(prev => prev.map(x => (x.id === id ? { ...x, visivelAtletas: !x.visivelAtletas } : x)));
   const alternarMomento = (lista) => {
@@ -10837,32 +10965,39 @@ function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack, onVer }) {
       }}>
         <ChevronLeft size={15} /> Ideia de Jogo
       </button>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
-        <div style={{ ...display, fontSize: 20, color: T.cream }}>Portal do Atleta · Ideia de Jogo</div>
-        <span style={{ color: T.good, fontSize: 12.5, ...body }}>● {nIdeia} de {ideias.length} no Portal</span>
+      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 12 }}>Portal do Atleta</div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+        <ToggleBtn active={aba === 'ideia'} onClick={() => { setAba('ideia'); if (planos) planos.setAberto(null); }}>Ideia de Jogo · {nIdeia}</ToggleBtn>
+        <ToggleBtn active={aba === 'plano'} onClick={() => setAba('plano')}>Plano de Jogo{prox ? ` · ${nPlano}` : ''}</ToggleBtn>
       </div>
-      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
-        Escolhe, momento a momento, que ideias gerais os jogadores veem. Carrega no desenho para o ver em grande. O Plano de Jogo do Portal é o do próximo jogo — escolhe-se em Planos de Jogo.
-      </div>
-      {!atual ? (
-        <EmptyState text="Ainda não há ideias gerais." />
+
+      {aba === 'plano' ? (
+        <PlanosDeJogo ideias={todasIdeias || ideias} setIdeias={setIdeias} matches={matches} labelOf={labelOf}
+          aberto={planos ? planos.aberto : null} setAberto={planos ? planos.setAberto : () => {}}
+          onVer={onVer} onNovaParaJogo={planos ? planos.onNovaParaJogo : () => {}}
+          onEditar={planos ? planos.onEditar : () => {}} onRemover={planos ? planos.onRemover : () => {}} />
       ) : (
         <>
-          <PlanoMomentos grupos={grupos} momento={atual.fase} onMomento={setMomento} contaMarcadas={(l) => l.filter(i => i.visivelAtletas).length} />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <Btn variant="ghost" onClick={() => alternarMomento(atual.lista)}>
-              {atual.lista.every(i => i.visivelAtletas) ? 'Tirar este momento todo do Portal' : 'Pôr este momento todo no Portal'}
-            </Btn>
+          <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
+            Escolhe, momento a momento, que ideias gerais os jogadores veem. Carrega no ▶ para ver a animação no cartão, ou no desenho para o ver em grande.
           </div>
-          <div style={PLANO_CAIXA}>
-            <div style={PLANO_GRELHA}>
-              {atual.lista.map(x => (
+          {!atual ? (
+            <EmptyState text="Ainda não há ideias gerais." />
+          ) : (
+            <>
+              <PlanoMomentos grupos={grupos} momento={atual.fase} onMomento={setMomento} contaMarcadas={(l) => l.filter(i => i.visivelAtletas).length} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                <Btn variant="ghost" onClick={() => alternarMomento(atual.lista)}>
+                  {atual.lista.every(i => i.visivelAtletas) ? 'Tirar este momento todo do Portal' : 'Pôr este momento todo no Portal'}
+                </Btn>
+              </div>
+              <LinhaCartoes key={atual.fase} itens={atual.lista} renderItem={x => (
                 <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={!!x.visivelAtletas} corMarca={T.good}
                   textoMarca={x.visivelAtletas ? 'No Portal' : 'Pôr no Portal'}
                   onMarcar={() => alternar(x.id)} onVer={() => onVer(x)} />
-              ))}
-            </div>
-          </div>
+              )} />
+            </>
+          )}
         </>
       )}
     </div>
@@ -10983,49 +11118,41 @@ function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onV
         <ChipBtn active={vista === 'juntar'} onClick={() => { setVista('juntar'); setMomento(null); }}>Juntar ideias gerais</ChipBtn>
       </div>
 
-      {!atual ? (
-        <div style={{ ...PLANO_CAIXA, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 13, textAlign: 'center', padding: 20, ...body }}>
-          {vista === 'plano'
-            ? 'Este plano ainda está vazio. Cria uma ideia para este jogo ou junta ideias gerais.'
-            : 'Ainda não há ideias gerais.'}
-        </div>
-      ) : (
-        <>
-          <PlanoMomentos grupos={lista} momento={atual.fase} onMomento={setMomento}
-            contaMarcadas={(l) => l.filter(i => ideiaNoPlano(i, jogo.id)).length} />
-          <div style={PLANO_CAIXA}>
-            <div style={PLANO_GRELHA}>
-              {atual.lista.map(x => {
-                const propria = x.jogoId === jogo.id;
-                const marcado = ideiaNoPlano(x, jogo.id);
-                if (vista === 'juntar') {
-                  return (
-                    <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={marcado} corMarca={T.gold}
-                      textoMarca={marcado ? 'No plano' : 'Juntar ao plano'} onMarcar={() => alternarGeral(x.id)} onVer={() => onVer(x)} />
-                  );
-                }
-                return (
-                  <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={false} corMarca={T.gold}
-                    onVer={() => onVer(x)}
-                    extra={(
-                      <>
-                        <span style={{ fontSize: 10.5, color: propria ? T.gold : T.mutedDim, whiteSpace: 'nowrap', marginRight: 'auto', ...body }}>{propria ? 'Criada para este jogo' : 'Ideia geral'}</span>
-                        {propria ? (
-                          <>
-                            <button type="button" onClick={() => onEditar(x)} title="Editar" style={botaoIcone}><Pencil size={13} /></button>
-                            <button type="button" onClick={() => onRemover(x)} title="Apagar ideia" style={botaoIcone}><Trash2 size={13} /></button>
-                          </>
-                        ) : (
-                          <button type="button" onClick={() => alternarGeral(x.id)} title="Tirar do plano (a ideia geral fica intacta)" style={botaoIcone}><X size={13} /></button>
-                        )}
-                      </>
-                    )} />
-                );
-              })}
-            </div>
-          </div>
-        </>
+      {atual && (
+        <PlanoMomentos grupos={lista} momento={atual.fase} onMomento={setMomento}
+          contaMarcadas={(l) => l.filter(i => ideiaNoPlano(i, jogo.id)).length} />
       )}
+      <LinhaCartoes key={`${vista}|${atual ? atual.fase : ''}`} itens={atual ? atual.lista : []}
+        vazio={vista === 'plano'
+          ? 'Este plano ainda está vazio. Cria uma ideia para este jogo ou junta ideias gerais.'
+          : 'Ainda não há ideias gerais.'}
+        renderItem={x => {
+          const propria = x.jogoId === jogo.id;
+          const marcado = ideiaNoPlano(x, jogo.id);
+          if (vista === 'juntar') {
+            return (
+              <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={marcado} corMarca={T.gold}
+                textoMarca={marcado ? 'No plano' : 'Juntar ao plano'} onMarcar={() => alternarGeral(x.id)} onVer={() => onVer(x)} />
+            );
+          }
+          return (
+            <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={false} corMarca={T.gold}
+              onVer={() => onVer(x)}
+              extra={(
+                <>
+                  <span style={{ fontSize: 10.5, color: propria ? T.gold : T.mutedDim, whiteSpace: 'nowrap', marginRight: 'auto', ...body }}>{propria ? 'Criada para este jogo' : 'Ideia geral'}</span>
+                  {propria ? (
+                    <>
+                      <button type="button" onClick={() => onEditar(x)} title="Editar" style={botaoIcone}><Pencil size={13} /></button>
+                      <button type="button" onClick={() => onRemover(x)} title="Apagar ideia" style={botaoIcone}><Trash2 size={13} /></button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => alternarGeral(x.id)} title="Tirar do plano (a ideia geral fica intacta)" style={botaoIcone}><X size={13} /></button>
+                  )}
+                </>
+              )} />
+          );
+        }} />
     </div>
   );
 }
@@ -11055,9 +11182,8 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
   }, [printDossier]);
   const [filter, setFilter] = useState('Todas');
   const [portalAtleta, setPortalAtleta] = useState(false);
-  // IDEIA DE JOGO (gerais) | PLANOS DE JOGO (por jogo). As ideias criadas
-  // para um jogo (`jogoId`) só aparecem no plano desse jogo.
-  const [secao, setSecao] = useState('ideia');
+  // As ideias criadas para um jogo (`jogoId`) só aparecem no plano desse
+  // jogo (Portal › Plano de Jogo), nunca na Ideia de Jogo geral.
   const [planoAberto, setPlanoAberto] = useState(null);
   const [jogoNovaIdeia, setJogoNovaIdeia] = useState(null);
   const gerais = ideias.filter(x => !ideiaParaJogo(x));
@@ -11122,24 +11248,17 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
           </div>
         )} />
 
-      {!dossier && !portalAtleta && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
-          <ToggleBtn active={secao === 'ideia'} onClick={() => { setSecao('ideia'); setPlanoAberto(null); }}>Ideia de Jogo</ToggleBtn>
-          <ToggleBtn active={secao === 'planos'} onClick={() => setSecao('planos')}>Planos de Jogo</ToggleBtn>
-        </div>
-      )}
-
       {dossier ? (
         <DossierIdeias ideias={gerais} labelOf={labelOf} onBack={fecharDossier} onImprimir={imprimirDossier} />
       ) : portalAtleta ? (
-        <PortalAtletaIdeias ideias={gerais} setIdeias={setIdeias} labelOf={labelOf} onBack={fecharPortalAtleta} onVer={setViewing} />
-      ) : secao === 'planos' ? (
-        <PlanosDeJogo ideias={ideias} setIdeias={setIdeias} matches={matches} labelOf={labelOf}
-          aberto={planoAberto} setAberto={setPlanoAberto}
-          onVer={setViewing}
-          onNovaParaJogo={(jogoId) => { setJogoNovaIdeia(jogoId); setModal('new'); }}
-          onEditar={(x) => setModal(x)}
-          onRemover={(x) => remove(x.id)} />
+        <PortalAtletaIdeias ideias={gerais} todasIdeias={ideias} setIdeias={setIdeias} matches={matches} labelOf={labelOf}
+          onBack={() => { setPlanoAberto(null); fecharPortalAtleta(); }} onVer={setViewing}
+          planos={{
+            aberto: planoAberto, setAberto: setPlanoAberto,
+            onNovaParaJogo: (jogoId) => { setJogoNovaIdeia(jogoId); setModal('new'); },
+            onEditar: (x) => setModal(x),
+            onRemover: (x) => remove(x.id),
+          }} />
       ) : (
         <>
       <MomentoFilter value={filter} onChange={setFilter} options={EXERCISE_PHASES} />
@@ -11599,7 +11718,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
         <div style={{ display: 'flex', gap: 14, flexDirection: isMobile ? 'column' : 'row' }}>
           <div style={{ flex: isMobile ? 'none' : '0 0 46%' }}>
             {temEsquema(atual)
-              ? <DiagramThumb diagram={atual.diagram} space={atual.space} phase={atual.phase} height={isMobile ? 200 : 240} />
+              ? <DiagramThumbAnimado diagram={atual.diagram} space={atual.space} phase={atual.phase} height={isMobile ? 200 : 240} />
               : <div style={{ height: 120, borderRadius: 6, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 12 }}>Sem esquema desenhado</div>}
           </div>
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -11718,7 +11837,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
                 }}
               >
                 {temEsquema(x)
-                  ? <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={isMobile ? 78 : 92} />
+                  ? <DiagramThumbAnimado key={`${x.id}|${pag}`} diagram={x.diagram} space={x.space} phase={x.phase} height={isMobile ? 78 : 92} />
                   : <div style={{ height: isMobile ? 78 : 92, marginBottom: 8, borderRadius: 6, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 11 }}>Sem esquema</div>}
                 <div style={{
                   fontSize: 12.5, color: T.cream, lineHeight: 1.3, padding: '0 2px',
