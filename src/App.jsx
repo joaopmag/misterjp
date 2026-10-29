@@ -10374,9 +10374,12 @@ function Exercicios({ exercises, setExercises, meta }) {
                   por baixo, para o título não ser cortado a meio. Altura
                   fixa (2 linhas) — mesmo critério já usado na Ideia de
                   Jogo, para os cartões ficarem todos do mesmo tamanho. */}
-              <div style={{
-                color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 8, height: 40,
-                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              {/* Título numa só linha (o nome completo aparece ao passar o
+                  rato e no detalhe): sem o espaço vazio que a 2.ª linha
+                  reservada deixava nos nomes curtos. */}
+              <div title={x.name} style={{
+                color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 7, lineHeight: '20px', height: 20,
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{x.name}</div>
               <div style={{ marginBottom: 8 }}>
                 <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
@@ -11323,9 +11326,9 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
             const m = meta && meta[x.id];
             return (
               <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
-                <div style={{
-                  color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6, height: 40,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                <div title={labelOf(x)} style={{
+                  color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6, lineHeight: '20px', height: 20,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>{labelOf(x)}</div>
                 <div style={{ marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
