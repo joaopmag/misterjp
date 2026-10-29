@@ -10387,15 +10387,15 @@ function Exercicios({ exercises, setExercises, meta }) {
                   130px, ícones, descrição 3 linhas), por isso os cartões
                   ficam todos do mesmo tamanho, tenham ou não descrição,
                   anexo ou esquema. */}
-              <div style={{ width: '100%', height: 130, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+              <div style={{ width: '100%', aspectRatio: CARTAO_ASPECT, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
                 {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
                   <DiagramThumbAnimado diagram={x.diagram} space={x.space} phase={x.phase} height={130} />
                 ) : (x.attachment && x.attachment.type === 'image') ? (
-                  <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
+                  <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 ) : (
                   <div style={{
-                    width: '100%', height: 130, background: '#1e3a24',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 12px',
+                    width: '100%', aspectRatio: CARTAO_ASPECT, background: '#1e3a24',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 12px', boxSizing: 'border-box',
                     fontSize: 11.5, color: T_ESCURO.mutedDim, textAlign: 'center',
                   }}>
                     {x.attachment ? (<><BookOpen size={13} style={{ flexShrink: 0 }} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.attachment.name}</span></>) : 'Sem esquema'}
@@ -10789,7 +10789,7 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
     if (aTocar) { setATocar(false); return; }
     let fr = frames;
     if (!fr) {
-      try { fr = computeDiagramAnimationFrames(diagram || {}, getSpaceZones(diagram, space), phase).frames; } catch (err) { fr = null; }
+      try { fr = computeDiagramAnimationFrames(diagram || {}, getSpaceZones(diagram, space), phase, { cartao: true }).frames; } catch (err) { fr = null; }
       setFrames(fr);
     }
     if (!fr || !fr.length) return;
@@ -10803,8 +10803,8 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
       {mostrarFotograma && frames[idx] ? (
-        <svg viewBox={viewBoxDaVista(diagram && diagram.vista)} preserveAspectRatio="xMidYMid meet"
-          style={{ width: '100%', height, background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
+        <svg viewBox={viewBoxCartao(diagram && diagram.vista)} preserveAspectRatio="xMidYMid meet"
+          style={{ width: '100%', height: 'auto', aspectRatio: CARTAO_ASPECT, background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
           dangerouslySetInnerHTML={{ __html: frames[idx].svg }} />
       ) : (
         <DiagramThumb diagram={diagram} space={space} phase={phase} height={height} />
@@ -10942,7 +10942,7 @@ function IdeiaCartaoMini({ x, nome, marcado, corMarca, textoMarca, onMarcar, onV
       <div onClick={onVer} title="Ver a ideia (com a animação)" style={{ cursor: 'pointer' }}>
         {temEsquema
           ? <DiagramThumbAnimado diagram={x.diagram} space={x.space} phase={x.phase} height={110} />
-          : <div style={{ height: 110, marginBottom: 8, borderRadius: 6, background: '#1e3a24', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T_ESCURO.mutedDim, fontSize: 11 }}>Sem esquema</div>}
+          : <div style={{ aspectRatio: CARTAO_ASPECT, marginBottom: 8, borderRadius: 6, background: '#1e3a24', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T_ESCURO.mutedDim, fontSize: 11 }}>Sem esquema</div>}
         <div style={{ color: T.cream, fontSize: 13, fontWeight: 500, lineHeight: '17px', height: 34, marginTop: 6, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', ...body }}>{nome}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, minHeight: 28 }}>
@@ -11339,7 +11339,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
                   <DiagramThumbAnimado diagram={x.diagram} height={130} />
                 ) : (
                   <div style={{
-                    width: '100%', height: 130, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
+                    width: '100%', aspectRatio: CARTAO_ASPECT, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: T_ESCURO.mutedDim,
                   }}>Sem esquema</div>
                 )}
@@ -11885,7 +11885,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
               >
                 {temEsquema(x)
                   ? <DiagramThumbAnimado key={`${x.id}|${pag}`} diagram={x.diagram} space={x.space} phase={x.phase} height={isMobile ? 78 : 92} />
-                  : <div style={{ height: isMobile ? 78 : 92, marginBottom: 8, borderRadius: 6, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 11 }}>Sem esquema</div>}
+                  : <div style={{ aspectRatio: CARTAO_ASPECT, marginBottom: 8, borderRadius: 6, background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 11 }}>Sem esquema</div>}
                 <div style={{
                   fontSize: 12.5, color: T.cream, lineHeight: 1.3, padding: '0 2px',
                   display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: 33,
@@ -12659,6 +12659,14 @@ const PITCH_VIEWBOX_MEIO = `${VISTA_MEIO.u0} ${VISTA_MEIO.v0} ${VISTA_MEIO.w} ${
 // (x, y) do campo → (u, v) no ecrã: u = y, v = 107 − x.
 const VISTA_MEIO_TRANSFORM = 'matrix(0 -1 1 0 0 107)';
 function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : PITCH_VIEWBOX; }
+/* ENQUADRAMENTO DOS CARTÕES (miniaturas de exercícios, ideias, etc.):
+   só o campo — sem a folga à volta nem os bancos — para o relvado encher
+   o cartão. Mesma proporção nas duas vistas (o meio-campo vertical ganha
+   margem dos lados), para todos os cartões terem a mesma altura. */
+const CARTAO_VIEWBOX = '-2 -0.6 111 71.2';
+const CARTAO_VIEWBOX_MEIO = '-8.95 -2 87.9 56.4';
+const CARTAO_ASPECT = '111 / 71.2';
+function viewBoxCartao(vista) { return vista === 'meio' ? CARTAO_VIEWBOX_MEIO : CARTAO_VIEWBOX; }
 const VistaCampoCtx = React.createContext('completo');
 function VistaCampo({ vista, gRef, children }) {
   const v = vista === 'meio' ? 'meio' : 'completo';
@@ -13691,7 +13699,7 @@ function QuadroTaticoLivre({ teamId, notifyEdit, onClose }) {
   );
 }
 
-function PitchMarkings({ printMode }) {
+function PitchMarkings({ printMode, cartao = false }) {
 
   // Em ecrã, linhas brancas translúcidas sobre o relvado escuro; em
   // impressão (fundo branco, para poupar tinto) linhas escuras sólidas,
@@ -13704,6 +13712,11 @@ function PitchMarkings({ printMode }) {
 
   return (
     <>
+      {/* CARTÕES: riscas do relvado (faixas alternadas, como num campo
+          cortado), para um campo mais realista nas miniaturas. */}
+      {cartao && !printMode && Array.from({ length: 14 }, (_, i) => (
+        i % 2 === 0 ? <rect key={`risca${i}`} x={1 + i * 7.5} y="1" width="7.5" height="68" fill="#ffffff" fillOpacity="0.045" /> : null
+      ))}
       <rect x="1" y="1" width="105" height="68" fill="none" stroke={stroke} strokeWidth="0.4" />
       <line x1="53.5" y1="1" x2="53.5" y2="69" stroke={stroke} strokeWidth="0.4" />
       <circle cx="53.5" cy="35" r="9.15" fill="none" stroke={stroke} strokeWidth="0.4" />
@@ -13728,12 +13741,28 @@ function PitchMarkings({ printMode }) {
       <CornerFlag cx={106} cy={1} ox={D} oy={-D} color={flagColor} />
       <CornerFlag cx={1} cy={69} ox={-D} oy={D} color={flagColor} />
       <CornerFlag cx={106} cy={69} ox={D} oy={D} color={flagColor} />
-      <BenchesAndTechnicalArea printMode={printMode} />
-      {/* balizas pequenas, com rede */}
-      <rect x="-0.6" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
-      <rect x="106" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
-      <GoalNet x={-0.6} y={31.34} w={1.6} h={7.32} color={netColor} />
-      <GoalNet x={106} y={31.34} w={1.6} h={7.32} color={netColor} />
+      {/* Nos cartões não há bancos de suplentes (só o campo). */}
+      {!cartao && <BenchesAndTechnicalArea printMode={printMode} />}
+      {cartao ? (
+        /* CARTÕES: balizas por FORA da linha de baliza, com rede e postes
+           — a linha de baliza fica livre, como num campo a sério. */
+        <>
+          <GoalNet x={-1.2} y={31.34} w={2.2} h={7.32} color={netColor} />
+          <GoalNet x={106} y={31.34} w={2.2} h={7.32} color={netColor} />
+          <path d="M 1 31.34 L -1.2 31.34 L -1.2 38.66 L 1 38.66" fill="none" stroke={strokeGoal} strokeWidth="0.5" strokeLinejoin="round" />
+          <path d="M 106 31.34 L 108.2 31.34 L 108.2 38.66 L 106 38.66" fill="none" stroke={strokeGoal} strokeWidth="0.5" strokeLinejoin="round" />
+          <line x1="1" y1="31.34" x2="1" y2="38.66" stroke={strokeGoal} strokeWidth="0.6" />
+          <line x1="106" y1="31.34" x2="106" y2="38.66" stroke={strokeGoal} strokeWidth="0.6" />
+        </>
+      ) : (
+        <>
+          {/* balizas pequenas, com rede */}
+          <rect x="-0.6" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
+          <rect x="106" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
+          <GoalNet x={-0.6} y={31.34} w={1.6} h={7.32} color={netColor} />
+          <GoalNet x={106} y={31.34} w={1.6} h={7.32} color={netColor} />
+        </>
+      )}
     </>
   );
 }
@@ -14332,8 +14361,9 @@ function stepStaticArrows(step, diagram) {
 // (markup já pronto) que, mostrados um a seguir ao outro com o "holdMs"
 // indicado, reconstroem passo a passo a coreografia gravada no editor
 // (diagram.sequence). Sem sequência gravada, devolve só o fotograma final.
-function computeDiagramAnimationFrames(diagram, zones, phase) {
+function computeDiagramAnimationFrames(diagram, zones, phase, opcoes = {}) {
   const iconEscala = iconScaleForPhase(phase);
+  const cartao = !!opcoes.cartao; // miniaturas: campo com riscas, sem bancos
   const sequence = diagram.sequence || [];
   const frames = [];
 
@@ -14341,7 +14371,7 @@ function computeDiagramAnimationFrames(diagram, zones, phase) {
     frames.push({
       svg: ReactDOMServer.renderToStaticMarkup(
         <VistaCampo vista={diagram.vista}>
-          <PitchMarkings />
+          <PitchMarkings cartao={cartao} />
           {zones.map(z => (
             <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
           ))}
@@ -16681,13 +16711,15 @@ function DiagramThumb({ diagram, space, phase, height = 95, fill = false }) {
   const hasDiagram = diagram && (diagram.elements?.length || diagram.arrows?.length);
   if (!hasDiagram && !zones.length) return null;
   return (
+    /* CARTÃO: só o campo, à proporção do campo (a altura sai da largura),
+       com riscas e sem bancos. Com `fill` mantém a altura pedida. */
     <svg
-      viewBox={viewBoxDaVista(diagram && diagram.vista)}
+      viewBox={viewBoxCartao(diagram && diagram.vista)}
       preserveAspectRatio={fill ? 'xMidYMid slice' : 'xMidYMid meet'}
-      style={{ width: '100%', height, background: '#1e3a24', borderRadius: 6, marginBottom: 8 }}
+      style={{ width: '100%', ...(fill ? { height } : { height: 'auto', aspectRatio: CARTAO_ASPECT }), background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
     >
       <VistaCampo vista={diagram && diagram.vista}>
-      <PitchMarkings />
+      <PitchMarkings cartao />
       {zones.map(z => (
         <SpaceZone key={z.id} meters={{ w: z.w, h: z.h }} label={z.label} center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }} interactive={false} />
       ))}
