@@ -10389,7 +10389,7 @@ function Exercicios({ exercises, setExercises, meta }) {
                   anexo ou esquema. */}
               <div style={{ width: '100%', height: 130, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
                 {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
-                  <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={130} />
+                  <DiagramThumbAnimado diagram={x.diagram} space={x.space} phase={x.phase} height={130} />
                 ) : (x.attachment && x.attachment.type === 'image') ? (
                   <img src={x.attachment.dataUrl} alt={x.attachment.name} style={{ width: '100%', height: 130, objectFit: 'cover', display: 'block' }} />
                 ) : (
@@ -10804,11 +10804,11 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tocar(e); } }}
           title={aTocar ? 'Parar' : 'Reproduzir a animação aqui'}
           style={{
-            position: 'absolute', right: 6, bottom: 14, width: 28, height: 28, borderRadius: '50%',
-            background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff',
+            position: 'absolute', right: 6, bottom: 14, width: 24, height: 24, borderRadius: '50%',
+            background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', color: 'rgba(255,255,255,0.85)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
           }}>
-          {aTocar ? <Pause size={13} /> : <Play size={13} />}
+          {aTocar ? <Pause size={11} /> : <Play size={11} style={{ marginLeft: 1 }} />}
         </span>
       )}
     </div>
@@ -10864,7 +10864,9 @@ function LinhaCartoes({ itens, renderItem, vazio }) {
     <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, background: T.surface, padding: 10, overflowAnchor: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', marginBottom: 10 }}>
         {seta(-1)}
-        <span style={{ ...mono, fontSize: 12, color: T.muted, minWidth: 74, textAlign: 'center' }}>
+        {/* Largura FIXA: "1–5 de 14" e "11–14 de 14" ocupam o mesmo
+            espaço, por isso as setas não andam ao carregar nelas. */}
+        <span style={{ ...mono, fontSize: 12, color: T.muted, width: 108, flexShrink: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>
           {itens.length ? `${pag * porLinha + 1}–${Math.min(itens.length, pag * porLinha + porLinha)} de ${itens.length}` : '0'}
         </span>
         {seta(1)}
@@ -11074,7 +11076,7 @@ function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, 
   return (
     <div style={{ overflowAnchor: 'none' }}>
       <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, lineHeight: 1.5, ...body }}>
-        Um plano por jogo. O Portal do Atleta mostra só o plano do próximo jogo e, depois do jogo, passa para o arquivo.
+        Um plano por jogo. O Portal do Atleta mostra só o plano do próximo jogo.
       </div>
       {proximos.length === 0 && passados.length === 0 ? (
         <EmptyState text="Ainda não há jogos marcados. Os planos de jogo aparecem aqui quando houver jogos em Jogos." />
@@ -11302,7 +11304,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
                   )}
                 </div>
                 {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
-                  <DiagramThumb diagram={x.diagram} height={130} />
+                  <DiagramThumbAnimado diagram={x.diagram} height={130} />
                 ) : (
                   <div style={{
                     width: '100%', height: 130, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
@@ -11812,7 +11814,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
         {/* Sempre presente (mesmo sem resultados): a altura não muda. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {seta(-1)}
-          <span style={{ ...mono, fontSize: 12, color: T.muted, minWidth: 74, textAlign: 'center' }}>
+          <span style={{ ...mono, fontSize: 12, color: T.muted, width: 108, flexShrink: 0, textAlign: 'center', whiteSpace: 'nowrap' }}>
             {visiveis.length ? `${pag * porLinha + 1}–${Math.min(visiveis.length, pag * porLinha + porLinha)}` : '0'} de {visiveis.length}
           </span>
           {seta(1)}
