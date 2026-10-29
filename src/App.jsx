@@ -3094,6 +3094,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
   const [sessions, setSessions, sessionsReady, sessionsMeta] = useCollectionSync('sessions', notifyEdit, teamId);
   const [monitoring, setMonitoring, monitoringReady, monitoringMeta, autorizarApagarMonitoring] = useCollectionSync('monitoring', notifyEdit, teamId);
   const [matches, setMatches, matchesReady, matchesMeta, autorizarLimparJogos] = useCollectionSync('matches', notifyEdit, teamId);
+  // Portal → Plano de Jogo = plano do PRÓXIMO jogo (sai sozinho quando o
+  // jogo passa). Só acerta o campo `visivelPlanoJogo` das ideias.
+  useSincronizarPlanoPortal(ideias, setIdeias, matches, ideiasReady && matchesReady);
   const [scouting, setScouting, scoutingReady, scoutingMeta] = useCollectionSync('scouting', notifyEdit, teamId);
   // NECESSIDADES (Scouting): ligadas logo ao abrir a app, e não só ao
   // entrar no Scouting — assim a contagem e o 🎯 nos cartões já estão
@@ -4223,7 +4226,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
-          {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} />}
+          {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} matches={matches} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
           {tab === 'equipa' && (
@@ -10691,7 +10694,343 @@ function DossierModal({ ideias, onClose, onImprimir }) {
   );
 }
 
-function IdeiaJogo({ ideias, setIdeias, meta }) {
+/* =====================================================================
+   IDEIA DE JOGO vs PLANO DE JOGO.
+
+   · Ideia GERAL — a identidade da equipa. É a que aparece em Ideia de
+     Jogo, no Dossier e no Portal → Ideia de Jogo.
+   · Ideia PARA UM JOGO (`jogoId`) — criada a pensar num adversário.
+     Fica ligada a esse jogo e NÃO aparece na Ideia de Jogo geral.
+   · PLANO DE JOGO de um jogo = as ideias criadas para ele + as ideias
+     gerais que se juntarem a esse plano (`planosJogo: [jogoId, …]` na
+     própria ideia — nada é copiado; melhorar a ideia geral atualiza o
+     plano).
+   · PORTAL → Plano de Jogo mostra SÓ o plano do PRÓXIMO jogo e, quando
+     o jogo passa, sai sozinho: a app mantém o `visivelPlanoJogo` de
+     cada ideia igual a "está no plano do próximo jogo" (ver
+     `useSincronizarPlanoPortal`). O servidor do Portal não muda — lê o
+     mesmo campo de sempre.
+   ===================================================================== */
+
+const ideiaParaJogo = (x) => !!(x && x.jogoId);
+const ideiaNoPlano = (x, jogoId) => !!(x && jogoId && (x.jogoId === jogoId || (Array.isArray(x.planosJogo) && x.planosJogo.includes(jogoId))));
+function planoProximoJogo(matches) {
+  const hoje = todayStr();
+  return [...(matches || [])]
+    .filter(m => m && m.date && m.date >= hoje && !jogoNaoJogado(m))
+    .sort((a, b) => a.date.localeCompare(b.date) || String(a.hora || '').localeCompare(String(b.hora || '')))[0] || null;
+}
+const planoNomeJogo = (m) => (m ? (m.opponent ? `vs ${m.opponent}` : 'Jogo') : 'Jogo');
+const planoFaseDe = (x) => (PHASES.includes(x && x.phase) ? x.phase : 'Sem fase');
+
+/* Mantém o Portal → Plano de Jogo = plano do próximo jogo. Só mexe no
+   campo `visivelPlanoJogo` e só nas ideias em que ele está errado.
+   Ideias antigas marcadas à mão (antes dos planos existirem) passam
+   para o plano do próximo jogo, para nada desaparecer do Portal sem
+   aviso; depois desse jogo, saem sozinhas como as outras. */
+function useSincronizarPlanoPortal(ideias, setIdeias, matches, pronto) {
+  const [dia, setDia] = useState(todayStr());
+  useEffect(() => {
+    const t = setInterval(() => { const d = todayStr(); setDia(x => (x === d ? x : d)); }, 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    if (!pronto) return;
+    const prox = planoProximoJogo(matches);
+    const corrigir = (x) => {
+      if (!x) return x;
+      if (x.visivelPlanoJogo && x.planosJogo === undefined && !x.jogoId) {
+        // Marcação antiga, à mão: entra no plano do próximo jogo (se houver).
+        return prox ? { ...x, planosJogo: [prox.id] } : x;
+      }
+      const deve = !!prox && ideiaNoPlano(x, prox.id);
+      return !!x.visivelPlanoJogo === deve ? x : { ...x, visivelPlanoJogo: deve };
+    };
+    if (!(ideias || []).some(x => corrigir(x) !== x)) return;
+    setIdeias(prev => prev.map(corrigir));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pronto, ideias, matches, dia]);
+}
+
+/* Cartão de ideia (miniatura do esquema), usado no Portal e nos Planos. */
+function IdeiaCartaoMini({ x, nome, marcado, corMarca, textoMarca, onMarcar, onVer, extra }) {
+  const temEsquema = !!(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length));
+  return (
+    <div style={{
+      background: T.surface, border: `${marcado ? 2 : 1}px solid ${marcado ? corMarca : T.line}`, borderRadius: 10,
+      padding: marcado ? 7 : 8, display: 'flex', flexDirection: 'column', minWidth: 0,
+    }}>
+      <div onClick={onVer} title="Ver a ideia (com a animação)" style={{ cursor: 'pointer' }}>
+        {temEsquema
+          ? <DiagramThumb diagram={x.diagram} space={x.space} phase={x.phase} height={110} />
+          : <div style={{ height: 110, borderRadius: 6, background: '#1e3a24', display: 'flex', alignItems: 'center', justifyContent: 'center', color: T_ESCURO.mutedDim, fontSize: 11 }}>Sem esquema</div>}
+        <div style={{ color: T.cream, fontSize: 13, fontWeight: 500, lineHeight: '17px', height: 34, marginTop: 6, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', ...body }}>{nome}</div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, minHeight: 28 }}>
+        {onMarcar ? (
+          <button type="button" onClick={onMarcar} style={{
+            display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11.5, ...body, flexShrink: 0,
+            color: marcado ? corMarca : T.mutedDim, background: 'none', border: `1px solid ${marcado ? corMarca : T.line}`, borderRadius: 20, padding: '3px 10px 3px 6px',
+          }}>
+            <span style={{
+              width: 14, height: 14, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: marcado ? corMarca : 'transparent', border: `1px solid ${marcado ? corMarca : T.line}`,
+            }}>{marcado && <Check size={10} color="#0d140e" />}</span>
+            {textoMarca}
+          </button>
+        ) : null}
+        <div style={{ flex: 1 }} />
+        {extra}
+      </div>
+    </div>
+  );
+}
+
+/* Separadores de momento com a contagem "marcadas/total". */
+function PlanoMomentos({ grupos, momento, onMomento, contaMarcadas }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+      {grupos.map(g => {
+        const ativo = g.fase === momento;
+        return (
+          <button key={g.fase} type="button" onClick={() => onMomento(g.fase)} style={{
+            padding: '7px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, ...body,
+            background: ativo ? T.crimson : 'transparent', color: ativo ? '#fff' : T.muted,
+            border: `1px solid ${ativo ? T.crimson : T.line}`,
+          }}>
+            {g.fase} <span style={{ ...mono, opacity: 0.8 }}>{contaMarcadas(g.lista)}/{g.lista.length}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+const planoGrupos = (lista) => {
+  const g = PHASES.map(fase => ({ fase, lista: lista.filter(x => planoFaseDe(x) === fase) })).filter(x => x.lista.length);
+  const sem = lista.filter(x => planoFaseDe(x) === 'Sem fase');
+  if (sem.length) g.push({ fase: 'Sem fase', lista: sem });
+  return g;
+};
+// Grelha dentro de uma caixa de ALTURA FIXA: trocar de momento (com mais
+// ou menos ideias) não muda o tamanho da página.
+const PLANO_CAIXA = { height: 'min(58vh, 560px)', overflowY: 'auto', overflowAnchor: 'none', scrollbarGutter: 'stable', border: `1px solid ${T.line}`, borderRadius: 12, padding: 10 };
+const PLANO_GRELHA = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10 };
+
+/* ---------- Portal → Ideia de Jogo (só ideias gerais) ---------- */
+function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack, onVer }) {
+  const grupos = planoGrupos(ideias);
+  const [momento, setMomento] = useState(grupos[0] ? grupos[0].fase : null);
+  const atual = grupos.find(g => g.fase === momento) || grupos[0] || null;
+  const nIdeia = ideias.filter(x => x.visivelAtletas).length;
+  // `prev =>`: nunca escrever por cima de um eco do Realtime mais recente.
+  const alternar = (id) => setIdeias(prev => prev.map(x => (x.id === id ? { ...x, visivelAtletas: !x.visivelAtletas } : x)));
+  const alternarMomento = (lista) => {
+    const todas = lista.every(i => i.visivelAtletas);
+    const ids = new Set(lista.map(i => i.id));
+    setIdeias(prev => prev.map(x => (ids.has(x.id) ? { ...x, visivelAtletas: !todas } : x)));
+  };
+  return (
+    <div style={{ overflowAnchor: 'none' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 16,
+      }}>
+        <ChevronLeft size={15} /> Ideia de Jogo
+      </button>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+        <div style={{ ...display, fontSize: 20, color: T.cream }}>Portal do Atleta · Ideia de Jogo</div>
+        <span style={{ color: T.good, fontSize: 12.5, ...body }}>● {nIdeia} de {ideias.length} no Portal</span>
+      </div>
+      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
+        Escolhe, momento a momento, que ideias gerais os jogadores veem. Carrega no desenho para o ver em grande. O Plano de Jogo do Portal é o do próximo jogo — escolhe-se em Planos de Jogo.
+      </div>
+      {!atual ? (
+        <EmptyState text="Ainda não há ideias gerais." />
+      ) : (
+        <>
+          <PlanoMomentos grupos={grupos} momento={atual.fase} onMomento={setMomento} contaMarcadas={(l) => l.filter(i => i.visivelAtletas).length} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <Btn variant="ghost" onClick={() => alternarMomento(atual.lista)}>
+              {atual.lista.every(i => i.visivelAtletas) ? 'Tirar este momento todo do Portal' : 'Pôr este momento todo no Portal'}
+            </Btn>
+          </div>
+          <div style={PLANO_CAIXA}>
+            <div style={PLANO_GRELHA}>
+              {atual.lista.map(x => (
+                <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={!!x.visivelAtletas} corMarca={T.good}
+                  textoMarca={x.visivelAtletas ? 'No Portal' : 'Pôr no Portal'}
+                  onMarcar={() => alternar(x.id)} onVer={() => onVer(x)} />
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Planos de Jogo ---------- */
+function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, onVer, onNovaParaJogo, onEditar, onRemover }) {
+  const prox = planoProximoJogo(matches);
+  const hoje = todayStr();
+  const jogos = (matches || []).filter(m => m && m.date && !jogoNaoJogado(m));
+  const proximos = jogos.filter(m => m.date >= hoje).sort((a, b) => a.date.localeCompare(b.date));
+  const passados = jogos.filter(m => m.date < hoje).sort((a, b) => b.date.localeCompare(a.date));
+  const doJogo = (m) => ideias.filter(x => ideiaNoPlano(x, m.id));
+
+  const jogo = aberto ? jogos.find(m => m.id === aberto) || (matches || []).find(m => m.id === aberto) : null;
+  if (jogo) {
+    return <PlanoDeJogoPagina jogo={jogo} prox={prox} ideias={ideias} setIdeias={setIdeias} labelOf={labelOf}
+      onBack={() => setAberto(null)} onVer={onVer} onNovaParaJogo={onNovaParaJogo} onEditar={onEditar} onRemover={onRemover} />;
+  }
+
+  const cartao = (m) => {
+    const lista = doJogo(m);
+    const proprias = lista.filter(x => x.jogoId === m.id).length;
+    const noPortal = prox && prox.id === m.id;
+    const passado = m.date < hoje;
+    return (
+      <div key={m.id} onClick={() => setAberto(m.id)} title="Abrir plano de jogo" style={{
+        cursor: 'pointer', background: T.surface, border: `${noPortal ? 2 : 1}px solid ${noPortal ? T.gold : T.line}`, borderRadius: 12,
+        padding: noPortal ? '13px 15px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ ...display, fontSize: 17, fontWeight: 600, color: T.cream, flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{planoNomeJogo(m)}</span>
+          {noPortal
+            ? <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, border: `1px solid ${T.gold}`, color: T.gold, whiteSpace: 'nowrap', ...body }}>No Portal agora</span>
+            : passado
+              ? <span style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', ...body }}>Arquivo</span>
+              : <span style={{ fontSize: 11, color: T.mutedDim, whiteSpace: 'nowrap', ...body }}>Mais à frente</span>}
+        </div>
+        <div style={{ fontSize: 12, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...body }}>
+          {fmtDate(m.date)}{m.competition ? ` · ${competitionLabel(m.competition)}` : ''}
+        </div>
+        <div style={{ fontSize: 12.5, color: lista.length ? T.cream : T.mutedDim, ...body }}>
+          {lista.length ? `${lista.length} ideia${lista.length === 1 ? '' : 's'} · ${proprias} criada${proprias === 1 ? '' : 's'} para este jogo` : 'Plano por fazer'}
+        </div>
+      </div>
+    );
+  };
+  const grelha = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 };
+  return (
+    <div style={{ overflowAnchor: 'none' }}>
+      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, lineHeight: 1.5, ...body }}>
+        Um plano por jogo. O Portal do Atleta mostra só o plano do <b style={{ color: T.gold }}>próximo jogo</b> e, quando o jogo passa, ele sai sozinho do Portal — fica aqui, no arquivo.
+      </div>
+      {proximos.length === 0 && passados.length === 0 ? (
+        <EmptyState text="Ainda não há jogos marcados. Os planos de jogo aparecem aqui quando houver jogos em Jogos." />
+      ) : (
+        <>
+          {proximos.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', margin: '4px 0 8px', ...body }}>Próximos jogos</div>
+              <div style={{ ...grelha, marginBottom: 20 }}>{proximos.map(cartao)}</div>
+            </>
+          )}
+          {passados.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', margin: '4px 0 8px', ...body }}>Arquivo</div>
+              <div style={grelha}>{passados.map(cartao)}</div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onVer, onNovaParaJogo, onEditar, onRemover }) {
+  const [vista, setVista] = useState('plano'); // plano | juntar
+  const noPlano = ideias.filter(x => ideiaNoPlano(x, jogo.id));
+  const gerais = ideias.filter(x => !ideiaParaJogo(x));
+  const gruposPlano = planoGrupos(noPlano);
+  const gruposGerais = planoGrupos(gerais);
+  const [momento, setMomento] = useState(null);
+  const lista = vista === 'plano' ? gruposPlano : gruposGerais;
+  const atual = lista.find(g => g.fase === momento) || lista[0] || null;
+  const noPortal = prox && prox.id === jogo.id;
+  const passado = jogo.date < todayStr();
+
+  const alternarGeral = (id) => setIdeias(prev => prev.map(x => {
+    if (x.id !== id) return x;
+    const l = Array.isArray(x.planosJogo) ? x.planosJogo : [];
+    return { ...x, planosJogo: l.includes(jogo.id) ? l.filter(j => j !== jogo.id) : [...l, jogo.id] };
+  }));
+  const botaoIcone = { background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 3, display: 'flex' };
+
+  return (
+    <div style={{ overflowAnchor: 'none' }}>
+      <button onClick={onBack} style={{
+        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
+        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 16,
+      }}>
+        <ChevronLeft size={15} /> Planos de Jogo
+      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+        <div style={{ ...display, fontSize: 22, color: T.cream }}>Plano de jogo · {planoNomeJogo(jogo)}</div>
+        {noPortal
+          ? <span style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, border: `1px solid ${T.gold}`, color: T.gold, ...body }}>No Portal agora</span>
+          : <span style={{ fontSize: 11.5, color: T.mutedDim, ...body }}>{passado ? 'Arquivo — já não está no Portal' : 'Entra no Portal quando for o próximo jogo'}</span>}
+        <div style={{ flex: 1 }} />
+        <Btn onClick={() => onNovaParaJogo(jogo.id)}><Plus size={15} /> Nova ideia para este jogo</Btn>
+      </div>
+      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
+        {fmtDate(jogo.date)}{jogo.competition ? ` · ${competitionLabel(jogo.competition)}` : ''} · {noPlano.length} ideia{noPlano.length === 1 ? '' : 's'} no plano
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <ChipBtn active={vista === 'plano'} onClick={() => { setVista('plano'); setMomento(null); }}>No plano {noPlano.length}</ChipBtn>
+        <ChipBtn active={vista === 'juntar'} onClick={() => { setVista('juntar'); setMomento(null); }}>Juntar ideias gerais</ChipBtn>
+      </div>
+
+      {!atual ? (
+        <div style={{ ...PLANO_CAIXA, display: 'flex', alignItems: 'center', justifyContent: 'center', color: T.mutedDim, fontSize: 13, textAlign: 'center', padding: 20, ...body }}>
+          {vista === 'plano'
+            ? 'Este plano ainda está vazio. Cria uma ideia para este jogo ou junta ideias gerais.'
+            : 'Ainda não há ideias gerais.'}
+        </div>
+      ) : (
+        <>
+          <PlanoMomentos grupos={lista} momento={atual.fase} onMomento={setMomento}
+            contaMarcadas={(l) => l.filter(i => ideiaNoPlano(i, jogo.id)).length} />
+          <div style={PLANO_CAIXA}>
+            <div style={PLANO_GRELHA}>
+              {atual.lista.map(x => {
+                const propria = x.jogoId === jogo.id;
+                const marcado = ideiaNoPlano(x, jogo.id);
+                if (vista === 'juntar') {
+                  return (
+                    <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={marcado} corMarca={T.gold}
+                      textoMarca={marcado ? 'No plano' : 'Juntar ao plano'} onMarcar={() => alternarGeral(x.id)} onVer={() => onVer(x)} />
+                  );
+                }
+                return (
+                  <IdeiaCartaoMini key={x.id} x={x} nome={labelOf(x)} marcado={false} corMarca={T.gold}
+                    onVer={() => onVer(x)}
+                    extra={(
+                      <>
+                        <span style={{ fontSize: 10.5, color: propria ? T.gold : T.mutedDim, whiteSpace: 'nowrap', marginRight: 'auto', ...body }}>{propria ? 'Criada para este jogo' : 'Ideia geral'}</span>
+                        {propria ? (
+                          <>
+                            <button type="button" onClick={() => onEditar(x)} title="Editar" style={botaoIcone}><Pencil size={13} /></button>
+                            <button type="button" onClick={() => onRemover(x)} title="Apagar ideia" style={botaoIcone}><Trash2 size={13} /></button>
+                          </>
+                        ) : (
+                          <button type="button" onClick={() => alternarGeral(x.id)} title="Tirar do plano (a ideia geral fica intacta)" style={botaoIcone}><X size={13} /></button>
+                        )}
+                      </>
+                    )} />
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
   const cabecalhoEstreito = useIsMobile(560);
   const [modal, setModal] = useState(null); // null | 'new' | ideia (edição)
   const [viewing, setViewing] = useState(null);
@@ -10716,6 +11055,12 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
   }, [printDossier]);
   const [filter, setFilter] = useState('Todas');
   const [portalAtleta, setPortalAtleta] = useState(false);
+  // IDEIA DE JOGO (gerais) | PLANOS DE JOGO (por jogo). As ideias criadas
+  // para um jogo (`jogoId`) só aparecem no plano desse jogo.
+  const [secao, setSecao] = useState('ideia');
+  const [planoAberto, setPlanoAberto] = useState(null);
+  const [jogoNovaIdeia, setJogoNovaIdeia] = useState(null);
+  const gerais = ideias.filter(x => !ideiaParaJogo(x));
   // Retroceder no browser tem de fechar o Portal do Atleta e voltar à
   // lista de ideias — sem isto, o "voltar" saltava por cima deste
   // ecrã e ia diretamente para o que estava aberto antes da Ideia de
@@ -10727,6 +11072,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
     const isEdicao = !!data.id;
     if (isEdicao) setIdeias(prev => prev.map(x => x.id === data.id ? data : x));
     else setIdeias(prev => [...prev, { ...data, id: uid() }]);
+    setJogoNovaIdeia(null);
     if (isEdicao) trocarJanela(() => setModal(null), () => setViewing(data));
     else setModal(null);
   };
@@ -10750,7 +11096,7 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
     : `Ideia ${ideias.findIndex(i => i.id === x.id) + 1}`;
   /* Mais recentes primeiro (como nos Exercícios): a lista chega por ordem
      de criação e as novas entram no fim, por isso basta inverter. */
-  const visible = (filter === 'Todas' ? ideias : ideias.filter(x => x.phase === filter))
+  const visible = (filter === 'Todas' ? gerais : gerais.filter(x => x.phase === filter))
     .slice()
     .reverse();
 
@@ -10776,10 +11122,24 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
           </div>
         )} />
 
+      {!dossier && !portalAtleta && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 18 }}>
+          <ToggleBtn active={secao === 'ideia'} onClick={() => { setSecao('ideia'); setPlanoAberto(null); }}>Ideia de Jogo</ToggleBtn>
+          <ToggleBtn active={secao === 'planos'} onClick={() => setSecao('planos')}>Planos de Jogo</ToggleBtn>
+        </div>
+      )}
+
       {dossier ? (
-        <DossierIdeias ideias={ideias} labelOf={labelOf} onBack={fecharDossier} onImprimir={imprimirDossier} />
+        <DossierIdeias ideias={gerais} labelOf={labelOf} onBack={fecharDossier} onImprimir={imprimirDossier} />
       ) : portalAtleta ? (
-        <PortalAtletaIdeias ideias={ideias} setIdeias={setIdeias} labelOf={labelOf} onBack={fecharPortalAtleta} />
+        <PortalAtletaIdeias ideias={gerais} setIdeias={setIdeias} labelOf={labelOf} onBack={fecharPortalAtleta} onVer={setViewing} />
+      ) : secao === 'planos' ? (
+        <PlanosDeJogo ideias={ideias} setIdeias={setIdeias} matches={matches} labelOf={labelOf}
+          aberto={planoAberto} setAberto={setPlanoAberto}
+          onVer={setViewing}
+          onNovaParaJogo={(jogoId) => { setJogoNovaIdeia(jogoId); setModal('new'); }}
+          onEditar={(x) => setModal(x)}
+          onRemover={(x) => remove(x.id)} />
       ) : (
         <>
       <MomentoFilter value={filter} onChange={setFilter} options={EXERCISE_PHASES} />
@@ -10844,7 +11204,9 @@ function IdeiaJogo({ ideias, setIdeias, meta }) {
           ideia={modal === 'new' ? null : modal}
           allIdeias={ideias}
           meta={meta}
-          onClose={() => (modal === 'new' ? setModal(null) : trocarJanela(() => setModal(null), () => setViewing(modal)))}
+          matches={matches}
+          jogoInicial={modal === 'new' ? jogoNovaIdeia : null}
+          onClose={() => { setJogoNovaIdeia(null); if (modal === 'new') setModal(null); else trocarJanela(() => setModal(null), () => setViewing(modal)); }}
           onSave={save}
         />
       )}
@@ -11063,134 +11425,6 @@ function DossierIdeias({ ideias, labelOf, onBack, onImprimir }) {
   );
 }
 
-function PortalAtletaIdeias({ ideias, setIdeias, labelOf, onBack }) {
-  const estreito = useIsMobile(560);
-  // `prev =>` em vez de `ideias.map(...)`: aqui o `ideias` (prop) é só o
-  // que se via no último desenho do ecrã — sempre que se grava, chega um
-  // eco do Realtime com a versão confirmada, e um clique logo a seguir
-  // podia ainda estar a olhar para o `ideias` de ANTES desse eco, escrevendo
-  // por cima dele. Com `prev`, o React garante a versão mais recente no
-  // preciso instante em que a atualização é aplicada, nunca uma cópia à
-  // parte que possa ter ficado para trás.
-  const toggleCampo = (id, campo) => {
-    setIdeias(prev => prev.map(x => (x.id === id ? { ...x, [campo]: !x[campo] } : x)));
-  };
-  const nIdeia = ideias.filter(x => x.visivelAtletas).length;
-  const nPlano = ideias.filter(x => x.visivelPlanoJogo).length;
-
-  // Agrupadas por momento de jogo — mesma divisão do Dossier (`PHASES`,
-  // pela mesma ordem), com um balde "Sem fase" no fim para o que não
-  // encaixa em nenhuma.
-  const porFase = PHASES
-    .map(fase => ({ fase, lista: ideias.filter(i => i.phase === fase) }))
-    .filter(g => g.lista.length);
-  const semFase = ideias.filter(i => !PHASES.includes(i.phase));
-  if (semFase.length) porFase.push({ fase: 'Sem fase', lista: semFase });
-
-  // O botão do cabeçalho de cada fase continua a marcar/desmarcar tudo
-  // de uma vez — mas só para "Ideia de Jogo" (o destino mais comum);
-  // "Plano de Jogo" fica de escolha fina, uma a uma, para não se marcar
-  // sem querer um bloco inteiro de diagramas para os Jogos.
-  const alternarFase = (idsDaFase, todasMarcadas) => {
-    setIdeias(prev => prev.map(x => (idsDaFase.has(x.id) ? { ...x, visivelAtletas: !todasMarcadas } : x)));
-  };
-
-  return (
-    <div>
-      <button onClick={onBack} style={{
-        display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: `1px solid ${T.line}`,
-        borderRadius: 8, color: T.cream, padding: '7px 13px', cursor: 'pointer', ...body, fontSize: 13, marginBottom: 18,
-      }}>
-        <ChevronLeft size={15} /> Ideia de Jogo
-      </button>
-
-      <div style={{ ...display, fontSize: 20, color: T.cream, marginBottom: 4 }}>Portal do Atleta</div>
-      <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 6 }}>
-        Marca, ideia a ideia, para onde cada uma vai no Portal — o mesmo diagrama pode ir para os dois sítios, para um só, ou para nenhum.
-      </div>
-      <div style={{ display: 'flex', gap: 16, marginBottom: 18, fontSize: 12 }}>
-        <span style={{ color: T.good }}>● Ideia de Jogo — {nIdeia} de {ideias.length}</span>
-        <span style={{ color: T.gold }}>● Plano de Jogo — {nPlano} de {ideias.length}</span>
-      </div>
-
-      {porFase.map(({ fase, lista }) => (
-        <div key={fase} style={{ marginBottom: 20 }}>
-          <button
-            type="button"
-            onClick={() => alternarFase(new Set(lista.map(i => i.id)), lista.every(i => i.visivelAtletas))}
-            title="Marcar ou desmarcar este momento todo para Ideia de Jogo"
-            style={{
-              display: 'flex', alignItems: 'baseline', gap: 10, width: '100%', textAlign: 'left',
-              background: 'none', border: 'none', padding: 0, marginBottom: 8, cursor: 'pointer',
-            }}
-          >
-            <span style={{ ...display, fontSize: 14, fontWeight: 600, color: T.cream }}>{fase}</span>
-            <span style={{ ...mono, fontSize: 11, color: T.mutedDim }}>{lista.filter(i => i.visivelAtletas).length}/{lista.length}</span>
-            <span style={{ flex: 1, height: 1, background: T.line }} />
-          </button>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {lista.map(x => {
-              const emIdeia = !!x.visivelAtletas;
-              const emPlano = !!x.visivelPlanoJogo;
-              const marcada = emIdeia || emPlano;
-              const pill = (ativo, cor, texto, onClick) => (
-                <button
-                  type="button"
-                  onClick={onClick}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 11.5, ...body,
-                    color: ativo ? cor : T.mutedDim, flexShrink: 0, background: 'none',
-                    border: `1px solid ${ativo ? cor : T.line}`, borderRadius: 20, padding: '4px 10px 4px 6px',
-                  }}
-                >
-                  <span style={{
-                    width: 14, height: 14, borderRadius: 4, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: ativo ? cor : 'transparent', border: `1px solid ${ativo ? cor : T.line}`,
-                  }}>
-                    {ativo && <Check size={10} color="#0d140e" />}
-                  </span>
-                  {texto}
-                </button>
-              );
-              return (
-                <div
-                  key={x.id}
-                  style={{
-                    /* No telemóvel: o nome inteiro em cima e os dois botões
-                       por baixo (antes o nome ficava em "Pressão ..."). */
-                    display: 'flex', alignItems: estreito ? 'flex-start' : 'center', gap: estreito ? 8 : 14, width: '100%',
-                    flexWrap: estreito ? 'wrap' : 'nowrap',
-                    background: marcada ? `${T.good}12` : T.surface, border: `1px solid ${marcada ? T.good : T.line}`,
-                    borderRadius: 10, padding: '10px 14px', ...body,
-                  }}
-                >
-                  <span style={{ flex: estreito ? '1 1 100%' : 1, minWidth: 0, fontSize: 14, color: T.cream, lineHeight: 1.35 }}>
-                    {labelOf(x)}
-                  </span>
-                  {/* Dois interruptores independentes, lado a lado — a
-                      mesma ideia pode ir para os dois sítios do Portal,
-                      só para um, ou para nenhum. Botões próprios, não
-                      `<input type="checkbox">`: colados uns aos outros
-                      como aqui ficam, alguns browsers "arrastam" o
-                      estado ao passar o rato por cima com o botão
-                      ainda em baixo — o mesmo gesto de um clique um
-                      pouco impreciso (vulgar em trackpad) passava a
-                      destocar caixas vizinhas sem se querer. Um botão
-                      normal só reage a um clique a sério. */}
-                  {pill(emIdeia, T.good, 'Ideia de Jogo', () => toggleCampo(x.id, 'visivelAtletas'))}
-                  {pill(emPlano, T.gold, 'Plano de Jogo', () => toggleCampo(x.id, 'visivelPlanoJogo'))}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-
 /* FECHAR SEM SALTAR. Quando uma secção grande se fecha (a lista de
    cartões para copiar), o conteúdo encolhe por baixo e o browser, sem
    página suficiente para manter o scroll onde estava, puxa tudo para
@@ -11270,6 +11504,11 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   const [escolhido, setEscolhido] = useState(null);
   const [aberto, setAberto] = useState(null); // cartão debaixo do rato
   const [pagina, setPagina] = useState(0);
+  /* ALTURA FIXA entre a lista e a pré-visualização: ao abrir um cartão,
+     a pré-visualização fica com a mesma altura da lista (desliza por
+     dentro se precisar), por isso os botões de baixo e o resto da
+     página não saltam. */
+  const alturaListaRef = useRef(0);
 
   /* ORDEM — A–Z ou por criação (mais recentes primeiro). Fica lembrada
      de uma vez para a outra. A ordem de criação é a
@@ -11354,7 +11593,9 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   if (atual) {
     const det = detalhesDe ? detalhesDe(atual) : [];
     return (
-      <div style={{ marginTop: 10, border: `1px solid ${T.gold}`, borderRadius: 10, background: T.surface, padding: 12 }}>
+      <div style={{ marginTop: 10, border: `1px solid ${T.gold}`, borderRadius: 10, background: T.surface, padding: 12,
+        boxSizing: 'border-box', overflowAnchor: 'none',
+        ...(alturaListaRef.current ? { height: alturaListaRef.current, overflowY: 'auto' } : {}) }}>
         <div style={{ display: 'flex', gap: 14, flexDirection: isMobile ? 'column' : 'row' }}>
           <div style={{ flex: isMobile ? 'none' : '0 0 46%' }}>
             {temEsquema(atual)
@@ -11399,7 +11640,8 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   };
 
   return (
-    <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 10, background: T.surface, padding: 10 }}>
+    <div ref={el => { if (el) alturaListaRef.current = el.offsetHeight; }}
+      style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 10, background: T.surface, padding: 10, boxSizing: 'border-box', overflowAnchor: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 12, color: T.muted }}>
           {tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}
@@ -11530,8 +11772,8 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   );
 }
 
-function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
-  const [f, setF] = useState(ideia || { name: '', phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] } });
+function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = [], jogoInicial = null }) {
+  const [f, setF] = useState(ideia || { name: '', phase: EXERCISE_PHASES[0], diagram: { elements: [], arrows: [] }, ...(jogoInicial ? { jogoId: jogoInicial } : {}) });
   const { rascunhoEncontrado, restaurar, descartar, limpar } = useRascunho(`rascunho_ideia_${ideia?.id || 'novo'}`, f, setF);
   // Tal como no ExerciseModal, a cor ativa do editor vive aqui (no modal) e
   // não dentro do DiagramEditor, para não poder ser reposta a meio.
@@ -11667,30 +11909,43 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave }) {
           dentro de Jogos, aos dois, ou a nenhum — o conteúdo é o
           mesmo, só o SÍTIO onde aparece no Portal é que se escolhe
           aqui, sem duplicar nada. */}
+      {/* GERAL ou PARA UM JOGO. Uma ideia para um jogo fica no plano
+          desse jogo (Ideia de Jogo › Planos de Jogo) e não aparece na
+          Ideia de Jogo geral. O Portal → Plano de Jogo é sempre o plano
+          do próximo jogo (escolhido nos Planos, não aqui). */}
       <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={!!f.visivelAtletas}
-            onChange={e => setF({ ...f, visivelAtletas: e.target.checked })}
-            style={{ width: 16, height: 16, accentColor: T.crimson, cursor: 'pointer' }}
-          />
-          <span style={{ fontSize: 13, color: T.cream }}>Visível no Portal → Ideia de Jogo</span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-          <input
-            type="checkbox"
-            checked={!!f.visivelPlanoJogo}
-            onChange={e => setF({ ...f, visivelPlanoJogo: e.target.checked })}
-            style={{ width: 16, height: 16, accentColor: T.crimson, cursor: 'pointer' }}
-          />
-          <span style={{ fontSize: 13, color: T.cream }}>Visível no Portal → Jogos → Plano de Jogo</span>
-        </label>
+        <Field label="Esta ideia é">
+          <Select value={f.jogoId || ''} onChange={e => setF({ ...f, jogoId: e.target.value || null, ...(e.target.value ? { visivelAtletas: false } : {}) })}>
+            <option value="">Ideia de Jogo geral (identidade da equipa)</option>
+            {(() => {
+              const hoje = todayStr();
+              const jogos = (matches || []).filter(m => m && m.date && (!jogoNaoJogado(m) || m.id === f.jogoId));
+              const prox = jogos.filter(m => m.date >= hoje).sort((a, b) => a.date.localeCompare(b.date));
+              const pas = jogos.filter(m => m.date < hoje).sort((a, b) => b.date.localeCompare(a.date));
+              return [...prox, ...pas].map(m => <option key={m.id} value={m.id}>Para o jogo {planoNomeJogo(m)} · {fmtDate(m.date)}</option>);
+            })()}
+          </Select>
+        </Field>
+        {f.jogoId ? (
+          <div style={{ fontSize: 12.5, color: T.mutedDim, lineHeight: 1.5 }}>
+            Fica no plano deste jogo e não aparece na Ideia de Jogo geral. Os jogadores veem-na no Portal → Plano de Jogo enquanto este for o próximo jogo.
+          </div>
+        ) : (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={!!f.visivelAtletas}
+              onChange={e => setF({ ...f, visivelAtletas: e.target.checked })}
+              style={{ width: 16, height: 16, accentColor: T.crimson, cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: 13, color: T.cream }}>Visível no Portal → Ideia de Jogo</span>
+          </label>
+        )}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn disabled={!f.name || !f.name.trim()} onClick={() => { limpar(); onSave(f); }}><Check size={15} /> Guardar</Btn>
+        <Btn disabled={!f.name || !f.name.trim()} onClick={() => { limpar(); onSave(f.jogoId ? { ...f, visivelAtletas: false } : f); }}><Check size={15} /> Guardar</Btn>
       </div>
       {espacoSemSaltar}
     </Modal>
