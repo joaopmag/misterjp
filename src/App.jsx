@@ -36383,27 +36383,37 @@ function usePortalFetch(rpcName, code, teamId) {
 function cvDataCurta(iso) {
   return iso ? formatShortDatePt(iso) : '';
 }
-function CvCarimbo({ clube, convocado, tam, data }) {
-  const cor = convocado ? T.gold : T.mutedDim;
+/* O carimbo da equipa técnica com a faixa "CONVOCADO" (só para quem vai
+   ao jogo): selo limpo, numa só letra (Oswald), com o nome do clube no
+   arco de cima e "EQUIPA TÉCNICA" no de baixo; a faixa dourada atravessa
+   o selo e sai um pouco para fora, com as pontas em cauda de andorinha. */
+function CvCarimbo({ clube, tam }) {
+  const cor = T.gold;
   const id = React.useId().replace(/:/g, '');
-  const texto = `${String(clube || 'Equipa').toUpperCase()} · EQUIPA TÉCNICA · `;
-  const dm = /^\d{4}-(\d{2})-(\d{2})/.exec(String(data || ''));
-  const f = { fontFamily: "'Oswald', sans-serif", fontWeight: 600 };
+  const nome = String(clube || 'Equipa').replace(/\s+(u|sub)-?\d{1,2}\b.*$/i, '').toUpperCase();
+  const f = { fontFamily: "'Oswald', sans-serif", fontWeight: 500 };
+  const arco = { ...f, fontSize: 10, letterSpacing: '.16em' };
+  const longo = nome.length > 13;
   return (
-    <svg aria-hidden="true" width={tam} height={tam} viewBox="0 0 120 120" style={{ display: 'block', transform: 'rotate(-12deg)', opacity: convocado ? 0.92 : 0.6, pointerEvents: 'none' }}>
+    <svg aria-hidden="true" width={tam} height={tam} viewBox="-8 0 136 120" style={{ display: 'block', transform: 'rotate(-8deg)', pointerEvents: 'none', overflow: 'visible' }}>
       <defs>
-        {/* Círculo para o texto à volta (começa em cima, no sentido do relógio). */}
-        <path id={`cv-arco-${id}`} d="M 60,15 a 45,45 0 1,1 -0.01,0" />
+        <path id={`cv-cima-${id}`} d="M 21,50 A 40,40 0 0 1 99,50" />
+        <path id={`cv-baixo-${id}`} d="M 17,73 A 44,44 0 0 0 103,73" />
       </defs>
-      <circle cx="60" cy="60" r="57" fill="none" stroke={cor} strokeWidth="2.6" />
-      <circle cx="60" cy="60" r="35" fill="none" stroke={cor} strokeWidth="1.3" />
-      {/* O texto ocupa sempre a volta toda, seja qual for o nome do clube. */}
-      <text fill={cor} style={{ ...f, fontSize: 10.5 }}>
-        <textPath href={`#cv-arco-${id}`} textLength="280" lengthAdjust="spacingAndGlyphs">{texto}</textPath>
-      </text>
-      <text x="60" y={convocado ? 48 : 54} textAnchor="middle" fill={cor} style={{ ...f, fontSize: 10 }}>★</text>
-      {convocado && <text x="60" y="64" textAnchor="middle" fill={cor} textLength="58" lengthAdjust="spacingAndGlyphs" style={{ ...f, fontSize: 12, fontWeight: 700 }}>CONVOCADO</text>}
-      {dm && <text x="60" y={convocado ? 78 : 72} textAnchor="middle" fill={cor} style={{ ...f, fontSize: convocado ? 10 : 15, letterSpacing: '.08em' }}>{`${dm[2]}·${dm[1]}`}</text>}
+      <g fill={cor} stroke={cor}>
+        <circle cx="60" cy="60" r="56" fill="none" strokeWidth="1.8" />
+        <circle cx="60" cy="60" r="52" fill="none" strokeWidth="0.7" />
+        <text stroke="none" style={arco}>
+          <textPath href={`#cv-cima-${id}`} startOffset="50%" textAnchor="middle" {...(longo ? { textLength: 96, lengthAdjust: 'spacingAndGlyphs' } : {})}>{nome}</textPath>
+        </text>
+        <text stroke="none" style={arco}>
+          <textPath href={`#cv-baixo-${id}`} startOffset="50%" textAnchor="middle">EQUIPA TÉCNICA</textPath>
+        </text>
+        {/* A faixa: sai para fora do selo dos dois lados. */}
+        <path d="M -6,50 L 126,50 L 119,60 L 126,70 L -6,70 L 1,60 Z" stroke="none" />
+        <text x="60" y="64.5" textAnchor="middle" stroke="none" fill="#1B231D" textLength="74" lengthAdjust="spacingAndGlyphs" style={{ ...f, fontSize: 13, fontWeight: 600 }}>CONVOCADO</text>
+        <text x="60" y="44" textAnchor="middle" stroke="none" style={{ fontSize: 7, letterSpacing: '.35em' }}>★★★</text>
+      </g>
     </svg>
   );
 }
@@ -36443,6 +36453,8 @@ function CvJogador({ p, eu, tam }) {
 function PlayerConvocatoriasTab({ code, teamId, jogadorId, logo, infoJogo }) { // eslint-disable-line no-unused-vars
   const [estado, dados] = usePortalFetch('checkin_convocatoria', code, teamId);
   const estreito = useIsMobile(560);
+  // No computador, a convocatória ocupa a página toda (sem scroll).
+  const largo = !useIsMobile(900);
   if (estado === 'a-carregar') return <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
   if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
   const lista = (dados && dados.convocatorias) || [];
@@ -36451,7 +36463,7 @@ function PlayerConvocatoriasTab({ code, teamId, jogadorId, logo, infoJogo }) { /
     return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhuma convocatória partilhada contigo.</div>;
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 760 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 760, margin: largo ? '0 auto' : 0 }}>
       {lista.map(c => {
         // Por número da camisola — quem não tem número atribuído vai
         // para o fim. Os jogadores à experiência (sem `id`, porque não
@@ -36465,55 +36477,63 @@ function PlayerConvocatoriasTab({ code, teamId, jogadorId, logo, infoJogo }) { /
           const nb = typeof b.number === 'number' ? b.number : Infinity;
           return na - nb;
         });
+        const tamCarimbo = estreito ? 80 : 96;
         let jornada = '';
         try { jornada = (infoJogo && (infoJogo(c) || {}).jornada) || ''; } catch (e) { jornada = ''; }
-        const tamCarimbo = estreito ? 78 : 104;
         const tam = estreito ? 54 : 66;
         return (
           <div key={c.id} style={{ position: 'relative', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: estreito ? 14 : 20, overflow: 'hidden' }}>
-            {/* O carimbo do clube, no canto. */}
-            <div style={{ position: 'absolute', right: estreito ? 8 : 18, top: estreito ? 8 : 14 }}>
-              <CvCarimbo clube={nossoClube} convocado={!!c.convocado} tam={tamCarimbo} data={c.data} />
-            </div>
+            {/* Carimbo com a faixa "CONVOCADO" (só para quem vai ao jogo). */}
+            {c.convocado && (
+              <div style={{ position: 'absolute', right: estreito ? 12 : 22, top: estreito ? 12 : 16 }}>
+                <CvCarimbo clube={nossoClube} tam={tamCarimbo} />
+              </div>
+            )}
 
-            <div style={{ paddingRight: tamCarimbo + (estreito ? 4 : 16) }}>
-              <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.4, color: c.convocado ? T.gold : T.mutedDim, marginBottom: 12 }}>
+            {/* No telemóvel só a mensagem fica ao lado do carimbo; o nome do
+                jogo usa a largura toda, por baixo dele. */}
+            <div>
+              {/* TIPOGRAFIA: só duas letras (Inter no texto, Oswald no nome do
+                  jogo) e três tamanhos: 11 (rótulos), 13,5 (texto) e o título. */}
+              <div style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.45, color: c.convocado ? T.gold : T.mutedDim, marginBottom: 14, paddingRight: c.convocado ? tamCarimbo + 8 : 0, minHeight: c.convocado && estreito ? tamCarimbo - 6 : 0, ...body }}>
                 {c.convocado ? (
                   <>
                     <div>Parabéns estás convocado.</div>
-                    <div style={{ marginTop: 6 }}>Estar convocado é o primeiro passo; o foco agora é a vitória da equipa.</div>
+                    <div style={{ marginTop: 2, fontWeight: 400, color: T.cream }}>Estar convocado é o primeiro passo; o foco agora é a vitória da equipa.</div>
                   </>
                 ) : (
                   'Desta vez não estás na lista de convocados. Levanta a cabeça e foca-te no próximo treino.'
                 )}
               </div>
-              {jornada && <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: T.muted, marginBottom: 2, ...body }}>{jornada}</div>}
-              {/* O nome do jogo, em destaque. */}
-              <div style={{ ...display, fontSize: estreito ? 20 : 26, fontWeight: 600, lineHeight: 1.15, color: T.textoForte, letterSpacing: '.01em', marginBottom: 6 }}>
-                {c.casaFora === 'Fora'
-                  ? <>{c.adversario} <span style={{ color: T.muted, fontWeight: 400, fontSize: '.8em' }}>vs</span> {nossoClube}</>
-                  : <>{nossoClube} <span style={{ color: T.muted, fontWeight: 400, fontSize: '.8em' }}>vs</span> {c.adversario}</>}
+              {/* Jornada, dia e hora numa só linha, a cinza, por cima do nome do jogo.
+                  O local fica só na concentração (sem concentração, vem aqui). */}
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: T.muted, marginBottom: 4, ...body }}>
+                {[jornada, cvDataCurta(c.data), c.horaJogo, (c.horaConcentracao || c.localConcentracao) ? '' : c.localJogo].filter(Boolean).join(' · ')}
               </div>
-              <div style={{ fontSize: 13, color: T.muted }}>
-                {[cvDataCurta(c.data), c.horaJogo, c.localJogo].filter(Boolean).join(' · ')}
+              {/* O nome do jogo, em destaque. */}
+              {/* Numa só linha: no telemóvel a letra encolhe com o ecrã. */}
+              <div style={{ ...display, fontSize: estreito ? 'clamp(15px, 4.7vw, 20px)' : 24, fontWeight: 600, lineHeight: 1.2, color: T.textoForte, letterSpacing: '.01em', marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {c.casaFora === 'Fora'
+                  ? <>{c.adversario} <span style={{ color: T.muted, fontWeight: 400 }}>vs</span> {nossoClube}</>
+                  : <>{nossoClube} <span style={{ color: T.muted, fontWeight: 400 }}>vs</span> {c.adversario}</>}
               </div>
               {(c.horaConcentracao || c.localConcentracao) && (
-                <div style={{ fontSize: 12.5, color: T.gold, marginTop: 6 }}>
+                <div style={{ fontSize: 13.5, lineHeight: 1.45, color: T.gold, marginTop: 2, ...body }}>
                   Concentração: {[c.horaConcentracao, c.localConcentracao].filter(Boolean).join(' · ')}
                 </div>
               )}
             </div>
-            {c.outrasInfo && <div style={{ fontSize: 12.5, color: T.cream, marginTop: 10, lineHeight: 1.5 }}>{c.outrasInfo}</div>}
+            {c.outrasInfo && <div style={{ fontSize: 13.5, color: T.cream, marginTop: 10, lineHeight: 1.45, ...body }}>{c.outrasInfo}</div>}
 
             {convocados.length > 0 && (
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.line}` }}>
-                <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.warn, textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 16, ...body }}>
                   Convocados · {convocados.length}
                 </div>
                 {/* 4 colunas, por número. A foto vem do servidor (campo
                     `photo`); sem ela, uma bola na cor da equipa com as
                     iniciais. */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', columnGap: estreito ? 6 : 14, rowGap: estreito ? 16 : 22 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: largo ? 'repeat(5, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', columnGap: estreito ? 6 : 14, rowGap: estreito ? 16 : 20 }}>
                   {convocados.map((p, i) => (
                     <CvJogador key={p.id || `x-${i}`} p={p} eu={!!(jogadorId && p.id && p.id === jogadorId)} tam={tam} />
                   ))}
