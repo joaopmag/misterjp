@@ -4580,7 +4580,7 @@ function Overview({ season, setSeason, players, setPlayers, sessions, setSession
         />
       )}
       {matchModal && (
-        <MatchModal
+        <MatchModal matches={matches}
           match={matchModal} players={players} standings={standings} season={season}
           onClose={() => setMatchModal(null)}
           onSave={(data) => {
@@ -22478,12 +22478,13 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             onEscalacao={(patch) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ...patch } : m)))}
             onIdeias={(texto) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ideias: texto } : m)))}
             clinico={clinico}
+            matches={matches}
           />
         );
       })()}
 
       {matchModal && (
-        <MatchModal
+        <MatchModal matches={matches}
           match={matchModal}
           players={players}
           standings={standings}
@@ -26118,6 +26119,12 @@ function PrintFichaJogo({ match, players, season }) {
       {/* Sem o código da formação no título: a disposição está desenhada
           logo por baixo, e escrever "4-3-3" ao lado é dizer duas vezes a
           mesma coisa — uma delas em pior linguagem. */}
+      {(match.starters || []).length > 0 && (() => {
+        // Onze no campo com fotos + suplentes com foto, como no ecrã.
+        const esc = escalacaoDoJogo(match, players);
+        return <EscalacaoPrint players={players} formacao={esc.formacao} slots={esc.slots} banco={esc.banco} capitao={match.capitao} subcapitao={match.subcapitao} />;
+      })()}
+      {!(match.starters || []).length && <>
       <h3 style={{ fontSize: 15, margin: '0 0 8px' }}>Formação</h3>
       <div style={{
         position: 'relative', width: '100%', maxWidth: 440, aspectRatio: ASPECT_CAMPO_PRINT,
@@ -26152,6 +26159,7 @@ function PrintFichaJogo({ match, players, season }) {
       </div>
 
       <EquipaEmColunasPrint titulares={titulares} suplentes={suplentes} capitaoId={match.capitao} subcapitaoId={match.subcapitao} />
+      </>}
 
       {nomesDosConvidados(match).length > 0 && (
         <p style={{ fontSize: 12.5, margin: '0 0 14px' }}>
@@ -26208,8 +26216,8 @@ function escalacaoComFotosHtml(match, players) {
       + `<span style="min-width:0"><span style="display:block;font-size:13px">${nomeCurto(p)}</span><span style="display:block;font-size:11px;opacity:.6">${escapeHtmlText([p.position, p.number].filter(Boolean).join(' · '))}</span></span></div>`).join('')
     : '<p class="desc">Sem suplentes.</p>';
   return `<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">`
-    + `<div style="flex:1 1 280px;max-width:340px">${campo}<div style="font-size:12px;opacity:.6;margin-top:6px">Formação ${escapeHtmlText(formacao)}</div></div>`
-    + `<div style="flex:1 1 260px;min-width:0"><h3 style="margin:0 0 8px">Suplentes (${banco.length})</h3><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px">${suplentes}</div></div>`
+    + `<div style="flex:1 1 280px;max-width:340px"><div style="font-size:14px;font-weight:600;margin:0 0 8px">Onze inicial</div>${campo}<div style="font-size:12px;opacity:.6;margin-top:6px">Sistema ${escapeHtmlText(formacao)}</div></div>`
+    + `<div style="flex:0 1 260px;min-width:0"><div style="font-size:14px;font-weight:600;margin:0 0 8px">Suplentes (${banco.length})</div><div style="display:flex;flex-direction:column;gap:6px">${suplentes}</div></div>`
     + `</div>`;
 }
 
@@ -26229,7 +26237,7 @@ function buildMatchShareHtml({ match, players, season }) {
   const comFotos = escalacaoComFotosHtml(match, players);
   const extraHtml = [
     comFotos
-      ? `<h2>Escalação</h2>${comFotos}`
+      ? `<h2>Onze inicial e suplentes</h2>${comFotos}`
       : `<h2>Formação</h2>${campoDaEquipaHtml(equipa)}<h2>Equipa</h2>${equipaEmColunasHtml(equipa.titulares, equipa.suplentes)}`,
     `<h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(match.ideias || '').trim() || '—')}</p>`,
     `<h2>Destaques</h2>${destaques.length
@@ -26262,7 +26270,7 @@ function buildMatchShareHtml({ match, players, season }) {
   };
 }
 
-function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, onFormacao, onAlinhamento, onStarters, onEscalacao, onIdeias, clinico = [] }) {
+function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, onFormacao, onAlinhamento, onStarters, onEscalacao, onIdeias, clinico = [], matches = [] }) {
   const isNarrow = useIsMobile(760);
   const formacao = match.formacao || '4-3-3';
   /* JOGO POR JOGAR (sem resultado e de hoje para a frente): em vez da ficha
@@ -26377,6 +26385,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
             onFormacao={formacaoEscalacao}
             clinico={clinico}
             data={match.date}
+            castigados={castigadosParaJogo(matches, match.date, match.id)}
           />
           {/* Ideias para o jogo: por baixo do campo. */}
           {onIdeias && (
@@ -29429,12 +29438,13 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
             onEscalacao={(patch) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ...patch } : m)))}
             onIdeias={(texto) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ideias: texto } : m)))}
             clinico={clinico}
+            matches={matches}
           />
         );
       })()}
 
       {modal && (
-        <MatchModal
+        <MatchModal matches={matches}
           match={modal === 'new' ? null : modal}
           players={players}
           standings={standings}
@@ -29476,7 +29486,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
    (ficha de edição do jogo, convocatória) é que traduz para o seu
    formato. Nada é gravado aqui.
    ===================================================================== */
-function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormacao, clinico = [], data, maxBanco = null }) {
+function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormacao, clinico = [], data, maxBanco = null, castigados = null }) {
   const isMobile = useIsMobile(820);
   const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
@@ -29488,7 +29498,11 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
 
   const porId = new Map(players.map(p => [p.id, p]));
   const naEscalacao = new Set([...slots.filter(Boolean), ...banco]);
-  const estado = (p) => estadoClinicoEm(p.id, data || todayStr(), clinico);
+  // Estado do jogador: castigo (expulsão no último jogo oficial) ou Boletim Clínico.
+  const estado = (p) => {
+    if (castigados && castigados.has(p.id)) return { id: 'indisponivel', avisaJogo: true, curto: 'Castigo', cor: T.bad, label: castigados.get(p.id) };
+    return estadoClinicoEm(p.id, data || todayStr(), clinico);
+  };
   const indisponivel = (p) => { const e = estado(p); return !!(e && (e.avisaJogo || e.id === 'indisponivel')); };
   const fora = sortByPosition(players.filter(p => !naEscalacao.has(p.id)));
   const foraDisp = fora.filter(p => !indisponivel(p));
@@ -29645,7 +29659,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
   return (
     <div ref={raizRef} style={{ overflowAnchor: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <span style={{ fontSize: 11.5, color: T.mutedDim, ...body }}>Formação</span>
+        <span style={{ fontSize: 11.5, color: T.mutedDim, ...body }}>Sistema</span>
         <Select value={formacao} onChange={e => onFormacao(e.target.value)} style={{ width: 110 }}>
           {Object.keys(FORMACOES).map(fm => <option key={fm} value={fm}>{fm}</option>)}
         </Select>
@@ -29822,6 +29836,90 @@ function CartaoPlanoDoJogo({ jogo }) {
     </button>
   );
 }
+/* CASTIGOS AUTOMÁTICOS — quem foi expulso (2.º amarelo ou vermelho
+   direto) no último jogo OFICIAL antes deste fica de castigo neste jogo:
+   aparece em Indisponíveis (como os lesionados) e não entra no
+   "Selecionar todos". Os amigáveis não contam. */
+function castigadosParaJogo(matches, data, jogoId) {
+  if (!data) return new Map();
+  const anteriores = (matches || [])
+    .filter(m => m && m.date && m.date < data && m.id !== jogoId && !isFriendlyMatch(m) && !jogoNaoJogado(m))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const ultimo = anteriores[0];
+  const out = new Map();
+  if (!ultimo) return out;
+  Object.entries(ultimo.report || {}).forEach(([pid, r]) => {
+    if (r && (r.card === 'yellow2' || r.card === 'red')) {
+      out.set(pid, `Castigo (${r.card === 'red' ? 'vermelho' : '2.º amarelo'} vs ${ultimo.opponent || 'último jogo'})`);
+    }
+  });
+  return out;
+}
+
+/* ONZE NO CAMPO + SUPLENTES COM FOTO, PARA IMPRIMIR (ficha do jogo e
+   ficha técnica da convocatória). Campo vertical de linhas finas sobre
+   branco (poupa tinta); fotos redondas, número e nome. */
+function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }) {
+  const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
+  const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
+  const porId = new Map(players.map(p => [p.id, p]));
+  const marca = (pid) => (pid === capitao ? ' (C)' : pid === subcapitao ? ' (SC)' : '');
+  const foto = (p, mm) => (
+    <span style={{
+      width: `${mm}mm`, height: `${mm}mm`, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, display: 'inline-flex',
+      alignItems: 'center', justifyContent: 'center', border: '1px solid #555', background: '#eee', color: '#111', fontWeight: 700, fontSize: `${mm * 1.1}pt`,
+    }}>{p.photo ? <img src={p.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (p.number || '')}</span>
+  );
+  const suplentes = banco.map(id => porId.get(id)).filter(Boolean);
+  return (
+    <div style={{ display: 'flex', gap: '8mm', alignItems: 'flex-start', marginBottom: 14, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+      <div style={{ flex: '0 0 92mm' }}>
+        <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Onze inicial</h3>
+        <div style={{ position: 'relative', width: '92mm', height: '142mm', border: '1px solid #999', borderRadius: 4 }}>
+          <svg viewBox="0 0 68 105" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+            <g fill="none" stroke="#aaa" strokeWidth="0.3">
+              <rect x="1.5" y="1.5" width="65" height="102" />
+              <line x1="1.5" y1="52.5" x2="66.5" y2="52.5" />
+              <circle cx="34" cy="52.5" r="9.15" />
+              <rect x="13.84" y="1.5" width="40.32" height="16.5" />
+              <rect x="24.84" y="1.5" width="18.32" height="5.5" />
+              <rect x="13.84" y="87" width="40.32" height="16.5" />
+              <rect x="24.84" y="98" width="18.32" height="5.5" />
+            </g>
+          </svg>
+          {lugares.map((lugar, i) => {
+            const [lx, ly] = layout[i] || [0.5, 0.5];
+            const p = slots[i] ? porId.get(slots[i]) : null;
+            return (
+              <div key={i} style={{ position: 'absolute', left: `${ly * 100}%`, top: `${(1 - lx) * 100}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
+                {p ? (
+                  <>
+                    {foto(p, 10)}
+                    <span style={{ fontSize: '7.5pt', fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '24mm', textAlign: 'center' }}>
+                      {p.number ? `${p.number} ` : ''}{shortPlayerName(p, players)}{marca(p.id)}
+                    </span>
+                  </>
+                ) : <span style={{ fontSize: '7pt', color: '#999' }}>{rotuloDoLugar(lugar)}</span>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: '8pt', color: '#666', marginTop: 3 }}>Sistema {formacao}</div>
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Suplentes ({suplentes.length})</h3>
+        {suplentes.length === 0 ? <div style={{ fontSize: '10pt', color: '#777' }}>—</div> : suplentes.map(p => (
+          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '3mm', padding: '1.2mm 0', borderBottom: '1px solid #e2e2e2', fontSize: '10.5pt', breakInside: 'avoid' }}>
+            {foto(p, 8)}
+            <span style={{ width: '7mm', textAlign: 'right', color: '#666', ...mono }}>{p.number || ''}</span>
+            <span>{p.name}{marca(p.id)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function withConvocadosInAttendance(f) {
   const convocados = f.convocados || [];
   const ratings = { ...(f.ratings || {}) };
@@ -29829,7 +29927,7 @@ function withConvocadosInAttendance(f) {
   return { ...f, attendance: [...convocados], ratings };
 }
 
-function MatchModal({ match, players, standings, season, onClose, onSave, clinico, onIntegrarConvidado }) {
+function MatchModal({ match, players, standings, season, onClose, onSave, clinico, onIntegrarConvidado, matches = [] }) {
   // Só para o Relatório de jogo: no telemóvel, 8 colunas espremidas ficam
   // ilegíveis (nomes cortados, campos com um dígito de largura) — ver a
   // nota junto da tabela, mais abaixo.
@@ -30054,9 +30152,10 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
                 // convocado, nem muito menos como titular. "Selecionar
                 // todos" é para poupar cliques, não para convocar quem
                 // está de fora.
+                const castigoJ = castigadosParaJogo(matches, f.date, f.id);
                 const disponiveis = players.filter(p => {
                   const estado = estadoClinicoEm(p.id, f.date, clinico);
-                  return !(estado && estado.avisaJogo);
+                  return !(estado && estado.avisaJogo) && !castigoJ.has(p.id);
                 });
                 const ids = sortByPosition(disponiveis).map(p => p.id);
                 // "Selecionar todos" tem de escolher um onze que FAÇA
@@ -30112,6 +30211,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
           onFormacao={mudarFormacaoEscalacao}
           clinico={clinico}
           data={f.date}
+          castigados={castigadosParaJogo(matches, f.date, f.id)}
         />
       </div>
 
@@ -49903,15 +50003,18 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
                       {[
                         ...idsOrdenados.map(pid => {
                           const p = players.find(pl => pl.id === pid);
-                          return p ? { key: pid, numero: p.number, texto: p.name } : null;
+                          return p ? { key: pid, numero: p.number, texto: p.name, foto: p.photo || null } : null;
                         }).filter(Boolean),
                         ...experiencia.map((n, i) => ({ key: `x-${i}`, numero: null, texto: `${n} (exp)` })),
                       ].map(r => (
                         <tr key={r.key} style={{ height: '9mm', breakInside: 'avoid', pageBreakInside: 'avoid' }}>
                           <td style={{ verticalAlign: 'bottom', padding: '0 0 3px' }}>
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-                              <span style={{ width: 20, flexShrink: 0, textAlign: 'right', color: '#888' }}>{r.numero || ''}</span>
-                              <span>{r.numero ? '·' : ''}</span>
+                            {/* Foto, número e nome de cada convocado. */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                              <span style={{ width: '7mm', height: '7mm', borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: '1px solid #888', background: '#eee', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '8pt', fontWeight: 700 }}>
+                                {r.foto ? <img src={r.foto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (r.numero || '')}
+                              </span>
+                              <span style={{ width: 22, flexShrink: 0, textAlign: 'right', color: '#666', fontWeight: 600 }}>{r.numero || ''}</span>
                               <span>{r.texto}</span>
                             </div>
                           </td>
@@ -49947,6 +50050,17 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
             const pelaCamisola = (lista) => ordenarPorCamisola(lista.map(pid => players.find(pl => pl.id === pid)).filter(Boolean)).map(p => p.id);
             const onze = pelaCamisola(onzeIds);
             const banco = pelaCamisola(bancoIds);
+            // Onze no campo + suplentes com foto (o mesmo desenho do ecrã).
+            const escPrint = (jogoLigado && (jogoLigado.starters || []).length)
+              ? escalacaoDoJogo(jogoLigado, players)
+              : escalacaoDaConvocatoria(printConvocatoria, players);
+            if (escPrint.slots.some(Boolean)) {
+              return (
+                <EscalacaoPrint players={players} formacao={escPrint.formacao} slots={escPrint.slots}
+                  banco={ordenarPorCamisola(escPrint.banco.map(id => players.find(p => p.id === id)).filter(Boolean)).map(p => p.id)}
+                  capitao={printConvocatoria.capitao} subcapitao={printConvocatoria.subcapitao} />
+              );
+            }
             return (
               <>
                 {/* UMA COLUNA, e não uma grelha que se espalha pela folha.
@@ -50117,9 +50231,6 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
           <div style={FIELD_FULL}>
             <Field label="Local de concentração"><Input value={f.localConcentracao} onChange={e => setF({ ...f, localConcentracao: e.target.value })} /></Field>
           </div>
-          <div style={FIELD_FULL}>
-            <Field label="Outras informações"><TextArea value={f.outrasInfo} onChange={e => setF({ ...f, outrasInfo: e.target.value })} /></Field>
-          </div>
         </div>
       </div>
 
@@ -50130,7 +50241,12 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
           </span>
           {players.length > 0 && (
             <SelectAllBar
-              onSelectAll={() => setF({ ...f, convocados: sortByPosition(players).map(p => p.id), alinhamento: null })}
+              onSelectAll={() => {
+                // Sem indisponíveis (Boletim Clínico) nem castigados.
+                const castigoC = castigadosParaJogo(matches, f.data, jogoDaConvocatoria && jogoDaConvocatoria.id);
+                const ok = players.filter(p => { const e = estadoClinicoEm(p.id, f.data, clinico); return !(e && e.avisaJogo) && !castigoC.has(p.id); });
+                setF({ ...f, convocados: sortByPosition(ok).map(p => p.id), alinhamento: null });
+              }}
               onClear={() => setF({ ...f, convocados: [], alinhamento: null, capitao: undefined, subcapitao: undefined })}
             />
           )}
@@ -50138,9 +50254,7 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
             <CartaoPlanoDoJogo jogo={jogoDaConvocatoria} />
           </div>
         </div>
-        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10 }}>
-          Arrasta os jogadores para o campo e para o banco (até 9 suplentes). No telemóvel, toca no jogador e depois no sítio.
-        </div>
+        <div style={{ height: 6 }} />
         {players.length === 0 ? (
           <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores ao plantel antes de criar uma convocatória.</div>
         ) : (
@@ -50155,6 +50269,7 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
               clinico={clinico}
               data={f.data}
               maxBanco={9}
+              castigados={castigadosParaJogo(matches, f.data, jogoDaConvocatoria && jogoDaConvocatoria.id)}
             />
 
             {f.convocados.length > 0 && (
