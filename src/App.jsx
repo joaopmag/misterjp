@@ -10378,12 +10378,9 @@ function Exercicios({ exercises, setExercises, meta }) {
                   rato e no detalhe): sem o espaço vazio que a 2.ª linha
                   reservada deixava nos nomes curtos. */}
               <div title={x.name} style={{
-                color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 7, lineHeight: '20px', height: 20,
+                color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 10, lineHeight: '20px', height: 20,
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
               }}>{x.name}</div>
-              <div style={{ marginBottom: 8 }}>
-                <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
-              </div>
               {/* CARTÃO SIMPLIFICADO — sem espaço, nº de jogadores, material
                   nem "editado por" (continuam no detalhe e no histórico).
                   Todas as zonas têm altura fixa (título 2 linhas, imagem
@@ -10411,7 +10408,12 @@ function Exercicios({ exercises, setExercises, meta }) {
               }}>{x.description}</p>
               {/* Ícones no fundo do cartão, encostados à direita — por baixo
                   da descrição, a pedido. */}
-              <div style={{ display: 'flex', gap: 16, marginTop: 10, justifyContent: 'flex-end' }}>
+              {/* O MOMENTO passa para baixo do campo, à esquerda, na linha
+                  dos ícones (a pedido) — o campo sobe para logo a seguir
+                  ao título. */}
+              <div style={{ display: 'flex', gap: 16, marginTop: 10, alignItems: 'center' }}>
+                <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{x.phase}</span>
+                <span style={{ flex: 1 }} />
                 <button onClick={(e) => { e.stopPropagation(); doShare(x); }} title="Partilhar como ficheiro" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Share2 size={14} /></button>
                 <button onClick={(e) => { e.stopPropagation(); doPrint(x); }} title="Imprimir exercício" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Printer size={14} /></button>
                 <button onClick={(e) => { e.stopPropagation(); setHistoryFor(x); }} title="Histórico de alterações" style={{ background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', padding: 0 }}><Clock size={14} /></button>
@@ -12666,9 +12668,9 @@ function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : 
    só o campo — sem a folga à volta nem os bancos — para o relvado encher
    o cartão. Mesma proporção nas duas vistas (o meio-campo vertical ganha
    margem dos lados), para todos os cartões terem a mesma altura. */
-const CARTAO_VIEWBOX = '-2 -0.6 111 71.2';
+const CARTAO_VIEWBOX = '-2.2 -0.6 111.4 71.2';
 const CARTAO_VIEWBOX_MEIO = '-8.95 -2 87.9 56.4';
-const CARTAO_ASPECT = '111 / 71.2';
+const CARTAO_ASPECT = '111.4 / 71.2';
 function viewBoxCartao(vista) { return vista === 'meio' ? CARTAO_VIEWBOX_MEIO : CARTAO_VIEWBOX; }
 const VistaCampoCtx = React.createContext('completo');
 function VistaCampo({ vista, gRef, children }) {
@@ -13750,12 +13752,26 @@ function PitchMarkings({ printMode, cartao = false }) {
         /* CARTÕES: balizas por FORA da linha de baliza, com rede e postes
            — a linha de baliza fica livre, como num campo a sério. */
         <>
-          <GoalNet x={-1.2} y={31.34} w={2.2} h={7.32} color={netColor} />
-          <GoalNet x={106} y={31.34} w={2.2} h={7.32} color={netColor} />
-          <path d="M 1 31.34 L -1.2 31.34 L -1.2 38.66 L 1 38.66" fill="none" stroke={strokeGoal} strokeWidth="0.5" strokeLinejoin="round" />
-          <path d="M 106 31.34 L 108.2 31.34 L 108.2 38.66 L 106 38.66" fill="none" stroke={strokeGoal} strokeWidth="0.5" strokeLinejoin="round" />
-          <line x1="1" y1="31.34" x2="1" y2="38.66" stroke={strokeGoal} strokeWidth="0.6" />
-          <line x1="106" y1="31.34" x2="106" y2="38.66" stroke={strokeGoal} strokeWidth="0.6" />
+          {/* Baliza "a sério": rede clara (malha apertada) por trás da
+              linha, armação e postes brancos. */}
+          {[{ x: -1.4, lado: -1 }, { x: 106, lado: 1 }].map(({ x, lado }) => {
+            const w = 2.4; const y0 = 31.34; const h = 7.32;
+            const xLinha = lado < 0 ? 1 : 106;
+            const xFundo = lado < 0 ? x : x + w;
+            const malha = [];
+            for (let i = 1; i < 4; i++) { const gx = x + (w * i) / 4; malha.push(<line key={`v${i}`} x1={gx} y1={y0} x2={gx} y2={y0 + h} stroke="#ffffff" strokeWidth="0.07" opacity="0.55" />); }
+            for (let j = 1; j < 10; j++) { const gy = y0 + (h * j) / 10; malha.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke="#ffffff" strokeWidth="0.07" opacity="0.55" />); }
+            return (
+              <g key={lado} style={{ pointerEvents: 'none' }}>
+                <rect x={x} y={y0} width={w} height={h} fill="#ffffff" fillOpacity="0.2" />
+                {malha}
+                <path d={`M ${xLinha} ${y0} L ${xFundo} ${y0} L ${xFundo} ${y0 + h} L ${xLinha} ${y0 + h}`} fill="none" stroke="#ffffff" strokeOpacity="0.85" strokeWidth="0.35" strokeLinejoin="round" />
+                <line x1={xLinha} y1={y0} x2={xLinha} y2={y0 + h} stroke="#ffffff" strokeWidth="0.7" />
+                <circle cx={xLinha} cy={y0} r="0.45" fill="#ffffff" />
+                <circle cx={xLinha} cy={y0 + h} r="0.45" fill="#ffffff" />
+              </g>
+            );
+          })}
         </>
       ) : (
         <>
