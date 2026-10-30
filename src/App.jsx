@@ -10958,7 +10958,10 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tocar(e); } }}
           title={aTocar ? 'Parar' : 'Reproduzir a animação aqui'}
           style={{
-            position: 'absolute', right: 6, bottom: 14, width: 24, height: 24, borderRadius: '50%',
+            /* Dentro do campo, sem tocar nas linhas: a linha lateral e a de
+               fundo ficam a ~4 % da borda do desenho (e o desenho tem 8 px
+               de margem por baixo). */
+            position: 'absolute', right: 'calc(4.5% + 6px)', bottom: 'calc(8px + 4.5% + 5px)', width: 24, height: 24, borderRadius: '50%',
             background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', color: 'rgba(255,255,255,0.85)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
           }}>
@@ -30039,17 +30042,20 @@ function topNoCampoPrint(lx) {
   const t = 2.5 + (1 - lx) * 93;
   return t > 44 && t < 53 ? 44 : t;
 }
-/* NA FOLHA IMPRESSA, O NOME É QUE MANDA (a mesma lógica do ecrã): o GR
-   tem o nome assente na linha de fundo e os médios que calham no meio
-   têm o nome assente na linha do meio-campo, com a foto por cima. O nome
+/* NA FOLHA IMPRESSA, O NOME É QUE MANDA: o GR tem o nome logo POR CIMA
+   da linha de fundo e os médios que calham no meio têm o nome logo POR
+   CIMA da linha do meio-campo, com a foto por cima do nome. O nome
    leva fundo branco, por isso nenhuma linha do campo o corta. Os outros
    ficam onde estavam (nome por baixo da foto).
    Devolve a altura (em % do campo) do CENTRO do nome. */
 const PRINT_NOME_ABAIXO = 3.6; // da bola ao centro do nome, em % do campo (142 mm)
+// Meia altura do nome (7,5 pt ≈ 3,2 mm) + uma folga, em % do campo: o nome
+// fica POR CIMA da linha, encostado a ela, sem lhe tocar.
+const PRINT_NOME_ACIMA_LINHA = 1.7;
 function nomeNoCampoPrint(lx) {
   const t = 2.5 + (1 - lx) * 93;
-  if (t >= 88) return (103.5 / 105) * 100;      // GR: na linha de fundo
-  if (t > 44 && t < 53) return 50;              // médios: na linha do meio-campo
+  if (t >= 88) return (103.5 / 105) * 100 - PRINT_NOME_ACIMA_LINHA; // GR: por cima da linha de fundo
+  if (t > 44 && t < 53) return 50 - PRINT_NOME_ACIMA_LINHA;          // médios: por cima da linha do meio-campo
   return t + PRINT_NOME_ABAIXO;
 }
 function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }) {
@@ -36387,8 +36393,9 @@ function cvDataCurta(iso) {
    ao jogo): selo limpo, numa só letra (Oswald), com o nome do clube no
    arco de cima e "EQUIPA TÉCNICA" no de baixo; a faixa dourada atravessa
    o selo e sai um pouco para fora, com as pontas em cauda de andorinha. */
-function CvCarimbo({ clube, tam }) {
+function CvCarimbo({ clube, tam, data }) {
   const cor = T.gold;
+  const dm = /^\d{4}-(\d{2})-(\d{2})/.exec(String(data || ''));
   const id = React.useId().replace(/:/g, '');
   const nome = String(clube || 'Equipa').replace(/\s+(u|sub)-?\d{1,2}\b.*$/i, '').toUpperCase();
   const f = { fontFamily: "'Oswald', sans-serif", fontWeight: 500 };
@@ -36412,7 +36419,8 @@ function CvCarimbo({ clube, tam }) {
         {/* A faixa: sai para fora do selo dos dois lados. */}
         <path d="M -6,50 L 126,50 L 119,60 L 126,70 L -6,70 L 1,60 Z" stroke="none" />
         <text x="60" y="64.5" textAnchor="middle" stroke="none" fill="#1B231D" textLength="74" lengthAdjust="spacingAndGlyphs" style={{ ...f, fontSize: 13, fontWeight: 600 }}>CONVOCADO</text>
-        <text x="60" y="44" textAnchor="middle" stroke="none" style={{ fontSize: 7, letterSpacing: '.35em' }}>★★★</text>
+        {/* Por cima da faixa, a data do jogo: o carimbo fica "datado". */}
+        {dm && <text x="60" y="44" textAnchor="middle" stroke="none" style={{ ...f, fontSize: 10, letterSpacing: '.14em' }}>{`${dm[2]}.${dm[1]}`}</text>}
       </g>
     </svg>
   );
@@ -36486,7 +36494,7 @@ function PlayerConvocatoriasTab({ code, teamId, jogadorId, logo, infoJogo }) { /
             {/* Carimbo com a faixa "CONVOCADO" (só para quem vai ao jogo). */}
             {c.convocado && (
               <div style={{ position: 'absolute', right: estreito ? 12 : 22, top: estreito ? 12 : 16 }}>
-                <CvCarimbo clube={nossoClube} tam={tamCarimbo} />
+                <CvCarimbo clube={nossoClube} tam={tamCarimbo} data={c.data} />
               </div>
             )}
 
