@@ -26170,6 +26170,49 @@ function PrintFichaJogo({ match, players, season }) {
 /* A mesma ficha, mas como ficheiro para enviar (WhatsApp, email). Não
    desenha o campo — o HTML partilhável não tem prancheta para jogos — mas
    leva a mesma informação por palavras. */
+/* ESCALAÇÃO COM FOTOS, PARA O FICHEIRO PARTILHADO — o mesmo desenho da
+   escalação no ecrã: campo vertical com o onze nas bolas com foto e, à
+   direita, só os suplentes (também com foto). HTML e CSS simples, sem
+   JavaScript, com as fotos dentro do próprio ficheiro. */
+function escalacaoComFotosHtml(match, players) {
+  const formacao = match.formacao || '4-3-3';
+  const porId = new Map(players.map(p => [p.id, p]));
+  const titulares = (match.starters || []).map(id => porId.get(id)).filter(Boolean);
+  if (!titulares.length) return '';
+  const { lugares, colocados } = distribuirOnzeNoCampo(titulares, formacao, match.alinhamento);
+  const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
+  const usados = new Set(colocados.filter(Boolean).map(p => p.id));
+  const banco = (match.convocados || []).filter(id => !usados.has(id) && !(match.starters || []).includes(id)).map(id => porId.get(id)).filter(Boolean);
+  const nomeCurto = (p) => escapeHtmlText(shortPlayerName(p, players));
+  const bola = (p, tam) => {
+    const conteudo = p.photo
+      ? `<img src="${escapeHtmlText(p.photo)}" alt="" style="width:100%;height:100%;object-fit:cover">`
+      : escapeHtmlText(String(p.number || (p.name || '?').slice(0, 1)));
+    return `<span style="width:${tam}px;height:${tam}px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#9E2B33;color:#fff;font-weight:700;font-size:${Math.round(tam * 0.36)}px;border:2px solid #fff;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.4)">${conteudo}</span>`;
+  };
+  const noCampo = lugares.map((lugar, i) => {
+    const p = colocados[i];
+    const [lx, ly] = layout[i] || [0.5, 0.5];
+    const pos = `left:${(ly * 100).toFixed(2)}%;top:${((1 - lx) * 100).toFixed(2)}%`;
+    if (!p) return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);color:#ffffffaa;font-size:11px">${escapeHtmlText(rotuloDoLugar(lugar))}</div>`;
+    return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;width:76px">${bola(p, 40)}`
+      + `<span style="font-size:11px;color:#fff;margin-top:2px;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">${nomeCurto(p)}</span></div>`;
+  }).join('');
+  const linhas = '<svg viewBox="0 0 68 105" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%"><g fill="none" stroke="#ffffff88" stroke-width="0.35">'
+    + '<rect x="1.5" y="1.5" width="65" height="102"/><line x1="1.5" y1="52.5" x2="66.5" y2="52.5"/><circle cx="34" cy="52.5" r="9.15"/>'
+    + '<rect x="13.84" y="1.5" width="40.32" height="16.5"/><rect x="24.84" y="1.5" width="18.32" height="5.5"/>'
+    + '<rect x="13.84" y="87" width="40.32" height="16.5"/><rect x="24.84" y="98" width="18.32" height="5.5"/></g></svg>';
+  const campo = `<div style="position:relative;width:100%;max-width:340px;aspect-ratio:68/105;border-radius:10px;overflow:hidden;background:repeating-linear-gradient(180deg,#2b5a33 0 7.5%,#275230 7.5% 15%)">${linhas}${noCampo}</div>`;
+  const suplentes = banco.length
+    ? banco.map(p => `<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border:1px solid #ffffff22;border-radius:8px;background:#ffffff08">${bola(p, 30)}`
+      + `<span style="min-width:0"><span style="display:block;font-size:13px">${nomeCurto(p)}</span><span style="display:block;font-size:11px;opacity:.6">${escapeHtmlText([p.position, p.number].filter(Boolean).join(' · '))}</span></span></div>`).join('')
+    : '<p class="desc">Sem suplentes.</p>';
+  return `<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start">`
+    + `<div style="flex:1 1 280px;max-width:340px">${campo}<div style="font-size:12px;opacity:.6;margin-top:6px">Formação ${escapeHtmlText(formacao)}</div></div>`
+    + `<div style="flex:1 1 260px;min-width:0"><h3 style="margin:0 0 8px">Suplentes (${banco.length})</h3><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px">${suplentes}</div></div>`
+    + `</div>`;
+}
+
 function buildMatchShareHtml({ match, players, season }) {
   const nosso = clubeSemEscalao(season && season.club) || 'A nossa equipa';
   const eventos = eventosDoJogo(match, players);
@@ -26181,9 +26224,13 @@ function buildMatchShareHtml({ match, players, season }) {
      do mesmo jogo. */
   const equipa = equipaDoAmigavel({ session: null, jogo: match, players });
 
+  // Com onze lançado: campo vertical com fotos + suplentes com fotos.
+  // Sem onze, fica o que havia (campo e as duas colunas).
+  const comFotos = escalacaoComFotosHtml(match, players);
   const extraHtml = [
-    `<h2>Formação</h2>${campoDaEquipaHtml(equipa)}`,
-    `<h2>Equipa</h2>${equipaEmColunasHtml(equipa.titulares, equipa.suplentes)}`,
+    comFotos
+      ? `<h2>Escalação</h2>${comFotos}`
+      : `<h2>Formação</h2>${campoDaEquipaHtml(equipa)}<h2>Equipa</h2>${equipaEmColunasHtml(equipa.titulares, equipa.suplentes)}`,
     `<h2>Ideias para o jogo</h2><p class="desc">${escapeHtmlText(String(match.ideias || '').trim() || '—')}</p>`,
     `<h2>Destaques</h2>${destaques.length
       ? destaques.map(l => `<p class="desc">${escapeHtmlText(l)}</p>`).join('')
@@ -26287,8 +26334,10 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
       xwide
       fullPage
     >
-      {/* Resultado em destaque: é a primeira coisa que se procura. */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+      {/* Resultado em destaque: é a primeira coisa que se procura. Num jogo
+          por jogar não há resultado e o encontro já está no título — a
+          linha sai, para a escalação caber no ecrã. */}
+      <div style={{ display: porJogar ? 'none' : 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         {/* Casa à esquerda, fora à direita, e o resultado tal como está
             guardado ("casa-fora"): num jogo fora, "Paredes 6 – 0 Salgueiros". */}
         <span style={{ ...display, fontSize: 17, color: T.cream }}>{match.atHome === false ? (match.opponent || '—') : nosso}</span>
@@ -26314,8 +26363,9 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
 
       {porJogar ? (
         <div>
-          {/* O plano de jogo: botão pequeno, no canto superior direito. */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          {/* O plano de jogo: botão pequeno, lá em cima à direita, à altura
+              da linha da data (no telemóvel fica por baixo dela). */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, marginTop: isNarrow ? 0 : -44 }}>
             <CartaoPlanoDoJogo jogo={match} />
           </div>
           <EscalacaoNoCampo
@@ -28455,7 +28505,6 @@ const GRELHA_RELATORIO = 'minmax(0,1.7fr) 86px 74px 104px 104px 150px 74px';
    com botões − / + (sem ter de escrever); minutos e nota (0–10, a nossa
    escala de sempre) em caixa. Os dados são os mesmos de sempre
    (`report[pid]`: minutes, goals, assists, card, rating). */
-const COR_FAMILIA_POS = { GR: '#3A8FC4', DC: '#B3261E', DD: '#B3261E', DE: '#B3261E', MD: '#C9A227', MC: '#C9A227', MOC: '#C9A227', EE: '#3E9B5F', ED: '#3E9B5F', PL: '#3E9B5F' };
 function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcapitao, onReport, onTitular, estreito, alturaMax }) {
   const comMin = (r) => !!r && Number(r.minutes) > 0;
   const campo = { padding: '6px 6px', fontSize: 13, textAlign: 'center' };
@@ -28499,15 +28548,18 @@ function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcap
           const r = report[p.id] || {};
           const tit = starters.includes(p.id);
           const b = bracadeira(p.id);
-          const corPos = COR_FAMILIA_POS[p.position] || T.mutedDim;
+          const corPos = T.corEquipa || T.crimson;
           const nome = (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
               {foto(p)}
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13.5, color: T.cream, ...LINHAS(1) }}>{shortPlayerName(p, players)}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                  {p.number ? <span style={{ ...mono, fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#0d1a12', color: T.cream }}>{p.number}</span> : null}
-                  {p.position ? <span style={{ ...mono, fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: corPos, color: '#fff' }}>{p.position}</span> : null}
+                  {/* Larguras FIXAS: com números de 1 ou 2 algarismos as
+                      etiquetas da posição ficam todas alinhadas. Posição na
+                      cor da equipa (a de Gerir equipa). */}
+                  <span style={{ ...mono, fontSize: 10, fontWeight: 700, width: 22, textAlign: 'center', padding: '1px 0', borderRadius: 3, background: '#0d1a12', color: T.cream, visibility: p.number ? 'visible' : 'hidden' }}>{p.number || '0'}</span>
+                  <span style={{ ...mono, fontSize: 10, fontWeight: 700, width: 30, textAlign: 'center', padding: '1px 0', borderRadius: 3, background: corPos, color: '#fff', visibility: p.position ? 'visible' : 'hidden' }}>{p.position || '—'}</span>
                   {b && (
                     <span title={b === 'C' ? 'Capitão (escolhido na Convocatória)' : 'Subcapitão (escolhido na Convocatória)'} style={{
                       ...mono, fontSize: 10, fontWeight: 800, padding: '1px 5px', borderRadius: 3,
@@ -29547,22 +29599,25 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
     onClick: (e) => { e.stopPropagation(); tocarJogador(origem); },
   });
 
+  // Cartão compacto: foto, nome e (posição · número) — ou o estado
+  // clínico, nos indisponíveis — sempre em duas linhas curtas.
   const cartaoJogador = (p, origem, extra) => {
     const escolhido = sel && sel.id === p.id;
     return (
       <button key={p.id} type="button" {...props(origem)}
         title={`${p.name}${p.position ? ` · ${p.position}` : ''}`}
         style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', minWidth: 0, textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 7, padding: '4px 7px', minWidth: 0, textAlign: 'left',
           background: escolhido ? `${T.gold}22` : T.surfaceRaise, border: `1px solid ${escolhido ? T.gold : T.line}`, borderRadius: 8,
           color: T.cream, cursor: 'pointer', opacity: arrasto && arrasto.id === p.id ? 0.35 : 1, touchAction: 'manipulation', ...body,
         }}>
-        {fotoBola(p, 28, escolhido)}
+        {fotoBola(p, 26, escolhido)}
         <span style={{ minWidth: 0, flex: 1 }}>
-          <span style={{ display: 'block', fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortPlayerName(p, players)}</span>
-          <span style={{ display: 'block', fontSize: 10.5, color: T.mutedDim, ...mono }}>{p.position || '—'}{p.number ? ` · ${p.number}` : ''}</span>
+          <span style={{ display: 'block', fontSize: 12, lineHeight: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortPlayerName(p, players)}</span>
+          <span style={{ display: 'block', fontSize: 10, lineHeight: '13px', color: extra ? T.bad : T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...mono }}>
+            {extra || `${p.position || '—'}${p.number ? ` · ${p.number}` : ''}`}
+          </span>
         </span>
-        {extra}
       </button>
     );
   };
@@ -29572,15 +29627,14 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
       <div data-zona={opcoes.semZona ? undefined : `${zona}`} onClick={() => !opcoes.semToque && tocarZona({ tipo: zona })}
         style={{
           border: `1px ${ativo && !opcoes.semZona ? 'dashed' : 'solid'} ${alvo === `${zona}:` ? T.gold : (opcoes.cor || T.line)}`,
-          borderRadius: 10, padding: 10, background: alvo === `${zona}:` ? `${T.gold}14` : 'transparent', minWidth: 0,
+          borderRadius: 10, padding: '9px 10px', background: alvo === `${zona}:` ? `${T.gold}14` : T.surface, minWidth: 0,
           cursor: sel && !opcoes.semToque ? 'pointer' : 'default',
         }}>
-        <div style={{ fontSize: 11, color: opcoes.cor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8, ...body }}>{titulo}</div>
-        <div style={{ height: opcoes.altura || 150, overflowY: 'auto', overflowAnchor: 'none', scrollbarGutter: 'stable' }}>
-          {conteudo.length === 0
-            ? <div style={{ color: T.mutedDim, fontSize: 12, padding: '14px 4px', textAlign: 'center', ...body }}>{vazio}</div>
-            : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 6 }}>{conteudo}</div>}
-        </div>
+        <div style={{ fontSize: 11, color: opcoes.cor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 7, ...body }}>{titulo}</div>
+        {/* Sem deslizar por dentro: a caixa cresce com os jogadores. */}
+        {conteudo.length === 0
+          ? <div style={{ color: T.mutedDim, fontSize: 12, padding: '8px 4px', textAlign: 'center', ...body }}>{vazio}</div>
+          : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(132px, 1fr))', gap: 5 }}>{conteudo}</div>}
       </div>
     );
   };
@@ -29606,10 +29660,10 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 360px) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 320px) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
         {/* CAMPO VERTICAL (ataque para cima). */}
         <div style={{
-          position: 'relative', width: '100%', maxWidth: 360, margin: isMobile ? '0 auto' : 0, aspectRatio: '68 / 105', borderRadius: 10, overflow: 'hidden',
+          position: 'relative', width: '100%', maxWidth: 320, margin: isMobile ? '0 auto' : 0, aspectRatio: '68 / 105', borderRadius: 10, overflow: 'hidden',
           background: 'repeating-linear-gradient(180deg, #2b5a33 0 7.5%, #275230 7.5% 15%)', border: `1px solid ${T.line}`,
         }}>
           <svg viewBox="0 0 68 105" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
@@ -29660,7 +29714,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
         </div>
 
         {/* ZONAS À VOLTA DO CAMPO */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
           {caixa('banco', `Suplentes · ${banco.length}${maxBanco != null ? `/${maxBanco}` : ''}`,
             banco.map(id => porId.get(id)).filter(Boolean).map(p => cartaoJogador(p, { de: 'banco', id: p.id })),
             bancoCheio ? 'Banco completo.' : 'Arrasta (ou toca) para pôr aqui os suplentes.', { altura: 130 })}
@@ -29668,7 +29722,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
             foraDisp.map(p => cartaoJogador(p, { de: 'fora', id: p.id })),
             'Todos os jogadores disponíveis estão na escalação.', { altura: 190 })}
           {foraIndisp.length > 0 && caixa('indisp', `Indisponíveis · ${foraIndisp.length}`,
-            foraIndisp.map(p => cartaoJogador(p, { de: 'fora', id: p.id }, <span style={{ fontSize: 10, color: T.bad, ...body }}>{(estado(p) || {}).curto || ''}</span>)),
+            foraIndisp.map(p => cartaoJogador(p, { de: 'fora', id: p.id }, (estado(p) || {}).curto || 'Indisponível')),
             '', { altura: 80, cor: T.bad, semZona: true, semToque: true })}
         </div>
       </div>
