@@ -11357,8 +11357,13 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
         action={(
           /* Pela ordem: Nova ideia, Dossier, Portal. No telemóvel, os três
              numa linha, a dividir a largura (como nas outras páginas). */
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', ...(cabecalhoEstreito ? { width: '100%' } : {}) }}>
+          /* No computador: "Nova ideia" no mesmo sítio do "Novo exercício"
+             (em cima, à direita) e Dossier e Portal por baixo dele. */
+          <div style={cabecalhoEstreito
+            ? { display: 'flex', gap: 8, flexWrap: 'nowrap', width: '100%' }
+            : { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
             <Btn onClick={() => setModal('new')} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Plus size={15} /> Nova ideia</Btn>
+            <div style={cabecalhoEstreito ? { display: 'contents' } : { display: 'flex', gap: 8 }}>
             {/* Só faz sentido com alguma coisa para compilar. Passar do
                 Portal para o Dossier (ou ao contrário) usa `trocarJanela`:
                 a página nova herda a marca do "voltar" da anterior. Antes,
@@ -11370,6 +11375,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
             {ideias.length > 0 && (
               <Btn variant="ghost" onClick={() => { if (portalAtleta) return; if (dossier) trocarJanela(() => setDossier(false), () => setPortalAtleta(true)); else setPortalAtleta(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Eye size={15} /> Portal</Btn>
             )}
+            </div>
           </div>
         )} />
 
@@ -29905,8 +29911,10 @@ function castigadosParaJogo(matches, data, jogoId) {
    ficheiro partilhado: GR em baixo, com o nome na pequena área; os médios
    que calham na linha do meio sobem, com o nome acima da linha. */
 function topNoCampoEcra(lx) {
-  const t = 4 + (1 - lx) * 91.5;
-  return t > 41 && t < 54 ? 41 : t;
+  // GR: bola um pouco acima da linha de fundo, com o NOME em cima dela.
+  // Médios na linha do meio: bola acima, com o NOME em cima da linha.
+  const t = 3 + (1 - lx) * 95;
+  return t > 41 && t < 54 ? 44.5 : t;
 }
 function topNoCampoPrint(lx) {
   const t = 2.5 + (1 - lx) * 93;
@@ -36202,7 +36210,7 @@ function PlayerConvocatoriasTab({ code, teamId }) {
     return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhuma convocatória partilhada contigo.</div>;
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 560 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 760 }}>
       {lista.map(c => {
         // Por número da camisola — quem não tem número atribuído vai
         // para o fim. Os jogadores à experiência (sem `id`, porque não
@@ -36246,15 +36254,34 @@ function PlayerConvocatoriasTab({ code, teamId }) {
                 <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
                   Convocados
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {convocados.map((p, i) => (
-                    <div key={p.id || `x-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: T.cream }}>
-                      <span style={{ ...mono, color: T.mutedDim, width: 24, flexShrink: 0, textAlign: 'right' }}>
-                        {typeof p.number === 'number' ? p.number : '—'}
-                      </span>
-                      <span>{p.name}{p.id == null && <span style={{ color: T.mutedDim }}> (exp)</span>}</span>
-                    </div>
-                  ))}
+                {/* Cartões com FOTO, número e nome. A foto vem do servidor se a
+                    função do Portal a enviar (campo `photo` de cada
+                    convocado); sem ela, uma bola na cor da equipa com as
+                    iniciais. */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6 }}>
+                  {convocados.map((p, i) => {
+                    const iniciais = String(p.name || '?').split(' ').filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase();
+                    return (
+                      <div key={p.id || `x-${i}`} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 10,
+                        background: T.surfaceRaise, border: `1px solid ${T.line}`, minWidth: 0,
+                      }}>
+                        <span style={{
+                          width: 36, height: 36, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
+                          background: T.corEquipa || T.crimson, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 12, fontWeight: 700, border: '2px solid #ffffffcc', ...body,
+                        }}>
+                          {p.photo ? <img src={p.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : iniciais}
+                        </span>
+                        <span style={{ ...mono, fontSize: 12, fontWeight: 700, minWidth: 24, textAlign: 'center', padding: '2px 0', borderRadius: 4, background: '#0d1a12', color: T.cream, flexShrink: 0 }}>
+                          {typeof p.number === 'number' ? p.number : '—'}
+                        </span>
+                        <span style={{ fontSize: 13.5, color: T.cream, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {p.name}{p.id == null && <span style={{ color: T.mutedDim }}> (exp)</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
