@@ -4351,6 +4351,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
               setDesenvolvimento={setDesenvolvimento}
               autorizarRemocaoEmMassa={autorizarApagarMomento}
               userEmail={session && session.user && session.user.email}
+              setTarefas={setTarefas}
             />
           )}
           {tarefasReady && membros && (
@@ -18410,7 +18411,14 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18, flexWrap: 'wrap' }}>
+      {/* BOTÕES FIXOS no fundo do ecrã: as secções têm números diferentes
+          de perguntas, e os botões andavam para cima e para baixo ao
+          mudar de secção. Agora ficam sempre no mesmo sítio. */}
+      <div style={{
+        display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18, flexWrap: 'wrap',
+        position: 'sticky', bottom: 0, zIndex: 5, background: T.bg, padding: '12px 0 14px',
+        borderTop: `1px solid ${T.line}`, boxShadow: `0 -10px 14px -10px ${T.bg}`,
+      }}>
         <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
         {onGuardar && <Btn onClick={onGuardar}><Check size={15} /> Guardar</Btn>}
         {proximaDim && (
@@ -18428,7 +18436,7 @@ function DiQuestionario({ titulo, subtitulo, posicao, respostas, comentarios, pe
   );
 }
 
-function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolvimento, autorizarRemocaoEmMassa, userEmail }) {
+function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolvimento, autorizarRemocaoEmMassa, userEmail, setTarefas }) {
   const isNarrow = useIsMobile(760);
   const [aba, setAba] = useState('geral');
   const [momentoId, setMomentoId] = useState(null);
@@ -18546,6 +18554,18 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
     // O momento e uma linha por jogador escolhido, tudo de uma vez.
     const linhas = (novoMomento.jogadores || []).map(pid => diRegistoVazio(m.id, pid));
     setDesenvolvimento(prev => [...(prev || []), m, ...linhas]);
+    /* MISSÃO AUTOMÁTICA NO PORTAL: com prazo de resposta, cada jogador
+       escolhido (e SÓ esses) recebe a missão "Autoavaliação" até ao
+       prazo. Fecha-se sozinha quando o jogador submete. */
+    if (setTarefas && novoMomento.prazo) {
+      const nome = m.nome;
+      const novas = (novoMomento.jogadores || []).map(pid => ({
+        id: uid(), titulo: `Autoavaliação · ${nome}`, notas: '', responsavel: '', prazo: novoMomento.prazo,
+        estado: 'aberta', recorrencia: null, jogadorId: pid, destino: 'autoavaliacao', origemMomento: m.id,
+        missoes: [{ id: uid(), destino: 'autoavaliacao', instrucoes: `Responde à autoavaliação "${nome}" até ${fmtDate(novoMomento.prazo)}.` }],
+      }));
+      if (novas.length) setTarefas(prev => [...(prev || []), ...novas]);
+    }
     setMomentoId(m.id);
     setNovoMomento(null);
   };
@@ -18576,7 +18596,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   ];
   const familiaDaPosicao = (pos) => FAMILIAS_JOGADOR.find(f => f.posicoes.includes(pos))?.id || 'outros';
 
-  const jogadoresParaCabecalho = jogadoresOrdenados.filter(p => registos.size === 0 || registos.has(p.id));
+  const jogadoresParaCabecalho = jogadoresOrdenados.filter(p => registos.has(p.id));
   const linhasCabecalho = [...FAMILIAS_JOGADOR, { id: 'outros', label: 'Outros' }]
     .map(f => ({ ...f, jogadores: jogadoresParaCabecalho.filter(p => familiaDaPosicao(p.position) === f.id) }))
     .filter(f => f.jogadores.length > 0);
@@ -18670,7 +18690,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                   </tr>
                 </thead>
                 <tbody>
-                  {jogadoresOrdenados.filter(p => registos.size === 0 || registos.has(p.id)).map(p => {
+                  {jogadoresOrdenados.filter(p => registos.has(p.id)).map(p => {
                     const reg = diRegisto(registos, p.id);
                     const sa = diScoreGlobal(reg && reg.auto).score;
                     const ss = diScoreGlobal(reg && reg.staff).score;
@@ -18721,7 +18741,7 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
                 no questionário ou registada aqui pelo treinador.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {jogadoresOrdenados.filter(p => registos.size === 0 || registos.has(p.id)).map(p => {
+                {jogadoresOrdenados.filter(p => registos.has(p.id)).map(p => {
                   const reg = diRegisto(registos, p.id);
                   const nAuto = diRespondido(reg && reg.auto);
                   const nStaff = diRespondido(reg && reg.staff);
@@ -35600,6 +35620,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
   const [aSubmeter, setASubmeter] = useState(false);
   const [erro, setErro] = useState('');
   const [confirmarSaida, setConfirmarSaida] = useState(false);
+  const fecharDepoisRef = useRef(false);
 
   useEffect(() => {
     if (dados && dados.registoId && auto === null) {
@@ -35617,18 +35638,16 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
     window.addEventListener('beforeunload', aoSair);
     return () => window.removeEventListener('beforeunload', aoSair);
   }, [aMeio]);
-  const tentarSair = () => { if (aMeio) setConfirmarSaida(true); else onBack(); };
-  /* RESPONDEU ÀS 30 → SUBMETE SOZINHO. Um momento curto ("Todas
-     respondidas — a submeter…") e fecha; sem botão a mais para esquecer. */
+  /* SUBMETER É SEMPRE DO JOGADOR: responder à última pergunta já não
+     submete sozinho. Se tentar FECHAR com tudo respondido, avisa que as
+     respostas vão ser submetidas — e, se aceitar, submete e fecha. */
   const completo = !!(auto && !enviado && diRespondido(auto) === DI_INDICADORES.length);
-  const [autoSubmeter, setAutoSubmeter] = useState(false);
-  useEffect(() => {
-    if (!completo || aSubmeter) return undefined;
-    setAutoSubmeter(true);
-    const h = setTimeout(() => { confirmarSubmissaoRef.current && confirmarSubmissaoRef.current(); }, 1500);
-    return () => { clearTimeout(h); setAutoSubmeter(false); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completo, auto]);
+  const [confirmarFechoCompleto, setConfirmarFechoCompleto] = useState(false);
+  const tentarSair = () => {
+    if (completo) { setConfirmarFechoCompleto(true); return; }
+    if (aMeio) setConfirmarSaida(true); else onBack();
+  };
+  const autoSubmeter = false;
   const confirmarSubmissaoRef = useRef(null);
 
   const voltar = (
@@ -35699,6 +35718,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
   const confirmarSubmissao = async () => {
     setASubmeter(true);
     setErro('');
+    setConfirmarFechoCompleto(false);
     try {
       // 1) as respostas todas de uma vez; 2) fecha o momento.
       const r1 = await supabase.rpc('checkin_desenvolvimento_responder', {
@@ -35706,14 +35726,18 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
         p_auto: auto || {}, p_submeter: false,
       });
       if (r1.error || !(r1.data && r1.data.ok)) throw (r1.error || new Error('recusado'));
+      // As respostas vão também no passo que submete: se o servidor
+      // gravasse o `p_auto` deste passo por cima, um objeto vazio apagava
+      // tudo o que o jogador respondeu.
       const { data, error } = await supabase.rpc('checkin_desenvolvimento_responder', {
         p_code: code, p_team: teamId, p_registo_id: dados.registoId,
-        p_auto: {}, p_submeter: true,
+        p_auto: auto || {}, p_submeter: true,
       });
       if (error || !(data && data.ok)) throw (error || new Error('recusado'));
       setEnviado(true);
       if (onSubmetido) onSubmetido(); // missão "Autoavaliação" fecha-se sozinha
       setConfirmar(false);
+      if (fecharDepoisRef.current) { fecharDepoisRef.current = false; onBack(); }
     } catch (e) {
       setErro('Não foi possível submeter. Tenta outra vez.');
     } finally {
@@ -35752,6 +35776,25 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
           background: T.surfaceRaise, border: `1px solid ${T.good}`, color: T.good, borderRadius: 8,
           padding: '10px 18px', fontSize: 13, ...body, display: 'flex', alignItems: 'center', gap: 8,
         }}><Loader2 size={14} className="animate-spin" /> Todas respondidas — a submeter…</div>
+      )}
+      {confirmarFechoCompleto && (
+        <div style={{
+          position: 'fixed', inset: 0, background: '#000000aa', zIndex: 60,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div style={{ background: T.surfaceRaise, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20, maxWidth: 400, width: '100%' }}>
+            <div style={{ ...display, fontSize: 16, color: T.cream, marginBottom: 8 }}>Já respondeste a todas as perguntas</div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 18, lineHeight: 1.5 }}>
+              Se fechares agora, as tuas respostas são submetidas e já não as podes alterar.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+              <Btn variant="ghost" onClick={() => setConfirmarFechoCompleto(false)} disabled={aSubmeter}>Continuar a rever</Btn>
+              <Btn onClick={() => { fecharDepoisRef.current = true; confirmarSubmissao(); }} disabled={aSubmeter}>
+                <Check size={15} /> {aSubmeter ? 'A submeter…' : 'Submeter e fechar'}
+              </Btn>
+            </div>
+          </div>
+        </div>
       )}
       {confirmarSaida && (
         <div style={{
