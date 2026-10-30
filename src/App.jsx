@@ -26385,8 +26385,8 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
           />
           {/* Ideias para o jogo: por baixo do campo. */}
           {onIdeias && (
-            <div style={{ marginTop: 14 }}>
-              <NotasDoJogo valor={match.ideias} onGuardar={onIdeias} altura={70} />
+            <div style={{ marginTop: 10 }}>
+              <NotasDoJogo valor={match.ideias} onGuardar={onIdeias} altura={52} />
             </div>
           )}
         </div>
@@ -26590,8 +26590,9 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
         </div>
       )}
 
-      {/* ---------- NÚMEROS ---------- */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10, marginTop: 14 }}>
+      {/* ---------- NÚMEROS ---------- (antes do jogo não há minutos nem
+          notas — os números saem, para a página caber no ecrã) */}
+      <div style={{ display: porJogar ? 'none' : 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10, marginTop: 14 }}>
         {[
           { label: isFriendlyMatch(match) ? 'Presentes' : 'Convocados', valor: resumo.convocados },
           { label: 'Minutos dados', valor: resumo.minutos },
@@ -29876,6 +29877,14 @@ function castigadosParaJogo(matches, data, jogoId) {
 /* ONZE NO CAMPO + SUPLENTES COM FOTO, PARA IMPRIMIR (ficha do jogo e
    ficha técnica da convocatória). Campo vertical de linhas finas sobre
    branco (poupa tinta); fotos redondas, número e nome. */
+/* Altura de cada lugar no campo impresso (ataque para cima). O GR fica
+   em baixo, com o nome dentro da pequena área; quem calha na linha do
+   meio-campo sobe um pouco, para o nome ficar ACIMA da linha e não a
+   cortá-la. */
+function topNoCampoPrint(lx) {
+  const t = 2.5 + (1 - lx) * 93;
+  return t > 44 && t < 53 ? 44 : t;
+}
 function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }) {
   const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
@@ -29908,7 +29917,7 @@ function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }
             const [lx, ly] = layout[i] || [0.5, 0.5];
             const p = slots[i] ? porId.get(slots[i]) : null;
             return (
-              <div key={i} style={{ position: 'absolute', left: `${6 + ly * 88}%`, top: `${5 + (1 - lx) * 87}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
+              <div key={i} style={{ position: 'absolute', left: `${6 + ly * 88}%`, top: `${topNoCampoPrint(lx)}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
                 {p ? (
                   <>
                     {foto(p, 10)}
