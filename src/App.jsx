@@ -26201,7 +26201,7 @@ function escalacaoComFotosHtml(match, players) {
   const noCampo = lugares.map((lugar, i) => {
     const p = colocados[i];
     const [lx, ly] = layout[i] || [0.5, 0.5];
-    const pos = `left:${(ly * 100).toFixed(2)}%;top:${((1 - lx) * 100).toFixed(2)}%`;
+    const pos = `left:${(6 + ly * 88).toFixed(2)}%;top:${(5 + (1 - lx) * 88).toFixed(2)}%`;
     if (!p) return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);color:#ffffffaa;font-size:11px">${escapeHtmlText(rotuloDoLugar(lugar))}</div>`;
     return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;width:76px">${bola(p, 40)}`
       + `<span style="font-size:11px;color:#fff;margin-top:2px;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">${nomeCurto(p)}</span></div>`;
@@ -26371,12 +26371,8 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
 
       {porJogar ? (
         <div>
-          {/* O plano de jogo: botão pequeno, lá em cima à direita, à altura
-              da linha da data (no telemóvel fica por baixo dela). */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, marginTop: isNarrow ? 0 : -44 }}>
-            <CartaoPlanoDoJogo jogo={match} />
-          </div>
           <EscalacaoNoCampo
+            acao={<CartaoPlanoDoJogo jogo={match} />}
             players={players}
             formacao={escalacao.formacao}
             slots={escalacao.slots}
@@ -29486,7 +29482,7 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
    (ficha de edição do jogo, convocatória) é que traduz para o seu
    formato. Nada é gravado aqui.
    ===================================================================== */
-function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormacao, clinico = [], data, maxBanco = null, castigados = null }) {
+function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormacao, clinico = [], data, maxBanco = null, castigados = null, acao = null }) {
   const isMobile = useIsMobile(820);
   const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
@@ -29518,6 +29514,18 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
     let s = [...slots];
     let b = banco.filter(x => x !== id);
     const tirarDosLugares = () => { s = s.map(x => (x === id ? null : x)); };
+    if (destino.tipo === 'jogador') {
+      if (destino.id === id) return;
+      if (origem.de === 'slot') {
+        // Titular largado em cima de um suplente/não convocado: trocam.
+        s[origem.i] = destino.id;
+        if (destino.de === 'banco') b = banco.map(x => (x === destino.id ? id : x));
+        onChange({ slots: s, banco: b });
+        return;
+      }
+      // Entre banco e fora, conta como largar na zona desse jogador.
+      return mover(origem, { tipo: destino.de === 'banco' ? 'banco' : 'fora' });
+    }
     if (destino.tipo === 'slot') {
       const ocupante = s[destino.i];
       if (ocupante === id) return;
@@ -29562,6 +29570,12 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
     const raiz = raizRef.current;
     if (!raiz) return null;
     const el = document.elementFromPoint(x, y);
+    // Largar em cima de um jogador (no banco ou fora): troca com ele.
+    const j = el && el.closest ? el.closest('[data-jogador]') : null;
+    if (j && raiz.contains(j)) {
+      const [de, id] = String(j.getAttribute('data-jogador')).split('|');
+      return { tipo: 'jogador', de, id };
+    }
     const z = el && el.closest ? el.closest('[data-zona]') : null;
     if (!z || !raiz.contains(z)) return null;
     const [tipo, i] = String(z.getAttribute('data-zona')).split(':');
@@ -29579,7 +29593,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
     if (!st.moveu) return;
     setArrasto({ id: st.origem.id, x: e.clientX, y: e.clientY });
     const z = zonaEm(e.clientX, e.clientY);
-    setAlvo(z ? `${z.tipo}:${z.i ?? ''}` : null);
+    setAlvo(z ? (z.tipo === 'jogador' ? `${z.de}:` : `${z.tipo}:${z.i ?? ''}`) : null);
   };
   const aoLargar = (e) => {
     const st = estadoRef.current;
@@ -29618,7 +29632,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
   const cartaoJogador = (p, origem, extra) => {
     const escolhido = sel && sel.id === p.id;
     return (
-      <button key={p.id} type="button" {...props(origem)}
+      <button key={p.id} type="button" {...props(origem)} data-jogador={`${origem.de}|${p.id}`}
         title={`${p.name}${p.position ? ` · ${p.position}` : ''}`}
         style={{
           display: 'flex', alignItems: 'center', gap: 7, padding: '4px 7px', minWidth: 0, textAlign: 'left',
@@ -29672,6 +29686,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
             ? <span style={{ color: T.gold }}>Toca no lugar, no banco ou em "Não convocados" para onde vai {porId.get(sel.id) ? shortPlayerName(porId.get(sel.id), players) : 'o jogador'}.</span>
             : (isMobile ? 'Toca num jogador e depois no sítio para onde vai.' : 'Arrasta os jogadores (ou clica num e depois no sítio).')}
         </span>
+        {acao}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 320px) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
@@ -29703,7 +29718,9 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
               <div key={i} data-zona={`slot:${i}`}
                 onClick={(e) => { e.stopPropagation(); if (p) tocarJogador({ de: 'slot', i, id: p.id }); else tocarZona({ tipo: 'slot', i }); }}
                 style={{
-                  position: 'absolute', left: `${ly * 100}%`, top: `${(1 - lx) * 100}%`, transform: 'translate(-50%, -50%)',
+                  // Margem dentro do campo: o GR e os avançados (e os nomes
+                  // por baixo deles) ficam sempre dentro das linhas.
+                  position: 'absolute', left: `${6 + ly * 88}%`, top: `${5 + (1 - lx) * 88}%`, transform: 'translate(-50%, -50%)',
                   width: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', zIndex: escolhido ? 3 : 2,
                 }}>
                 {p ? (
@@ -29730,7 +29747,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
         {/* ZONAS À VOLTA DO CAMPO */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
           {caixa('banco', `Suplentes · ${banco.length}${maxBanco != null ? `/${maxBanco}` : ''}`,
-            banco.map(id => porId.get(id)).filter(Boolean).map(p => cartaoJogador(p, { de: 'banco', id: p.id })),
+            sortByPosition(banco.map(id => porId.get(id)).filter(Boolean)).map(p => cartaoJogador(p, { de: 'banco', id: p.id })),
             bancoCheio ? 'Banco completo.' : 'Arrasta (ou toca) para pôr aqui os suplentes.', { altura: 130 })}
           {caixa('fora', `Não convocados · ${foraDisp.length}`,
             foraDisp.map(p => cartaoJogador(p, { de: 'fora', id: p.id })),
@@ -29872,7 +29889,7 @@ function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }
   );
   const suplentes = banco.map(id => porId.get(id)).filter(Boolean);
   return (
-    <div style={{ display: 'flex', gap: '8mm', alignItems: 'flex-start', marginBottom: 14, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+    <div style={{ display: 'flex', gap: '8mm', alignItems: 'flex-start', marginTop: '7mm', marginBottom: 14, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
       <div style={{ flex: '0 0 92mm' }}>
         <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>Onze inicial</h3>
         <div style={{ position: 'relative', width: '92mm', height: '142mm', border: '1px solid #999', borderRadius: 4 }}>
@@ -29891,7 +29908,7 @@ function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }
             const [lx, ly] = layout[i] || [0.5, 0.5];
             const p = slots[i] ? porId.get(slots[i]) : null;
             return (
-              <div key={i} style={{ position: 'absolute', left: `${ly * 100}%`, top: `${(1 - lx) * 100}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
+              <div key={i} style={{ position: 'absolute', left: `${6 + ly * 88}%`, top: `${5 + (1 - lx) * 87}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
                 {p ? (
                   <>
                     {foto(p, 10)}
@@ -30063,7 +30080,7 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
 
   return (
     <Modal title={match ? 'Editar jogo' : 'Novo jogo'} onClose={onClose} wide xwide fullPage>
-      <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
+      <div style={{ ...FIELD_GRID, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', marginBottom: 12 }}>
         <Field label="Competição">
           <Select value={compAtual} onChange={e => setF({ ...f, competition: e.target.value, opponent: '', jornada: '' })}>
             <option value="">— sem competição —</option>
@@ -30197,12 +30214,8 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
             segundo jogador tem de perceber porque é que ele não ficou
             titular como os anteriores. Vale para qualquer jogo, não só
             amigáveis — é a mesma regra que já usávamos em Convocatórias. */}
-        {f.id && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-            <CartaoPlanoDoJogo jogo={f} />
-          </div>
-        )}
         <EscalacaoNoCampo
+          acao={f.id ? <CartaoPlanoDoJogo jogo={f} /> : null}
           players={players}
           formacao={escalacao.formacao}
           slots={escalacao.slots}
@@ -36030,10 +36043,18 @@ async function submeterAutoavaliacaoSeCompleta(code, teamId, dadosConhecidos) {
     // Já submetida (pelo jogador noutro dia, ou pela equipa técnica em
     // Desenvolvimento): conta como feita, para a missão "Autoavaliação"
     // do Portal fechar também.
-    if (d.enviado) return true;
+    if (d.enviado) {
+      // Só conta como feita se houver mesmo respostas guardadas: uma
+      // submissão VAZIA não pode fechar a missão do jogador.
+      return diRespondido(d.auto) > 0;
+    }
     if (diRespondido(d.auto) !== DI_INDICADORES.length) return false;
+    /* ATENÇÃO: enviar as RESPOSTAS ao submeter. Antes ia `p_auto: {}` —
+       o servidor gravava esse objeto vazio por cima do que o jogador tinha
+       respondido e marcava como submetida, por isso a equipa técnica via
+       "Autoavaliação submetida" sem nada respondido. */
     const { data, error } = await supabase.rpc('checkin_desenvolvimento_responder', {
-      p_code: code, p_team: teamId, p_registo_id: d.registoId, p_auto: {}, p_submeter: true,
+      p_code: code, p_team: teamId, p_registo_id: d.registoId, p_auto: d.auto || {}, p_submeter: true,
     });
     return !error && !!(data && data.ok);
   } catch (e) {
