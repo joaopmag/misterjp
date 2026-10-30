@@ -14398,6 +14398,210 @@ function buildAnimationChainsPure(arrowList) {
 }
 function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
+/* =====================================================================
+   MOTOR DE ANIMAÇÃO DO EDITOR 2D (fases 1 e 2 da fluidez, 30/10)
+   =====================================================================
+   Uma só implementação, usada por TODOS os sítios que reproduzem a
+   coreografia: o "Animar" do editor, o "Apresentar tudo", a apresentação
+   do exercício (também no Portal e nas ideias de jogo), as miniaturas com
+   ▶ e o ficheiro partilhado.
+
+   FASE 1 (fluidez):
+   · Cada jogador (ou a bola) faz o seu trajeto TODO como um só movimento:
+     arranca suave, mantém a velocidade e só trava no fim. Antes, cada
+     seta acelerava e travava sozinha e o jogador parava em cada junção.
+   · Velocidade constante também nas setas curvas (pelo comprimento real
+     da curva, não pelo parâmetro da curva).
+   · A bola anda ao DOBRO da velocidade dos jogadores e sai logo.
+   · Dentro de um passo, os jogadores (e tudo o que desliza) usam o tempo
+     do passo inteiro: quem tem pouco caminho anda mais devagar em vez de
+     chegar e ficar parado à espera.
+   · Sem pausa entre passos: um passo acaba e o seguinte começa logo.
+
+   FASE 2 (arrastar também é movimento):
+   · O que foi ARRASTADO entre dois "Animar" já não salta de sítio: desliza
+     no passo seguinte, ao mesmo tempo que as setas. Quem foi arrastado e
+     também tem seta nesse passo faz primeiro o caminho até ao início da
+     seta e depois a seta, num só movimento.
+   · O que foi arrastado DEPOIS do último "Animar" desliza no fim, até ao
+     sítio onde ficou guardado.
+   Não muda nada no que está gravado: é só a forma de reproduzir. Por isso
+   vale também para os exercícios antigos. */
+const ANIM_VEL_JOGADOR = 26;            // unidades do campo por segundo (a de sempre)
+const ANIM_VEL_BOLA = ANIM_VEL_JOGADOR * 2;
+const ANIM_MIN_MS = 280;                // nenhum movimento demora menos do que isto
+const ANIM_DESLIZE_MIN = 0.3;           // menos do que isto não conta como arrastado
+
+// Comprimento e tabela de distâncias de uma seta (curva quadrática).
+function animSegmento(a, vel) {
+  const x1 = a.x1, y1 = a.y1, x2 = a.x2, y2 = a.y2;
+  const cx = a.cx != null ? a.cx : (x1 + x2) / 2;
+  const cy = a.cy != null ? a.cy : (y1 + y2) / 2;
+  const N = 24;
+  const ts = [0], ls = [0];
+  let px = x1, py = y1, total = 0;
+  for (let i = 1; i <= N; i++) {
+    const t = i / N, u = 1 - t;
+    const x = u * u * x1 + 2 * u * t * cx + t * t * x2;
+    const y = u * u * y1 + 2 * u * t * cy + t * t * y2;
+    total += Math.hypot(x - px, y - py);
+    ts.push(t); ls.push(total);
+    px = x; py = y;
+  }
+  return { x1, y1, cx, cy, x2, y2, len: total, ts, ls, vel };
+}
+// Ponto da seta a uma dada distância do início (velocidade constante).
+function animPontoAoLongo(seg, d) {
+  if (seg.len <= 0) return { x: seg.x2, y: seg.y2 };
+  const alvo = Math.max(0, Math.min(seg.len, d));
+  let i = 1;
+  while (i < seg.ls.length - 1 && seg.ls[i] < alvo) i++;
+  const l0 = seg.ls[i - 1], l1 = seg.ls[i];
+  const f = l1 > l0 ? (alvo - l0) / (l1 - l0) : 0;
+  const t = seg.ts[i - 1] + (seg.ts[i] - seg.ts[i - 1]) * f, u = 1 - t;
+  return {
+    x: u * u * seg.x1 + 2 * u * t * seg.cx + t * t * seg.x2,
+    y: u * u * seg.y1 + 2 * u * t * seg.cy + t * t * seg.y2,
+  };
+}
+/* Perfil de velocidade: rampa de arranque, velocidade constante, rampa de
+   travagem (as rampas valem `rampaMs`, no máximo 30 % do movimento cada).
+   Recebe a fração de tempo (0–1) e devolve a fração do caminho (0–1). */
+function animPerfil(x, durMs, rampaMs) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const a = Math.min(0.3, durMs > 0 ? rampaMs / durMs : 0.3);
+  if (a <= 0) return x;
+  const v = 1 / (1 - a);
+  if (x < a) return 0.5 * v * x * x / a;
+  if (x > 1 - a) return 1 - 0.5 * v * (1 - x) * (1 - x) / a;
+  return v * (x - a / 2);
+}
+// Um trajeto = várias setas seguidas, percorridas como um só movimento.
+function animTrajeto(segs, ehBola) {
+  let tempo = 0;
+  const partes = segs.map(sg => {
+    const ms = (sg.len / sg.vel) * 1000;
+    const p = { sg, inicio: tempo, ms };
+    tempo += ms;
+    return p;
+  });
+  return { partes, natural: Math.max(ANIM_MIN_MS, tempo), tempoCaminho: tempo, ehBola, dur: 0 };
+}
+function animPosicaoNoTrajeto(tr, ms) {
+  const x = tr.dur > 0 ? ms / tr.dur : 1;
+  const f = animPerfil(x, tr.dur, tr.ehBola ? 140 : 380);
+  const alvo = f * tr.tempoCaminho;
+  let p = tr.partes[tr.partes.length - 1];
+  for (const q of tr.partes) { if (alvo <= q.inicio + q.ms) { p = q; break; } }
+  const local = p.ms > 0 ? Math.max(0, Math.min(1, (alvo - p.inicio) / p.ms)) : 1;
+  return animPontoAoLongo(p.sg, local * p.sg.len);
+}
+// Quem se mexe numa cadeia de setas (o dono gravado; senão, o mais perto).
+function animMoverPadrao(first, elementos) {
+  if (first.ownerId) {
+    const dono = elementos.find(el => el.id === first.ownerId);
+    if (dono) return dono;
+  }
+  const tipos = first.type === 'arrow-run' ? ['player', 'keeper', 'text'] : ['ball'];
+  let best = null, bestD = Infinity;
+  for (const el of elementos) {
+    if (!tipos.includes(el.kind)) continue;
+    let d;
+    if (el.kind === 'text') {
+      const m = textBoxMetrics(el);
+      d = Math.hypot(Math.max(0, Math.abs(m.cx - first.x1) - m.w / 2), Math.max(0, Math.abs(m.cy - first.y1) - m.h / 2));
+    } else d = Math.hypot(el.x - first.x1, el.y - first.y1);
+    if (d < bestD) { bestD = d; best = el; }
+  }
+  return best && bestD <= 3.2 ? best : null;
+}
+/* Plano de UM passo.
+   `elementos`: o campo no início das setas deste passo (a fotografia
+   gravada). `antes`: onde cada coisa estava no fim do passo anterior
+   (Map id → {x,y}); quem estiver noutro sítio desliza até aqui.
+   Devolve { base, dur, posicoes(ms) → Map, fim, movers }. */
+function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
+  const acharMover = opcoes.acharMover || animMoverPadrao;
+  const animaveis = (setas || []).filter(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
+  const cadeias = animaveis.length ? buildAnimationChainsPure(animaveis) : [];
+  const novasBolas = [];
+  const porMover = new Map(); // id → { segs, ehBola }
+  cadeias.forEach(cad => {
+    const first = cad[0];
+    let mover = acharMover(first, elementos);
+    if (!mover && first.type === 'arrow-pass') {
+      mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
+      novasBolas.push(mover);
+    }
+    if (!mover || porMover.has(mover.id)) return;
+    const ehBola = first.type === 'arrow-pass';
+    const vel = ehBola ? ANIM_VEL_BOLA : ANIM_VEL_JOGADOR;
+    porMover.set(mover.id, { segs: cad.map(a => animSegmento(a, vel)), ehBola, fimSeta: cad[cad.length - 1] });
+  });
+  const todos = [...elementos, ...novasBolas];
+  const trajetos = new Map();
+  const base = todos.map(el => {
+    const ant = antes && antes.get(el.id);
+    const desloca = ant && Math.hypot(ant.x - el.x, ant.y - el.y) > ANIM_DESLIZE_MIN;
+    // O caminho de quem foi arrastado: reto, ou curvo se se puxou o ponto do meio.
+    const curva = desloca && opcoes.curvas && opcoes.curvas[el.id];
+    const deslize = desloca ? { x1: ant.x, y1: ant.y, x2: el.x, y2: el.y, ...(curva ? { cx: curva.cx, cy: curva.cy } : {}) } : null;
+    const m = porMover.get(el.id);
+    if (m) {
+      // Arrastado e com seta: primeiro até ao início da seta, depois a seta.
+      const segs = desloca ? [animSegmento(deslize, m.ehBola ? ANIM_VEL_BOLA : ANIM_VEL_JOGADOR), ...m.segs] : m.segs;
+      trajetos.set(el.id, animTrajeto(segs, m.ehBola));
+    } else if (desloca) {
+      const ehBola = el.kind === 'ball';
+      trajetos.set(el.id, animTrajeto([animSegmento(deslize, ehBola ? ANIM_VEL_BOLA : ANIM_VEL_JOGADOR)], ehBola));
+    }
+    return desloca ? { ...el, x: ant.x, y: ant.y } : el;
+  });
+  let dur = 0;
+  trajetos.forEach(tr => { dur = Math.max(dur, tr.natural); });
+  // A bola sai logo, à sua velocidade; o resto acompanha o passo todo.
+  trajetos.forEach(tr => { tr.dur = tr.ehBola ? tr.natural : dur; });
+  const fim = todos.map(el => {
+    const m = porMover.get(el.id);
+    return m ? { ...el, x: m.fimSeta.x2, y: m.fimSeta.y2 } : el;
+  });
+  const posicoes = (ms) => {
+    const out = new Map();
+    trajetos.forEach((tr, id) => out.set(id, animPosicaoNoTrajeto(tr, Math.max(0, Math.min(tr.dur, ms)))));
+    return out;
+  };
+  return { base, dur, posicoes, fim, novasBolas, movers: new Set(trajetos.keys()) };
+}
+const animMapaPosicoes = (lista) => new Map((lista || []).map(el => [el.id, { x: el.x, y: el.y }]));
+/* Plano da coreografia toda: os passos gravados, cada um a partir do fim
+   do anterior, e (se houver) o deslize final até ao campo guardado.
+   `ate`: só os passos 0 … ate-1 (para o editor saber o fim do anterior). */
+function planearCoreografiaAnim(diagram, opcoes = {}) {
+  const seq = Array.isArray(diagram && diagram.sequence) ? diagram.sequence : [];
+  const ate = opcoes.ate != null ? Math.min(opcoes.ate, seq.length) : seq.length;
+  const passos = [];
+  let antes = null;
+  for (let i = 0; i < ate; i++) {
+    const step = seq[i];
+    const p = planearPassoAnim(stepElements(step, diagram), step.arrows, antes, { ...opcoes, curvas: step.curvas });
+    p.setasFixas = stepStaticArrows(step, diagram);
+    p.indice = i;
+    passos.push(p);
+    antes = animMapaPosicoes(p.fim);
+  }
+  if (opcoes.semFinal !== true && ate === seq.length && seq.length) {
+    const fin = planearPassoAnim(diagram.elements || [], [], antes, { ...opcoes, curvas: diagram.deslizeCurvas });
+    if (fin.dur > 0) { fin.setasFixas = diagram.arrows || []; fin.final = true; passos.push(fin); }
+  }
+  return { passos, fimAnterior: antes };
+}
+// Estado do campo num instante de um plano: { passo, elementos, setas }.
+function animEstadoNoPasso(p, ms) {
+  const pos = p.posicoes(ms);
+  return p.base.map(el => (pos.has(el.id) ? { ...el, ...pos.get(el.id) } : el));
+}
+
 /* O PONTO NA SETA a meio caminho (0 a 1) — reta por omissão, curva se a
    pega do meio (`cx`/`cy`) alguma vez foi arrastada para fora do ponto
    médio. Sem `cx`/`cy` guardados (setas antigas, ou nunca curvadas), o
@@ -14606,52 +14810,17 @@ function computeDiagramAnimationFrames(diagram, zones, phase, opcoes = {}) {
     return { frames, hasAnimation: false };
   }
 
-  const FRAME_MS = 55;
-  sequence.forEach((step) => {
-    const stepArrows = stepStaticArrows(step, diagram);
-    const chains = buildAnimationChainsPure(step.arrows).map(chainArrows => {
-      let cursor = 0;
-      const segments = chainArrows.map(a => {
-        const dist = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
-        const duration = Math.max(280, (dist / 26) * 1000);
-        const segment = { arrow: a, duration, start: cursor };
-        cursor += duration;
-        return segment;
-      });
-      const first = chainArrows[0];
-      // Prioriza o dono gravado na própria seta; só recorre à procura por
-      // proximidade para setas antigas, guardadas antes desta correção.
-      const elementosDoPasso = stepElements(step, diagram);
-      let mover = (first.ownerId && elementosDoPasso.find(el => el.id === first.ownerId)) || elementosDoPasso.find(el =>
-        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
-        Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
-      );
-      let isNewBall = false;
-      if (!mover && first.type === 'arrow-pass') {
-        mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
-        isNewBall = true;
-      }
-      return { segments, mover, isNewBall, totalDuration: cursor };
-    });
-    const baseElements = [...stepElements(step, diagram), ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover }))];
-    const maxDuration = Math.max(...chains.map(c => c.totalDuration));
-    const nSteps = Math.max(1, Math.round(maxDuration / FRAME_MS));
+  /* Com o motor partilhado (planearCoreografiaAnim): movimentos contínuos,
+     bola ao dobro da velocidade, o que foi arrastado desliza e sem pausa
+     entre passos. 25 fotogramas por segundo (antes 18, aos saltos). */
+  const FRAME_MS = 40;
+  const { passos } = planearCoreografiaAnim(diagram);
+  passos.forEach((p) => {
+    const nSteps = Math.max(1, Math.round(p.dur / FRAME_MS));
     for (let f = 0; f <= nSteps; f++) {
-      const elapsed = (f / nSteps) * maxDuration;
-      const movedPositions = new Map();
-      chains.forEach(({ segments, mover }) => {
-        if (!mover) return;
-        let active = segments[segments.length - 1];
-        for (const seg of segments) { if (elapsed < seg.start + seg.duration) { active = seg; break; } }
-        const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
-        const t = easeInOutQuadPure(active.duration ? localElapsed / active.duration : 1);
-        const { arrow } = active;
-        movedPositions.set(mover.id, pontoNaSeta(arrow, t));
-      });
-      const frameElements = baseElements.map(el => (movedPositions.has(el.id) ? { ...el, x: movedPositions.get(el.id).x, y: movedPositions.get(el.id).y } : el));
-      pushFrame(frameElements, FRAME_MS, stepArrows);
+      if (f === 0 && frames.length) continue; // o fim do anterior já é o início deste
+      pushFrame(animEstadoNoPasso(p, (f / nSteps) * p.dur), FRAME_MS, p.setasFixas);
     }
-    frames[frames.length - 1].holdMs = 450; // pausa entre passos, igual à apresentação em direto
   });
   pushFrame(diagram.elements || [], 0); // fotograma final: exatamente como o exercício está guardado hoje
   return { frames, hasAnimation: true };
@@ -14865,6 +15034,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const [goalDrag, setGoalDrag] = useState(null); // { id, mode: 'rotate'|'resize' }
   const [isPlaying, setIsPlaying] = useState(false);
   const [animItems, setAnimItems] = useState([]); // [{ id, type: 'arrow-pass'|'arrow-run', x, y, mover }]
+  // O campo a meio do "Animar" (motor partilhado): todos os elementos, já
+  // com as posições deste instante. null = sem animação a correr.
+  const [animFrame, setAnimFrame] = useState(null);
   const animRef = React.useRef(null);
   useEffect(() => () => { if (animRef.current) cancelAnimationFrame(animRef.current); }, []);
   const [dragZoneId, setDragZoneId] = useState(null);
@@ -14941,6 +15113,16 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const desdeValido = inserirDesde != null && inserirDesde >= 0 && inserirDesde <= ultimoIndicePasso ? inserirDesde : null;
   const emRecuo = desdeValido != null && desdeValido < ultimoIndicePasso;
   const elementosRecuo = emRecuo ? stepElements(value.sequence[desdeValido], value) : null;
+  /* Onde cada coisa estava no FIM do passo anterior ao que se vai gravar
+     (o último, ou o "desde" em recuo). Quem estiver agora noutro sítio foi
+     arrastado e desliza no próximo Animar (ver planearPassoAnim). */
+  const indicePassoNovo = emRecuo ? desdeValido : (value.sequence || []).length;
+  const fimAnteriorMemo = React.useMemo(() => {
+    if (!indicePassoNovo) return null;
+    try { return planearCoreografiaAnim(value, { ate: indicePassoNovo, semFinal: true }).fimAnterior; } catch (e) { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.sequence, indicePassoNovo]);
+  const fimDoPassoAnterior = () => fimAnteriorMemo;
 
   /* Corrige sozinho um `inserirDesde` que ficou a apontar para um passo
      que já não existe (ver a nota acima) — sem isto, o valor inválido
@@ -14954,6 +15136,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
 
   const elements = value?.elements || [];
   const arrows = value?.arrows || [];
+  // Há alguma coisa arrastada desde o último Animar? (o Animar aparece
+  // também só com arrastos)
+  const haArrastos = !!fimAnteriorMemo && (elementosRecuo || elements).some(el => {
+    const a = fimAnteriorMemo.get(el.id);
+    return a && Math.hypot(a.x - el.x, a.y - el.y) > ANIM_DESLIZE_MIN;
+  });
   const selectedEl = elements.find(e => e.id === selectedId) || null;
   const selectedArrow = arrows.find(a => a.id === selectedArrowId) || null;
   // Lista de zonas de espaço reduzido desenhadas no campo. Compatibilidade
@@ -15274,6 +15462,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     animRef.current = null;
     setIsPlaying(false);
     setAnimItems([]);
+    setAnimFrame(null);
   };
   // Agrupa setas encadeadas (o fim de uma coincide com o início da
   // seguinte, do mesmo tipo) em "cadeias", para que a animação as toque
@@ -15287,7 +15476,6 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const buildAnimationChains = (arrowList) => buildAnimationChainsPure(arrowList);
   const playAnimation = () => {
     const animArrows = arrows.filter(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
-    if (animArrows.length === 0) return;
     /* Em recuo: o ponto de partida do movimento vem das posições do
        passo escolhido em "desde" (`elementosRecuo`), não das posições
        "atuais" — é assim que desenhar um caminho novo a partir do
@@ -15295,51 +15483,17 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
        nessa altura, e não de onde acabaram por ficar depois de mais
        passos terem sido gravados. */
     const elementosBase = elementosRecuo || elements;
-    // Mesma velocidade para o passe e para a corrida do jogador.
-    const PASS_SPEED = 26, RUN_SPEED = 26;
-    const chains = buildAnimationChains(animArrows).map(chainArrows => {
-      let cursor = 0;
-      const segments = chainArrows.map(a => {
-        const dist = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
-        const speed = a.type === 'arrow-pass' ? PASS_SPEED : RUN_SPEED;
-        const duration = Math.max(280, (dist / speed) * 1000);
-        const segment = { arrow: a, duration, start: cursor };
-        cursor += duration;
-        return segment;
-      });
-      const first = chainArrows[0];
-      // Prioriza o dono gravado na própria seta (ver handleBgPointerDown);
-      // só recorre à antiga procura por proximidade para setas antigas,
-      // guardadas antes desta correção, que não têm essa informação.
-      let mover = first.ownerId ? elementosBase.find(el => el.id === first.ownerId) : null;
-      if (!mover) {
-        mover = first.type === 'arrow-run'
-          ? nearestElementOfKind(['player', 'keeper', 'text'], first.x1, first.y1, 3.2)
-          : nearestElementOfKind(['ball'], first.x1, first.y1, 3.2);
-      }
-      // Um "Passe" representa sempre a bola a deslocar-se. Se ainda não
-      // houver nenhuma bola colocada perto do início da seta (por exemplo,
-      // desenhou-se o passe sem usar primeiro a ferramenta "Bola"), a
-      // animação até corria bem visualmente — mas, por não haver nenhum
-      // elemento real a "agarrar", nada ficava colocado no campo quando a
-      // animação terminava e a bola simplesmente desaparecia. Criamos aqui
-      // essa bola, já no início da seta, para que o passe deixe sempre uma
-      // bola a sério no destino final.
-      let isNewBall = false;
-      if (!mover && first.type === 'arrow-pass') {
-        mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
-        isNewBall = true;
-      }
-      return { id: first.id, segments, mover, isNewBall, totalDuration: cursor };
-    });
+    /* ARRASTAR TAMBÉM É MOVIMENTO: quem foi arrastado desde o fim do passo
+       anterior desliza neste passo (ver planearPassoAnim). Por isso o
+       Animar também funciona só com arrastos, sem nenhuma seta. */
+    const curvasPendentes = value.deslizeCurvas || {};
+    const planoPasso = planearPassoAnim(elementosBase, animArrows, fimDoPassoAnterior(), { curvas: curvasPendentes });
+    if (animArrows.length === 0 && planoPasso.movers.size === 0) return;
     // Elementos de base desta animação: os que já existiam mais qualquer
-    // bola nova criada agora mesmo, na posição de partida do passe. Tanto o
-    // "instantâneo" guardado para a apresentação como o resultado final
-    // partem daqui, para não repetir esta lógica duas vezes.
-    const baseElements = [
-      ...elementosBase,
-      ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
-    ];
+    // bola nova criada agora mesmo, na posição de partida do passe (um
+    // "Passe" representa sempre a bola a deslocar-se; sem bola colocada,
+    // cria-se uma para o passe deixar uma bola a sério no destino).
+    const baseElements = [...elementosBase, ...planoPasso.novasBolas.map(b => ({ ...b }))];
     // Regista este "passo" da sequência de criação (posições antes do
     // movimento + as setas que vão animar). É assim que a apresentação do
     // exercício, mais tarde, consegue reproduzir toda a coreografia de
@@ -15352,36 +15506,23 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
          apresentação desenhava todos os traços do exercício desde o
          primeiro fotograma — mesmo os que só foram feitos no fim. */
       staticArrows: arrows.filter(a => !animArrows.some(x => x.id === a.id)).map(a => ({ ...a })),
+      // Curvas dos caminhos de quem foi arrastado (o ponto do meio puxado).
+      ...(Object.keys(curvasPendentes).some(id => planoPasso.movers.has(id))
+        ? { curvas: Object.fromEntries(Object.entries(curvasPendentes).filter(([id]) => planoPasso.movers.has(id))) } : {}),
     };
-    const maxDuration = Math.max(...chains.map(c => c.totalDuration));
     setIsPlaying(true);
     const start = performance.now();
     const tick = (now) => {
       const elapsed = now - start;
-      setAnimItems(chains.map(({ id, segments, mover }) => {
-        // Encontra o segmento (seta) da cadeia que está ativo neste
-        // instante; se a cadeia já terminou, fica parado no último.
-        let active = segments[segments.length - 1];
-        for (const seg of segments) {
-          if (elapsed < seg.start + seg.duration) { active = seg; break; }
-        }
-        const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
-        const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
-        const { arrow } = active;
-        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
-      }));
-      if (elapsed < maxDuration) {
+      setAnimFrame(animEstadoNoPasso(planoPasso, Math.min(elapsed, planoPasso.dur)));
+      if (elapsed < planoPasso.dur) {
         animRef.current = requestAnimationFrame(tick);
       } else {
         // A animação terminou: quem se deslocou (jogador ou bola) fica
         // mesmo colocado no destino final da cadeia, em vez de voltar ao
         // sítio de onde partiu.
-        const moved = new Map();
-        chains.forEach(({ segments, mover }) => {
-          if (mover && segments.length) moved.set(mover.id, { x: segments[segments.length - 1].arrow.x2, y: segments[segments.length - 1].arrow.y2 });
-        });
+        const elementosFinais = planoPasso.fim;
         const animatedIds = new Set(animArrows.map(a => a.id));
-        const elementosFinais = baseElements.map(el => (moved.has(el.id) ? { ...el, x: moved.get(el.id).x, y: moved.get(el.id).y } : el));
         let indiceGravado;
         if (emRecuo) {
           /* EDITAR A MEIO DA COREOGRAFIA = RECOMEÇAR DALI.
@@ -15416,6 +15557,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             elements: elementosFinais,
             arrows: fixasFinais,
             sequence: [...seq.slice(0, k), novoPasso],
+            deslizeCurvas: {},
           });
         } else {
           indiceGravado = (value.sequence || []).length;
@@ -15426,6 +15568,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             // já que o movimento que representavam já aconteceu.
             arrows: arrows.filter(a => !animatedIds.has(a.id)),
             sequence: [...(value.sequence || []), stepSnapshot],
+            deslizeCurvas: {},
           });
         }
         /* O passo que se acaba de gravar passa a ser a referência por
@@ -15447,6 +15590,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         if (selectedArrowId && animatedIds.has(selectedArrowId)) setSelectedArrowId(null);
         setIsPlaying(false);
         setAnimItems([]);
+        setAnimFrame(null);
         animRef.current = null;
       }
     };
@@ -15477,73 +15621,26 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     setPresentArrows(null);
     setPresentAnimItems([]);
   };
-  const runPresentStep = (idx, seq) => {
-    const step = seq[idx];
-    // `valueRef.current`, não o `value` fechado nesta função — ver a nota
-    // ao lado da declaração da ref: uma apresentação com vários passos
-    // corre ao longo de segundos, e cada passo tem de ver sempre o
-    // conteúdo mais recente das caixas de texto, nunca uma versão presa
-    // ao momento em que a apresentação começou.
-    const diagramaAtual = valueRef.current;
-    const chains = buildAnimationChains(step.arrows).map(chainArrows => {
-      let cursor = 0;
-      const segments = chainArrows.map(a => {
-        const dist = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
-        const duration = Math.max(280, (dist / 26) * 1000);
-        const segment = { arrow: a, duration, start: cursor };
-        cursor += duration;
-        return segment;
-      });
-      const first = chainArrows[0];
-      const elementosDoPasso = stepElements(step, diagramaAtual);
-      let mover = (first.ownerId && elementosDoPasso.find(el => el.id === first.ownerId)) || elementosDoPasso.find(el =>
-        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
-        Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
-      );
-      let isNewBall = false;
-      if (!mover && first.type === 'arrow-pass') {
-        mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
-        isNewBall = true;
-      }
-      return { id: first.id, segments, mover, isNewBall, totalDuration: cursor };
-    });
-    const baseElements = [
-      ...stepElements(step, diagramaAtual),
-      ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
-    ];
-    setPresentElements(baseElements);
-    setPresentArrows(stepStaticArrows(step, diagramaAtual));
-    const maxDuration = Math.max(...chains.map(c => c.totalDuration));
+  /* Com o motor partilhado (planearCoreografiaAnim): cada passo começa
+     onde o anterior acabou, o que foi arrastado desliza, a bola anda ao
+     dobro e não há pausa entre passos. O plano é feito a partir de
+     `valueRef.current` (o conteúdo mais recente das caixas de texto). */
+  const runPresentStep = (idx, plano) => {
+    const p = plano.passos[idx];
+    if (!p) { stopPresentation(); return; }
+    setPresentArrows(p.setasFixas);
     const start = performance.now();
     const tick = (now) => {
       const elapsed = now - start;
-      setPresentAnimItems(chains.map(({ id, segments, mover }) => {
-        let active = segments[segments.length - 1];
-        for (const seg of segments) {
-          if (elapsed < seg.start + seg.duration) { active = seg; break; }
-        }
-        const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
-        const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
-        const { arrow } = active;
-        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
-      }));
-      if (elapsed < maxDuration) {
+      setPresentElements(animEstadoNoPasso(p, Math.min(elapsed, p.dur)));
+      if (elapsed < p.dur) {
         presentAnimRef.current = requestAnimationFrame(tick);
       } else {
-        const moved = new Map();
-        chains.forEach(({ segments, mover }) => {
-          if (mover && segments.length) moved.set(mover.id, { x: segments[segments.length - 1].arrow.x2, y: segments[segments.length - 1].arrow.y2 });
-        });
-        setPresentElements(baseElements.map(el => (moved.has(el.id) ? { ...el, x: moved.get(el.id).x, y: moved.get(el.id).y } : el)));
-        setPresentAnimItems([]);
         presentAnimRef.current = null;
-        if (idx + 1 < seq.length) {
-          presentTimeoutRef.current = setTimeout(() => runPresentStep(idx + 1, seq), 450);
-        } else {
-          // Terminou: volta a mostrar o quadro tal como está agora no editor,
-          // incluindo setas por animar que ainda não tenham sido "Animadas".
-          stopPresentation();
-        }
+        if (idx + 1 < plano.passos.length) runPresentStep(idx + 1, plano);
+        // Terminou: volta a mostrar o quadro tal como está agora no editor,
+        // incluindo setas por animar que ainda não tenham sido "Animadas".
+        else stopPresentation();
       }
     };
     presentAnimRef.current = requestAnimationFrame(tick);
@@ -15551,9 +15648,12 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const startPresentation = () => {
     const seq = value.sequence || [];
     if (seq.length === 0) return;
+    const plano = planearCoreografiaAnim(valueRef.current || value);
+    if (!plano.passos.length) return;
     setIsPresenting(true);
-    setPresentElements(seq[0].elements);
-    presentTimeoutRef.current = setTimeout(() => runPresentStep(0, seq), 200);
+    setPresentElements(plano.passos[0].base);
+    setPresentArrows(plano.passos[0].setasFixas);
+    presentTimeoutRef.current = setTimeout(() => runPresentStep(0, plano), 200);
   };
 
   /* INSERIR UM ELEMENTO A PARTIR DE UM PASSO JÁ GRAVADO. (ver a nota
@@ -15762,13 +15862,21 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             }),
           };
         });
-        onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)), sequence: sequencia });
+        onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)), sequence: sequencia, deslizeCurvas: semCurvaDe(dragId) });
       } else {
-        onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)) });
+        onChange({ ...value, elements: elements.map(el => (el.id === dragId ? { ...el, x: p.x, y: p.y } : el)), deslizeCurvas: semCurvaDe(dragId) });
       }
     } else if (dragHandle) {
       const p = toPoint(e);
-      if (dragHandle.which === 'curve') {
+      if (dragHandle.which === 'deslize') {
+        /* O ponto puxado é o MEIO da curva; o controlo da curva fica a
+           2·meio − (início+fim)/2, para a curva passar mesmo pelo dedo. */
+        const ant = fimAnteriorMemo && fimAnteriorMemo.get(dragHandle.id);
+        const el = (elementosRecuo || elements).find(x => x.id === dragHandle.id);
+        if (ant && el) {
+          onChange({ ...value, deslizeCurvas: { ...(value.deslizeCurvas || {}), [dragHandle.id]: { cx: 2 * p.x - (ant.x + el.x) / 2, cy: 2 * p.y - (ant.y + el.y) / 2 } } });
+        }
+      } else if (dragHandle.which === 'curve') {
         onChange({ ...value, arrows: arrows.map(a => a.id === dragHandle.id ? { ...a, cx: p.x, cy: p.y } : a) });
       } else {
         const key1 = dragHandle.which === 'start' ? 'x1' : 'x2';
@@ -15924,6 +16032,20 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     dragArrowRef.current = { start: toPoint(e), orig: { x1: arrow.x1, y1: arrow.y1, x2: arrow.x2, y2: arrow.y2, cx: arrow.cx, cy: arrow.cy } };
     setArrowMoved(false);
     setDragArrowId(id);
+  };
+  // A curva de um arrasto só vale para a posição em que foi feita.
+  const semCurvaDe = (id) => {
+    const c = value.deslizeCurvas;
+    if (!c || !c[id]) return c;
+    const { [id]: _fora, ...resto } = c;
+    return resto;
+  };
+  // Puxar o ponto do meio do caminho de quem foi arrastado.
+  const onDeslizeDown = (e, id) => {
+    e.stopPropagation();
+    beginGesture();
+    try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    setDragHandle({ id, which: 'deslize' });
   };
   const onHandleDown = (e, id, which) => {
     e.stopPropagation();
@@ -16351,8 +16473,31 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               />
             );
           })}
+          {/* CAMINHO DE QUEM FOI ARRASTADO desde o último Animar: tracejado
+              do sítio onde estava até onde está, com um ponto a meio para o
+              curvar. É este o caminho por onde desliza no próximo Animar.
+              Fica por BAIXO dos jogadores, para não os tapar. */}
+          {!isPresenting && !isPlaying && fimAnteriorMemo && (elementosRecuo || elements).map(el => {
+            const ant = fimAnteriorMemo.get(el.id);
+            if (!ant || Math.hypot(ant.x - el.x, ant.y - el.y) <= ANIM_DESLIZE_MIN) return null;
+            const c = (value.deslizeCurvas || {})[el.id];
+            const cx = c ? c.cx : (ant.x + el.x) / 2, cy = c ? c.cy : (ant.y + el.y) / 2;
+            const mx = 0.25 * ant.x + 0.5 * cx + 0.25 * el.x, my = 0.25 * ant.y + 0.5 * cy + 0.25 * el.y;
+            return (
+              <g key={`deslize-${el.id}`}>
+                <path d={`M ${ant.x} ${ant.y} Q ${cx} ${cy} ${el.x} ${el.y}`} fill="none" stroke="#FFFFFF" strokeOpacity="0.55" strokeWidth="0.22" strokeDasharray="0.9,0.7" style={{ pointerEvents: 'none' }} />
+                <circle cx={ant.x} cy={ant.y} r="0.45" fill="#FFFFFF" fillOpacity="0.45" style={{ pointerEvents: 'none' }} />
+                {/* O ponto do meio só aparece em caminhos com alguma distância:
+                    num arrasto curto ficava em cima do jogador e tapava-o. */}
+                {tool === 'select' && Math.hypot(ant.x - el.x, ant.y - el.y) > 5 && (
+                  <circle cx={mx} cy={my} r="0.95" fill="#3A6FC4" stroke="#FFFFFF" strokeWidth="0.2"
+                    onPointerDown={(e) => onDeslizeDown(e, el.id)} style={{ cursor: 'grab', touchAction: 'none' }} />
+                )}
+              </g>
+            );
+          })}
           <DiagramElements
-            elements={(isPresenting ? presentElements || [] : (elementosRecuo || elements)).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
+            elements={(isPresenting ? presentElements || [] : (animFrame || elementosRecuo || elements)).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
             arrows={isPresenting && presentArrows ? presentArrows : arrows}
             iconScale={iconEscala * escalaEcra}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
@@ -16421,11 +16566,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           SEMPRE reservado (`minHeight`): mesmo sem setas nenhumas, nada se
           mexe quando ele nasce. */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, minHeight: 34, alignItems: 'center' }}>
-        {arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') && (
+        {(arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') || haArrastos || isPlaying) && (
           <button
             type="button"
             onClick={isPlaying ? stopAnimation : playAnimation}
-            title={isPlaying ? 'Parar animação' : 'Animar deslocamentos (bola no passe, jogador na corrida)'}
+            title={isPlaying ? 'Parar animação' : 'Animar deslocamentos (bola no passe, jogador na corrida, e quem foi arrastado desliza)'}
             style={{
               padding: '7px 14px', borderRadius: 7, fontSize: 12.5, cursor: 'pointer', ...body,
               background: isPlaying ? T.bad : T.crimsonBright,
@@ -17336,6 +17481,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const [paused, setPaused] = useState(false);
   const passoAtualRef = useRef(0);
   const decorridoRef = useRef(0);
+  const planoAnim = React.useMemo(() => planearCoreografiaAnim(diagram), [diagram]);
   const attachmentBlobUrl = useBlobUrl(exercise.attachment && exercise.attachment.type !== 'image' ? exercise.attachment.dataUrl : null);
   const animRef = React.useRef(null);
   const timeoutRef = React.useRef(null);
@@ -17387,91 +17533,45 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   // à que se viu ao criar o exercício — incluindo a regra do dono da seta.
   const buildAnimationChains = (arrowList) => buildAnimationChainsPure(arrowList);
 
+  /* Com o motor partilhado (planearCoreografiaAnim): cada passo começa
+     onde o anterior acabou, o que foi arrastado desliza, a bola anda ao
+     dobro e não há pausa entre passos. O último "passo" pode ser o deslize
+     final até ao campo guardado. */
   const runStep = (idx, offsetMs = 0) => {
     passoAtualRef.current = idx;
-    const step = sequence[idx];
-    const chains = buildAnimationChains(step.arrows).map(chainArrows => {
-      let cursor = 0;
-      const segments = chainArrows.map(a => {
-        const dist = Math.hypot(a.x2 - a.x1, a.y2 - a.y1);
-        const speed = 26;
-        const duration = Math.max(280, (dist / speed) * 1000);
-        const segment = { arrow: a, duration, start: cursor };
-        cursor += duration;
-        return segment;
-      });
-      const first = chainArrows[0];
-      // Prioriza o dono gravado na própria seta; só recorre à procura por
-      // proximidade para setas antigas, guardadas antes desta correção.
-      const elementosDoPasso = stepElements(step, diagram);
-      let mover = (first.ownerId && elementosDoPasso.find(el => el.id === first.ownerId)) || elementosDoPasso.find(el =>
-        (first.type === 'arrow-run' ? (el.kind === 'player' || el.kind === 'keeper' || el.kind === 'text') : el.kind === 'ball') &&
-        Math.hypot(el.x - first.x1, el.y - first.y1) <= 3.2
-      );
-      // Passos gravados antes desta correção podem não ter nenhuma bola
-      // guardada (ver playAnimation, em DiagramEditor); criamos uma aqui
-      // também, para a apresentação não "perder" o passe no final.
-      let isNewBall = false;
-      if (!mover && first.type === 'arrow-pass') {
-        mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
-        isNewBall = true;
-      }
-      return { id: first.id, segments, mover, isNewBall, totalDuration: cursor };
-    });
-    const baseElements = [
-      ...stepElements(step, diagram),
-      ...chains.filter(c => c.isNewBall).map(c => ({ ...c.mover })),
-    ];
-    setFrameElements(baseElements);
-    setFrameArrows(stepStaticArrows(step, diagram));
-    const maxDuration = Math.max(...chains.map(c => c.totalDuration));
+    const p = planoAnim.passos[idx];
+    const acabar = () => {
+      // Último passo: fica exatamente como o exercício está guardado hoje,
+      // já com todos os desenhos.
+      setFrameElements(diagram.elements || []);
+      setFrameArrows(diagram.arrows || []);
+      setAnimItems([]);
+      animRef.current = null;
+      decorridoRef.current = 0;
+      setPlaying(false);
+      setPaused(false);
+      passoAtualRef.current = 0;
+      setFinished(true);
+    };
+    if (!p) { acabar(); return; }
+    setFrameArrows(p.setasFixas);
     // `offsetMs` recua o relógio: retomar em 3s é o mesmo que ter
     // começado 3s antes de agora.
     const start = performance.now() - offsetMs;
     const tick = (now) => {
       const elapsed = now - start;
       decorridoRef.current = elapsed;
-      setAnimItems(chains.map(({ id, segments, mover }) => {
-        let active = segments[segments.length - 1];
-        for (const seg of segments) {
-          if (elapsed < seg.start + seg.duration) { active = seg; break; }
-        }
-        const localElapsed = Math.max(0, Math.min(active.duration, elapsed - active.start));
-        const t = easeInOutQuad(Math.min(1, localElapsed / active.duration));
-        const { arrow } = active;
-        return { id, type: arrow.type, mover, ...pontoNaSeta(arrow, t) };
-      }));
-      if (elapsed < maxDuration) {
+      setFrameElements(animEstadoNoPasso(p, Math.min(elapsed, p.dur)));
+      if (elapsed < p.dur) {
         animRef.current = requestAnimationFrame(tick);
       } else {
-        const moved = new Map();
-        chains.forEach(({ segments, mover }) => {
-          if (mover && segments.length) moved.set(mover.id, { x: segments[segments.length - 1].arrow.x2, y: segments[segments.length - 1].arrow.y2 });
-        });
-        setFrameElements(baseElements.map(el => (moved.has(el.id) ? { ...el, x: moved.get(el.id).x, y: moved.get(el.id).y } : el)));
-        setAnimItems([]);
         animRef.current = null;
         decorridoRef.current = 0;
-        if (idx + 1 < sequence.length) {
-          /* O passo atual avança JÁ, antes da pausa de 450 ms entre passos.
-
-             Sem isto, quem carregasse em Pausa durante essa pausa ficava
-             com o marcador ainda no passo que acabou de terminar, e o
-             "Continuar" repetia-o do princípio — era o "volta ao passo
-             atrás" que se notava em ecrã inteiro, onde a apresentação é
-             mais lenta e a probabilidade de apanhar o intervalo é maior. */
+        if (idx + 1 < planoAnim.passos.length) {
+          // Sem pausa entre passos: o seguinte começa já.
           passoAtualRef.current = idx + 1;
-          timeoutRef.current = setTimeout(() => runStep(idx + 1), 450);
-        } else {
-          // Último passo: fica exatamente como o exercício está guardado hoje,
-          // já com todos os desenhos.
-          setFrameElements(diagram.elements || []);
-          setFrameArrows(diagram.arrows || []);
-          setPlaying(false);
-          setPaused(false);
-          passoAtualRef.current = 0;
-          setFinished(true);
-        }
+          runStep(idx + 1);
+        } else acabar();
       }
     };
     animRef.current = requestAnimationFrame(tick);
@@ -17484,7 +17584,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setPaused(false);
     passoAtualRef.current = 0;
     decorridoRef.current = 0;
-    setFrameElements(sequence[0].elements);
+    setFrameElements(planoAnim.passos[0] ? planoAnim.passos[0].base : sequence[0].elements);
     setFrameArrows(stepStaticArrows(sequence[0], diagram));
     timeoutRef.current = setTimeout(() => runStep(0), 200);
   };
@@ -17546,7 +17646,10 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
        que dizer: como está no início do passo escolhido. É a fotografia
        do passo, com o conteúdo atual (ver stepElements). */
     const step = sequence[alvo];
-    setFrameElements(stepElements(step, diagram));
+    // O início do passo = onde o anterior acabou (com o que foi arrastado
+    // ainda no sítio de partida: desliza quando se carregar em Continuar).
+    const pa = planoAnim.passos[alvo];
+    setFrameElements(pa ? pa.base : stepElements(step, diagram));
     setFrameArrows([...stepStaticArrows(step, diagram), ...(step.arrows || [])]);
   };
 
