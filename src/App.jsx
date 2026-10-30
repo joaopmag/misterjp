@@ -11478,11 +11478,15 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
      a página nova herda a marca do "voltar" da anterior. Antes, fechar
      uma desfazia a marca e o "voltar" fechava também a que acabava de
      abrir, saltando para a lista das ideias. */
-  const estiloBotaoLinha = cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined;
+  const estiloBotaoLinha = cabecalhoEstreito
+    ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 }
+    // Pequenos (cabem nos 22 px entre o cabeçalho e os Momentos).
+    : { padding: '0 9px', height: 18, fontSize: 11, gap: 4, borderRadius: 5, whiteSpace: 'nowrap', lineHeight: 1 };
+  const tamIconeLinha = cabecalhoEstreito ? 15 : 11;
   const botoesDossierPortal = ideias.length > 0 ? (
     <>
-      <Btn variant="ghost" onClick={() => { if (dossier) return; if (portalAtleta) trocarJanela(() => setPortalAtleta(false), () => setDossier(true)); else setDossier(true); }} style={estiloBotaoLinha}><BookOpen size={15} /> Dossier</Btn>
-      <Btn variant="ghost" onClick={() => { if (portalAtleta) return; if (dossier) trocarJanela(() => setDossier(false), () => setPortalAtleta(true)); else setPortalAtleta(true); }} style={estiloBotaoLinha}><Eye size={15} /> Portal</Btn>
+      <Btn variant="ghost" onClick={() => { if (dossier) return; if (portalAtleta) trocarJanela(() => setPortalAtleta(false), () => setDossier(true)); else setDossier(true); }} style={estiloBotaoLinha}><BookOpen size={tamIconeLinha} /> Dossier</Btn>
+      <Btn variant="ghost" onClick={() => { if (portalAtleta) return; if (dossier) trocarJanela(() => setDossier(false), () => setPortalAtleta(true)); else setPortalAtleta(true); }} style={estiloBotaoLinha}><Eye size={tamIconeLinha} /> Portal</Btn>
     </>
   ) : null;
 
@@ -11494,13 +11498,20 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
              largura (como nas outras páginas).
              No computador: SÓ "Nova ideia", no mesmo sítio do "Novo exercício".
              O cabeçalho fica com a mesma altura do dos Exercícios e a página não
-             mexe ao trocar entre os dois. Dossier e Portal vão para baixo da
-             lista (ver `botoesDossierPortal`). */
+             mexe ao trocar entre os dois. Dossier e Portal ficam pequenos logo
+             por baixo (ver `botoesDossierPortal`). */
           <div style={cabecalhoEstreito
             ? { display: 'flex', gap: 8, flexWrap: 'nowrap', width: '100%' }
-            : { display: 'flex' }}>
+            : { display: 'flex', position: 'relative' }}>
             <Btn onClick={() => setModal('new')} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Plus size={15} /> Nova ideia</Btn>
             {cabecalhoEstreito && botoesDossierPortal}
+            {/* No computador, Dossier e Portal pequenos logo por baixo de
+                "Nova ideia", no espaço entre o cabeçalho e os Momentos.
+                Ficam "por cima" da página (posição absoluta): o cabeçalho
+                tem a mesma altura do dos Exercícios e nada mexe. */}
+            {!cabecalhoEstreito && botoesDossierPortal && (
+              <div style={{ position: 'absolute', top: 'calc(100% + 3px)', right: 0, display: 'flex', gap: 6, zIndex: 1 }}>{botoesDossierPortal}</div>
+            )}
           </div>
         )} />
 
@@ -11570,11 +11581,6 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
         </div>
       )}
         </>
-      )}
-
-      {/* No computador, Dossier e Portal ficam por baixo do conteúdo. */}
-      {!cabecalhoEstreito && botoesDossierPortal && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>{botoesDossierPortal}</div>
       )}
 
       {modal && (
@@ -28761,11 +28767,25 @@ function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcap
               background: tit ? T.crimson : 'transparent', color: tit ? TEXT_ON_ACCENT : T.mutedDim, border: `1px solid ${tit ? T.crimson : T.line}`,
             }}>{tit ? 'Titular' : 'Suplente'}</button>
           );
-          const cartao = (
+          const selCartao = (
             <Select value={r.card || 'none'} onChange={e => onReport(p.id, 'card', e.target.value)} style={{ padding: '6px 6px', fontSize: 12.5 }}>
               {CARD_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
             </Select>
           );
+          /* Vermelho direto: quantos jogos de castigo. Quando se lança o
+             relatório ainda não se sabe, por isso começa "Por definir" (fica
+             indisponível até se escolher). O 2.º amarelo é sempre 1 jogo. */
+          const cartao = r.card === 'red' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+              {selCartao}
+              <Select value={r.castigoJogos == null ? '' : String(r.castigoJogos)} onChange={e => onReport(p.id, 'castigoJogos', e.target.value === '' ? '' : Number(e.target.value))}
+                title="Jogos de castigo" style={{ padding: '4px 6px', fontSize: 11.5, height: 30, color: (r.castigoJogos == null || r.castigoJogos === '') ? T.warn : T.cream }}>
+                <option value="">Castigo por definir</option>
+                {[1, 2, 3, 4, 5, 6, 8, 10].map(n => <option key={n} value={n}>{n === 1 ? 'Castigo: 1 jogo' : `Castigo: ${n} jogos`}</option>)}
+                <option value="0">Castigo anulado</option>
+              </Select>
+            </div>
+          ) : selCartao;
           const borda = comMin(r) ? T.line : (tit ? T.warn : T.line);
           return estreito ? (
             <div key={p.id} style={{ background: T.bg, border: `1px solid ${borda}`, borderRadius: 10, padding: 10 }}>
@@ -30033,22 +30053,42 @@ function CartaoPlanoDoJogo({ jogo }) {
     </button>
   );
 }
-/* CASTIGOS AUTOMÁTICOS — quem foi expulso (2.º amarelo ou vermelho
-   direto) no último jogo OFICIAL antes deste fica de castigo neste jogo:
-   aparece em Indisponíveis (como os lesionados) e não entra no
-   "Selecionar todos". Os amigáveis não contam. */
+/* CASTIGOS — quem foi expulso num jogo OFICIAL fica indisponível nos
+   jogos oficiais seguintes (aparece em Indisponíveis, como os lesionados,
+   e não entra no "Selecionar todos"). Os amigáveis não contam.
+   · 2.º amarelo: 1 jogo.
+   · Vermelho direto: o número de jogos escrito no relatório desse jogo
+     ("Castigo"). Enquanto estiver "Por definir", fica indisponível em
+     todos os jogos oficiais seguintes, até alguém o definir. 0 = anulado.
+   Cada jogo oficial da equipa depois do da expulsão (já jogado ou só
+   marcado) conta como um jogo de castigo cumprido. */
+function jogosDeCastigo(r) {
+  if (!r) return 0;
+  if (r.card === 'yellow2') return 1;
+  if (r.card !== 'red') return 0;
+  const v = r.castigoJogos;
+  if (v === '' || v == null) return Infinity; // por definir
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : Infinity;
+}
 function castigadosParaJogo(matches, data, jogoId) {
-  if (!data) return new Map();
-  const anteriores = (matches || [])
-    .filter(m => m && m.date && m.date < data && m.id !== jogoId && !isFriendlyMatch(m) && !jogoNaoJogado(m))
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const ultimo = anteriores[0];
   const out = new Map();
-  if (!ultimo) return out;
-  Object.entries(ultimo.report || {}).forEach(([pid, r]) => {
-    if (r && (r.card === 'yellow2' || r.card === 'red')) {
-      out.set(pid, `Castigo (${r.card === 'red' ? 'vermelho' : '2.º amarelo'} vs ${ultimo.opponent || 'último jogo'})`);
-    }
+  if (!data) return out;
+  const oficiais = (matches || [])
+    .filter(m => m && m.date && m.id !== jogoId && !isFriendlyMatch(m) && !jogoNaoJogado(m))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  oficiais.filter(m => m.date < data).forEach(m => {
+    Object.entries(m.report || {}).forEach(([pid, r]) => {
+      const n = jogosDeCastigo(r);
+      if (!n) return;
+      // Jogos oficiais entre o da expulsão e este (já cumpridos).
+      const cumpridos = oficiais.filter(x => x.date > m.date && x.date < data).length;
+      if (cumpridos >= n) return;
+      const motivo = `${r.card === 'red' ? 'vermelho' : '2.º amarelo'} vs ${m.opponent || 'jogo anterior'}`;
+      out.set(pid, n === Infinity
+        ? `Castigo por definir (${motivo})`
+        : n === 1 ? `Castigo (${motivo})` : `Castigo · jogo ${cumpridos + 1} de ${n} (${motivo})`);
+    });
   });
   return out;
 }
