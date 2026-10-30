@@ -10958,10 +10958,10 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tocar(e); } }}
           title={aTocar ? 'Parar' : 'Reproduzir a animação aqui'}
           style={{
-            /* Dentro do campo, sem tocar nas linhas: a linha lateral e a de
-               fundo ficam a ~4 % da borda do desenho (e o desenho tem 8 px
-               de margem por baixo). */
-            position: 'absolute', right: 'calc(4.5% + 6px)', bottom: 'calc(8px + 4.5% + 5px)', width: 24, height: 24, borderRadius: '50%',
+            /* No cantinho do campo, encostado às linhas sem lhes tocar: a
+               linha lateral e a de fundo ficam a ~4 % da borda do desenho (e
+               o desenho tem 8 px de margem por baixo). */
+            position: 'absolute', right: 'calc(4% + 2px)', bottom: 'calc(8px + 3.8% + 2px)', width: 24, height: 24, borderRadius: '50%',
             background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)', color: 'rgba(255,255,255,0.85)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
           }}>
@@ -30060,12 +30060,11 @@ function topNoCampoEcra(lx, ly) {
   // Médios na linha do meio: bola acima, com o NOME em cima da linha.
   const t = 3 + (1 - lx) * 95;
   if (t > 41 && t < 54) return 44.5;
-  /* CENTRAIS (e quem calhar à frente da nossa grande área): o nome ficava
-     em cima da linha da grande área ou da meia-lua. Sobem até o nome ficar
-     por cima das duas (na mesma altura dos laterais, num 4-3-3). Só dentro da largura da área (os laterais, mais
+  /* CENTRAIS (e quem calhar à frente da nossa grande área): o nome fica
+     assente logo por cima da linha da grande área (antes cortava-a). Só dentro da largura da área (os laterais, mais
      abertos, ficam onde estão). O nome está ~6 % abaixo do centro da bola. */
   const x = ly == null ? 50 : 6 + ly * 88;
-  if (x > 19 && x < 81 && t > 73.3 && t < 81) return 73.3;
+  if (x > 19 && x < 81 && t > 71 && t < 81) return 77.4;
   return t;
 }
 function topNoCampoPrint(lx) {
