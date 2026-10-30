@@ -4242,7 +4242,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
-          {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} matches={matches} planoPedido={planoPedido} onPlanoTratado={() => setPlanoPedido(null)} />}
+          {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} matches={matches} setMatches={setMatches} planoPedido={planoPedido} onPlanoTratado={() => setPlanoPedido(null)} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
           {tab === 'equipa' && (
@@ -11087,7 +11087,8 @@ function PortalAtletaIdeias({ ideias, todasIdeias, setIdeias, matches, labelOf, 
         <PlanosDeJogo ideias={todasIdeias || ideias} setIdeias={setIdeias} matches={matches} labelOf={labelOf}
           aberto={planos ? planos.aberto : null} setAberto={planos ? planos.setAberto : () => {}}
           onVer={onVer} onNovaParaJogo={planos ? planos.onNovaParaJogo : () => {}}
-          onEditar={planos ? planos.onEditar : () => {}} onRemover={planos ? planos.onRemover : () => {}} />
+          onEditar={planos ? planos.onEditar : () => {}} onRemover={planos ? planos.onRemover : () => {}}
+          onIdeiasJogo={planos ? planos.onIdeiasJogo : null} />
       ) : (
         <>
           <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
@@ -11117,7 +11118,7 @@ function PortalAtletaIdeias({ ideias, todasIdeias, setIdeias, matches, labelOf, 
 }
 
 /* ---------- Planos de Jogo ---------- */
-function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, onVer, onNovaParaJogo, onEditar, onRemover }) {
+function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, onVer, onNovaParaJogo, onEditar, onRemover, onIdeiasJogo }) {
   const prox = planoProximoJogo(matches);
   const hoje = todayStr();
   const jogos = (matches || []).filter(m => m && m.date && !jogoNaoJogado(m));
@@ -11128,7 +11129,8 @@ function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, 
   const jogo = aberto ? jogos.find(m => m.id === aberto) || (matches || []).find(m => m.id === aberto) : null;
   if (jogo) {
     return <PlanoDeJogoPagina jogo={jogo} prox={prox} ideias={ideias} setIdeias={setIdeias} labelOf={labelOf}
-      onBack={() => setAberto(null)} onVer={onVer} onNovaParaJogo={onNovaParaJogo} onEditar={onEditar} onRemover={onRemover} />;
+      onBack={() => setAberto(null)} onVer={onVer} onNovaParaJogo={onNovaParaJogo} onEditar={onEditar} onRemover={onRemover}
+      onIdeiasJogo={onIdeiasJogo} />;
   }
 
   const cartao = (m) => {
@@ -11186,7 +11188,7 @@ function PlanosDeJogo({ ideias, setIdeias, matches, labelOf, aberto, setAberto, 
   );
 }
 
-function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onVer, onNovaParaJogo, onEditar, onRemover }) {
+function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onVer, onNovaParaJogo, onEditar, onRemover, onIdeiasJogo }) {
   const [vista, setVista] = useState('plano'); // plano | juntar
   const noPlano = ideias.filter(x => ideiaNoPlano(x, jogo.id));
   const gerais = ideias.filter(x => !ideiaParaJogo(x));
@@ -11218,6 +11220,12 @@ function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onV
       <div style={{ color: T.mutedDim, fontSize: 12.5, marginBottom: 14, ...body }}>
         {fmtDate(jogo.date)}{jogo.competition ? ` · ${competitionLabel(jogo.competition)}` : ''} · {noPlano.length} ideia{noPlano.length === 1 ? '' : 's'} no plano
       </div>
+
+      {onIdeiasJogo && (
+        <div style={{ marginBottom: 14 }}>
+          <NotasDoJogo valor={jogo.ideias} onGuardar={(t) => onIdeiasJogo(jogo.id, t)} altura={62} />
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <ChipBtn active={vista === 'plano'} onClick={() => { setVista('plano'); setMomento(null); }}>No plano {noPlano.length}</ChipBtn>
@@ -11263,7 +11271,7 @@ function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onV
   );
 }
 
-function IdeiaJogo({ ideias, setIdeias, meta, matches = [], planoPedido = null, onPlanoTratado }) {
+function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPedido = null, onPlanoTratado }) {
   const cabecalhoEstreito = useIsMobile(560);
   const [modal, setModal] = useState(null); // null | 'new' | ideia (edição)
   const [viewing, setViewing] = useState(null);
@@ -11287,10 +11295,12 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], planoPedido = null, 
     return () => window.removeEventListener('afterprint', limpar);
   }, [printDossier]);
   const [filter, setFilter] = useState('Todas');
-  const [portalAtleta, setPortalAtleta] = useState(false);
+  // Vindo do cartão "Plano de jogo": nasce JÁ no plano pedido (sem mostrar
+  // primeiro a grelha e depois saltar — era isso o "piscar").
+  const [portalAtleta, setPortalAtleta] = useState(() => !!planoPedido);
   // As ideias criadas para um jogo (`jogoId`) só aparecem no plano desse
   // jogo (Portal › Plano de Jogo), nunca na Ideia de Jogo geral.
-  const [planoAberto, setPlanoAberto] = useState(null);
+  const [planoAberto, setPlanoAberto] = useState(() => planoPedido || null);
   const [jogoNovaIdeia, setJogoNovaIdeia] = useState(null);
   const gerais = ideias.filter(x => !ideiaParaJogo(x));
   // Retroceder no browser tem de fechar o Portal do Atleta e voltar à
@@ -11301,8 +11311,8 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], planoPedido = null, 
   // Vindo de um "Plano de jogo" de um jogo: abre logo esse plano.
   useEffect(() => {
     if (!planoPedido) return;
-    setPlanoAberto(planoPedido);
-    setPortalAtleta(true);
+    if (planoAberto !== planoPedido) setPlanoAberto(planoPedido);
+    if (!portalAtleta) setPortalAtleta(true);
     if (onPlanoTratado) onPlanoTratado();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planoPedido]);
@@ -11372,6 +11382,7 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], planoPedido = null, 
             onNovaParaJogo: (jogoId) => { setJogoNovaIdeia(jogoId); setModal('new'); },
             onEditar: (x) => setModal(x),
             onRemover: (x) => remove(x.id),
+            onIdeiasJogo: setMatches ? (jogoId, texto) => setMatches(prev => prev.map(m => (m.id === jogoId ? { ...m, ideias: texto } : m))) : null,
           }} />
       ) : (
         <>
@@ -22466,6 +22477,9 @@ function Planeamento({ sessions, setSessions, exercises, players, setPlayers, ma
             onFormacao={(f) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
             onAlinhamento={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
             onStarters={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
+            onEscalacao={(patch) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ...patch } : m)))}
+            onIdeias={(texto) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ideias: texto } : m)))}
+            clinico={clinico}
           />
         );
       })()}
@@ -26203,9 +26217,31 @@ function buildMatchShareHtml({ match, players, season }) {
   };
 }
 
-function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, onFormacao, onAlinhamento, onStarters }) {
+function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, onFormacao, onAlinhamento, onStarters, onEscalacao, onIdeias, clinico = [] }) {
   const isNarrow = useIsMobile(760);
   const formacao = match.formacao || '4-3-3';
+  /* JOGO POR JOGAR (sem resultado e de hoje para a frente): em vez da ficha
+     com os acontecimentos, mostra a escalação no campo — a mesma da
+     Convocatória — para arrumar o onze e o banco aqui mesmo. Depois do
+     jogo, volta a ser a ficha de sempre. */
+  const porJogar = !!onEscalacao && !String(match.result || '').trim() && (match.date || '') >= todayStr();
+  const escalacao = porJogar ? escalacaoDoJogo(match, players) : null;
+  const aplicarEscalacao = ({ slots, banco }) => {
+    const starters = slots.filter(Boolean);
+    const convocados = [...starters, ...banco];
+    const ficam = new Set(convocados);
+    const report = Object.fromEntries(Object.entries(match.report || {}).filter(([pid]) => ficam.has(pid)));
+    onEscalacao({
+      convocados, starters, alinhamento: slots, report,
+      capitao: ficam.has(match.capitao) ? match.capitao : undefined,
+      subcapitao: ficam.has(match.subcapitao) ? match.subcapitao : undefined,
+    });
+  };
+  const formacaoEscalacao = (fm) => {
+    const e = escalacaoNovaFormacao(escalacaoDoJogo(match, players), fm, players);
+    const starters = e.slots.filter(Boolean);
+    onEscalacao({ formacao: fm, alinhamento: e.slots, starters, convocados: [...starters, ...e.banco] });
+  };
   const eventos = eventosDoJogo(match, players);
   const resumo = resumoDoJogo(eventos);
   const { lugares, colocados, sobram } = distribuirOnzeNoCampo(eventos.titulares.map(x => x.player), formacao, match.alinhamento);
@@ -26264,6 +26300,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
             : (match.result || '—')}
         </span>
         <span style={{ ...display, fontSize: 17, color: T.cream }}>{match.atHome === false ? nosso : (match.opponent || '—')}</span>
+        {!porJogar && (
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11.5, color: T.mutedDim }}>Formação</span>
           <Select
@@ -26274,9 +26311,27 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
             {Object.keys(FORMACOES).map(f => <option key={f} value={f}>{f}</option>)}
           </Select>
         </div>
+        )}
       </div>
 
-      {eventos.titulares.length === 0 ? (
+      {porJogar ? (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginBottom: 14 }}>
+            <CartaoPlanoDoJogo jogo={match} />
+            {onIdeias && <NotasDoJogo valor={match.ideias} onGuardar={onIdeias} altura={62} />}
+          </div>
+          <EscalacaoNoCampo
+            players={players}
+            formacao={escalacao.formacao}
+            slots={escalacao.slots}
+            banco={escalacao.banco}
+            onChange={aplicarEscalacao}
+            onFormacao={formacaoEscalacao}
+            clinico={clinico}
+            data={match.date}
+          />
+        </div>
+      ) : eventos.titulares.length === 0 ? (
         <EmptyState
           text="Este jogo ainda não tem onze inicial. Marca os titulares na ficha de edição e a equipa aparece aqui no campo."
           action={<Btn onClick={onEdit}><Pencil size={15} /> Editar jogo</Btn>}
@@ -26467,6 +26522,12 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
               })()}
             </div>
           </div>
+        </div>
+      )}
+
+      {!porJogar && onIdeias && (
+        <div style={{ marginTop: 14 }}>
+          <NotasDoJogo valor={match.ideias} onGuardar={onIdeias} />
         </div>
       )}
 
@@ -29270,6 +29331,9 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
             onFormacao={(f) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, formacao: f, alinhamento: null } : m)))}
             onAlinhamento={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, alinhamento: lista } : m)))}
             onStarters={(lista) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, starters: lista } : m)))}
+            onEscalacao={(patch) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ...patch } : m)))}
+            onIdeias={(texto) => setMatches(prev => prev.map(m => (m.id === atual.id ? { ...m, ideias: texto } : m)))}
+            clinico={clinico}
           />
         );
       })()}
@@ -29620,6 +29684,26 @@ function escalacaoNovaFormacao(esc, novaFormacao, players) {
    Jogo › Portal › Plano de Jogo). A navegação é pedida por um evento,
    tratado na raiz da app, para não ter de passar funções por todos os
    ecrãs que mostram um jogo. */
+/* IDEIAS PARA O JOGO — o texto livre do jogo (`match.ideias`), editável
+   na ficha do jogo e no Plano de Jogo. Escreve-se à vontade e grava ao
+   sair da caixa (não a cada tecla). */
+function NotasDoJogo({ valor, onGuardar, altura = 90 }) {
+  const [texto, setTexto] = useState(valor || '');
+  const focadoRef = useRef(false);
+  useEffect(() => { if (!focadoRef.current) setTexto(valor || ''); }, [valor]);
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6, ...body }}>Ideias para o jogo</div>
+      <TextArea value={texto}
+        onFocus={() => { focadoRef.current = true; }}
+        onChange={e => setTexto(e.target.value)}
+        onBlur={() => { focadoRef.current = false; if ((texto || '') !== (valor || '')) onGuardar(texto); }}
+        placeholder="Ex: pressão alta nos primeiros 15 min · sair a jogar pelo lado do 3 · atenção ao 9 deles nas bolas paradas"
+        style={{ minHeight: altura }} />
+    </div>
+  );
+}
+
 function abrirPlanoDoJogo(jogoId) {
   if (!jogoId || typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('mjp:abrir-plano', { detail: { jogoId } }));
@@ -29858,16 +29942,8 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
           marcadas como "Visível no Portal → Jogos → Plano de Jogo" (ver
           IdeiaModal), que é mais claro para o atleta do que um texto
           solto sem imagem. */}
-      <div style={{ marginBottom: 16 }}>
-        <Field label="Ideias para o jogo" bloco solto>
-          <TextArea
-            value={f.ideias}
-            onChange={e => setF({ ...f, ideias: e.target.value })}
-            placeholder="Ex: pressão alta nos primeiros 15 min · sair a jogar pelo lado do 3 · atenção ao 9 deles nas bolas paradas"
-            style={{ minHeight: 90 }}
-          />
-        </Field>
-      </div>
+      {/* "Ideias para o jogo" passou para a ficha do jogo e para o Plano
+          de Jogo (ver NotasDoJogo) — o texto continua guardado no jogo. */}
 
       {/* Num amigável não há convocatória: vai quem aparece. A lista é a
           mesma, mas chama-se pelo que é — presenças — e a matriz de
