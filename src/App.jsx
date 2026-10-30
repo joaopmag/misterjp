@@ -11473,31 +11473,34 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
     .slice()
     .reverse();
 
+  /* Dossier e Portal. Só faz sentido com alguma coisa para compilar.
+     Passar do Portal para o Dossier (ou ao contrário) usa `trocarJanela`:
+     a página nova herda a marca do "voltar" da anterior. Antes, fechar
+     uma desfazia a marca e o "voltar" fechava também a que acabava de
+     abrir, saltando para a lista das ideias. */
+  const estiloBotaoLinha = cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined;
+  const botoesDossierPortal = ideias.length > 0 ? (
+    <>
+      <Btn variant="ghost" onClick={() => { if (dossier) return; if (portalAtleta) trocarJanela(() => setPortalAtleta(false), () => setDossier(true)); else setDossier(true); }} style={estiloBotaoLinha}><BookOpen size={15} /> Dossier</Btn>
+      <Btn variant="ghost" onClick={() => { if (portalAtleta) return; if (dossier) trocarJanela(() => setDossier(false), () => setPortalAtleta(true)); else setPortalAtleta(true); }} style={estiloBotaoLinha}><Eye size={15} /> Portal</Btn>
+    </>
+  ) : null;
+
   return (
     <div>
       <SectionHeader title="Ideia de Jogo" subtitle="A tua ideia de jogo."
         action={(
-          /* Pela ordem: Nova ideia, Dossier, Portal. No telemóvel, os três
-             numa linha, a dividir a largura (como nas outras páginas). */
-          /* No computador: "Nova ideia" no mesmo sítio do "Novo exercício"
-             (em cima, à direita) e Dossier e Portal por baixo dele. */
+          /* No telemóvel: Nova ideia, Dossier e Portal numa linha, a dividir a
+             largura (como nas outras páginas).
+             No computador: SÓ "Nova ideia", no mesmo sítio do "Novo exercício".
+             O cabeçalho fica com a mesma altura do dos Exercícios e a página não
+             mexe ao trocar entre os dois. Dossier e Portal vão para baixo da
+             lista (ver `botoesDossierPortal`). */
           <div style={cabecalhoEstreito
             ? { display: 'flex', gap: 8, flexWrap: 'nowrap', width: '100%' }
-            : { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+            : { display: 'flex' }}>
             <Btn onClick={() => setModal('new')} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Plus size={15} /> Nova ideia</Btn>
-            <div style={cabecalhoEstreito ? { display: 'contents' } : { display: 'flex', gap: 8 }}>
-            {/* Só faz sentido com alguma coisa para compilar. Passar do
-                Portal para o Dossier (ou ao contrário) usa `trocarJanela`:
-                a página nova herda a marca do "voltar" da anterior. Antes,
-                fechar uma desfazia a marca e o "voltar" fechava também a
-                que acabava de abrir, saltando para a lista das ideias. */}
-            {ideias.length > 0 && (
-              <Btn variant="ghost" onClick={() => { if (dossier) return; if (portalAtleta) trocarJanela(() => setPortalAtleta(false), () => setDossier(true)); else setDossier(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><BookOpen size={15} /> Dossier</Btn>
-            )}
-            {ideias.length > 0 && (
-              <Btn variant="ghost" onClick={() => { if (portalAtleta) return; if (dossier) trocarJanela(() => setDossier(false), () => setPortalAtleta(true)); else setPortalAtleta(true); }} style={cabecalhoEstreito ? { flex: '1 1 0', minWidth: 0, justifyContent: 'center', whiteSpace: 'nowrap', padding: '9px 6px', fontSize: 13 } : undefined}><Eye size={15} /> Portal</Btn>
-            )}
-            </div>
+            {cabecalhoEstreito && botoesDossierPortal}
           </div>
         )} />
 
@@ -11567,6 +11570,11 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [], setMatches, planoPed
         </div>
       )}
         </>
+      )}
+
+      {/* No computador, Dossier e Portal ficam por baixo do conteúdo. */}
+      {!cabecalhoEstreito && botoesDossierPortal && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>{botoesDossierPortal}</div>
       )}
 
       {modal && (
