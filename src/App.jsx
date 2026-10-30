@@ -26338,7 +26338,9 @@ function escalacaoComFotosHtml(match, players) {
   const { lugares, colocados } = distribuirOnzeNoCampo(titulares, formacao, match.alinhamento);
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
   const usados = new Set(colocados.filter(Boolean).map(p => p.id));
-  const banco = (match.convocados || []).filter(id => !usados.has(id) && !(match.starters || []).includes(id)).map(id => porId.get(id)).filter(Boolean);
+  const numDe = (p) => (Number.isFinite(Number(p.number)) && String(p.number).trim() !== '' ? Number(p.number) : Infinity);
+  const banco = (match.convocados || []).filter(id => !usados.has(id) && !(match.starters || []).includes(id)).map(id => porId.get(id)).filter(Boolean)
+    .sort((a, b) => numDe(a) - numDe(b) || String(a.name || '').localeCompare(String(b.name || ''), 'pt'));
   const nomeCurto = (p) => escapeHtmlText(shortPlayerName(p, players));
   const bola = (p, tam) => {
     const conteudo = p.photo
@@ -26349,7 +26351,7 @@ function escalacaoComFotosHtml(match, players) {
   const noCampo = lugares.map((lugar, i) => {
     const p = colocados[i];
     const [lx, ly] = layout[i] || [0.5, 0.5];
-    const pos = `left:${(6 + ly * 88).toFixed(2)}%;top:${topNoCampoEcra(lx).toFixed(2)}%`;
+    const pos = `left:${(6 + ly * 88).toFixed(2)}%;top:${topNoCampoEcra(lx, ly).toFixed(2)}%`;
     if (!p) return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);color:#ffffffaa;font-size:11px">${escapeHtmlText(rotuloDoLugar(lugar))}</div>`;
     return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;width:76px">${bola(p, 40)}`
       + `<span style="font-size:11px;color:#fff;margin-top:2px;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">${nomeCurto(p)}</span></div>`;
@@ -28060,7 +28062,28 @@ function StandingsModal({ standings, onClose, onSave, tabInicial, competicaoInic
     || initial.activeId || (initial.competitions[0] && initial.competitions[0].id) || null
   );
   const [tab, setTab] = useState(tabInicial || 'resultados'); // 'config' | 'resultados'
-  const [roundIdx, setRoundIdx] = useState(0);
+  /* ABRE NA JORNADA QUE ESTÁ A DECORRER: a que tem jogos com a data mais
+     perto de hoje (em empate, a que vem a seguir). Antes abria sempre na
+     1.ª e era preciso andar jornada a jornada até à atual. */
+  const jornadaAtual = (c) => {
+    const lista = (c && c.rounds) || [];
+    const hoje = new Date(`${todayStr()}T12:00:00`).getTime();
+    let melhor = -1, dist = Infinity;
+    lista.forEach((r, i) => {
+      (r.games || []).forEach(g => {
+        const d = String((g && g.date) || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+        const x = Math.abs(new Date(`${d}T12:00:00`).getTime() - hoje);
+        if (x < dist || (x === dist && i > melhor)) { dist = x; melhor = i; }
+      });
+    });
+    return melhor >= 0 ? melhor : 0;
+  };
+  const [roundIdx, setRoundIdx] = useState(() => {
+    const id0 = (competicaoInicial && initial.competitions.some(c => c.id === competicaoInicial) ? competicaoInicial : null)
+      || initial.activeId || (initial.competitions[0] && initial.competitions[0].id) || null;
+    return jornadaAtual(initial.competitions.find(c => c.id === id0) || initial.competitions[0]);
+  });
   const [notice, setNotice] = useState('');
 
   const comp = competitions.find(c => c.id === activeId) || competitions[0];
@@ -28364,7 +28387,7 @@ function StandingsModal({ standings, onClose, onSave, tabInicial, competicaoInic
         <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Competição</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           {competitions.map(c => (
-            <button key={c.id} type="button" onClick={() => { setActiveId(c.id); setRoundIdx(0); setNotice(''); }} style={{
+            <button key={c.id} type="button" onClick={() => { setActiveId(c.id); setRoundIdx(jornadaAtual(c)); setNotice(''); }} style={{
               padding: '6px 12px', borderRadius: 16, fontSize: 12.5, cursor: 'pointer', ...body,
               background: c.id === comp.id ? '#B5393F' : 'transparent',
               color: c.id === comp.id ? TEXT_ON_ACCENT : T.muted,
@@ -29869,7 +29892,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
                 style={{
                   // Margem dentro do campo: o GR e os avançados (e os nomes
                   // por baixo deles) ficam sempre dentro das linhas.
-                  position: 'absolute', left: `${6 + ly * 88}%`, top: `${topNoCampoEcra(lx)}%`, transform: 'translate(-50%, -50%)',
+                  position: 'absolute', left: `${6 + ly * 88}%`, top: `${topNoCampoEcra(lx, ly)}%`, transform: 'translate(-50%, -50%)',
                   width: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', zIndex: escolhido ? 3 : 2,
                 }}>
                 {p ? (
@@ -30032,11 +30055,18 @@ function castigadosParaJogo(matches, data, jogoId) {
 /* O mesmo no ecrã (Editar jogo, Convocatória, jogo no Planeamento) e no
    ficheiro partilhado: GR em baixo, com o nome na pequena área; os médios
    que calham na linha do meio sobem, com o nome acima da linha. */
-function topNoCampoEcra(lx) {
+function topNoCampoEcra(lx, ly) {
   // GR: bola um pouco acima da linha de fundo, com o NOME em cima dela.
   // Médios na linha do meio: bola acima, com o NOME em cima da linha.
   const t = 3 + (1 - lx) * 95;
-  return t > 41 && t < 54 ? 44.5 : t;
+  if (t > 41 && t < 54) return 44.5;
+  /* CENTRAIS (e quem calhar à frente da nossa grande área): o nome ficava
+     em cima da linha da grande área ou da meia-lua. Sobem até o nome ficar
+     por cima das duas (na mesma altura dos laterais, num 4-3-3). Só dentro da largura da área (os laterais, mais
+     abertos, ficam onde estão). O nome está ~6 % abaixo do centro da bola. */
+  const x = ly == null ? 50 : 6 + ly * 88;
+  if (x > 19 && x < 81 && t > 73.3 && t < 81) return 73.3;
+  return t;
 }
 function topNoCampoPrint(lx) {
   const t = 2.5 + (1 - lx) * 93;
@@ -30069,7 +30099,13 @@ function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }
       alignItems: 'center', justifyContent: 'center', border: '1px solid #555', background: '#eee', color: '#111', fontWeight: 700, fontSize: `${mm * 1.1}pt`,
     }}>{p.photo ? <img src={p.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (p.number || '')}</span>
   );
-  const suplentes = banco.map(id => porId.get(id)).filter(Boolean);
+  // Suplentes por número da camisola (sem número, no fim), como na convocatória.
+  const porNumero = (a, b) => {
+    const na = Number.isFinite(Number(a.number)) && String(a.number).trim() !== '' ? Number(a.number) : Infinity;
+    const nb = Number.isFinite(Number(b.number)) && String(b.number).trim() !== '' ? Number(b.number) : Infinity;
+    return na - nb || String(a.name || '').localeCompare(String(b.name || ''), 'pt');
+  };
+  const suplentes = banco.map(id => porId.get(id)).filter(Boolean).sort(porNumero);
   return (
     <div style={{ display: 'flex', gap: '8mm', alignItems: 'flex-start', marginTop: '7mm', marginBottom: 14, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
       <div style={{ flex: '0 0 92mm' }}>
