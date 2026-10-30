@@ -26221,7 +26221,7 @@ function escalacaoComFotosHtml(match, players) {
   const noCampo = lugares.map((lugar, i) => {
     const p = colocados[i];
     const [lx, ly] = layout[i] || [0.5, 0.5];
-    const pos = `left:${(6 + ly * 88).toFixed(2)}%;top:${(5 + (1 - lx) * 88).toFixed(2)}%`;
+    const pos = `left:${(6 + ly * 88).toFixed(2)}%;top:${topNoCampoEcra(lx).toFixed(2)}%`;
     if (!p) return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);color:#ffffffaa;font-size:11px">${escapeHtmlText(rotuloDoLugar(lugar))}</div>`;
     return `<div style="position:absolute;${pos};transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;width:76px">${bola(p, 40)}`
       + `<span style="font-size:11px;color:#fff;margin-top:2px;text-shadow:0 1px 2px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:76px">${nomeCurto(p)}</span></div>`;
@@ -29741,7 +29741,7 @@ function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormaca
                 style={{
                   // Margem dentro do campo: o GR e os avançados (e os nomes
                   // por baixo deles) ficam sempre dentro das linhas.
-                  position: 'absolute', left: `${6 + ly * 88}%`, top: `${5 + (1 - lx) * 88}%`, transform: 'translate(-50%, -50%)',
+                  position: 'absolute', left: `${6 + ly * 88}%`, top: `${topNoCampoEcra(lx)}%`, transform: 'translate(-50%, -50%)',
                   width: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', zIndex: escolhido ? 3 : 2,
                 }}>
                 {p ? (
@@ -29901,6 +29901,13 @@ function castigadosParaJogo(matches, data, jogoId) {
    em baixo, com o nome dentro da pequena área; quem calha na linha do
    meio-campo sobe um pouco, para o nome ficar ACIMA da linha e não a
    cortá-la. */
+/* O mesmo no ecrã (Editar jogo, Convocatória, jogo no Planeamento) e no
+   ficheiro partilhado: GR em baixo, com o nome na pequena área; os médios
+   que calham na linha do meio sobem, com o nome acima da linha. */
+function topNoCampoEcra(lx) {
+  const t = 4 + (1 - lx) * 91.5;
+  return t > 41 && t < 54 ? 41 : t;
+}
 function topNoCampoPrint(lx) {
   const t = 2.5 + (1 - lx) * 93;
   return t > 44 && t < 53 ? 44 : t;
