@@ -29920,6 +29920,19 @@ function topNoCampoPrint(lx) {
   const t = 2.5 + (1 - lx) * 93;
   return t > 44 && t < 53 ? 44 : t;
 }
+/* NA FOLHA IMPRESSA, O NOME É QUE MANDA (a mesma lógica do ecrã): o GR
+   tem o nome assente na linha de fundo e os médios que calham no meio
+   têm o nome assente na linha do meio-campo, com a foto por cima. O nome
+   leva fundo branco, por isso nenhuma linha do campo o corta. Os outros
+   ficam onde estavam (nome por baixo da foto).
+   Devolve a altura (em % do campo) do CENTRO do nome. */
+const PRINT_NOME_ABAIXO = 3.6; // da bola ao centro do nome, em % do campo (142 mm)
+function nomeNoCampoPrint(lx) {
+  const t = 2.5 + (1 - lx) * 93;
+  if (t >= 88) return (103.5 / 105) * 100;      // GR: na linha de fundo
+  if (t > 44 && t < 53) return 50;              // médios: na linha do meio-campo
+  return t + PRINT_NOME_ABAIXO;
+}
 function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }) {
   const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
   const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
@@ -29952,16 +29965,20 @@ function EscalacaoPrint({ players, formacao, slots, banco, capitao, subcapitao }
             const [lx, ly] = layout[i] || [0.5, 0.5];
             const p = slots[i] ? porId.get(slots[i]) : null;
             return (
-              <div key={i} style={{ position: 'absolute', left: `${6 + ly * 88}%`, top: `${topNoCampoPrint(lx)}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
-                {p ? (
-                  <>
-                    {foto(p, 10)}
-                    <span style={{ fontSize: '7.5pt', fontWeight: 600, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '24mm', textAlign: 'center' }}>
-                      {p.number ? `${p.number} ` : ''}{shortPlayerName(p, players)}{marca(p.id)}
-                    </span>
-                  </>
-                ) : <span style={{ fontSize: '7pt', color: '#999' }}>{rotuloDoLugar(lugar)}</span>}
-              </div>
+              p ? (
+                /* Ancorado no NOME: o centro do nome fica na altura dada;
+                   a foto fica logo por cima. */
+                <div key={i} style={{ position: 'absolute', left: `${6 + ly * 88}%`, top: `${nomeNoCampoPrint(lx)}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
+                  <span style={{ position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: '0.2mm', display: 'flex' }}>{foto(p, 10)}</span>
+                  <span style={{ fontSize: '7.5pt', fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '24mm', textAlign: 'center', background: '#fff', padding: '0 1mm', borderRadius: '1mm', WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+                    {p.number ? `${p.number} ` : ''}{shortPlayerName(p, players)}{marca(p.id)}
+                  </span>
+                </div>
+              ) : (
+                <div key={i} style={{ position: 'absolute', left: `${6 + ly * 88}%`, top: `${topNoCampoPrint(lx)}%`, transform: 'translate(-50%, -50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '24mm' }}>
+                  <span style={{ fontSize: '7pt', color: '#999' }}>{rotuloDoLugar(lugar)}</span>
+                </div>
+              )
             );
           })}
         </div>
@@ -32736,7 +32753,8 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   // Autoavaliação já toda respondida mas por submeter: fecha-se sozinha.
   const autoavaliacaoSubmetidaRef = useRef(null);
   useEffect(() => {
-    if (code && teamId) submeterAutoavaliacaoSeCompleta(code, teamId).then(ok => { if (ok && autoavaliacaoSubmetidaRef.current) autoavaliacaoSubmetidaRef.current(); });
+    // Em silêncio: ao entrar, o jogador não deve ver outra vez "Missão cumprida".
+    if (code && teamId) submeterAutoavaliacaoSeCompleta(code, teamId).then(ok => { if (ok && autoavaliacaoSubmetidaRef.current) autoavaliacaoSubmetidaRef.current({ silencioso: true }); });
   }, [code, teamId]);
   // Ajustes feitos DEPOIS deste pedido (rascunhos gravados, submissões)
   // ficam aqui por cima — sem isto, sair de Tarefas e voltar a entrar
@@ -32952,6 +32970,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     try { setMissoesJogoVistas(JSON.parse(localStorage.getItem('mjp_missoes_jogo_vistas') || '[]')); } catch (e) { /* fica como está */ }
   }, [loggedPlayerId, code]);
   const missoesEmCurso = useRef(new Set());
+  const notasMissaoRef = useRef({});
   // Conclui UM passo (item da missão). Recebe o item ou, por compatibilidade, a tarefa.
   const completarMissao = async (item, texto, { silencioso = false } = {}) => {
     if (!item) return;
@@ -32966,7 +32985,9 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     const quando = `${String(agora.getDate()).padStart(2, '0')}/${String(agora.getMonth() + 1).padStart(2, '0')} ${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
     const acao = texto || destinoMissao(p.destino).acao;
     const linha = p.total > 1 ? `✓ Passo ${p.ordem + 1} · ${acao} — feito na app (${quando})` : `✓ ${acao} — feito na app (${quando})`;
-    const notaAntes = String((tarefasAjustes[t.id] && tarefasAjustes[t.id].notaAtleta) || t.notaAtleta || '').trim();
+    /* A nota mais recente desta tarefa (também a de um passo acabado de
+       fechar nesta mesma ronda, que o estado ainda não mostra). */
+    const notaAntes = String(notasMissaoRef.current[t.id] || (tarefasAjustes[t.id] && tarefasAjustes[t.id].notaAtleta) || t.notaAtleta || '').trim();
     const nota = notaAntes ? `${notaAntes}\n${linha}` : linha;
     const restantes = passosDe({ ...t, notaAtleta: nota }).filter(x => !x.feito);
     const submeter = p.total === 1 || restantes.length === 0;
@@ -32975,13 +32996,16 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
         p_code: code, p_team: teamId, p_tarefa_id: t.id, p_nota: nota, p_submeter: submeter,
       });
       if (error || !(data && data.ok)) throw (error || new Error('recusado'));
+      notasMissaoRef.current[t.id] = nota;
       setTarefasAjustes(prev => ({ ...prev, [t.id]: { ...prev[t.id], notaAtleta: nota, ...(submeter ? { notaSubmetida: true } : {}) } }));
       setMissaoAtiva(m => (m && m.id === it.id ? null : m));
       if (!silencioso) setMissaoCumprida(submeter
         ? (t.titulo || 'Missão')
         : `${t.titulo || 'Missão'} — passo ${p.ordem + 1} feito. ${restantes.length === 1 ? 'Falta 1 passo.' : `Faltam ${restantes.length} passos.`}`);
+      return true;
     } catch (e) {
       missoesEmCurso.current.delete(it.id);
+      return false;
     }
   };
   /* CLIPE CRIADO: a missão "Criar um clipe" só fecha quando o clipe fica
@@ -32997,11 +33021,37 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
     const it = (jogoId && pendentes.find(x => jogoDe(x) === jogoId)) || pendentes.find(x => !jogoDe(x));
     if (it) completarMissao(it, `Clipe criado: ${titulo}`);
   };
-  const autoavaliacaoSubmetida = () => {
+  /* AUTOAVALIAÇÃO SUBMETIDA = FEITA, DE UMA VEZ. Uma submissão fecha TODAS
+     as missões de autoavaliação por fazer (a mesma tarefa pode ter mais de
+     um passo de autoavaliação, ou haver duas tarefas para o mesmo
+     momento). Antes fechava só uma: a outra voltava logo ao ecrã e, no
+     login seguinte, aparecia outra vez "Autoavaliação submetida".
+     Saem já do ecrã (não piscam enquanto o servidor responde) e há um só
+     "Missão cumprida". `silencioso`: ao entrar na app, sem festa. */
+  const autoavaliacaoSubmetida = async ({ silencioso = false } = {}) => {
     esquecerCacheCacifo('dev', teamId, code);
-    const it = missoesPorFazer.find(x => x.destino === 'autoavaliacao');
-    if (it) completarMissao(it, 'Autoavaliação submetida');
+    const its = missoesPorFazer.filter(x => x.destino === 'autoavaliacao');
+    if (!its.length) return;
+    its.forEach(x => adiarMissao(x.id));
+    let algum = false;
+    for (const it of its) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await completarMissao(it, 'Autoavaliação submetida', { silencioso: true })) algum = true;
+    }
+    if (algum && !silencioso) setMissaoCumprida((its[0]._tarefa && its[0]._tarefa.titulo) || 'Autoavaliação submetida');
   };
+  /* Missões de autoavaliação que ficaram por fechar de antes (a
+     autoavaliação já está submetida): fecham-se em silêncio assim que as
+     tarefas chegam. Antes só se verificava uma vez ao abrir, muitas vezes
+     ANTES de as tarefas chegarem, e a missão ficava. */
+  const idsMissoesAuto = missoesPorFazer.filter(x => x.destino === 'autoavaliacao').map(x => x.id).join('|');
+  useEffect(() => {
+    if (!idsMissoesAuto || !code || !teamId) return undefined;
+    let cancelado = false;
+    submeterAutoavaliacaoSeCompleta(code, teamId)
+      .then(ok => { if (!cancelado && ok && autoavaliacaoSubmetidaRef.current) autoavaliacaoSubmetidaRef.current({ silencioso: true }); });
+    return () => { cancelado = true; };
+  }, [idsMissoesAuto, code, teamId]);
   autoavaliacaoSubmetidaRef.current = autoavaliacaoSubmetida;
   useEffect(() => {
     if (!missaoCumprida) return undefined;
@@ -33208,7 +33258,7 @@ function CheckinKiosk({ player, monitoring, sessions, onSave, onLogout, diagnost
   }
 
   if (activeType === 'jogos') {
-    return comBarraMissao(<PlayerJogosHome code={code} teamId={teamId} onBack={voltar} />);
+    return comBarraMissao(<PlayerJogosHome code={code} teamId={teamId} onBack={voltar} jogadorId={loggedPlayerId} logo={(equipa && equipa.logo) || ''} infoJogo={jogoDoCalendario} />);
   }
 
   if (activeType === 'competicao') {
@@ -33771,7 +33821,8 @@ function EcraJogo({ player, missao, onIr, onAdiar }) {
     return () => {
       try {
         if (vp && antes.vp != null) vp.setAttribute('content', antes.vp);
-        if (tc && antes.tc != null) tc.setAttribute('content', antes.tc);
+        // Se entrou pela porta, a cor guardada era a da porta: volta à da app.
+        if (tc && antes.tc != null) tc.setAttribute('content', (antes.tc === PE_TC_PORTA.escuro || antes.tc === PE_TC_PORTA.claro) ? T.bg : antes.tc);
         if (antes.html) html.style.setProperty('background', antes.html, antes.htmlP); else html.style.removeProperty('background');
         if (corpo) { if (antes.corpo) corpo.style.setProperty('background', antes.corpo, antes.corpoP); else corpo.style.removeProperty('background'); }
       } catch (e) { /* nada */ }
@@ -35283,7 +35334,7 @@ function PlayerCacifo({
    própria no servidor (checkin_convocatoria / checkin_plano_jogo /
    checkin_adversario), pela mesma razão de sempre: o atleta nunca lê as
    tabelas diretamente, só o que o treinador marcou como visível. */
-function PlayerJogosHome({ code, teamId, onBack }) {
+function PlayerJogosHome({ code, teamId, onBack, jogadorId, logo, infoJogo }) {
   const [subTab, setSubTab] = useState('convocatorias');
   const abas = [
     { id: 'convocatorias', label: 'Convocatória' },
@@ -35314,7 +35365,7 @@ function PlayerJogosHome({ code, teamId, onBack }) {
         })}
       </div>
 
-      {subTab === 'convocatorias' && <PlayerConvocatoriasTab code={code} teamId={teamId} />}
+      {subTab === 'convocatorias' && <PlayerConvocatoriasTab code={code} teamId={teamId} jogadorId={jogadorId} logo={logo} infoJogo={infoJogo} />}
       {subTab === 'planoJogo' && <PlayerPlanoJogoTab code={code} teamId={teamId} />}
       {subTab === 'adversario' && <PlayerAdversarioTab code={code} teamId={teamId} />}
     </div>
@@ -35752,7 +35803,11 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
       setEnviado(true);
       if (onSubmetido) onSubmetido(); // missão "Autoavaliação" fecha-se sozinha
       setConfirmar(false);
-      if (fecharDepoisRef.current) { fecharDepoisRef.current = false; onBack(); }
+      /* Submetido = feito: volta logo para dentro (o balneário, ou Tarefas
+         se veio de lá), com o "Missão cumprida" por cima. Já não fica no
+         ecrã do questionário. */
+      fecharDepoisRef.current = false;
+      onBack();
     } catch (e) {
       setErro('Não foi possível submeter. Tenta outra vez.');
     } finally {
@@ -36200,8 +36255,75 @@ function usePortalFetch(rpcName, code, teamId) {
   return usePortalRpc(rpcName, code, teamId);
 }
 
-function PlayerConvocatoriasTab({ code, teamId }) {
+/* CONVOCATÓRIA NO PORTAL.
+   Em cima, o cartão de sempre com a informação do jogo (sem emblemas),
+   com o nome do jogo em destaque. Por baixo, os convocados em 4 colunas,
+   por número: foto redonda, número na bola e nome por baixo (o próprio
+   jogador com anel dourado). No canto, o carimbo redondo do clube, como
+   numa folha oficial da equipa técnica. */
+function cvDataCurta(iso) {
+  return iso ? formatShortDatePt(iso) : '';
+}
+function CvCarimbo({ clube, convocado, tam, data }) {
+  const cor = convocado ? T.gold : T.mutedDim;
+  const id = React.useId().replace(/:/g, '');
+  const texto = `${String(clube || 'Equipa').toUpperCase()} · EQUIPA TÉCNICA · `;
+  const dm = /^\d{4}-(\d{2})-(\d{2})/.exec(String(data || ''));
+  const f = { fontFamily: "'Oswald', sans-serif", fontWeight: 600 };
+  return (
+    <svg aria-hidden="true" width={tam} height={tam} viewBox="0 0 120 120" style={{ display: 'block', transform: 'rotate(-12deg)', opacity: convocado ? 0.92 : 0.6, pointerEvents: 'none' }}>
+      <defs>
+        {/* Círculo para o texto à volta (começa em cima, no sentido do relógio). */}
+        <path id={`cv-arco-${id}`} d="M 60,15 a 45,45 0 1,1 -0.01,0" />
+      </defs>
+      <circle cx="60" cy="60" r="57" fill="none" stroke={cor} strokeWidth="2.6" />
+      <circle cx="60" cy="60" r="35" fill="none" stroke={cor} strokeWidth="1.3" />
+      {/* O texto ocupa sempre a volta toda, seja qual for o nome do clube. */}
+      <text fill={cor} style={{ ...f, fontSize: 10.5 }}>
+        <textPath href={`#cv-arco-${id}`} textLength="280" lengthAdjust="spacingAndGlyphs">{texto}</textPath>
+      </text>
+      <text x="60" y={convocado ? 48 : 54} textAnchor="middle" fill={cor} style={{ ...f, fontSize: 10 }}>★</text>
+      {convocado && <text x="60" y="64" textAnchor="middle" fill={cor} textLength="58" lengthAdjust="spacingAndGlyphs" style={{ ...f, fontSize: 12, fontWeight: 700 }}>CONVOCADO</text>}
+      {dm && <text x="60" y={convocado ? 78 : 72} textAnchor="middle" fill={cor} style={{ ...f, fontSize: convocado ? 10 : 15, letterSpacing: '.08em' }}>{`${dm[2]}·${dm[1]}`}</text>}
+    </svg>
+  );
+}
+function CvJogador({ p, eu, tam }) {
+  const cor = T.corEquipa || T.crimson;
+  const exp = p.id == null;
+  const iniciais = String(p.name || '?').split(' ').filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase();
+  const num = typeof p.number === 'number' ? p.number : null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, minWidth: 0 }}>
+      <span style={{ position: 'relative', width: tam, height: tam, flexShrink: 0 }}>
+        <span style={{
+          position: 'absolute', inset: 0, borderRadius: '50%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: cor, color: '#fff', fontSize: tam * 0.3, fontWeight: 700, ...body,
+          boxShadow: eu
+            ? `0 0 0 2px ${T.surface}, 0 0 0 4.5px ${T.gold}, 0 0 18px ${T.gold}55`
+            : `0 0 0 2px ${T.surface}, 0 0 0 3.5px ${exp ? T.mutedDim : '#ffffffcc'}`,
+        }}>
+          {iniciais}
+          {/* Sem a foto (não carregou), ficam as iniciais por baixo. */}
+          {p.photo && <img src={p.photo} alt="" onError={e => { e.currentTarget.style.display = 'none'; }} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', background: '#E4E8E3' }} />}
+        </span>
+        {num != null && (
+          <span style={{
+            position: 'absolute', right: -4, bottom: -2, minWidth: 24, height: 24, padding: '0 4px', boxSizing: 'border-box', borderRadius: 12,
+            background: eu ? T.goldFundo : '#0d1a12', color: eu ? '#1B231D' : '#ECEFEA', border: `2px solid ${T.surface}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, ...mono,
+          }}>{num}</span>
+        )}
+      </span>
+      <span style={{ fontSize: 13, fontWeight: eu ? 700 : 500, color: eu ? T.gold : T.cream, textAlign: 'center', lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', ...body }}>
+        {p.name}{exp && <span style={{ color: T.mutedDim, fontWeight: 400 }}> (exp)</span>}
+      </span>
+    </div>
+  );
+}
+function PlayerConvocatoriasTab({ code, teamId, jogadorId, logo, infoJogo }) { // eslint-disable-line no-unused-vars
   const [estado, dados] = usePortalFetch('checkin_convocatoria', code, teamId);
+  const estreito = useIsMobile(560);
   if (estado === 'a-carregar') return <div className="mjp-carregar" style={{ fontSize: 13, color: T.mutedDim }}>A carregar…</div>;
   if (estado === 'erro') return <div style={{ fontSize: 13, color: T.bad }}>Não foi possível carregar. Tenta outra vez ou fala com o staff.</div>;
   const lista = (dados && dados.convocatorias) || [];
@@ -36210,7 +36332,7 @@ function PlayerConvocatoriasTab({ code, teamId }) {
     return <div style={{ fontSize: 13, color: T.mutedDim }}>Ainda não há nenhuma convocatória partilhada contigo.</div>;
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 760 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 760 }}>
       {lista.map(c => {
         // Por número da camisola — quem não tem número atribuído vai
         // para o fim. Os jogadores à experiência (sem `id`, porque não
@@ -36224,64 +36346,58 @@ function PlayerConvocatoriasTab({ code, teamId }) {
           const nb = typeof b.number === 'number' ? b.number : Infinity;
           return na - nb;
         });
+        let jornada = '';
+        try { jornada = (infoJogo && (infoJogo(c) || {}).jornada) || ''; } catch (e) { jornada = ''; }
+        const tamCarimbo = estreito ? 78 : 104;
+        const tam = estreito ? 54 : 66;
         return (
-          <div key={c.id} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
-            <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.4, color: c.convocado ? T.gold : T.mutedDim, marginBottom: 8 }}>
-              {c.convocado ? (
-                <>
-                  <div>Parabéns estás convocado.</div>
-                  <div style={{ marginTop: 6 }}>Estar convocado é o primeiro passo; o foco agora é a vitória da equipa.</div>
-                </>
-              ) : (
-                'Desta vez não estás na lista de convocados. Levanta a cabeça e foca-te no próximo treino.'
+          <div key={c.id} style={{ position: 'relative', background: T.surface, border: `1px solid ${T.line}`, borderRadius: 12, padding: estreito ? 14 : 20, overflow: 'hidden' }}>
+            {/* O carimbo do clube, no canto. */}
+            <div style={{ position: 'absolute', right: estreito ? 8 : 18, top: estreito ? 8 : 14 }}>
+              <CvCarimbo clube={nossoClube} convocado={!!c.convocado} tam={tamCarimbo} data={c.data} />
+            </div>
+
+            <div style={{ paddingRight: tamCarimbo + (estreito ? 4 : 16) }}>
+              <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.4, color: c.convocado ? T.gold : T.mutedDim, marginBottom: 12 }}>
+                {c.convocado ? (
+                  <>
+                    <div>Parabéns estás convocado.</div>
+                    <div style={{ marginTop: 6 }}>Estar convocado é o primeiro passo; o foco agora é a vitória da equipa.</div>
+                  </>
+                ) : (
+                  'Desta vez não estás na lista de convocados. Levanta a cabeça e foca-te no próximo treino.'
+                )}
+              </div>
+              {jornada && <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: T.muted, marginBottom: 2, ...body }}>{jornada}</div>}
+              {/* O nome do jogo, em destaque. */}
+              <div style={{ ...display, fontSize: estreito ? 20 : 26, fontWeight: 600, lineHeight: 1.15, color: T.textoForte, letterSpacing: '.01em', marginBottom: 6 }}>
+                {c.casaFora === 'Fora'
+                  ? <>{c.adversario} <span style={{ color: T.crimsonBright, fontWeight: 500 }}>vs</span> {nossoClube}</>
+                  : <>{nossoClube} <span style={{ color: T.crimsonBright, fontWeight: 500 }}>vs</span> {c.adversario}</>}
+              </div>
+              <div style={{ fontSize: 13, color: T.muted }}>
+                {[cvDataCurta(c.data), c.horaJogo, c.localJogo].filter(Boolean).join(' · ')}
+              </div>
+              {(c.horaConcentracao || c.localConcentracao) && (
+                <div style={{ fontSize: 12.5, color: T.gold, marginTop: 6 }}>
+                  Concentração: {[c.horaConcentracao, c.localConcentracao].filter(Boolean).join(' · ')}
+                </div>
               )}
             </div>
-            <div style={{ fontSize: 13.5, color: T.cream, marginBottom: 4 }}>
-              {c.casaFora === 'Fora' ? `${c.adversario} vs ${nossoClube}` : `${nossoClube} vs ${c.adversario}`}
-            </div>
-            <div style={{ fontSize: 12.5, color: T.mutedDim }}>
-              {[c.data && formatShortDatePt(c.data), c.horaJogo, c.localJogo].filter(Boolean).join(' · ')}
-            </div>
-            {(c.horaConcentracao || c.localConcentracao) && (
-              <div style={{ fontSize: 12, color: T.gold, marginTop: 6 }}>
-                Concentração: {[c.horaConcentracao, c.localConcentracao].filter(Boolean).join(' · ')}
-              </div>
-            )}
-            {c.outrasInfo && <div style={{ fontSize: 12.5, color: T.cream, marginTop: 8, lineHeight: 1.5 }}>{c.outrasInfo}</div>}
+            {c.outrasInfo && <div style={{ fontSize: 12.5, color: T.cream, marginTop: 10, lineHeight: 1.5 }}>{c.outrasInfo}</div>}
 
             {convocados.length > 0 && (
-              <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.line}` }}>
-                <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-                  Convocados
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.line}` }}>
+                <div style={{ fontSize: 11, color: T.warn, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 16 }}>
+                  Convocados · {convocados.length}
                 </div>
-                {/* Cartões com FOTO, número e nome. A foto vem do servidor se a
-                    função do Portal a enviar (campo `photo` de cada
-                    convocado); sem ela, uma bola na cor da equipa com as
+                {/* 4 colunas, por número. A foto vem do servidor (campo
+                    `photo`); sem ela, uma bola na cor da equipa com as
                     iniciais. */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6 }}>
-                  {convocados.map((p, i) => {
-                    const iniciais = String(p.name || '?').split(' ').filter(Boolean).map(x => x[0]).slice(0, 2).join('').toUpperCase();
-                    return (
-                      <div key={p.id || `x-${i}`} style={{
-                        display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 10,
-                        background: T.surfaceRaise, border: `1px solid ${T.line}`, minWidth: 0,
-                      }}>
-                        <span style={{
-                          width: 36, height: 36, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
-                          background: T.corEquipa || T.crimson, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 12, fontWeight: 700, border: '2px solid #ffffffcc', ...body,
-                        }}>
-                          {p.photo ? <img src={p.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : iniciais}
-                        </span>
-                        <span style={{ ...mono, fontSize: 12, fontWeight: 700, minWidth: 24, textAlign: 'center', padding: '2px 0', borderRadius: 4, background: '#0d1a12', color: T.cream, flexShrink: 0 }}>
-                          {typeof p.number === 'number' ? p.number : '—'}
-                        </span>
-                        <span style={{ fontSize: 13.5, color: T.cream, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {p.name}{p.id == null && <span style={{ color: T.mutedDim }}> (exp)</span>}
-                        </span>
-                      </div>
-                    );
-                  })}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', columnGap: estreito ? 6 : 14, rowGap: estreito ? 16 : 22 }}>
+                  {convocados.map((p, i) => (
+                    <CvJogador key={p.id || `x-${i}`} p={p} eu={!!(jogadorId && p.id && p.id === jogadorId)} tam={tam} />
+                  ))}
                 </div>
               </div>
             )}
@@ -36952,6 +37068,10 @@ function PeCartao({ jogador, cor, logo, clube }) {
    ainda a abrir, esse ecrã cresce até à página inteira. É sempre o mesmo
    ecrã, por isso não há imagens trocadas nem paragens a meio. */
 let ENTRADA = null; // { rect, fundo: { svg, H }, logo, cor, t }
+/* Quando o acesso foi autorizado (para a barra de cima do sistema não
+   piscar na passagem da porta para o Portal: ver o ecrã da porta). */
+let ENTRADA_T = 0;
+const PE_TC_PORTA = { escuro: '#0E1310', claro: '#E8EDE6' };
 
 /* PRÉ-BUSCA: com o PIN certo, os pedidos que o Portal faz ao abrir partem
    todos logo, em paralelo (antes iam um a seguir ao outro, já com a porta
@@ -37267,6 +37387,7 @@ function PePorta({ aberta, jogador, cor, logo, clube, largura, altura, faceId = 
     const el = caixaRef.current;
     if (!el) return undefined;
     const r = el.getBoundingClientRect();
+    ENTRADA_T = Date.now();
     ENTRADA = {
       rect: { left: r.left, top: r.top, width: r.width, height: r.height }, fundo: { svg, H },
       tam: tamEmblema, logo: logo || '', cor, t: Date.now(),
@@ -38212,13 +38333,28 @@ function PortalEntrada({ entrar, equipa, teamId }) {
     const claro = TEMA_ATUAL === 'claro';
     const meta = document.querySelector('meta[name="theme-color"]');
     const antes = meta ? meta.getAttribute('content') : null;
-    if (meta) meta.setAttribute('content', claro ? '#E8EDE6' : '#0E1310');
+    const corPorta = claro ? PE_TC_PORTA.claro : PE_TC_PORTA.escuro;
+    if (meta) meta.setAttribute('content', corPorta);
     const st = document.createElement('style');
     st.textContent = `html:root, html:root body { background: ${claro ? '#E3E9E1' : '#0B0F0D'} !important; }`;
     document.head.appendChild(st);
     return () => {
-      if (meta && antes != null) meta.setAttribute('content', antes);
-      if (st.parentNode) st.parentNode.removeChild(st);
+      /* A BARRA DE CIMA NÃO PISCA AO ENTRAR. Com o acesso autorizado, a cor
+         da app só volta quando a porta acabou de abrir (e só se nenhum ecrã
+         a mudou entretanto, como o estádio do dia de jogo). Antes voltava
+         logo: a barra passava a verde por um instante e depois à cor do ecrã
+         seguinte. Sem entrada (voltar ao PIN, etc.), repõe-se logo. */
+      let feito = false, tempo = 0;
+      const repor = () => {
+        if (feito) return; feito = true;
+        clearTimeout(tempo); window.removeEventListener('mjp-entrada-fim', repor);
+        if (meta && antes != null && meta.getAttribute('content') === corPorta) meta.setAttribute('content', antes);
+        if (st.parentNode) st.parentNode.removeChild(st);
+      };
+      if (ENTRADA_T && Date.now() - ENTRADA_T < 20000) {
+        window.addEventListener('mjp-entrada-fim', repor);
+        tempo = setTimeout(repor, 8000);
+      } else repor();
     };
   }, [ecra]);
   useEffect(() => {
