@@ -12739,9 +12739,9 @@ function viewBoxDaVista(vista) { return vista === 'meio' ? PITCH_VIEWBOX_MEIO : 
    só o campo — sem a folga à volta nem os bancos — para o relvado encher
    o cartão. Mesma proporção nas duas vistas (o meio-campo vertical ganha
    margem dos lados), para todos os cartões terem a mesma altura. */
-const CARTAO_VIEWBOX = '-2.2 -0.6 111.4 71.2';
+const CARTAO_VIEWBOX = '-2.3 -0.6 111.6 71.2';
 const CARTAO_VIEWBOX_MEIO = '-8.95 -2 87.9 56.4';
-const CARTAO_ASPECT = '111.4 / 71.2';
+const CARTAO_ASPECT = '111.6 / 71.2';
 function viewBoxCartao(vista) { return vista === 'meio' ? CARTAO_VIEWBOX_MEIO : CARTAO_VIEWBOX; }
 const VistaCampoCtx = React.createContext('completo');
 function VistaCampo({ vista, gRef, children }) {
@@ -13819,25 +13819,23 @@ function PitchMarkings({ printMode, cartao = false }) {
       <CornerFlag cx={106} cy={69} ox={D} oy={D} color={flagColor} />
       {/* Nos cartões não há bancos de suplentes (só o campo). */}
       {!cartao && <BenchesAndTechnicalArea printMode={printMode} />}
-      {/* BALIZA "A SÉRIO" (cartões, editor 2D, apresentação e impressão):
-          por FORA da linha de baliza, com rede de malha apertada, armação e
-          postes. A linha de baliza fica livre, como num campo real. */}
-      {[{ x: -1.4, lado: -1 }, { x: 106, lado: 1 }].map(({ x, lado }) => {
-        const w = 2.4; const y0 = 31.34; const h = 7.32;
+      {/* BALIZA vista de cima (cartões, editor 2D, apresentação e
+          impressão): por FORA da linha de baliza, só a armação (fundo e
+          laterais, traço fino) e a rede em malha fina e suave — sem postes
+          desenhados nem traço por cima da linha de baliza. */}
+      {[{ x: -1.5, lado: -1 }, { x: 106, lado: 1 }].map(({ x, lado }) => {
+        const w = 2.5; const y0 = 31.34; const h = 7.32;
         const xLinha = lado < 0 ? 1 : 106;
         const xFundo = lado < 0 ? x : x + w;
         const corRede = printMode ? '#2A2A2A' : '#ffffff';
         const malha = [];
-        for (let i = 1; i < 4; i++) { const gx = x + (w * i) / 4; malha.push(<line key={`v${i}`} x1={gx} y1={y0} x2={gx} y2={y0 + h} stroke={corRede} strokeWidth="0.07" opacity={printMode ? 0.45 : 0.55} />); }
-        for (let j = 1; j < 10; j++) { const gy = y0 + (h * j) / 10; malha.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke={corRede} strokeWidth="0.07" opacity={printMode ? 0.45 : 0.55} />); }
+        for (let i = 1; i < 6; i++) { const gx = x + (w * i) / 6; malha.push(<line key={`v${i}`} x1={gx} y1={y0} x2={gx} y2={y0 + h} stroke={corRede} strokeWidth="0.045" opacity={printMode ? 0.35 : 0.32} />); }
+        for (let j = 1; j < 18; j++) { const gy = y0 + (h * j) / 18; malha.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke={corRede} strokeWidth="0.045" opacity={printMode ? 0.35 : 0.32} />); }
         return (
           <g key={lado} style={{ pointerEvents: 'none' }}>
-            <rect x={x} y={y0} width={w} height={h} fill={corRede} fillOpacity={printMode ? 0.06 : 0.2} />
+            <rect x={x} y={y0} width={w} height={h} fill={corRede} fillOpacity={printMode ? 0.04 : 0.1} />
             {malha}
-            <path d={`M ${xLinha} ${y0} L ${xFundo} ${y0} L ${xFundo} ${y0 + h} L ${xLinha} ${y0 + h}`} fill="none" stroke={strokeGoal} strokeWidth="0.35" strokeLinejoin="round" />
-            <line x1={xLinha} y1={y0} x2={xLinha} y2={y0 + h} stroke={printMode ? '#2A2A2A' : '#ffffff'} strokeWidth="0.7" />
-            <circle cx={xLinha} cy={y0} r="0.45" fill={printMode ? '#2A2A2A' : '#ffffff'} />
-            <circle cx={xLinha} cy={y0 + h} r="0.45" fill={printMode ? '#2A2A2A' : '#ffffff'} />
+            <path d={`M ${xLinha} ${y0} L ${xFundo} ${y0} L ${xFundo} ${y0 + h} L ${xLinha} ${y0 + h}`} fill="none" stroke={strokeGoal} strokeWidth="0.28" strokeLinejoin="round" />
           </g>
         );
       })}
@@ -26316,9 +26314,9 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
 
       {porJogar ? (
         <div>
-          <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginBottom: 14 }}>
+          {/* O plano de jogo: botão pequeno, no canto superior direito. */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <CartaoPlanoDoJogo jogo={match} />
-            {onIdeias && <NotasDoJogo valor={match.ideias} onGuardar={onIdeias} altura={62} />}
           </div>
           <EscalacaoNoCampo
             players={players}
@@ -26330,6 +26328,12 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
             clinico={clinico}
             data={match.date}
           />
+          {/* Ideias para o jogo: por baixo do campo. */}
+          {onIdeias && (
+            <div style={{ marginTop: 14 }}>
+              <NotasDoJogo valor={match.ideias} onGuardar={onIdeias} altura={70} />
+            </div>
+          )}
         </div>
       ) : eventos.titulares.length === 0 ? (
         <EmptyState
@@ -26480,7 +26484,7 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
             )}
 
             {/* Atalho direto para o plano deste jogo. */}
-            <CartaoPlanoDoJogo jogo={match} compacto />
+            <div><CartaoPlanoDoJogo jogo={match} /></div>
 
             <div style={card}>
               <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
@@ -28445,7 +28449,13 @@ function StandingsModal({ standings, onClose, onSave, tabInicial, competicaoInic
    maneira: jogador, titular/suplente, minutos, golos, assistências,
    cartão e nota. O capitão e o subcapitão só se MOSTRAM aqui (C / SC ao
    lado do nome): escolhem-se na Convocatória. */
-const GRELHA_RELATORIO = 'minmax(0,1.6fr) 92px 70px 70px 70px 150px 70px';
+const GRELHA_RELATORIO = 'minmax(0,1.7fr) 86px 74px 104px 104px 150px 74px';
+/* RELATÓRIO DE JOGO — linhas mais legíveis (como nas apps de análise):
+   foto redonda, nome, número e posição em etiqueta; golos e assistências
+   com botões − / + (sem ter de escrever); minutos e nota (0–10, a nossa
+   escala de sempre) em caixa. Os dados são os mesmos de sempre
+   (`report[pid]`: minutes, goals, assists, card, rating). */
+const COR_FAMILIA_POS = { GR: '#3A8FC4', DC: '#B3261E', DD: '#B3261E', DE: '#B3261E', MD: '#C9A227', MC: '#C9A227', MOC: '#C9A227', EE: '#3E9B5F', ED: '#3E9B5F', PL: '#3E9B5F' };
 function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcapitao, onReport, onTitular, estreito, alturaMax }) {
   const comMin = (r) => !!r && Number(r.minutes) > 0;
   const campo = { padding: '6px 6px', fontSize: 13, textAlign: 'center' };
@@ -28453,30 +28463,60 @@ function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcap
     <Input type="number" inputMode="numeric" min="0" max={max} placeholder={ph} value={(report[p.id] || {})[k] ?? ''}
       onChange={e => onReport(p.id, k, e.target.value)} style={campo} />
   );
+  // − valor + : golos e assistências.
+  const passo = (p, k) => {
+    const v = Math.max(0, Number((report[p.id] || {})[k]) || 0);
+    const bot = (txt, novo, off) => (
+      <button type="button" disabled={off} onClick={() => onReport(p.id, k, String(novo))} title={txt === '+' ? 'Somar' : 'Tirar'} style={{
+        width: 26, height: 26, borderRadius: '50%', border: `1px solid ${T.line}`, background: 'transparent', flexShrink: 0,
+        color: off ? T.mutedDim : T.cream, cursor: off ? 'default' : 'pointer', opacity: off ? 0.4 : 1, fontSize: 15, lineHeight: '22px', padding: 0, ...body,
+      }}>{txt}</button>
+    );
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+        {bot('−', v - 1, v <= 0)}
+        <span style={{ ...mono, fontSize: 14, color: v ? T.cream : T.mutedDim, minWidth: 16, textAlign: 'center' }}>{v}</span>
+        {bot('+', v + 1, false)}
+      </div>
+    );
+  };
   const bracadeira = (pid) => (pid === capitao ? 'C' : pid === subcapitao ? 'SC' : null);
+  const foto = (p) => (
+    <span style={{
+      width: 34, height: 34, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, background: T.crimson, color: '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, border: `1px solid ${T.line}`, ...mono,
+    }}>{p.photo ? <img src={p.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (p.number || (p.name || '?').slice(0, 1))}</span>
+  );
   return (
     <>
       {!estreito && (
-        <div style={{ display: 'grid', gridTemplateColumns: GRELHA_RELATORIO, gap: 8, padding: '0 10px 4px', fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>
-          <span>Jogador</span><span /><span style={{ textAlign: 'center' }}>Min</span><span style={{ textAlign: 'center' }}>Golos</span><span style={{ textAlign: 'center' }}>Ass.</span><span>Cartão</span><span style={{ textAlign: 'center' }}>Nota</span>
+        <div style={{ display: 'grid', gridTemplateColumns: GRELHA_RELATORIO, gap: 8, padding: '0 10px 6px', fontSize: 10.5, color: T.mutedDim, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+          <span>Jogador</span><span /><span style={{ textAlign: 'center' }}>Min</span><span style={{ textAlign: 'center' }}>Golos</span><span style={{ textAlign: 'center' }}>Assist.</span><span>Cartão</span><span style={{ textAlign: 'center' }}>Nota 0–10</span>
         </div>
       )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...(estreito || !alturaMax ? {} : { maxHeight: alturaMax, overflowY: 'auto' }) }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...(estreito || !alturaMax ? {} : { maxHeight: alturaMax, overflowY: 'auto', overflowAnchor: 'none', scrollbarGutter: 'stable' }) }}>
         {jogadores.map(p => {
           const r = report[p.id] || {};
           const tit = starters.includes(p.id);
           const b = bracadeira(p.id);
+          const corPos = COR_FAMILIA_POS[p.position] || T.mutedDim;
           const nome = (
-            <span style={{ fontSize: 13.5, color: T.cream, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-              <span style={{ ...mono, fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{p.position || '--'}</span>
-              <span style={LINHAS(1)}>{p.number ? `${p.number} ` : ''}{shortPlayerName(p, players)}</span>
-              {b && (
-                <span title={b === 'C' ? 'Capitão (escolhido na Convocatória)' : 'Subcapitão (escolhido na Convocatória)'} style={{
-                  ...mono, fontSize: 10, fontWeight: 800, padding: '1px 5px', borderRadius: 4, flexShrink: 0,
-                  background: b === 'C' ? T.goldFundo : '#B08A1E', color: '#1A1A1A',
-                }}>{b}</span>
-              )}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              {foto(p)}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, color: T.cream, ...LINHAS(1) }}>{shortPlayerName(p, players)}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                  {p.number ? <span style={{ ...mono, fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#0d1a12', color: T.cream }}>{p.number}</span> : null}
+                  {p.position ? <span style={{ ...mono, fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: corPos, color: '#fff' }}>{p.position}</span> : null}
+                  {b && (
+                    <span title={b === 'C' ? 'Capitão (escolhido na Convocatória)' : 'Subcapitão (escolhido na Convocatória)'} style={{
+                      ...mono, fontSize: 10, fontWeight: 800, padding: '1px 5px', borderRadius: 3,
+                      background: b === 'C' ? T.goldFundo : '#B08A1E', color: '#1A1A1A',
+                    }}>{b}</span>
+                  )}
+                </div>
+              </div>
+            </div>
           );
           const botTit = (
             <button type="button" onClick={() => onTitular(p.id)} style={{
@@ -28491,21 +28531,24 @@ function TabelaRelatorio({ jogadores, players, report, starters, capitao, subcap
           );
           const borda = comMin(r) ? T.line : (tit ? T.warn : T.line);
           return estreito ? (
-            <div key={p.id} style={{ background: T.bg, border: `1px solid ${borda}`, borderRadius: 8, padding: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div key={p.id} style={{ background: T.bg, border: `1px solid ${borda}`, borderRadius: 10, padding: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>{nome}</div>{botTit}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 6, marginBottom: 6 }}>
-                {num(p, 'minutes', 'Min', 120)}{num(p, 'goals', 'Golos')}{num(p, 'assists', 'Ass.')}{num(p, 'rating', 'Nota', 10)}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 8, marginBottom: 8 }}>
+                <div><div style={{ fontSize: 10, color: T.mutedDim, marginBottom: 3 }}>MIN</div>{num(p, 'minutes', 'Min', 120)}</div>
+                <div><div style={{ fontSize: 10, color: T.mutedDim, marginBottom: 3 }}>NOTA 0–10</div>{num(p, 'rating', '–', 10)}</div>
+                <div><div style={{ fontSize: 10, color: T.mutedDim, marginBottom: 3 }}>GOLOS</div>{passo(p, 'goals')}</div>
+                <div><div style={{ fontSize: 10, color: T.mutedDim, marginBottom: 3 }}>ASSIST.</div>{passo(p, 'assists')}</div>
               </div>
               {cartao}
             </div>
           ) : (
             <div key={p.id} style={{
               display: 'grid', gridTemplateColumns: GRELHA_RELATORIO, gap: 8, alignItems: 'center',
-              background: T.bg, border: `1px solid ${borda}`, borderRadius: 8, padding: '6px 10px',
+              background: T.bg, border: `1px solid ${borda}`, borderRadius: 10, padding: '7px 10px',
             }}>
-              {nome}{botTit}{num(p, 'minutes', 'Min', 120)}{num(p, 'goals', '0')}{num(p, 'assists', '0')}{cartao}{num(p, 'rating', '–', 10)}
+              {nome}{botTit}{num(p, 'minutes', 'Min', 120)}{passo(p, 'goals')}{passo(p, 'assists')}{cartao}{num(p, 'rating', '–', 10)}
             </div>
           );
         })}
@@ -29708,24 +29751,20 @@ function abrirPlanoDoJogo(jogoId) {
   if (!jogoId || typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('mjp:abrir-plano', { detail: { jogoId } }));
 }
-function CartaoPlanoDoJogo({ jogo, compacto = false }) {
+function CartaoPlanoDoJogo({ jogo }) {
+  // Discreto: um botão pequeno, sem legenda.
   const ok = !!(jogo && jogo.id);
   return (
     <button type="button" disabled={!ok} onClick={() => ok && abrirPlanoDoJogo(jogo.id)}
-      title={ok ? 'Abrir o plano deste jogo' : 'Este jogo ainda não está em Jogos — grava-o primeiro.'}
+      title={ok ? `Abrir o plano de jogo${jogo.opponent ? ` vs ${jogo.opponent}` : ''}` : 'Disponível depois de gravar o jogo em Jogos'}
       style={{
-        display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', cursor: ok ? 'pointer' : 'default',
-        background: T.surface, border: `1px solid ${ok ? T.gold : T.line}`, borderRadius: 10, padding: compacto ? '8px 12px' : '12px 14px',
-        color: T.cream, opacity: ok ? 1 : 0.6, width: '100%', ...body,
+        display: 'inline-flex', alignItems: 'center', gap: 7, cursor: ok ? 'pointer' : 'default', flexShrink: 0,
+        background: 'transparent', border: `1px solid ${T.line}`, borderRadius: 8, padding: '6px 10px 6px 9px',
+        color: T.cream, opacity: ok ? 1 : 0.5, fontSize: 12.5, whiteSpace: 'nowrap', ...body,
       }}>
-      <Target size={18} color={T.gold} style={{ flexShrink: 0 }} />
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600 }}>Plano de jogo</span>
-        <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {ok ? `Ideias para ${jogo.opponent ? `o jogo vs ${jogo.opponent}` : 'este jogo'}` : 'Disponível depois de gravar o jogo'}
-        </span>
-      </span>
-      {ok && <ChevronRight size={16} color={T.mutedDim} style={{ flexShrink: 0 }} />}
+      <Target size={14} color={T.gold} />
+      Plano de jogo
+      {ok && <ChevronRight size={14} color={T.mutedDim} />}
     </button>
   );
 }
@@ -30006,8 +30045,8 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
             titular como os anteriores. Vale para qualquer jogo, não só
             amigáveis — é a mesma regra que já usávamos em Convocatórias. */}
         {f.id && (
-          <div style={{ marginBottom: 10, maxWidth: 420 }}>
-            <CartaoPlanoDoJogo jogo={f} compacto />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <CartaoPlanoDoJogo jogo={f} />
           </div>
         )}
         <EscalacaoNoCampo
@@ -50041,8 +50080,8 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
               onClear={() => setF({ ...f, convocados: [], alinhamento: null, capitao: undefined, subcapitao: undefined })}
             />
           )}
-          <div style={{ marginLeft: 'auto', minWidth: 220, maxWidth: 320, flex: '0 1 320px' }}>
-            <CartaoPlanoDoJogo jogo={jogoDaConvocatoria} compacto />
+          <div style={{ marginLeft: 'auto' }}>
+            <CartaoPlanoDoJogo jogo={jogoDaConvocatoria} />
           </div>
         </div>
         <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10 }}>
