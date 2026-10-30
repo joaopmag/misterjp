@@ -3739,6 +3739,21 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     return item;
   };
 
+  /* Pedido "abrir o plano deste jogo" (CartaoPlanoDoJogo, em qualquer
+     ecrã de jogo): vai para Ideia de Jogo e abre lá o Portal › Plano de
+     Jogo desse jogo. */
+  const [planoPedido, setPlanoPedido] = useState(null);
+  const goTabRef = useRef(null);
+  useEffect(() => {
+    const ao = (e) => {
+      const id = e && e.detail && e.detail.jogoId;
+      if (!id) return;
+      setPlanoPedido(id);
+      if (goTabRef.current) goTabRef.current('ideiajogo');
+    };
+    window.addEventListener('mjp:abrir-plano', ao);
+    return () => window.removeEventListener('mjp:abrir-plano', ao);
+  }, []);
   const goTab = (id) => {
     setOrigemMissao(null);
     /* Trocar de separador na barra lateral pode desmontar um ecrã que
@@ -3760,6 +3775,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     setTab(tabValida(id));
     setNavOpen(false);
   };
+  goTabRef.current = goTab;
 
   if (loading) {
     return <LoadingGate />;
@@ -4226,7 +4242,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
             />
           )}
           {tab === 'exercicios' && <Exercicios exercises={exercises} setExercises={setExercises} meta={exercisesMeta} />}
-          {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} matches={matches} />}
+          {tab === 'ideiajogo' && <IdeiaJogo ideias={ideias} setIdeias={setIdeias} meta={ideiasMeta} matches={matches} planoPedido={planoPedido} onPlanoTratado={() => setPlanoPedido(null)} />}
           {tab === 'planeamento' && <Planeamento sessions={sessions} setSessions={setSessions} exercises={exercises} players={players} setPlayers={setPlayers} matches={matches} setMatches={setMatches} standings={standings} season={season} clinico={clinico} convocatorias={convocatorias} setConvocatorias={setConvocatorias} />}
           {tab === 'presencas' && <Presencas players={players} sessions={sessions} setSessions={setSessions} matches={matches} setMatches={setMatches} convocatorias={convocatorias} season={season} clinico={clinico} setClinico={setClinico} />}
           {tab === 'equipa' && (
@@ -10833,6 +10849,34 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
   );
 }
 
+/* RODA DO RATO nas linhas de cartões: rodar anda cartão a cartão, sem
+   ter de agarrar a barra. Só "prende" a roda quando ainda há cartões
+   nesse sentido — no princípio/fim da linha, a página desliza como de
+   costume. `passar(dir, soTestar)` devolve se dá para andar. */
+function useRodaDoRato(passar) {
+  const passarRef = useRef(passar);
+  passarRef.current = passar;
+  const elRef = useRef(null);
+  const acumulado = useRef(0);
+  const aoRodar = useCallback((e) => {
+    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (!d) return;
+    if (!passarRef.current(d > 0 ? 1 : -1, true)) { acumulado.current = 0; return; }
+    e.preventDefault();
+    const unidade = e.deltaMode === 1 ? 3 : 60; // linhas vs píxeis
+    acumulado.current += d;
+    if (Math.abs(acumulado.current) >= unidade) {
+      passarRef.current(acumulado.current > 0 ? 1 : -1, false);
+      acumulado.current = 0;
+    }
+  }, []);
+  return useCallback((el) => {
+    if (elRef.current) elRef.current.removeEventListener('wheel', aoRodar);
+    elRef.current = el;
+    if (el) el.addEventListener('wheel', aoRodar, { passive: false });
+  }, [aoRodar]);
+}
+
 /* UMA LINHA DE CARTÕES (como no "Anexar exercício existente"): cabem
    tantos quantos a largura permite; o resto está nas setas, no gesto de
    deslizar ou na barra. A altura é sempre a de uma linha — trocar de
@@ -10875,6 +10919,11 @@ function LinhaCartoes({ itens, renderItem, vazio }) {
     const r = el.getBoundingClientRect();
     return (clientX - r.left) / r.width;
   };
+  const rodaRef = useRodaDoRato((dir, soTestar) => {
+    const pode = dir > 0 ? pag < maxInicio : pag > 0;
+    if (pode && !soTestar) irParaInicio(pag + dir);
+    return pode;
+  });
   const seta = (dir) => {
     const off = dir < 0 ? pag === 0 : pag >= maxInicio;
     const Ic = dir < 0 ? ChevronLeft : ChevronRight;
@@ -10887,7 +10936,7 @@ function LinhaCartoes({ itens, renderItem, vazio }) {
     );
   };
   return (
-    <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, background: T.surface, padding: 10, overflowAnchor: 'none' }}>
+    <div ref={rodaRef} style={{ border: `1px solid ${T.line}`, borderRadius: 12, background: T.surface, padding: 10, overflowAnchor: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', marginBottom: 10 }}>
         {seta(-1)}
         {/* Largura FIXA: "1–5 de 14" e "11–14 de 14" ocupam o mesmo
@@ -11214,7 +11263,7 @@ function PlanoDeJogoPagina({ jogo, prox, ideias, setIdeias, labelOf, onBack, onV
   );
 }
 
-function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
+function IdeiaJogo({ ideias, setIdeias, meta, matches = [], planoPedido = null, onPlanoTratado }) {
   const cabecalhoEstreito = useIsMobile(560);
   const [modal, setModal] = useState(null); // null | 'new' | ideia (edição)
   const [viewing, setViewing] = useState(null);
@@ -11249,6 +11298,14 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
   // ecrã e ia diretamente para o que estava aberto antes da Ideia de
   // Jogo. Mesmo padrão já usado no resto da app (ver `useDetailBack`).
   const fecharPortalAtleta = useDetailBack(portalAtleta, () => setPortalAtleta(false));
+  // Vindo de um "Plano de jogo" de um jogo: abre logo esse plano.
+  useEffect(() => {
+    if (!planoPedido) return;
+    setPlanoAberto(planoPedido);
+    setPortalAtleta(true);
+    if (onPlanoTratado) onPlanoTratado();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planoPedido]);
   const fecharDossier = useDetailBack(dossier, () => setDossier(false));
 
   const save = (data) => {
@@ -11329,17 +11386,9 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
             return (
               <div key={x.id} onClick={() => setViewing(x)} style={{ background: T.surface, border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, cursor: 'pointer', display: 'flex', flexDirection: 'column' }}>
                 <div title={labelOf(x)} style={{
-                  color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 6, lineHeight: '20px', height: 20,
+                  color: T.cream, fontWeight: 500, fontSize: 15, marginBottom: 10, lineHeight: '20px', height: 20,
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>{labelOf(x)}</div>
-                <div style={{ marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12 }}>{x.phase}</span>
-                  {x.visivelAtletas && (
-                    <span title="Visível para os atletas no Portal do Atleta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: T.good, background: `${T.good}22`, padding: '3px 9px', borderRadius: 12 }}>
-                      <Eye size={11} /> Atletas
-                    </span>
-                  )}
-                </div>
                 {(x.diagram && ((x.diagram.elements || []).length || (x.diagram.arrows || []).length)) ? (
                   <DiagramThumbAnimado diagram={x.diagram} height={130} />
                 ) : (
@@ -11350,7 +11399,12 @@ function IdeiaJogo({ ideias, setIdeias, meta, matches = [] }) {
                 )}
                 {/* Ícones por baixo da imagem, encostados à margem direita
                     do cartão. */}
-                <div style={{ display: 'flex', gap: 16, marginTop: 8, justifyContent: 'flex-end' }}>
+                {/* Como nos Exercícios: o MOMENTO em baixo, à esquerda, na
+                    linha dos ícones. A visibilidade no Portal vê-se só no
+                    olho (verde = visível), sem etiqueta extra. */}
+                <div style={{ display: 'flex', gap: 16, marginTop: 8, alignItems: 'center' }}>
+                  <span style={{ display: 'inline-block', fontSize: 11, color: T.warn, background: `${T.crimson}55`, padding: '3px 9px', borderRadius: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{x.phase}</span>
+                  <span style={{ flex: 1 }} />
                   <button
                     onClick={(e) => { e.stopPropagation(); setIdeias(prev => prev.map(y => (y.id === x.id ? { ...y, visivelAtletas: !y.visivelAtletas } : y))); }}
                     title={x.visivelAtletas ? 'Visível no Portal → Ideia de Jogo — clicar para esconder' : 'Tornar visível no Portal → Ideia de Jogo'}
@@ -11743,6 +11797,12 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
     const r = el.getBoundingClientRect();
     return (clientX - r.left) / r.width;
   };
+  // Roda do rato: anda cartão a cartão (ver useRodaDoRato).
+  const rodaRef = useRodaDoRato((dir, soTestar) => {
+    const pode = dir > 0 ? pag < maxInicio : pag > 0;
+    if (pode && !soTestar) irParaInicio(pag + dir);
+    return pode;
+  });
 
   // Deslizar no telemóvel.
   const toqueX = useRef(null);
@@ -11811,7 +11871,7 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
   };
 
   return (
-    <div ref={el => { if (el) alturaListaRef.current = el.offsetHeight; }}
+    <div ref={el => { if (el) alturaListaRef.current = el.offsetHeight; rodaRef(el); }}
       style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 10, background: T.surface, padding: 10, boxSizing: 'border-box', overflowAnchor: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 12, color: T.muted }}>
@@ -13711,15 +13771,15 @@ function PitchMarkings({ printMode, cartao = false }) {
   // para se manterem legíveis no papel.
   const stroke = printMode ? '#2A2A2A' : '#ffffff55';
   const strokeGoal = printMode ? '#2A2A2A' : '#ffffffcc';
-  const netColor = printMode ? '#2A2A2A' : '#ffffff';
   const flagColor = printMode ? '#2A2A2A' : '#E7CD7A';
   const D = 0.70710678; // sen/cos de 45º, para as diagonais dos cantos
 
   return (
     <>
-      {/* CARTÕES: riscas do relvado (faixas alternadas, como num campo
-          cortado), para um campo mais realista nas miniaturas. */}
-      {cartao && !printMode && Array.from({ length: 14 }, (_, i) => (
+      {/* Riscas do relvado (faixas alternadas, como num campo cortado) —
+          em todo o lado no ecrã (cartões, editor 2D, apresentação); na
+          impressão não, para poupar tinta. */}
+      {!printMode && Array.from({ length: 14 }, (_, i) => (
         i % 2 === 0 ? <rect key={`risca${i}`} x={1 + i * 7.5} y="1" width="7.5" height="68" fill="#ffffff" fillOpacity="0.045" /> : null
       ))}
       <rect x="1" y="1" width="105" height="68" fill="none" stroke={stroke} strokeWidth="0.4" />
@@ -13748,40 +13808,28 @@ function PitchMarkings({ printMode, cartao = false }) {
       <CornerFlag cx={106} cy={69} ox={D} oy={D} color={flagColor} />
       {/* Nos cartões não há bancos de suplentes (só o campo). */}
       {!cartao && <BenchesAndTechnicalArea printMode={printMode} />}
-      {cartao ? (
-        /* CARTÕES: balizas por FORA da linha de baliza, com rede e postes
-           — a linha de baliza fica livre, como num campo a sério. */
-        <>
-          {/* Baliza "a sério": rede clara (malha apertada) por trás da
-              linha, armação e postes brancos. */}
-          {[{ x: -1.4, lado: -1 }, { x: 106, lado: 1 }].map(({ x, lado }) => {
-            const w = 2.4; const y0 = 31.34; const h = 7.32;
-            const xLinha = lado < 0 ? 1 : 106;
-            const xFundo = lado < 0 ? x : x + w;
-            const malha = [];
-            for (let i = 1; i < 4; i++) { const gx = x + (w * i) / 4; malha.push(<line key={`v${i}`} x1={gx} y1={y0} x2={gx} y2={y0 + h} stroke="#ffffff" strokeWidth="0.07" opacity="0.55" />); }
-            for (let j = 1; j < 10; j++) { const gy = y0 + (h * j) / 10; malha.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke="#ffffff" strokeWidth="0.07" opacity="0.55" />); }
-            return (
-              <g key={lado} style={{ pointerEvents: 'none' }}>
-                <rect x={x} y={y0} width={w} height={h} fill="#ffffff" fillOpacity="0.2" />
-                {malha}
-                <path d={`M ${xLinha} ${y0} L ${xFundo} ${y0} L ${xFundo} ${y0 + h} L ${xLinha} ${y0 + h}`} fill="none" stroke="#ffffff" strokeOpacity="0.85" strokeWidth="0.35" strokeLinejoin="round" />
-                <line x1={xLinha} y1={y0} x2={xLinha} y2={y0 + h} stroke="#ffffff" strokeWidth="0.7" />
-                <circle cx={xLinha} cy={y0} r="0.45" fill="#ffffff" />
-                <circle cx={xLinha} cy={y0 + h} r="0.45" fill="#ffffff" />
-              </g>
-            );
-          })}
-        </>
-      ) : (
-        <>
-          {/* balizas pequenas, com rede */}
-          <rect x="-0.6" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
-          <rect x="106" y="31.34" width="1.6" height="7.32" fill="none" stroke={strokeGoal} strokeWidth="0.5" />
-          <GoalNet x={-0.6} y={31.34} w={1.6} h={7.32} color={netColor} />
-          <GoalNet x={106} y={31.34} w={1.6} h={7.32} color={netColor} />
-        </>
-      )}
+      {/* BALIZA "A SÉRIO" (cartões, editor 2D, apresentação e impressão):
+          por FORA da linha de baliza, com rede de malha apertada, armação e
+          postes. A linha de baliza fica livre, como num campo real. */}
+      {[{ x: -1.4, lado: -1 }, { x: 106, lado: 1 }].map(({ x, lado }) => {
+        const w = 2.4; const y0 = 31.34; const h = 7.32;
+        const xLinha = lado < 0 ? 1 : 106;
+        const xFundo = lado < 0 ? x : x + w;
+        const corRede = printMode ? '#2A2A2A' : '#ffffff';
+        const malha = [];
+        for (let i = 1; i < 4; i++) { const gx = x + (w * i) / 4; malha.push(<line key={`v${i}`} x1={gx} y1={y0} x2={gx} y2={y0 + h} stroke={corRede} strokeWidth="0.07" opacity={printMode ? 0.45 : 0.55} />); }
+        for (let j = 1; j < 10; j++) { const gy = y0 + (h * j) / 10; malha.push(<line key={`h${j}`} x1={x} y1={gy} x2={x + w} y2={gy} stroke={corRede} strokeWidth="0.07" opacity={printMode ? 0.45 : 0.55} />); }
+        return (
+          <g key={lado} style={{ pointerEvents: 'none' }}>
+            <rect x={x} y={y0} width={w} height={h} fill={corRede} fillOpacity={printMode ? 0.06 : 0.2} />
+            {malha}
+            <path d={`M ${xLinha} ${y0} L ${xFundo} ${y0} L ${xFundo} ${y0 + h} L ${xLinha} ${y0 + h}`} fill="none" stroke={strokeGoal} strokeWidth="0.35" strokeLinejoin="round" />
+            <line x1={xLinha} y1={y0} x2={xLinha} y2={y0 + h} stroke={printMode ? '#2A2A2A' : '#ffffff'} strokeWidth="0.7" />
+            <circle cx={xLinha} cy={y0} r="0.45" fill={printMode ? '#2A2A2A' : '#ffffff'} />
+            <circle cx={xLinha} cy={y0 + h} r="0.45" fill={printMode ? '#2A2A2A' : '#ffffff'} />
+          </g>
+        );
+      })}
     </>
   );
 }
@@ -26376,6 +26424,9 @@ function FichaJogo({ match, players, season, onClose, onEdit, onShare, onPrint, 
               </div>
             )}
 
+            {/* Atalho direto para o plano deste jogo. */}
+            <CartaoPlanoDoJogo jogo={match} compacto />
+
             <div style={card}>
               <div style={{ fontSize: 12, color: T.muted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
                 Suplentes ({eventos.suplentes.length})
@@ -29249,6 +29300,351 @@ function Jogos({ matches, setMatches, players, setPlayers, standings, setStandin
    passa a alinhar as duas listas, para não ficarem versões diferentes da
    mesma coisa em sítios diferentes. As notas de quem sai da convocatória
    também são retiradas, porque deixaram de ter a que se referir. */
+/* =====================================================================
+   ESCALAÇÃO NO CAMPO — convocatória feita num campo vertical.
+
+   · Escolhe-se a formação; cada lugar do campo é uma bola com a foto.
+   · No computador ARRASTA-SE o jogador (do plantel, do banco ou de outro
+     lugar) para o sítio certo; no telemóvel TOCA-SE no jogador e depois
+     no sítio (sem arrastar — arrastar numa página que desliza falha).
+     O toque também funciona no computador.
+   · Largar em cima de um lugar ocupado TROCA os dois.
+   · Zonas: lugares do onze · Suplentes · Não convocados. Os
+     indisponíveis (Boletim Clínico) aparecem à parte, a vermelho.
+
+   Componente só de ecrã: recebe `slots` (um id por lugar da formação,
+   ou null) e `banco` (ids), e devolve tudo por `onChange` — quem o usa
+   (ficha de edição do jogo, convocatória) é que traduz para o seu
+   formato. Nada é gravado aqui.
+   ===================================================================== */
+function EscalacaoNoCampo({ players, formacao, slots, banco, onChange, onFormacao, clinico = [], data, maxBanco = null }) {
+  const isMobile = useIsMobile(820);
+  const lugares = FORMACOES[formacao] || FORMACOES['4-3-3'];
+  const layout = LAYOUT_FORMACAO[formacao] || LAYOUT_FORMACAO['4-3-3'];
+  const [sel, setSel] = useState(null); // { de: 'slot'|'banco'|'fora', i?, id }
+  const [arrasto, setArrasto] = useState(null); // { id, x, y, de, i }
+  const [alvo, setAlvo] = useState(null);
+  const estadoRef = useRef(null);
+  const raizRef = useRef(null);
+
+  const porId = new Map(players.map(p => [p.id, p]));
+  const naEscalacao = new Set([...slots.filter(Boolean), ...banco]);
+  const estado = (p) => estadoClinicoEm(p.id, data || todayStr(), clinico);
+  const indisponivel = (p) => { const e = estado(p); return !!(e && (e.avisaJogo || e.id === 'indisponivel')); };
+  const fora = sortByPosition(players.filter(p => !naEscalacao.has(p.id)));
+  const foraDisp = fora.filter(p => !indisponivel(p));
+  const foraIndisp = fora.filter(p => indisponivel(p));
+  const bancoCheio = maxBanco != null && banco.length >= maxBanco;
+
+  /* Mover `id` (vindo de `origem`) para `destino`. Regras:
+     · destino lugar ocupado → troca (o ocupante vai para onde o outro estava);
+     · destino banco → fica suplente (se houver lugar);
+     · destino fora → deixa de estar convocado. */
+  const mover = (origem, destino) => {
+    const id = origem.id;
+    let s = [...slots];
+    let b = banco.filter(x => x !== id);
+    const tirarDosLugares = () => { s = s.map(x => (x === id ? null : x)); };
+    if (destino.tipo === 'slot') {
+      const ocupante = s[destino.i];
+      if (ocupante === id) return;
+      tirarDosLugares();
+      s[destino.i] = id;
+      if (ocupante) {
+        if (origem.de === 'slot') s[origem.i] = ocupante;
+        else if (origem.de === 'banco') b = [...b, ocupante];
+        else b = [...b, ocupante].slice(0, maxBanco == null ? undefined : maxBanco); // vindo de fora: o ocupante vai para o banco
+      }
+    } else if (destino.tipo === 'banco') {
+      if (origem.de === 'banco') return;
+      if (maxBanco != null && b.length >= maxBanco) return;
+      tirarDosLugares();
+      b = [...b, id];
+    } else if (destino.tipo === 'fora') {
+      if (origem.de === 'fora') return;
+      tirarDosLugares();
+    }
+    onChange({ slots: s, banco: b });
+  };
+
+  // ---- Toque: escolher e depois tocar no destino ----
+  const tocarJogador = (origem) => {
+    if (arrastoFeito.current) { arrastoFeito.current = false; return; }
+    if (!sel) { setSel(origem); return; }
+    if (sel.id === origem.id) { setSel(null); return; }
+    // Tocar noutro jogador: se esse estiver num lugar, troca; senão, muda a escolha.
+    if (origem.de === 'slot') { mover(sel, { tipo: 'slot', i: origem.i }); setSel(null); return; }
+    if (sel.de === 'slot' && origem.de !== 'slot') { mover(origem, { tipo: 'slot', i: sel.i }); setSel(null); return; }
+    setSel(origem);
+  };
+  const tocarZona = (destino) => {
+    if (!sel) return;
+    mover(sel, destino);
+    setSel(null);
+  };
+
+  // ---- Arrastar (só rato) ----
+  const arrastoFeito = useRef(false);
+  const zonaEm = (x, y) => {
+    const raiz = raizRef.current;
+    if (!raiz) return null;
+    const el = document.elementFromPoint(x, y);
+    const z = el && el.closest ? el.closest('[data-zona]') : null;
+    if (!z || !raiz.contains(z)) return null;
+    const [tipo, i] = String(z.getAttribute('data-zona')).split(':');
+    return { tipo, i: i != null ? Number(i) : undefined };
+  };
+  const aoPrimir = (origem) => (e) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return; // no toque, só o clique
+    estadoRef.current = { origem, x0: e.clientX, y0: e.clientY, moveu: false };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* nada */ }
+  };
+  const aoMover = (e) => {
+    const st = estadoRef.current;
+    if (!st) return;
+    if (!st.moveu && Math.hypot(e.clientX - st.x0, e.clientY - st.y0) > 6) st.moveu = true;
+    if (!st.moveu) return;
+    setArrasto({ id: st.origem.id, x: e.clientX, y: e.clientY });
+    const z = zonaEm(e.clientX, e.clientY);
+    setAlvo(z ? `${z.tipo}:${z.i ?? ''}` : null);
+  };
+  const aoLargar = (e) => {
+    const st = estadoRef.current;
+    estadoRef.current = null;
+    setArrasto(null);
+    setAlvo(null);
+    if (!st || !st.moveu) return;
+    arrastoFeito.current = true;
+    setTimeout(() => { arrastoFeito.current = false; }, 0);
+    // O alvo do largar está por baixo do jogador arrastado (que segue o rato).
+    const z = zonaEm(e.clientX, e.clientY);
+    if (z) mover(st.origem, z);
+    setSel(null);
+  };
+
+  const fotoBola = (p, tam, destaque) => {
+    const e = estado(p);
+    const anel = destaque ? T.gold : (e && e.cor ? e.cor : '#ffffff');
+    return (
+      <span style={{
+        width: tam, height: tam, borderRadius: '50%', flexShrink: 0, overflow: 'hidden',
+        border: `2px solid ${anel}`, background: T.crimson, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: destaque ? `0 0 0 3px ${T.gold}55` : '0 1px 3px rgba(0,0,0,.4)', fontSize: Math.round(tam * 0.36), fontWeight: 700, ...mono,
+      }}>
+        {p.photo ? <img src={p.photo} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (p.number || (p.name || '?').slice(0, 1))}
+      </span>
+    );
+  };
+  const props = (origem) => ({
+    onPointerDown: aoPrimir(origem), onPointerMove: aoMover, onPointerUp: aoLargar, onPointerCancel: aoLargar,
+    onClick: (e) => { e.stopPropagation(); tocarJogador(origem); },
+  });
+
+  const cartaoJogador = (p, origem, extra) => {
+    const escolhido = sel && sel.id === p.id;
+    return (
+      <button key={p.id} type="button" {...props(origem)}
+        title={`${p.name}${p.position ? ` · ${p.position}` : ''}`}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', minWidth: 0, textAlign: 'left',
+          background: escolhido ? `${T.gold}22` : T.surfaceRaise, border: `1px solid ${escolhido ? T.gold : T.line}`, borderRadius: 8,
+          color: T.cream, cursor: 'pointer', opacity: arrasto && arrasto.id === p.id ? 0.35 : 1, touchAction: 'manipulation', ...body,
+        }}>
+        {fotoBola(p, 28, escolhido)}
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{ display: 'block', fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{shortPlayerName(p, players)}</span>
+          <span style={{ display: 'block', fontSize: 10.5, color: T.mutedDim, ...mono }}>{p.position || '—'}{p.number ? ` · ${p.number}` : ''}</span>
+        </span>
+        {extra}
+      </button>
+    );
+  };
+  const caixa = (zona, titulo, conteudo, vazio, opcoes = {}) => {
+    const ativo = alvo === `${zona}:` || (sel && !opcoes.semToque);
+    return (
+      <div data-zona={opcoes.semZona ? undefined : `${zona}`} onClick={() => !opcoes.semToque && tocarZona({ tipo: zona })}
+        style={{
+          border: `1px ${ativo && !opcoes.semZona ? 'dashed' : 'solid'} ${alvo === `${zona}:` ? T.gold : (opcoes.cor || T.line)}`,
+          borderRadius: 10, padding: 10, background: alvo === `${zona}:` ? `${T.gold}14` : 'transparent', minWidth: 0,
+          cursor: sel && !opcoes.semToque ? 'pointer' : 'default',
+        }}>
+        <div style={{ fontSize: 11, color: opcoes.cor || T.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8, ...body }}>{titulo}</div>
+        <div style={{ height: opcoes.altura || 150, overflowY: 'auto', overflowAnchor: 'none', scrollbarGutter: 'stable' }}>
+          {conteudo.length === 0
+            ? <div style={{ color: T.mutedDim, fontSize: 12, padding: '14px 4px', textAlign: 'center', ...body }}>{vazio}</div>
+            : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 6 }}>{conteudo}</div>}
+        </div>
+      </div>
+    );
+  };
+
+  const nTitulares = slots.filter(Boolean).length;
+  const arrastado = arrasto ? porId.get(arrasto.id) : null;
+
+  return (
+    <div ref={raizRef} style={{ overflowAnchor: 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span style={{ fontSize: 11.5, color: T.mutedDim, ...body }}>Formação</span>
+        <Select value={formacao} onChange={e => onFormacao(e.target.value)} style={{ width: 110 }}>
+          {Object.keys(FORMACOES).map(fm => <option key={fm} value={fm}>{fm}</option>)}
+        </Select>
+        <span style={{ fontSize: 12, color: nTitulares === lugares.length ? T.good : T.warn, ...body }}>
+          {nTitulares}/{lugares.length} titulares · {banco.length}{maxBanco != null ? `/${maxBanco}` : ''} suplentes
+        </span>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 11.5, color: T.mutedDim, ...body }}>
+          {sel
+            ? <span style={{ color: T.gold }}>Toca no lugar, no banco ou em "Não convocados" para onde vai {porId.get(sel.id) ? shortPlayerName(porId.get(sel.id), players) : 'o jogador'}.</span>
+            : (isMobile ? 'Toca num jogador e depois no sítio para onde vai.' : 'Arrasta os jogadores (ou clica num e depois no sítio).')}
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 360px) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
+        {/* CAMPO VERTICAL (ataque para cima). */}
+        <div style={{
+          position: 'relative', width: '100%', maxWidth: 360, margin: isMobile ? '0 auto' : 0, aspectRatio: '68 / 105', borderRadius: 10, overflow: 'hidden',
+          background: 'repeating-linear-gradient(180deg, #2b5a33 0 7.5%, #275230 7.5% 15%)', border: `1px solid ${T.line}`,
+        }}>
+          <svg viewBox="0 0 68 105" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+            <g fill="none" stroke="#ffffff88" strokeWidth="0.35">
+              <rect x="1.5" y="1.5" width="65" height="102" />
+              <line x1="1.5" y1="52.5" x2="66.5" y2="52.5" />
+              <circle cx="34" cy="52.5" r="9.15" />
+              <rect x="13.84" y="1.5" width="40.32" height="16.5" />
+              <rect x="24.84" y="1.5" width="18.32" height="5.5" />
+              <rect x="13.84" y="87" width="40.32" height="16.5" />
+              <rect x="24.84" y="98" width="18.32" height="5.5" />
+              <path d="M 26.69 18 A 9.15 9.15 0 0 0 41.31 18" />
+              <path d="M 26.69 87 A 9.15 9.15 0 0 1 41.31 87" />
+            </g>
+          </svg>
+          {lugares.map((lugar, i) => {
+            const [lx, ly] = layout[i] || [0.5, 0.5];
+            const id = slots[i];
+            const p = id ? porId.get(id) : null;
+            const escolhido = sel && p && sel.id === p.id;
+            const realce = alvo === `slot:${i}`;
+            return (
+              <div key={i} data-zona={`slot:${i}`}
+                onClick={(e) => { e.stopPropagation(); if (p) tocarJogador({ de: 'slot', i, id: p.id }); else tocarZona({ tipo: 'slot', i }); }}
+                style={{
+                  position: 'absolute', left: `${ly * 100}%`, top: `${(1 - lx) * 100}%`, transform: 'translate(-50%, -50%)',
+                  width: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer', zIndex: escolhido ? 3 : 2,
+                }}>
+                {p ? (
+                  <div {...props({ de: 'slot', i, id: p.id })} onClick={undefined}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: arrasto && arrasto.id === p.id ? 0.35 : 1, touchAction: 'manipulation' }}>
+                    <div style={{ outline: realce ? `2px dashed ${T.gold}` : 'none', outlineOffset: 3, borderRadius: '50%' }}>{fotoBola(p, 38, escolhido)}</div>
+                    <span style={{ fontSize: 10.5, color: '#fff', marginTop: 2, maxWidth: 70, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textShadow: '0 1px 2px #000', ...body }}>{shortPlayerName(p, players)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <span style={{
+                      width: 38, height: 38, borderRadius: '50%', border: `2px dashed ${realce || sel ? T.gold : '#ffffffaa'}`,
+                      background: realce ? `${T.gold}33` : 'rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#fff', fontSize: 10.5, ...mono,
+                    }}>{rotuloDoLugar(lugar)}</span>
+                    <span style={{ fontSize: 10, color: '#ffffffbb', marginTop: 2, ...body }}>livre</span>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ZONAS À VOLTA DO CAMPO */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+          {caixa('banco', `Suplentes · ${banco.length}${maxBanco != null ? `/${maxBanco}` : ''}`,
+            banco.map(id => porId.get(id)).filter(Boolean).map(p => cartaoJogador(p, { de: 'banco', id: p.id })),
+            bancoCheio ? 'Banco completo.' : 'Arrasta (ou toca) para pôr aqui os suplentes.', { altura: 130 })}
+          {caixa('fora', `Não convocados · ${foraDisp.length}`,
+            foraDisp.map(p => cartaoJogador(p, { de: 'fora', id: p.id })),
+            'Todos os jogadores disponíveis estão na escalação.', { altura: 190 })}
+          {foraIndisp.length > 0 && caixa('indisp', `Indisponíveis · ${foraIndisp.length}`,
+            foraIndisp.map(p => cartaoJogador(p, { de: 'fora', id: p.id }, <span style={{ fontSize: 10, color: T.bad, ...body }}>{(estado(p) || {}).curto || ''}</span>)),
+            '', { altura: 80, cor: T.bad, semZona: true, semToque: true })}
+        </div>
+      </div>
+
+      {/* O jogador arrastado segue o rato. */}
+      {arrastado && arrasto && createPortal(
+        <div style={{ position: 'fixed', left: arrasto.x, top: arrasto.y, transform: 'translate(-50%, -50%)', pointerEvents: 'none', zIndex: 9999 }}>
+          {fotoBola(arrastado, 42, true)}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+/* Do jogo para o campo: lugares (pelo alinhamento, se houver) + banco. */
+function escalacaoDoJogo(f, players) {
+  const formacao = f.formacao || '4-3-3';
+  const porId = new Map(players.map(p => [p.id, p]));
+  const titulares = (f.starters || []).map(id => porId.get(id)).filter(Boolean);
+  const { colocados, sobram } = distribuirOnzeNoCampo(titulares, formacao, f.alinhamento);
+  const slots = colocados.map(p => (p ? p.id : null));
+  const usados = new Set(slots.filter(Boolean));
+  const banco = [...sobram.map(p => p.id), ...(f.convocados || []).filter(id => !usados.has(id) && !(f.starters || []).includes(id))];
+  return { formacao, slots, banco: [...new Set(banco)].filter(id => porId.has(id)) };
+}
+/* Da convocatória para o campo: os 11 primeiros são o onze. */
+function escalacaoDaConvocatoria(f, players) {
+  const formacao = f.formacao || '4-3-3';
+  const porId = new Map(players.map(p => [p.id, p]));
+  const n = tamanhoDaFormacao(formacao) || 11;
+  // Já arrumada no campo: os lugares mandam (mesmo com algum vazio), e o
+  // resto dos convocados é banco.
+  if (Array.isArray(f.alinhamento) && f.alinhamento.length === n) {
+    const conv = new Set((f.convocados || []).filter(id => porId.has(id)));
+    const slots = f.alinhamento.map(id => (id && conv.has(id) ? id : null));
+    const usados = new Set(slots.filter(Boolean));
+    return { formacao, slots, banco: (f.convocados || []).filter(id => conv.has(id) && !usados.has(id)) };
+  }
+  const titulares = (f.convocados || []).slice(0, n).map(id => porId.get(id)).filter(Boolean);
+  const { colocados, sobram } = distribuirOnzeNoCampo(titulares, formacao, f.alinhamento);
+  const slots = colocados.map(p => (p ? p.id : null));
+  const banco = [...sobram.map(p => p.id), ...(f.convocados || []).slice(n)].filter(id => porId.has(id));
+  return { formacao, slots, banco };
+}
+/* Trocar de formação mantém os titulares (reencaixados nos novos lugares). */
+function escalacaoNovaFormacao(esc, novaFormacao, players) {
+  const porId = new Map(players.map(p => [p.id, p]));
+  const titulares = esc.slots.filter(Boolean).map(id => porId.get(id)).filter(Boolean);
+  const { colocados, sobram } = distribuirOnzeNoCampo(titulares, novaFormacao, null);
+  return { formacao: novaFormacao, slots: colocados.map(p => (p ? p.id : null)), banco: [...sobram.map(p => p.id), ...esc.banco] };
+}
+
+
+/* CARTÃO "PLANO DE JOGO" — leva diretamente ao plano deste jogo (Ideia de
+   Jogo › Portal › Plano de Jogo). A navegação é pedida por um evento,
+   tratado na raiz da app, para não ter de passar funções por todos os
+   ecrãs que mostram um jogo. */
+function abrirPlanoDoJogo(jogoId) {
+  if (!jogoId || typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('mjp:abrir-plano', { detail: { jogoId } }));
+}
+function CartaoPlanoDoJogo({ jogo, compacto = false }) {
+  const ok = !!(jogo && jogo.id);
+  return (
+    <button type="button" disabled={!ok} onClick={() => ok && abrirPlanoDoJogo(jogo.id)}
+      title={ok ? 'Abrir o plano deste jogo' : 'Este jogo ainda não está em Jogos — grava-o primeiro.'}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', cursor: ok ? 'pointer' : 'default',
+        background: T.surface, border: `1px solid ${ok ? T.gold : T.line}`, borderRadius: 10, padding: compacto ? '8px 12px' : '12px 14px',
+        color: T.cream, opacity: ok ? 1 : 0.6, width: '100%', ...body,
+      }}>
+      <Target size={18} color={T.gold} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600 }}>Plano de jogo</span>
+        <span style={{ display: 'block', fontSize: 11.5, color: T.mutedDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {ok ? `Ideias para ${jogo.opponent ? `o jogo vs ${jogo.opponent}` : 'este jogo'}` : 'Disponível depois de gravar o jogo'}
+        </span>
+      </span>
+      {ok && <ChevronRight size={16} color={T.mutedDim} style={{ flexShrink: 0 }} />}
+    </button>
+  );
+}
 function withConvocadosInAttendance(f) {
   const convocados = f.convocados || [];
   const ratings = { ...(f.ratings || {}) };
@@ -29334,6 +29730,26 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
     const isStarter = f.starters.includes(pid);
     setF({ ...f, starters: isStarter ? f.starters.filter(id => id !== pid) : [...f.starters, pid] });
   };
+  /* ESCALAÇÃO NO CAMPO: os lugares viram `alinhamento` + `starters`; o
+     banco são os restantes convocados. Quem sai da convocatória perde o
+     relatório e a braçadeira, como no clique da lista antiga. */
+  const escalacao = escalacaoDoJogo(f, players);
+  const aplicarEscalacao = ({ slots, banco }) => setF(prev => {
+    const starters = slots.filter(Boolean);
+    const convocados = [...starters, ...banco];
+    const ficam = new Set(convocados);
+    const report = Object.fromEntries(Object.entries(prev.report || {}).filter(([pid]) => ficam.has(pid)));
+    return {
+      ...prev, convocados, starters, alinhamento: slots, report,
+      capitao: ficam.has(prev.capitao) ? prev.capitao : undefined,
+      subcapitao: ficam.has(prev.subcapitao) ? prev.subcapitao : undefined,
+    };
+  });
+  const mudarFormacaoEscalacao = (fm) => setF(prev => {
+    const e = escalacaoNovaFormacao(escalacaoDoJogo(prev, players), fm, players);
+    const starters = e.slots.filter(Boolean);
+    return { ...prev, formacao: fm, alinhamento: e.slots, starters, convocados: [...starters, ...e.banco] };
+  });
   // Mesmo mecanismo já usado em Convocatórias — clicar em "C" ou "SC"
   // marca esse jogador; clicar outra vez tira. Escolher um novo capitão
   // tira a braçadeira a quem a tinha antes, nunca ficam dois ao mesmo
@@ -29513,15 +29929,20 @@ function MatchModal({ match, players, standings, season, onClose, onSave, clinic
             segundo jogador tem de perceber porque é que ele não ficou
             titular como os anteriores. Vale para qualquer jogo, não só
             amigáveis — é a mesma regra que já usávamos em Convocatórias. */}
-        <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 8, lineHeight: 1.5 }}>
-          Os primeiros onze escolhidos entram como titulares; os seguintes ficam suplentes.
-        </div>
-        <PlayerChipList
+        {f.id && (
+          <div style={{ marginBottom: 10, maxWidth: 420 }}>
+            <CartaoPlanoDoJogo jogo={f} compacto />
+          </div>
+        )}
+        <EscalacaoNoCampo
           players={players}
-          isOn={p => f.convocados.includes(p.id)}
-          onToggle={p => toggleConvocado(p.id)}
-          estadoClinico={p => estadoClinicoEm(p.id, f.date, clinico)}
-          avisaEm="jogo"
+          formacao={escalacao.formacao}
+          slots={escalacao.slots}
+          banco={escalacao.banco}
+          onChange={aplicarEscalacao}
+          onFormacao={mudarFormacaoEscalacao}
+          clinico={clinico}
+          data={f.date}
         />
       </div>
 
@@ -49221,6 +49642,7 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
           season={season}
           standings={standings}
           clinico={clinico}
+          matches={matches}
           onClose={() => setModal(null)}
           onSave={save}
         />
@@ -49395,7 +49817,7 @@ function Convocatorias({ convocatorias, setConvocatorias, autorizarLimparConvoca
   );
 }
 
-function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, onSave, clinico }) {
+function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, onSave, clinico, matches = [] }) {
   const [f, setF] = useState(convocatoria || {
     epoca: season?.name || '', competicao: FRIENDLY, escalao: 'Sub-19', adversario: '', casaFora: 'Casa',
     jornada: '', data: '', horaJogo: '', localJogo: '', horaConcentracao: '',
@@ -49415,6 +49837,23 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
      o primeiro suplente. */
   const TITULARES = 11;
   const MAX_CONVOCADOS = 20;
+  // Escalação no campo (formação + lugares + banco até 9).
+  const escConv = escalacaoDaConvocatoria(f, players);
+  const aplicarConv = ({ slots, banco }) => setF(prev => {
+    const convocados = [...slots.filter(Boolean), ...banco];
+    const ficam = new Set(convocados);
+    return {
+      ...prev, convocados, alinhamento: slots,
+      capitao: ficam.has(prev.capitao) ? prev.capitao : undefined,
+      subcapitao: ficam.has(prev.subcapitao) ? prev.subcapitao : undefined,
+    };
+  });
+  const formacaoConv = (fm) => setF(prev => {
+    const e = escalacaoNovaFormacao(escalacaoDaConvocatoria(prev, players), fm, players);
+    return { ...prev, formacao: fm, alinhamento: e.slots, convocados: [...e.slots.filter(Boolean), ...e.banco] };
+  });
+  // O jogo desta convocatória (mesma data e adversário), para o cartão do plano.
+  const jogoDaConvocatoria = (matches || []).find(m => m.date === f.data && f.adversario && m.opponent === f.adversario) || null;
   const titulares = f.convocados.slice(0, TITULARES);
   const suplentes = f.convocados.slice(TITULARES, MAX_CONVOCADOS);
   const excedentes = f.convocados.slice(MAX_CONVOCADOS);
@@ -49522,24 +49961,31 @@ function ConvocatoriaModal({ convocatoria, players, season, standings, onClose, 
           </span>
           {players.length > 0 && (
             <SelectAllBar
-              onSelectAll={() => setF({ ...f, convocados: sortByPosition(players).map(p => p.id) })}
-              onClear={() => setF({ ...f, convocados: [], capitao: undefined, subcapitao: undefined })}
+              onSelectAll={() => setF({ ...f, convocados: sortByPosition(players).map(p => p.id), alinhamento: null })}
+              onClear={() => setF({ ...f, convocados: [], alinhamento: null, capitao: undefined, subcapitao: undefined })}
             />
           )}
+          <div style={{ marginLeft: 'auto', minWidth: 220, maxWidth: 320, flex: '0 1 320px' }}>
+            <CartaoPlanoDoJogo jogo={jogoDaConvocatoria} compacto />
+          </div>
         </div>
         <div style={{ fontSize: 11.5, color: T.mutedDim, marginBottom: 10 }}>
-          Os 11 primeiros que escolheres são o onze inicial; os seguintes, até 9, ficam no banco.
+          Arrasta os jogadores para o campo e para o banco (até 9 suplentes). No telemóvel, toca no jogador e depois no sítio.
         </div>
         {players.length === 0 ? (
           <div style={{ fontSize: 13, color: T.mutedDim }}>Adiciona jogadores ao plantel antes de criar uma convocatória.</div>
         ) : (
           <>
-            <PlayerChipList
+            <EscalacaoNoCampo
               players={players}
-              isOn={p => f.convocados.includes(p.id)}
-              onToggle={p => toggleConvocado(p.id)}
-              estadoClinico={p => estadoClinicoEm(p.id, f.data, clinico)}
-              avisaEm="jogo"
+              formacao={escConv.formacao}
+              slots={escConv.slots}
+              banco={escConv.banco}
+              onChange={aplicarConv}
+              onFormacao={formacaoConv}
+              clinico={clinico}
+              data={f.data}
+              maxBanco={9}
             />
 
             {f.convocados.length > 0 && (
