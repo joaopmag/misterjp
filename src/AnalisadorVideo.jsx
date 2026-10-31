@@ -2804,7 +2804,13 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   useEffect(() => {
     const medir = () => {
       const el = grelhaOriginaisRef.current;
-      if (el) setPorLinhaOriginais(Math.max(1, Math.floor((el.getBoundingClientRect().width + 10) / 182)));
+      /* A Análise de Vídeo fica montada mas ESCONDIDA quando se está
+         noutro separador: aí a grelha mede 0 de largura. Medir nesse
+         estado reduzia a grelha a 1 vídeo; ao voltar, voltava a crescer e
+         os cartões novos apareciam sem imagem durante uns instantes (era
+         esse o piscar). Escondida, mantém-se a última medida boa. */
+      const w = el ? el.getBoundingClientRect().width : 0;
+      if (w > 0) setPorLinhaOriginais(Math.max(1, Math.floor((w + 10) / 182)));
     };
     medir();
     window.addEventListener('resize', medir);
@@ -3960,9 +3966,12 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
   useEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver(() => setEstreitoBancada(el.clientWidth < 900));
+    // Escondida (outro separador) mede 0: não conta, senão ao voltar o
+    // leitor mudava de arrumação por um instante.
+    const medir = () => { if (el.clientWidth > 0) setEstreitoBancada(el.clientWidth < 900); };
+    const ro = new ResizeObserver(medir);
     ro.observe(el);
-    setEstreitoBancada(el.clientWidth < 900);
+    medir();
     return () => ro.disconnect();
   }, [originalAtivoId, signedUrl]);
   const marcadoClipe = inPoint != null && outPoint != null && outPoint > inPoint;
