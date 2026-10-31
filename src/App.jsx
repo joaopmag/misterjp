@@ -3811,7 +3811,7 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
 
   /* TAREFAS "AUTOAVALIAÇÃO" SEM NADA PARA RESPONDER. Uma tarefa criada
      com um momento do Desenvolvimento fica sem sentido se o momento foi
-     apagado ou se o jogador foi tirado desse momento: no Portal aparecia
+     apagado, FECHADO, ou se o jogador foi tirado desse momento: no Portal aparecia
      a tarefa, o jogador abria-a e o ecrã dizia que não havia nenhuma
      autoavaliação. Essas tarefas saem sozinhas aqui. Só corre com as
      duas listas carregadas e com o Desenvolvimento não vazio, para nunca
@@ -3820,7 +3820,9 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     if (!tarefasReady || !desenvolvimentoReady) return;
     const dev = desenvolvimento || [];
     if (!dev.length) return;
-    const momentos = new Set(dev.filter(x => x && x.tipo === 'momento').map(x => x.id));
+    // Só contam os momentos ABERTOS: o Portal (checkin_desenvolvimento)
+    // não mostra o questionário de um momento fechado.
+    const momentos = new Set(dev.filter(x => x && x.tipo === 'momento' && !x.fechado).map(x => x.id));
     const registos = new Set(dev.filter(x => x && x.tipo === 'registo').map(x => `${x.momentoId}|${x.playerId}`));
     const orfa = (t) => t && t.origemMomento && t.jogadorId && t.estado !== 'feita'
       && (!momentos.has(t.origemMomento) || !registos.has(`${t.origemMomento}|${t.jogadorId}`));
@@ -19634,7 +19636,27 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
 
           {aba === 'geral' && (
             <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <Btn variant="ghost" onClick={() => patchMomento(momento.id, { fechado: !momento.fechado })}>
+              <Btn variant="ghost" onClick={() => {
+                const reabrir = !!momento.fechado;
+                patchMomento(momento.id, { fechado: !momento.fechado });
+                /* Reabrir um momento com prazo devolve a tarefa
+                   "Autoavaliação" a quem ainda não submeteu (ao fechar,
+                   essas tarefas saem do Portal, porque o servidor deixa de
+                   mostrar o questionário de um momento fechado). */
+                if (reabrir && setTarefas && momento.prazo) {
+                  const pendentes = (desenvolvimento || []).filter(x => x && x.tipo === 'registo' && x.momentoId === momento.id && !x.enviado).map(x => x.playerId);
+                  const nome = momento.nome;
+                  setTarefas(prev => {
+                    const jaTem = new Set((prev || []).filter(t => t && t.origemMomento === momento.id && t.estado !== 'feita').map(t => t.jogadorId));
+                    const novas = pendentes.filter(pid => !jaTem.has(pid)).map(pid => ({
+                      id: uid(), titulo: `Autoavaliação · ${nome}`, notas: '', responsavel: '', prazo: momento.prazo,
+                      estado: 'aberta', recorrencia: null, jogadorId: pid, destino: 'autoavaliacao', origemMomento: momento.id,
+                      missoes: [{ id: uid(), destino: 'autoavaliacao', instrucoes: `Responde à autoavaliação "${nome}" até ${fmtDate(momento.prazo)}.` }],
+                    }));
+                    return novas.length ? [...(prev || []), ...novas] : prev;
+                  });
+                }
+              }}>
                 {momento.fechado ? 'Reabrir momento' : 'Fechar momento'}
               </Btn>
               {!momento.fechado && jogadoresForaDoMomento.length > 0 && (
