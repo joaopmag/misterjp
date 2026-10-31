@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import ReactDOMServer from 'react-dom/server';
 // JSZip — abre/fecha o .xlsx como o que ele realmente é por dentro (um
 // .zip com XML lá dentro). É isto que permite mudar só o texto exato
@@ -8201,6 +8201,9 @@ function linkWhatsApp(contact, mensagem) {
 
 function shortPlayerName(player, allPlayers) {
   if (!player) return '—';
+  // O nome por que é conhecido (Plantel › "Nome no clube") manda sempre.
+  const alcunha = String(player.alcunha || '').trim();
+  if (alcunha) return alcunha;
   const lista = allPlayers || [];
   const outros = lista.filter(o => o && o.id !== player.id);
 
@@ -10371,6 +10374,13 @@ function PlayerModal({ player, onClose, onSave }) {
         <div style={{ ...FIELD_GRID }}>
           <div style={FIELD_FULL}>
             <Field label="Nome completo"><Input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Nome do jogador" /></Field>
+          </div>
+          {/* O NOME POR QUE É CONHECIDO no balneário (ex.: "Cadilhe", "Dani").
+              É este que aparece em toda a app onde o nome é curto: campo,
+              convocatória, relatórios, Portal… Sem ele, a app escolhe o
+              primeiro nome (ou o apelido, se houver dois iguais). */}
+          <div style={FIELD_FULL}>
+            <Field label="Nome no clube (como é conhecido)"><Input value={f.alcunha || ''} onChange={e => setF({ ...f, alcunha: e.target.value })} placeholder="Ex.: Dani, Cadilhe, Rodri" /></Field>
           </div>
           <Field label="Nº"><Input value={f.number} onChange={e => setF({ ...f, number: e.target.value })} placeholder="10" /></Field>
           <Field label="Nacionalidade"><Input value={f.nationality} onChange={e => setF({ ...f, nationality: e.target.value })} /></Field>
@@ -14169,7 +14179,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
 
         if (el.kind === 'cone') {
           return (
-            <g key={el.id}>
+            <g key={el.id} data-anim-id={el.id}>
               {hitsEnabled && <circle cx={el.x} cy={el.y} r="1.4" onPointerDown={handler} style={hitStyle} />}
               <polygon points={`${el.x},${el.y - 1.2} ${el.x - 1.1},${el.y + 1.0} ${el.x + 1.1},${el.y + 1.0}`} fill="#C4832F" style={{ pointerEvents: 'none' }} />
             </g>
@@ -14202,7 +14212,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
             netLines.push(<line key={`h${j}`} x1={-w / 2} y1={gy} x2={w / 2} y2={gy} stroke={corBaliza} strokeWidth="0.05" opacity={opRede} />);
           }
           return (
-            <g key={el.id}>
+            <g key={el.id} data-anim-id={el.id}>
               {hitsEnabled && (
                 <rect x={-w / 2 - 0.4} y={-h / 2 - 0.4} width={w + 0.8} height={h + 0.8} transform={tr}
                   onPointerDown={handler} style={hitStyle} />
@@ -14220,7 +14230,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
         }
         if (el.kind === 'stake') {
           return (
-            <g key={el.id}>
+            <g key={el.id} data-anim-id={el.id}>
               {/* A área de toque cobre a estaca TODA (base e vara). Antes era só
                   um círculo na base: tocar na vara, que é o que se vê, não a
                   apanhava e a estaca parecia impossível de mexer. */}
@@ -14269,7 +14279,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           const { size, linhas, alturaLinha, folgaY, w: boxW, h: boxH, cx: tx, topo } = textBoxMetrics(el);
           const fill = printMode ? '#1B1B1B' : '#F0E7D6';
           return (
-            <g key={el.id}>
+            <g key={el.id} data-anim-id={el.id}>
               {hitsEnabled && (
                 <rect x={tx - boxW / 2} y={topo} width={boxW} height={boxH}
                   transform={rodarTexto(tx, topo + boxH / 2)}
@@ -14292,7 +14302,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           // Marcador do treinador: mais pequeno que um jogador e com o "T"
           // a preto — a dourado sobre fundo claro quase não se lia.
           return (
-            <g key={el.id}>
+            <g key={el.id} data-anim-id={el.id}>
               {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(1.9 * k, 1.6)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
                 <circle cx={el.x} cy={el.y} r={1.5 * k} fill="#F0E7D6" stroke="#C9A227" strokeWidth={0.3 * k} />
@@ -14303,7 +14313,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
         }
         if (el.kind === 'ball') {
           return (
-            <g key={el.id}>
+            <g key={el.id} data-anim-id={el.id}>
               {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(1.8 * k, 1.6)} onPointerDown={handler} style={hitStyle} />}
               <g style={{ pointerEvents: 'none' }}>
                 <TriondaBall cx={el.x} cy={el.y} r={1.6 * k} />
@@ -14315,7 +14325,7 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
           const tm = teamInfo(el.team);
           const isKeeper = el.kind === 'keeper';
           return (
-            <g key={el.id}>
+            <g key={el.id} data-anim-id={el.id}>
               {/* A área de toque nunca encolhe abaixo do dedo: mesmo com os
                   ícones pequenos, continua a dar para agarrar e arrastar. */}
               {hitsEnabled && <circle cx={el.x} cy={el.y} r={Math.max(2.2 * k, 1.8)} onPointerDown={handler} style={hitStyle} />}
@@ -14659,11 +14669,71 @@ const animMapaPosicoes = (lista) => new Map((lista || []).map(el => [el.id, { x:
 /* Plano da coreografia toda: os passos gravados, cada um a partir do fim
    do anterior, e (se houver) o deslize final até ao campo guardado.
    `ate`: só os passos 0 … ate-1 (para o editor saber o fim do anterior). */
+/* EXERCÍCIOS ANTIGOS TOCAM COMO SEMPRE TOCARAM (decisão de 31/10).
+   Um exercício é "novo" se algum passo foi gravado com o motor novo
+   (`step.v === 2`, ou `step.de` dos primeiros dias). Os antigos usam a
+   reprodução de origem: cada passo começa na sua fotografia (as peças
+   aparecem no sítio), cada seta acelera e trava sozinha, bola e jogadores
+   à mesma velocidade (26), e 0,45 s de pausa entre passos. */
+const ANIM_PAUSA_ANTIGA_MS = 450;
+const ANIM_PAUSA_NOVA_MS = 300; // entre cada Animar, nos exercícios novos
+const animExercicioNovo = (seq) => (seq || []).some(st => st && (st.v === 2 || st.de));
+function planearPassoAntigo(elementos, setas) {
+  const animaveis = (setas || []).filter(a => a.type === 'arrow-pass' || a.type === 'arrow-run');
+  const cadeias = animaveis.length ? buildAnimationChainsPure(animaveis) : [];
+  const novasBolas = [];
+  const movs = [];
+  cadeias.forEach(cad => {
+    const first = cad[0];
+    let mover = animMoverPadrao(first, elementos);
+    if (!mover && first.type === 'arrow-pass') {
+      mover = { id: uid(), kind: 'ball', x: first.x1, y: first.y1 };
+      novasBolas.push(mover);
+    }
+    if (!mover) return;
+    let cursor = 0;
+    const segmentos = cad.map(a => {
+      const duration = Math.max(280, (Math.hypot(a.x2 - a.x1, a.y2 - a.y1) / 26) * 1000);
+      const sg = { arrow: a, duration, start: cursor };
+      cursor += duration;
+      return sg;
+    });
+    movs.push({ id: mover.id, segmentos, total: cursor });
+  });
+  const todos = [...elementos, ...novasBolas];
+  const dur = movs.reduce((m, x) => Math.max(m, x.total), 0);
+  const posicoes = (ms) => {
+    const out = new Map();
+    movs.forEach(({ id, segmentos }) => {
+      let ativo = segmentos[segmentos.length - 1];
+      for (const sg of segmentos) { if (ms < sg.start + sg.duration) { ativo = sg; break; } }
+      const local = Math.max(0, Math.min(ativo.duration, ms - ativo.start));
+      out.set(id, pontoNaSeta(ativo.arrow, easeInOutQuadPure(ativo.duration ? local / ativo.duration : 1)));
+    });
+    return out;
+  };
+  const fimPos = new Map(movs.map(m => { const a = m.segmentos[m.segmentos.length - 1].arrow; return [m.id, { x: a.x2, y: a.y2 }]; }));
+  const fim = todos.map(el => (fimPos.has(el.id) ? { ...el, ...fimPos.get(el.id) } : el));
+  return { base: todos, dur, posicoes, fim, novasBolas, movers: new Set(movs.map(m => m.id)), deslizados: {} };
+}
 function planearCoreografiaAnim(diagram, opcoes = {}) {
   const seq = Array.isArray(diagram && diagram.sequence) ? diagram.sequence : [];
   const ate = opcoes.ate != null ? Math.min(opcoes.ate, seq.length) : seq.length;
   const passos = [];
   let antes = null;
+  if (!animExercicioNovo(seq) && !opcoes.forcarNovo) {
+    for (let i = 0; i < ate; i++) {
+      const step = seq[i];
+      const p = planearPassoAntigo(stepElements(step, diagram), step.arrows);
+      p.setasFixas = stepStaticArrows(step, diagram);
+      p.indice = i;
+      p.antigo = true;
+      if (i + 1 < seq.length) p.pausa = ANIM_PAUSA_ANTIGA_MS;
+      passos.push(p);
+      antes = animMapaPosicoes(p.fim);
+    }
+    return { passos, fimAnterior: antes };
+  }
   for (let i = 0; i < ate; i++) {
     const step = seq[i];
     /* PASSOS ANTIGOS (sem `step.de`): quem está noutro sítio no início do
@@ -14701,10 +14771,17 @@ function planearCoreografiaAnim(diagram, opcoes = {}) {
       antes = animMapaPosicoes(fin.fim);
     }
   }
+  /* PAUSA CURTA ENTRE CADA ANIMAR (exercícios novos): cada Animar é uma
+     "frase" da jogada; 0,3 s entre elas ajuda a ler. Não há pausa antes do
+     deslize final até ao campo guardado. */
+  for (let i = 0; i + 1 < passos.length; i++) {
+    if (!passos[i + 1].final) passos[i].pausa = ANIM_PAUSA_NOVA_MS;
+  }
   /* MOVIMENTO SEGUIDO ENTRE PASSOS: quem se mexe num passo e também no
      seguinte passa de um para o outro sem travar até parar (era o
-     "pára-arranca" em cada mudança de passo). */
+     "pára-arranca" em cada mudança de passo). Com pausa pelo meio, trava. */
   for (let i = 0; i + 1 < passos.length; i++) {
+    if (passos[i].pausa) continue;
     const agora = passos[i].trajetos, depois = passos[i + 1].trajetos;
     if (!agora || !depois) continue;
     agora.forEach((tr, id) => {
@@ -14939,6 +15016,7 @@ function computeDiagramAnimationFrames(diagram, zones, phase, opcoes = {}) {
       if (f === 0 && frames.length) continue; // o fim do anterior já é o início deste
       pushFrame(animEstadoNoPasso(p, (f / nSteps) * p.dur), FRAME_MS, p.setasFixas);
     }
+    if (p.pausa) frames[frames.length - 1].holdMs = FRAME_MS + p.pausa;
   });
   pushFrame(diagram.elements || [], 0); // fotograma final: exatamente como o exercício está guardado hoje
   return { frames, hasAnimation: true };
@@ -15591,6 +15669,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     setIsPlaying(false);
     setAnimItems([]);
     setAnimFrame(null);
+    limparDeslocadosEditor();
   };
   // Agrupa setas encadeadas (o fim de uma coincide com o início da
   // seguinte, do mesmo tipo) em "cadeias", para que a animação as toque
@@ -15628,6 +15707,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     // exercício, mais tarde, consegue reproduzir toda a coreografia de
     // movimentos sem depender de um vídeo gravado — basta reler os passos.
     const stepSnapshot = {
+      v: 2, // gravado com o motor novo (ver planearCoreografiaAnim)
       elements: baseElements.map(el => ({ ...el })),
       arrows: animArrows.map(a => ({ ...a })),
       /* Desenhos fixos (linhas, zonas de pressão, setas sem animação) que
@@ -15642,10 +15722,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         ? { curvas: Object.fromEntries(Object.entries(curvasPendentes).filter(([id]) => planoPasso.movers.has(id))) } : {}),
     };
     setIsPlaying(true);
+    try { flushSync(() => setAnimFrame(planoPasso.base)); } catch (e) { setAnimFrame(planoPasso.base); }
+    limparDeslocadosEditor();
+    const mexer = animarNos(planoPasso, planoPasso.base);
     const start = performance.now();
     const tick = (now) => {
       const elapsed = now - start;
-      setAnimFrame(animEstadoNoPasso(planoPasso, Math.min(elapsed, planoPasso.dur)));
+      mexer(Math.min(elapsed, planoPasso.dur));
       if (elapsed < planoPasso.dur) {
         animRef.current = requestAnimationFrame(tick);
       } else {
@@ -15721,7 +15804,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         if (selectedArrowId && animatedIds.has(selectedArrowId)) setSelectedArrowId(null);
         setIsPlaying(false);
         setAnimItems([]);
-        setAnimFrame(null);
+        try { flushSync(() => setAnimFrame(null)); } catch (e) { setAnimFrame(null); }
+        limparDeslocadosEditor();
         animRef.current = null;
       }
     };
@@ -15744,6 +15828,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     if (presentTimeoutRef.current) clearTimeout(presentTimeoutRef.current);
   }, []);
   const stopPresentation = () => {
+    limparDeslocadosEditor();
     if (presentAnimRef.current) cancelAnimationFrame(presentAnimRef.current);
     if (presentTimeoutRef.current) clearTimeout(presentTimeoutRef.current);
     presentAnimRef.current = null;
@@ -15756,22 +15841,41 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
      onde o anterior acabou, o que foi arrastado desliza, a bola anda ao
      dobro e não há pausa entre passos. O plano é feito a partir de
      `valueRef.current` (o conteúdo mais recente das caixas de texto). */
+  // Só as peças que andam se mexem (transform direto), sem redesenhar o
+  // campo a cada imagem (ver ExercisePresentation).
+  const limparDeslocadosEditor = () => {
+    const raiz = svgRef.current;
+    if (raiz) raiz.querySelectorAll('[data-anim-id][transform]').forEach(n => n.removeAttribute('transform'));
+  };
+  const animarNos = (p, base) => {
+    const nos = new Map();
+    if (svgRef.current) svgRef.current.querySelectorAll('[data-anim-id]').forEach(n => nos.set(n.getAttribute('data-anim-id'), n));
+    const baseMap = new Map(base.map(el => [el.id, el]));
+    return (ms) => p.posicoes(ms).forEach((v, id) => {
+      const n = nos.get(id), b = baseMap.get(id);
+      if (n && b) n.setAttribute('transform', `translate(${(v.x - b.x).toFixed(3)} ${(v.y - b.y).toFixed(3)})`);
+    });
+  };
   const runPresentStep = (idx, plano, sobraMs = 0) => {
     const p = plano.passos[idx];
-    if (!p) { stopPresentation(); return; }
+    if (!p) { limparDeslocadosEditor(); stopPresentation(); return; }
     setPresentArrows(p.setasFixas);
+    try { flushSync(() => setPresentElements(p.base)); } catch (e) { setPresentElements(p.base); }
+    limparDeslocadosEditor();
+    const mexer = animarNos(p, p.base);
     const start = performance.now() - sobraMs;
     const tick = (now) => {
       const elapsed = now - start;
-      setPresentElements(animEstadoNoPasso(p, Math.min(elapsed, p.dur)));
-      if (elapsed < p.dur) {
+      mexer(Math.min(elapsed, p.dur));
+      const total = p.dur + (p.pausa || 0);
+      if (elapsed < total) {
         presentAnimRef.current = requestAnimationFrame(tick);
       } else {
         presentAnimRef.current = null;
-        if (idx + 1 < plano.passos.length) runPresentStep(idx + 1, plano, Math.max(0, elapsed - p.dur));
+        if (idx + 1 < plano.passos.length) runPresentStep(idx + 1, plano, Math.max(0, elapsed - total));
         // Terminou: volta a mostrar o quadro tal como está agora no editor,
         // incluindo setas por animar que ainda não tenham sido "Animadas".
-        else stopPresentation();
+        else { try { flushSync(() => stopPresentation()); } catch (e) { stopPresentation(); } limparDeslocadosEditor(); }
       }
     };
     presentAnimRef.current = requestAnimationFrame(tick);
@@ -17741,6 +17845,19 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const passoAtualRef = useRef(0);
   const decorridoRef = useRef(0);
   const planoAnim = React.useMemo(() => planearCoreografiaAnim(diagram), [diagram]);
+  /* SEM SOLUÇOS: durante cada fase, só as peças que andam se mexem (um
+     `transform` direto no desenho de cada uma), sem redesenhar o campo
+     todo a cada imagem. Antes o React redesenhava tudo 60 vezes por
+     segundo e, com muitos itens em campo, perdia imagens (os soluços dos
+     exercícios antigos). O campo só é redesenhado na passagem de fase. */
+  const limparDeslocados = () => {
+    const raiz = pitchWrapRef.current;
+    if (raiz) raiz.querySelectorAll('[data-anim-id][transform]').forEach(n => n.removeAttribute('transform'));
+  };
+  const mostrarCampo = (els) => {
+    try { flushSync(() => setFrameElements(els)); } catch (e) { setFrameElements(els); }
+    limparDeslocados();
+  };
   /* O plano pode ter mais fases do que passos gravados (a reposição antes
      de um passo antigo). `passoAtualRef` continua a ser o número do PASSO
      (para Anterior/Seguinte); `faseRef` é a fase do plano a correr. */
@@ -17811,7 +17928,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     const acabar = () => {
       // Último passo: fica exatamente como o exercício está guardado hoje,
       // já com todos os desenhos.
-      setFrameElements(diagram.elements || []);
+      mostrarCampo(diagram.elements || []);
       setFrameArrows(diagram.arrows || []);
       setAnimItems([]);
       animRef.current = null;
@@ -17823,22 +17940,31 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     };
     if (!p) { acabar(); return; }
     setFrameArrows(p.setasFixas);
+    mostrarCampo(p.base);
+    const nos = new Map();
+    if (pitchWrapRef.current) pitchWrapRef.current.querySelectorAll('[data-anim-id]').forEach(n => nos.set(n.getAttribute('data-anim-id'), n));
+    const baseMap = new Map(p.base.map(el => [el.id, el]));
     // `offsetMs` recua o relógio: retomar em 3s é o mesmo que ter
     // começado 3s antes de agora.
     const start = performance.now() - offsetMs;
     const tick = (now) => {
       const elapsed = now - start;
       decorridoRef.current = elapsed;
-      setFrameElements(animEstadoNoPasso(p, Math.min(elapsed, p.dur)));
-      if (elapsed < p.dur) {
+      p.posicoes(Math.min(elapsed, p.dur)).forEach((v, id) => {
+        const n = nos.get(id), b = baseMap.get(id);
+        if (n && b) n.setAttribute('transform', `translate(${(v.x - b.x).toFixed(3)} ${(v.y - b.y).toFixed(3)})`);
+      });
+      // Depois do movimento, a pausa do passo (se houver), parado.
+      const total = p.dur + (p.pausa || 0);
+      if (elapsed < total) {
         animRef.current = requestAnimationFrame(tick);
       } else {
         animRef.current = null;
         decorridoRef.current = 0;
         if (idx + 1 < planoAnim.passos.length) {
-          // Sem pausa entre passos: o seguinte começa já, com o tempo que
-          // sobrou deste (sem uma imagem repetida na passagem).
-          runStep(idx + 1, Math.max(0, elapsed - p.dur));
+          // O seguinte começa já, com o tempo que sobrou deste (sem uma
+          // imagem repetida na passagem).
+          runStep(idx + 1, Math.max(0, elapsed - total));
         } else acabar();
       }
     };
@@ -17853,7 +17979,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     passoAtualRef.current = 0;
     faseRef.current = 0;
     decorridoRef.current = 0;
-    setFrameElements(planoAnim.passos[0] ? planoAnim.passos[0].base : sequence[0].elements);
+    mostrarCampo(planoAnim.passos[0] ? planoAnim.passos[0].base : sequence[0].elements);
     setFrameArrows(stepStaticArrows(sequence[0], diagram));
     timeoutRef.current = setTimeout(() => runStep(0), 200);
   };
@@ -17922,7 +18048,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     // O início do passo = onde o anterior acabou (com o que foi arrastado
     // ainda no sítio de partida: desliza quando se carregar em Continuar).
     const pa = planoAnim.passos[faseRef.current];
-    setFrameElements(pa ? pa.base : stepElements(step, diagram));
+    mostrarCampo(pa ? pa.base : stepElements(step, diagram));
     setFrameArrows([...stepStaticArrows(step, diagram), ...(step.arrows || [])]);
   };
 
@@ -17939,7 +18065,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
       setPaused(false);
       setFinished(true);
       setAnimItems([]);
-      setFrameElements(diagram.elements || []);
+      mostrarCampo(diagram.elements || []);
       setFrameArrows(diagram.arrows || []);
       return;
     }
@@ -35304,7 +35430,7 @@ const CACIFO_CSS = `
   .cf-aberto .cf-rig { left: 150px; }
   .cf-corpo { position: absolute; inset: 0; background: #0f1612; border: 5px solid #2c4336; border-radius: 6px; overflow: hidden; pointer-events: none; }
   .cf-aberto .cf-corpo { pointer-events: auto; }
-  .cf-porta { position: absolute; inset: 0; transform-origin: left center; transform-style: preserve-3d; -webkit-transform-style: preserve-3d; transition: transform 1.3s cubic-bezier(.35,.75,.25,1) .8s; z-index: 5; pointer-events: none; }
+  .cf-porta { position: absolute; inset: 0; transform-origin: left center; transform-style: preserve-3d; -webkit-transform-style: preserve-3d; transition: transform 1.2s cubic-bezier(.35,.75,.25,1) .45s; z-index: 5; pointer-events: none; }
   .cf-aberto .cf-porta { transform: rotateY(-165deg); }
   .cf-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 6px; overflow: hidden; }
   .cf-tras { background: #243a2e; transform: rotateY(180deg); border: 1px solid #4e6a58; }
@@ -35312,10 +35438,12 @@ const CACIFO_CSS = `
   .cf-roda { transition: transform .8s cubic-bezier(.45,1.5,.5,1); transform-origin: 116px 300px; }
   .cf-aberto .cf-roda { transform: rotate(-290deg); }
   .cf-luz { position: absolute; top: 0; left: 0; display: block; pointer-events: none; opacity: 0; }
-  .cf-aberto .cf-luz { opacity: 1; animation: cf-ligar .55s linear 1s both; }
+  .cf-aberto .cf-luz { opacity: 1; animation: cf-ligar .6s ease-out .55s both; }
   .cf-cone { opacity: 0; }
-  .cf-aberto .cf-cone { opacity: 1; animation: cf-cone .5s ease-out 1.3s both; }
-  @keyframes cf-ligar { 0% { opacity: 0; } 12% { opacity: .85; } 22% { opacity: .2; } 36% { opacity: 1; } 100% { opacity: 1; } }
+  .cf-aberto .cf-cone { opacity: 1; animation: cf-cone .5s ease-out .8s both; }
+  /* A luz acende SUAVE, à medida que a porta abre. Antes piscava
+     (0 → 0,85 → 0,2 → 1), e via-se o interior escuro aos soluços. */
+  @keyframes cf-ligar { from { opacity: 0; } to { opacity: 1; } }
   @keyframes cf-cone { from { opacity: 0; } to { opacity: 1; } }
   .cf-ja .cf-luz, .cf-ja .cf-cone { animation: none !important; }
   .cf-it { opacity: 0; transform: translateY(8px); transition: opacity .45s, transform .45s; }
@@ -36912,7 +37040,8 @@ function CvJogador({ p, eu, tam }) {
         )}
       </span>
       <span style={{ fontSize: 13, fontWeight: eu ? 700 : 500, color: eu ? T.gold : T.cream, textAlign: 'center', lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', ...body }}>
-        {p.name}{exp && <span style={{ color: T.mutedDim, fontWeight: 400 }}> (exp)</span>}
+        {/* O nome por que é conhecido, se o servidor o enviar (ver Plantel). */}
+        {String(p.alcunha || '').trim() || p.name}{exp && <span style={{ color: T.mutedDim, fontWeight: 400 }}> (exp)</span>}
       </span>
     </div>
   );
