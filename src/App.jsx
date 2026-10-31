@@ -12982,6 +12982,10 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
 // 86 (antes 70): com o editor mais largo (até 1480 px), o campo cresce e
 // enche mais as laterais; a barra de ferramentas fica logo por cima.
 const PITCH_TARGET_VH = 86;
+// Altura de tudo o que rodeia o campo no editor (computador): cores,
+// ferramentas, dica, linha das animações, painel do selecionado e marca.
+// O campo fica com o resto do ecrã: tudo à vista sem scroll.
+const CHROME_EDITOR_PX = 222;
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
@@ -14217,7 +14221,10 @@ function DiagramElements({ elements, arrows, onElementDown, onArrowDown, onHandl
         if (el.kind === 'stake') {
           return (
             <g key={el.id}>
-              {hitsEnabled && <circle cx={el.x} cy={el.y} r="1.1" onPointerDown={handler} style={hitStyle} />}
+              {/* A área de toque cobre a estaca TODA (base e vara). Antes era só
+                  um círculo na base: tocar na vara, que é o que se vê, não a
+                  apanhava e a estaca parecia impossível de mexer. */}
+              {hitsEnabled && <rect x={el.x - 1} y={el.y - 4.2} width="2" height="4.9" rx="0.6" onPointerDown={handler} style={hitStyle} />}
               {/* ESTACA, NÃO FÓSFORO.
 
                   Era um pau amarelo com uma cabeça vermelha em cima, o que
@@ -14492,15 +14499,18 @@ function animPontoAoLongo(seg, d) {
 /* Perfil de velocidade: rampa de arranque, velocidade constante, rampa de
    travagem (as rampas valem `rampaMs`, no máximo 30 % do movimento cada).
    Recebe a fração de tempo (0–1) e devolve a fração do caminho (0–1). */
-function animPerfil(x, durMs, rampaMs) {
+function animPerfil(x, durMs, rampaMs, semArranque, semTravagem) {
   if (x <= 0) return 0;
   if (x >= 1) return 1;
   const a = Math.min(0.3, durMs > 0 ? rampaMs / durMs : 0.3);
-  if (a <= 0) return x;
-  const v = 1 / (1 - a);
-  if (x < a) return 0.5 * v * x * x / a;
-  if (x > 1 - a) return 1 - 0.5 * v * (1 - x) * (1 - x) / a;
-  return v * (x - a / 2);
+  // Quem já vinha a correr do passo anterior não arranca do zero, e quem
+  // continua a correr no passo seguinte não trava até parar.
+  const a1 = semArranque ? 0 : a, a2 = semTravagem ? 0 : a;
+  if (a1 <= 0 && a2 <= 0) return x;
+  const v = 1 / (1 - a1 / 2 - a2 / 2);
+  if (a1 > 0 && x < a1) return 0.5 * v * x * x / a1;
+  if (a2 > 0 && x > 1 - a2) return 1 - 0.5 * v * (1 - x) * (1 - x) / a2;
+  return v * (x - a1 / 2);
 }
 // Um trajeto = várias setas seguidas, percorridas como um só movimento.
 function animTrajeto(segs, ehBola) {
@@ -14515,7 +14525,7 @@ function animTrajeto(segs, ehBola) {
 }
 function animPosicaoNoTrajeto(tr, ms) {
   const x = tr.dur > 0 ? ms / tr.dur : 1;
-  const f = animPerfil(x, tr.dur, tr.ehBola ? 140 : 380);
+  const f = animPerfil(x, tr.dur, tr.ehBola ? 140 : 380, tr.semArranque, tr.semTravagem);
   const alvo = f * tr.tempoCaminho;
   let p = tr.partes[tr.partes.length - 1];
   for (const q of tr.partes) { if (alvo <= q.inicio + q.ms) { p = q; break; } }
@@ -14611,7 +14621,7 @@ function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
   };
   const deslizados = {};
   base.forEach((el, i) => { if (el !== todos[i]) deslizados[el.id] = { x: el.x, y: el.y }; });
-  return { base, dur, posicoes, fim, novasBolas, movers: new Set(trajetos.keys()), deslizados };
+  return { base, dur, posicoes, fim, novasBolas, movers: new Set(trajetos.keys()), deslizados, trajetos };
 }
 const animMapaPosicoes = (lista) => new Map((lista || []).map(el => [el.id, { x: el.x, y: el.y }]));
 /* Plano da coreografia toda: os passos gravados, cada um a partir do fim
@@ -14662,6 +14672,17 @@ function planearCoreografiaAnim(diagram, opcoes = {}) {
       passos.push(fin);
       antes = animMapaPosicoes(fin.fim);
     }
+  }
+  /* MOVIMENTO SEGUIDO ENTRE PASSOS: quem se mexe num passo e também no
+     seguinte passa de um para o outro sem travar até parar (era o
+     "pára-arranca" em cada mudança de passo). */
+  for (let i = 0; i + 1 < passos.length; i++) {
+    const agora = passos[i].trajetos, depois = passos[i + 1].trajetos;
+    if (!agora || !depois) continue;
+    agora.forEach((tr, id) => {
+      const seg = depois.get(id);
+      if (seg) { tr.semTravagem = true; seg.semArranque = true; }
+    });
   }
   return { passos, fimAnterior: antes };
 }
@@ -15706,11 +15727,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
      onde o anterior acabou, o que foi arrastado desliza, a bola anda ao
      dobro e não há pausa entre passos. O plano é feito a partir de
      `valueRef.current` (o conteúdo mais recente das caixas de texto). */
-  const runPresentStep = (idx, plano) => {
+  const runPresentStep = (idx, plano, sobraMs = 0) => {
     const p = plano.passos[idx];
     if (!p) { stopPresentation(); return; }
     setPresentArrows(p.setasFixas);
-    const start = performance.now();
+    const start = performance.now() - sobraMs;
     const tick = (now) => {
       const elapsed = now - start;
       setPresentElements(animEstadoNoPasso(p, Math.min(elapsed, p.dur)));
@@ -15718,7 +15739,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         presentAnimRef.current = requestAnimationFrame(tick);
       } else {
         presentAnimRef.current = null;
-        if (idx + 1 < plano.passos.length) runPresentStep(idx + 1, plano);
+        if (idx + 1 < plano.passos.length) runPresentStep(idx + 1, plano, Math.max(0, elapsed - p.dur));
         // Terminou: volta a mostrar o quadro tal como está agora no editor,
         // incluindo setas por animar que ainda não tenham sido "Animadas".
         else stopPresentation();
@@ -16822,9 +16843,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           ...PITCH_FIT,
           /* TUDO NUM SÓ ECRÃ (computador): o campo fica com a altura do ecrã
              menos o que está à volta dele no editor (cores, ferramentas,
-             dica, linha das animações, painel do selecionado), ~300 px.
+             dica, linha das animações, painel do selecionado), ver
+             CHROME_EDITOR_PX.
              Assim as ferramentas e o campo inteiro veem-se sem scroll. */
-          ...(isNarrowEditor ? {} : { maxWidth: `min(100%, calc((100vh - 300px) * ${PITCH_BOX.w} / ${PITCH_BOX.h}))` }),
+          ...(isNarrowEditor ? {} : { maxWidth: `min(100%, calc((100vh - ${CHROME_EDITOR_PX}px) * ${PITCH_BOX.w} / ${PITCH_BOX.h}))` }),
           position: 'relative',
         }}
       >
@@ -17150,7 +17172,10 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           quando se seleciona um elemento. */}
       {/* Painel do elemento selecionado, por baixo do campo, com o espaço
           sempre reservado (o campo e a página não mexem ao selecionar). */}
-      <div style={{ minHeight: isNarrowEditor ? 200 : 92, marginTop: 4 }}>
+      {/* No computador o painel tem sempre uma linha (38 px), por isso basta
+          reservar 46: os 92 de antes deixavam uma faixa vazia e roubavam
+          altura ao campo. */}
+      <div style={{ minHeight: isNarrowEditor ? 200 : 46, marginTop: 4 }}>
       {painelElemento}
       </div>
 
@@ -17781,8 +17806,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         animRef.current = null;
         decorridoRef.current = 0;
         if (idx + 1 < planoAnim.passos.length) {
-          // Sem pausa entre passos: o seguinte começa já.
-          runStep(idx + 1);
+          // Sem pausa entre passos: o seguinte começa já, com o tempo que
+          // sobrou deste (sem uma imagem repetida na passagem).
+          runStep(idx + 1, Math.max(0, elapsed - p.dur));
         } else acabar();
       }
     };
