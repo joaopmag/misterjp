@@ -10918,7 +10918,7 @@ function useSincronizarPlanoPortal(ideias, setIdeias, matches, pronto) {
    reproduz a coreografia ali mesmo, no cartão pequeno (os mesmos
    fotogramas da apresentação e da partilha), sem abrir nada. Os
    fotogramas só se calculam ao carregar no ▶. */
-function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
+function DiagramThumbAnimado({ diagram, space, phase, height = 110, fill = false }) {
   const temAnimacao = !!(diagram && Array.isArray(diagram.sequence) && diagram.sequence.length);
   const [frames, setFrames] = useState(null);
   const [idx, setIdx] = useState(0);
@@ -10970,11 +10970,11 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
       {mostrarFotograma && frames[idx] ? (
-        <svg viewBox={viewBoxCartao(diagram && diagram.vista)} preserveAspectRatio="xMidYMid meet"
-          style={{ width: '100%', height: 'auto', aspectRatio: CARTAO_ASPECT, background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
+        <svg viewBox={viewBoxCartao(diagram && diagram.vista)} preserveAspectRatio={fill ? 'xMidYMid slice' : 'xMidYMid meet'}
+          style={{ width: '100%', ...(fill ? { height } : { height: 'auto', aspectRatio: CARTAO_ASPECT }), background: '#1e3a24', borderRadius: 6, marginBottom: 8, display: 'block' }}
           dangerouslySetInnerHTML={{ __html: frames[idx].svg }} />
       ) : (
-        <DiagramThumb diagram={diagram} space={space} phase={phase} height={height} />
+        <DiagramThumb diagram={diagram} space={space} phase={phase} height={height} fill={fill} />
       )}
       {temAnimacao && (
         // <span> e não <button>: este ▶ também vive dentro de cartões que
@@ -18011,6 +18011,30 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setPlaying(true);
     runStep(faseRef.current, decorridoRef.current);
   };
+
+  /* BARRA DE ESPAÇO = reproduzir / pausar / continuar, como num leitor
+     de vídeo. Lê sempre o estado mais recente (ref), e ignora quando se
+     está a escrever num campo. Tira o foco de um botão focado, para o
+     espaço não o "carregar" também (seria play e pausa ao mesmo tempo). */
+  const espacoRef = useRef(null);
+  espacoRef.current = () => {
+    if (!sequence.length) return;
+    if (playing) pause(); else if (paused) resume(); else restart();
+  };
+  useEffect(() => {
+    const aoTecla = (e) => {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      if (e.repeat) { e.preventDefault(); return; }
+      const a = document.activeElement;
+      const tag = a && a.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (a && a.isContentEditable)) return;
+      e.preventDefault();
+      if (a && (tag === 'BUTTON' || a.getAttribute('role') === 'button') && a.blur) a.blur();
+      if (espacoRef.current) espacoRef.current();
+    };
+    window.addEventListener('keydown', aoTecla, true);
+    return () => window.removeEventListener('keydown', aoTecla, true);
+  }, []);
 
   /* ANDAR PARA A FRENTE E PARA TRÁS, passo a passo.
 
@@ -37532,7 +37556,9 @@ function ColunaIdeias({ titulo, itens, onAbrir }) {
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{x.name || 'Ideia de jogo'}</div>
             {temDiagrama ? (
-              <DiagramThumb diagram={x.diagram} height={ALTURA_MINIATURA} fill />
+              /* Com ▶ no canto, como nos cartões do staff: anima ali mesmo,
+                 sem abrir a ideia (o toque no resto do cartão abre-a). */
+              <DiagramThumbAnimado diagram={x.diagram} phase={x.phase} height={ALTURA_MINIATURA} fill />
             ) : (
               <div style={{
                 width: '100%', height: ALTURA_MINIATURA, background: '#1e3a24', borderRadius: 6, marginBottom: 8,
@@ -43973,6 +43999,44 @@ function VisualizadorVideoPortal({ item, onClose }) {
    no fim, volta ao início e continua a tocar. */
 function CorteYoutubeEmbutido({ item }) {
   const iframeRef = useRef(null);
+  // ECRÃ INTEIRO direto da caixa pequena: vai para ecrã inteiro a própria
+  // caixa (o mesmo leitor, o vídeo não recomeça), com a barra do corte e
+  // a lupa. No iPhone a caixa cobre o ecrã por CSS.
+  const caixaRef = useRef(null);
+  const areaRef = useRef(null);
+  const [cheio, setCheio] = useState(false);
+  const [cheioCss, setCheioCss] = useState(false);
+  const emCheio = cheio || cheioCss;
+  const lupa = useLupa(areaRef, emCheio);
+  useEffect(() => {
+    const aoMudar = () => {
+      const el = document.fullscreenElement || document.webkitFullscreenElement;
+      setCheio(!!el && el === caixaRef.current);
+    };
+    document.addEventListener('fullscreenchange', aoMudar);
+    document.addEventListener('webkitfullscreenchange', aoMudar);
+    return () => {
+      document.removeEventListener('fullscreenchange', aoMudar);
+      document.removeEventListener('webkitfullscreenchange', aoMudar);
+    };
+  }, []);
+  useKioskVoltar(cheioCss, () => setCheioCss(false));
+  const alternarEcra = () => {
+    if (cheio) {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      return;
+    }
+    if (cheioCss) { setCheioCss(false); return; }
+    const el = caixaRef.current;
+    const pedir = el && (el.requestFullscreen || el.webkitRequestFullscreen);
+    if (pedir) {
+      try {
+        const r = pedir.call(el);
+        if (r && typeof r.catch === 'function') r.catch(() => setCheioCss(true));
+      } catch (e) { setCheioCss(true); }
+    } else setCheioCss(true);
+  };
   const inicio = Math.max(0, item.clipInicio || 0);
   const fim = Math.max(inicio + 1, item.clipFim || inicio + 1);
   const duracao = fim - inicio;
@@ -44025,18 +44089,34 @@ function CorteYoutubeEmbutido({ item }) {
   const src = React.useMemo(() => `https://www.youtube.com/embed/${item.youtubeId}?start=${Math.floor(inicio)}&rel=0&playsinline=1&controls=0&disablekb=1&enablejsapi=1&fs=0&iv_load_policy=3`,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [item.id]);
+  const alternarPlay = () => comando(aTocar ? 'pauseVideo' : 'playVideo');
   return (
-    <div style={{ background: '#000' }}>
-      <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%' }}>
-        <iframe
-          ref={iframeRef} onLoad={aoCarregar} src={src} title={item.title || 'Corte'}
-          allow="autoplay; encrypted-media; picture-in-picture"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
-          scrolling="no" loading="lazy"
-        />
-        <div onClick={() => comando(aTocar ? 'pauseVideo' : 'playVideo')} style={{ position: 'absolute', inset: 0, cursor: 'pointer' }} />
+    <div ref={caixaRef} style={{
+      background: '#000', display: 'flex', flexDirection: 'column',
+      ...(emCheio ? {
+        width: cheioCss ? '100vw' : '100%', height: cheioCss ? '100dvh' : '100%',
+        ...(cheioCss ? { position: 'fixed', inset: 0, zIndex: 9500, paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxSizing: 'border-box' } : {}),
+      } : {}),
+    }}>
+      <div ref={areaRef} style={{ position: 'relative', width: '100%', overflow: 'hidden', ...(emCheio ? { flex: 1, minHeight: 0 } : { paddingTop: '56.25%' }) }}>
+        <div style={{ position: 'absolute', inset: 0, transform: lupa.transform || 'none', transformOrigin: '0 0', transition: lupa.aArrastar ? 'none' : 'transform 0.2s ease-out' }}>
+          <iframe
+            ref={iframeRef} onLoad={aoCarregar} src={src} title={item.title || 'Corte'}
+            allow="autoplay; encrypted-media; picture-in-picture"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0 }}
+            scrolling="no" loading="lazy"
+          />
+        </div>
+        {emCheio ? (
+          <>
+            <div {...lupa.handlers(alternarPlay)} style={{ position: 'absolute', inset: 0, zIndex: 5, touchAction: 'none', cursor: lupa.lupa.z > 1 ? (lupa.aArrastar ? 'grabbing' : 'grab') : 'pointer' }} />
+            <ControlosLupa {...lupa} />
+          </>
+        ) : (
+          <div onClick={alternarPlay} style={{ position: 'absolute', inset: 0, cursor: 'pointer' }} />
+        )}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#111' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#111', flexShrink: 0 }}>
         <button onClick={() => comando(aTocar ? 'pauseVideo' : 'playVideo')} title={aTocar ? 'Pausar' : 'Reproduzir'} style={btn}>
           {aTocar ? <Pause size={16} /> : <Play size={16} />}
         </button>
@@ -44049,6 +44129,9 @@ function CorteYoutubeEmbutido({ item }) {
           style={{ flex: 1, minWidth: 0, accentColor: T.gold, cursor: 'pointer' }}
         />
         <span style={{ fontSize: 11.5, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0, ...mono }}>{fmtMMSS(pos)} / {fmtMMSS(duracao)}</span>
+        <button onClick={alternarEcra} title={emCheio ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'} aria-label={emCheio ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'} style={btn}>
+          {emCheio ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
       </div>
     </div>
   );
