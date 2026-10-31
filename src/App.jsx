@@ -12232,7 +12232,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = []
   };
 
   return (
-    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide fullPage>
+    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide fullPage larguraMax="100%">
       <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ marginBottom: 12 }}>
         <Field label="Nome"><Input value={f.name || ''} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Construção a 3 com médio a cair" /></Field>
@@ -12979,7 +12979,9 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
    janela estreita (telemóvel) o 100% já é mais pequeno do que este
    limite, e o `min()` escolhe-o — o campo continua a ocupar a largura
    toda como antes. */
-const PITCH_TARGET_VH = 70; // deixa espaço à barra de ferramentas e ao painel de edição por baixo
+// 80 (antes 70): com o editor na largura toda da página, o campo pode crescer
+// mais; continua a sobrar espaço para a barra de ferramentas por cima.
+const PITCH_TARGET_VH = 80;
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
@@ -14431,10 +14433,10 @@ function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t
      seta acelerava e travava sozinha e o jogador parava em cada junção.
    · Velocidade constante também nas setas curvas (pelo comprimento real
      da curva, não pelo parâmetro da curva).
-   · A bola anda ao DOBRO da velocidade dos jogadores e sai logo.
-   · Dentro de um passo, os jogadores (e tudo o que desliza) usam o tempo
-     do passo inteiro: quem tem pouco caminho anda mais devagar em vez de
-     chegar e ficar parado à espera.
+   · A bola conta ao DOBRO da velocidade dos jogadores e sai logo.
+   · Dentro de um passo, TUDO (bola, jogadores e o que desliza) começa e
+     acaba ao mesmo tempo: quem tem pouco caminho anda mais devagar em vez
+     de chegar e ficar parado à espera.
    · Sem pausa entre passos: um passo acaba e o seguinte começa logo.
 
    FASE 2 (arrastar também é movimento):
@@ -14588,8 +14590,14 @@ function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
   });
   let dur = 0;
   trajetos.forEach(tr => { dur = Math.max(dur, tr.natural); });
-  // A bola sai logo, à sua velocidade; o resto acompanha o passo todo.
-  trajetos.forEach(tr => { tr.dur = tr.ehBola ? tr.natural : dur; });
+  /* TUDO NO MESMO TEMPO DENTRO DO PASSO (31/10). A bola sai logo, mas
+     já não chega antes dos jogadores: bola e jogadores começam e acabam
+     juntos, como um fotograma. Antes a bola fazia o passe ao dobro da
+     velocidade e ficava parada à espera do recetor, e nos exercícios
+     antigos (pensados com bola e jogadores ao mesmo ritmo) os tempos
+     ficavam desfasados. A bola mais rápida continua a contar para a
+     duração do passo: um passe longo sem corridas é rápido. */
+  trajetos.forEach(tr => { tr.dur = dur; });
   const fim = todos.map(el => {
     const m = porMover.get(el.id);
     return m ? { ...el, x: m.fimSeta.x2, y: m.fimSeta.y2 } : el;
@@ -16454,24 +16462,32 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               <Printer size={14} color={TEXT_ON_ACCENT} />
             </button>
           </div>
-          {(elements.length > 0 || arrows.length > 0 || zones.length > 0) && (
-            <button
-              type="button"
-              onClick={clearAll}
-              title="Limpar tudo"
-              style={{
-                width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'transparent', border: `1px solid ${T.line}`, color: T.mutedDim, cursor: 'pointer', flexShrink: 0,
-              }}
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
+          {/* Sempre presente (apagado quando não há nada): antes só aparecia
+              com algo no campo, a barra ficava mais comprida ao colocar o
+              primeiro jogador, partia para a linha de baixo e a página mexia. */}
+          {(() => {
+            const temAlgo = elements.length > 0 || arrows.length > 0 || zones.length > 0;
+            return (
+              <button
+                type="button"
+                onClick={temAlgo ? clearAll : undefined}
+                disabled={!temAlgo}
+                title="Limpar tudo"
+                style={{
+                  width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'transparent', border: `1px solid ${T.line}`, color: T.mutedDim, cursor: temAlgo ? 'pointer' : 'not-allowed', flexShrink: 0,
+                  opacity: temAlgo ? 1 : 0.5,
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            );
+          })()}
         </div>
       </div>
       {tool === 'multi' ? (
         /* "Vários": atalhos para escolher uma equipa inteira de uma vez. */
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6, fontSize: 11.5, color: T.mutedDim, ...body }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap', overflow: 'hidden', minHeight: 26, marginBottom: 6, fontSize: 11.5, color: T.mutedDim, ...body }}>
           {emRecuo ? (
             <span style={{ color: T.warn }}>Em "desde animar" arrastar serve para corrigir o passo. Para mexer vários em bloco, escolhe "só agora".</span>
           ) : (
@@ -16495,7 +16511,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           )}
         </div>
       ) : (
-        <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6 }}>
+        /* Mesma altura da linha da ferramenta "Vários" (26 px): trocar de
+           ferramenta não mexe no campo. */
+        <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6, minHeight: 26, display: 'flex', alignItems: 'center' }}>
           Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
         </div>
       )}
@@ -17462,7 +17480,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
   };
 
   return (
-    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide fullPage>
+    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide fullPage larguraMax="100%">
       <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <div style={FIELD_FULL}>
