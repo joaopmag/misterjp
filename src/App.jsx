@@ -14458,10 +14458,10 @@ function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t
      equipa reposta noutra situação passava a "correr" para lá.
    · O que for arrastado depois do último Animar não se mexe na
      apresentação enquanto não se carregar outra vez em Animar. */
-const ANIM_VEL_JOGADOR = 22;            // unidades do campo por segundo (antes 26: ficava rápido demais sem as pausas)
+const ANIM_VEL_JOGADOR = 16;            // unidades do campo por segundo (antes 26, depois 22: ainda rápido demais)
 const ANIM_VEL_BOLA = ANIM_VEL_JOGADOR * 2;
 const ANIM_MIN_MS = 280;                // nenhum movimento demora menos do que isto
-const ANIM_VEL_REPOSICAO = 16;          // reposicionar a equipa entre passos antigos: com calma
+const ANIM_VEL_REPOSICAO = 12;          // reposicionar a equipa no fim: com calma
 const ANIM_DESLIZE_MIN = 0.3;           // menos do que isto não conta como arrastado
 /* Material de treino (cones, estacas, balizas): é estático. Arrastá-lo só
    o muda de sítio; nunca desliza nem ganha caminho tracejado. */
@@ -14528,7 +14528,10 @@ function animTrajeto(segs, ehBola) {
 }
 function animPosicaoNoTrajeto(tr, ms) {
   const x = tr.dur > 0 ? ms / tr.dur : 1;
-  const f = animPerfil(x, tr.dur, tr.ehBola ? 140 : 380, tr.semArranque, tr.semTravagem);
+  // A bola com o MESMO arranque e travagem dos jogadores: numa condução,
+  // bola e jogador andam juntos (antes a bola arrancava mais depressa e
+  // parecia soltar-se do pé).
+  const f = animPerfil(x, tr.dur, 380, tr.semArranque, tr.semTravagem);
   const alvo = f * tr.tempoCaminho;
   let p = tr.partes[tr.partes.length - 1];
   for (const q of tr.partes) { if (alvo <= q.inicio + q.ms) { p = q; break; } }
@@ -14603,6 +14606,31 @@ function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
     }
     return desloca ? { ...el, x: ant.x, y: ant.y } : el;
   });
+  /* DESTINOS (exercícios antigos): onde cada peça tem de estar no FIM
+     deste passo (a fotografia do passo seguinte). Quem lá não chega pelas
+     setas vai lá ter DURANTE este passo — o recetor chega com a bola, o
+     bloco bascula enquanto a bola viaja. */
+  const fimMap = new Map();
+  if (opcoes.destinos) {
+    todos.forEach((el, i) => {
+      if (ANIM_MATERIAL_ESTATICO.has(el.kind)) return;
+      const dest = opcoes.destinos.get(el.id);
+      if (!dest) return;
+      const m = porMover.get(el.id);
+      const fimNatural = m ? { x: m.fimSeta.x2, y: m.fimSeta.y2 } : { x: el.x, y: el.y };
+      if (Math.hypot(dest.x - fimNatural.x, dest.y - fimNatural.y) <= ANIM_DESLIZE_MIN) return;
+      const ehBola = el.kind === 'ball';
+      const extra = animSegmento({ x1: fimNatural.x, y1: fimNatural.y, x2: dest.x, y2: dest.y }, ehBola ? ANIM_VEL_BOLA : ANIM_VEL_JOGADOR);
+      const tr = trajetos.get(el.id);
+      if (tr) trajetos.set(el.id, animTrajeto([...tr.partes.map(q => q.sg), extra], tr.ehBola));
+      else {
+        // Parte de onde está no início deste passo (já com algum deslize).
+        const b = base[i];
+        trajetos.set(el.id, animTrajeto([animSegmento({ x1: b.x, y1: b.y, x2: dest.x, y2: dest.y }, ehBola ? ANIM_VEL_BOLA : ANIM_VEL_JOGADOR)], ehBola));
+      }
+      fimMap.set(el.id, dest);
+    });
+  }
   let dur = 0;
   trajetos.forEach(tr => { dur = Math.max(dur, tr.natural); });
   /* TUDO NO MESMO TEMPO DENTRO DO PASSO (31/10). A bola sai logo, mas
@@ -14614,6 +14642,7 @@ function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
      duração do passo: um passe longo sem corridas é rápido. */
   trajetos.forEach(tr => { tr.dur = dur; });
   const fim = todos.map(el => {
+    if (fimMap.has(el.id)) return { ...el, ...fimMap.get(el.id) };
     const m = porMover.get(el.id);
     return m ? { ...el, x: m.fimSeta.x2, y: m.fimSeta.y2 } : el;
   });
@@ -14637,24 +14666,20 @@ function planearCoreografiaAnim(diagram, opcoes = {}) {
   let antes = null;
   for (let i = 0; i < ate; i++) {
     const step = seq[i];
-    /* PASSOS ANTIGOS (sem `step.de`): quem mudou de sítio entre o fim do
-       passo anterior e o início deste (a equipa reposta para a situação
-       seguinte) já não salta a meio da animação. Antes da jogada deste
-       passo há uma fase curta em que essas peças se reposicionam, com
-       calma e todas juntas; depois correm as setas. Antes havia uma pausa
-       de 0,45 s que escondia o salto; sem pausa, o salto via-se. */
-    if (!step.de && antes) {
-      const rep = planearPassoAnim(stepElements(step, diagram), [], antes, { ...opcoes, velDeslize: ANIM_VEL_REPOSICAO });
-      if (rep.dur > 0) {
-        rep.setasFixas = stepStaticArrows(step, diagram);
-        rep.indice = i;
-        rep.reposicao = true;
-        passos.push(rep);
-        antes = animMapaPosicoes(rep.fim);
-      }
+    /* PASSOS ANTIGOS (sem `step.de`): quem está noutro sítio no início do
+       passo SEGUINTE (a equipa reposta para a situação seguinte) vai lá ter
+       durante ESTE passo, ao mesmo tempo que a bola e as corridas: o
+       recetor chega com a bola. O mesmo para o campo guardado, no último
+       passo. (Antes saltavam de sítio; depois passaram a reposicionar-se
+       antes do passo seguinte, e o recetor chegava depois da bola.) */
+    const seguinte = seq[i + 1];
+    let destinos = null;
+    if (!step.de) {
+      if (seguinte && !seguinte.de) destinos = animMapaPosicoes(stepElements(seguinte, diagram));
+      else if (!seguinte && opcoes.semFinal !== true && ate === seq.length) destinos = animMapaPosicoes(diagram.elements || []);
     }
     const p = planearPassoAnim(stepElements(step, diagram), step.arrows, antes, {
-      ...opcoes, curvas: step.curvas, soDeslizar: new Set(Object.keys(step.de || {})),
+      ...opcoes, curvas: step.curvas, soDeslizar: new Set(Object.keys(step.de || {})), destinos,
     });
     p.setasFixas = stepStaticArrows(step, diagram);
     p.indice = i;
