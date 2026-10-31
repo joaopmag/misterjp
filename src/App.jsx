@@ -12232,7 +12232,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = []
   };
 
   return (
-    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide fullPage larguraMax={1480}>
+    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide fullPage larguraMax="92vw">
       <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ marginBottom: 12 }}>
         <Field label="Nome"><Input value={f.name || ''} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Construção a 3 com médio a cair" /></Field>
@@ -14648,8 +14648,21 @@ function planearCoreografiaAnim(diagram, opcoes = {}) {
     passos.push(p);
     antes = animMapaPosicoes(p.fim);
   }
-  // (Sem deslize final: o que for arrastado depois do último Animar só
-  // conta como movimento quando se carregar outra vez em Animar.)
+  /* FIM: se o campo guardado não é igual ao fim do último passo (peças
+     arrumadas depois do último Animar, ou correções), as peças vão lá ter
+     com a mesma calma da reposição entre passos, em vez de saltarem no
+     último instante. */
+  if (opcoes.semFinal !== true && ate === seq.length && seq.length && antes) {
+    const fin = planearPassoAnim(diagram.elements || [], [], antes, { ...opcoes, velDeslize: ANIM_VEL_REPOSICAO });
+    if (fin.dur > 0) {
+      fin.setasFixas = diagram.arrows || [];
+      fin.indice = seq.length - 1;
+      fin.reposicao = true;
+      fin.final = true;
+      passos.push(fin);
+      antes = animMapaPosicoes(fin.fim);
+    }
+  }
   return { passos, fimAnterior: antes };
 }
 // Estado do campo num instante de um plano: { passo, elementos, setas }.
@@ -16552,7 +16565,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
         </div>
   ) : null;
   const painelSeta = selectedArrow ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: isNarrowEditor ? 8 : 0, padding: '7px 10px', height: isNarrowEditor ? undefined : 38, boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7 }}>
           <span style={{ fontSize: 12, color: T.cream }}>{LINE_LABELS[selectedArrow.type] || 'Linha'} — arrasta as pontas douradas para mudar o ângulo e o comprimento</span>
           <button type="button" onClick={deleteSelectedArrow} style={{ fontSize: 11.5, color: T.bad, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>Apagar</button>
           <button type="button" onClick={() => setSelectedArrowId(null)} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>Fechar</button>
@@ -16743,13 +16756,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           })()}
         </div>
       </div>
-      {!isNarrowEditor && (painelElemento || painelSeta) ? (
-        /* Computador: o painel do elemento (ou da linha) selecionado ocupa
-           a linha da dica, por cima do campo, com a mesma altura (38 px). */
-        <div style={{ height: 38, marginBottom: 6 }}>{painelElemento || painelSeta}</div>
-      ) : tool === 'multi' ? (
+      {tool === 'multi' ? (
         /* "Vários": atalhos para escolher uma equipa inteira de uma vez. */
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap', overflow: 'hidden', minHeight: isNarrowEditor ? 26 : 38, marginBottom: 6, fontSize: 11.5, color: T.mutedDim, ...body }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap', overflow: 'hidden', minHeight: 26, marginBottom: 6, fontSize: 11.5, color: T.mutedDim, ...body }}>
           {emRecuo ? (
             <span style={{ color: T.warn }}>Em "desde animar" arrastar serve para corrigir o passo. Para mexer vários em bloco, escolhe "só agora".</span>
           ) : (
@@ -16775,7 +16784,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       ) : (
         /* Mesma altura da linha da ferramenta "Vários" (26 px): trocar de
            ferramenta não mexe no campo. */
-        <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6, minHeight: isNarrowEditor ? 26 : 38, display: 'flex', alignItems: 'center' }}>
+        <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6, minHeight: 26, display: 'flex', alignItems: 'center' }}>
           Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
         </div>
       )}
@@ -16811,6 +16820,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
       <div
         style={{
           ...PITCH_FIT,
+          /* TUDO NUM SÓ ECRÃ (computador): o campo fica com a altura do ecrã
+             menos o que está à volta dele no editor (cores, ferramentas,
+             dica, linha das animações, painel do selecionado), ~300 px.
+             Assim as ferramentas e o campo inteiro veem-se sem scroll. */
+          ...(isNarrowEditor ? {} : { maxWidth: `min(100%, calc((100vh - 300px) * ${PITCH_BOX.w} / ${PITCH_BOX.h}))` }),
           position: 'relative',
         }}
       >
@@ -17134,17 +17148,13 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           em duas ou três linhas. Continua a ser um número FIXO por ecrã e
           não o conteúdo a mandar — é isso que impede o campo de encolher
           quando se seleciona um elemento. */}
-      {/* No telemóvel o painel do elemento selecionado fica por baixo do
-          campo, com o espaço sempre reservado. No computador passou para
-          CIMA do campo (na linha da dica, que tem sempre a mesma altura):
-          debaixo do campo ficava uma faixa vazia de ~130 px. */}
-      {isNarrowEditor && (
-      <div style={{ minHeight: 200, marginTop: 4 }}>
+      {/* Painel do elemento selecionado, por baixo do campo, com o espaço
+          sempre reservado (o campo e a página não mexem ao selecionar). */}
+      <div style={{ minHeight: isNarrowEditor ? 200 : 92, marginTop: 4 }}>
       {painelElemento}
       </div>
-      )}
 
-      {isNarrowEditor && painelSeta}
+      {painelSeta}
 
       <div style={{ textAlign: 'right', marginTop: 8 }}>
         <span style={{ ...display, fontSize: 11, color: T.mutedDim, letterSpacing: '.04em' }}>™ Mister JP</span>
@@ -17522,7 +17532,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
   };
 
   return (
-    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide fullPage larguraMax={1480}>
+    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide fullPage larguraMax="92vw">
       <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <div style={FIELD_FULL}>
