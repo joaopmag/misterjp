@@ -4205,7 +4205,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
               }}>
               <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
                 {v.thumbUrl ? (
-                  <img src={v.thumbUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  <img src={v.thumbUrl} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                 ) : (
                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Film size={20} color={T.mutedDim} />
@@ -4998,7 +4998,7 @@ export default function AnalisadorVideo({ teamId, videosOriginais = [], setVideo
                     }}>
                     <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: T.surfaceRaise }}>
                       {clip.thumbUrl ? (
-                        <img src={clip.thumbUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        <img src={clip.thumbUrl} alt="" decoding="sync" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                       ) : (
                         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Film size={22} color={T.mutedDim} />

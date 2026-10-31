@@ -3809,6 +3809,26 @@ function App({ session, teamId, equipas, equipaAtiva, onNovaEquipa, onEquipasMud
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tarefas, tarefasReady, euId, userEmail, matches, videosMeta, videosOriginaisMeta, clipesMeta, scoutingMeta, adversariosMeta, sessionsMeta, matchesMeta, convocatoriasMeta, monitoringMeta, desenvolvimentoMeta, ideiasMeta, exercisesMeta, clinicoMeta, apresentacoesMeta, documentosMeta]);
 
+  /* TAREFAS "AUTOAVALIAÇÃO" SEM NADA PARA RESPONDER. Uma tarefa criada
+     com um momento do Desenvolvimento fica sem sentido se o momento foi
+     apagado ou se o jogador foi tirado desse momento: no Portal aparecia
+     a tarefa, o jogador abria-a e o ecrã dizia que não havia nenhuma
+     autoavaliação. Essas tarefas saem sozinhas aqui. Só corre com as
+     duas listas carregadas e com o Desenvolvimento não vazio, para nunca
+     apagar tarefas por causa de uma lista que ainda não chegou. */
+  useEffect(() => {
+    if (!tarefasReady || !desenvolvimentoReady) return;
+    const dev = desenvolvimento || [];
+    if (!dev.length) return;
+    const momentos = new Set(dev.filter(x => x && x.tipo === 'momento').map(x => x.id));
+    const registos = new Set(dev.filter(x => x && x.tipo === 'registo').map(x => `${x.momentoId}|${x.playerId}`));
+    const orfa = (t) => t && t.origemMomento && t.jogadorId && t.estado !== 'feita'
+      && (!momentos.has(t.origemMomento) || !registos.has(`${t.origemMomento}|${t.jogadorId}`));
+    if (!(tarefas || []).some(orfa)) return;
+    setTarefas(prev => (prev || []).filter(t => !orfa(t)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarefas, tarefasReady, desenvolvimento, desenvolvimentoReady]);
+
   /* CLIPES DA ANÁLISE DE VÍDEO → SALA DE VÍDEO (Canal).
      O clipe já é um MP4 no Storage (videos-clipes): passa a ser também um
      vídeo do Canal, sem novo upload. Leva os tempos do jogo de onde saiu
@@ -19150,8 +19170,21 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
       onConfirm: () => {
         setDesenvolvimento(prev => (prev || []).filter(x => x.id !== reg.id));
         if (jogadorId === p.id) setJogadorId(null);
+        /* A tarefa "Autoavaliação" deste jogador para este momento sai
+           também. Antes ficava aberta no Portal: o jogador via a tarefa,
+           abria-a e não havia nada para responder. */
+        let tarefasTiradas = [];
+        if (setTarefas) setTarefas(prev => {
+          const ehDeste = (t) => t && t.origemMomento === momento.id && t.jogadorId === p.id && t.estado !== 'feita';
+          tarefasTiradas = (prev || []).filter(ehDeste);
+          return tarefasTiradas.length ? (prev || []).filter(t => !ehDeste(t)) : prev;
+        });
         offerUndo(`${shortPlayerName(p, players)} removido do momento.`, () => {
           setDesenvolvimento(prev => (prev.some(x => x.id === reg.id) ? prev : [...prev, reg]));
+          if (setTarefas && tarefasTiradas.length) setTarefas(prev => {
+            const ids = new Set((prev || []).map(t => t.id));
+            return [...(prev || []), ...tarefasTiradas.filter(t => !ids.has(t.id))];
+          });
         });
       },
     });
@@ -19175,7 +19208,19 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
         if (autorizarRemocaoEmMassa) autorizarRemocaoEmMassa();
         setDesenvolvimento(prev => (prev || []).filter(x => !pertencem(x)));
         if (momentoId === m.id) setMomentoId(null);
+        // As tarefas "Autoavaliação" deste momento ainda por fazer saem
+        // também (senão ficavam no Portal, sem nada para responder).
+        let tarefasTiradas = [];
+        if (setTarefas) setTarefas(prev => {
+          const ehDeste = (t) => t && t.origemMomento === m.id && t.estado !== 'feita';
+          tarefasTiradas = (prev || []).filter(ehDeste);
+          return tarefasTiradas.length ? (prev || []).filter(t => !ehDeste(t)) : prev;
+        });
         offerUndo(`Momento "${m.nome}" apagado.`, () => {
+          if (setTarefas && tarefasTiradas.length) setTarefas(prev => {
+            const ids = new Set((prev || []).map(t => t.id));
+            return [...(prev || []), ...tarefasTiradas.filter(t => !ids.has(t.id))];
+          });
           setDesenvolvimento(prev => {
             const existentes = new Set((prev || []).map(x => x.id));
             return [...(prev || []), ...apagadas.filter(x => !existentes.has(x.id))];
@@ -19245,6 +19290,20 @@ function DesenvolvimentoIndividual({ players, desenvolvimento, setDesenvolviment
   const confirmarAdicionarJogadores = () => {
     const linhas = (adicionarJogadores || []).map(pid => diRegistoVazio(momento.id, pid));
     setDesenvolvimento(prev => [...(prev || []), ...linhas]);
+    /* Quem entra depois num momento com prazo recebe a mesma tarefa
+       "Autoavaliação" no Portal que os outros receberam ao criar. */
+    if (setTarefas && momento.prazo && (adicionarJogadores || []).length) {
+      const nome = momento.nome;
+      setTarefas(prev => {
+        const jaTem = new Set((prev || []).filter(t => t && t.origemMomento === momento.id).map(t => t.jogadorId));
+        const novas = (adicionarJogadores || []).filter(pid => !jaTem.has(pid)).map(pid => ({
+          id: uid(), titulo: `Autoavaliação · ${nome}`, notas: '', responsavel: '', prazo: momento.prazo,
+          estado: 'aberta', recorrencia: null, jogadorId: pid, destino: 'autoavaliacao', origemMomento: momento.id,
+          missoes: [{ id: uid(), destino: 'autoavaliacao', instrucoes: `Responde à autoavaliação "${nome}" até ${fmtDate(momento.prazo)}.` }],
+        }));
+        return novas.length ? [...(prev || []), ...novas] : prev;
+      });
+    }
     setAdicionarJogadores(null);
   };
 
@@ -36482,7 +36541,7 @@ function PlayerDesenvolvimentoView({ code, teamId, onBack, onSubmetido }) {
     return (
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 24px 60px' }}>
         {voltar}
-        <EmptyState text="Ainda não há nenhuma autoavaliação para responderes. Quando a equipa técnica criar um momento de avaliação, aparece aqui." />
+        <EmptyState text="Não há nenhuma autoavaliação aberta para ti neste momento. Se tens uma tarefa de autoavaliação por fazer, avisa a equipa técnica: o teu nome pode não estar no momento de avaliação." />
       </div>
     );
   }
