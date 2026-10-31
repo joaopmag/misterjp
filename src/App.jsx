@@ -12232,7 +12232,7 @@ function IdeiaModal({ ideia, allIdeias = [], meta, onClose, onSave, matches = []
   };
 
   return (
-    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide fullPage larguraMax="100%">
+    <Modal title={ideia ? 'Editar ideia' : 'Nova ideia'} onClose={onClose} wide xwide fullPage larguraMax={1480}>
       <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ marginBottom: 12 }}>
         <Field label="Nome"><Input value={f.name || ''} onChange={e => setF({ ...f, name: e.target.value })} placeholder="Ex: Construção a 3 com médio a cair" /></Field>
@@ -12979,9 +12979,9 @@ const PITCH_PADDING_TOP = `${(PITCH_BOX.h / PITCH_BOX.w * 100).toFixed(2)}%`;
    janela estreita (telemóvel) o 100% já é mais pequeno do que este
    limite, e o `min()` escolhe-o — o campo continua a ocupar a largura
    toda como antes. */
-// 80 (antes 70): com o editor na largura toda da página, o campo pode crescer
-// mais; continua a sobrar espaço para a barra de ferramentas por cima.
-const PITCH_TARGET_VH = 80;
+// 86 (antes 70): com o editor mais largo (até 1480 px), o campo cresce e
+// enche mais as laterais; a barra de ferramentas fica logo por cima.
+const PITCH_TARGET_VH = 86;
 const PITCH_FIT = {
   width: '100%',
   aspectRatio: PITCH_ASPECT,
@@ -14454,6 +14454,7 @@ function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t
 const ANIM_VEL_JOGADOR = 22;            // unidades do campo por segundo (antes 26: ficava rápido demais sem as pausas)
 const ANIM_VEL_BOLA = ANIM_VEL_JOGADOR * 2;
 const ANIM_MIN_MS = 280;                // nenhum movimento demora menos do que isto
+const ANIM_VEL_REPOSICAO = 16;          // reposicionar a equipa entre passos antigos: com calma
 const ANIM_DESLIZE_MIN = 0.3;           // menos do que isto não conta como arrastado
 
 // Comprimento e tabela de distâncias de uma seta (curva quadrática).
@@ -14577,14 +14578,15 @@ function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
     // O caminho de quem foi arrastado: reto, ou curvo se se puxou o ponto do meio.
     const curva = desloca && opcoes.curvas && opcoes.curvas[el.id];
     const deslize = desloca ? { x1: ant.x, y1: ant.y, x2: el.x, y2: el.y, ...(curva ? { cx: curva.cx, cy: curva.cy } : {}) } : null;
+    const velDeslize = (ehBola) => opcoes.velDeslize || (ehBola ? ANIM_VEL_BOLA : ANIM_VEL_JOGADOR);
     const m = porMover.get(el.id);
     if (m) {
       // Arrastado e com seta: primeiro até ao início da seta, depois a seta.
-      const segs = desloca ? [animSegmento(deslize, m.ehBola ? ANIM_VEL_BOLA : ANIM_VEL_JOGADOR), ...m.segs] : m.segs;
+      const segs = desloca ? [animSegmento(deslize, velDeslize(m.ehBola)), ...m.segs] : m.segs;
       trajetos.set(el.id, animTrajeto(segs, m.ehBola));
     } else if (desloca) {
       const ehBola = el.kind === 'ball';
-      trajetos.set(el.id, animTrajeto([animSegmento(deslize, ehBola ? ANIM_VEL_BOLA : ANIM_VEL_JOGADOR)], ehBola));
+      trajetos.set(el.id, animTrajeto([animSegmento(deslize, velDeslize(ehBola))], ehBola));
     }
     return desloca ? { ...el, x: ant.x, y: ant.y } : el;
   });
@@ -14622,6 +14624,22 @@ function planearCoreografiaAnim(diagram, opcoes = {}) {
   let antes = null;
   for (let i = 0; i < ate; i++) {
     const step = seq[i];
+    /* PASSOS ANTIGOS (sem `step.de`): quem mudou de sítio entre o fim do
+       passo anterior e o início deste (a equipa reposta para a situação
+       seguinte) já não salta a meio da animação. Antes da jogada deste
+       passo há uma fase curta em que essas peças se reposicionam, com
+       calma e todas juntas; depois correm as setas. Antes havia uma pausa
+       de 0,45 s que escondia o salto; sem pausa, o salto via-se. */
+    if (!step.de && antes) {
+      const rep = planearPassoAnim(stepElements(step, diagram), [], antes, { ...opcoes, velDeslize: ANIM_VEL_REPOSICAO });
+      if (rep.dur > 0) {
+        rep.setasFixas = stepStaticArrows(step, diagram);
+        rep.indice = i;
+        rep.reposicao = true;
+        passos.push(rep);
+        antes = animMapaPosicoes(rep.fim);
+      }
+    }
     const p = planearPassoAnim(stepElements(step, diagram), step.arrows, antes, {
       ...opcoes, curvas: step.curvas, soDeslizar: new Set(Object.keys(step.de || {})),
     });
@@ -16301,424 +16319,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     commitZones(zones.filter(z => z.id !== zoneId));
   };
 
-  return (
-    <div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-        <span style={{ fontSize: 11, color: T.mutedDim }}>Cor:</span>
-        {TEAMS.map(tm => (
-          <button
-            key={tm.id}
-            type="button"
-            // Responde a pointerdown (tal como o campo) em vez de onClick:
-            // evita reagir a um clique de compatibilidade que alguns
-            // browsers/webviews móveis podem disparar noutro elemento
-            // pouco depois de o ecrã mudar (ex.: ao colocar um jogador).
-            onPointerDown={(e) => { e.preventDefault(); selectColor(tm.id, e); }}
-            title={tm.label}
-            style={{
-              width: 24, height: 24, borderRadius: '50%', background: tm.fill, cursor: 'pointer', padding: 0,
-              border: activeColor === tm.id ? `2px solid ${T.gold}` : '1px solid #00000055',
-              boxShadow: activeColor === tm.id ? '0 0 0 2px #12100C' : 'none', flexShrink: 0,
-            }}
-          />
-        ))}
-        <span style={{ fontSize: 11, color: T.warn }}>{teamInfo(activeColor).label}</span>
-        {/* JOGADORES DO TREINO — carrega os presentes de uma sessão do
-            Planeamento (hoje primeiro), nos lugares do Quadro de posições. */}
-        {sessoesCarregaveis.length > 0 && (
-          <Select value="" onChange={e => { carregarSessao(e.target.value); e.target.value = ''; }}
-            title="Junta ao campo os jogadores presentes num treino do Planeamento, com o nome e nos lugares do Quadro de posições, na cor escolhida"
-            style={{ marginLeft: 'auto', width: 'auto', maxWidth: 260, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 8px', borderRadius: 16 }}>
-            <option value="">Jogadores do treino…</option>
-            {sessoesCarregaveis.map(s => {
-              const n = (s.attendance || []).length + (s.convidados || []).length;
-              const quando = s.date === todayStr() ? 'Hoje' : fmtShort(s.date);
-              return <option key={s.id} value={s.id}>{quando}{s.focus ? ` · ${String(s.focus).slice(0, 28)}` : ''} · {n} jogadores</option>;
-            })}
-          </Select>
-        )}
-        {/* VISTA DO CAMPO — campo inteiro (horizontal) ou meio-campo
-            (vertical). Só muda o enquadramento: nada do desenho se perde. */}
-        <div style={{ marginLeft: sessoesCarregaveis.length > 0 ? 0 : 'auto', display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden', flexShrink: 0 }}>
-          {[['completo', 'Campo inteiro'], ['meio', 'Meio-campo']].map(([id, rot]) => (
-            <button key={id} type="button" onPointerDown={(e) => { e.preventDefault(); mudarVista(id); }}
-              title={id === 'meio' ? 'Meio-campo na vertical, com a baliza em cima' : 'Campo inteiro na horizontal'}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', border: 'none', cursor: 'pointer', ...body, fontSize: 12,
-                background: vistaCampo === id ? T.gold : 'transparent', color: vistaCampo === id ? TEXT_ON_ACCENT : T.muted,
-              }}>
-              <svg width={id === 'meio' ? 11 : 16} height={id === 'meio' ? 14 : 11} viewBox={id === 'meio' ? '0 0 11 14' : '0 0 16 11'} aria-hidden="true">
-                {id === 'meio'
-                  ? <><rect x="0.75" y="0.75" width="9.5" height="12.5" fill="none" stroke="currentColor" strokeWidth="1.2" /><rect x="3" y="0.75" width="5" height="3" fill="none" stroke="currentColor" strokeWidth="1" /></>
-                  : <><rect x="0.75" y="0.75" width="14.5" height="9.5" fill="none" stroke="currentColor" strokeWidth="1.2" /><line x1="8" y1="0.75" x2="8" y2="10.25" stroke="currentColor" strokeWidth="1" /></>}
-              </svg>
-              {rot}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* No telemóvel os botões entram numa grelha de colunas iguais: com
-          `flex-wrap` cada linha ficava com uma largura diferente e o bloco
-          parecia desalinhado. Em ecrã largo mantém-se a linha corrida. */}
-      {/* `minmax(0, 1fr)` e não `1fr`.
-
-          Um `1fr` é na verdade `minmax(auto, 1fr)`, e esse `auto` é a
-          largura MÍNIMA do conteúdo. Com um botão a dizer
-          "Mover / Selecionar" sem quebra de linha, a coluna era forçada a
-          essa largura, as quatro colunas somavam mais do que o ecrã e a
-          grelha transbordava — daí os botões terem tamanhos diferentes e a
-          página arrastar-se de lado.
-
-          Com `minmax(0, 1fr)` as colunas podem encolher abaixo do
-          conteúdo, ficam todas iguais, e o texto quebra em duas linhas
-          quando é preciso. */}
-      <div style={{
-        marginBottom: 8,
-        ...(isNarrowEditor
-          ? { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }
-          : { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }),
-      }}>
-        {BASE_TOOLS.map(t => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTool(t.id)}
-            title={t.title || t.label}
-            style={{
-              padding: t.symbol ? '6px 8px' : '6px 6px', borderRadius: 7, fontSize: isNarrowEditor ? 12 : 12.5, cursor: 'pointer', ...body,
-              background: tool === t.id ? '#B5393F' : 'transparent',
-              color: tool === t.id ? TEXT_ON_ACCENT : T.muted,
-              border: `1px solid ${tool === t.id ? '#B5393F' : T.line}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 34,
-              // No telemóvel o texto pode quebrar; em linha corrida não.
-              whiteSpace: isNarrowEditor ? 'normal' : 'nowrap',
-              textAlign: 'center', lineHeight: 1.15, minWidth: 0, overflow: 'hidden',
-            }}
-          >
-            {t.symbol === 'solid' && (
-              <svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="currentColor" strokeWidth="2" /></svg>
-            )}
-            {t.symbol === 'dashed' && (
-              <svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeDasharray="0.1,5" /></svg>
-            )}
-            {t.symbol === 'square' && (
-              <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.4,1.8" /></svg>
-            )}
-            {!t.symbol && (isNarrowEditor && t.curto ? t.curto : t.label)}
-          </button>
-        ))}
-        {/* DESFAZER / REFAZER / IMPRIMIR / LIMPAR TUDO — ações sobre o
-            DESENHO, não sobre a animação (essa tem a sua própria linha,
-            mais abaixo). Estavam antes numa linha à parte, por baixo do
-            campo; seguem agora a par das restantes ferramentas, no fim da
-            mesma linha.
-
-            Um SÓ grupo, com `flexWrap: 'nowrap'` — "Limpar tudo" era um
-            item separado do resto (undo/redo/imprimir), e o wrap decide-se
-            por item, não pelo espaço que sobra na linha: "Limpar tudo"
-            saltava sozinho para a linha de baixo mesmo havendo espaço
-            visível a seguir ao imprimir. Agrupados, ou cabem todos juntos
-            ou quebram todos juntos — nunca um sozinho, à parte. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button
-              type="button"
-              onClick={undo}
-              disabled={!canUndo}
-              title="Retroceder (Ctrl+Z)"
-              style={{
-                width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'transparent', border: `1px solid ${T.line}`,
-                color: canUndo ? T.cream : T.mutedDim, cursor: canUndo ? 'pointer' : 'not-allowed',
-                opacity: canUndo ? 1 : 0.5, flexShrink: 0,
-              }}
-            >
-              <Undo2 size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={redo}
-              disabled={!canRedo}
-              title="Refazer (Ctrl+Y)"
-              style={{
-                width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: 'transparent', border: `1px solid ${T.line}`,
-                color: canRedo ? T.cream : T.mutedDim, cursor: canRedo ? 'pointer' : 'not-allowed',
-                opacity: canRedo ? 1 : 0.5, flexShrink: 0,
-              }}
-            >
-              <Redo2 size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={doPrint}
-              title="Imprimir prancheta"
-              style={{
-                width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                background: '#B5393F', border: '1px solid #B5393F', cursor: 'pointer', flexShrink: 0,
-              }}
-            >
-              <Printer size={14} color={TEXT_ON_ACCENT} />
-            </button>
-          </div>
-          {/* Sempre presente (apagado quando não há nada): antes só aparecia
-              com algo no campo, a barra ficava mais comprida ao colocar o
-              primeiro jogador, partia para a linha de baixo e a página mexia. */}
-          {(() => {
-            const temAlgo = elements.length > 0 || arrows.length > 0 || zones.length > 0;
-            return (
-              <button
-                type="button"
-                onClick={temAlgo ? clearAll : undefined}
-                disabled={!temAlgo}
-                title="Limpar tudo"
-                style={{
-                  width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'transparent', border: `1px solid ${T.line}`, color: T.mutedDim, cursor: temAlgo ? 'pointer' : 'not-allowed', flexShrink: 0,
-                  opacity: temAlgo ? 1 : 0.5,
-                }}
-              >
-                <Trash2 size={14} />
-              </button>
-            );
-          })()}
-        </div>
-      </div>
-      {tool === 'multi' ? (
-        /* "Vários": atalhos para escolher uma equipa inteira de uma vez. */
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap', overflow: 'hidden', minHeight: 26, marginBottom: 6, fontSize: 11.5, color: T.mutedDim, ...body }}>
-          {emRecuo ? (
-            <span style={{ color: T.warn }}>Em "desde animar" arrastar serve para corrigir o passo. Para mexer vários em bloco, escolhe "só agora".</span>
-          ) : (
-            <>
-              <span>Desenha um retângulo à volta (ou toca em cada um) e arrasta o grupo. Depois, Animar.</span>
-              {TEAMS.filter(t => elements.some(el => (el.kind === 'player' || el.kind === 'keeper') && (el.team || 'A') === t.id)).map(t => (
-                <button key={t.id} type="button"
-                  onClick={() => setGrupo(elements.filter(el => (el.kind === 'player' || el.kind === 'keeper') && (el.team || 'A') === t.id).map(el => el.id))}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, fontSize: 11.5, cursor: 'pointer', ...body }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.fill, border: '1px solid #ffffff55' }} /> Equipa
-                </button>
-              ))}
-              {grupo.length > 0 && (
-                <>
-                  <span style={{ color: T.gold }}>{grupo.length} no grupo</span>
-                  <button type="button" onClick={() => setGrupo([])}
-                    style={{ padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.line}`, background: 'transparent', color: T.muted, fontSize: 11.5, cursor: 'pointer', ...body }}>Limpar</button>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      ) : (
-        /* Mesma altura da linha da ferramenta "Vários" (26 px): trocar de
-           ferramenta não mexe no campo. */
-        <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6, minHeight: 26, display: 'flex', alignItems: 'center' }}>
-          Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
-        </div>
-      )}
-
-      {/* Aviso claro de que a prancheta está a mostrar um passo antigo,
-          não o estado mais recente — sem isto, era fácil desenhar uma
-          seta sem perceber de onde ela ia partir de verdade. Desaparece
-          sozinho assim que "desde" voltar a apontar para o último passo
-          (o que acontece sozinho a seguir a um novo "Animar"). */}
-      {emRecuo && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px',
-          borderRadius: 8, background: `${T.gold}22`, border: `1px solid ${T.gold}`, color: T.gold,
-          fontSize: 12, ...body,
-        }}>
-          <Clock size={14} />
-          {(() => {
-            const total = (value.sequence || []).length;
-            const seguinte = desdeValido + 2;
-            const antes = desdeValido === 0 ? '' : desdeValido === 1 ? ' O Animar 1 fica como está.' : ` Os Animar 1 a ${desdeValido} ficam como estão.`;
-            /* Duas maneiras de editar a partir daqui, e o aviso diz as duas:
-               CORRIGIR um item (arrastar, rodar, mudar o número/texto,
-               apagar) vale deste passo até ao fim e não mexe em mais nada;
-               ANIMAR um movimento novo recomeça a jogada daqui. */
-            return `A ver o início do Animar ${desdeValido + 1}. Para corrigir só um item (arrastar a baliza, rodar, mudar o número…), mexe nele: fica corrigido do Animar ${desdeValido + 1} ao ${total} e o resto fica igual. Se animares um movimento novo, ele passa a ser o Animar ${desdeValido + 1} e ${seguinte === total ? `o Animar ${total} é apagado` : `os Animar ${seguinte} a ${total} são apagados`}.${antes} O desfazer (↶) repõe tudo.`;
-          })()}
-        </div>
-      )}
-
-      {/* A largura sai da altura disponível, para a proporção nunca mudar:
-          limitar a altura diretamente deixaria o elemento com a largura
-          toda e uma forma diferente da declarada — e o desenho esticava. */}
-      <div
-        style={{
-          ...PITCH_FIT,
-          position: 'relative',
-        }}
-      >
-        <svg
-          ref={svgRef}
-          viewBox={viewBoxDaVista(vistaCampo)}
-          /* "meet" e não "none": mesmo que o contentor fique com uma
-             proporção ligeiramente diferente (arredondamentos, limites de
-             largura), o desenho encaixa dentro sem esticar. Com "none" um
-             desvio de meio por cento transformava os jogadores em elipses. */
-          preserveAspectRatio="xMidYMid meet"
-          style={{
-            position: 'absolute', inset: 0, width: '100%', height: '100%',
-            background: '#1e3a24', borderRadius: 8,
-            border: `1px solid ${T.line}`, touchAction: 'none',
-            cursor: tool === 'select' ? 'default' : 'crosshair',
-            userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none',
-            WebkitUserDrag: 'none', KhtmlUserSelect: 'none',
-            /* PISCAR NO iPAD
-
-               Ao tocar para colocar um ícone, o Safari desenha o realce de
-               toque e o menu de seleção por cima do campo — no iPad isso
-               lê-se como um flash da janela inteira a cada toque. Estas
-               três propriedades desligam esses efeitos nativos; o toque
-               continua a funcionar porque é tratado por eventos de
-               ponteiro, não pelo comportamento por omissão do browser. */
-            WebkitTapHighlightColor: 'transparent',
-            WebkitTouchCallout: 'none',
-            /* O campo passa a ter camada de composição PRÓPRIA no GPU.
-
-               `willChange: contents` não chegou no iPad. O `translateZ(0)`
-               força mesmo a criação da camada, e o `backfaceVisibility`
-               impede o Safari de a descartar e voltar a criar a cada toque
-               — que é o que produzia o flash da janela inteira.
-
-               Também se desliga a ampliação por duplo toque: no iPad, um
-               toque rápido para colocar dois ícones seguidos era
-               interpretado como duplo toque e o Safari respondia com um
-               salto de zoom. */
-            transform: 'translateZ(0)',
-            WebkitBackfaceVisibility: 'hidden',
-            backfaceVisibility: 'hidden',
-            touchAction: 'none',
-          }}
-          draggable="false"
-          onDragStart={(e) => e.preventDefault()}
-          onPointerDown={handleBgPointerDown}
-          onPointerMove={handleBgPointerMove}
-          onPointerUp={finishInteraction}
-          onPointerCancel={finishInteraction}
-        >
-          <VistaCampo vista={vistaCampo} gRef={gVistaRef}>
-          <PitchMarkings />
-          {zones.map(z => {
-            const meters = resizingZoneId === z.id && liveZoneSize ? liveZoneSize : { w: z.w, h: z.h };
-            return (
-              <SpaceZone
-                key={z.id}
-                meters={meters}
-                label={z.label}
-                center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }}
-                onPointerDown={(e) => onZonePointerDown(e, z.id)}
-                onResizeDown={(e) => onZoneResizeDown(e, z.id)}
-                onDelete={() => deleteZone(z.id)}
-                interactive={tool === 'select'}
-              />
-            );
-          })}
-          {/* CAMINHO DE QUEM FOI ARRASTADO desde o último Animar: tracejado
-              do sítio onde estava até onde está, com um ponto a meio para o
-              curvar. É este o caminho por onde desliza no próximo Animar.
-              Fica por BAIXO dos jogadores, para não os tapar. */}
-          {!isPresenting && !isPlaying && !emRecuo && fimAnteriorMemo && elements.map(el => {
-            const ant = fimAnteriorMemo.get(el.id);
-            if (!ant || Math.hypot(ant.x - el.x, ant.y - el.y) <= ANIM_DESLIZE_MIN) return null;
-            const c = (value.deslizeCurvas || {})[el.id];
-            const cx = c ? c.cx : (ant.x + el.x) / 2, cy = c ? c.cy : (ant.y + el.y) / 2;
-            const mx = 0.25 * ant.x + 0.5 * cx + 0.25 * el.x, my = 0.25 * ant.y + 0.5 * cy + 0.25 * el.y;
-            return (
-              <g key={`deslize-${el.id}`}>
-                <path d={`M ${ant.x} ${ant.y} Q ${cx} ${cy} ${el.x} ${el.y}`} fill="none" stroke="#FFFFFF" strokeOpacity="0.55" strokeWidth="0.22" strokeDasharray="0.9,0.7" style={{ pointerEvents: 'none' }} />
-                <circle cx={ant.x} cy={ant.y} r="0.45" fill="#FFFFFF" fillOpacity="0.45" style={{ pointerEvents: 'none' }} />
-                {/* O ponto do meio só aparece em caminhos com alguma distância:
-                    num arrasto curto ficava em cima do jogador e tapava-o. */}
-                {tool === 'select' && Math.hypot(ant.x - el.x, ant.y - el.y) > 5 && (
-                  <circle cx={mx} cy={my} r="0.95" fill="#3A6FC4" stroke="#FFFFFF" strokeWidth="0.2"
-                    onPointerDown={(e) => onDeslizeDown(e, el.id)} style={{ cursor: 'grab', touchAction: 'none' }} />
-                )}
-              </g>
-            );
-          })}
-          <DiagramElements
-            elements={(isPresenting ? presentElements || [] : (animFrame || elementosRecuo || elements)).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
-            arrows={isPresenting && presentArrows ? presentArrows : arrows}
-            iconScale={iconEscala * escalaEcra}
-            onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
-            selectedArrowId={selectedArrowId} interactive={!isPresenting}
-            placingActive={tool !== 'select' && tool !== 'eraser' && tool !== 'multi'}
-          />
-          {/* Vários: quem está no grupo leva um anel, e o retângulo a ser desenhado. */}
-          {tool === 'multi' && !isPresenting && !isPlaying && elements.filter(el => grupo.includes(el.id)).map(el => (
-            <circle key={`grupo-${el.id}`} cx={el.x} cy={el.y} r="2.7" fill="#C9A22722" stroke="#C9A227" strokeWidth="0.3" strokeDasharray="0.8,0.5" style={{ pointerEvents: 'none' }} />
-          ))}
-          {laco && (
-            <rect x={Math.min(laco.x1, laco.x2)} y={Math.min(laco.y1, laco.y2)} width={Math.abs(laco.x2 - laco.x1)} height={Math.abs(laco.y2 - laco.y1)}
-              fill="#C9A22714" stroke="#C9A227" strokeWidth="0.25" strokeDasharray="1,0.7" style={{ pointerEvents: 'none' }} />
-          )}
-          {selectedEl && selectedEl.kind !== 'goalmarker' && (
-            <circle cx={selectedEl.x} cy={selectedEl.y} r="3.2" fill="none" stroke={T.warn} strokeWidth="0.3" strokeDasharray="0.8,0.6" />
-          )}
-          {selectedEl && selectedEl.kind === 'goalmarker' && (() => {
-            const w = selectedEl.w != null ? selectedEl.w : 3.6 * (selectedEl.scale || 1);
-            const h = selectedEl.h != null ? selectedEl.h : 2.2 * (selectedEl.scale || 1);
-            const rotHandle = localToWorld(selectedEl, 0, -h / 2 - 1.5);
-            const resizeHandle = localToWorld(selectedEl, w / 2, h / 2);
-            const topMid = localToWorld(selectedEl, 0, -h / 2);
-            return (
-              <g>
-                {/* retângulo de seleção tracejado, acompanha a rotação atual */}
-                <rect
-                  x={-w / 2 - 0.4} y={-h / 2 - 0.4} width={w + 0.8} height={h + 0.8}
-                  transform={`translate(${selectedEl.x} ${selectedEl.y}) rotate(${selectedEl.rotation || 0})`}
-                  fill="none" stroke={T.warn} strokeWidth="0.25" strokeDasharray="0.7,0.5" style={{ pointerEvents: 'none' }}
-                />
-                {/* linha-guia até ao manípulo de rotação */}
-                <line x1={topMid.x} y1={topMid.y} x2={rotHandle.x} y2={rotHandle.y}
-                  stroke={T.warn} strokeWidth="0.15" opacity="0.8" style={{ pointerEvents: 'none' }} />
-                {/* manípulo de rotação — arrasta à volta para rodar livremente 360° */}
-                <circle cx={rotHandle.x} cy={rotHandle.y} r="1.5" fill={T.warn} stroke={TEXT_ON_ACCENT} strokeWidth="0.25"
-                  onPointerDown={(e) => onGoalRotateDown(e, selectedEl.id)}
-                  style={{ cursor: 'grab', touchAction: 'none' }} />
-                {/* manípulo de redimensionamento — arrasta para ajustar largura/altura */}
-                <rect x={resizeHandle.x - 1.1} y={resizeHandle.y - 1.1} width="2.2" height="2.2"
-                  transform={`rotate(${selectedEl.rotation || 0} ${resizeHandle.x} ${resizeHandle.y})`}
-                  fill={T.warn} stroke={TEXT_ON_ACCENT} strokeWidth="0.25"
-                  onPointerDown={(e) => onGoalResizeDown(e, selectedEl.id)}
-                  style={{ cursor: 'nwse-resize', touchAction: 'none' }} />
-              </g>
-            );
-          })()}
-          {drawing && (
-            <line x1={drawing.x1} y1={drawing.y1} x2={drawing.x2} y2={drawing.y2}
-              stroke="#C9A227" strokeWidth={drawing.type === 'line-dashed' ? '0.42' : '0.3'}
-              strokeLinecap={drawing.type === 'line-dashed' ? 'round' : 'butt'}
-              strokeDasharray={drawing.type === 'line-dashed' ? '0.1,2.1' : (drawing.type === 'arrow-run' ? '2,1.5' : '1,1')} />
-          )}
-          <AnimOverlay items={animItems} iconScale={iconEscala * escalaEcra} />
-          <AnimOverlay items={presentAnimItems} iconScale={iconEscala * escalaEcra} />
-          </VistaCampo>
-        </svg>
-      </div>
-
-      {/* Undo/Redo/Imprimir/Limpar tudo — por baixo do campo, à esquerda,
-          para não competir por espaço com a barra de ferramentas em cima
-          (que já é apertada em ecrãs pequenos). */}
-      {/* `minWidth: 0` nos filhos é o que lhes permite encolher: sem isso
-          um item recusa-se a passar abaixo da largura do seu conteúdo e
-          empurra a barra para fora do ecrã, mesmo com `flexWrap`. */}
-      {/* O ANIMAR DEIXOU DE ESTAR NA BARRA DE CIMA.
-
-          Aparecia assim que houvesse a primeira seta e desaparecia ao
-          apagá-la — e como estava ACIMA do campo, cada vez que aparecia
-          empurrava a prancheta para baixo. No telemóvel isso é o desenho a
-          fugir por baixo do dedo a meio de o fazer.
-
-          Agora fica por baixo do campo, encostado à direita, e o espaço é
-          SEMPRE reservado (`minHeight`): mesmo sem setas nenhumas, nada se
-          mexe quando ele nasce. */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, minHeight: 34, alignItems: 'center' }}>
-        {(arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') || haArrastos || isPlaying) && (
+  // O botão Animar (no telemóvel numa linha própria; no computador na linha das animações).
+  const botaoAnimar = (arrows.some(a => a.type === 'arrow-pass' || a.type === 'arrow-run') || haArrastos || isPlaying) ? (
           <button
             type="button"
             onClick={isPlaying ? stopAnimation : playAnimation}
@@ -16733,154 +16335,9 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             {isPlaying ? <Square size={13} /> : <Play size={13} />}
             {isPlaying ? 'Parar' : 'Animar'}
           </button>
-        )}
-      </div>
-
-      {/* GESTÃO DAS ANIMAÇÕES — linha própria, alinhada à esquerda.
-
-          Estava na mesma linha do desfazer/refazer/imprimir, e o conjunto
-          ficava tão comprido que no telemóvel saía do ecrã. Separadas,
-          cada uma cabe na sua largura e lê-se o que é: em cima o que se faz
-          ao DESENHO, em baixo o que se faz à ANIMAÇÃO. */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, marginTop: 8,
-        flexWrap: 'wrap', minWidth: 0, maxWidth: '100%',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
-          {/* A contagem abre a linha das animações: diz de imediato com
-              quantas se está a lidar, antes dos botões que lhes mexem. */}
-          {((value.sequence || []).length > 0 || passosAnulados.length > 0) && (
-            <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>
-              {(value.sequence || []).length} {(value.sequence || []).length === 1 ? 'animação' : 'animações'}
-            </span>
-          )}
-
-          {/* A partir de que passo vale o que se fizer a seguir — tanto
-              colocar como apagar.
-
-              Sem isto, um elemento acrescentado depois da coreografia
-              pronta só existia no fim: ao rever a animação desde o
-              princípio, aparecia do nada. Escolher um passo aqui mete-o em
-              campo desde esse momento até ao fim, o que permite testar uma
-              variante sem desmanchar o que já está feito.
-
-              O mesmo seletor serve também para apagar: escolhido um
-              passo, apagar um elemento só o tira a partir dali — continua
-              a aparecer nos passos anteriores, onde esteve mesmo em
-              campo. */}
-          {(value.sequence || []).length > 0 && (
-            <label
-              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: desdeValido == null ? T.mutedDim : T.gold }}
-              title="Vale para o que colocares e para o que apagares a seguir: passa a aplicar-se a partir deste passo da animação, não só agora"
-            >
-              desde
-              <Select
-                value={desdeValido == null ? '' : String(desdeValido)}
-                onChange={ev => setInserirDesde(ev.target.value === '' ? null : Number(ev.target.value))}
-                style={{ width: 92, minWidth: 0, height: 26, lineHeight: '24px', fontSize: 11.5, padding: '0 4px' }}
-              >
-                {/* O índice é o do passo, começando em 0.
-
-                    A primeira versão usava `i + 1` e o elemento entrava
-                    só DEPOIS do passo escolhido — escolher o último passo
-                    não propagava para lado nenhum e o item aparecia apenas
-                    no fim, que foi exatamente o que se notou. */}
-                {/* "Animar N" e não "passo N": é o nome do botão que os
-                    cria, e é assim que o treinador os conta. */}
-                <option value="">só agora</option>
-                {(value.sequence || []).map((_, i) => (
-                  <option key={i} value={i}>desde animar {i + 1}</option>
-                ))}
-              </Select>
-            </label>
-          )}
-          {(value.sequence || []).length > 0 && (
-            <button
-              type="button"
-              onClick={anularUltimoPasso}
-              title="Retira o último passo da animação e devolve as setas ao campo para as poderes corrigir"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
-                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
-                background: 'transparent', color: T.cream, border: `1px solid ${T.line}`,
-              }}
-            ><Undo2 size={12} /> Anular</button>
-          )}
-          {passosAnulados.length > 0 && (
-            <button
-              type="button"
-              onClick={refazerPasso}
-              title="Repõe o passo que acabaste de anular"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
-                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
-                background: 'transparent', color: T.cream, border: `1px solid ${T.line}`,
-              }}
-            ><Redo2 size={12} /> Refazer</button>
-          )}
-          {(value.sequence || []).length > 0 && (
-            <button
-              type="button"
-              onClick={isPresenting ? stopPresentation : startPresentation}
-              title={isPresenting ? 'Parar apresentação' : 'Pré-visualiza a apresentação completa (todos os passos já animados, em sequência) antes de guardar'}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', height: 26, borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
-                background: isPresenting ? T.bad : 'transparent',
-                color: isPresenting ? T.cream : T.cream,
-                border: `1px solid ${isPresenting ? T.bad : T.line}`,
-              }}
-            >
-              {isPresenting ? <Square size={12} /> : <Play size={12} />}
-              {isPresenting ? 'Parar' : 'Apresentar tudo'}
-            </button>
-          )}
-          {(value.sequence || []).length > 0 && idsOrfaosDaAnimacao().size > 0 && (
-            <button
-              type="button"
-              onClick={repararAnimacao}
-              title="Remove elementos que ficaram presos numa fotografia da animação (ex: um jogador inserido a partir de um passo e depois apagado antes de esta correção existir)"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
-                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
-                background: `${T.warn}18`, color: T.warn, border: `1px solid ${T.warn}`,
-              }}
-            ><RefreshCw size={12} /> Reparar animação</button>
-          )}
-        </div>
-      </div>
-
-      {/* SALTO DE SCROLL AO CLICAR FORA DA PRANCHETA
-
-          Este painel aparecia e desaparecia conforme houvesse ou não um
-          elemento selecionado. Clicar no campo para desmarcar tirava-o do
-          fluxo, a página encolhia de repente e o browser reposicionava o
-          scroll — lia-se como "salta sozinho para cima".
-
-          Agora o espaço fica sempre reservado (`minHeight`), com ou sem
-          seleção. A altura da página deixa de mudar e o scroll fica quieto. */}
-      {/* A altura reservada é a do MAIOR painel — o do texto, com a caixa
-          de escrita e os botões de tamanho e largura. Reservar menos fazia
-          a página crescer ao selecionar um texto, e o scroll saltava.
-
-          Está no mínimo possível: a caixa de escrita passou a uma linha (o
-          texto continua a poder ter várias, só se rola dentro dela) para
-          esta faixa não roubar altura ao campo quando nada está
-          selecionado. */}
-      {/* `marginTop: 8` fica aqui, no wrapper que existe SEMPRE — e não no
-          bloco de baixo, que só nasce quando `selectedEl` é verdadeiro.
-          Estava ao contrário: a margem só existia com o painel aberto, e
-          como este `<div>` não tem padding nem borda, essa margem "fugia"
-          para fora dele (colapso de margens) e empurrava a altura do editor
-          uns 8px só nesse momento — o resíduo de encolhimento que ainda
-          sobrava mesmo com a altura da faixa já fixa em 38px. Com a margem
-          sempre presente, a altura deste wrapper é 100% constante entre
-          aberto e fechado. */}
-      {/* O espaço reservado cresce no telemóvel, porque lá a barra quebra
-          em duas ou três linhas. Continua a ser um número FIXO por ecrã e
-          não o conteúdo a mandar — é isso que impede o campo de encolher
-          quando se seleciona um elemento. */}
-      <div style={{ minHeight: isNarrowEditor ? 200 : 92, marginTop: 4 }}>
-      {selectedEl && (
+  ) : null;
+  /* Painéis do elemento e da linha selecionados (ver onde são mostrados). */
+  const painelElemento = selectedEl ? (
         <div>
         {/* NUNCA quebra para uma segunda linha (nowrap + scroll horizontal
             em vez de flexWrap).
@@ -17093,16 +16550,601 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           <button type="button" onClick={() => setSelectedId(null)} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>Fechar</button>
         </div>
         </div>
-      )}
-      </div>
-
-      {selectedArrow && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, padding: '7px 10px', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7 }}>
+  ) : null;
+  const painelSeta = selectedArrow ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: isNarrowEditor ? 8 : 0, padding: '7px 10px', height: isNarrowEditor ? undefined : 38, boxSizing: 'border-box', background: T.bg, border: `1px solid ${T.line}`, borderRadius: 7 }}>
           <span style={{ fontSize: 12, color: T.cream }}>{LINE_LABELS[selectedArrow.type] || 'Linha'} — arrasta as pontas douradas para mudar o ângulo e o comprimento</span>
           <button type="button" onClick={deleteSelectedArrow} style={{ fontSize: 11.5, color: T.bad, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 'auto' }}>Apagar</button>
           <button type="button" onClick={() => setSelectedArrowId(null)} style={{ fontSize: 11.5, color: T.mutedDim, background: 'none', border: 'none', cursor: 'pointer' }}>Fechar</button>
         </div>
+  ) : null;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: T.mutedDim }}>Cor:</span>
+        {TEAMS.map(tm => (
+          <button
+            key={tm.id}
+            type="button"
+            // Responde a pointerdown (tal como o campo) em vez de onClick:
+            // evita reagir a um clique de compatibilidade que alguns
+            // browsers/webviews móveis podem disparar noutro elemento
+            // pouco depois de o ecrã mudar (ex.: ao colocar um jogador).
+            onPointerDown={(e) => { e.preventDefault(); selectColor(tm.id, e); }}
+            title={tm.label}
+            style={{
+              width: 24, height: 24, borderRadius: '50%', background: tm.fill, cursor: 'pointer', padding: 0,
+              border: activeColor === tm.id ? `2px solid ${T.gold}` : '1px solid #00000055',
+              boxShadow: activeColor === tm.id ? '0 0 0 2px #12100C' : 'none', flexShrink: 0,
+            }}
+          />
+        ))}
+        <span style={{ fontSize: 11, color: T.warn }}>{teamInfo(activeColor).label}</span>
+        {/* JOGADORES DO TREINO — carrega os presentes de uma sessão do
+            Planeamento (hoje primeiro), nos lugares do Quadro de posições. */}
+        {sessoesCarregaveis.length > 0 && (
+          <Select value="" onChange={e => { carregarSessao(e.target.value); e.target.value = ''; }}
+            title="Junta ao campo os jogadores presentes num treino do Planeamento, com o nome e nos lugares do Quadro de posições, na cor escolhida"
+            style={{ marginLeft: 'auto', width: 'auto', maxWidth: 260, height: 30, lineHeight: '28px', fontSize: 12, padding: '0 8px', borderRadius: 16 }}>
+            <option value="">Jogadores do treino…</option>
+            {sessoesCarregaveis.map(s => {
+              const n = (s.attendance || []).length + (s.convidados || []).length;
+              const quando = s.date === todayStr() ? 'Hoje' : fmtShort(s.date);
+              return <option key={s.id} value={s.id}>{quando}{s.focus ? ` · ${String(s.focus).slice(0, 28)}` : ''} · {n} jogadores</option>;
+            })}
+          </Select>
+        )}
+        {/* VISTA DO CAMPO — campo inteiro (horizontal) ou meio-campo
+            (vertical). Só muda o enquadramento: nada do desenho se perde. */}
+        <div style={{ marginLeft: sessoesCarregaveis.length > 0 ? 0 : 'auto', display: 'inline-flex', border: `1px solid ${T.line}`, borderRadius: 16, overflow: 'hidden', flexShrink: 0 }}>
+          {[['completo', 'Campo inteiro'], ['meio', 'Meio-campo']].map(([id, rot]) => (
+            <button key={id} type="button" onPointerDown={(e) => { e.preventDefault(); mudarVista(id); }}
+              title={id === 'meio' ? 'Meio-campo na vertical, com a baliza em cima' : 'Campo inteiro na horizontal'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', border: 'none', cursor: 'pointer', ...body, fontSize: 12,
+                background: vistaCampo === id ? T.gold : 'transparent', color: vistaCampo === id ? TEXT_ON_ACCENT : T.muted,
+              }}>
+              <svg width={id === 'meio' ? 11 : 16} height={id === 'meio' ? 14 : 11} viewBox={id === 'meio' ? '0 0 11 14' : '0 0 16 11'} aria-hidden="true">
+                {id === 'meio'
+                  ? <><rect x="0.75" y="0.75" width="9.5" height="12.5" fill="none" stroke="currentColor" strokeWidth="1.2" /><rect x="3" y="0.75" width="5" height="3" fill="none" stroke="currentColor" strokeWidth="1" /></>
+                  : <><rect x="0.75" y="0.75" width="14.5" height="9.5" fill="none" stroke="currentColor" strokeWidth="1.2" /><line x1="8" y1="0.75" x2="8" y2="10.25" stroke="currentColor" strokeWidth="1" /></>}
+              </svg>
+              {rot}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* No telemóvel os botões entram numa grelha de colunas iguais: com
+          `flex-wrap` cada linha ficava com uma largura diferente e o bloco
+          parecia desalinhado. Em ecrã largo mantém-se a linha corrida. */}
+      {/* `minmax(0, 1fr)` e não `1fr`.
+
+          Um `1fr` é na verdade `minmax(auto, 1fr)`, e esse `auto` é a
+          largura MÍNIMA do conteúdo. Com um botão a dizer
+          "Mover / Selecionar" sem quebra de linha, a coluna era forçada a
+          essa largura, as quatro colunas somavam mais do que o ecrã e a
+          grelha transbordava — daí os botões terem tamanhos diferentes e a
+          página arrastar-se de lado.
+
+          Com `minmax(0, 1fr)` as colunas podem encolher abaixo do
+          conteúdo, ficam todas iguais, e o texto quebra em duas linhas
+          quando é preciso. */}
+      <div style={{
+        marginBottom: 8,
+        ...(isNarrowEditor
+          ? { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }
+          : { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }),
+      }}>
+        {BASE_TOOLS.map(t => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTool(t.id)}
+            title={t.title || t.label}
+            style={{
+              padding: t.symbol ? '6px 8px' : '6px 6px', borderRadius: 7, fontSize: isNarrowEditor ? 12 : 12.5, cursor: 'pointer', ...body,
+              background: tool === t.id ? '#B5393F' : 'transparent',
+              color: tool === t.id ? TEXT_ON_ACCENT : T.muted,
+              border: `1px solid ${tool === t.id ? '#B5393F' : T.line}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 34,
+              // No telemóvel o texto pode quebrar; em linha corrida não.
+              whiteSpace: isNarrowEditor ? 'normal' : 'nowrap',
+              textAlign: 'center', lineHeight: 1.15, minWidth: 0, overflow: 'hidden',
+            }}
+          >
+            {t.symbol === 'solid' && (
+              <svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="currentColor" strokeWidth="2" /></svg>
+            )}
+            {t.symbol === 'dashed' && (
+              <svg width="18" height="10" viewBox="0 0 18 10"><line x1="1" y1="5" x2="17" y2="5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeDasharray="0.1,5" /></svg>
+            )}
+            {t.symbol === 'square' && (
+              <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1.6" y="1.6" width="10.8" height="10.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeDasharray="2.4,1.8" /></svg>
+            )}
+            {!t.symbol && (isNarrowEditor && t.curto ? t.curto : t.label)}
+          </button>
+        ))}
+        {/* DESFAZER / REFAZER / IMPRIMIR / LIMPAR TUDO — ações sobre o
+            DESENHO, não sobre a animação (essa tem a sua própria linha,
+            mais abaixo). Estavam antes numa linha à parte, por baixo do
+            campo; seguem agora a par das restantes ferramentas, no fim da
+            mesma linha.
+
+            Um SÓ grupo, com `flexWrap: 'nowrap'` — "Limpar tudo" era um
+            item separado do resto (undo/redo/imprimir), e o wrap decide-se
+            por item, não pelo espaço que sobra na linha: "Limpar tudo"
+            saltava sozinho para a linha de baixo mesmo havendo espaço
+            visível a seguir ao imprimir. Agrupados, ou cabem todos juntos
+            ou quebram todos juntos — nunca um sozinho, à parte. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              type="button"
+              onClick={undo}
+              disabled={!canUndo}
+              title="Retroceder (Ctrl+Z)"
+              style={{
+                width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent', border: `1px solid ${T.line}`,
+                color: canUndo ? T.cream : T.mutedDim, cursor: canUndo ? 'pointer' : 'not-allowed',
+                opacity: canUndo ? 1 : 0.5, flexShrink: 0,
+              }}
+            >
+              <Undo2 size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={redo}
+              disabled={!canRedo}
+              title="Refazer (Ctrl+Y)"
+              style={{
+                width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'transparent', border: `1px solid ${T.line}`,
+                color: canRedo ? T.cream : T.mutedDim, cursor: canRedo ? 'pointer' : 'not-allowed',
+                opacity: canRedo ? 1 : 0.5, flexShrink: 0,
+              }}
+            >
+              <Redo2 size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={doPrint}
+              title="Imprimir prancheta"
+              style={{
+                width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: '#B5393F', border: '1px solid #B5393F', cursor: 'pointer', flexShrink: 0,
+              }}
+            >
+              <Printer size={14} color={TEXT_ON_ACCENT} />
+            </button>
+          </div>
+          {/* Sempre presente (apagado quando não há nada): antes só aparecia
+              com algo no campo, a barra ficava mais comprida ao colocar o
+              primeiro jogador, partia para a linha de baixo e a página mexia. */}
+          {(() => {
+            const temAlgo = elements.length > 0 || arrows.length > 0 || zones.length > 0;
+            return (
+              <button
+                type="button"
+                onClick={temAlgo ? clearAll : undefined}
+                disabled={!temAlgo}
+                title="Limpar tudo"
+                style={{
+                  width: 26, height: 26, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'transparent', border: `1px solid ${T.line}`, color: T.mutedDim, cursor: temAlgo ? 'pointer' : 'not-allowed', flexShrink: 0,
+                  opacity: temAlgo ? 1 : 0.5,
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            );
+          })()}
+        </div>
+      </div>
+      {!isNarrowEditor && (painelElemento || painelSeta) ? (
+        /* Computador: o painel do elemento (ou da linha) selecionado ocupa
+           a linha da dica, por cima do campo, com a mesma altura (38 px). */
+        <div style={{ height: 38, marginBottom: 6 }}>{painelElemento || painelSeta}</div>
+      ) : tool === 'multi' ? (
+        /* "Vários": atalhos para escolher uma equipa inteira de uma vez. */
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: isNarrowEditor ? 'wrap' : 'nowrap', overflow: 'hidden', minHeight: isNarrowEditor ? 26 : 38, marginBottom: 6, fontSize: 11.5, color: T.mutedDim, ...body }}>
+          {emRecuo ? (
+            <span style={{ color: T.warn }}>Em "desde animar" arrastar serve para corrigir o passo. Para mexer vários em bloco, escolhe "só agora".</span>
+          ) : (
+            <>
+              <span>Desenha um retângulo à volta (ou toca em cada um) e arrasta o grupo. Depois, Animar.</span>
+              {TEAMS.filter(t => elements.some(el => (el.kind === 'player' || el.kind === 'keeper') && (el.team || 'A') === t.id)).map(t => (
+                <button key={t.id} type="button"
+                  onClick={() => setGrupo(elements.filter(el => (el.kind === 'player' || el.kind === 'keeper') && (el.team || 'A') === t.id).map(el => el.id))}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, fontSize: 11.5, cursor: 'pointer', ...body }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.fill, border: '1px solid #ffffff55' }} /> Equipa
+                </button>
+              ))}
+              {grupo.length > 0 && (
+                <>
+                  <span style={{ color: T.gold }}>{grupo.length} no grupo</span>
+                  <button type="button" onClick={() => setGrupo([])}
+                    style={{ padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.line}`, background: 'transparent', color: T.muted, fontSize: 11.5, cursor: 'pointer', ...body }}>Limpar</button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        /* Mesma altura da linha da ferramenta "Vários" (26 px): trocar de
+           ferramenta não mexe no campo. */
+        <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6, minHeight: isNarrowEditor ? 26 : 38, display: 'flex', alignItems: 'center' }}>
+          Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
+        </div>
       )}
+
+      {/* Aviso claro de que a prancheta está a mostrar um passo antigo,
+          não o estado mais recente — sem isto, era fácil desenhar uma
+          seta sem perceber de onde ela ia partir de verdade. Desaparece
+          sozinho assim que "desde" voltar a apontar para o último passo
+          (o que acontece sozinho a seguir a um novo "Animar"). */}
+      {emRecuo && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '8px 12px',
+          borderRadius: 8, background: `${T.gold}22`, border: `1px solid ${T.gold}`, color: T.gold,
+          fontSize: 12, ...body,
+        }}>
+          <Clock size={14} />
+          {(() => {
+            const total = (value.sequence || []).length;
+            const seguinte = desdeValido + 2;
+            const antes = desdeValido === 0 ? '' : desdeValido === 1 ? ' O Animar 1 fica como está.' : ` Os Animar 1 a ${desdeValido} ficam como estão.`;
+            /* Duas maneiras de editar a partir daqui, e o aviso diz as duas:
+               CORRIGIR um item (arrastar, rodar, mudar o número/texto,
+               apagar) vale deste passo até ao fim e não mexe em mais nada;
+               ANIMAR um movimento novo recomeça a jogada daqui. */
+            return `A ver o início do Animar ${desdeValido + 1}. Para corrigir só um item (arrastar a baliza, rodar, mudar o número…), mexe nele: fica corrigido do Animar ${desdeValido + 1} ao ${total} e o resto fica igual. Se animares um movimento novo, ele passa a ser o Animar ${desdeValido + 1} e ${seguinte === total ? `o Animar ${total} é apagado` : `os Animar ${seguinte} a ${total} são apagados`}.${antes} O desfazer (↶) repõe tudo.`;
+          })()}
+        </div>
+      )}
+
+      {/* A largura sai da altura disponível, para a proporção nunca mudar:
+          limitar a altura diretamente deixaria o elemento com a largura
+          toda e uma forma diferente da declarada — e o desenho esticava. */}
+      <div
+        style={{
+          ...PITCH_FIT,
+          position: 'relative',
+        }}
+      >
+        <svg
+          ref={svgRef}
+          viewBox={viewBoxDaVista(vistaCampo)}
+          /* "meet" e não "none": mesmo que o contentor fique com uma
+             proporção ligeiramente diferente (arredondamentos, limites de
+             largura), o desenho encaixa dentro sem esticar. Com "none" um
+             desvio de meio por cento transformava os jogadores em elipses. */
+          preserveAspectRatio="xMidYMid meet"
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            background: '#1e3a24', borderRadius: 8,
+            border: `1px solid ${T.line}`, touchAction: 'none',
+            cursor: tool === 'select' ? 'default' : 'crosshair',
+            userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none',
+            WebkitUserDrag: 'none', KhtmlUserSelect: 'none',
+            /* PISCAR NO iPAD
+
+               Ao tocar para colocar um ícone, o Safari desenha o realce de
+               toque e o menu de seleção por cima do campo — no iPad isso
+               lê-se como um flash da janela inteira a cada toque. Estas
+               três propriedades desligam esses efeitos nativos; o toque
+               continua a funcionar porque é tratado por eventos de
+               ponteiro, não pelo comportamento por omissão do browser. */
+            WebkitTapHighlightColor: 'transparent',
+            WebkitTouchCallout: 'none',
+            /* O campo passa a ter camada de composição PRÓPRIA no GPU.
+
+               `willChange: contents` não chegou no iPad. O `translateZ(0)`
+               força mesmo a criação da camada, e o `backfaceVisibility`
+               impede o Safari de a descartar e voltar a criar a cada toque
+               — que é o que produzia o flash da janela inteira.
+
+               Também se desliga a ampliação por duplo toque: no iPad, um
+               toque rápido para colocar dois ícones seguidos era
+               interpretado como duplo toque e o Safari respondia com um
+               salto de zoom. */
+            transform: 'translateZ(0)',
+            WebkitBackfaceVisibility: 'hidden',
+            backfaceVisibility: 'hidden',
+            touchAction: 'none',
+          }}
+          draggable="false"
+          onDragStart={(e) => e.preventDefault()}
+          onPointerDown={handleBgPointerDown}
+          onPointerMove={handleBgPointerMove}
+          onPointerUp={finishInteraction}
+          onPointerCancel={finishInteraction}
+        >
+          <VistaCampo vista={vistaCampo} gRef={gVistaRef}>
+          <PitchMarkings />
+          {zones.map(z => {
+            const meters = resizingZoneId === z.id && liveZoneSize ? liveZoneSize : { w: z.w, h: z.h };
+            return (
+              <SpaceZone
+                key={z.id}
+                meters={meters}
+                label={z.label}
+                center={{ x: 53.5 + (z.dx || 0), y: 35 + (z.dy || 0) }}
+                onPointerDown={(e) => onZonePointerDown(e, z.id)}
+                onResizeDown={(e) => onZoneResizeDown(e, z.id)}
+                onDelete={() => deleteZone(z.id)}
+                interactive={tool === 'select'}
+              />
+            );
+          })}
+          {/* CAMINHO DE QUEM FOI ARRASTADO desde o último Animar: tracejado
+              do sítio onde estava até onde está, com um ponto a meio para o
+              curvar. É este o caminho por onde desliza no próximo Animar.
+              Fica por BAIXO dos jogadores, para não os tapar. */}
+          {!isPresenting && !isPlaying && !emRecuo && fimAnteriorMemo && elements.map(el => {
+            const ant = fimAnteriorMemo.get(el.id);
+            if (!ant || Math.hypot(ant.x - el.x, ant.y - el.y) <= ANIM_DESLIZE_MIN) return null;
+            const c = (value.deslizeCurvas || {})[el.id];
+            const cx = c ? c.cx : (ant.x + el.x) / 2, cy = c ? c.cy : (ant.y + el.y) / 2;
+            const mx = 0.25 * ant.x + 0.5 * cx + 0.25 * el.x, my = 0.25 * ant.y + 0.5 * cy + 0.25 * el.y;
+            return (
+              <g key={`deslize-${el.id}`}>
+                <path d={`M ${ant.x} ${ant.y} Q ${cx} ${cy} ${el.x} ${el.y}`} fill="none" stroke="#FFFFFF" strokeOpacity="0.55" strokeWidth="0.22" strokeDasharray="0.9,0.7" style={{ pointerEvents: 'none' }} />
+                <circle cx={ant.x} cy={ant.y} r="0.45" fill="#FFFFFF" fillOpacity="0.45" style={{ pointerEvents: 'none' }} />
+                {/* O ponto do meio só aparece em caminhos com alguma distância:
+                    num arrasto curto ficava em cima do jogador e tapava-o. */}
+                {tool === 'select' && Math.hypot(ant.x - el.x, ant.y - el.y) > 5 && (
+                  <circle cx={mx} cy={my} r="0.95" fill="#3A6FC4" stroke="#FFFFFF" strokeWidth="0.2"
+                    onPointerDown={(e) => onDeslizeDown(e, el.id)} style={{ cursor: 'grab', touchAction: 'none' }} />
+                )}
+              </g>
+            );
+          })}
+          <DiagramElements
+            elements={(isPresenting ? presentElements || [] : (animFrame || elementosRecuo || elements)).filter(el => !(isPresenting ? presentAnimItems : animItems).some(it => it.mover?.id === el.id))}
+            arrows={isPresenting && presentArrows ? presentArrows : arrows}
+            iconScale={iconEscala * escalaEcra}
+            onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
+            selectedArrowId={selectedArrowId} interactive={!isPresenting}
+            placingActive={tool !== 'select' && tool !== 'eraser' && tool !== 'multi'}
+          />
+          {/* Vários: quem está no grupo leva um anel, e o retângulo a ser desenhado. */}
+          {tool === 'multi' && !isPresenting && !isPlaying && elements.filter(el => grupo.includes(el.id)).map(el => (
+            <circle key={`grupo-${el.id}`} cx={el.x} cy={el.y} r="2.7" fill="#C9A22722" stroke="#C9A227" strokeWidth="0.3" strokeDasharray="0.8,0.5" style={{ pointerEvents: 'none' }} />
+          ))}
+          {laco && (
+            <rect x={Math.min(laco.x1, laco.x2)} y={Math.min(laco.y1, laco.y2)} width={Math.abs(laco.x2 - laco.x1)} height={Math.abs(laco.y2 - laco.y1)}
+              fill="#C9A22714" stroke="#C9A227" strokeWidth="0.25" strokeDasharray="1,0.7" style={{ pointerEvents: 'none' }} />
+          )}
+          {selectedEl && selectedEl.kind !== 'goalmarker' && (
+            <circle cx={selectedEl.x} cy={selectedEl.y} r="3.2" fill="none" stroke={T.warn} strokeWidth="0.3" strokeDasharray="0.8,0.6" />
+          )}
+          {selectedEl && selectedEl.kind === 'goalmarker' && (() => {
+            const w = selectedEl.w != null ? selectedEl.w : 3.6 * (selectedEl.scale || 1);
+            const h = selectedEl.h != null ? selectedEl.h : 2.2 * (selectedEl.scale || 1);
+            const rotHandle = localToWorld(selectedEl, 0, -h / 2 - 1.5);
+            const resizeHandle = localToWorld(selectedEl, w / 2, h / 2);
+            const topMid = localToWorld(selectedEl, 0, -h / 2);
+            return (
+              <g>
+                {/* retângulo de seleção tracejado, acompanha a rotação atual */}
+                <rect
+                  x={-w / 2 - 0.4} y={-h / 2 - 0.4} width={w + 0.8} height={h + 0.8}
+                  transform={`translate(${selectedEl.x} ${selectedEl.y}) rotate(${selectedEl.rotation || 0})`}
+                  fill="none" stroke={T.warn} strokeWidth="0.25" strokeDasharray="0.7,0.5" style={{ pointerEvents: 'none' }}
+                />
+                {/* linha-guia até ao manípulo de rotação */}
+                <line x1={topMid.x} y1={topMid.y} x2={rotHandle.x} y2={rotHandle.y}
+                  stroke={T.warn} strokeWidth="0.15" opacity="0.8" style={{ pointerEvents: 'none' }} />
+                {/* manípulo de rotação — arrasta à volta para rodar livremente 360° */}
+                <circle cx={rotHandle.x} cy={rotHandle.y} r="1.5" fill={T.warn} stroke={TEXT_ON_ACCENT} strokeWidth="0.25"
+                  onPointerDown={(e) => onGoalRotateDown(e, selectedEl.id)}
+                  style={{ cursor: 'grab', touchAction: 'none' }} />
+                {/* manípulo de redimensionamento — arrasta para ajustar largura/altura */}
+                <rect x={resizeHandle.x - 1.1} y={resizeHandle.y - 1.1} width="2.2" height="2.2"
+                  transform={`rotate(${selectedEl.rotation || 0} ${resizeHandle.x} ${resizeHandle.y})`}
+                  fill={T.warn} stroke={TEXT_ON_ACCENT} strokeWidth="0.25"
+                  onPointerDown={(e) => onGoalResizeDown(e, selectedEl.id)}
+                  style={{ cursor: 'nwse-resize', touchAction: 'none' }} />
+              </g>
+            );
+          })()}
+          {drawing && (
+            <line x1={drawing.x1} y1={drawing.y1} x2={drawing.x2} y2={drawing.y2}
+              stroke="#C9A227" strokeWidth={drawing.type === 'line-dashed' ? '0.42' : '0.3'}
+              strokeLinecap={drawing.type === 'line-dashed' ? 'round' : 'butt'}
+              strokeDasharray={drawing.type === 'line-dashed' ? '0.1,2.1' : (drawing.type === 'arrow-run' ? '2,1.5' : '1,1')} />
+          )}
+          <AnimOverlay items={animItems} iconScale={iconEscala * escalaEcra} />
+          <AnimOverlay items={presentAnimItems} iconScale={iconEscala * escalaEcra} />
+          </VistaCampo>
+        </svg>
+      </div>
+
+      {/* Undo/Redo/Imprimir/Limpar tudo — por baixo do campo, à esquerda,
+          para não competir por espaço com a barra de ferramentas em cima
+          (que já é apertada em ecrãs pequenos). */}
+      {/* `minWidth: 0` nos filhos é o que lhes permite encolher: sem isso
+          um item recusa-se a passar abaixo da largura do seu conteúdo e
+          empurra a barra para fora do ecrã, mesmo com `flexWrap`. */}
+      {/* O ANIMAR DEIXOU DE ESTAR NA BARRA DE CIMA.
+
+          Aparecia assim que houvesse a primeira seta e desaparecia ao
+          apagá-la — e como estava ACIMA do campo, cada vez que aparecia
+          empurrava a prancheta para baixo. No telemóvel isso é o desenho a
+          fugir por baixo do dedo a meio de o fazer.
+
+          Agora fica por baixo do campo, encostado à direita, e o espaço é
+          SEMPRE reservado (`minHeight`): mesmo sem setas nenhumas, nada se
+          mexe quando ele nasce. */}
+      {/* No computador o Animar passou para a linha das animações (à
+          direita): eram duas linhas por baixo do campo, uma quase vazia. */}
+      {isNarrowEditor && (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, minHeight: 34, alignItems: 'center' }}>
+        {botaoAnimar}
+      </div>
+      )}
+
+      {/* GESTÃO DAS ANIMAÇÕES — linha própria, alinhada à esquerda.
+
+          Estava na mesma linha do desfazer/refazer/imprimir, e o conjunto
+          ficava tão comprido que no telemóvel saía do ecrã. Separadas,
+          cada uma cabe na sua largura e lê-se o que é: em cima o que se faz
+          ao DESENHO, em baixo o que se faz à ANIMAÇÃO. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, marginTop: 8,
+        flexWrap: 'wrap', minWidth: 0, maxWidth: '100%',
+        // No computador esta linha também leva o Animar (à direita) e tem
+        // sempre a mesma altura, com ou sem botões.
+        ...(isNarrowEditor ? {} : { minHeight: 34 }),
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+          {/* A contagem abre a linha das animações: diz de imediato com
+              quantas se está a lidar, antes dos botões que lhes mexem. */}
+          {((value.sequence || []).length > 0 || passosAnulados.length > 0) && (
+            <span style={{ ...mono, fontSize: 10.5, color: T.mutedDim }}>
+              {(value.sequence || []).length} {(value.sequence || []).length === 1 ? 'animação' : 'animações'}
+            </span>
+          )}
+
+          {/* A partir de que passo vale o que se fizer a seguir — tanto
+              colocar como apagar.
+
+              Sem isto, um elemento acrescentado depois da coreografia
+              pronta só existia no fim: ao rever a animação desde o
+              princípio, aparecia do nada. Escolher um passo aqui mete-o em
+              campo desde esse momento até ao fim, o que permite testar uma
+              variante sem desmanchar o que já está feito.
+
+              O mesmo seletor serve também para apagar: escolhido um
+              passo, apagar um elemento só o tira a partir dali — continua
+              a aparecer nos passos anteriores, onde esteve mesmo em
+              campo. */}
+          {(value.sequence || []).length > 0 && (
+            <label
+              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: desdeValido == null ? T.mutedDim : T.gold }}
+              title="Vale para o que colocares e para o que apagares a seguir: passa a aplicar-se a partir deste passo da animação, não só agora"
+            >
+              desde
+              <Select
+                value={desdeValido == null ? '' : String(desdeValido)}
+                onChange={ev => setInserirDesde(ev.target.value === '' ? null : Number(ev.target.value))}
+                style={{ width: 92, minWidth: 0, height: 26, lineHeight: '24px', fontSize: 11.5, padding: '0 4px' }}
+              >
+                {/* O índice é o do passo, começando em 0.
+
+                    A primeira versão usava `i + 1` e o elemento entrava
+                    só DEPOIS do passo escolhido — escolher o último passo
+                    não propagava para lado nenhum e o item aparecia apenas
+                    no fim, que foi exatamente o que se notou. */}
+                {/* "Animar N" e não "passo N": é o nome do botão que os
+                    cria, e é assim que o treinador os conta. */}
+                <option value="">só agora</option>
+                {(value.sequence || []).map((_, i) => (
+                  <option key={i} value={i}>desde animar {i + 1}</option>
+                ))}
+              </Select>
+            </label>
+          )}
+          {(value.sequence || []).length > 0 && (
+            <button
+              type="button"
+              onClick={anularUltimoPasso}
+              title="Retira o último passo da animação e devolve as setas ao campo para as poderes corrigir"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
+                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: 'transparent', color: T.cream, border: `1px solid ${T.line}`,
+              }}
+            ><Undo2 size={12} /> Anular</button>
+          )}
+          {passosAnulados.length > 0 && (
+            <button
+              type="button"
+              onClick={refazerPasso}
+              title="Repõe o passo que acabaste de anular"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
+                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: 'transparent', color: T.cream, border: `1px solid ${T.line}`,
+              }}
+            ><Redo2 size={12} /> Refazer</button>
+          )}
+          {(value.sequence || []).length > 0 && (
+            <button
+              type="button"
+              onClick={isPresenting ? stopPresentation : startPresentation}
+              title={isPresenting ? 'Parar apresentação' : 'Pré-visualiza a apresentação completa (todos os passos já animados, em sequência) antes de guardar'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5, padding: '0 10px', height: 26, borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: isPresenting ? T.bad : 'transparent',
+                color: isPresenting ? T.cream : T.cream,
+                border: `1px solid ${isPresenting ? T.bad : T.line}`,
+              }}
+            >
+              {isPresenting ? <Square size={12} /> : <Play size={12} />}
+              {isPresenting ? 'Parar' : 'Apresentar tudo'}
+            </button>
+          )}
+          {(value.sequence || []).length > 0 && idsOrfaosDaAnimacao().size > 0 && (
+            <button
+              type="button"
+              onClick={repararAnimacao}
+              title="Remove elementos que ficaram presos numa fotografia da animação (ex: um jogador inserido a partir de um passo e depois apagado antes de esta correção existir)"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', height: 26,
+                borderRadius: 6, fontSize: 11.5, cursor: 'pointer', ...body,
+                background: `${T.warn}18`, color: T.warn, border: `1px solid ${T.warn}`,
+              }}
+            ><RefreshCw size={12} /> Reparar animação</button>
+          )}
+        </div>
+        {!isNarrowEditor && <div style={{ marginLeft: 'auto', display: 'flex' }}>{botaoAnimar}</div>}
+      </div>
+
+      {/* SALTO DE SCROLL AO CLICAR FORA DA PRANCHETA
+
+          Este painel aparecia e desaparecia conforme houvesse ou não um
+          elemento selecionado. Clicar no campo para desmarcar tirava-o do
+          fluxo, a página encolhia de repente e o browser reposicionava o
+          scroll — lia-se como "salta sozinho para cima".
+
+          Agora o espaço fica sempre reservado (`minHeight`), com ou sem
+          seleção. A altura da página deixa de mudar e o scroll fica quieto. */}
+      {/* A altura reservada é a do MAIOR painel — o do texto, com a caixa
+          de escrita e os botões de tamanho e largura. Reservar menos fazia
+          a página crescer ao selecionar um texto, e o scroll saltava.
+
+          Está no mínimo possível: a caixa de escrita passou a uma linha (o
+          texto continua a poder ter várias, só se rola dentro dela) para
+          esta faixa não roubar altura ao campo quando nada está
+          selecionado. */}
+      {/* `marginTop: 8` fica aqui, no wrapper que existe SEMPRE — e não no
+          bloco de baixo, que só nasce quando `selectedEl` é verdadeiro.
+          Estava ao contrário: a margem só existia com o painel aberto, e
+          como este `<div>` não tem padding nem borda, essa margem "fugia"
+          para fora dele (colapso de margens) e empurrava a altura do editor
+          uns 8px só nesse momento — o resíduo de encolhimento que ainda
+          sobrava mesmo com a altura da faixa já fixa em 38px. Com a margem
+          sempre presente, a altura deste wrapper é 100% constante entre
+          aberto e fechado. */}
+      {/* O espaço reservado cresce no telemóvel, porque lá a barra quebra
+          em duas ou três linhas. Continua a ser um número FIXO por ecrã e
+          não o conteúdo a mandar — é isso que impede o campo de encolher
+          quando se seleciona um elemento. */}
+      {/* No telemóvel o painel do elemento selecionado fica por baixo do
+          campo, com o espaço sempre reservado. No computador passou para
+          CIMA do campo (na linha da dica, que tem sempre a mesma altura):
+          debaixo do campo ficava uma faixa vazia de ~130 px. */}
+      {isNarrowEditor && (
+      <div style={{ minHeight: 200, marginTop: 4 }}>
+      {painelElemento}
+      </div>
+      )}
+
+      {isNarrowEditor && painelSeta}
 
       <div style={{ textAlign: 'right', marginTop: 8 }}>
         <span style={{ ...display, fontSize: 11, color: T.mutedDim, letterSpacing: '.04em' }}>™ Mister JP</span>
@@ -17480,7 +17522,7 @@ function ExerciseModal({ exercise, allExercises = [], meta, onClose, onSave }) {
   };
 
   return (
-    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide fullPage larguraMax="100%">
+    <Modal title={exercise ? 'Editar exercício' : 'Novo exercício'} onClose={onClose} wide xwide fullPage larguraMax={1480}>
       <BannerRascunho rascunho={rascunhoEncontrado} onRestaurar={restaurar} onDescartar={descartar} />
       <div style={{ ...FIELD_GRID, marginBottom: 16 }}>
         <div style={FIELD_FULL}>
@@ -17634,6 +17676,14 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
   const passoAtualRef = useRef(0);
   const decorridoRef = useRef(0);
   const planoAnim = React.useMemo(() => planearCoreografiaAnim(diagram), [diagram]);
+  /* O plano pode ter mais fases do que passos gravados (a reposição antes
+     de um passo antigo). `passoAtualRef` continua a ser o número do PASSO
+     (para Anterior/Seguinte); `faseRef` é a fase do plano a correr. */
+  const faseRef = useRef(0);
+  const faseDoPasso = (k) => {
+    const i = planoAnim.passos.findIndex(x => x.indice === k);
+    return i < 0 ? 0 : i;
+  };
   const attachmentBlobUrl = useBlobUrl(exercise.attachment && exercise.attachment.type !== 'image' ? exercise.attachment.dataUrl : null);
   const animRef = React.useRef(null);
   const timeoutRef = React.useRef(null);
@@ -17690,8 +17740,9 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
      dobro e não há pausa entre passos. O último "passo" pode ser o deslize
      final até ao campo guardado. */
   const runStep = (idx, offsetMs = 0) => {
-    passoAtualRef.current = idx;
+    faseRef.current = idx;
     const p = planoAnim.passos[idx];
+    if (p) passoAtualRef.current = p.indice != null ? p.indice : passoAtualRef.current;
     const acabar = () => {
       // Último passo: fica exatamente como o exercício está guardado hoje,
       // já com todos os desenhos.
@@ -17721,7 +17772,6 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
         decorridoRef.current = 0;
         if (idx + 1 < planoAnim.passos.length) {
           // Sem pausa entre passos: o seguinte começa já.
-          passoAtualRef.current = idx + 1;
           runStep(idx + 1);
         } else acabar();
       }
@@ -17735,6 +17785,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     setPlaying(true);
     setPaused(false);
     passoAtualRef.current = 0;
+    faseRef.current = 0;
     decorridoRef.current = 0;
     setFrameElements(planoAnim.passos[0] ? planoAnim.passos[0].base : sequence[0].elements);
     setFrameArrows(stepStaticArrows(sequence[0], diagram));
@@ -17766,7 +17817,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     if (!sequence.length) return;
     setPaused(false);
     setPlaying(true);
-    runStep(passoAtualRef.current, decorridoRef.current);
+    runStep(faseRef.current, decorridoRef.current);
   };
 
   /* ANDAR PARA A FRENTE E PARA TRÁS, passo a passo.
@@ -17788,6 +17839,10 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     timeoutRef.current = null;
 
     passoAtualRef.current = alvo;
+    // Continuar a partir daqui corre a jogada deste passo (a reposição já
+    // está feita: o campo mostra o início do passo).
+    const faseJogada = planoAnim.passos.findIndex(x => x.indice === alvo && !x.reposicao);
+    faseRef.current = faseJogada < 0 ? faseDoPasso(alvo) : faseJogada;
     decorridoRef.current = 0;
     setPlaying(false);
     setPaused(true);
@@ -17800,7 +17855,7 @@ function ExercisePresentation({ exercise, onClose, onEdit }) {
     const step = sequence[alvo];
     // O início do passo = onde o anterior acabou (com o que foi arrastado
     // ainda no sítio de partida: desliza quando se carregar em Continuar).
-    const pa = planoAnim.passos[alvo];
+    const pa = planoAnim.passos[faseRef.current];
     setFrameElements(pa ? pa.base : stepElements(step, diagram));
     setFrameArrows([...stepStaticArrows(step, diagram), ...(step.arrows || [])]);
   };
