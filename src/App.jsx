@@ -10915,6 +10915,22 @@ function DiagramThumbAnimado({ diagram, space, phase, height = 110 }) {
   const [aTocar, setATocar] = useState(false);
   const timerRef = useRef(null);
   useEffect(() => () => clearTimeout(timerRef.current), []);
+  /* EXERCÍCIO ALTERADO = FOTOGRAMAS NOVOS. Os fotogramas ficavam guardados
+     desde o primeiro ▶ e o cartão continuava a mostrar a animação antiga
+     depois de se gravar uma correção (por exemplo, feita em "desde
+     animar"). Agora, se o conteúdo do desenho mudar, deitam-se fora e o
+     próximo ▶ volta a calculá-los. Compara-se o conteúdo, não o objeto,
+     para não recomeçar a meio só porque a lista voltou a desenhar-se. */
+  const assinatura = React.useMemo(() => { try { return JSON.stringify(diagram || {}); } catch (e) { return String(Math.random()); } }, [diagram]);
+  const assinaturaRef = useRef(assinatura);
+  useEffect(() => {
+    if (assinaturaRef.current === assinatura) return;
+    assinaturaRef.current = assinatura;
+    clearTimeout(timerRef.current);
+    setFrames(null);
+    setIdx(0);
+    setATocar(false);
+  }, [assinatura]);
   useEffect(() => {
     if (!aTocar || !frames) return undefined;
     const f = frames[idx];
@@ -12359,6 +12375,9 @@ const teamInfo = (id) => TEAMS.find(t => t.id === id) || TEAMS[0];
    só. Não é abreviar por abreviar: são as duas únicas que não cabem. */
 const BASE_TOOLS = [
   { id: 'select', label: 'Mover / Selecionar', curto: 'Mover' },
+  // Vários de uma vez: retângulo à volta, ou tocar em cada um; depois
+  // arrasta-se o grupo todo (a equipa em bloco).
+  { id: 'multi', label: 'Vários', title: 'Selecionar vários e mexê-los em bloco' },
   { id: 'player', label: 'Jogador' },
   { id: 'keeper', label: 'Guarda-redes', curto: 'GR' },
   { id: 'coach', label: 'T', title: 'Treinador' },
@@ -14423,11 +14442,14 @@ function easeInOutQuadPure(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t
      no passo seguinte, ao mesmo tempo que as setas. Quem foi arrastado e
      também tem seta nesse passo faz primeiro o caminho até ao início da
      seta e depois a seta, num só movimento.
-   · O que foi arrastado DEPOIS do último "Animar" desliza no fim, até ao
-     sítio onde ficou guardado.
-   Não muda nada no que está gravado: é só a forma de reproduzir. Por isso
-   vale também para os exercícios antigos. */
-const ANIM_VEL_JOGADOR = 26;            // unidades do campo por segundo (a de sempre)
+   · Fica gravado no passo quem foi arrastado (`step.de`). Só esses
+     deslizam: nos passos antigos (gravados antes disto) e nas correções
+     feitas em "desde animar", a mudança de sítio continua imediata. Era
+     o que fazia os exercícios antigos parecerem estranhos (31/10): a
+     equipa reposta noutra situação passava a "correr" para lá.
+   · O que for arrastado depois do último Animar não se mexe na
+     apresentação enquanto não se carregar outra vez em Animar. */
+const ANIM_VEL_JOGADOR = 22;            // unidades do campo por segundo (antes 26: ficava rápido demais sem as pausas)
 const ANIM_VEL_BOLA = ANIM_VEL_JOGADOR * 2;
 const ANIM_MIN_MS = 280;                // nenhum movimento demora menos do que isto
 const ANIM_DESLIZE_MIN = 0.3;           // menos do que isto não conta como arrastado
@@ -14543,7 +14565,13 @@ function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
   const trajetos = new Map();
   const base = todos.map(el => {
     const ant = antes && antes.get(el.id);
-    const desloca = ant && Math.hypot(ant.x - el.x, ant.y - el.y) > ANIM_DESLIZE_MIN;
+    /* Só desliza quem foi mesmo ARRASTADO para este passo (gravado em
+       `step.de` quando se carregou em Animar). Nos exercícios antigos e nas
+       correções feitas em "desde animar", a mudança de sítio continua a
+       ser imediata, como sempre foi: muitas vezes era a equipa a ser
+       reposta para outra situação, e não um movimento. */
+    const podeDeslizar = !opcoes.soDeslizar || opcoes.soDeslizar.has(el.id);
+    const desloca = podeDeslizar && ant && Math.hypot(ant.x - el.x, ant.y - el.y) > ANIM_DESLIZE_MIN;
     // O caminho de quem foi arrastado: reto, ou curvo se se puxou o ponto do meio.
     const curva = desloca && opcoes.curvas && opcoes.curvas[el.id];
     const deslize = desloca ? { x1: ant.x, y1: ant.y, x2: el.x, y2: el.y, ...(curva ? { cx: curva.cx, cy: curva.cy } : {}) } : null;
@@ -14571,7 +14599,9 @@ function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
     trajetos.forEach((tr, id) => out.set(id, animPosicaoNoTrajeto(tr, Math.max(0, Math.min(tr.dur, ms)))));
     return out;
   };
-  return { base, dur, posicoes, fim, novasBolas, movers: new Set(trajetos.keys()) };
+  const deslizados = {};
+  base.forEach((el, i) => { if (el !== todos[i]) deslizados[el.id] = { x: el.x, y: el.y }; });
+  return { base, dur, posicoes, fim, novasBolas, movers: new Set(trajetos.keys()), deslizados };
 }
 const animMapaPosicoes = (lista) => new Map((lista || []).map(el => [el.id, { x: el.x, y: el.y }]));
 /* Plano da coreografia toda: os passos gravados, cada um a partir do fim
@@ -14584,16 +14614,16 @@ function planearCoreografiaAnim(diagram, opcoes = {}) {
   let antes = null;
   for (let i = 0; i < ate; i++) {
     const step = seq[i];
-    const p = planearPassoAnim(stepElements(step, diagram), step.arrows, antes, { ...opcoes, curvas: step.curvas });
+    const p = planearPassoAnim(stepElements(step, diagram), step.arrows, antes, {
+      ...opcoes, curvas: step.curvas, soDeslizar: new Set(Object.keys(step.de || {})),
+    });
     p.setasFixas = stepStaticArrows(step, diagram);
     p.indice = i;
     passos.push(p);
     antes = animMapaPosicoes(p.fim);
   }
-  if (opcoes.semFinal !== true && ate === seq.length && seq.length) {
-    const fin = planearPassoAnim(diagram.elements || [], [], antes, { ...opcoes, curvas: diagram.deslizeCurvas });
-    if (fin.dur > 0) { fin.setasFixas = diagram.arrows || []; fin.final = true; passos.push(fin); }
-  }
+  // (Sem deslize final: o que for arrastado depois do último Animar só
+  // conta como movimento quando se carregar outra vez em Animar.)
   return { passos, fimAnterior: antes };
 }
 // Estado do campo num instante de um plano: { passo, elementos, setas }.
@@ -15028,6 +15058,15 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const [dragId, setDragId] = useState(null);
   const [dragMoved, setDragMoved] = useState(false);
+  /* SELECIONAR VÁRIOS (ferramenta "Vários"): o grupo escolhido, o
+     retângulo a ser desenhado e o arrasto do grupo (de onde partiu e as
+     posições originais de cada um, para as distâncias se manterem). */
+  const [grupo, setGrupo] = useState([]);
+  const [laco, setLaco] = useState(null); // { x1, y1, x2, y2 }
+  const arrastoGrupoRef = useRef(null);   // { start, orig: Map, moveu }
+  const [aArrastarGrupo, setAArrastarGrupo] = useState(false);
+  // Ao sair da ferramenta "Vários", o grupo desfaz-se.
+  useEffect(() => { if (tool !== 'multi') { setGrupo([]); setLaco(null); } }, [tool]);
   const [dragArrowId, setDragArrowId] = useState(null);
   const [arrowMoved, setArrowMoved] = useState(false);
   const [dragHandle, setDragHandle] = useState(null); // { id, which: 'start'|'end' }
@@ -15138,7 +15177,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   const arrows = value?.arrows || [];
   // Há alguma coisa arrastada desde o último Animar? (o Animar aparece
   // também só com arrastos)
-  const haArrastos = !!fimAnteriorMemo && (elementosRecuo || elements).some(el => {
+  const haArrastos = !emRecuo && !!fimAnteriorMemo && (elementosRecuo || elements).some(el => {
     const a = fimAnteriorMemo.get(el.id);
     return a && Math.hypot(a.x - el.x, a.y - el.y) > ANIM_DESLIZE_MIN;
   });
@@ -15487,7 +15526,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
        anterior desliza neste passo (ver planearPassoAnim). Por isso o
        Animar também funciona só com arrastos, sem nenhuma seta. */
     const curvasPendentes = value.deslizeCurvas || {};
-    const planoPasso = planearPassoAnim(elementosBase, animArrows, fimDoPassoAnterior(), { curvas: curvasPendentes });
+    // Em "desde animar", arrastar é CORRIGIR o passo, não um movimento.
+    const planoPasso = planearPassoAnim(elementosBase, animArrows, emRecuo ? null : fimDoPassoAnterior(), { curvas: curvasPendentes });
     if (animArrows.length === 0 && planoPasso.movers.size === 0) return;
     // Elementos de base desta animação: os que já existiam mais qualquer
     // bola nova criada agora mesmo, na posição de partida do passe (um
@@ -15506,6 +15546,8 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
          apresentação desenhava todos os traços do exercício desde o
          primeiro fotograma — mesmo os que só foram feitos no fim. */
       staticArrows: arrows.filter(a => !animArrows.some(x => x.id === a.id)).map(a => ({ ...a })),
+      // Quem foi arrastado para este passo (e de onde vinha): só esses deslizam.
+      ...(Object.keys(planoPasso.deslizados).length ? { de: planoPasso.deslizados } : {}),
       // Curvas dos caminhos de quem foi arrastado (o ponto do meio puxado).
       ...(Object.keys(curvasPendentes).some(id => planoPasso.movers.has(id))
         ? { curvas: Object.fromEntries(Object.entries(curvasPendentes).filter(([id]) => planoPasso.movers.has(id))) } : {}),
@@ -15743,7 +15785,11 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     if (e.cancelable) e.preventDefault();
     try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     const p = toPoint(e);
-    if (tool === 'eraser') {
+    if (tool === 'multi') {
+      // Retângulo novo: começa uma seleção nova.
+      setGrupo([]);
+      setLaco({ x1: p.x, y1: p.y, x2: p.x, y2: p.y });
+    } else if (tool === 'eraser') {
       setErasing(true);
       eraseAt(p);
     } else if (tool === 'player') {
@@ -15808,6 +15854,28 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
     }
   };
   const handleBgPointerMove = (e) => {
+    if (laco) {
+      const p = toPoint(e);
+      setLaco(l => (l ? { ...l, x2: p.x, y2: p.y } : l));
+      return;
+    }
+    if (aArrastarGrupo && arrastoGrupoRef.current) {
+      const p = toPoint(e);
+      const g = arrastoGrupoRef.current;
+      const dx = p.x - g.start.x, dy = p.y - g.start.y;
+      if (Math.hypot(dx, dy) > 0.6) g.moveu = true;
+      if (!g.moveu) return;
+      let curvas = value.deslizeCurvas;
+      g.orig.forEach((_, id) => {
+        if (curvas && curvas[id]) { const { [id]: _f, ...r } = curvas; curvas = r; }
+      });
+      onChange({
+        ...value,
+        elements: elements.map(el => (g.orig.has(el.id) ? { ...el, x: g.orig.get(el.id).x + dx, y: g.orig.get(el.id).y + dy } : el)),
+        deslizeCurvas: curvas,
+      });
+      return;
+    }
     if (erasing) {
       eraseAt(toPoint(e));
     } else if (drawing) {
@@ -15960,6 +16028,22 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   };
   const finishInteraction = (e) => {
     try { svgRef.current.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    if (laco) {
+      // Entram todos os que ficam dentro do retângulo (menos as zonas).
+      const x1 = Math.min(laco.x1, laco.x2), x2 = Math.max(laco.x1, laco.x2);
+      const y1 = Math.min(laco.y1, laco.y2), y2 = Math.max(laco.y1, laco.y2);
+      if (x2 - x1 > 0.8 || y2 - y1 > 0.8) {
+        setGrupo(elements.filter(el => el.x >= x1 && el.x <= x2 && el.y >= y1 && el.y <= y2).map(el => el.id));
+      }
+      setLaco(null);
+    }
+    if (aArrastarGrupo) {
+      const g = arrastoGrupoRef.current;
+      // Toque sem arrastar num que já estava no grupo: sai do grupo.
+      if (g && !g.moveu && g.tocado && g.jaEstava) setGrupo(gr => gr.filter(id => id !== g.tocado));
+      arrastoGrupoRef.current = null;
+      setAArrastarGrupo(false);
+    }
     if (erasing) setErasing(false);
     if (drawing) {
       if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) > 0.8) {
@@ -15996,6 +16080,21 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // always allows dragging it right away — no tool switch required.
   const onElementDown = (e, id) => {
     e.stopPropagation();
+    if (tool === 'multi') {
+      if (emRecuo) return; // em "desde animar" arrastar é corrigir: não há grupos
+      try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      // Tocar num que não está no grupo junta-o; tocar e arrastar mexe o grupo todo.
+      const jaEstava = grupo.includes(id);
+      const novoGrupo = jaEstava ? grupo : [...grupo, id];
+      if (!jaEstava) setGrupo(novoGrupo);
+      beginGesture();
+      arrastoGrupoRef.current = {
+        start: toPoint(e), moveu: false, tocado: id, jaEstava,
+        orig: new Map(elements.filter(el => novoGrupo.includes(el.id)).map(el => [el.id, { x: el.x, y: el.y }])),
+      };
+      setAArrastarGrupo(true);
+      return;
+    }
     if (tool === 'eraser') {
       try { svgRef.current.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       setErasing(true);
@@ -16370,9 +16469,36 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
           )}
         </div>
       </div>
-      <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6 }}>
-        Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
-      </div>
+      {tool === 'multi' ? (
+        /* "Vários": atalhos para escolher uma equipa inteira de uma vez. */
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6, fontSize: 11.5, color: T.mutedDim, ...body }}>
+          {emRecuo ? (
+            <span style={{ color: T.warn }}>Em "desde animar" arrastar serve para corrigir o passo. Para mexer vários em bloco, escolhe "só agora".</span>
+          ) : (
+            <>
+              <span>Desenha um retângulo à volta (ou toca em cada um) e arrasta o grupo. Depois, Animar.</span>
+              {TEAMS.filter(t => elements.some(el => (el.kind === 'player' || el.kind === 'keeper') && (el.team || 'A') === t.id)).map(t => (
+                <button key={t.id} type="button"
+                  onClick={() => setGrupo(elements.filter(el => (el.kind === 'player' || el.kind === 'keeper') && (el.team || 'A') === t.id).map(el => el.id))}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.line}`, background: 'transparent', color: T.cream, fontSize: 11.5, cursor: 'pointer', ...body }}>
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: t.fill, border: '1px solid #ffffff55' }} /> Equipa
+                </button>
+              ))}
+              {grupo.length > 0 && (
+                <>
+                  <span style={{ color: T.gold }}>{grupo.length} no grupo</span>
+                  <button type="button" onClick={() => setGrupo([])}
+                    style={{ padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.line}`, background: 'transparent', color: T.muted, fontSize: 11.5, cursor: 'pointer', ...body }}>Limpar</button>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <div style={{ fontSize: 10.5, color: T.mutedDim, marginBottom: 6 }}>
+          Escolhe a cor, depois "Jogador" ou "Guarda-redes" (ou outro ícone), e toca no campo para colocar.
+        </div>
+      )}
 
       {/* Aviso claro de que a prancheta está a mostrar um passo antigo,
           não o estado mais recente — sem isto, era fácil desenhar uma
@@ -16477,7 +16603,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               do sítio onde estava até onde está, com um ponto a meio para o
               curvar. É este o caminho por onde desliza no próximo Animar.
               Fica por BAIXO dos jogadores, para não os tapar. */}
-          {!isPresenting && !isPlaying && fimAnteriorMemo && (elementosRecuo || elements).map(el => {
+          {!isPresenting && !isPlaying && !emRecuo && fimAnteriorMemo && elements.map(el => {
             const ant = fimAnteriorMemo.get(el.id);
             if (!ant || Math.hypot(ant.x - el.x, ant.y - el.y) <= ANIM_DESLIZE_MIN) return null;
             const c = (value.deslizeCurvas || {})[el.id];
@@ -16502,8 +16628,16 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
             iconScale={iconEscala * escalaEcra}
             onElementDown={onElementDown} onArrowDown={onArrowDown} onHandleDown={onHandleDown}
             selectedArrowId={selectedArrowId} interactive={!isPresenting}
-            placingActive={tool !== 'select' && tool !== 'eraser'}
+            placingActive={tool !== 'select' && tool !== 'eraser' && tool !== 'multi'}
           />
+          {/* Vários: quem está no grupo leva um anel, e o retângulo a ser desenhado. */}
+          {tool === 'multi' && !isPresenting && !isPlaying && elements.filter(el => grupo.includes(el.id)).map(el => (
+            <circle key={`grupo-${el.id}`} cx={el.x} cy={el.y} r="2.7" fill="#C9A22722" stroke="#C9A227" strokeWidth="0.3" strokeDasharray="0.8,0.5" style={{ pointerEvents: 'none' }} />
+          ))}
+          {laco && (
+            <rect x={Math.min(laco.x1, laco.x2)} y={Math.min(laco.y1, laco.y2)} width={Math.abs(laco.x2 - laco.x1)} height={Math.abs(laco.y2 - laco.y1)}
+              fill="#C9A22714" stroke="#C9A227" strokeWidth="0.25" strokeDasharray="1,0.7" style={{ pointerEvents: 'none' }} />
+          )}
           {selectedEl && selectedEl.kind !== 'goalmarker' && (
             <circle cx={selectedEl.x} cy={selectedEl.y} r="3.2" fill="none" stroke={T.warn} strokeWidth="0.3" strokeDasharray="0.8,0.6" />
           )}
