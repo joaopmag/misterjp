@@ -14463,6 +14463,9 @@ const ANIM_VEL_BOLA = ANIM_VEL_JOGADOR * 2;
 const ANIM_MIN_MS = 280;                // nenhum movimento demora menos do que isto
 const ANIM_VEL_REPOSICAO = 16;          // reposicionar a equipa entre passos antigos: com calma
 const ANIM_DESLIZE_MIN = 0.3;           // menos do que isto não conta como arrastado
+/* Material de treino (cones, estacas, balizas): é estático. Arrastá-lo só
+   o muda de sítio; nunca desliza nem ganha caminho tracejado. */
+const ANIM_MATERIAL_ESTATICO = new Set(['cone', 'stake', 'goalmarker']);
 
 // Comprimento e tabela de distâncias de uma seta (curva quadrática).
 function animSegmento(a, vel) {
@@ -14583,7 +14586,7 @@ function planearPassoAnim(elementos, setas, antes, opcoes = {}) {
        correções feitas em "desde animar", a mudança de sítio continua a
        ser imediata, como sempre foi: muitas vezes era a equipa a ser
        reposta para outra situação, e não um movimento. */
-    const podeDeslizar = !opcoes.soDeslizar || opcoes.soDeslizar.has(el.id);
+    const podeDeslizar = !ANIM_MATERIAL_ESTATICO.has(el.kind) && (!opcoes.soDeslizar || opcoes.soDeslizar.has(el.id));
     const desloca = podeDeslizar && ant && Math.hypot(ant.x - el.x, ant.y - el.y) > ANIM_DESLIZE_MIN;
     // O caminho de quem foi arrastado: reto, ou curvo se se puxou o ponto do meio.
     const curva = desloca && opcoes.curvas && opcoes.curvas[el.id];
@@ -15238,6 +15241,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
   // Há alguma coisa arrastada desde o último Animar? (o Animar aparece
   // também só com arrastos)
   const haArrastos = !emRecuo && !!fimAnteriorMemo && (elementosRecuo || elements).some(el => {
+    if (ANIM_MATERIAL_ESTATICO.has(el.kind)) return false;
     const a = fimAnteriorMemo.get(el.id);
     return a && Math.hypot(a.x - el.x, a.y - el.y) > ANIM_DESLIZE_MIN;
   });
@@ -16920,6 +16924,7 @@ function DiagramEditor({ value, onChange, spaceMeters, exerciseInfo, onClearAll,
               curvar. É este o caminho por onde desliza no próximo Animar.
               Fica por BAIXO dos jogadores, para não os tapar. */}
           {!isPresenting && !isPlaying && !emRecuo && fimAnteriorMemo && elements.map(el => {
+            if (ANIM_MATERIAL_ESTATICO.has(el.kind)) return null;
             const ant = fimAnteriorMemo.get(el.id);
             if (!ant || Math.hypot(ant.x - el.x, ant.y - el.y) <= ANIM_DESLIZE_MIN) return null;
             const c = (value.deslizeCurvas || {})[el.id];
