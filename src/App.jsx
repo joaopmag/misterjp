@@ -25315,32 +25315,6 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
               </div>
             ) : (
               <>
-                {/* OS ESCOLHIDOS, pela ordem da sessão: nome, fase, minutos
-                    (editáveis) e tirar. É aqui que se acerta a duração. */}
-                {f.exerciseIds.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 4 }}>
-                    {f.exerciseIds.map((e, i) => {
-                      const x = exercises.find(ex => ex.id === e.exId);
-                      if (!x) return null;
-                      return (
-                        <div key={e.exId} style={{
-                          display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px',
-                          background: `${T.crimson}33`, border: `1px solid ${T.gold}66`, borderRadius: 7,
-                        }}>
-                          <span style={{ ...mono, fontSize: 11.5, color: T.gold, width: 16, flexShrink: 0, textAlign: 'right' }}>{i + 1}</span>
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</span>
-                          {!estreitoSessao && <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{x.phase}</span>}
-                          <Input type="number" value={e.duration} onChange={ev => setDuration(x.id, ev.target.value)}
-                            title="Minutos" style={{ width: 60, padding: '4px 6px', fontSize: 12, flexShrink: 0 }} />
-                          <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>min</span>
-                          <button type="button" onClick={() => toggleExercise(x.id)} title="Tirar da sessão" aria-label="Tirar da sessão" style={{
-                            background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', padding: 2, flexShrink: 0,
-                          }}><X size={14} /></button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
                 {/* OS CARTÕES, como em "Anexar exercício existente": esquema
                     em miniatura com ▶, procura, A–Z / Criação. Tocar no
                     cartão junta à sessão; voltar a tocar tira. */}
@@ -25354,6 +25328,42 @@ function SessionModal({ session, presetDate, exercises, players, onClose, onSave
                   selecionados={f.exerciseIds.map(e => e.exId)}
                   onAlternar={(x) => toggleExercise(x.id)}
                 />
+                {/* NA SESSÃO, pela ordem da sessão: nome, fase, minutos
+                    (editáveis) e tirar. Fica POR BAIXO dos cartões e com
+                    ALTURA FIXA (desliza por dentro com mais exercícios):
+                    escolher ou tirar não empurra os cartões nem o resto da
+                    página. */}
+                <div style={{
+                  marginTop: 8, height: 4 * 38 + 3 * 5 + 2, overflowY: 'auto', overflowX: 'hidden',
+                  display: 'flex', flexDirection: 'column', gap: 5, boxSizing: 'content-box', overflowAnchor: 'none',
+                }}>
+                  {f.exerciseIds.length === 0 && (
+                    <div style={{
+                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+                      border: `1px dashed ${T.line}`, borderRadius: 7, fontSize: 12.5, color: T.mutedDim, padding: '0 12px',
+                    }}>Toca nos cartões para juntar exercícios à sessão.</div>
+                  )}
+                  {f.exerciseIds.map((e, i) => {
+                    const x = exercises.find(ex => ex.id === e.exId);
+                    if (!x) return null;
+                    return (
+                      <div key={e.exId} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px', height: 38, flexShrink: 0, boxSizing: 'border-box',
+                        background: `${T.crimson}33`, border: `1px solid ${T.gold}66`, borderRadius: 7,
+                      }}>
+                        <span style={{ ...mono, fontSize: 11.5, color: T.gold, width: 16, flexShrink: 0, textAlign: 'right' }}>{i + 1}</span>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.cream, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.name}</span>
+                        {!estreitoSessao && <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>{x.phase}</span>}
+                        <Input type="number" value={e.duration} onChange={ev => setDuration(x.id, ev.target.value)}
+                          title="Minutos" style={{ width: 56, padding: '3px 6px', fontSize: 12, flexShrink: 0, height: 28, boxSizing: 'border-box' }} />
+                        <span style={{ fontSize: 11, color: T.mutedDim, flexShrink: 0 }}>min</span>
+                        <button type="button" onClick={() => toggleExercise(x.id)} title="Tirar da sessão" aria-label="Tirar da sessão" style={{
+                          background: 'none', border: 'none', color: T.mutedDim, cursor: 'pointer', display: 'flex', padding: 2, flexShrink: 0,
+                        }}><X size={14} /></button>
+                      </div>
+                    );
+                  })}
+                </div>
               </>
             )}
           </div>
