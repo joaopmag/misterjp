@@ -12104,7 +12104,14 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
         <div style={{ fontSize: 12, color: T.muted, ...(multi ? {
           flex: isMobile ? '1 1 100%' : '0 0 360px', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         } : {}) }}>
-          {tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}
+          {multi ? (
+            /* Cada parte num espaço de largura fixa: trocar de fase para
+               "todas as fases" ou mudar os números não desloca nada. */
+            <>Exercícios de <span style={{ color: T.cream, display: 'inline-block', width: 140, verticalAlign: 'bottom', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fase}</span>
+              {' · '}<span style={{ ...mono, display: 'inline-block', minWidth: '3ch' }}>{itens.length}</span></>
+          ) : (
+            <>{tipo === 'ideia' ? 'Ideias' : 'Exercícios'} de <span style={{ color: T.cream }}>{fase}</span> · {itens.length}</>
+          )}
           {/* Sempre no lugar (escondido quando é 0) e com largura fixa:
               escolher ou tirar não pode empurrar a caixa da procura. */}
           {multi && (() => {
@@ -12159,11 +12166,11 @@ function EscolherParaCopiar({ itens, tipo, fase, meta, nomeDe, detalhesDe, temDe
             }}
             title="Tirar todos os exercícios da sessão"
             style={{
-              width: 128, padding: '5px 8px', borderRadius: 8, fontSize: 12, ...body, whiteSpace: 'nowrap',
+              width: 104, padding: '5px 8px', borderRadius: 8, fontSize: 12, ...body, whiteSpace: 'nowrap',
               border: `1px solid ${confirmarLimpar ? T.bad : T.line}`, background: confirmarLimpar ? `${T.bad}22` : 'transparent',
               color: !(selecionados || []).length ? T.mutedDim : (confirmarLimpar ? T.bad : T.muted),
               opacity: (selecionados || []).length ? 1 : 0.45, cursor: (selecionados || []).length ? 'pointer' : 'default',
-            }}>{confirmarLimpar ? 'Confirmar: tirar todos' : 'Tirar todos'}</button>
+            }}>{confirmarLimpar ? 'Confirmar' : 'Tirar todos'}</button>
         )}
         <div style={{ flex: 1 }} />
         {/* Sempre presente (mesmo sem resultados): a altura não muda. */}
